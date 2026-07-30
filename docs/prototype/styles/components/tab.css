@@ -1,0 +1,34 @@
+/* docs/prototype/styles/components/tab.css */
+.nb-tabs {
+  display: flex;
+  gap: var(--nb-space-sm);
+  width: 100%;
+  margin-bottom: var(--nb-space-md);
+}
+
+.nb-tab-btn {
+  flex: 1;
+  text-align: center;
+  font-family: var(--nb-font-family);
+  font-weight: var(--nb-font-weight-bold);
+  font-size: var(--nb-font-size-md);
+  line-height: var(--nb-line-height-tight);
+  letter-spacing: var(--nb-tracking-label);
+  text-transform: uppercase;
+  padding: 10px var(--nb-space-sm);
+  background-color: var(--nb-color-white);
+  border: var(--nb-border-thick);
+  border-radius: var(--nb-radius-medium);
+  color: var(--nb-color-dark);
+  transition: background-color var(--nb-transition-fast), transform var(--nb-transition-fast);
+  min-height: var(--nb-touch-min);
+}
+
+.nb-tab-btn.is-active {
+  background-color: var(--nb-color-accent-blue);
+  box-shadow: none;
+}
+
+.nb-tab-btn:not(.is-active):hover {
+  background-color: var(--nb-color-light-gray);
+}

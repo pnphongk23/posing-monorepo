@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Pose</title>
+  <!-- Stylesheets -->
+  <link rel="stylesheet" href="../styles/reset.css">
+  <link rel="stylesheet" href="../styles/base.css">
+  <link rel="stylesheet" href="../styles/utilities.css">
+  <link rel="stylesheet" href="../styles/components.css">
+</head>
+<body>
+  <div class="nb-phone">
+    <!-- Status Bar overlaying the camera view -->
+    <div class="nb-phone__header nb-phone__header--light">
+      <span class="nb-phone__time">9:41</span>
+      <div class="nb-phone__status-icons">
+        <svg class="nb-phone__icon" fill="currentColor" viewBox="0 0 24 24">
+          <path d="M12 21a2 2 0 1 1 0-4 2 2 0 0 1 0 4zm-4.95-4.95a7 7 0 0 1 9.9 0l-1.42 1.42a5 5 0 0 0-7.06 0L7.05 16.05zm-2.83-2.83a11 11 0 0 1 15.56 0l-1.42 1.42a9 9 0 0 0-12.72 0L4.22 13.22z"/>
+        </svg>
+        <svg class="nb-phone__icon" fill="currentColor" viewBox="0 0 24 24">
+          <path d="M2 22h20V2zM20 20h-2V9h2v11zm-4 0h-2V12h2v8zm-4 0h-2V15h2v5z"/>
+        </svg>
+        <svg class="nb-phone__icon" fill="currentColor" viewBox="0 0 24 24" style="width: 20px;">
+          <path d="M17 5H3a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2zm1 9h-2V10h2v4z"/>
+        </svg>
+      </div>
+    </div>
+    
+    <!-- Phone Content Area -->
+    <div class="nb-phone__content nb-phone__content--full">
+      <!-- Camera Viewport with pose overlay -->
+      <div class="nb-camera-viewport" id="camera-feed" style="background-image: url('https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=600');">
+        
+        <!-- 3x3 Grid Overlay (hidden by default in pose guide mode or active, let's keep it visible/toggled) -->
+        <div class="nb-camera-viewport__grid-overlay" id="camera-grid">
+          <div class="nb-camera-viewport__grid-line-h"></div>
+          <div class="nb-camera-viewport__grid-line-h"></div>
+          <div class="nb-camera-viewport__grid-line-v"></div>
+          <div class="nb-camera-viewport__grid-line-v"></div>
+        </div>
+
+        <!-- Pose Guide Overlay: Dancing stick figure guide in pink -->
+        <div class="nb-pose-overlay" id="pose-overlay-container" style="opacity: 0.85; pointer-events: none;">
+          <svg viewBox="0 0 100 100" style="width: 100%; height: 100%; pointer-events: none;">
+            <!-- Skeleton Lines (Pink) -->
+            <line x1="50" y1="25" x2="50" y2="55" stroke="var(--nb-color-accent-pink)" stroke-width="var(--nb-line-stroke)" stroke-linecap="round" />
+            <line x1="50" y1="33" x2="30" y2="20" stroke="var(--nb-color-accent-pink)" stroke-width="var(--nb-line-stroke)" stroke-linecap="round" />
+            <line x1="50" y1="33" x2="75" y2="40" stroke="var(--nb-color-accent-pink)" stroke-width="var(--nb-line-stroke)" stroke-linecap="round" />
+            <line x1="50" y1="55" x2="35" y2="80" stroke="var(--nb-color-accent-pink)" stroke-width="var(--nb-line-stroke)" stroke-linecap="round" />
+            <line x1="50" y1="55" x2="70" y2="65" stroke="var(--nb-color-accent-pink)" stroke-width="var(--nb-line-stroke)" stroke-linecap="round" />
+            <line x1="70" y1="65" x2="82" y2="80" stroke="var(--nb-color-accent-pink)" stroke-width="var(--nb-line-stroke)" stroke-linecap="round" />
+
+            <!-- Head (Pink) -->
+            <circle cx="50" cy="15" r="8" stroke="var(--nb-color-accent-pink)" stroke-width="var(--nb-line-stroke)" fill="none" />
+          </svg>
+        </div>
+
+        <!-- Dots Settings Button (floating) -->
+        <button class="nb-btn nb-btn--square nb-btn--white nb-camera-viewport__dots-btn" aria-label="Camera Settings" aria-expanded="false">
+          <svg style="width: 18px; height: 18px;"><use href="#icon-settings"></use></svg>
+        </button>
+
+        <!-- Dropdown settings menu -->
+        <div class="nb-dropdown" role="menu">
+          <div class="nb-dropdown__row" id="flash-row" style="cursor: pointer;">
+            <span class="nb-dropdown__label">
+              <svg fill="currentColor"><use href="#icon-flash"></use></svg>
+              Flash
+            </span>
+            <span class="nb-dropdown__value" id="flash-value">AUTO</span>
+          </div>
+          <div class="nb-dropdown__row">
+            <span class="nb-dropdown__label">
+              <svg stroke="currentColor" fill="none" viewBox="0 0 24 24"><use href="#icon-grid"></use></svg>
+              Grid
+            </span>
+            <label class="nb-switch">
+              <input type="checkbox" id="grid-switch" checked>
+              <span class="nb-switch__slider"></span>
+            </label>
+          </div>
+        </div>
+
+        <!-- Back Button Overlay (for return to live) -->
+        <a href="camera-live.html" class="nb-btn nb-btn--square nb-btn--white" style="position: absolute; top: var(--nb-space-md); left: var(--nb-space-md); z-index: var(--nb-z-index-overlay);" aria-label="Return to live feed">
+          <svg style="width: 20px; height: 20px;"><use href="#icon-back"></use></svg>
+        </a>
+
+        <!-- Pose Title Banner overlaying top center -->
+        <div id="pose-title-banner" class="nb-pose-banner">
+          Matching: Dancing Pose
+        </div>
+
+        <!-- Zoom level button (floating) -->
+        <div class="nb-btn nb-btn--square nb-btn--white nb-camera-viewport__zoom-btn nb-camera-viewport__zoom-chip" aria-hidden="true">
+          1x
+        </div>
+
+        <!-- Profile button (floating) -->
+        <a href="poses-list.html" class="nb-btn nb-btn--circle nb-btn--blue nb-camera-viewport__profile-btn" aria-label="Pose Gallery">
+          <svg style="width: 20px; height: 20px;"><use href="#icon-profile"></use></svg>
+        </a>
+      </div>
+
+      <!-- Bottom Shutter Bar -->
+      <div class="nb-shutter-bar">
+        <a href="gallery.html" class="nb-shutter-bar__thumb" style="background-image: url('https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=150');" aria-label="Open Gallery"></a>
+        <button id="shutter-btn" class="nb-btn nb-btn--shutter" aria-label="Capture photo"></button>
+        <a href="camera-live.html" class="nb-btn nb-btn--square nb-btn--white" aria-label="Toggle Overlay Off">
+          <!-- Active overlay indicator is shown, toggling back to camera live -->
+          <svg style="width: 20px; height: 20px; color: var(--nb-color-accent-pink);"><use href="#icon-flip"></use></svg>
+        </a>
+      </div>
+    </div>
+    
+    <!-- Home Bar Indicator -->
+    <div class="nb-phone__footer">
+      <div class="nb-phone__home-indicator"></div>
+    </div>
+  </div>
+
+  <!-- Shared Scripts -->
+  <script src="../scripts/icons.js"></script>
+  <script src="../scripts/fixtures.js"></script>
+  <script src="../scripts/toggle.js"></script>
+  <script src="../scripts/tabs.js"></script>
+  <script src="../scripts/progress.js"></script>
+  <script src="../scripts/modal.js"></script>
+  <script src="../scripts/view-toggle.js"></script>
+  <script src="../scripts/button-press.js"></script>
+  <script src="../scripts/app.js"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      const urlParams = new URLSearchParams(window.location.search);
+      const poseId = urlParams.get('pose') || 'dancing';
+
+      if (typeof POSES_FIXTURES !== 'undefined') {
+        const pose = POSES_FIXTURES.find(p => p.id === poseId) || POSES_FIXTURES.find(p => p.id === 'dancing');
+        if (pose) {
+          const banner = document.getElementById('pose-title-banner');
+          if (banner) {
+            banner.textContent = 'Matching: ' + pose.title;
+          }
+          const container = document.getElementById('pose-overlay-container');
+          if (container) {
+            container.innerHTML = pose.svg;
+            const svgEl = container.querySelector('svg');
+            if (svgEl) {
+              svgEl.setAttribute('viewBox', '0 0 24 24');
+              svgEl.style.width = '100%';
+              svgEl.style.height = '100%';
+              svgEl.style.display = 'block';
+              const elements = svgEl.querySelectorAll('line, circle');
+              elements.forEach(el => {
+                el.style.stroke = 'var(--nb-color-accent-pink)';
+                el.style.fill = 'none';
+                el.style.strokeWidth = '1.2px';
+                el.style.strokeLinecap = 'round';
+                el.style.strokeLinejoin = 'round';
+              });
+            }
+          }
+        }
+      }
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,90 @@
+/* docs/prototype/styles/tokens.css */
+:root {
+  /* ── Primitive Colors ── */
+  --nb-color-bg: #FBF6EF;
+  --nb-color-border: #000000;
+  --nb-color-white: #FFFFFF;
+  --nb-color-dark: #121212;
+  --nb-color-gray: #6B7280;
+  --nb-color-light-gray: #E5E7EB;
+
+  /* Pastel Accents */
+  --nb-color-accent-pink: #E89CAE;
+  --nb-color-accent-blue: #7FBBE6;
+  --nb-color-accent-yellow: #FED766;
+  --nb-color-accent-green: #B5E2B9;
+
+  /* ── Borders (refined neo-brutalist stroke) ── */
+  --nb-border-width-thick: 2px;
+  --nb-border-width-thin: 1.5px;
+  --nb-border-width-hairline: 1px;
+  --nb-border-thick: var(--nb-border-width-thick) solid var(--nb-color-border);
+  --nb-border-thin: var(--nb-border-width-thin) solid var(--nb-color-border);
+  --nb-border-hairline: var(--nb-border-width-hairline) solid var(--nb-color-border);
+
+  /* ── Shadows (hard offset, lighter lift) ── */
+  --nb-shadow-offset: 3px;
+  --nb-shadow-offset-small: 1.5px;
+  --nb-shadow-offset-large: 5px;
+  --nb-shadow: var(--nb-shadow-offset) var(--nb-shadow-offset) 0px var(--nb-color-border);
+  --nb-shadow-small: var(--nb-shadow-offset-small) var(--nb-shadow-offset-small) 0px var(--nb-color-border);
+  --nb-shadow-large: var(--nb-shadow-offset-large) var(--nb-shadow-offset-large) 0px var(--nb-color-border);
+  --nb-shadow-pressed: 0px 0px 0px var(--nb-color-border);
+
+  /* ── Radius ── */
+  --nb-radius-phone: 40px;
+  --nb-radius-large: 14px;
+  --nb-radius-medium: 10px;
+  --nb-radius-small: 6px;
+  --nb-radius-circle: 50%;
+
+  /* ── Spacing (4px base; additive mid steps) ── */
+  --nb-space-2xs: 2px;
+  --nb-space-xs: 4px;
+  --nb-space-sm: 8px;
+  --nb-space-md: 16px;
+  --nb-space-lg: 24px;
+  --nb-space-xl: 32px;
+  --nb-space-compact: 12px; /* between sm and md — control padding */
+
+  /* ── Typography ── */
+  --nb-font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --nb-font-weight-normal: 500;
+  --nb-font-weight-semibold: 600;
+  --nb-font-weight-bold: 700;
+
+  --nb-font-size-2xs: 10px;  /* tags, tab labels */
+  --nb-font-size-xs: 11px;   /* captions, meta, badges */
+  --nb-font-size-sm: 12px;   /* secondary labels */
+  --nb-font-size-md: 13px;   /* tabs, compact controls */
+  --nb-font-size-base: 14px; /* buttons, body */
+  --nb-font-size-lg: 16px;   /* emphasized body */
+  --nb-font-size-xl: 20px;   /* nav titles */
+  --nb-font-size-2xl: 24px;  /* page hero titles */
+
+  --nb-line-height-tight: 1.15;
+  --nb-line-height-snug: 1.25;
+  --nb-line-height-normal: 1.4;
+
+  --nb-tracking-tight: 0.02em;
+  --nb-tracking-label: 0.04em;
+  --nb-tracking-wide: 0.06em;
+
+  /* ── Icon / line stroke ── */
+  --nb-icon-stroke: 2;
+  --nb-line-stroke: 2px;
+
+  /* ── Touch targets ── */
+  --nb-touch-min: 44px;
+
+  /* ── Z-index ── */
+  --nb-z-index-base: 1;
+  --nb-z-index-overlay: 10;
+  --nb-z-index-sticky: 20;
+  --nb-z-index-dropdown: 100;
+  --nb-z-index-modal: 200;
+
+  /* ── Transitions ── */
+  --nb-transition-fast: 0.1s cubic-bezier(0.16, 1, 0.3, 1);
+  --nb-transition-normal: 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}

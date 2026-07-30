@@ -1,0 +1,54 @@
+/* docs/prototype/styles/base.css */
+@import "./tokens.css";
+
+body {
+  font-family: var(--nb-font-family);
+  font-weight: var(--nb-font-weight-normal);
+  background-color: #E2DDD5;
+  color: var(--nb-color-dark);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding: var(--nb-space-md);
+  box-sizing: border-box;
+}
+
+/* Full-screen app on mobile */
+@media (max-width: 480px) {
+  body {
+    padding: 0;
+    background-color: var(--nb-color-bg);
+    align-items: stretch;
+  }
+}
+
+/* Accessibility Focus Styles */
+*:focus-visible {
+  outline: 2px dashed var(--nb-color-accent-blue);
+  outline-offset: 3px;
+}
+
+/* Screen reader only utility */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Reduced motion overrides */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

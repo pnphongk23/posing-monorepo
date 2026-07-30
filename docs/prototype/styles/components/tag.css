@@ -1,0 +1,45 @@
+/* docs/prototype/styles/components/tag.css */
+.nb-tag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--nb-font-family);
+  font-weight: var(--nb-font-weight-bold);
+  font-size: var(--nb-font-size-2xs);
+  line-height: var(--nb-line-height-tight);
+  letter-spacing: var(--nb-tracking-label);
+  text-transform: uppercase;
+  padding: 5px var(--nb-space-sm);
+  border: var(--nb-border-thin);
+  border-radius: var(--nb-radius-small);
+  color: var(--nb-color-dark);
+  background-color: var(--nb-color-white);
+  white-space: nowrap;
+}
+
+.nb-tag--pink { background-color: var(--nb-color-accent-pink); }
+.nb-tag--blue { background-color: var(--nb-color-accent-blue); }
+.nb-tag--yellow { background-color: var(--nb-color-accent-yellow); }
+.nb-tag--green { background-color: var(--nb-color-accent-green); }
+
+.nb-tag--badge {
+  font-size: var(--nb-font-size-xs);
+  padding: 6px 10px;
+  gap: var(--nb-space-xs);
+  border-radius: var(--nb-radius-small);
+  border: var(--nb-border-thin);
+  box-shadow: none;
+}
+
+.nb-tag--badge svg {
+  width: 14px;
+  height: 14px;
+  stroke-width: var(--nb-icon-stroke);
+}
+
+.nb-tag--pill {
+  border-radius: var(--nb-radius-large);
+  padding: var(--nb-space-sm) var(--nb-space-compact);
+  font-size: var(--nb-font-size-xs);
+  gap: 6px;
+}

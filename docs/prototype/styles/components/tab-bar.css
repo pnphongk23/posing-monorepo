@@ -1,0 +1,59 @@
+/* docs/prototype/styles/components/tab-bar.css */
+.nb-tab-bar {
+  display: flex;
+  justify-content: space-around;
+  align-items: stretch;
+  min-height: 60px;
+  padding: var(--nb-space-sm) var(--nb-space-md) calc(var(--nb-space-sm) + env(safe-area-inset-bottom, 0px));
+  background-color: var(--nb-color-bg);
+  border-top: var(--nb-border-thick);
+  flex-shrink: 0;
+  z-index: var(--nb-z-index-sticky);
+}
+
+.nb-tab-bar__item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--nb-space-xs);
+  flex: 1;
+  min-height: var(--nb-touch-min);
+  padding: var(--nb-space-xs);
+  font-size: var(--nb-font-size-2xs);
+  font-weight: var(--nb-font-weight-bold);
+  line-height: var(--nb-line-height-tight);
+  letter-spacing: var(--nb-tracking-wide);
+  text-transform: uppercase;
+  color: var(--nb-color-gray);
+  text-decoration: none;
+  border-radius: var(--nb-radius-small);
+  transition: color var(--nb-transition-fast), background-color var(--nb-transition-fast);
+}
+
+.nb-tab-bar__item svg {
+  width: 20px;
+  height: 20px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: var(--nb-icon-stroke);
+}
+
+.nb-tab-bar__item.is-active {
+  color: var(--nb-color-dark);
+  background-color: var(--nb-color-accent-blue);
+  border: var(--nb-border-thin);
+  box-shadow: var(--nb-shadow-small);
+}
+
+.nb-tab-bar__item:active {
+  transform: translate(1px, 1px);
+}
+
+.nb-phone--with-tab-bar .nb-phone__content {
+  padding-bottom: 0;
+}
+
+.nb-phone--with-tab-bar .nb-phone__footer {
+  display: none;
+}

@@ -1,0 +1,52 @@
+/* docs/prototype/styles/components/toggle.css */
+.nb-switch {
+  position: relative;
+  display: inline-block;
+  width: 48px;
+  height: 26px;
+}
+
+.nb-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.nb-switch__slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: var(--nb-color-white);
+  border: var(--nb-border-thin);
+  border-radius: var(--nb-radius-large);
+  transition: background-color var(--nb-transition-fast);
+}
+
+.nb-switch__slider::before {
+  position: absolute;
+  content: "";
+  height: 16px;
+  width: 16px;
+  left: 3px;
+  bottom: 3px;
+  background-color: var(--nb-color-white);
+  border: var(--nb-border-thin);
+  border-radius: var(--nb-radius-circle);
+  transition: transform var(--nb-transition-fast);
+}
+
+.nb-switch input:checked + .nb-switch__slider {
+  background-color: var(--nb-color-accent-blue);
+}
+
+.nb-switch input:focus-visible + .nb-switch__slider {
+  outline: 2px dashed var(--nb-color-accent-blue);
+  outline-offset: 3px;
+}
+
+.nb-switch input:checked + .nb-switch__slider::before {
+  transform: translateX(20px);
+}

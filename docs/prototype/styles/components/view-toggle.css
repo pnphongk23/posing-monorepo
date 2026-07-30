@@ -1,0 +1,36 @@
+/* docs/prototype/styles/components/view-toggle.css */
+.nb-view-toggle {
+  display: flex;
+  background-color: var(--nb-color-bg);
+  border: var(--nb-border-thick);
+  border-radius: var(--nb-radius-medium);
+  overflow: hidden;
+  box-shadow: var(--nb-shadow-small);
+}
+
+.nb-view-toggle__btn {
+  width: 40px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  cursor: pointer;
+  background-color: var(--nb-color-bg);
+  color: var(--nb-color-dark);
+  transition: background-color var(--nb-transition-fast);
+}
+
+.nb-view-toggle__btn:not(:last-child) {
+  border-right: var(--nb-border-thick);
+}
+
+.nb-view-toggle__btn.is-active {
+  background-color: var(--nb-color-accent-blue);
+}
+
+.nb-view-toggle__btn svg {
+  width: 18px;
+  height: 18px;
+  stroke-width: var(--nb-icon-stroke);
+}

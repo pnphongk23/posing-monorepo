@@ -1,0 +1,87 @@
+/* docs/prototype/styles/components/button.css */
+.nb-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--nb-space-sm);
+  font-family: var(--nb-font-family);
+  font-weight: var(--nb-font-weight-bold);
+  font-size: var(--nb-font-size-base);
+  line-height: var(--nb-line-height-tight);
+  letter-spacing: var(--nb-tracking-label);
+  text-transform: uppercase;
+  text-align: center;
+  color: var(--nb-color-dark);
+  background-color: var(--nb-color-white);
+  border: var(--nb-border-thick);
+  border-radius: var(--nb-radius-medium);
+  box-shadow: var(--nb-shadow);
+  padding: var(--nb-space-compact) var(--nb-space-md);
+  transition: transform var(--nb-transition-fast), box-shadow var(--nb-transition-fast);
+  user-select: none;
+  min-height: var(--nb-touch-min);
+}
+
+.nb-btn:active,
+.nb-btn.is-active {
+  transform: translate(var(--nb-shadow-offset), var(--nb-shadow-offset));
+  box-shadow: var(--nb-shadow-pressed);
+}
+
+.nb-btn--square {
+  width: var(--nb-touch-min);
+  height: var(--nb-touch-min);
+  padding: 0;
+  border-radius: var(--nb-radius-medium);
+  flex-shrink: 0;
+}
+
+.nb-btn--circle {
+  width: 48px;
+  height: 48px;
+  border-radius: var(--nb-radius-circle);
+  padding: 0;
+  box-shadow: var(--nb-shadow);
+}
+
+.nb-btn--circle:active {
+  transform: translate(var(--nb-shadow-offset), var(--nb-shadow-offset));
+  box-shadow: var(--nb-shadow-pressed);
+}
+
+.nb-btn--shutter {
+  width: 72px;
+  height: 72px;
+  border-radius: var(--nb-radius-large);
+  background-color: var(--nb-color-accent-pink);
+  border: var(--nb-border-thick);
+  box-shadow: var(--nb-shadow-large);
+}
+
+.nb-btn--shutter:active {
+  transform: translate(var(--nb-shadow-offset-large), var(--nb-shadow-offset-large));
+  box-shadow: var(--nb-shadow-pressed);
+}
+
+.nb-btn--pink { background-color: var(--nb-color-accent-pink); }
+.nb-btn--blue { background-color: var(--nb-color-accent-blue); }
+.nb-btn--yellow { background-color: var(--nb-color-accent-yellow); }
+.nb-btn--green { background-color: var(--nb-color-accent-green); }
+.nb-btn--white { background-color: var(--nb-color-white); }
+.nb-btn--cream { background-color: var(--nb-color-bg); }
+
+.nb-btn--dark {
+  background-color: var(--nb-color-dark);
+  color: var(--nb-color-white);
+}
+
+.nb-btn--block {
+  width: 100%;
+}
+
+.nb-btn svg {
+  width: 18px;
+  height: 18px;
+  stroke-width: var(--nb-icon-stroke);
+  flex-shrink: 0;
+}

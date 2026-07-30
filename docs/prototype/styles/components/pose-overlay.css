@@ -1,0 +1,109 @@
+/* docs/prototype/styles/components/pose-overlay.css */
+.nb-pose-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: var(--nb-z-index-base);
+}
+
+.nb-pose-bone {
+  stroke-width: var(--nb-line-stroke);
+  stroke-linecap: round;
+  transition: stroke var(--nb-transition-normal);
+}
+
+.nb-pose-bone--primary {
+  stroke: var(--nb-color-dark);
+}
+
+.nb-pose-bone--skeleton {
+  stroke: var(--nb-color-accent-blue);
+}
+
+.nb-pose-bone--skeleton-lower {
+  stroke: var(--nb-color-accent-yellow);
+}
+
+.nb-pose-joint {
+  stroke: var(--nb-color-border);
+  stroke-width: var(--nb-border-width-thin);
+  r: 5;
+  transition: transform var(--nb-transition-fast);
+}
+
+.nb-pose-joint--head {
+  fill: var(--nb-color-accent-yellow);
+  r: 7;
+}
+
+.nb-pose-joint--eyes {
+  fill: #85C7F2;
+  r: 4;
+}
+
+.nb-pose-joint--shoulders {
+  fill: #F28482;
+  r: 6;
+}
+
+.nb-pose-joint--elbows {
+  fill: var(--nb-color-accent-green);
+  r: 5;
+}
+
+.nb-pose-joint--wrists {
+  fill: #7FE5F0;
+  r: 5;
+}
+
+.nb-pose-joint--hips {
+  fill: #E07A5F;
+  r: 5;
+}
+
+.nb-pose-joint--knees {
+  fill: var(--nb-color-accent-yellow);
+  r: 5;
+}
+
+.nb-stick-figure {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.nb-stick-figure path,
+.nb-stick-figure line,
+.nb-stick-figure circle {
+  fill: none;
+  stroke: var(--nb-color-border);
+  stroke-width: var(--nb-line-stroke);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.nb-stick-figure circle {
+  fill: none;
+}
+
+.nb-pose-banner {
+  position: absolute;
+  top: var(--nb-space-md);
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: var(--nb-color-dark);
+  color: var(--nb-color-white);
+  padding: 6px var(--nb-space-compact);
+  border: var(--nb-border-thin);
+  border-radius: var(--nb-radius-small);
+  font-family: var(--nb-font-family);
+  font-weight: var(--nb-font-weight-bold);
+  font-size: var(--nb-font-size-xs);
+  line-height: var(--nb-line-height-tight);
+  letter-spacing: var(--nb-tracking-label);
+  text-transform: uppercase;
+  white-space: nowrap;
+}

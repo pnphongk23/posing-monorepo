@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Pose</title>
+  <!-- Stylesheets -->
+  <link rel="stylesheet" href="../styles/reset.css">
+  <link rel="stylesheet" href="../styles/base.css">
+  <link rel="stylesheet" href="../styles/utilities.css">
+  <link rel="stylesheet" href="../styles/components.css">
+</head>
+<body>
+  <div class="nb-phone nb-phone--with-tab-bar">
+    <!-- Status Bar -->
+    <div class="nb-phone__header">
+      <span class="nb-phone__time">9:41</span>
+      <div class="nb-phone__status-icons">
+        <svg class="nb-phone__icon" fill="currentColor" viewBox="0 0 24 24">
+          <path d="M12 21a2 2 0 1 1 0-4 2 2 0 0 1 0 4zm-4.95-4.95a7 7 0 0 1 9.9 0l-1.42 1.42a5 5 0 0 0-7.06 0L7.05 16.05zm-2.83-2.83a11 11 0 0 1 15.56 0l-1.42 1.42a9 9 0 0 0-12.72 0L4.22 13.22z"/>
+        </svg>
+        <svg class="nb-phone__icon" fill="currentColor" viewBox="0 0 24 24">
+          <path d="M2 22h20V2zM20 20h-2V9h2v11zm-4 0h-2V12h2v8zm-4 0h-2V15h2v5z"/>
+        </svg>
+        <svg class="nb-phone__icon" fill="currentColor" viewBox="0 0 24 24" style="width: 20px;">
+          <path d="M17 5H3a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2zm1 9h-2V10h2v4z"/>
+        </svg>
+      </div>
+    </div>
+    
+    <!-- Phone Content Area -->
+    <div class="nb-phone__content">
+      <nav class="nb-nav-bar u-mb-md">
+        <h1 class="nb-nav-bar__title nb-nav-bar__title--page">Gallery</h1>
+        <div class="nb-nav-bar__right">
+          <div class="nb-view-toggle">
+            <button class="nb-view-toggle__btn is-active" data-view="grid" aria-label="Grid View" aria-pressed="true">
+              <svg><use href="#icon-grid"></use></svg>
+            </button>
+            <button class="nb-view-toggle__btn" data-view="list" aria-label="List View" aria-pressed="false">
+              <svg><use href="#icon-list"></use></svg>
+            </button>
+          </div>
+        </div>
+      </nav>
+
+      <div class="nb-grid-scroll-area nb-gallery-scroll">
+        <div class="nb-grid nb-grid--2col nb-gallery-grid" id="gallery-grid">
+          
+          <div class="nb-grid-group-title nb-grid__full-row">
+            <span>Today</span>
+            <span class="nb-grid-group-count">4</span>
+          </div>
+
+          <div class="nb-grid-photo-item">
+            <div class="nb-card nb-card--gallery" style="background-image: url('https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=300');" role="img" aria-label="Captured photo"></div>
+          </div>
+
+          <div class="nb-grid-photo-item">
+            <div class="nb-card nb-card--gallery" style="background-image: url('https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&q=80&w=300');" role="img" aria-label="Captured photo"></div>
+          </div>
+
+          <div class="nb-grid-photo-item">
+            <div class="nb-card nb-card--gallery" style="background-image: url('https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&q=80&w=300');" role="img" aria-label="Captured photo"></div>
+          </div>
+
+          <div class="nb-grid-photo-item">
+            <div class="nb-card nb-card--gallery" style="background-image: url('https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=300');" role="img" aria-label="Captured photo"></div>
+          </div>
+
+          <div class="nb-grid-group-title nb-grid__full-row nb-gallery-section--spaced">
+            <span>Yesterday</span>
+            <span class="nb-grid-group-count">2</span>
+          </div>
+
+          <div class="nb-grid-photo-item">
+            <div class="nb-card nb-card--placeholder" role="img" aria-label="Photo unavailable">
+              <svg class="nb-card__placeholder-icon"><use href="#icon-image"></use></svg>
+            </div>
+          </div>
+
+          <div class="nb-grid-photo-item">
+            <div class="nb-card nb-card--gallery" style="background-image: url('https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&q=80&w=300');" role="img" aria-label="Captured photo"></div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+    
+    <div class="nb-phone__footer">
+      <div class="nb-phone__home-indicator"></div>
+    </div>
+  </div>
+
+  <!-- Shared Scripts -->
+  <script src="../scripts/icons.js"></script>
+  <script src="../scripts/fixtures.js"></script>
+  <script src="../scripts/toggle.js"></script>
+  <script src="../scripts/tabs.js"></script>
+  <script src="../scripts/progress.js"></script>
+  <script src="../scripts/modal.js"></script>
+  <script src="../scripts/view-toggle.js"></script>
+  <script src="../scripts/button-press.js"></script>
+  <script src="../scripts/tab-bar.js"></script>
+  <script src="../scripts/app.js"></script>
+  <script>initTabBar('gallery');</script>
+</body>
+</html>

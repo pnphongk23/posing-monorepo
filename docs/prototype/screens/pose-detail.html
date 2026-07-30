@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Pose</title>
+  <!-- Stylesheets -->
+  <link rel="stylesheet" href="../styles/reset.css">
+  <link rel="stylesheet" href="../styles/base.css">
+  <link rel="stylesheet" href="../styles/utilities.css">
+  <link rel="stylesheet" href="../styles/components.css">
+</head>
+<body>
+  <div class="nb-phone">
+    <!-- Status Bar -->
+    <div class="nb-phone__header">
+      <span class="nb-phone__time">9:41</span>
+      <div class="nb-phone__status-icons">
+        <svg class="nb-phone__icon" fill="currentColor" viewBox="0 0 24 24">
+          <path d="M12 21a2 2 0 1 1 0-4 2 2 0 0 1 0 4zm-4.95-4.95a7 7 0 0 1 9.9 0l-1.42 1.42a5 5 0 0 0-7.06 0L7.05 16.05zm-2.83-2.83a11 11 0 0 1 15.56 0l-1.42 1.42a9 9 0 0 0-12.72 0L4.22 13.22z"/>
+        </svg>
+        <svg class="nb-phone__icon" fill="currentColor" viewBox="0 0 24 24">
+          <path d="M2 22h20V2zM20 20h-2V9h2v11zm-4 0h-2V12h2v8zm-4 0h-2V15h2v5z"/>
+        </svg>
+        <svg class="nb-phone__icon" fill="currentColor" viewBox="0 0 24 24" style="width: 20px;">
+          <path d="M17 5H3a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2zm1 9h-2V10h2v4z"/>
+        </svg>
+      </div>
+    </div>
+    
+    <!-- Phone Content Area -->
+    <div class="nb-phone__content">
+      <!-- Navigation Bar -->
+      <nav class="nb-nav-bar" aria-label="Main Navigation">
+        <div class="nb-nav-bar__left">
+          <a href="poses-list.html" class="nb-btn nb-btn--square nb-btn--white" aria-label="Go Back">
+            <svg style="width: 20px; height: 20px;"><use href="#icon-back"></use></svg>
+          </a>
+        </div>
+        <h1 class="nb-nav-bar__title" id="detail-page-title">Dancing</h1>
+        <div class="nb-nav-bar__right">
+          <button class="nb-btn nb-btn--square nb-btn--white" aria-label="Share">
+            <svg style="width: 20px; height: 20px;"><use href="#icon-share"></use></svg>
+          </button>
+        </div>
+      </nav>
+
+      <!-- Large Pose Detail Card -->
+      <div class="nb-card nb-card--pose-detail u-w-full" style="margin-bottom: var(--nb-space-md);">
+        <!-- Heart badge on card -->
+        <button class="nb-card__heart-badge" id="detail-heart-btn" aria-label="Like pose" style="cursor: pointer;">
+          <svg width="12" height="12" style="stroke: currentColor; fill: currentColor;"><use href="#icon-heart"></use></svg>
+          <span id="detail-heart-count">2.1K</span>
+        </button>
+
+        <!-- Stick figure display -->
+        <div id="detail-pose-svg-container" class="u-d-flex u-align-center u-w-full u-h-full" style="justify-content: center;">
+          <!-- SVG injected here -->
+        </div>
+      </div>
+
+      <!-- Pose Details Label -->
+      <div class="u-mb-lg">
+        <h2 class="u-font-bold u-text-uppercase u-text-lg" id="detail-pose-name" style="margin-bottom: var(--nb-space-2xs);">Dancing Pose</h2>
+        <span class="u-text-sm u-text-muted" id="detail-pose-author">by @posemaster · 3 days ago</span>
+      </div>
+
+      <!-- Metadata pills rows -->
+      <div class="u-d-flex u-gap-sm u-mb-xl">
+        <div class="nb-tag nb-tag--pill">
+          <svg width="14" height="14" style="stroke: currentColor; fill: none; stroke-width: var(--nb-icon-stroke);"><use href="#icon-camera"></use></svg>
+          <span id="detail-tries-count">1.2K Tries</span>
+        </div>
+        <div class="nb-tag nb-tag--pill">
+          <svg width="14" height="14" style="stroke: currentColor; fill: none; stroke-width: var(--nb-icon-stroke);"><use href="#icon-bookmark"></use></svg>
+          <span id="detail-saves-count">456 Saves</span>
+        </div>
+      </div>
+
+      <!-- Lower Action Buttons Row -->
+      <div class="u-d-flex u-gap-sm u-mb-md u-mt-auto u-pb-sm">
+        <a href="camera-pose-overlay.html" class="nb-btn nb-btn--pink nb-btn--block u-flex-grow u-justify-between" id="detail-try-pose-btn">
+          <svg><use href="#icon-camera"></use></svg>
+          <span>Try Pose</span>
+          <span style="opacity: 0;" aria-hidden="true"></span>
+        </a>
+        <button id="detail-bookmark-btn" class="nb-btn nb-btn--square nb-btn--cream" aria-label="Bookmark pose">
+          <svg><use href="#icon-bookmark"></use></svg>
+        </button>
+      </div>
+    </div>
+    
+    <!-- Home Bar Indicator -->
+    <div class="nb-phone__footer">
+      <div class="nb-phone__home-indicator"></div>
+    </div>
+  </div>
+
+  <!-- Dynamic Content Hydrator -->
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      // Parse query param
+      const urlParams = new URLSearchParams(window.location.search);
+      const poseId = urlParams.get('id') || 'dancing';
+
+      // Find matching fixture
+      if (typeof POSES_FIXTURES !== 'undefined') {
+        const pose = POSES_FIXTURES.find(p => p.id === poseId) || POSES_FIXTURES[1]; // default dancing
+        
+        // Hydrate details
+        document.getElementById('detail-page-title').textContent = pose.title;
+        document.getElementById('detail-pose-name').textContent = pose.title + ' Pose';
+        document.getElementById('detail-pose-svg-container').innerHTML = pose.svg;
+        document.getElementById('detail-try-pose-btn').href = 'camera-pose-overlay.html?pose=' + pose.id;
+        
+        const heartsLabel = document.getElementById('detail-heart-count');
+        const heartsBadge = document.getElementById('detail-heart-btn');
+        
+        if (pose.hearts) {
+          heartsLabel.textContent = pose.hearts;
+          heartsBadge.style.display = 'flex';
+        } else {
+          // If no pre-defined community hearts, generate a nice starting value
+          heartsLabel.textContent = '120';
+        }
+
+        // Mock different statistics based on the pose ID
+        const tries = document.getElementById('detail-tries-count');
+        const saves = document.getElementById('detail-saves-count');
+        const author = document.getElementById('detail-pose-author');
+
+        if (poseId === 'standing') {
+          tries.textContent = '840 Tries';
+          saves.textContent = '128 Saves';
+          author.textContent = 'by @posemaster · 5 days ago';
+        } else if (poseId === 'dancing') {
+          tries.textContent = '1.2K Tries';
+          saves.textContent = '456 Saves';
+          author.textContent = 'by @posemaster · 3 days ago';
+        } else if (poseId === 'jumping') {
+          tries.textContent = '910 Tries';
+          saves.textContent = '312 Saves';
+          author.textContent = 'by @posemaster · 2 days ago';
+        } else if (poseId === 'walking') {
+          tries.textContent = '1.5K Tries';
+          saves.textContent = '612 Saves';
+          author.textContent = 'by @community_core · 1 day ago';
+        } else if (poseId === 'arms-up') {
+          tries.textContent = '310 Tries';
+          saves.textContent = '88 Saves';
+          author.textContent = 'by @you · Just now';
+        } else if (poseId === 'sitting') {
+          tries.textContent = '750 Tries';
+          saves.textContent = '224 Saves';
+          author.textContent = 'by @posemaster · 4 days ago';
+        }
+      }
+    });
+  </script>
+
+  <!-- Shared Scripts -->
+  <script src="../scripts/icons.js"></script>
+  <script src="../scripts/fixtures.js"></script>
+  <script src="../scripts/toggle.js"></script>
+  <script src="../scripts/tabs.js"></script>
+  <script src="../scripts/progress.js"></script>
+  <script src="../scripts/modal.js"></script>
+  <script src="../scripts/view-toggle.js"></script>
+  <script src="../scripts/button-press.js"></script>
+  <script src="../scripts/app.js"></script>
+</body>
+</html>

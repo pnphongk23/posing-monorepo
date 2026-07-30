@@ -1,0 +1,15 @@
+/* docs/prototype/styles/components.css */
+@import "./components/phone-frame.css";
+@import "./components/button.css";
+@import "./components/card.css";
+@import "./components/tab.css";
+@import "./components/toggle.css";
+@import "./components/tag.css";
+@import "./components/progress.css";
+@import "./components/modal.css";
+@import "./components/nav-bar.css";
+@import "./components/grid.css";
+@import "./components/camera-viewport.css";
+@import "./components/pose-overlay.css";
+@import "./components/view-toggle.css";
+@import "./components/tab-bar.css";

@@ -1,0 +1,47 @@
+/* docs/prototype/styles/utilities.css */
+.u-d-none { display: none !important; }
+.u-d-block { display: block !important; }
+.u-d-flex { display: flex !important; }
+.u-flex-col { flex-direction: column !important; }
+.u-flex-grow { flex-grow: 1 !important; }
+.u-justify-between { justify-content: space-between !important; }
+.u-align-center { align-items: center !important; }
+
+.u-text-center { text-align: center !important; }
+.u-text-right { text-align: right !important; }
+.u-text-uppercase { text-transform: uppercase !important; }
+.u-w-full { width: 100% !important; }
+.u-h-full { height: 100% !important; }
+.u-font-bold { font-weight: var(--nb-font-weight-bold) !important; }
+
+.u-text-2xs { font-size: var(--nb-font-size-2xs) !important; }
+.u-text-xs { font-size: var(--nb-font-size-xs) !important; }
+.u-text-sm { font-size: var(--nb-font-size-sm) !important; }
+.u-text-md { font-size: var(--nb-font-size-base) !important; }
+.u-text-lg { font-size: var(--nb-font-size-xl) !important; }
+.u-text-xl { font-size: var(--nb-font-size-2xl) !important; }
+
+.u-gap-xs { gap: var(--nb-space-xs) !important; }
+.u-gap-sm { gap: var(--nb-space-sm) !important; }
+.u-gap-md { gap: var(--nb-space-md) !important; }
+
+.u-mb-sm { margin-bottom: var(--nb-space-sm) !important; }
+.u-mb-md { margin-bottom: var(--nb-space-md) !important; }
+.u-mb-lg { margin-bottom: var(--nb-space-lg) !important; }
+.u-mb-xl { margin-bottom: var(--nb-space-xl) !important; }
+.u-mt-auto { margin-top: auto !important; }
+.u-pb-sm { padding-bottom: var(--nb-space-sm) !important; }
+
+/* Colors & Backgrounds */
+.u-bg-pink { background-color: var(--nb-color-accent-pink) !important; }
+.u-bg-blue { background-color: var(--nb-color-accent-blue) !important; }
+.u-bg-yellow { background-color: var(--nb-color-accent-yellow) !important; }
+.u-bg-green { background-color: var(--nb-color-accent-green) !important; }
+.u-bg-cream { background-color: var(--nb-color-bg) !important; }
+.u-bg-white { background-color: var(--nb-color-white) !important; }
+.u-bg-dark { background-color: var(--nb-color-dark) !important; }
+
+.u-text-muted { color: var(--nb-color-gray) !important; }
+.u-text-yellow { color: var(--nb-color-accent-yellow) !important; }
+.u-text-pink { color: var(--nb-color-accent-pink) !important; }
+.u-text-blue { color: var(--nb-color-accent-blue) !important; }

@@ -1,0 +1,46 @@
+/* docs/prototype/styles/components/nav-bar.css */
+.nb-nav-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  height: 52px;
+  min-height: 52px;
+  width: 100%;
+  margin-bottom: var(--nb-space-md);
+  position: relative;
+  z-index: var(--nb-z-index-overlay);
+}
+
+.nb-nav-bar__title {
+  font-family: var(--nb-font-family);
+  font-weight: var(--nb-font-weight-bold);
+  font-size: var(--nb-font-size-xl);
+  line-height: var(--nb-line-height-tight);
+  letter-spacing: var(--nb-tracking-tight);
+  text-transform: uppercase;
+  color: var(--nb-color-dark);
+  text-align: center;
+  flex-grow: 1;
+}
+
+.nb-nav-bar__title--page {
+  text-align: left;
+  font-size: var(--nb-font-size-2xl);
+}
+
+.nb-nav-bar__left,
+.nb-nav-bar__right {
+  display: flex;
+  align-items: center;
+  width: var(--nb-touch-min);
+  flex-shrink: 0;
+}
+
+.nb-nav-bar__right {
+  justify-content: flex-end;
+}
+
+.nb-nav-bar__right--actions {
+  width: auto;
+  gap: var(--nb-space-sm);
+}

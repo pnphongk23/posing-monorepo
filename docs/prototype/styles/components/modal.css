@@ -1,0 +1,97 @@
+/* docs/prototype/styles/components/modal.css */
+.nb-modal-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.4);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: var(--nb-z-index-modal);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--nb-transition-normal);
+}
+
+.nb-modal-overlay.is-open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.nb-modal {
+  width: 90%;
+  max-width: 320px;
+  background-color: var(--nb-color-bg);
+  border: var(--nb-border-thick);
+  border-radius: var(--nb-radius-large);
+  box-shadow: var(--nb-shadow);
+  padding: var(--nb-space-md);
+  transform: translateY(20px);
+  transition: transform var(--nb-transition-normal);
+}
+
+.nb-modal-overlay.is-open .nb-modal {
+  transform: translateY(0);
+}
+
+.nb-dropdown {
+  position: absolute;
+  top: 52px;
+  right: var(--nb-space-md);
+  width: 180px;
+  background-color: var(--nb-color-dark);
+  color: var(--nb-color-white);
+  border: var(--nb-border-thick);
+  border-radius: var(--nb-radius-large);
+  padding: var(--nb-space-sm) var(--nb-space-md);
+  box-shadow: var(--nb-shadow);
+  z-index: var(--nb-z-index-dropdown);
+  display: flex;
+  flex-direction: column;
+  gap: var(--nb-space-sm);
+  opacity: 0;
+  transform: translateY(-10px);
+  pointer-events: none;
+  transition: transform var(--nb-transition-fast), opacity var(--nb-transition-fast);
+}
+
+.nb-dropdown.is-open {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+.nb-dropdown__row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--nb-space-sm) 0;
+  font-family: var(--nb-font-family);
+  font-weight: var(--nb-font-weight-bold);
+  font-size: var(--nb-font-size-md);
+  line-height: var(--nb-line-height-tight);
+  letter-spacing: var(--nb-tracking-label);
+  text-transform: uppercase;
+}
+
+.nb-dropdown__row:not(:last-child) {
+  border-bottom: var(--nb-border-width-hairline) solid rgba(255, 255, 255, 0.12);
+}
+
+.nb-dropdown__label {
+  display: flex;
+  align-items: center;
+  gap: var(--nb-space-sm);
+}
+
+.nb-dropdown__label svg {
+  width: 14px;
+  height: 14px;
+  stroke-width: var(--nb-icon-stroke);
+}
+
+.nb-dropdown__value {
+  color: var(--nb-color-accent-yellow);
+}
