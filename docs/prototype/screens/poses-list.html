@@ -29,74 +29,62 @@
     </div>
     
     <!-- Phone Content Area -->
-    <div class="nb-phone__content">
+    <main class="nb-phone__content" id="poses-library">
       <!-- Custom Poses Header -->
-      <header class="nb-nav-bar u-mb-sm">
-        <h1 class="nb-nav-bar__title nb-nav-bar__title--page">Poses</h1>
+      <header class="nb-nav-bar nb-nav-bar--poses u-mb-sm">
+        <h1 class="sr-only">Poses</h1>
+        <div class="nb-nav-bar__center">
+          <!-- Category tabs live in the toolbar to keep the browsing context visible. -->
+          <div class="nb-tabs nb-tabs--toolbar" role="tablist" aria-label="Pose category">
+            <button class="nb-tab-btn is-active" role="tab" aria-selected="true" data-category="my-poses">My Poses</button>
+            <button class="nb-tab-btn" role="tab" aria-selected="false" data-category="community">Community</button>
+          </div>
+        </div>
         <div class="nb-nav-bar__right nb-nav-bar__right--actions">
-          <button id="toggle-search-btn" class="nb-btn nb-btn--square nb-btn--white" aria-label="Toggle Search" aria-expanded="false">
-            <svg><use href="#icon-search"></use></svg>
-          </button>
-          <a href="camera-live.html" class="nb-btn nb-btn--square nb-btn--yellow" aria-label="Create Pose">
-            <svg><use href="#icon-plus"></use></svg>
+          <a href="search.html" class="nb-btn nb-btn--compact-action nb-btn--toolbar-search" aria-label="Search poses">
+            <span class="nb-btn__compact-surface nb-btn__compact-surface--plain">
+              <svg><use href="#icon-search"></use></svg>
+            </span>
+          </a>
+          <a href="camera-live.html" class="nb-btn nb-btn--compact-action" aria-label="Create Pose">
+            <span class="nb-btn__compact-surface">
+              <svg><use href="#icon-plus"></use></svg>
+            </span>
           </a>
         </div>
       </header>
 
-      <!-- Expandable Search Input -->
-      <div id="search-bar-container" class="nb-search-bar">
-        <svg width="16" height="16" style="color: var(--nb-color-gray); flex-shrink: 0;"><use href="#icon-search"></use></svg>
-        <input type="text" id="poses-search-input" class="nb-search-bar__input" placeholder="SEARCH POSES..." aria-label="Search Poses">
+      <!-- Library context and recoverable mock controls -->
+      <div class="nb-library-context" aria-live="polite">
+        <div class="nb-library-context__copy">
+          <strong id="poses-category-label">My Poses</strong>
+          <span id="poses-source-note">Private mock poses · delete available</span>
+        </div>
+        <button id="poses-refresh-btn" type="button" class="nb-btn nb-btn--compact-text nb-btn--white" aria-label="Refresh pose list">
+          Refresh
+        </button>
       </div>
 
-      <!-- Tabs Component -->
-      <div class="nb-tabs" role="tablist">
-        <button class="nb-tab-btn is-active" role="tab" aria-selected="true" data-category="my-poses">My Poses</button>
-        <button class="nb-tab-btn" role="tab" aria-selected="false" data-category="community">Community</button>
-      </div>
+      <div id="poses-state-message" class="nb-state-message" role="status" aria-live="polite" hidden></div>
 
       <!-- Category Label Header -->
-      <div class="nb-grid-group-title" style="margin-top: 0;">
-        <span>Recent</span>
-        <span class="nb-grid-group-count">6 Poses</span>
+      <div class="nb-grid-group-title nb-grid-group-title--count-only" style="margin-top: 0;">
+        <span id="poses-count-label" class="nb-grid-group-count">3 poses</span>
       </div>
 
       <!-- Poses Dynamic Grid -->
       <div class="nb-grid-scroll-area">
-        <div class="nb-grid nb-grid--2col" id="poses-dynamic-grid">
+        <div class="nb-grid--masonry" id="poses-dynamic-grid">
           <!-- Populated by scripts/app.js -->
         </div>
       </div>
-    </div>
+    </main>
     
     <!-- Home Bar Indicator -->
     <div class="nb-phone__footer">
       <div class="nb-phone__home-indicator"></div>
     </div>
   </div>
-
-  <!-- Script to toggle the search bar container -->
-  <script>
-    document.addEventListener('DOMContentLoaded', function() {
-      const toggleBtn = document.getElementById('toggle-search-btn');
-      const searchContainer = document.getElementById('search-bar-container');
-      const searchInput = document.getElementById('poses-search-input');
-
-      if (toggleBtn && searchContainer) {
-        toggleBtn.addEventListener('click', function() {
-          const isOpen = searchContainer.classList.toggle('is-open');
-          toggleBtn.classList.toggle('is-active', isOpen);
-          toggleBtn.setAttribute('aria-expanded', String(isOpen));
-          if (isOpen) {
-            searchInput.focus();
-          } else {
-            searchInput.value = '';
-            searchInput.dispatchEvent(new Event('input'));
-          }
-        });
-      }
-    });
-  </script>
 
   <!-- Shared Scripts -->
   <script src="../scripts/icons.js"></script>

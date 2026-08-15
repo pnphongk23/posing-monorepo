@@ -2,31 +2,38 @@
 (function () {
   const TABS = [
     { id: 'poses', label: 'Poses', href: 'poses-list.html', icon: 'icon-grid' },
-    { id: 'camera', label: 'Camera', href: 'camera-live.html', icon: 'icon-camera' },
     { id: 'gallery', label: 'Gallery', href: 'gallery.html', icon: 'icon-image' },
   ];
 
   function renderTabBar(activeId) {
     const phone = document.querySelector('.nb-phone');
-    if (!phone || phone.querySelector('.nb-tab-bar')) return;
+    if (!phone || phone.querySelector('.nb-dock')) return;
 
     phone.classList.add('nb-phone--with-tab-bar');
 
-    const nav = document.createElement('nav');
-    nav.className = 'nb-tab-bar';
-    nav.setAttribute('aria-label', 'Main navigation');
+    // Create floating dock element
+    const dock = document.createElement('nav');
+    dock.className = 'nb-dock';
+    dock.setAttribute('aria-label', 'Main navigation');
 
-    nav.innerHTML = TABS.map(function (tab) {
-      const isActive = tab.id === activeId;
-      return (
-        '<a href="' + tab.href + '" class="nb-tab-bar__item' + (isActive ? ' is-active' : '') + '"' +
-        (isActive ? ' aria-current="page"' : '') + '>' +
-        '<svg viewBox="0 0 24 24"><use href="#' + tab.icon + '"></use></svg>' +
-        '<span>' + tab.label + '</span></a>'
-      );
-    }).join('');
+    dock.innerHTML = `
+      <div class="nb-dock__pill">
+        ${TABS.map(function (tab) {
+          const isActive = tab.id === activeId;
+          return `
+            <a href="${tab.href}" class="nb-dock__item${isActive ? ' is-active' : ''}"${isActive ? ' aria-current="page"' : ''}>
+              <svg viewBox="0 0 24 24"><use href="#${tab.icon}"></use></svg>
+              <span>${tab.label}</span>
+            </a>
+          `;
+        }).join('')}
+      </div>
+      <a href="camera-live.html" class="nb-dock__camera-btn nb-btn nb-btn--circle nb-btn--pink" aria-label="Open Camera">
+        <svg><use href="#icon-camera"></use></svg>
+      </a>
+    `;
 
-    phone.appendChild(nav);
+    phone.appendChild(dock);
   }
 
   window.initTabBar = function (activeId) {

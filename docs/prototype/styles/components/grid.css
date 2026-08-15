@@ -80,18 +80,20 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--nb-space-sm);
+  gap: var(--nb-space-xs); /* Tighter gap to group label with its card */
 }
 
 .nb-grid-pose-label {
   font-family: var(--nb-font-family);
   font-weight: var(--nb-font-weight-bold);
-  font-size: var(--nb-font-size-xs);
+  font-size: var(--nb-font-size-sm); /* Legible 12px label */
   line-height: var(--nb-line-height-tight);
-  letter-spacing: var(--nb-tracking-label);
-  text-transform: uppercase;
+  letter-spacing: var(--nb-tracking-tight);
+  text-transform: none; /* Keep Title Case name from fixtures */
   color: var(--nb-color-dark);
-  text-align: center;
+  text-align: left;
+  align-self: flex-start;
+  padding-left: 2px; /* Subtle offset to align perfectly with the card border */
 }
 
 .nb-grid-group-title {
@@ -111,4 +113,150 @@
 
 .nb-grid-group-count {
   color: var(--nb-color-gray);
+}
+
+.nb-grid-group-title--count-only {
+  justify-content: flex-end;
+}
+
+.nb-library-context {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--nb-space-sm);
+  padding: var(--nb-space-sm) var(--nb-space-compact);
+  margin-bottom: var(--nb-space-sm);
+  background-color: var(--nb-color-white);
+  border: var(--nb-border-thin);
+  border-radius: var(--nb-radius-medium);
+}
+
+.nb-library-context__copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--nb-space-2xs);
+}
+
+.nb-library-context__copy strong {
+  font-size: var(--nb-font-size-md);
+  line-height: var(--nb-line-height-tight);
+}
+
+.nb-library-context__copy span,
+.nb-prototype-note {
+  color: var(--nb-color-gray);
+  font-size: var(--nb-font-size-xs);
+  line-height: var(--nb-line-height-snug);
+}
+
+.nb-state-message {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--nb-space-sm);
+  padding: var(--nb-space-md);
+  margin-bottom: var(--nb-space-sm);
+  background-color: var(--nb-color-white);
+  border: var(--nb-border-thin);
+  border-radius: var(--nb-radius-medium);
+  line-height: var(--nb-line-height-normal);
+}
+
+.nb-state-message[hidden] {
+  display: none;
+}
+
+.nb-state-message--error {
+  background-color: #fff4f5;
+}
+
+.nb-state-message--success,
+.nb-inline-notice {
+  background-color: var(--nb-color-accent-green);
+}
+
+.nb-state-message strong {
+  font-size: var(--nb-font-size-lg);
+}
+
+.nb-state-message p {
+  margin: 0;
+  font-size: var(--nb-font-size-sm);
+}
+
+.nb-state-message .nb-btn {
+  width: auto;
+}
+
+.nb-inline-notice {
+  margin: 0 0 var(--nb-space-md);
+  padding: var(--nb-space-sm) var(--nb-space-compact);
+  border: var(--nb-border-thin);
+  border-radius: var(--nb-radius-small);
+  font-size: var(--nb-font-size-sm);
+  line-height: var(--nb-line-height-normal);
+}
+
+.nb-pose-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 120px;
+  padding: var(--nb-space-lg);
+  color: var(--nb-color-gray);
+  font-size: var(--nb-font-size-sm);
+  text-align: center;
+  border: var(--nb-border-thin);
+  border-radius: var(--nb-radius-medium);
+  background-color: var(--nb-color-white);
+}
+
+.nb-detail-metadata {
+  flex-wrap: wrap;
+}
+
+.nb-search-label {
+  display: block;
+  margin-bottom: var(--nb-space-xs);
+  font-size: var(--nb-font-size-xs);
+  font-weight: var(--nb-font-weight-bold);
+  letter-spacing: var(--nb-tracking-label);
+  text-transform: uppercase;
+}
+
+/* Column masonry style for Poses */
+.nb-grid--masonry {
+  column-count: 2;
+  column-gap: 8px;
+  width: 100%;
+}
+
+.nb-grid--masonry .nb-grid-pose-item {
+  display: inline-flex;
+  flex-direction: column;
+  width: 100%;
+  break-inside: avoid;
+  margin-bottom: var(--nb-space-md); /* Relaxed spacing before the next card */
+}
+
+/* Three column dense grid for Gallery */
+.nb-gallery-grid-dense {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  gap: 3px !important; /* 2-4px gaps */
+}
+
+.nb-gallery-grid-dense .nb-grid-photo-item {
+  min-width: 0;
+  break-inside: avoid;
+}
+
+/* Padding to prevent overlay elements from obscuring scrollable list contents */
+.nb-grid-scroll-area {
+  padding-bottom: calc(100px + env(safe-area-inset-bottom, 0px)) !important;
+}
+
+.nb-gallery-scroll {
+  padding-bottom: calc(100px + env(safe-area-inset-bottom, 0px)) !important;
 }

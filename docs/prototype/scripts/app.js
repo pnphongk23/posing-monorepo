@@ -7,7 +7,6 @@ document.addEventListener('DOMContentLoaded', function() {
     document.body.classList.add('is-iframe');
   }
 
-
   // Initialize general modal and dropdown bindings
   if (typeof initModals === 'function') {
     initModals();
@@ -23,154 +22,304 @@ document.addEventListener('DOMContentLoaded', function() {
     initProgress();
   }
 
-  // Initialize grid/list toggling on the gallery page
-  if (typeof initViewToggle === 'function') {
-    initViewToggle();
+  // --- SCREEN SPECIFIC LOGIC ---
+
+  const posePrototype = window.PosePrototype;
+  const escapeHtml = posePrototype ? posePrototype.escapeHtml : value => String(value);
+  const poseSourceLabel = posePrototype ? posePrototype.getPoseSourceLabel : pose => pose.category;
+
+  function createPoseCard(pose, index) {
+    const item = document.createElement('div');
+    item.className = 'nb-grid-pose-item';
+
+    const aspectClasses = ['nb-card--aspect-tall', 'nb-card--aspect-short', 'nb-card--aspect-square'];
+    const aspectClass = aspectClasses[index % aspectClasses.length];
+    const sourceLabel = poseSourceLabel(pose);
+    const sourceClass = pose.category === 'community' ? 'nb-card__source-badge--community' : 'nb-card__source-badge--personal';
+    const route = posePrototype ? posePrototype.getPoseRoute(pose) : `pose-detail.html?id=${encodeURIComponent(pose.id)}`;
+
+    item.innerHTML = `
+      <a href="${route}" class="nb-card nb-card--pose-grid ${aspectClass} u-w-full" aria-label="${escapeHtml(pose.title)} · ${escapeHtml(sourceLabel)}" style="text-decoration: none; color: inherit;">
+        <span class="nb-card__source-badge nb-tag ${sourceClass}">${escapeHtml(sourceLabel)}</span>
+        ${pose.svg}
+      </a>
+      <span class="nb-grid-pose-label">${escapeHtml(pose.title)}</span>
+    `;
+
+    return item;
   }
 
-  // --- SCREEN SPECIFIC LOGIC ---
+  function setStateMessage(element, state, title, copy, action) {
+    if (!element) return;
+
+    element.className = `nb-state-message nb-state-message--${state}`;
+    element.innerHTML = `<strong>${escapeHtml(title)}</strong><p>${escapeHtml(copy)}</p>`;
+
+    if (action) {
+      const actionButton = document.createElement('button');
+      actionButton.type = 'button';
+      actionButton.className = 'nb-btn nb-btn--white';
+      actionButton.textContent = action.label;
+      actionButton.addEventListener('click', action.onClick);
+      element.appendChild(actionButton);
+    }
+
+    element.hidden = false;
+  }
+
+  function clearStateMessage(element) {
+    if (!element) return;
+    element.hidden = true;
+    element.innerHTML = '';
+  }
 
   // 1. Poses List Screen Logic
   const posesGrid = document.getElementById('poses-dynamic-grid');
-  const searchInput = document.getElementById('poses-search-input');
-  
-  if (posesGrid && typeof POSES_FIXTURES !== 'undefined') {
-    let currentCategory = 'my-poses'; // default active tab matches screenshot
-    let searchQuery = '';
 
-    function renderPoses() {
-      posesGrid.innerHTML = '';
-      
-      const filtered = POSES_FIXTURES.filter(pose => {
-        const matchesTab = pose.category === currentCategory;
-        const matchesSearch = pose.title.toLowerCase().includes(searchQuery.toLowerCase());
-        return matchesTab && matchesSearch;
+  if (posesGrid && posePrototype) {
+    const posesStateMessage = document.getElementById('poses-state-message');
+    const posesCountLabel = document.getElementById('poses-count-label');
+    const posesCategoryLabel = document.getElementById('poses-category-label');
+    const posesSourceNote = document.getElementById('poses-source-note');
+    const posesRefreshBtn = document.getElementById('poses-refresh-btn');
+    const params = new URLSearchParams(window.location.search);
+    let currentCategory = params.get('tab') === 'community' ? 'community' : 'my-poses';
+    let forcedState = posePrototype.getPrototypeState();
+    let isRefreshing = false;
+
+    function updatePoseTabPresentation() {
+      const isCommunity = currentCategory === 'community';
+      const activeTab = document.querySelector(`.nb-tab-btn[data-category="${currentCategory}"]`);
+
+      document.querySelectorAll('.nb-tab-btn').forEach(tab => {
+        const selected = tab === activeTab;
+        tab.classList.toggle('is-active', selected);
+        tab.setAttribute('aria-selected', String(selected));
       });
 
-      if (filtered.length === 0) {
-        posesGrid.innerHTML = `
-          <div class="u-text-center u-text-muted" style="grid-column: span 2; padding: var(--nb-space-xl) 0;">
-            No poses found.
-          </div>
-        `;
+      if (posesCategoryLabel) posesCategoryLabel.textContent = isCommunity ? 'Community' : 'My Poses';
+      if (posesSourceNote) {
+        posesSourceNote.textContent = isCommunity
+          ? 'Published mock catalogue · management unavailable'
+          : 'Private mock poses · delete available';
+      }
+    }
+
+    function getCurrentPoses() {
+      return posePrototype.getVisiblePoseFixtures().filter(pose => {
+        const isPublishedCommunity = pose.category !== 'community' || pose.visibility === 'published';
+        return pose.category === currentCategory && isPublishedCommunity;
+      });
+    }
+
+    function renderPoseCards(poses) {
+      posesGrid.innerHTML = '';
+      poses.forEach((pose, index) => posesGrid.appendChild(createPoseCard(pose, index)));
+      posesGrid.hidden = false;
+      posesGrid.removeAttribute('aria-busy');
+      if (posesCountLabel) posesCountLabel.textContent = `${poses.length} ${poses.length === 1 ? 'pose' : 'poses'}`;
+    }
+
+    function renderPoses() {
+      updatePoseTabPresentation();
+      const currentPoses = getCurrentPoses();
+      const isCommunity = currentCategory === 'community';
+
+      if (forcedState === 'loading') {
+        posesGrid.innerHTML = '<div class="nb-pose-loading" role="status">Loading mock poses…</div>';
+        posesGrid.hidden = false;
+        posesGrid.setAttribute('aria-busy', 'true');
+        if (posesCountLabel) posesCountLabel.textContent = 'Loading';
+        setStateMessage(posesStateMessage, 'loading', 'Loading pose library', 'The prototype is loading confirmed mock results.');
         return;
       }
 
-      filtered.forEach(pose => {
-        // Create grid cell item
-        const item = document.createElement('div');
-        item.className = 'nb-grid-pose-item';
-        
-        let tagHtml = '';
-        if (pose.tag) {
-          tagHtml = `<span class="nb-card__tag nb-tag nb-tag--${pose.tagColor}">${pose.tag}</span>`;
-        }
+      if (forcedState === 'error') {
+        posesGrid.innerHTML = '';
+        posesGrid.hidden = true;
+        if (posesCountLabel) posesCountLabel.textContent = 'Unavailable';
+        setStateMessage(posesStateMessage, 'error', 'Unable to load poses', 'No unconfirmed pose is shown. Retry the mock catalogue request.', {
+          label: 'Retry',
+          onClick: () => {
+            forcedState = 'ready';
+            renderPoses();
+          }
+        });
+        return;
+      }
 
-        let heartHtml = '';
-        if (pose.hearts) {
-          heartHtml = `
-            <div class="nb-card__heart-badge">
-              <svg style="width: 10px; height: 10px; stroke: currentColor; fill: currentColor;" viewBox="0 0 24 24">
-                <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
-              </svg>
-              <span>${pose.hearts}</span>
-            </div>
-          `;
-        } else {
-          heartHtml = `
-            <button class="nb-card__heart-badge-outline" aria-label="Like pose">
-              <svg viewBox="0 0 24 24">
-                <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
-              </svg>
-            </button>
-          `;
-        }
+      renderPoseCards(currentPoses);
 
-        item.innerHTML = `
-          <a href="pose-detail.html?id=${pose.id}" class="nb-card nb-card--pose-grid u-w-full" aria-label="${pose.title} pose" style="text-decoration: none; color: inherit;">
-            ${pose.svg}
-            ${tagHtml}
-            ${heartHtml}
-          </a>
-          <span class="nb-grid-pose-label">${pose.title}</span>
-        `;
+      if (forcedState === 'refresh-error') {
+        setStateMessage(posesStateMessage, 'error', 'Refresh failed', 'The confirmed list is still shown. Retry when you are ready.', {
+          label: 'Retry refresh',
+          onClick: () => {
+            forcedState = 'ready';
+            renderPoses();
+          }
+        });
+        return;
+      }
 
-        // Bind heart outline toggle
-        const heartBtn = item.querySelector('.nb-card__heart-badge-outline');
-        if (heartBtn) {
-          heartBtn.addEventListener('click', function(e) {
-            e.preventDefault();
-            e.stopPropagation();
-            const svg = this.querySelector('svg');
-            if (this.classList.toggle('is-liked')) {
-              svg.style.fill = 'var(--nb-color-accent-pink)';
-              svg.style.stroke = 'var(--nb-color-accent-pink)';
-            } else {
-              svg.style.fill = 'none';
-              svg.style.stroke = 'var(--nb-color-gray)';
+      if (forcedState === 'empty' || currentPoses.length === 0) {
+        if (isCommunity) {
+          setStateMessage(posesStateMessage, 'empty', 'No published community poses', 'The mock catalogue has no confirmed community results right now.', {
+            label: 'Retry catalogue',
+            onClick: () => {
+              forcedState = 'ready';
+              renderPoses();
             }
           });
+        } else {
+          setStateMessage(posesStateMessage, 'empty', 'No poses saved yet', 'Capture a pose to start building My Poses.', {
+            label: 'Create a pose',
+            onClick: () => { window.location.href = 'camera-live.html'; }
+          });
         }
+        posesGrid.hidden = true;
+        if (posesCountLabel) posesCountLabel.textContent = 'Empty';
+        return;
+      }
 
-        posesGrid.appendChild(item);
-      });
+      clearStateMessage(posesStateMessage);
     }
 
-    // Initialize list tabs
     if (typeof initTabs === 'function') {
       initTabs(function(category) {
-        currentCategory = category;
+        currentCategory = category === 'community' ? 'community' : 'my-poses';
+        forcedState = 'ready';
+        const nextUrl = new URL(window.location.href);
+        nextUrl.searchParams.set('tab', currentCategory);
+        nextUrl.searchParams.delete('state');
+        window.history.replaceState({}, '', nextUrl);
         renderPoses();
       });
     }
 
-    // Initialize search listener
-    if (searchInput) {
-      searchInput.addEventListener('input', function(e) {
-        searchQuery = e.target.value;
-        renderPoses();
+    if (posesRefreshBtn) {
+      posesRefreshBtn.addEventListener('click', function() {
+        if (isRefreshing) return;
+        isRefreshing = true;
+        posesRefreshBtn.disabled = true;
+        posesGrid.setAttribute('aria-busy', 'true');
+        setStateMessage(posesStateMessage, 'loading', 'Refreshing mock catalogue', 'Confirmed results stay visible while the prototype refreshes.');
+
+        window.setTimeout(function() {
+          isRefreshing = false;
+          posesRefreshBtn.disabled = false;
+          forcedState = 'ready';
+          renderPoses();
+        }, 300);
       });
     }
 
-    // Initial render
     renderPoses();
+
+    if (params.get('notice') === 'deleted') {
+      setStateMessage(posesStateMessage, 'success', 'Pose deleted', 'Removed from My Poses for this prototype session.');
+    }
   }
 
   // 2. Pose Detail Screen Logic
-  const heartDetailBtn = document.getElementById('detail-heart-btn');
-  const heartDetailCount = document.getElementById('detail-heart-count');
-  
-  if (heartDetailBtn && heartDetailCount) {
-    heartDetailBtn.addEventListener('click', function() {
-      const isLiked = this.classList.toggle('is-liked');
-      let count = parseFloat(heartDetailCount.textContent);
-      
-      if (isLiked) {
-        this.style.backgroundColor = 'var(--nb-color-accent-pink)';
-        count += 0.1;
-        heartDetailCount.textContent = count.toFixed(1) + 'K';
-      } else {
-        this.style.backgroundColor = '';
-        count -= 0.1;
-        heartDetailCount.textContent = count.toFixed(1) + 'K';
-      }
-    });
-  }
+  const detailContent = document.getElementById('detail-content');
+  const detailUnavailableState = document.getElementById('detail-unavailable-state');
 
-  // Bookmark Toggle on Detail Page
-  const bookmarkBtn = document.getElementById('detail-bookmark-btn');
-  if (bookmarkBtn) {
-    bookmarkBtn.addEventListener('click', function() {
-      const isBookmarked = this.classList.toggle('is-active');
-      const svg = this.querySelector('svg');
-      if (isBookmarked) {
-        svg.style.fill = 'var(--nb-color-accent-yellow)';
-        svg.style.stroke = 'var(--nb-color-accent-yellow)';
-      } else {
-        svg.style.fill = 'none';
-        svg.style.stroke = 'currentColor';
+  if (detailContent && posePrototype) {
+    const params = new URLSearchParams(window.location.search);
+    const requestedId = params.get('id') || 'dancing';
+    const requestedSource = params.get('source') || (params.has('id') ? null : 'community');
+    const forcedState = posePrototype.getPrototypeState();
+    const pose = forcedState === 'unavailable'
+      ? null
+      : posePrototype.getPoseByReference(requestedId, requestedSource);
+    const detailPageTitle = document.getElementById('detail-page-title');
+    const detailPoseName = document.getElementById('detail-pose-name');
+    const detailPoseSource = document.getElementById('detail-pose-source');
+    const detailPoseContext = document.getElementById('detail-pose-context');
+    const detailPoseSvg = document.getElementById('detail-pose-svg-container');
+    const detailMetadata = document.getElementById('detail-metadata');
+    const detailTryPoseBtn = document.getElementById('detail-try-pose-btn');
+    const detailHandoffNote = document.getElementById('detail-handoff-note');
+    const detailDeleteBtn = document.getElementById('detail-delete-btn');
+    const confirmDeleteBtn = document.getElementById('confirm-delete-btn');
+    const deleteModal = document.getElementById('delete-pose-modal');
+    const detailReturnLink = document.getElementById('detail-return-link');
+
+    function showDetailUnavailable() {
+      detailContent.hidden = true;
+      if (detailUnavailableState) {
+        const copy = document.getElementById('detail-unavailable-copy');
+        if (detailReturnLink) {
+          detailReturnLink.href = requestedSource === 'community'
+            ? 'poses-list.html?tab=community'
+            : 'poses-list.html?tab=my-poses';
+        }
+        if (copy) {
+          copy.textContent = requestedSource === 'community'
+            ? 'This community pose could not be confirmed as published. Return to the Community tab and try again.'
+            : 'This personal pose is no longer in My Poses. Return to the library to see the current list.';
+        }
+        detailUnavailableState.hidden = false;
       }
-    });
+      if (detailPageTitle) detailPageTitle.textContent = 'Unavailable';
+    }
+
+    function appendMetadata(label, value) {
+      if (value === null || value === undefined || value === '') return;
+      const item = document.createElement('span');
+      item.className = 'nb-tag nb-tag--pill';
+      item.setAttribute('role', 'listitem');
+      item.textContent = `${label}: ${value}`;
+      detailMetadata.appendChild(item);
+    }
+
+    if (!pose || !pose.svg) {
+      showDetailUnavailable();
+    } else {
+      const metadata = pose.metadata || {};
+      const sourceLabel = poseSourceLabel(pose);
+
+      if (detailPageTitle) detailPageTitle.textContent = pose.title;
+      if (detailPoseName) detailPoseName.textContent = pose.title;
+      if (detailPoseSource) {
+        detailPoseSource.textContent = sourceLabel;
+        detailPoseSource.classList.toggle('nb-tag--blue', pose.category === 'community');
+        detailPoseSource.classList.toggle('nb-tag--green', pose.category !== 'community');
+      }
+      if (detailPoseContext) detailPoseContext.textContent = metadata.context || 'Metadata not provided';
+      if (detailPoseSvg) detailPoseSvg.innerHTML = pose.svg;
+      if (detailMetadata) {
+        detailMetadata.innerHTML = '';
+        appendMetadata('Author', metadata.author);
+        appendMetadata('Difficulty', metadata.difficulty);
+        appendMetadata('Tries', metadata.tries);
+        appendMetadata('Saves', metadata.saves);
+      }
+
+      if (detailDeleteBtn) detailDeleteBtn.hidden = pose.category !== 'my-poses';
+
+      if (detailTryPoseBtn) {
+        detailTryPoseBtn.addEventListener('click', function() {
+          if (detailHandoffNote) {
+            detailHandoffNote.textContent = `Prepared “${pose.title}” for the Camera handoff (mock). Camera overlay and controls remain deferred to the pending handoff phase.`;
+            detailHandoffNote.hidden = false;
+          }
+        });
+      }
+
+      if (confirmDeleteBtn) {
+        confirmDeleteBtn.addEventListener('click', function() {
+          if (pose.category !== 'my-poses' || !posePrototype.markPoseDeleted(pose.id)) return;
+
+          confirmDeleteBtn.disabled = true;
+          if (deleteModal) {
+            const closeButton = deleteModal.querySelector('[data-close-modal]');
+            if (closeButton) closeButton.click();
+          }
+          window.location.href = 'poses-list.html?tab=my-poses&notice=deleted';
+        });
+      }
+    }
   }
 
   // 3. Shutter Click Flash Simulation
@@ -214,6 +363,175 @@ document.addEventListener('DOMContentLoaded', function() {
         }, 150);
       }, 50);
     });
+  }
+
+  // 4. Gallery Screen Logic
+  const galleryGrid = document.getElementById('gallery-grid');
+
+  if (galleryGrid && typeof GALLERY_FIXTURES !== 'undefined') {
+    // Combine today and yesterday into one continuous list
+    const allPhotos = [...GALLERY_FIXTURES.today, ...GALLERY_FIXTURES.yesterday];
+    let gallerySearchQuery = '';
+
+    function renderGallery() {
+      galleryGrid.innerHTML = '';
+
+      const filtered = allPhotos.filter(photo => {
+        const queryLower = gallerySearchQuery.toLowerCase();
+        const titleMatch = photo.title.toLowerCase().includes(queryLower);
+        const tagMatch = photo.tag ? photo.tag.toLowerCase().includes(queryLower) : false;
+        return titleMatch || tagMatch;
+      });
+
+      if (filtered.length === 0) {
+        galleryGrid.innerHTML = `
+          <div class="u-text-center u-text-muted" style="grid-column: span 3; padding: var(--nb-space-xl) 0; width: 100%;">
+            No photos found.
+          </div>
+        `;
+        return;
+      }
+
+      filtered.forEach(photo => {
+        const item = document.createElement('div');
+        item.className = 'nb-grid-photo-item';
+
+        if (photo.placeholder) {
+          item.innerHTML = `
+            <div class="nb-card nb-card--gallery-dense nb-card--placeholder" role="img" aria-label="Photo unavailable">
+              <svg class="nb-card__placeholder-icon"><use href="#icon-image"></use></svg>
+            </div>
+          `;
+        } else {
+          item.innerHTML = `
+            <div class="nb-card nb-card--gallery-dense" style="background-image: url('${photo.photoUrl}');" role="img" aria-label="${photo.title}"></div>
+          `;
+        }
+        galleryGrid.appendChild(item);
+      });
+    }
+
+    // Search listener removed (plumbing moved to dedicated search screen)
+
+    renderGallery();
+  }
+
+  // 5. Camera Close Button Logic
+  const closeBtn = document.getElementById('camera-close-btn');
+  if (closeBtn) {
+    closeBtn.addEventListener('click', function() {
+      if (document.referrer && document.referrer.includes(window.location.host)) {
+        window.history.back();
+      } else {
+        window.location.href = 'poses-list.html';
+      }
+    });
+  }
+
+  // 6. Search Screen Logic
+  const searchResultsGrid = document.getElementById('search-results-grid');
+  const searchScreenInput = document.getElementById('search-screen-input');
+  const searchClearBtn = document.getElementById('search-clear-btn');
+
+  if (searchResultsGrid && posePrototype) {
+    const searchStateMessage = document.getElementById('search-state-message');
+    const searchResultsCount = document.getElementById('search-results-count');
+    const searchParams = new URLSearchParams(window.location.search);
+    let searchQuery = searchParams.get('q') || '';
+    let forcedState = posePrototype.getPrototypeState();
+
+    function getSearchResults() {
+      const queryLower = searchQuery.trim().toLocaleLowerCase();
+      return posePrototype.getVisiblePoseFixtures().filter(pose => {
+        const isPublishedCommunity = pose.category !== 'community' || pose.visibility === 'published';
+        return isPublishedCommunity && pose.title.toLocaleLowerCase().includes(queryLower);
+      });
+    }
+
+    function clearSearch() {
+      searchQuery = '';
+      if (searchScreenInput) {
+        searchScreenInput.value = '';
+        searchScreenInput.focus();
+      }
+      if (searchClearBtn) searchClearBtn.style.display = 'none';
+      forcedState = 'ready';
+      renderSearchResults();
+    }
+
+    function renderSearchResults() {
+      const queryLabel = searchQuery.trim() ? ` for “${searchQuery.trim()}”` : '';
+
+      if (forcedState === 'loading') {
+        searchResultsGrid.innerHTML = '<div class="nb-pose-loading" role="status">Loading mock search results…</div>';
+        searchResultsGrid.setAttribute('aria-busy', 'true');
+        if (searchResultsCount) searchResultsCount.querySelector('span').textContent = 'Loading';
+        setStateMessage(searchStateMessage, 'loading', 'Searching mock catalogue', 'Community title search is represented by deterministic fixture data.');
+        return;
+      }
+
+      if (forcedState === 'error') {
+        searchResultsGrid.innerHTML = '';
+        searchResultsGrid.hidden = true;
+        if (searchResultsCount) searchResultsCount.querySelector('span').textContent = 'Unavailable';
+        setStateMessage(searchStateMessage, 'error', 'Search unavailable', 'The mock catalogue could not confirm results. Retry without changing your title.', {
+          label: 'Retry search',
+          onClick: () => {
+            forcedState = 'ready';
+            renderSearchResults();
+          }
+        });
+        return;
+      }
+
+      const filtered = forcedState === 'empty' ? [] : getSearchResults();
+      searchResultsGrid.innerHTML = '';
+      searchResultsGrid.hidden = false;
+      searchResultsGrid.removeAttribute('aria-busy');
+
+      if (searchResultsCount) {
+        searchResultsCount.querySelector('span').textContent = `${filtered.length} ${filtered.length === 1 ? 'mock pose' : 'mock poses'}${queryLabel}`;
+      }
+
+      if (filtered.length === 0) {
+        const emptyCopy = searchQuery.trim()
+          ? `No pose titles match “${searchQuery.trim()}”. Clear the title to browse the fixture catalogue.`
+          : 'No confirmed mock poses are available to search right now.';
+        setStateMessage(searchStateMessage, 'empty', 'No matching poses', emptyCopy, {
+          label: 'Clear search',
+          onClick: clearSearch
+        });
+        searchResultsGrid.hidden = true;
+        return;
+      }
+
+      filtered.forEach((pose, index) => searchResultsGrid.appendChild(createPoseCard(pose, index)));
+      clearStateMessage(searchStateMessage);
+    }
+
+    if (searchScreenInput) {
+      searchScreenInput.value = searchQuery;
+      searchScreenInput.addEventListener('input', function() {
+        searchQuery = searchScreenInput.value;
+        forcedState = 'ready';
+        if (searchClearBtn) searchClearBtn.style.display = searchQuery ? 'inline-flex' : 'none';
+        const nextUrl = new URL(window.location.href);
+        if (searchQuery) nextUrl.searchParams.set('q', searchQuery);
+        else nextUrl.searchParams.delete('q');
+        nextUrl.searchParams.delete('state');
+        window.history.replaceState({}, '', nextUrl);
+        renderSearchResults();
+      });
+
+      window.setTimeout(() => searchScreenInput.focus(), 100);
+    }
+
+    if (searchClearBtn) {
+      searchClearBtn.style.display = searchQuery ? 'inline-flex' : 'none';
+      searchClearBtn.addEventListener('click', clearSearch);
+    }
+
+    renderSearchResults();
   }
 
 });

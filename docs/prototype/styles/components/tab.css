@@ -1,34 +1,80 @@
 /* docs/prototype/styles/components/tab.css */
 .nb-tabs {
   display: flex;
-  gap: var(--nb-space-sm);
   width: 100%;
+  border-bottom: 2px solid var(--nb-color-light-gray);
   margin-bottom: var(--nb-space-md);
+  position: relative;
+}
+
+.nb-tabs--toolbar {
+  margin: 0;
+  border-bottom: 0;
+  align-items: center;
+  gap: var(--nb-space-xs);
+}
+
+.nb-tabs--toolbar .nb-tab-btn {
+  flex: 0 0 auto;
+  width: auto;
+  min-height: var(--nb-touch-min);
+  padding: 8px var(--nb-space-sm) 11px;
+  font-size: 15px;
+  letter-spacing: var(--nb-tracking-label);
+  text-transform: none;
+  white-space: nowrap;
+}
+
+.nb-tabs--toolbar .nb-tab-btn.is-active::after {
+  bottom: 2px;
+  left: var(--nb-space-sm);
+  right: var(--nb-space-sm);
+  height: 3px;
+  border-width: 1px;
 }
 
 .nb-tab-btn {
+  position: relative;
   flex: 1;
   text-align: center;
   font-family: var(--nb-font-family);
   font-weight: var(--nb-font-weight-bold);
-  font-size: var(--nb-font-size-md);
+  font-size: var(--nb-font-size-sm);
   line-height: var(--nb-line-height-tight);
   letter-spacing: var(--nb-tracking-label);
   text-transform: uppercase;
-  padding: 10px var(--nb-space-sm);
-  background-color: var(--nb-color-white);
-  border: var(--nb-border-thick);
-  border-radius: var(--nb-radius-medium);
-  color: var(--nb-color-dark);
-  transition: background-color var(--nb-transition-fast), transform var(--nb-transition-fast);
+  padding: var(--nb-space-sm) var(--nb-space-xs) 12px;
+  background-color: transparent;
+  border: 0;
+  border-radius: 0;
+  color: var(--nb-color-gray);
+  transition: color var(--nb-transition-fast);
   min-height: var(--nb-touch-min);
 }
 
 .nb-tab-btn.is-active {
+  color: var(--nb-color-dark);
+}
+
+.nb-tab-btn.is-active::after {
+  content: "";
+  position: absolute;
+  left: 20%;
+  right: 20%;
+  bottom: -2px; /* Overlay the 2px border-bottom exactly */
+  height: 4px;
   background-color: var(--nb-color-accent-blue);
-  box-shadow: none;
+  border: 1.5px solid var(--nb-color-dark);
+  border-radius: 2px 2px 0 0;
 }
 
 .nb-tab-btn:not(.is-active):hover {
-  background-color: var(--nb-color-light-gray);
+  color: var(--nb-color-dark);
+}
+
+@media (max-width: 360px) {
+  .nb-tabs--toolbar .nb-tab-btn {
+    padding-inline: 4px;
+    letter-spacing: var(--nb-tracking-tight);
+  }
 }

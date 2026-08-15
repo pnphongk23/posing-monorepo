@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Search Poses - AI Pose</title>
+  <!-- Stylesheets -->
+  <link rel="stylesheet" href="../styles/reset.css">
+  <link rel="stylesheet" href="../styles/base.css">
+  <link rel="stylesheet" href="../styles/utilities.css">
+  <link rel="stylesheet" href="../styles/components.css">
+</head>
+<body>
+  <div class="nb-phone">
+    <!-- Status Bar -->
+    <div class="nb-phone__header">
+      <span class="nb-phone__time">9:41</span>
+      <div class="nb-phone__status-icons">
+        <svg class="nb-phone__icon" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 21a2 2 0 1 1 0-4 2 2 0 0 1 0 4zm-4.95-4.95a7 7 0 0 1 9.9 0l-1.42 1.42a5 5 0 0 0-7.06 0L7.05 16.05zm-2.83-2.83a11 11 0 0 1 15.56 0l-1.42 1.42a9 9 0 0 0-12.72 0L4.22 13.22z"/>
+        </svg>
+        <svg class="nb-phone__icon" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M2 22h20V2zM20 20h-2V9h2v11zm-4 0h-2V12h2v8zm-4 0h-2V15h2v5z"/>
+        </svg>
+        <svg class="nb-phone__icon" fill="currentColor" viewBox="0 0 24 24" style="width: 20px;" aria-hidden="true">
+          <path d="M17 5H3a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2zm1 9h-2V10h2v4z"/>
+        </svg>
+      </div>
+    </div>
+    
+    <!-- Phone Content Area -->
+    <main class="nb-phone__content" id="pose-search">
+      <!-- Search Header -->
+      <header class="nb-nav-bar">
+        <div class="nb-nav-bar__left">
+          <a href="poses-list.html" class="nb-btn nb-btn--square nb-btn--white" aria-label="Back to pose library">
+            <svg aria-hidden="true"><use href="#icon-back"></use></svg>
+          </a>
+        </div>
+        <h1 class="nb-nav-bar__title nb-nav-bar__title--page">Search</h1>
+        <div class="nb-nav-bar__right" aria-hidden="true"></div>
+      </header>
+
+      <!-- Search Input Container -->
+      <div class="nb-search-container u-mb-md">
+        <label for="search-screen-input" class="nb-search-label">Search pose titles</label>
+        <div class="nb-search-bar" style="display: flex; margin-bottom: 0; position: relative;">
+          <svg width="16" height="16" aria-hidden="true" style="color: var(--nb-color-gray); flex-shrink: 0; margin-right: var(--nb-space-sm);"><use href="#icon-search"></use></svg>
+          <input type="search" id="search-screen-input" class="nb-search-bar__input" placeholder="Type a title" aria-describedby="search-data-note" autocomplete="off" enterkeyhint="search" autofocus>
+          <button id="search-clear-btn" class="nb-btn nb-btn--square nb-btn--white" aria-label="Clear Search" style="position: absolute; right: 0; border: none; box-shadow: none; background: transparent; display: none; width: 44px; height: 44px; justify-content: center; align-items: center; padding: 0;">
+            <svg aria-hidden="true" style="width: 16px; height: 16px;"><use href="#icon-close"></use></svg>
+          </button>
+        </div>
+        <p id="search-data-note" class="nb-prototype-note">Mock title search · community matches are illustrative; production search is deferred.</p>
+      </div>
+
+      <div id="search-state-message" class="nb-state-message" role="status" aria-live="polite" hidden></div>
+      <div id="search-results-count" class="nb-grid-group-title nb-grid-group-title--count-only" aria-live="polite">
+        <span class="nb-grid-group-count">6 mock poses</span>
+      </div>
+
+      <!-- Results Grid -->
+      <div class="nb-grid-scroll-area">
+        <div class="nb-grid--masonry" id="search-results-grid">
+          <!-- Populated dynamically by scripts/app.js -->
+        </div>
+      </div>
+    </main>
+    
+    <!-- Home Bar Indicator -->
+    <div class="nb-phone__footer">
+      <div class="nb-phone__home-indicator"></div>
+    </div>
+  </div>
+
+  <!-- Shared Scripts -->
+  <script src="../scripts/icons.js"></script>
+  <script src="../scripts/fixtures.js"></script>
+  <script src="../scripts/toggle.js"></script>
+  <script src="../scripts/tabs.js"></script>
+  <script src="../scripts/progress.js"></script>
+  <script src="../scripts/modal.js"></script>
+  <script src="../scripts/view-toggle.js"></script>
+  <script src="../scripts/button-press.js"></script>
+  <script src="../scripts/tab-bar.js"></script>
+  <script src="../scripts/app.js"></script>
+  <script>
+    initTabBar(null);
+  </script>
+</body>
+</html>

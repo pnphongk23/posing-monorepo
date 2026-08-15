@@ -124,3 +124,56 @@
   bottom: auto;
   left: auto;
 }
+
+.nb-card__source-badge {
+  position: absolute;
+  top: var(--nb-space-sm);
+  left: var(--nb-space-sm);
+  z-index: var(--nb-z-index-base);
+}
+
+.nb-card__source-badge--personal {
+  background-color: var(--nb-color-accent-green);
+}
+
+.nb-card__source-badge--community {
+  background-color: var(--nb-color-accent-blue);
+}
+
+/* Intentionally varied aspect ratios/heights for masonry */
+.nb-card--aspect-tall {
+  aspect-ratio: 1 / 1.25 !important;
+}
+.nb-card--aspect-square {
+  aspect-ratio: 1 / 1 !important;
+}
+.nb-card--aspect-short {
+  aspect-ratio: 1.25 / 1 !important;
+}
+
+/* Gallery dense style */
+.nb-card--gallery-dense {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  border: var(--nb-border-hairline) !important;
+  border-radius: var(--nb-radius-small) !important;
+  box-shadow: none !important;
+  position: relative;
+  overflow: hidden;
+}
+
+.nb-card--gallery-dense.nb-card--placeholder {
+  background-color: var(--nb-color-light-gray);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.nb-card--gallery-dense .nb-card__placeholder-icon {
+  width: 24px;
+  height: 24px;
+  opacity: 0.4;
+}

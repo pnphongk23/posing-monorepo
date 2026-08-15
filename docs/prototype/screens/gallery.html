@@ -32,57 +32,11 @@
     <div class="nb-phone__content">
       <nav class="nb-nav-bar u-mb-md">
         <h1 class="nb-nav-bar__title nb-nav-bar__title--page">Gallery</h1>
-        <div class="nb-nav-bar__right">
-          <div class="nb-view-toggle">
-            <button class="nb-view-toggle__btn is-active" data-view="grid" aria-label="Grid View" aria-pressed="true">
-              <svg><use href="#icon-grid"></use></svg>
-            </button>
-            <button class="nb-view-toggle__btn" data-view="list" aria-label="List View" aria-pressed="false">
-              <svg><use href="#icon-list"></use></svg>
-            </button>
-          </div>
-        </div>
       </nav>
 
       <div class="nb-grid-scroll-area nb-gallery-scroll">
-        <div class="nb-grid nb-grid--2col nb-gallery-grid" id="gallery-grid">
-          
-          <div class="nb-grid-group-title nb-grid__full-row">
-            <span>Today</span>
-            <span class="nb-grid-group-count">4</span>
-          </div>
-
-          <div class="nb-grid-photo-item">
-            <div class="nb-card nb-card--gallery" style="background-image: url('https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=300');" role="img" aria-label="Captured photo"></div>
-          </div>
-
-          <div class="nb-grid-photo-item">
-            <div class="nb-card nb-card--gallery" style="background-image: url('https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&q=80&w=300');" role="img" aria-label="Captured photo"></div>
-          </div>
-
-          <div class="nb-grid-photo-item">
-            <div class="nb-card nb-card--gallery" style="background-image: url('https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&q=80&w=300');" role="img" aria-label="Captured photo"></div>
-          </div>
-
-          <div class="nb-grid-photo-item">
-            <div class="nb-card nb-card--gallery" style="background-image: url('https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=300');" role="img" aria-label="Captured photo"></div>
-          </div>
-
-          <div class="nb-grid-group-title nb-grid__full-row nb-gallery-section--spaced">
-            <span>Yesterday</span>
-            <span class="nb-grid-group-count">2</span>
-          </div>
-
-          <div class="nb-grid-photo-item">
-            <div class="nb-card nb-card--placeholder" role="img" aria-label="Photo unavailable">
-              <svg class="nb-card__placeholder-icon"><use href="#icon-image"></use></svg>
-            </div>
-          </div>
-
-          <div class="nb-grid-photo-item">
-            <div class="nb-card nb-card--gallery" style="background-image: url('https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&q=80&w=300');" role="img" aria-label="Captured photo"></div>
-          </div>
-
+        <div class="nb-grid nb-gallery-grid-dense" id="gallery-grid">
+          <!-- Populated dynamically by scripts/app.js -->
         </div>
       </div>
     </div>

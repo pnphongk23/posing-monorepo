@@ -111,6 +111,13 @@
   height: 35px;
 }
 
+.nb-camera-viewport__close-btn {
+  position: absolute;
+  top: var(--nb-space-md);
+  left: var(--nb-space-md);
+  z-index: var(--nb-z-index-overlay);
+}
+
 .nb-camera-viewport__dots-btn {
   position: absolute;
   top: var(--nb-space-md);

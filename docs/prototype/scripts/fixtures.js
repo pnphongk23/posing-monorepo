@@ -7,6 +7,15 @@ const POSES_FIXTURES = [
     tagColor: "green",
     hearts: null,
     category: "my-poses",
+    source: "personal",
+    visibility: "personal",
+    metadata: {
+      author: "You",
+      context: "Saved locally",
+      difficulty: null,
+      tries: null,
+      saves: null
+    },
     svg: `<svg viewBox="0 0 24 24" class="nb-stick-figure">
       <circle cx="12" cy="7" r="3"/>
       <line x1="12" y1="10" x2="12" y2="17"/>
@@ -23,6 +32,15 @@ const POSES_FIXTURES = [
     tagColor: "pink",
     hearts: "2.1K",
     category: "community",
+    source: "community",
+    visibility: "published",
+    metadata: {
+      author: "@posemaster",
+      context: "Published mock result",
+      difficulty: "Intermediate",
+      tries: "1.2K",
+      saves: "456"
+    },
     svg: `<svg viewBox="0 0 24 24" class="nb-stick-figure">
       <circle cx="12" cy="6" r="3"/>
       <line x1="12" y1="9" x2="11" y2="15"/>
@@ -40,6 +58,15 @@ const POSES_FIXTURES = [
     tagColor: "green",
     hearts: null,
     category: "my-poses",
+    source: "personal",
+    visibility: "personal",
+    metadata: {
+      author: "You",
+      context: "Saved locally",
+      difficulty: "Beginner",
+      tries: null,
+      saves: null
+    },
     svg: `<svg viewBox="0 0 24 24" class="nb-stick-figure">
       <circle cx="12" cy="5" r="3"/>
       <line x1="12" y1="8" x2="12" y2="14"/>
@@ -56,6 +83,15 @@ const POSES_FIXTURES = [
     tagColor: null,
     hearts: "856",
     category: "community",
+    source: "community",
+    visibility: "published",
+    metadata: {
+      author: null,
+      context: "Published mock result",
+      difficulty: null,
+      tries: "856",
+      saves: null
+    },
     svg: `<svg viewBox="0 0 24 24" class="nb-stick-figure">
       <circle cx="12" cy="7" r="3"/>
       <line x1="12" y1="10" x2="12" y2="16"/>
@@ -73,6 +109,15 @@ const POSES_FIXTURES = [
     tagColor: "yellow",
     hearts: null,
     category: "my-poses",
+    source: "personal",
+    visibility: "personal",
+    metadata: {
+      author: "You",
+      context: "Saved locally",
+      difficulty: null,
+      tries: null,
+      saves: null
+    },
     svg: `<svg viewBox="0 0 24 24" class="nb-stick-figure">
       <circle cx="12" cy="8" r="3"/>
       <line x1="12" y1="11" x2="12" y2="18"/>
@@ -89,6 +134,15 @@ const POSES_FIXTURES = [
     tagColor: null,
     hearts: "423",
     category: "community",
+    source: "community",
+    visibility: "published",
+    metadata: {
+      author: "@community_core",
+      context: "Published mock result",
+      difficulty: "Beginner",
+      tries: null,
+      saves: "423"
+    },
     svg: `<svg viewBox="0 0 24 24" class="nb-stick-figure">
       <circle cx="12" cy="9" r="3"/>
       <line x1="12" y1="12" x2="12" y2="18"/>
@@ -100,6 +154,96 @@ const POSES_FIXTURES = [
     </svg>`
   }
 ];
+
+const POSE_DELETED_STORAGE_KEY = "ai-pose.prototype.deleted-poses";
+let inMemoryDeletedPoseIds = new Set();
+
+function getDeletedPoseIds() {
+  const ids = new Set(inMemoryDeletedPoseIds);
+
+  try {
+    const storedIds = JSON.parse(sessionStorage.getItem(POSE_DELETED_STORAGE_KEY) || "[]");
+    if (Array.isArray(storedIds)) {
+      storedIds.forEach(id => ids.add(String(id)));
+    }
+  } catch (error) {
+    // The prototype still keeps the change in memory when storage is unavailable.
+  }
+
+  return ids;
+}
+
+function markPoseDeleted(poseId) {
+  const id = String(poseId);
+  const ids = getDeletedPoseIds();
+  ids.add(id);
+  inMemoryDeletedPoseIds = ids;
+
+  try {
+    sessionStorage.setItem(POSE_DELETED_STORAGE_KEY, JSON.stringify([...ids]));
+  } catch (error) {
+    // Memory-backed state is sufficient for the current prototype session.
+  }
+
+  return true;
+}
+
+function getVisiblePoseFixtures() {
+  const deletedIds = getDeletedPoseIds();
+  return POSES_FIXTURES.filter(pose => !(pose.category === "my-poses" && deletedIds.has(pose.id)));
+}
+
+function getPoseCategoryFromSource(source) {
+  if (source === "community") return "community";
+  if (source === "my-poses" || source === "personal") return "my-poses";
+  return null;
+}
+
+function getPoseByReference(poseId, source) {
+  const hasSource = source !== null && source !== undefined && source !== "";
+  const category = getPoseCategoryFromSource(source);
+  const candidates = getVisiblePoseFixtures();
+
+  if (hasSource && !category) return null;
+
+  return candidates.find(pose => {
+    const categoryMatches = category ? pose.category === category : true;
+    return categoryMatches && pose.id === poseId;
+  }) || null;
+}
+
+function getPoseSourceLabel(pose) {
+  return pose.category === "community" ? "Community" : "My Pose";
+}
+
+function getPoseRoute(pose) {
+  return `pose-detail.html?source=${encodeURIComponent(pose.category)}&id=${encodeURIComponent(pose.id)}`;
+}
+
+function getPrototypeState() {
+  const params = new URLSearchParams(window.location.search);
+  return params.get("state") || "ready";
+}
+
+function escapePrototypeHtml(value) {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+window.PosePrototype = {
+  escapeHtml: escapePrototypeHtml,
+  getDeletedPoseIds,
+  getPoseByReference,
+  getPoseRoute,
+  getPoseSourceLabel,
+  getPrototypeState,
+  getVisiblePoseFixtures,
+  markPoseDeleted
+};
 
 const GALLERY_FIXTURES = {
   today: [

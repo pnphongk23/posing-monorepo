@@ -1,5 +1,7 @@
 # Community Poses API
 
+> **Current contract (2026-08-09):** Public read endpoints and admin listing are current. The admin UI submits `multipart/form-data` to `POST /api/admin/community/poses`, which enqueues an extraction job and returns `202`. The `/upload-url` helper still exists, but there is currently no metadata-only `fileKey` POST path that completes that presigned flow.
+
 **Production base URL:** `https://pose-extract-server-production.up.railway.app`  
 **Local dev base URL:** `http://localhost:3001`
 
@@ -122,7 +124,7 @@ Returns `401 Unauthorized` if the header is missing or wrong.
 
 Request a presigned PUT URL to upload an image directly to R2.
 
-**Allowed MIME types:** `image/png`, `image/jpeg`, `image/webp`, `image/gif`
+**Allowed MIME types:** `image/png`, `image/jpeg`, `image/webp`
 
 **Request body**
 
@@ -150,7 +152,7 @@ Request a presigned PUT URL to upload an image directly to R2.
 {
   "error": {
     "code": "BAD_REQUEST",
-    "message": "mimeType \"image/bmp\" is not allowed. Allowed types: image/png, image/jpeg, image/webp, image/gif"
+    "message": "mimeType \"image/bmp\" is not allowed. Allowed types: image/png, image/jpeg, image/webp"
   }
 }
 ```
@@ -201,64 +203,35 @@ if (!uploadRes.ok) throw new Error("R2 upload failed");
 
 ---
 
-### POST /api/admin/community/poses — Save pose metadata
+### POST /api/admin/community/poses — Submit pose and enqueue extraction
 
-Call this after the file is successfully uploaded to R2.
+Send one `multipart/form-data` request. The Next.js admin proxy uses this contract.
 
-**Request body**
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `image` | PNG/JPEG/WEBP file | yes | Maximum 10 MB |
+| `name` | string | yes | Non-empty |
+| `bodyParts` | JSON string array or comma-separated string | yes | Must contain at least one item |
+| `tags` | JSON string array or comma-separated string | no | Defaults to empty |
+| `difficulty` | beginner/intermediate/advanced | no | Defaults to null |
+| `description` | string | no | Defaults to null |
+| `status` | draft/published | no | Defaults to draft |
 
-```ts
-{
-  name: string;               // required
-  fileKey: string;            // required — from upload-url response
-  tags?: string[];            // default []
-  difficulty?: "beginner" | "intermediate" | "advanced" | null;
-  description?: string | null;
-  bodyParts?: string[];       // default []
-  status?: "draft" | "published"; // default "draft"
-}
-```
-
-**Response `201`**
-
-```json
-{ "data": CommunityPose }
-```
-
-`imagePath` in the response is a full R2 public URL.
-
-**Response `409`** — fileKey not found in R2 (upload step was skipped or failed)
+**Response `202`**
 
 ```json
 {
-  "error": {
-    "code": "CONFLICT",
-    "message": "File \"community/abc.png\" not found in storage. Upload the file before submitting metadata."
+  "data": {
+    "pose": { "id": "...", "name": "Warrior Pose", "status": "draft" },
+    "jobId": "...",
+    "status": "queued"
   }
 }
 ```
 
-**Example (continuing from upload above)**
+The `imagePath` is derived from the configured R2 public URL and generated community key. Extraction completes asynchronously through the worker; poll the protected job-status endpoint used by the admin integration when job progress is needed.
 
-```ts
-const metaRes = await fetch(`${BASE_URL}/api/admin/community/poses`, {
-  method: "POST",
-  headers: {
-    "Content-Type": "application/json",
-    Authorization: `Bearer ${ADMIN_SECRET}`,
-  },
-  body: JSON.stringify({
-    name: "Warrior Pose",
-    fileKey,
-    tags: ["yoga", "balance"],
-    difficulty: "intermediate",
-    bodyParts: ["legs", "core"],
-    status: "published",
-  }),
-});
-const { data: pose } = await metaRes.json();
-console.log(pose.imagePath); // https://pub-....r2.dev/community/<uuid>.png
-```
+**Response `400`** uses `BAD_REQUEST` for invalid metadata or `INVALID_IMAGE` for a missing, unsupported, or oversized image. **Response `500`** uses `QUEUE_WRITE_FAILED` when enqueue cannot be completed.
 
 ---
 
@@ -279,7 +252,7 @@ Returns both draft and published poses sorted by newest first.
 
 ---
 
-## Full Upload Flow (TypeScript helper)
+## Current Multipart Upload Flow (TypeScript helper)
 
 ```ts
 const BASE_URL = "https://pose-extract-server-production.up.railway.app";
@@ -291,42 +264,28 @@ async function uploadPose(
     tags?: string[];
     difficulty?: "beginner" | "intermediate" | "advanced" | null;
     description?: string;
-    bodyParts?: string[];
+    bodyParts: string[];
     status?: "draft" | "published";
   },
   adminSecret: string
 ): Promise<CommunityPose> {
-  const headers = {
-    "Content-Type": "application/json",
-    Authorization: `Bearer ${adminSecret}`,
-  };
+  const form = new FormData();
+  form.append("image", file);
+  form.append("name", meta.name);
+  form.append("tags", JSON.stringify(meta.tags ?? []));
+  form.append("difficulty", meta.difficulty ?? "");
+  form.append("description", meta.description ?? "");
+  form.append("bodyParts", JSON.stringify(meta.bodyParts ?? []));
+  form.append("status", meta.status ?? "draft");
 
-  // 1. Get presigned URL
-  const urlRes = await fetch(`${BASE_URL}/api/admin/community/poses/upload-url`, {
+  const response = await fetch(`${BASE_URL}/api/admin/community/poses`, {
     method: "POST",
-    headers,
-    body: JSON.stringify({ fileName: file.name, mimeType: file.type }),
+    headers: { Authorization: `Bearer ${adminSecret}` },
+    body: form,
   });
-  if (!urlRes.ok) throw new Error(`upload-url failed: ${urlRes.status}`);
-  const { data: { uploadUrl, fileKey } } = await urlRes.json();
-
-  // 2. Upload to R2
-  const r2Res = await fetch(uploadUrl, {
-    method: "PUT",
-    headers: { "Content-Type": file.type },
-    body: file,
-  });
-  if (!r2Res.ok) throw new Error(`R2 upload failed: ${r2Res.status}`);
-
-  // 3. Save metadata
-  const metaRes = await fetch(`${BASE_URL}/api/admin/community/poses`, {
-    method: "POST",
-    headers,
-    body: JSON.stringify({ fileKey, ...meta }),
-  });
-  if (!metaRes.ok) throw new Error(`save metadata failed: ${metaRes.status}`);
-  const { data } = await metaRes.json();
-  return data;
+  if (!response.ok) throw new Error(`community upload failed: ${response.status}`);
+  const { data } = await response.json();
+  return data.pose;
 }
 ```
 
@@ -339,7 +298,7 @@ All errors follow this shape:
 ```json
 {
   "error": {
-    "code": "NOT_FOUND" | "BAD_REQUEST" | "CONFLICT" | "UNAUTHORIZED" | "INTERNAL_SERVER_ERROR",
+    "code": "NOT_FOUND" | "BAD_REQUEST" | "INVALID_IMAGE" | "UNAUTHORIZED" | "QUEUE_WRITE_FAILED" | "INTERNAL_SERVER_ERROR",
     "message": "Human-readable message"
   }
 }
@@ -349,6 +308,7 @@ All errors follow this shape:
 |------|------|------|
 | `UNAUTHORIZED` | 401 | Missing or wrong `Authorization` header on admin endpoints |
 | `BAD_REQUEST` | 400 | Missing required field, invalid mimeType, schema validation failure |
-| `CONFLICT` | 409 | `fileKey` not found in R2 when saving metadata |
+| `INVALID_IMAGE` | 400 | Missing, unsupported, or oversized multipart image |
 | `NOT_FOUND` | 404 | Pose not found or not published |
+| `QUEUE_WRITE_FAILED` | 500 | Community extraction job could not be enqueued |
 | `INTERNAL_SERVER_ERROR` | 500 | Unexpected server error |

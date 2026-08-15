@@ -22,6 +22,10 @@
   min-height: var(--nb-touch-min);
 }
 
+.nb-btn[hidden] {
+  display: none !important;
+}
+
 .nb-btn:active,
 .nb-btn.is-active {
   transform: translate(var(--nb-shadow-offset), var(--nb-shadow-offset));
@@ -77,6 +81,12 @@
 
 .nb-btn--block {
   width: 100%;
+}
+
+.nb-btn--compact-text {
+  min-height: var(--nb-touch-min);
+  padding: var(--nb-space-sm) var(--nb-space-compact);
+  font-size: var(--nb-font-size-xs);
 }
 
 .nb-btn svg {
