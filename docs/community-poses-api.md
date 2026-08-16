@@ -1,3 +1,9 @@
+> **⚠️ Tài liệu lịch sử.** Contract chính thức đã chuyển sang [`docs/api/`](api/README.md).
+> Xem [`docs/api/openapi.yaml`](api/openapi.yaml) cho schemas đầy đủ và [`docs/api/conventions.md`](api/conventions.md) cho quy ước.
+> [`docs/api/modules/community.md`](api/modules/community.md) — public community routes.
+> [`docs/api/modules/admin-community.md`](api/modules/admin-community.md) — admin community routes.
+> File này được giữ nguyên như tài liệu lịch sử hỗ trợ; không chỉnh sửa thêm.
+
 # Community Poses API
 
 > **Current contract (2026-08-09):** Public read endpoints and admin listing are current. The admin UI submits `multipart/form-data` to `POST /api/admin/community/poses`, which enqueues an extraction job and returns `202`. The `/upload-url` helper still exists, but there is currently no metadata-only `fileKey` POST path that completes that presigned flow.

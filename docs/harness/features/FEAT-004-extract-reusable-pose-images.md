@@ -7,28 +7,36 @@ status: draft
 created: 2026-08-09
 relationships:
   specs:
-    - "[[technical-architecture]]"
     - "[[product-feature-inventory]]"
+    - "[[technical-architecture]]"
     - "[[ui-ux-system]]"
+    - "[[model-entity-catalogue]]"
+    - "[[erd]]"
+    - "[[api-catalogue]]"
   decisions: []
   plans: []
-  reports: []
+  reports:
+    - "[[REP-002-feature-gap-and-release-readiness-audit|REP-002]]"
+    - "[[REP-004-backend-feature-and-model-entity-scout|REP-004]]"
   rules: []
   features:
     - "[[FEAT-005-manage-a-pose-guide|FEAT-005]]"
     - "[[FEAT-007-operate-pose-content-from-admin-web|FEAT-007]]"
-  source_paths: []
+  source_paths:
+    - web/services/pose-extract-server/src/routes/extractPoseRoutes.ts
+    - web/services/pose-extract-server/src/services/geminiService.ts
+    - mobile/shared/src/commonMain/kotlin/com/aipose/data/remote/PoseApiService.kt
+    - mobile/composeApp/src/commonMain/kotlin/com/aipose/ui/screens/poses/PosesScreen.kt
 ---
 
 # FEAT-004: Extract Reusable Pose Images
 
 ## Introduction
 
-**Purpose:** Let an authorized pose creator turn one readable source image into one reusable pose image.
-
-**In scope:** Source-image validation, one extraction request, the extraction outcome, the common pose-image quality contract, the common request status, retryable failure, and ownership assignment to the actor who created the pose.
-
-**Out of scope:** Pose-guide metadata and owner-guide management in FEAT-005, public publication in FEAT-006, the Admin Web control surface in FEAT-007, saving or trying a published pose in FEAT-008, and implementation or provider choices.
+One source image is validated and sent through an extraction provider to produce
+one reusable image result. The common request/result contract is owned here;
+guide metadata/ownership is [FEAT-005](FEAT-005-manage-a-pose-guide.md), and the
+Admin operating surface is [FEAT-007](FEAT-007-operate-pose-content-from-admin-web.md).
 
 ## Business Understanding
 
@@ -36,86 +44,77 @@ relationships:
 
 | Actor | Type | Goal | Responsibility |
 | --- | --- | --- | --- |
-| Signed-in user | User | Create a reusable pose from a source image | Submit one eligible source image and receive the resulting pose as its owner |
-| Admin operator | Business role | Create an Admin-owned pose from a source image | Submit one eligible source image and receive the resulting pose as its owner |
-
-### User needs
-
-- A signed-in user and an Admin operator need the same extraction outcome from the same kind of source image.
-- The creator needs to know whether the request is queued, processing, succeeded, or failed.
-- The creator needs a usable pose result that contains one complete human pose on a transparent background without eyes, nose, or mouth.
-- A creator needs retryable failures to preserve ownership and avoid duplicate pose results.
-- The creator needs the successful result to be associated with the creator as Pose Owner.
+| Mobile user or Admin operator | User/business role | Produce one reusable pose image | Submit one eligible source image |
+| AI provider | External system | Return an extracted image | Process the source and report outcome |
 
 ### Preconditions
 
-- The requester is authenticated and authorized to create a pose.
-- Exactly one readable source image is supplied and it satisfies the accepted image constraints.
-- The requester has an available pose-creation context: a personal context for a signed-in user or an Admin context for an Admin operator.
+- One supported image is supplied through a client path.
 
 ### Trigger
 
-The signed-in user or Admin operator submits one source image for pose extraction.
+The actor submits a source image for extraction.
 
 ### Main flow
 
-1. **Actor:** The requester submits one source image. **System:** The system validates the submission and acknowledges one extraction request.
-2. **System:** The system reports the request as queued or processing while the pose is being generated.
-3. **System:** The system completes the extraction and evaluates one reusable pose result against the common pose-image contract.
-4. **System:** When the result is valid, the system reports success and assigns the resulting pose to the requester as Pose Owner. FEAT-005 governs the guide and owner storage around that result.
+1. **Actor:** The actor submits an image. **System:** The service validates the multipart payload and applies the direct-extraction limiter.
+2. **System:** The provider is invoked with an active credential. **System:** The service records usage and returns the extracted image result.
 
 ### Alternative flows
 
-- **A1 — Retry a failed request.** Source step: 2–3. Condition: the failure is retryable. Behavior: the requester retries the same creation intent; the system preserves one owner and does not create competing pose results. Ends with: a new truthful request outcome.
+- **A1 — Provider quota.** Source step: 2. Condition: the selected key is exhausted. Behavior: rotate to another active key when available. Resume at step: 2.
 
 ### Exception flows
 
-- **E1 — Invalid source image.** Source step: 1. Failure: the image is unreadable or outside the accepted constraints. Handling: reject the request with a correction message. Prohibited: starting extraction or claiming ownership of a successful result.
-- **E2 — No usable pose.** Source step: 3. Failure: the result does not contain one complete pose matching the common visual contract. Handling: report a corrective or retryable failure. Prohibited: reporting a successful pose.
-- **E3 — Extraction failure.** Source step: 2–3. Failure: the service cannot complete the request. Handling: expose a truthful failed outcome and preserve a retry path when permitted. Prohibited: creating a duplicate or claiming success.
+- **E1 — Invalid/oversized image.** Source step: 1. Failure: validation rejects the upload. Handling: return the documented error envelope. Prohibited: invoking the provider.
+- **E2 — Provider unavailable.** Source step: 2. Failure: no successful provider result. Handling: return a failed/retryable outcome. Prohibited: claiming a usable image.
 
 ### Postconditions
 
-- **Success:** Exactly one valid pose result exists for the request, and the actor who created it is its Pose Owner.
-- **Failure:** No invalid or unconfirmed result is reported as a successful pose, and a permitted retry remains understandable.
+- **Success:** One extracted image response is returned; persistence belongs to the caller/guide flow.
+- **Failure:** No usable result is claimed.
+
+### Current evidence
+
+- **Observed:** Direct Express extraction is synchronous; it accepts multipart
+  image data, applies a process-local IP limiter, rotates active provider keys,
+  logs requests, and returns base64 plus MIME and timing metadata.
+- **Observed:** Mobile `PosesScreen` can pick an image, call the service, and
+  persist the result through local pose storage.
+- **Alternate path:** Admin Web also contains a legacy Replicate route. It is
+  catalogued separately and is not silently treated as the canonical API-003 contract.
+- **Gaps:** Content validation, cancellation/idempotency, retention, and error
+  envelope parity remain documented in [REP-002](../reports/REP-002-feature-gap-and-release-readiness-audit.md).
+
+### Traceability
+
+| Concern | Canonical reference | Evidence |
+| --- | --- | --- |
+| Entities | [`ExtractionJob`](../../data/entities/extraction-job.md), [`ApiKeyCredential`](../../data/entities/api-key-credential.md), [`ProviderRequestLog`](../../data/entities/provider-request-log.md) | [`schema.sql`](../../../web/services/pose-extract-server/src/db/schema.sql), [`KeyStore`](../../../web/services/pose-extract-server/src/services/keyStore.ts) |
+| ERD | [Server physical graph](../../data/erd/server.md) | [`ExtractionJobStore`](../../../web/services/pose-extract-server/src/db/extractionJobStore.ts) |
+| APIs | [Direct extraction](../../api/modules/extract-pose.md), [legacy route in conventions](../../api/conventions.md) | [`extractPoseRoutes.ts`](../../../web/services/pose-extract-server/src/routes/extractPoseRoutes.ts), [`route.js`](../../../web/admin-ui/src/app/api/extract/route.js) |
+| Supporting client | Mobile picker/service and proxy | [`PosesScreen.kt`](../../../mobile/composeApp/src/commonMain/kotlin/com/aipose/ui/screens/poses/PosesScreen.kt), [`poseExtractExtractPoseProxy.js`](../../../web/admin-ui/src/lib/poseExtractExtractPoseProxy.js) |
 
 ## Requirements
 
-- **FR-001:** The system shall allow an authenticated signed-in user or Admin operator to submit exactly one eligible source image for extraction.
-- **FR-002:** The system shall distinguish queued, processing, succeeded, and failed outcomes for an extraction request.
-- **FR-003:** A successful extraction shall produce exactly one reusable pose image showing one complete human pose on a transparent background without eyes, nose, or mouth.
-- **FR-004:** A successful extraction shall assign the resulting pose to the actor who created it: a signed-in user owns that user's extracted pose, and an Admin operator owns that Admin-created pose.
-- **FR-005:** A failed, invalid, or incomplete extraction shall not be reported as a successful pose and shall not create a competing result.
-- **FR-006:** A permitted retry shall preserve the creation context and shall not transfer ownership or create duplicate pose results.
-- **BR-001:** The extraction behavior and success contract are the same for signed-in users and Admin operators; the caller's surface does not create a second extraction model.
-- **NFR-001:** User-visible extraction outcomes shall clearly distinguish an accepted request, successful result, and failure.
+- **FR-001:** The canonical direct route returns one structured extracted image result.
+- **FR-002:** Direct and legacy extraction routes remain separately labelled until a Decision selects one path.
+- **BR-001:** A failed or unverified provider result must not be reported as usable.
 
 ## Acceptance
 
-- [ ] A signed-in user can submit one eligible image and receives queued, processing, succeeded, or failed outcomes.
-- [ ] An Admin operator can submit one eligible image and receives the same extraction outcome and pose-image contract.
-- [ ] A successful result contains one complete human pose on a transparent background without eyes, nose, or mouth.
-- [ ] The signed-in user who created a pose is recorded as its Pose Owner.
-- [ ] The Admin operator who created a pose is recorded as its Pose Owner.
-- [ ] Invalid input, no-pose results, and service failures never appear as successful poses.
-- [ ] A permitted retry does not create duplicate pose results or change the original owner.
-
-**Scenario: signed-in user extracts a pose**  
-Given a signed-in user supplies one valid source image  
-When extraction succeeds  
-Then one valid reusable pose is produced and the user owns it.
-
-**Scenario: Admin extracts a pose**  
-Given an Admin operator supplies one valid source image  
-When extraction succeeds  
-Then one valid reusable pose is produced and the Admin operator owns it.
-
-**Scenario: extraction fails**  
-Given a request cannot produce a valid pose  
-When extraction finishes  
-Then the system reports failure, creates no successful pose, and offers a permitted recovery path.
+- [ ] Valid direct extraction returns the API-003 shape.
+- [ ] Invalid/oversized requests return documented errors.
+- [ ] Quota exhaustion and provider failures remain recoverable or explicit.
 
 ## Relationships
 
-- Specs: [[technical-architecture]], [[product-feature-inventory]], [[ui-ux-system]]
-- Features: [[FEAT-005-manage-a-pose-guide|FEAT-005]], [[FEAT-007-operate-pose-content-from-admin-web|FEAT-007]]
+- Shared references: [ExtractionJob](../../data/entities/extraction-job.md), [ERD server](../../data/erd/server.md), [Extract API](../../api/modules/extract-pose.md).
+- Related features: [FEAT-005](FEAT-005-manage-a-pose-guide.md), [FEAT-007](FEAT-007-operate-pose-content-from-admin-web.md).
+### Supporting evidence
+
+- [`extractPoseRoutes.ts`](../../../web/services/pose-extract-server/src/routes/extractPoseRoutes.ts)
+- [`geminiService.ts`](../../../web/services/pose-extract-server/src/services/geminiService.ts)
+- [`extractPose.test.ts`](../../../web/services/pose-extract-server/src/extractPose.test.ts)
+- [`PoseApiService.kt`](../../../mobile/shared/src/commonMain/kotlin/com/aipose/data/remote/PoseApiService.kt)
+- [`REP-002`](../reports/REP-002-feature-gap-and-release-readiness-audit.md)

@@ -7,6 +7,9 @@ relationships:
   specs:
     - "[[product-feature-inventory]]"
     - "[[ui-ux-system]]"
+    - "[[model-entity-catalogue]]"
+    - "[[erd]]"
+    - "[[api-catalogue]]"
   decisions: []
   plans: []
   reports: []
@@ -64,8 +67,8 @@ This document describes the code-backed architecture of the `ai-pose` monorepo. 
 
 1. **Server Proxying:** Browser requests from the Admin UI pass through server-side Next.js route proxies (`web/admin-ui/src/app/api/admin/`), which inject the `POSE_EXTRACT_ADMIN_SECRET` before forwarding calls to Express.
 2. **Metadata and Queueing:** Operators submit community pose metadata and source images via `POST /api/admin/community/poses`. The Express server creates a draft pose record, enqueues the extraction task in the job table, and returns a `202 Accepted` response with a `jobId`.
-3. **Worker Processing:** The background Playwright worker process (`startWorker`) polls the job table, claims pending tasks, executes extraction in a browser session using Mock controllers, writes the generated files to R2 storage, links the R2 object keys to the community pose, and transitions the job to a completed state.
-4. **Public Catalog Serving:** Public endpoints (`GET /api/community/poses`) serve only completed poses with valid linked R2 URLs, preventing unpublished drafts or unlinked items from appearing.
+3. **Worker Processing:** The background Playwright worker process (`startWorker`) polls the job table, claims pending tasks, executes extraction in a browser session, and writes the generated base64 result back to the `extraction_jobs` row. **Observed source evidence does not show an R2 upload or durable link to `community_poses`; see [ExtractionJob](../../data/entities/extraction-job.md) and [ERD unresolved links](../../data/erd/conceptual.md).**
+4. **Public Catalog Serving:** Public endpoints (`GET /api/community/poses`) filter by `community_poses.status = 'published'`. **The source does not independently prove linked-asset readiness, so the stronger “valid linked R2 URL” claim is unresolved.**
 
 ## Data and trust boundaries
 

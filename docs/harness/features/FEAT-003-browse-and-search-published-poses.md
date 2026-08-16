@@ -7,29 +7,36 @@ status: proposed
 created: 2026-08-09
 relationships:
   specs:
-    - "[[technical-architecture]]"
     - "[[product-feature-inventory]]"
+    - "[[technical-architecture]]"
     - "[[ui-ux-system]]"
+    - "[[model-entity-catalogue]]"
+    - "[[erd]]"
+    - "[[api-catalogue]]"
   decisions: []
-  plans: []
-  reports: []
+  plans:
+    - "[[260809-2240-pose-reference-library-convergence/plan|260809-2240]]"
+  reports:
+    - "[[REP-003-pose-reference-library-convergence-delivery|REP-003]]"
+    - "[[REP-004-backend-feature-and-model-entity-scout|REP-004]]"
   rules: []
   features:
-    - "[[FEAT-005-manage-a-pose-guide|FEAT-005]]"
     - "[[FEAT-006-publish-a-pose|FEAT-006]]"
     - "[[FEAT-008-use-published-poses|FEAT-008]]"
-  source_paths: []
+  source_paths:
+    - mobile/composeApp/src/commonMain/kotlin/com/aipose/ui/screens/poses
+    - mobile/shared/src/commonMain/kotlin/com/aipose/data/remote/PoseApiService.kt
+    - web/services/pose-extract-server/src/routes/communityRoutes.ts
 ---
 
 # FEAT-003: Browse and Search Published Poses
 
 ## Introduction
 
-**Purpose:** Let a visitor or signed-in user browse and search poses that have been published to the public pose catalogue.
-
-**In scope:** The public catalogue, published-only results, pose cards, pose detail, title search, pagination, refresh, empty states, and recoverable catalogue failures.
-
-**Out of scope:** Personal "My Poses" management, saving or unsaving, Saved collection management, Try Pose, camera overlay, pose extraction, editing, deletion, publishing, unpublishing, and unpublished or draft poses.
+Visitors and signed-in users browse a published community catalogue, filter the
+server list, search by title in the mobile library, refresh, and inspect detail.
+Save/Try Pose is [FEAT-008](FEAT-008-use-published-poses.md); publication is
+[FEAT-006](FEAT-006-publish-a-pose.md).
 
 ## Business Understanding
 
@@ -37,86 +44,77 @@ relationships:
 
 | Actor | Type | Goal | Responsibility |
 | --- | --- | --- | --- |
-| Visitor | User | Discover publicly available poses | Browse published poses and open their details without an account |
-| Signed-in user | User | Find a pose to inspect or use later | Browse, search, refresh results, and open published pose details |
-
-### User needs
-
-- A visitor needs to see only poses that are publicly available.
-- A signed-in user needs to search published poses by title and inspect a result before choosing an action governed by FEAT-008.
-- Users need stable result lists while loading more results or recovering from a catalogue failure.
-- Users need clear empty states when no published poses or no search matches exist.
+| Visitor or signed-in user | User | Discover published poses | Browse, filter, search, and inspect |
 
 ### Preconditions
 
-- The Published Pose Catalogue is available to the browsing experience.
-- A pose is eligible for this Feature only when its publication state is published.
-- Searching does not require the user to sign in.
+- A community record must be returned by the public route with `status=published`.
 
 ### Trigger
 
-The user opens the public pose catalogue, refreshes it, requests more results, or enters a title search.
+The user opens the catalogue, refreshes, searches, or opens a pose card.
 
 ### Main flow
 
-1. **Actor:** The user opens the pose catalogue. **System:** The system presents published pose cards.
-2. **Actor:** The user requests more results or refreshes the catalogue. **System:** The system presents the latest published results without duplicate poses.
-3. **Actor:** The user enters a title search. **System:** The system presents only published poses matching the search and an explicit empty state when there are no matches.
-4. **Actor:** The user opens a pose card. **System:** The system presents the published pose detail and the metadata available for that pose. Actions such as Save or Try Pose remain governed by FEAT-008.
+1. **Actor:** The user opens the catalogue. **System:** The app requests the published list.
+2. **Actor:** The user pages, filters, refreshes, or searches. **System:** The app presents confirmed matching results without duplicate active IDs.
+3. **Actor:** The user opens a card. **System:** The app presents published detail and available metadata.
 
 ### Alternative flows
 
-- **A1 — More results.** Source step: 2. Condition: additional published results exist. Behavior: the system appends the next results and keeps each pose only once. Ends with: an extended published list.
-- **A2 — Search reset.** Source step: 3. Condition: the user clears the title query. Behavior: the system returns to the current published catalogue view. Ends with: the unfiltered published list.
-- **A3 — Refresh.** Source step: 2. Condition: the user refreshes. Behavior: the system replaces stale results with the latest confirmed published results. Ends with: refreshed catalogue content.
+- **A1 — Empty result.** Source step: 1 or 2. Condition: no published match exists. Behavior: show an explicit empty state. Ends with: no-match view.
+- **A2 — Refresh.** Source step: 2. Condition: the user requests fresh data. Behavior: replace only with confirmed results. Ends with: refreshed list.
 
 ### Exception flows
 
-- **E1 — Catalogue unavailable.** Source step: 1–3. Failure: the catalogue cannot provide a confirmed result. Handling: the system keeps any already shown results, explains that the catalogue could not be refreshed, and offers retry. Prohibited: showing an unconfirmed pose as published.
-- **E2 — Published pose no longer available.** Source step: 4. Failure: the selected pose is no longer published or cannot be retrieved. Handling: the system explains that the pose is unavailable and returns the user to the published catalogue. Prohibited: presenting stale content as currently published.
+- **E1 — Catalogue unavailable.** Source step: 1 or 2. Failure: transport or server failure. Handling: preserve confirmed results and offer retry. Prohibited: showing unconfirmed content as published.
+- **E2 — Detail unavailable.** Source step: 3. Failure: pose is missing/unpublished. Handling: explain unavailability and return to the list. Prohibited: presenting stale detail as current.
 
 ### Postconditions
 
-- **Success:** The user sees a deduplicated list or title-filtered list of published poses and can inspect a published pose detail.
-- **Failure:** No unpublished or unconfirmed pose is presented as public, and the user has a retry or return path.
+- **Success:** The user sees a published list/search result or detail.
+- **Failure:** No unconfirmed pose is presented as public.
+
+### Current evidence
+
+- **Observed:** `CommunityPose` DTOs, public list/detail routes with pagination,
+  mobile list/detail client calls, refresh/load-more states, and source-qualified
+  detail exist.
+- **Partial:** `MockCommunitySearchProvider` backs title search; no server title
+  search query exists. Public asset readiness and production exposure are not proven.
+- **Delivery evidence:** [REP-003](../reports/REP-003-pose-reference-library-convergence-delivery.md)
+  records iOS-first library convergence and explicitly defers Android and
+  production community search.
+
+### Traceability
+
+| Concern | Canonical reference | Evidence |
+| --- | --- | --- |
+| Entity/DTO | [`CommunityPose`](../../data/entities/community-pose.md), pagination envelope in [openapi.yaml](../../api/openapi.yaml) | [`PoseApiService.kt`](../../../mobile/shared/src/commonMain/kotlin/com/aipose/data/remote/PoseApiService.kt) |
+| ERD | [Server graph](../../data/erd/server.md) plus [unresolved asset links](../../data/erd/conceptual.md) | [`schema.sql`](../../../web/services/pose-extract-server/src/db/schema.sql) |
+| APIs | [Community list/detail](../../api/modules/community.md) | [`communityRoutes.ts`](../../../web/services/pose-extract-server/src/routes/communityRoutes.ts), [`PoseApiService.kt`](../../../mobile/shared/src/commonMain/kotlin/com/aipose/data/remote/PoseApiService.kt#L114) |
+| Supporting UI/tests | Library, search, detail, coordinator | [`PosesScreen.kt`](../../../mobile/composeApp/src/commonMain/kotlin/com/aipose/ui/screens/poses/PosesScreen.kt), [`SearchScreen.kt`](../../../mobile/composeApp/src/commonMain/kotlin/com/aipose/ui/screens/poses/SearchScreen.kt), [`REP-003`](../reports/REP-003-pose-reference-library-convergence-delivery.md) |
 
 ## Requirements
 
-- **FR-001:** The system shall present only poses whose visibility state is published in the public catalogue.
-- **FR-002:** The system shall support browsing additional published results without presenting the same pose more than once in the active list.
-- **FR-003:** The system shall support searching published poses by title and shall return only published matches.
-- **FR-004:** The pose detail shall present the published pose's available title, images, and metadata without inventing values that are absent.
-- **FR-005:** The system shall provide a clear empty state for an empty catalogue and for a search with no matching published pose.
-- **FR-006:** Refresh and catalogue failures shall preserve already confirmed results and provide a recoverable retry path.
-- **BR-001:** A draft, unpublished, deleted, or otherwise unconfirmed pose must not appear in the public catalogue.
-- **BR-002:** Browsing or opening a detail must not grant ownership or management rights; Save and Try Pose behavior is owned by FEAT-008.
-- **NFR-001:** Catalogue loading, refresh, and search outcomes shall be understandable without relying on hidden state.
+- **FR-001:** Public list/detail responses use the shared `CommunityPose` and pagination DTOs.
+- **FR-002:** Title search remains labelled mock-backed until a server search contract exists.
+- **BR-001:** A draft or unverified pose must not be described as public/ready.
 
 ## Acceptance
 
-- [ ] A visitor can open the public catalogue and sees only published poses.
-- [ ] Additional results can be loaded without duplicate pose cards.
-- [ ] A title search returns only matching published poses and shows an explicit empty state when there are no matches.
-- [ ] Opening a card shows the available published metadata and does not fabricate missing values.
-- [ ] Refresh replaces the displayed catalogue with confirmed published results while retaining the existing list if refresh fails.
-- [ ] A catalogue failure offers retry and never reports an unconfirmed pose as published.
-
-**Scenario: browse published poses**  
-Given the catalogue contains published and unpublished poses  
-When a visitor opens the pose catalogue  
-Then only the published poses are shown.
-
-**Scenario: search published poses**  
-Given published poses have different titles  
-When a user enters a title query  
-Then only published poses matching that query are shown.
-
-**Scenario: inspect a published pose**  
-Given a published pose appears in the catalogue  
-When the user opens its card  
-Then the published detail and its available metadata are shown without granting management rights.
+- [ ] Public list returns only published records with pagination metadata.
+- [ ] Detail rejects missing or unpublished records.
+- [ ] Refresh/search failures offer recovery without fabricating content.
 
 ## Relationships
 
-- Specs: [[technical-architecture]], [[product-feature-inventory]], [[ui-ux-system]]
-- Features: [[FEAT-005-manage-a-pose-guide|FEAT-005]], [[FEAT-006-publish-a-pose|FEAT-006]], [[FEAT-008-use-published-poses|FEAT-008]]
+- Shared references: [CommunityPose](../../data/entities/community-pose.md), [ERD server](../../data/erd/server.md), [Community API](../../api/modules/community.md).
+- Related features: [FEAT-006](FEAT-006-publish-a-pose.md), [FEAT-008](FEAT-008-use-published-poses.md).
+### Supporting evidence
+
+- [`communityRoutes.ts`](../../../web/services/pose-extract-server/src/routes/communityRoutes.ts)
+- [`communityRoutes.test.ts`](../../../web/services/pose-extract-server/src/routes/communityRoutes.test.ts)
+- [`PosesLibraryCoordinator.kt`](../../../mobile/shared/src/commonMain/kotlin/com/aipose/data/PosesLibraryCoordinator.kt)
+- [`CommunitySearchProvider.kt`](../../../mobile/shared/src/commonMain/kotlin/com/aipose/data/CommunitySearchProvider.kt)
+- [`REP-003`](../reports/REP-003-pose-reference-library-convergence-delivery.md)

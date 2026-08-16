@@ -7,6 +7,9 @@ relationships:
   specs:
     - "[[technical-architecture]]"
     - "[[ui-ux-system]]"
+    - "[[model-entity-catalogue]]"
+    - "[[erd]]"
+    - "[[api-catalogue]]"
   decisions: []
   plans: []
   reports: []
@@ -28,6 +31,13 @@ relationships:
 ## Scope
 
 This inventory is a business-feature map. It records each Feature's observable boundary and ownership; implementation delivery, code parity, Plans, and runtime gaps are intentionally outside this inventory.
+
+The landing-level traceability map is in the [Harness README](../README.md).
+Shared model/entity, ERD, and API definitions are maintained once in
+[docs/data](../../data/README.md) and [docs/api](../../api/README.md);
+Feature pages link to those entries instead of duplicating them.
+Harness stubs remain at [model catalogue](model-entity-catalogue.md),
+[global ERD](erd.md), and [API catalogue](api-catalogue.md) for wikilink compatibility.
 
 ## Current feature inventory
 
