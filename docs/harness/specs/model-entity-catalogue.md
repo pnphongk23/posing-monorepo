@@ -39,17 +39,17 @@ relationships:
 
 # Model and Entity Catalogue — stub
 
-> **Nguồn sự thật đã chuyển sang [`docs/data/`](../../data/).**
+> **Nguồn sự thật đã chuyển sang [`docs/spec/data/`](../../spec/data/).**
 
 Tài liệu này được giữ lại để duy trì harness wikilinks. Nội dung catalogue không còn ở đây.
 
 | Tài nguyên | Đường dẫn |
 |---|---|
-| Entity index | [`docs/data/README.md`](../../data/README.md) |
-| Domain model & TBD section | [`docs/data/domain-model.md`](../../data/domain-model.md) |
-| Entity files (Photo, PersonalPose, CommunityPose, v.v.) | [`docs/data/entities/`](../../data/entities/) |
-| Enums (PoseStatus, PoseDifficulty, ApiKeyStatus, ExtractionJobStatus) | [`docs/data/enums.md`](../../data/enums.md) |
-| ERD (server, mobile, conceptual) | [`docs/data/erd/`](../../data/erd/) |
+| Entity index | [`docs/spec/data/README.md`](../../spec/data/README.md) |
+| Domain model | [`docs/spec/data/domain-model.md`](../../spec/data/domain-model.md) |
+| Entity files | [`docs/spec/data/entities/`](../../spec/data/entities/) |
+| Enums | [`docs/spec/data/enums.md`](../../spec/data/enums.md) |
+| ERD | [`docs/spec/data/erd/`](../../spec/data/erd/) |
 
 _Mapping ID cũ (tham chiếu nhanh cho harness features):_
 
@@ -68,15 +68,15 @@ _Mapping ID cũ (tham chiếu nhanh cho harness features):_
 
 | ID cũ | Entity mới |
 |---|---|
-| ME-001 | [Photo](../../data/entities/photo.md) |
-| ME-002 | [PersonalPose](../../data/entities/personal-pose.md) |
-| ME-003 | [CommunityPose](../../data/entities/community-pose.md) |
-| ME-004 | MediaAsset — TBD, xem [domain-model.md](../../data/domain-model.md) |
-| ME-005 | [ExtractionJob](../../data/entities/extraction-job.md) |
-| ME-006 | [ApiKeyCredential](../../data/entities/api-key-credential.md) |
-| ME-007 | [ProviderRequestLog](../../data/entities/provider-request-log.md) |
-| ME-008 | [PoseReferenceKey](../../data/entities/pose-reference-key.md) |
-| ME-009 | [PreparedPoseReference](../../data/entities/prepared-pose-reference.md) |
-| ME-010–ME-012 | Transport DTOs — xem [openapi.yaml](../../api/openapi.yaml) |
-| ME-013 | PoseGuide — TBD, xem [domain-model.md](../../data/domain-model.md) |
-| ME-014 | Account/SavedEntry — TBD, xem [domain-model.md](../../data/domain-model.md) |
+| ME-001 | [Photo](../../spec/data/entities/photo.md) |
+| ME-002 | [PersonalPose](../../spec/data/entities/personal-pose.md) |
+| ME-003 | [CommunityPose](../../spec/data/entities/community-pose.md) |
+| ME-004 | [MediaAsset](../../spec/data/entities/media-asset.md) |
+| ME-005 | [ExtractionJob](../../spec/data/entities/extraction-job.md) |
+| ME-006 | [ApiKeyCredential](../../spec/data/entities/api-key-credential.md) |
+| ME-007 | [ProviderRequestLog](../../spec/data/entities/provider-request-log.md) |
+| ME-008 | [PoseReferenceKey](../../spec/data/entities/pose-reference-key.md) |
+| ME-009 | [PreparedPoseReference](../../spec/data/entities/prepared-pose-reference.md) |
+| ME-010–ME-012 | Transport DTOs — xem [openapi.yaml](../../spec/api/openapi.yaml) |
+| ME-013 | [PoseGuide](../../spec/data/entities/pose-guide.md) |
+| ME-014 | [Account](../../spec/data/entities/account.md), [SavedEntry](../../spec/data/entities/saved-entry.md) |

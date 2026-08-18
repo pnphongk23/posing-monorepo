@@ -87,26 +87,26 @@ The owner requests publication or removal from public discovery.
 
 | Concern | Canonical reference | Evidence |
 | --- | --- | --- |
-| Entities | [`CommunityPose`](../../data/entities/community-pose.md), [MediaAsset TBD](../../data/domain-model.md), [PoseGuide TBD](../../data/domain-model.md) | [`schema.sql`](../../../web/services/pose-extract-server/src/db/schema.sql), [`communityStore.ts`](../../../web/services/pose-extract-server/src/db/communityStore.ts) |
-| ERD | [Server graph](../../data/erd/server.md), [unresolved asset/readiness links](../../data/erd/conceptual.md) | [`adminCommunityRoutes.ts`](../../../web/services/pose-extract-server/src/routes/adminCommunityRoutes.ts) |
-| APIs | [Public community](../../api/modules/community.md), [admin intake](../../api/modules/admin-community.md) | [`communityRoutes.ts`](../../../web/services/pose-extract-server/src/routes/communityRoutes.ts), [`adminCommunityRoutes.ts`](../../../web/services/pose-extract-server/src/routes/adminCommunityRoutes.ts) |
+| Entities | [`CommunityPose`](../../spec/data/entities/community-pose.md), [`MediaAsset`](../../spec/data/entities/media-asset.md), [`PoseGuide`](../../spec/data/entities/pose-guide.md), [`Account`](../../spec/data/entities/account.md) | [`schema.sql`](../../../web/services/pose-extract-server/src/db/schema.sql), [`communityStore.ts`](../../../web/services/pose-extract-server/src/db/communityStore.ts) |
+| ERD | [Server graph](../../spec/data/erd/server.md), [unresolved asset/readiness links](../../spec/data/erd/conceptual.md) | [`adminCommunityRoutes.ts`](../../../web/services/pose-extract-server/src/routes/adminCommunityRoutes.ts) |
+| APIs | [Public community](../../spec/api/modules/community.md), [publish](../../spec/api/modules/publish.md), [admin intake](../../spec/api/modules/admin-community.md) | [`communityRoutes.ts`](../../../web/services/pose-extract-server/src/routes/communityRoutes.ts), [`adminCommunityRoutes.ts`](../../../web/services/pose-extract-server/src/routes/adminCommunityRoutes.ts) |
 | Supporting evidence | Backend reports and feature inventory | [`REP-002`](../reports/REP-002-feature-gap-and-release-readiness-audit.md), [`REP-004`](../reports/REP-004-backend-feature-and-model-entity-scout.md) |
 
 ## Requirements
 
 - **FR-001:** Public reads use the shared `CommunityPose.status` contract.
-- **FR-002:** Owner authorization, unpublish, and readiness are TBD until implemented evidence exists.
-- **BR-001:** `published` must not be equated with a verified uploaded asset.
+- **FR-002:** Owner or Admin publishes/unpublishes through [`publish.md`](../../spec/api/modules/publish.md); readiness requires a `ready` render [`MediaAsset`](../../spec/data/entities/media-asset.md).
+- **BR-001:** `published` requires a readable ready render; queued `202` is not publication.
 
 ## Acceptance
 
 - [ ] Public list/detail return only current published records.
 - [ ] Draft/unready/unauthorized transitions are not claimed as success.
-- [ ] Unpublish/update API absence is recorded in the API catalogue.
+- [ ] Unpublish is `POST /api/guides/:id/unpublish`.
 
 ## Relationships
 
-- Shared references: [CommunityPose](../../data/entities/community-pose.md), [ERD conceptual](../../data/erd/conceptual.md), [Community API](../../api/modules/community.md).
+- Shared references: [CommunityPose](../../spec/data/entities/community-pose.md), [ERD conceptual](../../spec/data/erd/conceptual.md), [Community API](../../spec/api/modules/community.md).
 - Related features: [FEAT-003](FEAT-003-browse-and-search-published-poses.md), [FEAT-005](FEAT-005-manage-a-pose-guide.md), [FEAT-008](FEAT-008-use-published-poses.md).
 ### Supporting evidence
 

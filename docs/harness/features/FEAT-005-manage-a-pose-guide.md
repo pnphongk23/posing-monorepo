@@ -1,10 +1,6 @@
 ---
 schema_version: 1
-type: feature
-id: FEAT-005
 title: Manage a Pose Guide
-status: draft
-created: 2026-08-09
 relationships:
   specs:
     - "[[product-feature-inventory]]"
@@ -14,7 +10,8 @@ relationships:
     - "[[erd]]"
     - "[[api-catalogue]]"
   decisions: []
-  plans: []
+  plans:
+    - "[[260816-2240-higgsfield-cli-parallel-extract-provider/plan|260816-2240]]"
   reports:
     - "[[REP-002-feature-gap-and-release-readiness-audit|REP-002]]"
     - "[[REP-004-backend-feature-and-model-entity-scout|REP-004]]"
@@ -29,6 +26,12 @@ relationships:
     - web/services/pose-extract-server/src/routes/adminCommunityRoutes.ts
     - web/services/pose-extract-server/src/routes/jobStatusRoutes.ts
     - web/services/pose-extract-server/src/routes/adminRoutes.ts
+type: feature
+id: FEAT-005
+status: approved
+created: 2026-08-09
+approved: 2026-08-17
+approved_by: Product Authority
 ---
 
 # FEAT-005: Manage a Pose Guide
@@ -82,6 +85,10 @@ The owner or operator submits, inspects, retries, or manages a guide.
 
 - **Observed:** Server `CommunityPose`, `ExtractionJob`, API-key records, admin
   community intake/listing, worker processing, job status, and key CRUD/status/reset.
+- **Planned:** [Plan 260816-2240](../../plans/260816-2240-higgsfield-cli-parallel-extract-provider/plan.md)
+  routes the same `ExtractionJob` worker through `PoseExtractorProvider`; community
+  intake enqueue shape (`202` + `jobId`) is unchanged; engine follows global FEAT-009
+  setting at claim time.
 - **Not observed:** A dedicated pose-guide owner/version/notes model, guide CRUD,
   re-extraction/revert routes, durable job-to-pose link, or asset readiness state.
 - **Primary blocker:** Worker stores generated base64 on `ExtractionJob` only;
@@ -94,9 +101,9 @@ The owner or operator submits, inspects, retries, or manages a guide.
 
 | Concern | Canonical reference | Evidence |
 | --- | --- | --- |
-| Entities | [`CommunityPose`](../../data/entities/community-pose.md), [`ExtractionJob`](../../data/entities/extraction-job.md), [`ApiKeyCredential`](../../data/entities/api-key-credential.md), [PoseGuide TBD](../../data/domain-model.md) | [`communityStore.ts`](../../../web/services/pose-extract-server/src/db/communityStore.ts), [`schema.sql`](../../../web/services/pose-extract-server/src/db/schema.sql) |
-| ERD | [Server physical graph](../../data/erd/server.md), [unresolved cross-feature links](../../data/erd/conceptual.md) | [`job-processor.ts`](../../../web/services/pose-extract-server/src/worker/job-processor.ts) |
-| APIs | [Admin keys](../../api/modules/admin-keys.md), [admin community](../../api/modules/admin-community.md), [admin jobs](../../api/modules/admin-jobs.md) | [`adminCommunityRoutes.ts`](../../../web/services/pose-extract-server/src/routes/adminCommunityRoutes.ts), [`jobStatusRoutes.ts`](../../../web/services/pose-extract-server/src/routes/jobStatusRoutes.ts) |
+| Entities | [`PoseGuide`](../../spec/data/entities/pose-guide.md), [`CommunityPose`](../../spec/data/entities/community-pose.md), [`ExtractionJob`](../../spec/data/entities/extraction-job.md), [`MediaAsset`](../../spec/data/entities/media-asset.md), [`ApiKeyCredential`](../../spec/data/entities/api-key-credential.md) | [`communityStore.ts`](../../../web/services/pose-extract-server/src/db/communityStore.ts), [`schema.sql`](../../../web/services/pose-extract-server/src/db/schema.sql) |
+| ERD | [Server physical graph](../../spec/data/erd/server.md), [unresolved cross-feature links](../../spec/data/erd/conceptual.md) | [`job-processor.ts`](../../../web/services/pose-extract-server/src/worker/job-processor.ts) |
+| APIs | [Guides](../../spec/api/modules/guides.md), [admin keys](../../spec/api/modules/admin-keys.md), [admin community](../../spec/api/modules/admin-community.md), [admin jobs](../../spec/api/modules/admin-jobs.md) | [`adminCommunityRoutes.ts`](../../../web/services/pose-extract-server/src/routes/adminCommunityRoutes.ts), [`jobStatusRoutes.ts`](../../../web/services/pose-extract-server/src/routes/jobStatusRoutes.ts) |
 | Supporting evidence | Backend scout and readiness audit | [`REP-004`](../reports/REP-004-backend-feature-and-model-entity-scout.md), [`REP-002`](../reports/REP-002-feature-gap-and-release-readiness-audit.md) |
 
 ## Requirements
@@ -109,11 +116,11 @@ The owner or operator submits, inspects, retries, or manages a guide.
 
 - [ ] Submission returns one queued job and community record shape.
 - [ ] Job status distinguishes queued, processing, succeeded, and failed.
-- [ ] Missing owner/version/asset links remain explicitly TBD.
+- [ ] Owner, media assets, and job-to-guide links follow [`PoseGuide`](../../spec/data/entities/pose-guide.md).
 
 ## Relationships
 
-- Shared references: [CommunityPose](../../data/entities/community-pose.md), [ERD conceptual](../../data/erd/conceptual.md), [Admin API](../../api/README.md).
+- Shared references: [CommunityPose](../../spec/data/entities/community-pose.md), [ERD conceptual](../../spec/data/erd/conceptual.md), [Admin API](../../spec/api/README.md).
 - Related features: [FEAT-004](FEAT-004-extract-reusable-pose-images.md), [FEAT-006](FEAT-006-publish-a-pose.md).
 ### Supporting evidence
 

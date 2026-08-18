@@ -36,7 +36,7 @@ const POSES_FIXTURES = [
     visibility: "published",
     metadata: {
       author: "@posemaster",
-      context: "Published mock result",
+      context: "Published",
       difficulty: "Intermediate",
       tries: "1.2K",
       saves: "456"
@@ -87,7 +87,7 @@ const POSES_FIXTURES = [
     visibility: "published",
     metadata: {
       author: null,
-      context: "Published mock result",
+      context: "Published",
       difficulty: null,
       tries: "856",
       saves: null
@@ -138,7 +138,7 @@ const POSES_FIXTURES = [
     visibility: "published",
     metadata: {
       author: "@community_core",
-      context: "Published mock result",
+      context: "Published",
       difficulty: "Beginner",
       tries: null,
       saves: "423"

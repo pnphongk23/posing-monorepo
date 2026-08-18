@@ -36,7 +36,7 @@ relationships:
 ## Introduction
 
 The Photographer captures a still image through the mobile Camera surface and
-stores one local [`Photo`](../../data/entities/photo.md)
+stores one local [`Photo`](../../spec/data/entities/photo.md)
 record. Camera controls, permission outcomes, capture feedback, and the handoff
 to Gallery belong here. Pose extraction is [FEAT-004](FEAT-004-extract-reusable-pose-images.md);
 gallery management is [FEAT-002](FEAT-002-manage-a-local-photo-gallery.md).
@@ -92,8 +92,8 @@ The Photographer presses the shutter.
 
 | Concern | Canonical reference | Evidence |
 | --- | --- | --- |
-| Entity | [`Photo`](../../data/entities/photo.md) | [`Photo.sq`](../../../mobile/shared/src/commonMain/sqldelight/com/aipose/Photo.sq), [`PhotoRepository.kt`](../../../mobile/shared/src/commonMain/kotlin/com/aipose/data/PhotoRepository.kt) |
-| ERD | [Mobile local physical graph](../../data/erd/mobile.md) | [`Photo.sq`](../../../mobile/shared/src/commonMain/sqldelight/com/aipose/Photo.sq) optional `poseId` FK |
+| Entity | [`Photo`](../../spec/data/entities/photo.md) | [`Photo.sq`](../../../mobile/shared/src/commonMain/sqldelight/com/aipose/Photo.sq), [`PhotoRepository.kt`](../../../mobile/shared/src/commonMain/kotlin/com/aipose/data/PhotoRepository.kt) |
+| ERD | [Mobile local physical graph](../../spec/data/erd/mobile.md) | [`Photo.sq`](../../../mobile/shared/src/commonMain/sqldelight/com/aipose/Photo.sq) optional `poseId` FK |
 | API | None; capture is local/offline | No mobile capture HTTP route found |
 | Supporting UI | Camera contract and prototype | [`CameraScreen.kt`](../../../mobile/composeApp/src/commonMain/kotlin/com/aipose/camera/CameraScreen.kt), [`camera-live.html`](../../prototype/screens/camera-live.html), [`technical-architecture`](../specs/technical-architecture.md#mobile-capture-and-local-gallery) |
 
@@ -111,7 +111,7 @@ The Photographer presses the shutter.
 
 ## Relationships
 
-- Shared references: [Photo](../../data/entities/photo.md), [ERD mobile](../../data/erd/mobile.md), [API](../../api/README.md).
+- Shared references: [Photo](../../spec/data/entities/photo.md), [ERD mobile](../../spec/data/erd/mobile.md), [API](../../spec/api/README.md).
 - Related features: [FEAT-002](FEAT-002-manage-a-local-photo-gallery.md), [FEAT-004](FEAT-004-extract-reusable-pose-images.md).
 ### Supporting evidence
 

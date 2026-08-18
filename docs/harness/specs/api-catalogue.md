@@ -34,7 +34,7 @@ relationships:
 
 # API Catalogue — stub
 
-> **Nguồn sự thật đã chuyển sang [`docs/api/`](../../api/).**
+> **Nguồn sự thật đã chuyển sang [`docs/spec/api/`](../../spec/api/).**
 
 Tài liệu này được giữ lại để duy trì harness wikilinks. API catalogue không còn ở đây.
 
@@ -51,31 +51,37 @@ Tài liệu này được giữ lại để duy trì harness wikilinks. API cata
 
 | Tài nguyên | Đường dẫn |
 |---|---|
-| API index | [`docs/api/README.md`](../../api/README.md) |
-| OpenAPI 3.1 contract (paths, schemas, status codes) | [`docs/api/openapi.yaml`](../../api/openapi.yaml) |
-| Conventions (URL, auth, pagination, errors) | [`docs/api/conventions.md`](../../api/conventions.md) |
-| Health | [`docs/api/modules/health.md`](../../api/modules/health.md) |
-| Extract Pose | [`docs/api/modules/extract-pose.md`](../../api/modules/extract-pose.md) |
-| Community (public) | [`docs/api/modules/community.md`](../../api/modules/community.md) |
-| Admin Keys | [`docs/api/modules/admin-keys.md`](../../api/modules/admin-keys.md) |
-| Admin Community | [`docs/api/modules/admin-community.md`](../../api/modules/admin-community.md) |
-| Admin Jobs | [`docs/api/modules/admin-jobs.md`](../../api/modules/admin-jobs.md) |
+| API index | [`docs/spec/api/README.md`](../../spec/api/README.md) |
+| OpenAPI 3.1 contract (paths, schemas, status codes) | [`docs/spec/api/openapi.yaml`](../../spec/api/openapi.yaml) |
+| Conventions (URL, auth, pagination, errors) | [`docs/spec/api/conventions.md`](../../spec/api/conventions.md) |
+| Health | [`docs/spec/api/modules/health.md`](../../spec/api/modules/health.md) |
+| Extract Pose | [`docs/spec/api/modules/extract-pose.md`](../../spec/api/modules/extract-pose.md) |
+| Community (public) | [`docs/spec/api/modules/community.md`](../../spec/api/modules/community.md) |
+| Pose Guides | [`docs/spec/api/modules/guides.md`](../../spec/api/modules/guides.md) |
+| Publish | [`docs/spec/api/modules/publish.md`](../../spec/api/modules/publish.md) |
+| Saved | [`docs/spec/api/modules/saved.md`](../../spec/api/modules/saved.md) |
+| Admin Keys | [`docs/spec/api/modules/admin-keys.md`](../../spec/api/modules/admin-keys.md) |
+| Admin Community | [`docs/spec/api/modules/admin-community.md`](../../spec/api/modules/admin-community.md) |
+| Admin Jobs | [`docs/spec/api/modules/admin-jobs.md`](../../spec/api/modules/admin-jobs.md) |
 
 _Mapping ID cũ (tham chiếu nhanh cho harness features):_
 
 | ID cũ | Route | Module |
 |---|---|---|
-| API-001 | `GET /api/health` | [health.md](../../api/modules/health.md) |
-| API-003 | `POST /api/extract-pose` | [extract-pose.md](../../api/modules/extract-pose.md) |
-| API-004 | `GET /api/admin/keys` | [admin-keys.md](../../api/modules/admin-keys.md) |
-| API-005 | `POST /api/admin/keys` | [admin-keys.md](../../api/modules/admin-keys.md) |
-| API-006 | `PATCH /api/admin/keys/:id` | [admin-keys.md](../../api/modules/admin-keys.md) |
-| API-007 | `DELETE /api/admin/keys/:id`, `POST /api/admin/keys/reset` | [admin-keys.md](../../api/modules/admin-keys.md) |
-| API-008 | `GET /api/community/poses` | [community.md](../../api/modules/community.md) |
-| API-009 | `GET /api/community/poses/:id` | [community.md](../../api/modules/community.md) |
-| API-010 | `GET /api/admin/community/poses` | [admin-community.md](../../api/modules/admin-community.md) |
-| API-011 | `POST /api/admin/community/poses/upload-url` | [admin-community.md](../../api/modules/admin-community.md) |
-| API-012 | `POST /api/admin/community/poses` | [admin-community.md](../../api/modules/admin-community.md) |
-| API-013 | `GET /api/admin/jobs/:jobId` | [admin-jobs.md](../../api/modules/admin-jobs.md) |
-| API-015–API-019 | Next.js proxies | [conventions.md](../../api/conventions.md) |
-| API-020 | Legacy `POST /api/extract` | [conventions.md](../../api/conventions.md) |
+| API-001 | `GET /api/health` | [health.md](../../spec/api/modules/health.md) |
+| API-003 | `POST /api/extract-pose` | [extract-pose.md](../../spec/api/modules/extract-pose.md) |
+| API-004 | `GET /api/admin/keys` | [admin-keys.md](../../spec/api/modules/admin-keys.md) |
+| API-005 | `POST /api/admin/keys` | [admin-keys.md](../../spec/api/modules/admin-keys.md) |
+| API-006 | `PATCH /api/admin/keys/:id` | [admin-keys.md](../../spec/api/modules/admin-keys.md) |
+| API-007 | `DELETE /api/admin/keys/:id`, `POST /api/admin/keys/reset` | [admin-keys.md](../../spec/api/modules/admin-keys.md) |
+| API-008 | `GET /api/community/poses` | [community.md](../../spec/api/modules/community.md) |
+| API-009 | `GET /api/community/poses/:id` | [community.md](../../spec/api/modules/community.md) |
+| API-010 | `GET /api/admin/community/poses` | [admin-community.md](../../spec/api/modules/admin-community.md) |
+| API-011 | `POST /api/admin/community/poses/upload-url` | [admin-community.md](../../spec/api/modules/admin-community.md) |
+| API-012 | `POST /api/admin/community/poses` | [admin-community.md](../../spec/api/modules/admin-community.md) |
+| API-013 | `GET /api/admin/jobs/:jobId` | [admin-jobs.md](../../spec/api/modules/admin-jobs.md) |
+| API-015–API-019 | Next.js proxies | [conventions.md](../../spec/api/conventions.md) |
+| API-020 | Legacy `POST /api/extract` | [conventions.md](../../spec/api/conventions.md) |
+| API-021 | `/api/guides` | [guides.md](../../spec/api/modules/guides.md) |
+| API-022 | `/api/guides/:id/publish`, `/unpublish` | [publish.md](../../spec/api/modules/publish.md) |
+| API-023 | `/api/me/saved` | [saved.md](../../spec/api/modules/saved.md) |

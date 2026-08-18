@@ -30,7 +30,7 @@ relationships:
 
 # Global ERD — stub
 
-> **Nguồn sự thật đã chuyển sang [`docs/data/erd/`](../../data/erd/).**
+> **Nguồn sự thật đã chuyển sang [`docs/spec/data/erd/`](../../spec/data/erd/).**
 
 Tài liệu này được giữ lại để duy trì harness wikilinks. ERD diagrams không còn ở đây.
 
@@ -41,6 +41,6 @@ Tài liệu này được giữ lại để duy trì harness wikilinks. ERD diag
 
 | Tài nguyên | Đường dẫn |
 |---|---|
-| Server physical graph | [`docs/data/erd/server.md`](../../data/erd/server.md) |
-| Mobile local physical graph | [`docs/data/erd/mobile.md`](../../data/erd/mobile.md) |
-| Conceptual overlay & unresolved links | [`docs/data/erd/conceptual.md`](../../data/erd/conceptual.md) |
+| Server physical graph | [`docs/spec/data/erd/server.md`](../../spec/data/erd/server.md) |
+| Mobile local physical graph | [`docs/spec/data/erd/mobile.md`](../../spec/data/erd/mobile.md) |
+| Conceptual overlay | [`docs/spec/data/erd/conceptual.md`](../../spec/data/erd/conceptual.md) |

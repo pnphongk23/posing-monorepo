@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Pose</title>
+  <link rel="stylesheet" href="../styles/reset.css">
+  <link rel="stylesheet" href="../styles/base.css">
+  <link rel="stylesheet" href="../styles/utilities.css">
+  <link rel="stylesheet" href="../styles/components.css">
+</head>
+<body>
+  <div class="nb-phone">
+    <div class="nb-phone__header">
+      <span class="nb-phone__time">9:41</span>
+      <div class="nb-phone__status-icons">
+        <svg class="nb-phone__icon" fill="currentColor" viewBox="0 0 24 24">
+          <path d="M12 21a2 2 0 1 1 0-4 2 2 0 0 1 0 4zm-4.95-4.95a7 7 0 0 1 9.9 0l-1.42 1.42a5 5 0 0 0-7.06 0L7.05 16.05zm-2.83-2.83a11 11 0 0 1 15.56 0l-1.42 1.42a9 9 0 0 0-12.72 0L4.22 13.22z"/>
+        </svg>
+        <svg class="nb-phone__icon" fill="currentColor" viewBox="0 0 24 24">
+          <path d="M2 22h20V2zM20 20h-2V9h2v11zm-4 0h-2V12h2v8zm-4 0h-2V15h2v5z"/>
+        </svg>
+        <svg class="nb-phone__icon" fill="currentColor" viewBox="0 0 24 24" style="width: 20px;">
+          <path d="M17 5H3a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2zm1 9h-2V10h2v4z"/>
+        </svg>
+      </div>
+    </div>
+
+    <main class="nb-phone__content" id="gallery-detail-screen">
+      <nav class="nb-nav-bar" aria-label="Photo actions">
+        <div class="nb-nav-bar__left">
+          <a href="gallery.html" class="nb-btn nb-btn--square nb-btn--white" aria-label="Back to gallery">
+            <svg style="width: 20px; height: 20px;"><use href="#icon-back"></use></svg>
+          </a>
+        </div>
+        <h1 class="sr-only" id="gallery-detail-title">Photo</h1>
+        <div class="nb-nav-bar__right nb-nav-bar__right--actions" id="gallery-detail-actions">
+          <button type="button" id="gallery-save-btn" class="nb-btn nb-btn--square nb-btn--white" aria-label="Save to Photos">
+            <svg aria-hidden="true"><use href="#icon-share"></use></svg>
+          </button>
+          <button type="button" id="gallery-delete-btn" class="nb-btn nb-btn--square nb-btn--white" data-open-modal="delete-photo-modal" aria-label="Delete photo">
+            <svg aria-hidden="true"><use href="#icon-trash"></use></svg>
+          </button>
+        </div>
+      </nav>
+
+      <div id="gallery-unavailable-state" class="nb-state-message nb-state-message--error" role="alert" hidden>
+        <strong>Photo unavailable</strong>
+        <p>This photo can’t be opened. Return to Gallery to see your current photos.</p>
+        <a href="gallery.html" class="nb-btn nb-btn--white">Return to gallery</a>
+      </div>
+
+      <div id="gallery-detail-content" hidden>
+        <div id="gallery-detail-photo" class="nb-card nb-card--photo-detail" role="img" aria-label="Photo"></div>
+        <p id="gallery-detail-notice" class="nb-inline-notice" role="status" aria-live="polite" hidden></p>
+      </div>
+    </main>
+
+    <div id="delete-photo-modal" class="nb-modal-overlay" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="delete-photo-title">
+      <div class="nb-modal">
+        <h2 id="delete-photo-title" class="u-font-bold u-text-lg">Delete this photo?</h2>
+        <p class="u-text-sm u-text-muted u-mb-md">This photo will be permanently deleted.</p>
+        <div class="u-d-flex u-gap-sm u-justify-end">
+          <button type="button" class="nb-btn nb-btn--white" data-close-modal>Cancel</button>
+          <button type="button" id="confirm-delete-photo-btn" class="nb-btn nb-btn--pink">Delete</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="nb-phone__footer">
+      <div class="nb-phone__home-indicator"></div>
+    </div>
+  </div>
+
+  <script src="../scripts/icons.js"></script>
+  <script src="../scripts/fixtures.js"></script>
+  <script src="../scripts/toggle.js"></script>
+  <script src="../scripts/tabs.js"></script>
+  <script src="../scripts/progress.js"></script>
+  <script src="../scripts/modal.js"></script>
+  <script src="../scripts/view-toggle.js"></script>
+  <script src="../scripts/button-press.js"></script>
+  <script src="../scripts/app.js"></script>
+</body>
+</html>

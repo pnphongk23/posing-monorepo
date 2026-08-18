@@ -133,6 +133,11 @@
   z-index: var(--nb-z-index-overlay);
 }
 
+.nb-camera-viewport__zoom-btn:active,
+.nb-camera-viewport__zoom-btn.is-active {
+  transform: translate(calc(-50% + var(--nb-shadow-offset)), var(--nb-shadow-offset));
+}
+
 .nb-camera-viewport__profile-btn {
   position: absolute;
   bottom: var(--nb-space-md);
@@ -145,9 +150,9 @@
   width: 36px;
   height: 36px;
   padding: 0;
-  pointer-events: none;
   font-size: var(--nb-font-size-xs);
   min-height: 36px;
+  cursor: pointer;
 }
 
 .nb-shutter-bar {

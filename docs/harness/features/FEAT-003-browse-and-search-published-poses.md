@@ -1,10 +1,6 @@
 ---
 schema_version: 1
-type: feature
-id: FEAT-003
 title: Browse and Search Published Poses
-status: proposed
-created: 2026-08-09
 relationships:
   specs:
     - "[[product-feature-inventory]]"
@@ -27,6 +23,12 @@ relationships:
     - mobile/composeApp/src/commonMain/kotlin/com/aipose/ui/screens/poses
     - mobile/shared/src/commonMain/kotlin/com/aipose/data/remote/PoseApiService.kt
     - web/services/pose-extract-server/src/routes/communityRoutes.ts
+type: feature
+id: FEAT-003
+status: approved
+created: 2026-08-09
+approved: 2026-08-18
+approved_by: Repository Maintainer
 ---
 
 # FEAT-003: Browse and Search Published Poses
@@ -90,15 +92,15 @@ The user opens the catalogue, refreshes, searches, or opens a pose card.
 
 | Concern | Canonical reference | Evidence |
 | --- | --- | --- |
-| Entity/DTO | [`CommunityPose`](../../data/entities/community-pose.md), pagination envelope in [openapi.yaml](../../api/openapi.yaml) | [`PoseApiService.kt`](../../../mobile/shared/src/commonMain/kotlin/com/aipose/data/remote/PoseApiService.kt) |
-| ERD | [Server graph](../../data/erd/server.md) plus [unresolved asset links](../../data/erd/conceptual.md) | [`schema.sql`](../../../web/services/pose-extract-server/src/db/schema.sql) |
-| APIs | [Community list/detail](../../api/modules/community.md) | [`communityRoutes.ts`](../../../web/services/pose-extract-server/src/routes/communityRoutes.ts), [`PoseApiService.kt`](../../../mobile/shared/src/commonMain/kotlin/com/aipose/data/remote/PoseApiService.kt#L114) |
+| Entity/DTO | [`CommunityPose`](../../spec/data/entities/community-pose.md), pagination envelope in [openapi.yaml](../../spec/api/openapi.yaml) | [`PoseApiService.kt`](../../../mobile/shared/src/commonMain/kotlin/com/aipose/data/remote/PoseApiService.kt) |
+| ERD | [Server graph](../../spec/data/erd/server.md) plus [unresolved asset links](../../spec/data/erd/conceptual.md) | [`schema.sql`](../../../web/services/pose-extract-server/src/db/schema.sql) |
+| APIs | [Community list/detail](../../spec/api/modules/community.md) | [`communityRoutes.ts`](../../../web/services/pose-extract-server/src/routes/communityRoutes.ts), [`PoseApiService.kt`](../../../mobile/shared/src/commonMain/kotlin/com/aipose/data/remote/PoseApiService.kt#L114) |
 | Supporting UI/tests | Library, search, detail, coordinator | [`PosesScreen.kt`](../../../mobile/composeApp/src/commonMain/kotlin/com/aipose/ui/screens/poses/PosesScreen.kt), [`SearchScreen.kt`](../../../mobile/composeApp/src/commonMain/kotlin/com/aipose/ui/screens/poses/SearchScreen.kt), [`REP-003`](../reports/REP-003-pose-reference-library-convergence-delivery.md) |
 
 ## Requirements
 
 - **FR-001:** Public list/detail responses use the shared `CommunityPose` and pagination DTOs.
-- **FR-002:** Title search remains labelled mock-backed until a server search contract exists.
+- **FR-002:** Title search uses query `q` on `GET /api/community/poses` and only matches published records.
 - **BR-001:** A draft or unverified pose must not be described as public/ready.
 
 ## Acceptance
@@ -109,7 +111,7 @@ The user opens the catalogue, refreshes, searches, or opens a pose card.
 
 ## Relationships
 
-- Shared references: [CommunityPose](../../data/entities/community-pose.md), [ERD server](../../data/erd/server.md), [Community API](../../api/modules/community.md).
+- Shared references: [CommunityPose](../../spec/data/entities/community-pose.md), [ERD server](../../spec/data/erd/server.md), [Community API](../../spec/api/modules/community.md).
 - Related features: [FEAT-006](FEAT-006-publish-a-pose.md), [FEAT-008](FEAT-008-use-published-poses.md).
 ### Supporting evidence
 

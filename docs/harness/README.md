@@ -4,37 +4,40 @@
 
 This directory is one cross-feature documentation set. Start with the [generated
 Harness index](index.md), then use the shared references below; feature pages own
-behavior and evidence, while entity, ERD, and API definitions live only in the
-central catalogues.
+behavior and evidence, while entity, ERD, and API definitions live only in
+[docs/spec](../spec/README.md).
 
 ### Canonical shared references
 
-- [Data documentation](../data/README.md) — entity semantics, fields, business rules, ERD, enums. Single source of truth cho mô hình dữ liệu.
-  - [Entities](../data/entities/) — entity files (Photo, PersonalPose, CommunityPose, ExtractionJob, ApiKeyCredential, ProviderRequestLog, PoseReferenceKey, PreparedPoseReference)
-  - [ERD](../data/erd/) — server physical graph, mobile local graph, conceptual overlay
-  - [Enums](../data/enums.md) — PoseStatus, PoseDifficulty, ApiKeyStatus, ExtractionJobStatus
-  - [Domain model](../data/domain-model.md) — TBD concepts (MediaAsset, PoseGuide, Account/SavedEntry)
-- [API documentation](../api/README.md) — Express server contract. Single source of truth cho API.
-  - [OpenAPI 3.1](../api/openapi.yaml) — paths, schemas, status codes
-  - [Conventions](../api/conventions.md) — URL, auth, pagination, errors, Next.js proxies, legacy route
-  - [API modules](../api/modules/) — per-domain business rules và error docs
-- [Model and entity catalogue](specs/model-entity-catalogue.md) _(stub — redirects to docs/data/)_
-- [Global ERD](specs/erd.md) _(stub — redirects to docs/data/erd/)_
-- [API catalogue](specs/api-catalogue.md) _(stub — redirects to docs/api/)_
+- [Product spec](../spec/README.md) — landing cho data + API.
+
+- [Data documentation](../spec/data/README.md) — entity semantics, fields, business rules, ERD, enums. Single source of truth cho mô hình dữ liệu product.
+  - [Entities](../spec/data/entities/) — Photo, PersonalPose, PoseGuide, CommunityPose, MediaAsset, ExtractionJob, Account, SavedEntry, và entity vận hành/conceptual
+  - [ERD](../spec/data/erd/) — server, mobile, conceptual overlay
+  - [Enums](../spec/data/enums.md) — PoseStatus, PoseDifficulty, MediaAssetRole, MediaAssetReadiness, ExtractionJobStatus, ApiKeyStatus
+  - [Domain model](../spec/data/domain-model.md) — ranh giới layer và Feature ownership
+- [API documentation](../spec/api/README.md) — hợp đồng API product. Single source of truth cho API.
+  - [OpenAPI 3.1](../spec/api/openapi.yaml) — paths, schemas, status codes
+  - [Conventions](../spec/api/conventions.md) — URL, auth, pagination, errors, proxies
+  - [API modules](../spec/api/modules/) — community, guides, publish, saved, extract, admin
+- [Model and entity catalogue](specs/model-entity-catalogue.md) _(stub — redirects to docs/spec/data/)_
+- [Global ERD](specs/erd.md) _(stub — redirects to docs/spec/data/erd/)_
+- [API catalogue](specs/api-catalogue.md) _(stub — redirects to docs/spec/api/)_
 - [Product feature inventory](specs/product-feature-inventory.md) — business boundary and ownership summary.
 
 ### Feature inventory and traceability
 
 | Feature | Lifecycle status | Current evidence | Shared model / ERD / API / evidence |
 | --- | --- | --- | --- |
-| [FEAT-001 Capture a Photo on Mobile](features/FEAT-001-capture-a-photo-on-mobile.md) | Approved | Partial iOS implementation; Android parity and atomic persistence gaps remain | [Photo](../data/entities/photo.md), [ERD mobile](../data/erd/mobile.md), no feature API; [code/prototype evidence](features/FEAT-001-capture-a-photo-on-mobile.md#supporting-evidence) |
-| [FEAT-002 Manage a Local Photo Gallery](features/FEAT-002-manage-a-local-photo-gallery.md) | Draft | Local listing/favorite/detail paths observed; export and full file deletion are incomplete | [Photo](../data/entities/photo.md), [PersonalPose](../data/entities/personal-pose.md), [ERD mobile](../data/erd/mobile.md), no feature API; [code evidence](features/FEAT-002-manage-a-local-photo-gallery.md#supporting-evidence) |
-| [FEAT-003 Browse and Search Published Poses](features/FEAT-003-browse-and-search-published-poses.md) | Proposed | Public list/detail API and mobile DTO/client observed; title search is mock-backed and publication readiness is unproven | [CommunityPose](../data/entities/community-pose.md), [ERD server](../data/erd/server.md), [Community API](../api/modules/community.md), [code/reports](features/FEAT-003-browse-and-search-published-poses.md#supporting-evidence) |
-| [FEAT-004 Extract Reusable Pose Images](features/FEAT-004-extract-reusable-pose-images.md) | Draft | Direct synchronous extraction and mobile entry point observed; contract, abuse, and retention gaps remain | [ExtractionJob](../data/entities/extraction-job.md), [ERD server](../data/erd/server.md), [Extract API](../api/modules/extract-pose.md), [code/report evidence](features/FEAT-004-extract-reusable-pose-images.md#supporting-evidence) |
-| [FEAT-005 Manage a Pose Guide](features/FEAT-005-manage-a-pose-guide.md) | Draft | Server job, community store, worker, and admin key routes observed; guide ownership/versioning and job linkage are unresolved | [CommunityPose](../data/entities/community-pose.md), [ERD conceptual](../data/erd/conceptual.md), [Admin API](../api/README.md), [backend report/code evidence](features/FEAT-005-manage-a-pose-guide.md#supporting-evidence) |
-| [FEAT-006 Publish a Pose](features/FEAT-006-publish-a-pose.md) | Draft | `draft`/`published` fields and public filtering exist; owner authorization, unpublish, and ready-asset transition are not implemented | [CommunityPose](../data/entities/community-pose.md), [ERD conceptual](../data/erd/conceptual.md), [Admin community API](../api/modules/admin-community.md), [feature/report evidence](features/FEAT-006-publish-a-pose.md#supporting-evidence) |
-| [FEAT-007 Operate Pose Content from Admin Web](features/FEAT-007-operate-pose-content-from-admin-web.md) | Draft | Admin UI and server-side proxies are implemented for keys/community intake; truthful job polling and publication operations are missing | [ExtractionJob](../data/entities/extraction-job.md), [ERD server](../data/erd/server.md), [proxies](../api/conventions.md), [admin/code evidence](features/FEAT-007-operate-pose-content-from-admin-web.md#supporting-evidence) |
-| [FEAT-008 Use Published Poses](features/FEAT-008-use-published-poses.md) | Draft | Typed source-qualified Try Pose preparation is observed; account, Saved, persistence across relaunch, and overlay completion are unresolved | [PoseReferenceKey](../data/entities/pose-reference-key.md), [ERD conceptual](../data/erd/conceptual.md), no Save/Try API found; [mobile evidence](features/FEAT-008-use-published-poses.md#supporting-evidence) |
+| [FEAT-001 Capture a Photo on Mobile](features/FEAT-001-capture-a-photo-on-mobile.md) | Approved | Partial iOS implementation; Android parity and atomic persistence gaps remain | [Photo](../spec/data/entities/photo.md), [ERD mobile](../spec/data/erd/mobile.md), no feature API; [code/prototype evidence](features/FEAT-001-capture-a-photo-on-mobile.md#supporting-evidence) |
+| [FEAT-002 Manage a Local Photo Gallery](features/FEAT-002-manage-a-local-photo-gallery.md) | Draft | Local listing/favorite/detail paths observed; export and full file deletion are incomplete | [Photo](../spec/data/entities/photo.md), [PersonalPose](../spec/data/entities/personal-pose.md), [ERD mobile](../spec/data/erd/mobile.md), no feature API; [code evidence](features/FEAT-002-manage-a-local-photo-gallery.md#supporting-evidence) |
+| [FEAT-003 Browse and Search Published Poses](features/FEAT-003-browse-and-search-published-poses.md) | Proposed | Public list/detail API and mobile DTO/client observed; title search is mock-backed and publication readiness is unproven | [CommunityPose](../spec/data/entities/community-pose.md), [ERD server](../spec/data/erd/server.md), [Community API](../spec/api/modules/community.md), [code/reports](features/FEAT-003-browse-and-search-published-poses.md#supporting-evidence) |
+| [FEAT-004 Extract Reusable Pose Images](features/FEAT-004-extract-reusable-pose-images.md) | Draft | Direct synchronous extraction and mobile entry point observed; contract, abuse, and retention gaps remain | [ExtractionJob](../spec/data/entities/extraction-job.md), [ERD server](../spec/data/erd/server.md), [Extract API](../spec/api/modules/extract-pose.md), [code/report evidence](features/FEAT-004-extract-reusable-pose-images.md#supporting-evidence) |
+| [FEAT-005 Manage a Pose Guide](features/FEAT-005-manage-a-pose-guide.md) | Draft | Server job, community store, worker, and admin key routes observed; guide ownership/versioning and job linkage are unresolved | [CommunityPose](../spec/data/entities/community-pose.md), [ERD conceptual](../spec/data/erd/conceptual.md), [Admin API](../spec/api/README.md), [backend report/code evidence](features/FEAT-005-manage-a-pose-guide.md#supporting-evidence) |
+| [FEAT-006 Publish a Pose](features/FEAT-006-publish-a-pose.md) | Draft | `draft`/`published` fields and public filtering exist; owner authorization, unpublish, and ready-asset transition are not implemented | [CommunityPose](../spec/data/entities/community-pose.md), [ERD conceptual](../spec/data/erd/conceptual.md), [Admin community API](../spec/api/modules/admin-community.md), [feature/report evidence](features/FEAT-006-publish-a-pose.md#supporting-evidence) |
+| [FEAT-007 Operate Pose Content from Admin Web](features/FEAT-007-operate-pose-content-from-admin-web.md) | Draft | Admin UI and server-side proxies are implemented for keys/community intake; truthful job polling and publication operations are missing | [ExtractionJob](../spec/data/entities/extraction-job.md), [ERD server](../spec/data/erd/server.md), [proxies](../spec/api/conventions.md), [admin/code evidence](features/FEAT-007-operate-pose-content-from-admin-web.md#supporting-evidence) |
+| [FEAT-008 Use Published Poses](features/FEAT-008-use-published-poses.md) | Draft | Typed source-qualified Try Pose preparation is observed; account, Saved, persistence across relaunch, and overlay completion are unresolved | [PoseReferenceKey](../spec/data/entities/pose-reference-key.md), [ERD conceptual](../spec/data/erd/conceptual.md), no Save/Try API found; [mobile evidence](features/FEAT-008-use-published-poses.md#supporting-evidence) |
+| [FEAT-009 Configure Extraction Provider](features/FEAT-009-configure-extraction-provider.md) | Approved | Admin provider configuration policy approved (2026-08-16 Product Authority); DEC-001 approved (2026-08-17); no extraction-provider settings in admin routes or Admin Keys UI observed today | [ExtractionJob](../spec/data/entities/extraction-job.md), [ERD server](../spec/data/erd/server.md), [Admin API](../spec/api/README.md), [feature evidence](features/FEAT-009-configure-extraction-provider.md#current-evidence) |
 
 Feature pages intentionally link to these shared entries instead of repeating
 field definitions or endpoint contracts. Historical plans, reports, templates,

@@ -47,12 +47,14 @@
   transition: color var(--nb-transition-fast), background-color var(--nb-transition-fast), transform var(--nb-transition-fast);
 }
 
-.nb-dock__item svg {
+.nb-dock__item svg,
+.nb-dock__item use {
   width: 18px;
   height: 18px;
   stroke: currentColor;
   fill: none;
   stroke-width: var(--nb-icon-stroke);
+  pointer-events: none;
 }
 
 .nb-dock__item span {
@@ -89,12 +91,14 @@
   text-decoration: none;
 }
 
-.nb-dock__camera-btn svg {
+.nb-dock__camera-btn svg,
+.nb-dock__camera-btn use {
   width: 20px;
   height: 20px;
   stroke: currentColor;
   fill: none;
   stroke-width: var(--nb-icon-stroke);
+  pointer-events: none;
 }
 
 .nb-dock__camera-btn:active {

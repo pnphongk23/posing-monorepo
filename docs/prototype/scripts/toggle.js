@@ -21,6 +21,18 @@ function initToggles() {
     });
   }
 
+  const zoomBtn = document.getElementById('camera-zoom-btn');
+  if (zoomBtn) {
+    const zoomLevels = ['1x', '2x', '0.5x'];
+    let zoomIndex = 0;
+    zoomBtn.addEventListener('click', function () {
+      zoomIndex = (zoomIndex + 1) % zoomLevels.length;
+      const label = zoomLevels[zoomIndex];
+      zoomBtn.textContent = label;
+      zoomBtn.setAttribute('aria-label', 'Zoom ' + label);
+    });
+  }
+
   // Flash AUTO yellow text rotation if clicked
   const flashValue = document.getElementById('flash-value');
   const flashTrigger = document.getElementById('flash-row');

@@ -1,60 +1,68 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://github.com/vercel/next.js/tree/canary/packages/create-next-app).
+# AI Pose
 
-## Getting Started
+AI Pose is a monorepo for an iOS pose-reference camera, a local photo/pose library, an extraction API, and a small operational admin UI.
 
-First, run the development server:
+## Repository lanes
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+| Path | Purpose |
+| --- | --- |
+| `mobile/composeApp/` | Compose Multiplatform UI targeting iOS |
+| `mobile/shared/` | SQLDelight persistence and Ktor API client |
+| `mobile/iosApp/` | Native iOS host and camera integration |
+| `web/admin-ui/` | Next.js admin UI and server-side API proxies |
+| `web/services/pose-extract-server/` | Express extraction/community API and worker |
+| `docs/harness/` | Current product, technical, feature, and UI/UX source of truth |
+| `docs/superpowers/`, `plans/` | Historical designs and implementation plans |
+| `docs/prototype/` | Interactive UI reference; not production behavior |
+
+Start with the generated [Harness index](docs/harness/index.md), then read:
+
+- [Technical architecture](docs/harness/specs/technical-architecture.md)
+- [Product feature inventory](docs/harness/specs/product-feature-inventory.md)
+- [UI/UX system](docs/harness/specs/ui-ux-system.md)
+
+## Common checks
+
+```sh
+# Next.js admin
+npm run lint
+npm run build
+
+# Express service
+npm run backend:test
+npm run backend:build
+
+# iOS KMP modules
+./gradlew :composeApp:compileKotlinIosSimulatorArm64 :shared:iosSimulatorArm64Test
+
+# Documentation harness
+ckh validate --all --workspace .
+ckh index check --workspace .
+ckh graph check --workspace .
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Local services
 
-You can start editing the page by modifying `app/page.js`. The page auto-updates as you edit the file.
+The root npm scripts route to the correct web workspace:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```sh
+npm run dev          # Next.js admin UI
+npm run backend:dev  # Express service
+```
 
-## Learn More
+The Next.js server-side proxies require:
 
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
-
-## Admin UI (dev-only)
-
-Đã có giao diện quản trị key tại `http://localhost:3000/admin/keys`.
-
-UI này không lưu secret ở client; Next.js sẽ proxy request sang pose-extract-server bằng biến môi trường server-side.
-
-### Cần thêm env cho Next.js app
-
-```bash
+```env
 POSE_EXTRACT_SERVER_URL=http://localhost:3001
 POSE_EXTRACT_ADMIN_SECRET=change-me
 ```
 
-### Flow local gợi ý
+The Express service has additional database, R2, provider, and worker configuration. Use `web/services/pose-extract-server/src/config/env.ts` as the executable configuration contract and never commit real secrets.
 
-1. Chạy pose-extract-server (ở `services/pose-extract-server`).
-   - Ví dụ đặt `PORT=3001` cho service để không trùng port Next.js.
-2. Chạy Next.js app.
-3. Vào `/admin/keys` để:
-   - thêm key mới
-   - đổi status key
-   - xóa key
-   - reset daily counters
+## Current limitations
+
+- Mobile is iOS-only; no Android target is configured.
+- The mobile Extract Pose action is not wired to a screen yet.
+- Selecting “Use with Camera” returns to Camera but does not yet transfer the pose overlay.
+- Public user-generated content must not launch until the gates in `docs/privacy-ugc-compliance.md` are implemented and verified.
+- `sub2api/` is currently an untracked standalone checkout, not an integrated runtime lane.

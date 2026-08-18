@@ -34,8 +34,8 @@ relationships:
 
 The Photographer reviews and manages locally captured photos: reactive list,
 grid/list presentation, detail, favorite, deletion, and native Photos export.
-The canonical local records are [`Photo`](../../data/entities/photo.md)
-and, for pose references, [`PersonalPose`](../../data/entities/personal-pose.md).
+The canonical local records are [`Photo`](../../spec/data/entities/photo.md)
+and, for pose references, [`PersonalPose`](../../spec/data/entities/personal-pose.md).
 Capture is [FEAT-001](FEAT-001-capture-a-photo-on-mobile.md); no server API is
 owned by this feature.
 
@@ -90,8 +90,8 @@ The Photographer opens Gallery or selects a photo action.
 
 | Concern | Canonical reference | Evidence |
 | --- | --- | --- |
-| Entities | [`Photo`](../../data/entities/photo.md), [`PersonalPose`](../../data/entities/personal-pose.md) | [`Photo.sq`](../../../mobile/shared/src/commonMain/sqldelight/com/aipose/Photo.sq), [`Pose.sq`](../../../mobile/shared/src/commonMain/sqldelight/com/aipose/Pose.sq) |
-| ERD | [Mobile local physical graph](../../data/erd/mobile.md) | `Photo.poseId` is an optional FK to `Pose.id` |
+| Entities | [`Photo`](../../spec/data/entities/photo.md), [`PersonalPose`](../../spec/data/entities/personal-pose.md) | [`Photo.sq`](../../../mobile/shared/src/commonMain/sqldelight/com/aipose/Photo.sq), [`Pose.sq`](../../../mobile/shared/src/commonMain/sqldelight/com/aipose/Pose.sq) |
+| ERD | [Mobile local physical graph](../../spec/data/erd/mobile.md) | `Photo.poseId` is an optional FK to `Pose.id` |
 | API | None; local database/storage only | No gallery HTTP endpoint found |
 | Supporting UI | Gallery ViewModel/detail and platform export | [`GalleryViewModel.kt`](../../../mobile/composeApp/src/commonMain/kotlin/com/aipose/ui/screens/gallery/GalleryViewModel.kt), [`PhotoDetailDialog.kt`](../../../mobile/composeApp/src/commonMain/kotlin/com/aipose/ui/screens/gallery/PhotoDetailDialog.kt), [`SaveToPhotos.ios.kt`](../../../mobile/composeApp/src/iosMain/kotlin/com/aipose/platform/SaveToPhotos.ios.kt) |
 
@@ -109,7 +109,7 @@ The Photographer opens Gallery or selects a photo action.
 
 ## Relationships
 
-- Shared references: [Photo](../../data/entities/photo.md), [PersonalPose](../../data/entities/personal-pose.md), [ERD mobile](../../data/erd/mobile.md), [API](../../api/README.md).
+- Shared references: [Photo](../../spec/data/entities/photo.md), [PersonalPose](../../spec/data/entities/personal-pose.md), [ERD mobile](../../spec/data/erd/mobile.md), [API](../../spec/api/README.md).
 - Related feature: [FEAT-001](FEAT-001-capture-a-photo-on-mobile.md).
 ### Supporting evidence
 

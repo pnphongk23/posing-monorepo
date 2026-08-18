@@ -1,7 +1,7 @@
-> **⚠️ Tài liệu lịch sử.** Contract chính thức đã chuyển sang [`docs/api/`](api/README.md).
-> Xem [`docs/api/openapi.yaml`](api/openapi.yaml) cho schemas đầy đủ và [`docs/api/conventions.md`](api/conventions.md) cho quy ước.
-> [`docs/api/modules/community.md`](api/modules/community.md) — public community routes.
-> [`docs/api/modules/admin-community.md`](api/modules/admin-community.md) — admin community routes.
+> **⚠️ Tài liệu lịch sử.** Contract chính thức đã chuyển sang [`docs/spec/api/`](spec/api/README.md).
+> Xem [`docs/spec/api/openapi.yaml`](spec/api/openapi.yaml) cho schemas đầy đủ và [`docs/spec/api/conventions.md`](spec/api/conventions.md) cho quy ước.
+> [`docs/spec/api/modules/community.md`](spec/api/modules/community.md) — public community routes.
+> [`docs/spec/api/modules/admin-community.md`](spec/api/modules/admin-community.md) — admin community routes.
 > File này được giữ nguyên như tài liệu lịch sử hỗ trợ; không chỉnh sửa thêm.
 
 # Community Poses API

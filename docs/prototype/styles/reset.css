@@ -39,6 +39,12 @@ input {
 a {
   text-decoration: none;
   color: inherit;
+  cursor: pointer;
+}
+
+a svg,
+a use {
+  pointer-events: none;
 }
 
 img, svg {

@@ -41,6 +41,40 @@
   position: relative;
 }
 
+#detail-content:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.nb-detail-actions {
+  margin-top: auto;
+  flex-shrink: 0;
+  padding-bottom: var(--nb-space-md);
+}
+
+.nb-card--photo-detail {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  margin-bottom: var(--nb-space-md);
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-color: var(--nb-color-white);
+  border: var(--nb-border-thick);
+  border-radius: var(--nb-radius-large);
+  box-shadow: var(--nb-shadow);
+}
+
+#gallery-detail-content {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
 .nb-card--gallery {
   aspect-ratio: 1 / 1;
   background-size: cover;
@@ -125,21 +159,6 @@
   left: auto;
 }
 
-.nb-card__source-badge {
-  position: absolute;
-  top: var(--nb-space-sm);
-  left: var(--nb-space-sm);
-  z-index: var(--nb-z-index-base);
-}
-
-.nb-card__source-badge--personal {
-  background-color: var(--nb-color-accent-green);
-}
-
-.nb-card__source-badge--community {
-  background-color: var(--nb-color-accent-blue);
-}
-
 /* Intentionally varied aspect ratios/heights for masonry */
 .nb-card--aspect-tall {
   aspect-ratio: 1 / 1.25 !important;
@@ -153,6 +172,7 @@
 
 /* Gallery dense style */
 .nb-card--gallery-dense {
+  display: block;
   width: 100%;
   aspect-ratio: 1 / 1;
   background-size: cover;
@@ -163,6 +183,9 @@
   box-shadow: none !important;
   position: relative;
   overflow: hidden;
+  text-decoration: none;
+  color: inherit;
+  cursor: pointer;
 }
 
 .nb-card--gallery-dense.nb-card--placeholder {

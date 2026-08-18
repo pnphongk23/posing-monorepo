@@ -1,0 +1,87 @@
+# FEAT-003 Scout Summary (2026-08-18)
+
+Lead scout for Plan `260818-2105-feat-003-pose-library-slice`. Read-only
+evidence from repo state; no product code edits in this pass.
+
+## Authority and prerequisites
+
+| Artifact | Path | Status | Notes |
+| --- | --- | --- | --- |
+| FEAT-003 | `docs/harness/features/FEAT-003-browse-and-search-published-poses.md` | **approved** 2026-08-18 | FR-002 mentions server `q`; **excluded** from this Plan scope |
+| Plan 2240 | `docs/harness/plans/260809-2240-pose-reference-library-convergence/` | **completed / read-only** | Delivered library + search; REP-003 records delivery |
+| Plan 2241 | `docs/harness/plans/260809-2241-selected-pose-camera-handoff/` | **pending** | Camera overlay + durable handoff; **referenced, not implemented here** |
+| REP-003 | `docs/harness/reports/REP-003-pose-reference-library-convergence-delivery.md` | **read-only** | Historical delivery evidence for 2240 |
+| DEC-002 | `docs/harness/plans/260809-2240-pose-reference-library-convergence/DEC-002-pose-reference-library-parity-matrix.md` | **read-only** | Includes FR-007 search rows; superseded for scope by DEC-003 in this Plan |
+
+## Prototype authority (in-scope screens only)
+
+| Screen | Path | Relevant interactions |
+| --- | --- | --- |
+| poses-list | `docs/prototype/screens/poses-list.html:38-53` | My/Community tabs (`data-category`), Create Pose `+` → `camera-live.html:49`, search link **present but OUT OF SCOPE** (`search.html:44`) |
+| pose-detail | `docs/prototype/screens/pose-detail.html:72-79` | Try Pose CTA, optional Delete for owned poses; **no Save/bookmark controls in actions row** |
+| camera-pose-overlay | `docs/prototype/screens/camera-pose-overlay.html:34-46` | Transparent pose overlay on camera feed; **handoff owned by Plan 2241** |
+
+Prototype Create Pose target: `poses-list.html:49` → `camera-live.html` (FEAT-004 entry via Camera tab, not search).
+
+## Navigation and wiring gaps (verified)
+
+| Finding | File:line | Status |
+| --- | --- | --- |
+| Create Pose callback is no-op | `mobile/composeApp/src/commonMain/kotlin/com/aipose/navigation/Navigation.kt:129` | `onExtractPoseClick = {}` — **gap: WI-02 → CameraTab capture entry (Option A; NOT FEAT-004 extract)** |
+| Search navigation wired | `Navigation.kt:130-136` | **WI-03 delta: hide button + unwire route** (SearchScreen code read-only for Plan 2112) |
+| Try Pose sets in-memory handoff | `Navigation.kt:152-156` | Sets `PoseServiceLocator.preparedReference`, switches to `CameraTab` — prep done; overlay still disabled |
+| SearchScreen import | `Navigation.kt:46` | Screen registered — **OUT OF SCOPE** |
+| Camera overlay disabled | `mobile/composeApp/src/commonMain/kotlin/com/aipose/camera/CameraScreen.kt:173` | `if (false) {` wraps overlay block — **Plan 2241 boundary** |
+| preparedReference holder | `mobile/shared/src/commonMain/kotlin/com/aipose/data/PoseServiceLocator.kt:22` | In-memory only; no relaunch persistence — **Plan 2241** |
+
+## poses-list (My / Community)
+
+| Concern | File:line | Evidence |
+| --- | --- | --- |
+| Tab switcher My/Community | `PosesScreen.kt:161-172` | `ToolbarTab` "My Poses" / "Community" with test tags |
+| Create Pose toolbar button | `PosesScreen.kt:195-208` | `extract-pose-button`, calls `onExtractPoseClick` |
+| Search toolbar button | `PosesScreen.kt:179-193` | `poses-search-button`, calls `onSearchClick` — **OUT OF SCOPE** |
+| Empty My CTA | `PosesScreen.kt:259-262` | "Create Pose" → `onExtractPoseClick` |
+| Community grid + pagination | `PosesScreen.kt:416-457` | Lazy load-more with retry banners |
+| Community refresh | `PosesScreen.kt:392-408`, `298-320` | Refresh control + error banner |
+| Community card click | `PosesScreen.kt:466-516` | `CommunityPoseCard` with `onClick` |
+| Coordinator paging | `PosesLibraryCoordinator.kt:43-80` | Initial load + refresh with generationId stale guard |
+| Mock search provider default | `PoseServiceLocator.kt:14` | `MockCommunitySearchProvider()` — **OUT OF SCOPE** |
+
+## pose-detail
+
+| Concern | File:line | Evidence |
+| --- | --- | --- |
+| Personal detail stream | `PoseDetailScreen.kt:105-119` | SQLDelight reactive load |
+| Community detail API | `PoseDetailScreen.kt:122-144` | NOT_FOUND vs retryable error mapping |
+| Try Pose prepare | `PoseDetailScreen.kt:156-207` | Personal file/data-uri verify; community download+decode |
+| Try Pose UI | `PoseDetailScreen.kt:432-439` | Primary "Try Pose" button |
+| Local delete only | `PoseDetailScreen.kt:217-231`, `342-363` | Mutex guard; community never deletes |
+| No Save control | `PoseDetailScreen.kt` (actions) | Only Try Pose + Delete — aligns with FEAT-008 **OUT OF SCOPE** |
+
+## FEAT-004 extraction (OUT of Option A slice)
+
+| Concern | File:line | Evidence |
+| --- | --- | --- |
+| API client exists | `PoseApiService.kt:88-110` | `extractPose` — **not wired by Create Pose (+) in Plan 2105** |
+| Prototype entry | `poses-list.html:49` → `camera-live.html` | Camera **capture** only (Option A) |
+
+## Server community catalogue (browse only)
+
+| Concern | File:line | Evidence |
+| --- | --- | --- |
+| Public list route | `web/services/pose-extract-server/src/routes/communityRoutes.ts` | Pagination; **no `q` query param** (grep: no matches) |
+| Mobile list client | `PoseApiService.kt` (community list methods) | Used by `PosesLibraryCoordinator` |
+
+## Explicit exclusions (Plan scope OUT)
+
+- `SearchScreen.kt` and `Navigation.kt:130-136` search push
+- `CommunitySearchProvider.kt` / server `?q=` title search
+- Android targets / parity
+- FEAT-008 Save / bookmark UI
+- Camera overlay render (`CameraScreen.kt:173`) and relaunch persistence — Plan `260809-2241`
+- Editing Plan `260809-2240` artifacts or REP-003 claims
+
+## Scout conclusion
+
+Two user-visible gaps remain in scope: **Create Pose (+) is unwired** (`Navigation.kt:129`, WI-02 Camera capture entry only) and **search affordance must be removed** (WI-03). Try Pose handoff stops before Camera overlay (`CameraScreen.kt:173`, Plan 2241). FEAT-004 extraction is **explicitly deferred** (Option A).

@@ -95,11 +95,8 @@
   height: 16px;
 }
 
-.nb-btn__compact-surface--plain {
-  color: var(--nb-color-dark);
-  background-color: transparent;
-  border-color: transparent;
-  box-shadow: none;
+.nb-btn__compact-surface--white {
+  background-color: var(--nb-color-white);
 }
 
 .nb-btn--compact-action:active .nb-btn__compact-surface {

@@ -20,6 +20,12 @@
   transition: transform var(--nb-transition-fast), box-shadow var(--nb-transition-fast);
   user-select: none;
   min-height: var(--nb-touch-min);
+  cursor: pointer;
+}
+
+.nb-btn svg,
+.nb-btn use {
+  pointer-events: none;
 }
 
 .nb-btn[hidden] {

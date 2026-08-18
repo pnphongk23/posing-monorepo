@@ -23,6 +23,7 @@ relationships:
     - "[[FEAT-006-publish-a-pose|FEAT-006]]"
     - "[[FEAT-007-operate-pose-content-from-admin-web|FEAT-007]]"
     - "[[FEAT-008-use-published-poses|FEAT-008]]"
+    - "[[FEAT-009-configure-extraction-provider|FEAT-009]]"
   source_paths: []
 ---
 
@@ -34,7 +35,8 @@ This inventory is a business-feature map. It records each Feature's observable b
 
 The landing-level traceability map is in the [Harness README](../README.md).
 Shared model/entity, ERD, and API definitions are maintained once in
-[docs/data](../../data/README.md) and [docs/api](../../api/README.md);
+[docs/spec](../../spec/README.md)
+([data](../../spec/data/README.md), [api](../../spec/api/README.md));
 Feature pages link to those entries instead of duplicating them.
 Harness stubs remain at [model catalogue](model-entity-catalogue.md),
 [global ERD](erd.md), and [API catalogue](api-catalogue.md) for wikilink compatibility.
@@ -51,12 +53,14 @@ Harness stubs remain at [model catalogue](model-entity-catalogue.md),
 | [[FEAT-006-publish-a-pose\|FEAT-006]] | Publish or unpublish a pose | Pose Owner | Public-data acknowledgement, publication eligibility, and confirmed public visibility lifecycle. |
 | [[FEAT-007-operate-pose-content-from-admin-web\|FEAT-007]] | Operate pose content from Admin Web | Admin operator | Admin surface for intake, status, ownership, guide management in FEAT-005, and invoking FEAT-004 and FEAT-006; no alternate extraction or publication model. |
 | [[FEAT-008-use-published-poses\|FEAT-008]] | Use published poses | Signed-in user | Save, Unsave, Saved collection, Try Pose, camera guide lifecycle, and consequences of publication removal. |
+| [[FEAT-009-configure-extraction-provider\|FEAT-009]] | Configure extraction provider | Admin operator | Select and persist the global extraction engine (Gemini native or Higgsfield CLI) for extract jobs; timing, default, and credential policy in DEC-001. |
 
 ## Supporting surfaces
 
 - FEAT-003 consumes the public visibility established by FEAT-006.
 - FEAT-008 consumes the published poses discovered through FEAT-003 and does not change ownership.
 - FEAT-007 is an operating surface for Admin-owned pose content; Admin-created poses follow the same extraction, ownership, guide, and publication boundaries as other poses.
+- FEAT-009 owns global extraction engine configuration; FEAT-007 invokes FEAT-009 through Admin Web without redefining extract or provider policy.
 
 ## Documentation rules
 
