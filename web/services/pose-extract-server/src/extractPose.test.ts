@@ -1,77 +1,46 @@
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
-
 import request from "supertest";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { createApp } from "./app";
-import { createDatabase } from "./db/connection";
-import { AllKeysExhaustedError, GeminiError, GeminiQuotaExceededError } from "./services/errors";
+import { setupTestDatabase } from "./db/testDb";
+import { ExtractionJobStore } from "./db/extractionJobStore";
 import { KeyPoolManager } from "./services/keyPoolManager";
 import { KeyStore } from "./services/keyStore";
-
-const tempDirs: string[] = [];
-
-afterEach(() => {
-  for (const tempDir of tempDirs.splice(0)) {
-    fs.rmSync(tempDir, { recursive: true, force: true });
-  }
-});
 
 function createTestImageBuffer(): Buffer {
   return Buffer.from("fake-image-content");
 }
 
-type ExtractPoseImageMock = (input: {
-  apiKey: string;
-  sourceImageBase64: string;
-  sourceMimeType: string;
-}) => Promise<{
-  imageBase64: string;
-  mimeType: "image/png" | "image/jpeg" | "image/webp";
-}>;
-
 interface CreateExtractAppOptions {
   rateLimitWindowMs?: number;
   rateLimitMaxRequests?: number;
-  extractPoseImageMock?: ExtractPoseImageMock;
 }
 
-function createExtractApp(options: CreateExtractAppOptions = {}) {
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "pose-extract-api-"));
-  tempDirs.push(tempDir);
-
-  const db = createDatabase(path.join(tempDir, "keys.db"));
-  const keyStore = new KeyStore(db);
+async function createExtractApp(options: CreateExtractAppOptions = {}) {
+  const sql = await setupTestDatabase();
+  const keyStore = new KeyStore(sql);
   const keyPoolManager = new KeyPoolManager(keyStore);
-  keyStore.createKey({ name: "key1", apiKey: "AIza-key1" });
-  keyStore.createKey({ name: "key2", apiKey: "AIza-key2" });
-
-  const extractPoseImageMock =
-    options.extractPoseImageMock ??
-    (vi.fn().mockResolvedValue({
-      imageBase64: "dGVzdA==",
-      mimeType: "image/png"
-    }) as ExtractPoseImageMock);
+  const extractionJobStore = new ExtractionJobStore(sql);
+  await keyStore.createKey({ name: "key1", apiKey: "AIza-key1" });
 
   const app = createApp({
     version: "1.0.0-test",
     keyStore,
     keyPoolManager,
     geminiService: {
-      extractPoseImage: extractPoseImageMock
+      extractPoseImage: vi.fn()
     },
+    extractionJobStore,
     extractRateLimitWindowMs: options.rateLimitWindowMs,
     extractRateLimitMaxRequests: options.rateLimitMaxRequests
   });
 
-  return { app, keyStore, extractPoseImageMock };
+  return { app, extractionJobStore };
 }
 
 describe("POST /api/extract-pose", () => {
   it("returns INVALID_IMAGE when image field is missing", async () => {
-    const { app } = createExtractApp();
+    const { app } = await createExtractApp();
 
     const response = await request(app).post("/api/extract-pose");
 
@@ -80,7 +49,7 @@ describe("POST /api/extract-pose", () => {
   });
 
   it("returns INVALID_IMAGE for unsupported mime type", async () => {
-    const { app } = createExtractApp();
+    const { app } = await createExtractApp();
 
     const response = await request(app)
       .post("/api/extract-pose")
@@ -94,7 +63,7 @@ describe("POST /api/extract-pose", () => {
   });
 
   it("returns IMAGE_TOO_LARGE when file exceeds 10MB", async () => {
-    const { app } = createExtractApp();
+    const { app } = await createExtractApp();
     const tooLarge = Buffer.alloc(10 * 1024 * 1024 + 1, 1);
 
     const response = await request(app)
@@ -109,7 +78,7 @@ describe("POST /api/extract-pose", () => {
   });
 
   it("returns RATE_LIMITED when endpoint rate limit is exceeded", async () => {
-    const { app } = createExtractApp({
+    const { app } = await createExtractApp({
       rateLimitWindowMs: 60_000,
       rateLimitMaxRequests: 1
     });
@@ -121,13 +90,13 @@ describe("POST /api/extract-pose", () => {
       .post("/api/extract-pose")
       .attach("image", createTestImageBuffer(), { filename: "pose.jpg", contentType: "image/jpeg" });
 
-    expect(first.status).toBe(200);
+    expect(first.status).toBe(202);
     expect(second.status).toBe(429);
     expect(second.body.error.code).toBe("RATE_LIMITED");
   });
 
   it("uses forwarded-for IP for rate-limit key when trust proxy is enabled", async () => {
-    const { app } = createExtractApp({
+    const { app } = await createExtractApp({
       rateLimitWindowMs: 60_000,
       rateLimitMaxRequests: 1
     });
@@ -142,86 +111,91 @@ describe("POST /api/extract-pose", () => {
       .set("X-Forwarded-For", "198.51.100.8")
       .attach("image", createTestImageBuffer(), { filename: "pose.jpg", contentType: "image/jpeg" });
 
-    expect(firstIp.status).toBe(200);
-    expect(secondIp.status).toBe(200);
+    expect(firstIp.status).toBe(202);
+    expect(secondIp.status).toBe(202);
   });
 
-  it("returns ALL_KEYS_EXHAUSTED when all provider keys are out of quota", async () => {
-    const quotaError = new GeminiQuotaExceededError("quota");
-    const { app } = createExtractApp({
-      extractPoseImageMock: vi.fn().mockRejectedValue(quotaError) as ExtractPoseImageMock
+  it("enqueues extraction job and returns 202 with poll URL", async () => {
+    const { app, extractionJobStore } = await createExtractApp();
+
+    const response = await request(app)
+      .post("/api/extract-pose")
+      .attach("image", createTestImageBuffer(), { filename: "pose.jpg", contentType: "image/jpeg" });
+
+    expect(response.status).toBe(202);
+    expect(response.body.success).toBe(true);
+    expect(response.body.data.status).toBe("queued");
+    expect(response.body.data.jobId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+    );
+    expect(response.body.meta.pollUrl).toBe(`/api/extract-jobs/${response.body.data.jobId}`);
+
+    const job = await extractionJobStore.getById(response.body.data.jobId);
+    expect(job?.status).toBe("queued");
+    expect(job?.sourceMimeType).toBe("image/jpeg");
+  });
+});
+
+describe("GET /api/extract-jobs/:jobId", () => {
+  it("returns public job status without admin-only fields", async () => {
+    const { app, extractionJobStore } = await createExtractApp();
+    const job = await extractionJobStore.enqueue({
+      sourceImageBase64: Buffer.from("source").toString("base64"),
+      sourceMimeType: "image/png"
     });
 
-    const response = await request(app)
-      .post("/api/extract-pose")
-      .attach("image", createTestImageBuffer(), { filename: "pose.jpg", contentType: "image/jpeg" });
-
-    expect(response.status).toBe(503);
-    expect(response.body.error.code).toBe("ALL_KEYS_EXHAUSTED");
-  });
-
-  it("returns GEMINI_ERROR for non-quota provider failures", async () => {
-    const { app } = createExtractApp({
-      extractPoseImageMock: vi.fn().mockRejectedValue(new GeminiError("provider failed")) as ExtractPoseImageMock
-    });
-
-    const response = await request(app)
-      .post("/api/extract-pose")
-      .attach("image", createTestImageBuffer(), { filename: "pose.jpg", contentType: "image/jpeg" });
-
-    expect(response.status).toBe(500);
-    expect(response.body.error.code).toBe("GEMINI_ERROR");
-  });
-
-  it("orchestrates failover: key1 quota exceeded then key2 success", async () => {
-    const extractPoseImageMock = (vi
-      .fn()
-      .mockRejectedValueOnce(new GeminiQuotaExceededError("key1 exhausted"))
-      .mockResolvedValueOnce({
-        imageBase64: "cG9zZS1pbWFnZQ==",
-        mimeType: "image/png"
-      })) as ExtractPoseImageMock;
-
-    const { app, keyStore } = createExtractApp({ extractPoseImageMock });
-    const keys = keyStore.listKeys();
-    const key1 = keys[0];
-
-    const response = await request(app)
-      .post("/api/extract-pose")
-      .attach("image", createTestImageBuffer(), { filename: "pose.jpg", contentType: "image/jpeg" });
+    const response = await request(app).get(`/api/extract-jobs/${job.id}`);
 
     expect(response.status).toBe(200);
-    expect(response.body.success).toBe(true);
-    expect(response.body.meta.keyUsed).toBe("key2");
-    expect(extractPoseImageMock).toHaveBeenCalledTimes(2);
-
-    const updatedKey1 = keyStore.listKeys().find((item) => item.id === key1.id);
-    expect(updatedKey1?.status).toBe("exhausted");
-
-    const logs = keyStore.listRequestLogs();
-    expect(logs).toHaveLength(2);
-    expect(logs[0]).toMatchObject({
-      keyId: key1.id,
-      success: false,
-      errorCode: "GEMINI_QUOTA_EXCEEDED"
+    expect(response.body.data).toMatchObject({
+      jobId: job.id,
+      status: "queued",
+      result: null,
+      error: null
     });
-    expect(logs[1]).toMatchObject({
-      success: true,
-      errorCode: null
+    expect(response.body.data.attempts).toBeUndefined();
+    expect(response.body.data.maxAttempts).toBeUndefined();
+  });
+
+  it("returns succeeded result when job completes", async () => {
+    const { app, extractionJobStore } = await createExtractApp();
+    const job = await extractionJobStore.enqueue({
+      sourceImageBase64: Buffer.from("source").toString("base64"),
+      sourceMimeType: "image/png"
+    });
+    const lockToken = "test-lock-token";
+    await extractionJobStore.claimNext(lockToken, 120);
+    await extractionJobStore.markSucceeded(job.id, lockToken, "cG9zZQ==", "image/png");
+
+    const response = await request(app).get(`/api/extract-jobs/${job.id}`);
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.status).toBe("succeeded");
+    expect(response.body.data.result).toEqual({
+      imageBase64: "cG9zZQ==",
+      mimeType: "image/png"
     });
   });
 
-  it("maps immediate no-active-key state to ALL_KEYS_EXHAUSTED", async () => {
-    const { app, keyStore } = createExtractApp();
-    for (const key of keyStore.listKeys()) {
-      keyStore.updateKeyStatus(key.id, "exhausted");
-    }
+  it("returns provider error when job fails after max attempts", async () => {
+    const { app, extractionJobStore } = await createExtractApp();
+    const job = await extractionJobStore.enqueue({
+      sourceImageBase64: Buffer.from("source").toString("base64"),
+      sourceMimeType: "image/png",
+      maxAttempts: 1
+    });
+    const lockToken = "test-lock-token";
+    await extractionJobStore.claimNext(lockToken, 120);
+    await extractionJobStore.markFailedOrRequeue(job.id, lockToken, "PROVIDER_AUTH_REQUIRED", "Provider authentication required");
 
-    const response = await request(app)
-      .post("/api/extract-pose")
-      .attach("image", createTestImageBuffer(), { filename: "pose.jpg", contentType: "image/jpeg" });
+    const response = await request(app).get(`/api/extract-jobs/${job.id}`);
 
-    expect(response.status).toBe(503);
-    expect(response.body.error.code).toBe(new AllKeysExhaustedError().code);
+    expect(response.status).toBe(200);
+    expect(response.body.data.status).toBe("failed");
+    expect(response.body.data.result).toBeNull();
+    expect(response.body.data.error).toEqual({
+      code: "PROVIDER_AUTH_REQUIRED",
+      message: "Provider authentication required"
+    });
   });
 });

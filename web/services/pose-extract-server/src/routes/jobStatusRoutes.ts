@@ -7,9 +7,9 @@ export function createJobStatusRoutes(input: { adminSecret: string; jobStore: Ex
   const router = Router();
   const auth = createAdminAuthMiddleware(input.adminSecret);
 
-  router.get("/:jobId", auth, (req, res) => {
+  router.get("/:jobId", auth, async (req, res) => {
     const jobId = Array.isArray(req.params.jobId) ? req.params.jobId[0] : req.params.jobId;
-    const job = input.jobStore.getById(jobId);
+    const job = await input.jobStore.getById(jobId);
     if (!job) {
       res.status(404).json({ error: { code: "JOB_NOT_FOUND", message: "Job not found" } });
       return;

@@ -1,6 +1,7 @@
 import "dotenv/config";
 
 import { getEnv } from "../config/env";
+import { DEFAULT_EXTRACT_PROMPT } from "../services/extractPrompt";
 import { GeminiBrowserClient } from "./gemini-browser-client";
 
 async function run(): Promise<void> {
@@ -12,7 +13,7 @@ async function run(): Promise<void> {
     chromeChannel: process.env.PLAYWRIGHT_CHROME_CHANNEL,
     headless: env.BROWSER_HEADLESS === "true",
     executablePath: process.env.PLAYWRIGHT_CHROMIUM_PATH,
-    prompt: process.env.BROWSER_PROMPT ?? "Extract a clean human pose cutout from this image.",
+    prompt: process.env.BROWSER_PROMPT ?? DEFAULT_EXTRACT_PROMPT,
     timeoutMs: Number(process.env.BROWSER_TIMEOUT_MS ?? "45000"),
     useMockFlow: process.env.WORKER_MOCK_BROWSER === "true",
     debugDir: process.env.WORKER_DEBUG_DIR

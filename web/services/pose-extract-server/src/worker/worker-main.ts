@@ -1,38 +1,70 @@
 import "dotenv/config";
 
 import { getEnv } from "../config/env";
-import { createDatabase } from "../db/connection";
+import { applySchema, closeDatabase, createDatabase } from "../db/connection";
 import { ExtractionJobStore } from "../db/extractionJobStore";
+import { ProviderSettingsStore } from "../db/providerSettingsStore";
+import { GeminiService } from "../services/geminiService";
+import { KeyPoolManager } from "../services/keyPoolManager";
+import { KeyStore } from "../services/keyStore";
+import { createPoseExtractorProvider } from "../services/poseExtractorProvider";
 import { logger } from "../utils/logger";
-import { GeminiBrowserClient } from "./gemini-browser-client";
 import { processNextJob } from "./job-processor";
 
 const POLL_INTERVAL_MS = Number(process.env.WORKER_POLL_INTERVAL_MS ?? "1000");
 const STALE_LOCK_SECONDS = Number(process.env.WORKER_STALE_LOCK_SECONDS ?? "120");
-const BROWSER_TIMEOUT_MS = Number(process.env.BROWSER_TIMEOUT_MS ?? "90000");
-const BROWSER_PROMPT = process.env.BROWSER_PROMPT ?? "Extract a clean human pose cutout from this image.";
 
 async function run(): Promise<void> {
   const env = getEnv();
-  const db = createDatabase(env.DATABASE_PATH);
-  const jobStore = new ExtractionJobStore(db);
-  const profileDir = process.env.BROWSER_PROFILE_DIR ?? env.BROWSER_PROFILE_DIR;
-  const browserClient = new GeminiBrowserClient({
-    appUrl: env.BROWSER_APP_URL,
-    profileDir,
-    chromeChannel: env.BROWSER_CHROME_CHANNEL ?? process.env.PLAYWRIGHT_CHROME_CHANNEL,
-    headless: env.BROWSER_HEADLESS === "true",
-    executablePath: env.BROWSER_EXECUTABLE_PATH ?? process.env.PLAYWRIGHT_CHROMIUM_PATH,
-    prompt: BROWSER_PROMPT,
-    timeoutMs: BROWSER_TIMEOUT_MS,
-    useMockFlow: process.env.WORKER_MOCK_BROWSER === "true",
-    debugDir: process.env.WORKER_DEBUG_DIR
+  const sql = createDatabase(env.DATABASE_URL);
+  await applySchema(sql);
+  const jobStore = new ExtractionJobStore(sql);
+  const providerSettingsStore = new ProviderSettingsStore(sql);
+  const keyStore = new KeyStore(sql);
+  const keyPoolManager = new KeyPoolManager(keyStore);
+  const geminiService = new GeminiService();
+
+  const createProvider = (providerId: Parameters<typeof createPoseExtractorProvider>[0]["providerId"]) =>
+    createPoseExtractorProvider({
+      providerId,
+      geminiService,
+      keyPoolManager
+    });
+
+  logger.info(
+    {
+      pollIntervalMs: POLL_INTERVAL_MS,
+      staleLockSeconds: STALE_LOCK_SECONDS,
+      activeProvider: await providerSettingsStore.getActiveProvider()
+    },
+    "worker started"
+  );
+
+  let shuttingDown = false;
+  const shutdown = async (signal: NodeJS.Signals): Promise<void> => {
+    if (shuttingDown) {
+      return;
+    }
+    shuttingDown = true;
+    logger.info({ signal }, "worker shutting down");
+    await closeDatabase(sql);
+    process.exit(0);
+  };
+
+  process.on("SIGINT", (signal) => {
+    void shutdown(signal);
+  });
+  process.on("SIGTERM", (signal) => {
+    void shutdown(signal);
   });
 
-  logger.info({ pollIntervalMs: POLL_INTERVAL_MS, staleLockSeconds: STALE_LOCK_SECONDS }, "worker started");
-
-  while (true) {
-    const processed = await processNextJob({ jobStore, browserClient, staleLockSeconds: STALE_LOCK_SECONDS });
+  while (!shuttingDown) {
+    const processed = await processNextJob({
+      jobStore,
+      providerSettingsStore,
+      createProvider,
+      staleLockSeconds: STALE_LOCK_SECONDS
+    });
     if (!processed) {
       await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
     }

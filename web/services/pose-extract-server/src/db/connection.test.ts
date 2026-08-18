@@ -1,85 +1,104 @@
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
-
+import { PGlite } from "@electric-sql/pglite";
+import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { createDatabase } from "./connection";
+import { applySchema, closeDatabase, createDatabase, type Sql } from "./connection";
 
-const tempDirs: string[] = [];
+const cleanupFns: Array<() => Promise<void>> = [];
 
-afterEach(() => {
-  for (const tempDir of tempDirs.splice(0)) {
-    fs.rmSync(tempDir, { recursive: true, force: true });
+async function setupDatabase(): Promise<Sql> {
+  const pg = new PGlite();
+  const server = new PGLiteSocketServer({ db: pg, host: "127.0.0.1", port: 0 });
+  await server.start();
+
+  const sql = createDatabase(`postgres://postgres@${server.getServerConn()}/postgres`);
+  await applySchema(sql);
+
+  cleanupFns.push(async () => {
+    await closeDatabase(sql);
+    await server.stop();
+    await pg.close();
+  });
+
+  return sql;
+}
+
+afterEach(async () => {
+  while (cleanupFns.length > 0) {
+    const fn = cleanupFns.pop();
+    if (fn) {
+      await fn();
+    }
   }
 });
 
-describe("createDatabase", () => {
-  it("creates sqlite db file and applies schema", () => {
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "pose-db-"));
-    tempDirs.push(tempDir);
+describe("createDatabase / applySchema (Postgres via PGlite)", () => {
+  it("applies schema and creates all tables", async () => {
+    const sql = await setupDatabase();
 
-    const databasePath = path.join(tempDir, "nested", "keys.db");
-    const db = createDatabase(databasePath);
+    const tables = await sql`
+      SELECT table_name
+      FROM information_schema.tables
+      WHERE table_schema = 'public'
+      ORDER BY table_name
+    `;
+    const tableNames = tables.map((row) => row.table_name);
 
-    const tables = db
-      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
-      .all() as Array<{ name: string }>;
-    const sentinelRow = db
-      .prepare("SELECT id FROM schema_bootstrap WHERE id = 1")
-      .get() as { id: number } | undefined;
-
-    expect(fs.existsSync(databasePath)).toBe(true);
-    expect(tables.map((table) => table.name)).toContain("schema_bootstrap");
-    expect(tables.map((table) => table.name)).toContain("api_keys");
-    expect(tables.map((table) => table.name)).toContain("request_logs");
-    expect(sentinelRow?.id).toBe(1);
+    expect(tableNames).toContain("schema_bootstrap");
+    expect(tableNames).toContain("api_keys");
+    expect(tableNames).toContain("request_logs");
+    expect(tableNames).toContain("community_poses");
+    expect(tableNames).toContain("extraction_jobs");
+    expect(tableNames).toContain("app_settings");
   });
 
-  it("creates community_poses table", () => {
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "pose-schema-"));
-    tempDirs.push(tempDir);
+  it("seeds the schema_bootstrap sentinel row", async () => {
+    const sql = await setupDatabase();
 
-    const db = createDatabase(path.join(tempDir, "test.db"));
+    const sentinel = await sql`SELECT id FROM schema_bootstrap WHERE id = 1`;
 
-    const tables = db
-      .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='community_poses'")
-      .all();
-
-    expect(tables).toHaveLength(1);
-    db.close();
+    expect(sentinel).toHaveLength(1);
+    expect(sentinel[0].id).toBe(1);
   });
 
-  it("community_poses has correct defaults and constraints", () => {
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "pose-schema-constraints-"));
-    tempDirs.push(tempDir);
+  it("community_poses has correct defaults and constraints", async () => {
+    const sql = await setupDatabase();
 
-    const db = createDatabase(path.join(tempDir, "test.db"));
+    // Insert with minimal fields — defaults should apply.
+    await sql`
+      INSERT INTO community_poses (id, name, image_path)
+      VALUES ('test-1', 'Test Pose', 'community/test.png')
+    `;
 
-    // Insert with minimal fields — should apply defaults
-    db.prepare(
-      "INSERT INTO community_poses (id, name, image_path) VALUES ('test-1', 'Test Pose', 'community/test.png')"
-    ).run();
+    const rows = await sql`
+      SELECT status, download_count, tags, body_parts
+      FROM community_poses
+      WHERE id = 'test-1'
+    `;
 
-    const row = db.prepare("SELECT * FROM community_poses WHERE id = 'test-1'").get() as {
-      status: string;
-      download_count: number;
-      tags: string;
-      body_parts: string;
-    };
+    expect(rows).toHaveLength(1);
+    expect(rows[0].status).toBe("draft");
+    expect(rows[0].download_count).toBe(0);
+    expect(rows[0].tags).toBe("[]");
+    expect(rows[0].body_parts).toBe("[]");
 
-    expect(row.status).toBe("draft");
-    expect(row.download_count).toBe(0);
-    expect(row.tags).toBe("[]");
-    expect(row.body_parts).toBe("[]");
+    // Invalid status should fail the CHECK constraint.
+    await expect(
+      sql`
+        INSERT INTO community_poses (id, name, image_path, status)
+        VALUES ('test-2', 'Bad', 'path', 'invalid')
+      `
+    ).rejects.toThrow();
+  });
 
-    // Invalid status should fail CHECK constraint
-    expect(() => {
-      db.prepare(
-        "INSERT INTO community_poses (id, name, image_path, status) VALUES ('test-2', 'Bad', 'path', 'invalid')"
-      ).run();
-    }).toThrow();
+  it("request_logs.success is a BOOLEAN column", async () => {
+    const sql = await setupDatabase();
 
-    db.close();
+    await sql`INSERT INTO request_logs (success) VALUES (true)`;
+    await sql`INSERT INTO request_logs (success) VALUES (false)`;
+
+    const rows = await sql`SELECT success FROM request_logs ORDER BY id`;
+
+    expect(rows.map((row) => row.success)).toEqual([true, false]);
   });
 });

@@ -1,7 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import Database from "better-sqlite3";
+import postgres from "postgres";
+
+export type Sql = postgres.Sql;
 
 function resolveSchemaPath(): string {
   const schemaPath = path.resolve(__dirname, "schema.sql");
@@ -12,16 +14,23 @@ function resolveSchemaPath(): string {
   throw new Error(`Schema file not found at expected path: ${schemaPath}`);
 }
 
-export function createDatabase(databasePath: string): Database.Database {
-  const absolutePath = path.resolve(databasePath);
-  fs.mkdirSync(path.dirname(absolutePath), { recursive: true });
+export function createDatabase(databaseUrl: string): Sql {
+  return postgres(databaseUrl);
+}
 
-  const db = new Database(absolutePath);
-  db.pragma("journal_mode = WAL");
-  db.pragma("foreign_keys = ON");
-
+export async function applySchema(sql: Sql): Promise<void> {
   const schemaSql = fs.readFileSync(resolveSchemaPath(), "utf-8");
-  db.exec(schemaSql);
 
-  return db;
+  const statements = schemaSql
+    .split(";")
+    .map((statement) => statement.trim())
+    .filter((statement) => statement.length > 0);
+
+  for (const statement of statements) {
+    await sql.unsafe(statement);
+  }
+}
+
+export async function closeDatabase(sql: Sql): Promise<void> {
+  await sql.end();
 }

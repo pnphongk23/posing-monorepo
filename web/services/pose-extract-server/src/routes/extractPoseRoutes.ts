@@ -1,23 +1,12 @@
 import { Router } from "express";
 import multer from "multer";
 
+import type { ExtractionJobStore } from "../db/extractionJobStore";
 import { createExtractRateLimitMiddleware } from "../middleware/extractRateLimit";
-import { AllKeysExhaustedError, GeminiQuotaExceededError, ImageTooLargeError, InvalidImageError } from "../services/errors";
-import type { ApiKeyRecord, KeyStore } from "../services/keyStore";
-import type { KeyPoolManager } from "../services/keyPoolManager";
-
-interface GeminiServiceLike {
-  extractPoseImage(input: {
-    apiKey: string;
-    sourceImageBase64: string;
-    sourceMimeType: string;
-  }): Promise<{ imageBase64: string; mimeType: "image/png" | "image/jpeg" | "image/webp" }>;
-}
+import { ImageTooLargeError, InvalidImageError } from "../services/errors";
 
 interface CreateExtractPoseRoutesOptions {
-  keyStore: KeyStore;
-  keyPoolManager: KeyPoolManager;
-  geminiService: GeminiServiceLike;
+  jobStore: ExtractionJobStore;
   rateLimitWindowMs?: number;
   rateLimitMaxRequests?: number;
 }
@@ -54,11 +43,6 @@ function mapUploadError(error: unknown): Error {
   return new InvalidImageError();
 }
 
-function estimateQuotaRemaining(key: ApiKeyRecord): string {
-  const consumed = key.requestsToday + 1;
-  return `~${Math.max(0, 100 - Math.min(consumed, 100))}%`;
-}
-
 export function createExtractPoseRoutes(options: CreateExtractPoseRoutesOptions): Router {
   const router = Router();
   const rateLimit = createExtractRateLimitMiddleware({
@@ -85,74 +69,24 @@ export function createExtractPoseRoutes(options: CreateExtractPoseRoutesOptions)
         return;
       }
 
-      const processingStart = Date.now();
-      const sourceImageBase64 = req.file.buffer.toString("base64");
-      const sourceMimeType = req.file.mimetype;
-
-      while (true) {
-        const key = await options.keyPoolManager.getNextActiveKey().catch((error: unknown) => {
-          next(error);
-          return null;
+      try {
+        const job = await options.jobStore.enqueue({
+          sourceImageBase64: req.file.buffer.toString("base64"),
+          sourceMimeType: req.file.mimetype
         });
-        if (!key) {
-          return;
-        }
 
-        try {
-          const extracted = await options.geminiService.extractPoseImage({
-            apiKey: key.apiKey,
-            sourceImageBase64,
-            sourceMimeType
-          });
-
-          options.keyStore.incrementRequestsToday(key.id);
-          const processingTimeMs = Date.now() - processingStart;
-          options.keyStore.logRequest({
-            keyId: key.id,
-            processingTimeMs,
-            success: true,
-            errorCode: null
-          });
-
-          res.json({
-            success: true,
-            data: {
-              imageBase64: extracted.imageBase64,
-              mimeType: extracted.mimeType,
-              processingTimeMs
-            },
-            meta: {
-              keyUsed: key.name,
-              quotaRemaining: estimateQuotaRemaining(key)
-            }
-          });
-          return;
-        } catch (error) {
-          if (error instanceof GeminiQuotaExceededError) {
-            await options.keyPoolManager.markKeyExhausted(key.id);
-            options.keyStore.logRequest({
-              keyId: key.id,
-              processingTimeMs: Date.now() - processingStart,
-              success: false,
-              errorCode: error.code
-            });
-            continue;
+        res.status(202).json({
+          success: true,
+          data: {
+            jobId: job.id,
+            status: job.status
+          },
+          meta: {
+            pollUrl: `/api/extract-jobs/${job.id}`
           }
-
-          if (error instanceof AllKeysExhaustedError) {
-            next(error);
-            return;
-          }
-
-          options.keyStore.logRequest({
-            keyId: key.id,
-            processingTimeMs: Date.now() - processingStart,
-            success: false,
-            errorCode: error instanceof Error && "code" in error ? String((error as { code?: string }).code ?? null) : null
-          });
-          next(error);
-          return;
-        }
+        });
+      } catch {
+        next(new Error("QUEUE_WRITE_FAILED"));
       }
     }
   );

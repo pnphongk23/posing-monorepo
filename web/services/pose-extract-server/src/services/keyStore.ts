@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
-import type Database from "better-sqlite3";
+import type { Sql } from "../db/connection";
+import { pgIntId, pgTimestamp } from "../db/pgTypes";
 
 export type ApiKeyStatus = "active" | "disabled" | "exhausted";
 
@@ -34,16 +35,16 @@ interface ApiKeyRow {
   api_key: string;
   status: ApiKeyStatus;
   requests_today: number;
-  created_at: string;
-  last_used_at: string | null;
+  created_at: Date | string;
+  last_used_at: Date | string | null;
 }
 
 interface RequestLogRow {
-  id: number;
+  id: string | number;
   key_id: string | null;
-  timestamp: string;
+  timestamp: Date | string;
   processing_time_ms: number | null;
-  success: number;
+  success: boolean;
   error_code: string | null;
 }
 
@@ -55,84 +56,74 @@ interface LogRequestInput {
 }
 
 export class KeyStore {
-  constructor(private readonly db: Database.Database) {}
+  constructor(private readonly db: Sql) {}
 
-  listKeys(): ApiKeyRecord[] {
-    const rows = this.db
-      .prepare(
-        `SELECT id, name, api_key, status, requests_today, created_at, last_used_at
-         FROM api_keys
-         ORDER BY created_at ASC`
-      )
-      .all() as ApiKeyRow[];
+  async listKeys(): Promise<ApiKeyRecord[]> {
+    const rows = (await this.db`
+      SELECT id, name, api_key, status, requests_today, created_at, last_used_at
+      FROM api_keys
+      ORDER BY created_at ASC
+    `) as ApiKeyRow[];
 
     return rows.map((row) => this.toRecord(row));
   }
 
-  createKey(input: CreateApiKeyInput): ApiKeyRecord {
+  async createKey(input: CreateApiKeyInput): Promise<ApiKeyRecord> {
     const id = randomUUID();
-    this.db
-      .prepare(
-        `INSERT INTO api_keys (id, name, api_key, status, requests_today)
-         VALUES (?, ?, ?, 'active', 0)`
-      )
-      .run(id, input.name, input.apiKey);
+    await this.db`
+      INSERT INTO api_keys (id, name, api_key, status, requests_today)
+      VALUES (${id}, ${input.name}, ${input.apiKey}, 'active', 0)
+    `;
 
-    const created = this.getKeyById(id);
+    const created = await this.getKeyById(id);
     if (!created) {
       throw new Error("Failed to create API key");
     }
     return created;
   }
 
-  updateKeyStatus(id: string, status: ApiKeyStatus): ApiKeyRecord | null {
-    const result = this.db.prepare("UPDATE api_keys SET status = ? WHERE id = ?").run(status, id);
-    if (result.changes === 0) {
+  async updateKeyStatus(id: string, status: ApiKeyStatus): Promise<ApiKeyRecord | null> {
+    const result = await this.db`UPDATE api_keys SET status = ${status} WHERE id = ${id}`;
+    if (result.count === 0) {
       return null;
     }
     return this.getKeyById(id);
   }
 
-  deleteKey(id: string): boolean {
-    const result = this.db.prepare("DELETE FROM api_keys WHERE id = ?").run(id);
-    return result.changes > 0;
+  async deleteKey(id: string): Promise<boolean> {
+    const result = await this.db`DELETE FROM api_keys WHERE id = ${id}`;
+    return result.count > 0;
   }
 
-  incrementRequestsToday(id: string): void {
-    this.db
-      .prepare("UPDATE api_keys SET requests_today = requests_today + 1, last_used_at = CURRENT_TIMESTAMP WHERE id = ?")
-      .run(id);
+  async incrementRequestsToday(id: string): Promise<void> {
+    await this.db`
+      UPDATE api_keys
+      SET requests_today = requests_today + 1, last_used_at = NOW()
+      WHERE id = ${id}
+    `;
   }
 
-  resetDailyCounters(): number {
-    const result = this.db.prepare(
-      `UPDATE api_keys
-       SET requests_today = 0,
-           status = CASE
-             WHEN status = 'exhausted' THEN 'active'
-             ELSE status
-           END`
-    ).run();
+  async resetDailyCounters(): Promise<number> {
+    const result = await this.db`
+      UPDATE api_keys
+      SET requests_today = 0,
+          status = CASE
+            WHEN status = 'exhausted' THEN 'active'
+            ELSE status
+          END
+    `;
 
-    return result.changes;
+    return result.count;
   }
 
-  logRequest(input: LogRequestInput): RequestLogRecord {
-    const result = this.db
-      .prepare(
-        `INSERT INTO request_logs (key_id, processing_time_ms, success, error_code)
-         VALUES (?, ?, ?, ?)`
-      )
-      .run(input.keyId, input.processingTimeMs, input.success ? 1 : 0, input.errorCode);
+  async logRequest(input: LogRequestInput): Promise<RequestLogRecord> {
+    const rows = (await this.db`
+      INSERT INTO request_logs (key_id, processing_time_ms, success, error_code)
+      VALUES (${input.keyId}, ${input.processingTimeMs}, ${input.success}, ${input.errorCode})
+      RETURNING id, key_id, timestamp, processing_time_ms, success, error_code
+    `) as RequestLogRow[];
 
-    const created = this.db
-      .prepare(
-        `SELECT id, key_id, timestamp, processing_time_ms, success, error_code
-         FROM request_logs
-         WHERE id = ?`
-      )
-      .get(result.lastInsertRowid) as RequestLogRow | undefined;
-
+    const created = rows[0];
     if (!created) {
       throw new Error("Failed to log request");
     }
@@ -140,27 +131,24 @@ export class KeyStore {
     return this.toRequestLogRecord(created);
   }
 
-  listRequestLogs(): RequestLogRecord[] {
-    const rows = this.db
-      .prepare(
-        `SELECT id, key_id, timestamp, processing_time_ms, success, error_code
-         FROM request_logs
-         ORDER BY id ASC`
-      )
-      .all() as RequestLogRow[];
+  async listRequestLogs(): Promise<RequestLogRecord[]> {
+    const rows = (await this.db`
+      SELECT id, key_id, timestamp, processing_time_ms, success, error_code
+      FROM request_logs
+      ORDER BY id ASC
+    `) as RequestLogRow[];
 
     return rows.map((row) => this.toRequestLogRecord(row));
   }
 
-  private getKeyById(id: string): ApiKeyRecord | null {
-    const row = this.db
-      .prepare(
-        `SELECT id, name, api_key, status, requests_today, created_at, last_used_at
-         FROM api_keys
-         WHERE id = ?`
-      )
-      .get(id) as ApiKeyRow | undefined;
+  private async getKeyById(id: string): Promise<ApiKeyRecord | null> {
+    const rows = (await this.db`
+      SELECT id, name, api_key, status, requests_today, created_at, last_used_at
+      FROM api_keys
+      WHERE id = ${id}
+    `) as ApiKeyRow[];
 
+    const row = rows[0];
     return row ? this.toRecord(row) : null;
   }
 
@@ -171,18 +159,18 @@ export class KeyStore {
       apiKey: row.api_key,
       status: row.status,
       requestsToday: row.requests_today,
-      createdAt: row.created_at,
-      lastUsedAt: row.last_used_at
+      createdAt: pgTimestamp(row.created_at)!,
+      lastUsedAt: pgTimestamp(row.last_used_at)
     };
   }
 
   private toRequestLogRecord(row: RequestLogRow): RequestLogRecord {
     return {
-      id: row.id,
+      id: pgIntId(row.id),
       keyId: row.key_id,
-      timestamp: row.timestamp,
+      timestamp: pgTimestamp(row.timestamp)!,
       processingTimeMs: row.processing_time_ms,
-      success: row.success === 1,
+      success: row.success,
       errorCode: row.error_code
     };
   }

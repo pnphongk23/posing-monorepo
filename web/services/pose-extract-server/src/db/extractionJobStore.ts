@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
-import type Database from "better-sqlite3";
+import type { Sql } from "./connection";
+import { pgTimestamp } from "./pgTypes";
 
 export type ExtractionJobStatus = "queued" | "processing" | "succeeded" | "failed";
 
@@ -32,76 +33,119 @@ interface ExtractionJobRow {
   error_message: string | null;
   attempts: number;
   max_attempts: number;
-  locked_at: string | null;
+  locked_at: Date | string | null;
   lock_token: string | null;
-  created_at: string;
-  updated_at: string;
+  created_at: Date | string;
+  updated_at: Date | string;
 }
 
 export class ExtractionJobStore {
-  constructor(private readonly db: Database.Database) {}
+  constructor(private readonly db: Sql) {}
 
-  enqueue(input: { sourceImageBase64: string; sourceMimeType: string; maxAttempts?: number }): ExtractionJob {
+  async enqueue(input: {
+    sourceImageBase64: string;
+    sourceMimeType: string;
+    maxAttempts?: number;
+  }): Promise<ExtractionJob> {
     const id = randomUUID();
-    this.db
-      .prepare(`INSERT INTO extraction_jobs (id, status, source_image_base64, source_mime_type, max_attempts) VALUES (?, 'queued', ?, ?, ?)`)
-      .run(id, input.sourceImageBase64, input.sourceMimeType, input.maxAttempts ?? 3);
-    const job = this.getById(id);
+    const rows = (await this.db`
+      INSERT INTO extraction_jobs (id, status, source_image_base64, source_mime_type, max_attempts)
+      VALUES (${id}, 'queued', ${input.sourceImageBase64}, ${input.sourceMimeType}, ${input.maxAttempts ?? 3})
+      RETURNING *
+    `) as ExtractionJobRow[];
+
+    const job = rows[0];
     if (!job) throw new Error("Failed to enqueue extraction job");
-    return job;
+    return this.toJob(job);
   }
 
-  getById(id: string): ExtractionJob | null {
-    const row = this.db.prepare(`SELECT * FROM extraction_jobs WHERE id = ?`).get(id) as ExtractionJobRow | undefined;
+  async getById(id: string): Promise<ExtractionJob | null> {
+    const rows = (await this.db`SELECT * FROM extraction_jobs WHERE id = ${id}`) as ExtractionJobRow[];
+    const row = rows[0];
     return row ? this.toJob(row) : null;
   }
 
-  claimNext(lockToken: string, staleLockSeconds: number): ExtractionJob | null {
-    const staleExpr = `datetime('now', '-' || ? || ' seconds')`;
-    const row = this.db
-      .prepare(
-        `SELECT id FROM extraction_jobs
-         WHERE (status = 'queued' OR (status = 'processing' AND locked_at IS NOT NULL AND locked_at <= ${staleExpr}))
-           AND attempts < max_attempts
-         ORDER BY created_at ASC
-         LIMIT 1`
-      )
-      .get(staleLockSeconds) as { id: string } | undefined;
+  async claimNext(lockToken: string, staleLockSeconds: number): Promise<ExtractionJob | null> {
+    return this.db.begin(async (sql) => {
+      const candidateRows = (await sql`
+        SELECT id
+        FROM extraction_jobs
+        WHERE (
+          status = 'queued'
+          OR (
+            status = 'processing'
+            AND locked_at IS NOT NULL
+            AND locked_at <= NOW() - (${staleLockSeconds} * interval '1 second')
+          )
+        )
+        AND attempts < max_attempts
+        ORDER BY created_at ASC
+        FOR UPDATE SKIP LOCKED
+        LIMIT 1
+      `) as Array<{ id: string }>;
 
-    if (!row) return null;
+      const candidate = candidateRows[0];
+      if (!candidate) {
+        return null;
+      }
 
-    const result = this.db
-      .prepare(
-        `UPDATE extraction_jobs
-         SET status = 'processing', attempts = attempts + 1, lock_token = ?, locked_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-         WHERE id = ? AND (status = 'queued' OR status = 'processing')`
-      )
-      .run(lockToken, row.id);
+      const updated = await sql`
+        UPDATE extraction_jobs
+        SET status = 'processing',
+            attempts = attempts + 1,
+            lock_token = ${lockToken},
+            locked_at = NOW(),
+            updated_at = NOW()
+        WHERE id = ${candidate.id}
+          AND (status = 'queued' OR status = 'processing')
+      `;
 
-    if (result.changes === 0) return null;
-    return this.getById(row.id);
+      if (updated.count === 0) {
+        return null;
+      }
+
+      const rows = (await sql`SELECT * FROM extraction_jobs WHERE id = ${candidate.id}`) as ExtractionJobRow[];
+      const row = rows[0];
+      return row ? this.toJob(row) : null;
+    });
   }
 
-  markSucceeded(id: string, lockToken: string, resultImageBase64: string, resultMimeType: string): void {
-    this.db
-      .prepare(
-        `UPDATE extraction_jobs
-         SET status = 'succeeded', result_image_base64 = ?, result_mime_type = ?, error_code = NULL, error_message = NULL,
-             lock_token = NULL, locked_at = NULL, updated_at = CURRENT_TIMESTAMP
-         WHERE id = ? AND lock_token = ?`
-      )
-      .run(resultImageBase64, resultMimeType, id, lockToken);
+  async markSucceeded(
+    id: string,
+    lockToken: string,
+    resultImageBase64: string,
+    resultMimeType: string
+  ): Promise<void> {
+    await this.db`
+      UPDATE extraction_jobs
+      SET status = 'succeeded',
+          result_image_base64 = ${resultImageBase64},
+          result_mime_type = ${resultMimeType},
+          error_code = NULL,
+          error_message = NULL,
+          lock_token = NULL,
+          locked_at = NULL,
+          updated_at = NOW()
+      WHERE id = ${id} AND lock_token = ${lockToken}
+    `;
   }
 
-  markFailedOrRequeue(id: string, lockToken: string, errorCode: string, errorMessage: string): void {
-    this.db
-      .prepare(
-        `UPDATE extraction_jobs
-         SET status = CASE WHEN attempts >= max_attempts THEN 'failed' ELSE 'queued' END,
-             error_code = ?, error_message = ?, lock_token = NULL, locked_at = NULL, updated_at = CURRENT_TIMESTAMP
-         WHERE id = ? AND lock_token = ?`
-      )
-      .run(errorCode, errorMessage, id, lockToken);
+  async markFailedOrRequeue(
+    id: string,
+    lockToken: string,
+    errorCode: string,
+    errorMessage: string
+  ): Promise<void> {
+    await this.db`
+      UPDATE extraction_jobs
+      SET status = CASE WHEN attempts >= max_attempts THEN 'failed' ELSE 'queued' END,
+          error_code = ${errorCode},
+          error_message = ${errorMessage},
+          lock_token = NULL,
+          locked_at = NULL,
+          updated_at = NOW()
+      WHERE id = ${id} AND lock_token = ${lockToken}
+    `;
   }
 
   private toJob(row: ExtractionJobRow): ExtractionJob {
@@ -116,10 +160,10 @@ export class ExtractionJobStore {
       errorMessage: row.error_message,
       attempts: row.attempts,
       maxAttempts: row.max_attempts,
-      lockedAt: row.locked_at,
+      lockedAt: pgTimestamp(row.locked_at),
       lockToken: row.lock_token,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at
+      createdAt: pgTimestamp(row.created_at)!,
+      updatedAt: pgTimestamp(row.updated_at)!
     };
   }
 }

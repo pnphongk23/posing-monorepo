@@ -1,72 +1,58 @@
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
+import { describe, expect, it } from "vitest";
 
-import { afterEach, describe, expect, it } from "vitest";
-
-import { createDatabase } from "../db/connection";
+import { setupTestDatabase } from "../db/testDb";
 import { KeyStore } from "./keyStore";
 
-const tempDirs: string[] = [];
-
-afterEach(() => {
-  for (const tempDir of tempDirs.splice(0)) {
-    fs.rmSync(tempDir, { recursive: true, force: true });
-  }
-});
-
-function createTestStore(): KeyStore {
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "pose-keystore-"));
-  tempDirs.push(tempDir);
-  const db = createDatabase(path.join(tempDir, "keys.db"));
-  return new KeyStore(db);
+async function createTestStore(): Promise<KeyStore> {
+  const sql = await setupTestDatabase();
+  return new KeyStore(sql);
 }
 
 describe("KeyStore", () => {
-  it("creates and lists keys", () => {
-    const keyStore = createTestStore();
+  it("creates and lists keys", async () => {
+    const keyStore = await createTestStore();
 
-    const created = keyStore.createKey({
+    const created = await keyStore.createKey({
       name: "Primary",
       apiKey: "AIza-primary"
     });
 
-    const keys = keyStore.listKeys();
+    const keys = await keyStore.listKeys();
     expect(created.status).toBe("active");
     expect(created.requestsToday).toBe(0);
     expect(keys).toHaveLength(1);
     expect(keys[0]).toEqual(created);
   });
 
-  it("updates key status and deletes key", () => {
-    const keyStore = createTestStore();
-    const created = keyStore.createKey({
+  it("updates key status and deletes key", async () => {
+    const keyStore = await createTestStore();
+    const created = await keyStore.createKey({
       name: "Secondary",
       apiKey: "AIza-secondary"
     });
 
-    const updated = keyStore.updateKeyStatus(created.id, "disabled");
-    const wasDeleted = keyStore.deleteKey(created.id);
+    const updated = await keyStore.updateKeyStatus(created.id, "disabled");
+    const wasDeleted = await keyStore.deleteKey(created.id);
 
     expect(updated?.status).toBe("disabled");
     expect(wasDeleted).toBe(true);
-    expect(keyStore.listKeys()).toHaveLength(0);
+    expect(await keyStore.listKeys()).toHaveLength(0);
   });
 
-  it("resets requests_today and only reactivates exhausted keys", () => {
-    const keyStore = createTestStore();
-    const active = keyStore.createKey({ name: "A", apiKey: "key-a" });
-    const exhausted = keyStore.createKey({ name: "B", apiKey: "key-b" });
-    const disabled = keyStore.createKey({ name: "C", apiKey: "key-c" });
+  it("resets requests_today and only reactivates exhausted keys", async () => {
+    const keyStore = await createTestStore();
+    const active = await keyStore.createKey({ name: "A", apiKey: "key-a" });
+    const exhausted = await keyStore.createKey({ name: "B", apiKey: "key-b" });
+    const disabled = await keyStore.createKey({ name: "C", apiKey: "key-c" });
 
-    keyStore.incrementRequestsToday(active.id);
-    keyStore.incrementRequestsToday(exhausted.id);
-    keyStore.incrementRequestsToday(disabled.id);
-    keyStore.updateKeyStatus(exhausted.id, "exhausted");
-    keyStore.updateKeyStatus(disabled.id, "disabled");
+    await keyStore.incrementRequestsToday(active.id);
+    await keyStore.incrementRequestsToday(exhausted.id);
+    await keyStore.incrementRequestsToday(disabled.id);
+    await keyStore.updateKeyStatus(exhausted.id, "exhausted");
+    await keyStore.updateKeyStatus(disabled.id, "disabled");
 
-    const affectedRows = keyStore.resetDailyCounters();
-    const keys = keyStore.listKeys();
+    const affectedRows = await keyStore.resetDailyCounters();
+    const keys = await keyStore.listKeys();
 
     const activeAfterReset = keys.find((item) => item.id === active.id);
     const exhaustedAfterReset = keys.find((item) => item.id === exhausted.id);

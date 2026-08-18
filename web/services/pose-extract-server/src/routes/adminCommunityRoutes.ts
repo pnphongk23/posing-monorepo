@@ -31,6 +31,7 @@ export interface CreateAdminCommunityRoutesOptions {
   r2PublicUrl: string;
   createUploadUrl: (input: { fileName: string; mimeType: string }) => Promise<UploadUrlPayload>;
   objectExists: (fileKey: string) => Promise<boolean>;
+  uploadObject: (input: { fileKey: string; body: Buffer; mimeType: string }) => Promise<void>;
   jobStore: ExtractionJobStore;
 }
 
@@ -69,17 +70,20 @@ function parseStringList(value: unknown): string[] {
 }
 
 export function createAdminCommunityRoutes(options: CreateAdminCommunityRoutesOptions): Router {
-  const { adminSecret, communityStore, r2PublicUrl, createUploadUrl, objectExists, jobStore } = options;
+  const { adminSecret, communityStore, r2PublicUrl, createUploadUrl, objectExists, uploadObject, jobStore } = options;
 
   const auth = createAdminAuthMiddleware(adminSecret);
   const upload = createUploadMiddleware();
   const router = Router();
 
-  router.get("/", auth, (req, res) => {
+  router.get("/", auth, async (req, res) => {
     const page = Math.max(1, Number(req.query.page) || 1);
     const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 50));
     const allStatuses: Array<"draft" | "published"> = ["draft", "published"];
-    const results = allStatuses.flatMap((s) => communityStore.listPoses({ status: s, page: 1, limit: 200 }).poses);
+    const listResults = await Promise.all(
+      allStatuses.map((s) => communityStore.listPoses({ status: s, page: 1, limit: 200 }))
+    );
+    const results = listResults.flatMap((result) => result.poses);
     results.sort((a, b) => (a.uploadedAt < b.uploadedAt ? 1 : -1));
     const offset = (page - 1) * limit;
     const paginated = results.slice(offset, offset + limit);
@@ -145,14 +149,17 @@ export function createAdminCommunityRoutes(options: CreateAdminCommunityRoutesOp
 
     try {
       const { name, tags, difficulty, description, bodyParts, status } = parsed.data;
-      const job = jobStore.enqueue({
+
+      const fileKey = `community/${Date.now()}-${req.file.originalname.replace(/[^a-zA-Z0-9._-]/g, "-")}`;
+      await uploadObject({ fileKey, body: req.file.buffer, mimeType: req.file.mimetype });
+
+      const job = await jobStore.enqueue({
         sourceImageBase64: req.file.buffer.toString("base64"),
         sourceMimeType: req.file.mimetype,
       });
 
-      const fileKey = `community/${Date.now()}-${req.file.originalname.replace(/[^a-zA-Z0-9._-]/g, "-")}`;
       const imagePath = buildPublicUrl(r2PublicUrl, fileKey);
-      const pose = communityStore.createPose({
+      const pose = await communityStore.createPose({
         name,
         imagePath,
         thumbnailPath: null,

@@ -88,7 +88,7 @@ All error handling works correctly.
 
 ### Step 7: Migration Script Dry-Runs
 - Scripts exist: `scripts/migrate-imagepath-to-r2.ts`, `scripts/cleanup-r2-orphans.ts`
-- Local execution fails due to missing env vars (`DATABASE_PATH`, `R2_*`, `ADMIN_SECRET`) — expected
+- Local execution fails due to missing env vars (`DATABASE_URL`, `R2_*`, `ADMIN_SECRET`) — expected
 - **Non-blocker** per task spec — scripts must be run on the Railway production container with env injected
 
 ### Step 8: Tests & Build

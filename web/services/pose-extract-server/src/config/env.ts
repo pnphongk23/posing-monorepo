@@ -3,7 +3,7 @@ import { z } from "zod";
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   PORT: z.coerce.number().int().positive().default(3000),
-  DATABASE_PATH: z.string().min(1),
+  DATABASE_URL: z.string().min(1),
   ADMIN_SECRET: z.string().min(1),
   COMMUNITY_UPLOAD_DIR: z.string().min(1).default("data/community"),
   RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60_000),
@@ -32,7 +32,7 @@ export function getEnv(overrides?: Record<string, string | undefined>): AppEnv {
   const parsed = envSchema.safeParse({
     NODE_ENV: overrides?.NODE_ENV ?? process.env.NODE_ENV,
     PORT: overrides?.PORT ?? process.env.PORT,
-    DATABASE_PATH: overrides?.DATABASE_PATH ?? process.env.DATABASE_PATH,
+    DATABASE_URL: overrides?.DATABASE_URL ?? process.env.DATABASE_URL,
     ADMIN_SECRET: overrides?.ADMIN_SECRET ?? process.env.ADMIN_SECRET,
     COMMUNITY_UPLOAD_DIR: overrides?.COMMUNITY_UPLOAD_DIR ?? process.env.COMMUNITY_UPLOAD_DIR,
     RATE_LIMIT_WINDOW_MS: overrides?.RATE_LIMIT_WINDOW_MS ?? process.env.RATE_LIMIT_WINDOW_MS,

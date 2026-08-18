@@ -11,3 +11,7 @@ restartPolicyType = "on_failure"
 [[mounts]]
 source = "data"
 destination = "/app/data"
+
+[[mounts]]
+source = "higgsfield"
+destination = "/app/higgsfield"

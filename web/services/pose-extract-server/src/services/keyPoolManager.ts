@@ -2,8 +2,8 @@ import { AllKeysExhaustedError } from "./errors";
 import type { ApiKeyRecord } from "./types";
 
 interface KeyStoreLike {
-  listKeys(): ApiKeyRecord[];
-  updateKeyStatus(id: string, status: ApiKeyRecord["status"]): ApiKeyRecord | null;
+  listKeys(): Promise<ApiKeyRecord[]>;
+  updateKeyStatus(id: string, status: ApiKeyRecord["status"]): Promise<ApiKeyRecord | null>;
 }
 
 export class KeyPoolManager {
@@ -13,8 +13,9 @@ export class KeyPoolManager {
   constructor(private readonly keyStore: KeyStoreLike) {}
 
   async getNextActiveKey(): Promise<ApiKeyRecord> {
-    return this.runExclusive(() => {
-      const activeKeys = this.keyStore.listKeys().filter((key) => key.status === "active");
+    return this.runExclusive(async () => {
+      const keys = await this.keyStore.listKeys();
+      const activeKeys = keys.filter((key) => key.status === "active");
       if (activeKeys.length === 0) {
         throw new AllKeysExhaustedError();
       }
@@ -28,17 +29,17 @@ export class KeyPoolManager {
   }
 
   async markKeyExhausted(keyId: string): Promise<void> {
-    await this.runExclusive(() => {
-      const activeBefore = this.keyStore.listKeys().filter((key) => key.status === "active");
+    await this.runExclusive(async () => {
+      const activeBefore = (await this.keyStore.listKeys()).filter((key) => key.status === "active");
       const removedIndex = activeBefore.findIndex((key) => key.id === keyId);
       const pointerBefore = this.nextIndex;
 
-      const updated = this.keyStore.updateKeyStatus(keyId, "exhausted");
+      const updated = await this.keyStore.updateKeyStatus(keyId, "exhausted");
       if (!updated) {
         return;
       }
 
-      const activeCount = this.keyStore.listKeys().filter((key) => key.status === "active").length;
+      const activeCount = (await this.keyStore.listKeys()).filter((key) => key.status === "active").length;
       if (activeCount === 0) {
         this.nextIndex = 0;
         return;

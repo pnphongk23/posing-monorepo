@@ -1,28 +1,14 @@
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
-
 import express from "express";
 import request from "supertest";
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
-import { createDatabase } from "../db/connection";
+import { setupTestDatabase } from "../db/testDb";
 import { CommunityStore } from "../db/communityStore";
 import { createCommunityRoutes } from "./communityRoutes";
 
-const tempDirs: string[] = [];
-
-afterEach(() => {
-  for (const tempDir of tempDirs.splice(0)) {
-    fs.rmSync(tempDir, { recursive: true, force: true });
-  }
-});
-
-function createTestApp() {
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "pose-community-routes-"));
-  tempDirs.push(tempDir);
-  const db = createDatabase(path.join(tempDir, "test.db"));
-  const communityStore = new CommunityStore(db);
+async function createTestApp() {
+  const sql = await setupTestDatabase();
+  const communityStore = new CommunityStore(sql);
 
   const app = express();
   app.use("/api/community/poses", createCommunityRoutes(communityStore));
@@ -30,7 +16,10 @@ function createTestApp() {
   return { app, communityStore };
 }
 
-function seedPose(store: CommunityStore, overrides: Partial<Parameters<CommunityStore["createPose"]>[0]> = {}) {
+async function seedPose(
+  store: CommunityStore,
+  overrides: Partial<Parameters<CommunityStore["createPose"]>[0]> = {}
+) {
   return store.createPose({
     name: "Test Pose",
     imagePath: "community/test.png",
@@ -40,13 +29,13 @@ function seedPose(store: CommunityStore, overrides: Partial<Parameters<Community
     description: "A test pose",
     bodyParts: ["legs"],
     status: "published",
-    ...overrides,
+    ...overrides
   });
 }
 
 describe("GET /api/community/poses", () => {
   it("returns empty list when no poses", async () => {
-    const { app } = createTestApp();
+    const { app } = await createTestApp();
 
     const res = await request(app).get("/api/community/poses");
 
@@ -56,9 +45,9 @@ describe("GET /api/community/poses", () => {
   });
 
   it("returns only published poses", async () => {
-    const { app, communityStore } = createTestApp();
-    seedPose(communityStore, { status: "published", name: "Published" });
-    seedPose(communityStore, { status: "draft", name: "Draft" });
+    const { app, communityStore } = await createTestApp();
+    await seedPose(communityStore, { status: "published", name: "Published" });
+    await seedPose(communityStore, { status: "draft", name: "Draft" });
 
     const res = await request(app).get("/api/community/poses");
 
@@ -68,9 +57,9 @@ describe("GET /api/community/poses", () => {
   });
 
   it("filters by difficulty query param", async () => {
-    const { app, communityStore } = createTestApp();
-    seedPose(communityStore, { difficulty: "beginner", name: "Easy" });
-    seedPose(communityStore, { difficulty: "advanced", name: "Hard" });
+    const { app, communityStore } = await createTestApp();
+    await seedPose(communityStore, { difficulty: "beginner", name: "Easy" });
+    await seedPose(communityStore, { difficulty: "advanced", name: "Hard" });
 
     const res = await request(app).get("/api/community/poses?difficulty=beginner");
 
@@ -80,9 +69,9 @@ describe("GET /api/community/poses", () => {
   });
 
   it("filters by tag query param", async () => {
-    const { app, communityStore } = createTestApp();
-    seedPose(communityStore, { tags: ["balance"], name: "Balance" });
-    seedPose(communityStore, { tags: ["core"], name: "Core" });
+    const { app, communityStore } = await createTestApp();
+    await seedPose(communityStore, { tags: ["balance"], name: "Balance" });
+    await seedPose(communityStore, { tags: ["core"], name: "Core" });
 
     const res = await request(app).get("/api/community/poses?tag=balance");
 
@@ -92,9 +81,9 @@ describe("GET /api/community/poses", () => {
   });
 
   it("paginates with page and limit params", async () => {
-    const { app, communityStore } = createTestApp();
+    const { app, communityStore } = await createTestApp();
     for (let i = 0; i < 5; i++) {
-      seedPose(communityStore, { name: `Pose ${i}` });
+      await seedPose(communityStore, { name: `Pose ${i}` });
     }
 
     const res = await request(app).get("/api/community/poses?page=1&limit=3");
@@ -107,7 +96,7 @@ describe("GET /api/community/poses", () => {
   });
 
   it("rejects invalid difficulty param", async () => {
-    const { app } = createTestApp();
+    const { app } = await createTestApp();
 
     const res = await request(app).get("/api/community/poses?difficulty=extreme");
 
@@ -117,7 +106,7 @@ describe("GET /api/community/poses", () => {
 
 describe("GET /api/community/poses/:id", () => {
   it("returns 404 for unknown id", async () => {
-    const { app } = createTestApp();
+    const { app } = await createTestApp();
 
     const res = await request(app).get("/api/community/poses/nonexistent");
 
@@ -125,8 +114,8 @@ describe("GET /api/community/poses/:id", () => {
   });
 
   it("returns pose and increments download count", async () => {
-    const { app, communityStore } = createTestApp();
-    const pose = seedPose(communityStore);
+    const { app, communityStore } = await createTestApp();
+    const pose = await seedPose(communityStore);
 
     const res1 = await request(app).get(`/api/community/poses/${pose.id}`);
     expect(res1.status).toBe(200);
@@ -138,8 +127,8 @@ describe("GET /api/community/poses/:id", () => {
   });
 
   it("returns 404 for draft poses", async () => {
-    const { app, communityStore } = createTestApp();
-    const draft = seedPose(communityStore, { status: "draft" });
+    const { app, communityStore } = await createTestApp();
+    const draft = await seedPose(communityStore, { status: "draft" });
 
     const res = await request(app).get(`/api/community/poses/${draft.id}`);
 

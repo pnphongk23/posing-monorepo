@@ -31,7 +31,7 @@ vi.mock("../config/env", () => ({
   })
 }));
 
-import { buildPublicUrl, createUploadUrl, objectExists } from "./r2Storage";
+import { buildPublicUrl, createUploadUrl, objectExists, uploadObject } from "./r2Storage";
 
 const s3Module = await vi.importMock<typeof import("@aws-sdk/client-s3")>("@aws-sdk/client-s3");
 const stubClient = new s3Module.S3Client({} as never);
@@ -65,6 +65,40 @@ describe("r2Storage", () => {
 
       expect(payload.uploadUrl).toBe("https://upload.example.com/signed");
       expect(payload.fileKey).toMatch(/^community\/.+\.png$/);
+    });
+  });
+
+  describe("uploadObject", () => {
+    it("uploads bytes to R2 via PutObjectCommand", async () => {
+      stubSend.mockResolvedValue({});
+
+      const body = Buffer.from("image-bytes");
+      await uploadObject({
+        fileKey: "community/123.png",
+        body,
+        mimeType: "image/png"
+      });
+
+      expect(stubSend).toHaveBeenCalledTimes(1);
+      const command = stubSend.mock.calls[0]?.[0] as { input: Record<string, unknown> };
+      expect(command.input).toMatchObject({
+        Bucket: "test-bucket",
+        Key: "community/123.png",
+        Body: body,
+        ContentType: "image/png"
+      });
+    });
+
+    it("propagates errors from the S3 client", async () => {
+      stubSend.mockRejectedValue(new Error("upload failed"));
+
+      await expect(
+        uploadObject({
+          fileKey: "community/123.png",
+          body: Buffer.from("image-bytes"),
+          mimeType: "image/png"
+        })
+      ).rejects.toThrow("upload failed");
     });
   });
 

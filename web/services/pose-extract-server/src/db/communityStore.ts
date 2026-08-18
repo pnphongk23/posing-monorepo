@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
-import type Database from "better-sqlite3";
+import type { Sql } from "./connection";
+import { pgTimestamp } from "./pgTypes";
 
 export type PoseStatus = "draft" | "published";
 export type PoseDifficulty = "beginner" | "intermediate" | "advanced";
@@ -53,86 +54,81 @@ interface CommunityPoseRow {
   description: string | null;
   body_parts: string;
   status: PoseStatus;
-  uploaded_at: string;
+  uploaded_at: Date | string;
   download_count: number;
 }
 
 export class CommunityStore {
-  constructor(private readonly db: Database.Database) {}
+  constructor(private readonly db: Sql) {}
 
-  createPose(input: CreatePoseInput): CommunityPoseRecord {
+  async createPose(input: CreatePoseInput): Promise<CommunityPoseRecord> {
     const id = randomUUID();
-    this.db
-      .prepare(
-        `INSERT INTO community_poses
-           (id, name, image_path, thumbnail_path, tags, difficulty, description, body_parts, status)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    const rows = (await this.db`
+      INSERT INTO community_poses
+        (id, name, image_path, thumbnail_path, tags, difficulty, description, body_parts, status)
+      VALUES (
+        ${id},
+        ${input.name},
+        ${input.imagePath},
+        ${input.thumbnailPath},
+        ${JSON.stringify(input.tags)},
+        ${input.difficulty},
+        ${input.description},
+        ${JSON.stringify(input.bodyParts)},
+        ${input.status}
       )
-      .run(
-        id,
-        input.name,
-        input.imagePath,
-        input.thumbnailPath,
-        JSON.stringify(input.tags),
-        input.difficulty,
-        input.description,
-        JSON.stringify(input.bodyParts),
-        input.status
-      );
+      RETURNING *
+    `) as CommunityPoseRow[];
 
-    const created = this.getPoseById(id);
+    const created = rows[0];
     if (!created) throw new Error("Failed to create pose");
-    return created;
+    return this.toRecord(created);
   }
 
-  getPoseById(id: string): CommunityPoseRecord | null {
-    const row = this.db
-      .prepare(`SELECT * FROM community_poses WHERE id = ?`)
-      .get(id) as CommunityPoseRow | undefined;
+  async getPoseById(id: string): Promise<CommunityPoseRecord | null> {
+    const rows = (await this.db`SELECT * FROM community_poses WHERE id = ${id}`) as CommunityPoseRow[];
+    const row = rows[0];
     return row ? this.toRecord(row) : null;
   }
 
-  listPoses(filter: ListPosesFilter): ListPosesResult {
-    const conditions: string[] = ["status = ?"];
-    const params: unknown[] = [filter.status];
-
-    if (filter.difficulty) {
-      conditions.push("difficulty = ?");
-      params.push(filter.difficulty);
-    }
-
-    if (filter.tag) {
-      conditions.push("tags LIKE ?");
-      params.push(`%"${filter.tag}"%`);
-    }
-
-    const where = conditions.join(" AND ");
+  async listPoses(filter: ListPosesFilter): Promise<ListPosesResult> {
     const offset = (filter.page - 1) * filter.limit;
 
-    const countRow = this.db
-      .prepare(`SELECT COUNT(*) as count FROM community_poses WHERE ${where}`)
-      .get(...params) as { count: number };
+    const difficultyCondition = filter.difficulty
+      ? this.db` AND difficulty = ${filter.difficulty}`
+      : this.db``;
+    const tagCondition = filter.tag
+      ? this.db` AND tags LIKE ${`%"${filter.tag}"%`}`
+      : this.db``;
 
-    const rows = this.db
-      .prepare(
-        `SELECT * FROM community_poses WHERE ${where}
-         ORDER BY uploaded_at DESC
-         LIMIT ? OFFSET ?`
-      )
-      .all(...params, filter.limit, offset) as CommunityPoseRow[];
+    const countRows = (await this.db`
+      SELECT COUNT(*) AS count
+      FROM community_poses
+      WHERE status = ${filter.status}${difficultyCondition}${tagCondition}
+    `) as Array<{ count: string | number }>;
+
+    const total = Number(countRows[0]?.count ?? 0);
+
+    const rows = (await this.db`
+      SELECT *
+      FROM community_poses
+      WHERE status = ${filter.status}${difficultyCondition}${tagCondition}
+      ORDER BY uploaded_at DESC
+      LIMIT ${filter.limit} OFFSET ${offset}
+    `) as CommunityPoseRow[];
 
     return {
       poses: rows.map((row) => this.toRecord(row)),
-      total: countRow.count,
+      total
     };
   }
 
-  incrementDownload(id: string): void {
-    this.db
-      .prepare(
-        `UPDATE community_poses SET download_count = download_count + 1 WHERE id = ?`
-      )
-      .run(id);
+  async incrementDownload(id: string): Promise<void> {
+    await this.db`
+      UPDATE community_poses
+      SET download_count = download_count + 1
+      WHERE id = ${id}
+    `;
   }
 
   private toRecord(row: CommunityPoseRow): CommunityPoseRecord {
@@ -146,8 +142,8 @@ export class CommunityStore {
       description: row.description,
       bodyParts: JSON.parse(row.body_parts) as string[],
       status: row.status,
-      uploadedAt: row.uploaded_at,
-      downloadCount: row.download_count,
+      uploadedAt: pgTimestamp(row.uploaded_at)!,
+      downloadCount: row.download_count
     };
   }
 }

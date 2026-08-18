@@ -46,6 +46,42 @@ export class GeminiQuotaExceededError extends AppError {
   }
 }
 
+export class ProviderError extends AppError {
+  constructor(message = "Provider request failed") {
+    super(message, 500, "PROVIDER_ERROR");
+  }
+}
+
+export class ProviderQuotaExceededError extends AppError {
+  constructor(message = "Provider quota exceeded") {
+    super(message, 429, "PROVIDER_QUOTA_EXCEEDED");
+  }
+}
+
+export class ProviderCredentialsExhaustedError extends AppError {
+  constructor(message = "All provider credentials exhausted") {
+    super(message, 503, "PROVIDER_CREDENTIALS_EXHAUSTED");
+  }
+}
+
+export class ProviderAuthRequiredError extends AppError {
+  constructor(message = "Provider authentication required") {
+    super(message, 401, "PROVIDER_AUTH_REQUIRED");
+  }
+}
+
+export class ProviderTimeoutError extends AppError {
+  constructor(message = "Provider request timed out") {
+    super(message, 504, "PROVIDER_TIMEOUT");
+  }
+}
+
+export class ProviderCliFailedError extends AppError {
+  constructor(message = "Provider CLI failed") {
+    super(message, 500, "PROVIDER_CLI_FAILED");
+  }
+}
+
 export class UnauthorizedError extends AppError {
   constructor(message = "Unauthorized") {
     super(message, 401, "UNAUTHORIZED");

@@ -61,29 +61,30 @@ export function createAdminRoutes(options: CreateAdminRoutesOptions): Router {
   router.use(rateLimit);
   router.use(auth);
 
-  router.get("/keys", (_req, res) => {
-    res.json({ data: options.keyStore.listKeys().map(toPublicKeyRecord) });
+  router.get("/keys", async (_req, res) => {
+    const keys = await options.keyStore.listKeys();
+    res.json({ data: keys.map(toPublicKeyRecord) });
   });
 
-  router.post("/keys", (req, res) => {
+  router.post("/keys", async (req, res) => {
     const parsed = createKeySchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json(badRequest("Invalid key payload"));
       return;
     }
 
-    const created = options.keyStore.createKey(parsed.data);
+    const created = await options.keyStore.createKey(parsed.data);
     res.status(201).json({ data: toPublicKeyRecord(created) });
   });
 
-  router.patch("/keys/:id", (req, res) => {
+  router.patch("/keys/:id", async (req, res) => {
     const parsed = updateKeyStatusSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json(badRequest("Invalid status payload"));
       return;
     }
 
-    const updated = options.keyStore.updateKeyStatus(req.params.id, parsed.data.status);
+    const updated = await options.keyStore.updateKeyStatus(req.params.id, parsed.data.status);
     if (!updated) {
       res.status(404).json(notFound("API key not found"));
       return;
@@ -92,8 +93,8 @@ export function createAdminRoutes(options: CreateAdminRoutesOptions): Router {
     res.json({ data: toPublicKeyRecord(updated) });
   });
 
-  router.delete("/keys/:id", (req, res) => {
-    const deleted = options.keyStore.deleteKey(req.params.id);
+  router.delete("/keys/:id", async (req, res) => {
+    const deleted = await options.keyStore.deleteKey(req.params.id);
     if (!deleted) {
       res.status(404).json(notFound("API key not found"));
       return;
@@ -102,8 +103,8 @@ export function createAdminRoutes(options: CreateAdminRoutesOptions): Router {
     res.status(204).send();
   });
 
-  router.post("/keys/reset", (_req, res) => {
-    const updated = options.keyStore.resetDailyCounters();
+  router.post("/keys/reset", async (_req, res) => {
+    const updated = await options.keyStore.resetDailyCounters();
     res.json({ data: { updated } });
   });
 

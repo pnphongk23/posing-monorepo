@@ -5,7 +5,7 @@ import { getEnv, resetEnvCache } from "./env";
 const originalEnv = {
   NODE_ENV: process.env.NODE_ENV,
   PORT: process.env.PORT,
-  DATABASE_PATH: process.env.DATABASE_PATH,
+  DATABASE_URL: process.env.DATABASE_URL,
   ADMIN_SECRET: process.env.ADMIN_SECRET,
   RATE_LIMIT_WINDOW_MS: process.env.RATE_LIMIT_WINDOW_MS,
   RATE_LIMIT_MAX: process.env.RATE_LIMIT_MAX,
@@ -33,10 +33,10 @@ afterEach(() => {
     process.env.PORT = originalEnv.PORT;
   }
 
-  if (originalEnv.DATABASE_PATH === undefined) {
-    delete process.env.DATABASE_PATH;
+  if (originalEnv.DATABASE_URL === undefined) {
+    delete process.env.DATABASE_URL;
   } else {
-    process.env.DATABASE_PATH = originalEnv.DATABASE_PATH;
+    process.env.DATABASE_URL = originalEnv.DATABASE_URL;
   }
 
   if (originalEnv.ADMIN_SECRET === undefined) {
@@ -73,11 +73,13 @@ afterEach(() => {
   }
 });
 
+const DATABASE_URL = "postgres://user:pass@localhost:5432/pose";
+
 describe("getEnv", () => {
   it("uses schema defaults when NODE_ENV and PORT are missing", () => {
     delete process.env.NODE_ENV;
     delete process.env.PORT;
-    process.env.DATABASE_PATH = "./data/defaults.db";
+    process.env.DATABASE_URL = DATABASE_URL;
     process.env.ADMIN_SECRET = "secret-value";
     process.env.R2_ACCOUNT_ID = "account-id";
     process.env.R2_ACCESS_KEY_ID = "access-key-id";
@@ -89,7 +91,7 @@ describe("getEnv", () => {
 
     expect(env.NODE_ENV).toBe("development");
     expect(env.PORT).toBe(3000);
-    expect(env.DATABASE_PATH).toBe("./data/defaults.db");
+    expect(env.DATABASE_URL).toBe(DATABASE_URL);
     expect(env.ADMIN_SECRET).toBe("secret-value");
     expect(env.RATE_LIMIT_WINDOW_MS).toBe(60_000);
     expect(env.RATE_LIMIT_MAX).toBe(10);
@@ -103,7 +105,7 @@ describe("getEnv", () => {
   it("reads NODE_ENV and PORT from current process env", () => {
     process.env.NODE_ENV = "production";
     process.env.PORT = "4567";
-    process.env.DATABASE_PATH = "./data/current-env.db";
+    process.env.DATABASE_URL = "postgres://prod:secret@db.prod:5432/pose";
     process.env.ADMIN_SECRET = "prod-secret";
     process.env.RATE_LIMIT_WINDOW_MS = "120000";
     process.env.RATE_LIMIT_MAX = "25";
@@ -117,7 +119,7 @@ describe("getEnv", () => {
 
     expect(env.NODE_ENV).toBe("production");
     expect(env.PORT).toBe(4567);
-    expect(env.DATABASE_PATH).toBe("./data/current-env.db");
+    expect(env.DATABASE_URL).toBe("postgres://prod:secret@db.prod:5432/pose");
     expect(env.ADMIN_SECRET).toBe("prod-secret");
     expect(env.RATE_LIMIT_WINDOW_MS).toBe(120000);
     expect(env.RATE_LIMIT_MAX).toBe(25);
@@ -132,7 +134,7 @@ describe("getEnv", () => {
     expect(() =>
       getEnv({
         ADMIN_SECRET: "",
-        DATABASE_PATH: "",
+        DATABASE_URL: "",
         R2_ACCOUNT_ID: "",
         R2_ACCESS_KEY_ID: "",
         R2_SECRET_ACCESS_KEY: "",
@@ -142,10 +144,24 @@ describe("getEnv", () => {
     ).toThrowError(/Invalid environment variables/);
   });
 
+  it("throws when DATABASE_URL is missing", () => {
+    expect(() =>
+      getEnv({
+        DATABASE_URL: undefined,
+        ADMIN_SECRET: "secret",
+        R2_ACCOUNT_ID: "account-id",
+        R2_ACCESS_KEY_ID: "access-key-id",
+        R2_SECRET_ACCESS_KEY: "secret-access-key",
+        R2_BUCKET: "pose-bucket",
+        R2_PUBLIC_URL: "https://cdn.example.com"
+      })
+    ).toThrowError(/Invalid environment variables/);
+  });
+
   it("parses COMMUNITY_UPLOAD_DIR", () => {
     resetEnvCache();
     const env = getEnv({
-      DATABASE_PATH: "/tmp/test.db",
+      DATABASE_URL,
       ADMIN_SECRET: "secret",
       COMMUNITY_UPLOAD_DIR: "/tmp/community",
       R2_ACCOUNT_ID: "account-id",
@@ -162,7 +178,7 @@ describe("getEnv", () => {
   it("defaults COMMUNITY_UPLOAD_DIR to data/community", () => {
     resetEnvCache();
     const env = getEnv({
-      DATABASE_PATH: "/tmp/test.db",
+      DATABASE_URL,
       ADMIN_SECRET: "secret",
       R2_ACCOUNT_ID: "account-id",
       R2_ACCESS_KEY_ID: "access-key-id",
@@ -176,7 +192,7 @@ describe("getEnv", () => {
   });
 
   const r2BaseOverrides = {
-    DATABASE_PATH: "/tmp/test.db",
+    DATABASE_URL,
     ADMIN_SECRET: "secret",
     R2_ACCOUNT_ID: "account-id",
     R2_ACCESS_KEY_ID: "access-key-id",

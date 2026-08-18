@@ -13,7 +13,7 @@ const listQuerySchema = z.object({
 export function createCommunityRoutes(communityStore: CommunityStore): Router {
   const router = Router();
 
-  router.get("/", (req, res) => {
+  router.get("/", async (req, res) => {
     const parsed = listQuerySchema.safeParse(req.query);
     if (!parsed.success) {
       const messages = parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join(", ");
@@ -22,7 +22,7 @@ export function createCommunityRoutes(communityStore: CommunityStore): Router {
     }
 
     const { page, limit, difficulty, tag } = parsed.data;
-    const { poses, total } = communityStore.listPoses({
+    const { poses, total } = await communityStore.listPoses({
       status: "published",
       difficulty,
       tag,
@@ -36,16 +36,16 @@ export function createCommunityRoutes(communityStore: CommunityStore): Router {
     });
   });
 
-  router.get("/:id", (req, res) => {
-    const pose = communityStore.getPoseById(req.params.id);
+  router.get("/:id", async (req, res) => {
+    const pose = await communityStore.getPoseById(req.params.id);
 
     if (!pose || pose.status !== "published") {
       res.status(404).json({ error: { code: "NOT_FOUND", message: "Pose not found" } });
       return;
     }
 
-    communityStore.incrementDownload(pose.id);
-    const updated = communityStore.getPoseById(pose.id)!;
+    await communityStore.incrementDownload(pose.id);
+    const updated = await communityStore.getPoseById(pose.id);
 
     res.json({ data: updated });
   });

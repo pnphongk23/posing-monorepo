@@ -2,13 +2,16 @@ import type { NextFunction, Request, Response } from "express";
 import express from "express";
 import fs from "node:fs";
 
+import type { ProviderSettingsStore } from "./db/providerSettingsStore";
 import { createAdminRoutes } from "./routes/adminRoutes";
+import { createAdminSettingsRoutes } from "./routes/adminSettingsRoutes";
+import { createExtractJobsRoutes } from "./routes/extractJobsRoutes";
 import { createExtractPoseRoutes } from "./routes/extractPoseRoutes";
 import { createCommunityRoutes } from "./routes/communityRoutes";
 import { createAdminCommunityRoutes } from "./routes/adminCommunityRoutes";
 import { createJobStatusRoutes } from "./routes/jobStatusRoutes";
 import type { ExtractionJobStore } from "./db/extractionJobStore";
-import { createUploadUrl, objectExists } from "./services/r2Storage";
+import { createUploadUrl, objectExists, uploadObject } from "./services/r2Storage";
 import { AppError } from "./services/errors";
 import type { KeyPoolManager } from "./services/keyPoolManager";
 import type { KeyStore } from "./services/keyStore";
@@ -48,6 +51,7 @@ interface CreateAppOptions {
   communityStore?: CommunityStore;
   communityUploadDir?: string;
   extractionJobStore?: ExtractionJobStore;
+  providerSettingsStore?: ProviderSettingsStore;
 }
 
 export function createCommunityExtractPoseImage(options: CreateAppOptions): ExtractPoseImage | null {
@@ -64,9 +68,9 @@ export function createCommunityExtractPoseImage(options: CreateAppOptions): Extr
       sourceMimeType,
     });
 
-    options.keyStore!.incrementRequestsToday(key.id);
+    await options.keyStore!.incrementRequestsToday(key.id);
     const processingTimeMs = Date.now() - processingStart;
-    options.keyStore!.logRequest({
+    await options.keyStore!.logRequest({
       keyId: key.id,
       processingTimeMs,
       success: true,
@@ -123,13 +127,31 @@ export function createApp(options: CreateAppOptions): express.Express {
     );
   }
 
-  if (options.keyStore && options.keyPoolManager && options.geminiService) {
+  if (options.adminSecret && options.providerSettingsStore) {
+    app.use(
+      "/api/admin/settings",
+      createAdminSettingsRoutes({
+        adminSecret: options.adminSecret,
+        providerSettingsStore: options.providerSettingsStore,
+        rateLimitWindowMs: options.adminRateLimitWindowMs,
+        rateLimitMaxRequests: options.adminRateLimitMaxRequests
+      })
+    );
+  }
+
+  if (options.extractionJobStore) {
     app.use(
       "/api/extract-pose",
       createExtractPoseRoutes({
-        keyStore: options.keyStore,
-        keyPoolManager: options.keyPoolManager,
-        geminiService: options.geminiService,
+        jobStore: options.extractionJobStore,
+        rateLimitWindowMs: options.extractRateLimitWindowMs,
+        rateLimitMaxRequests: options.extractRateLimitMaxRequests
+      })
+    );
+    app.use(
+      "/api/extract-jobs",
+      createExtractJobsRoutes({
+        jobStore: options.extractionJobStore,
         rateLimitWindowMs: options.extractRateLimitWindowMs,
         rateLimitMaxRequests: options.extractRateLimitMaxRequests
       })
@@ -151,6 +173,7 @@ export function createApp(options: CreateAppOptions): express.Express {
         r2PublicUrl: process.env.R2_PUBLIC_URL ?? "",
         createUploadUrl,
         objectExists,
+        uploadObject,
         jobStore: options.extractionJobStore,
       })
     );
@@ -160,8 +183,9 @@ export function createApp(options: CreateAppOptions): express.Express {
     app.use("/api/admin/jobs", createJobStatusRoutes({ adminSecret: options.adminSecret, jobStore: options.extractionJobStore }));
   }
 
-  // Serve uploaded community images as static files
-  if (options.communityUploadDir) {
+  // Serve uploaded community images as static files (development/test only).
+  // Production serves community images from Cloudflare R2, never from local disk.
+  if (options.communityUploadDir && process.env.NODE_ENV !== "production") {
     const uploadDir = options.communityUploadDir;
     fs.mkdirSync(uploadDir, { recursive: true });
     app.use("/community", express.static(uploadDir));

@@ -1,121 +1,33 @@
-import { ListObjectsV2Command } from "@aws-sdk/client-s3";
-import Database from "better-sqlite3";
+/**
+ * DEPRECATED — SQLite has been removed from this service.
+ *
+ * This script previously listed Cloudflare R2 objects under `community/` and
+ * reported keys not referenced by any `community_poses.image_path` row read from
+ * a local SQLite file (`better-sqlite3` + `DATABASE_PATH`). That database
+ * backend is gone; the service now uses Postgres (`DATABASE_URL`).
+ *
+ * To find R2 orphans manually with Postgres:
+ *
+ *   1. List all `image_path` values currently referenced in Postgres:
+ *        psql "$DATABASE_URL" -c \
+ *          "SELECT image_path FROM community_poses WHERE image_path LIKE 'community/%';"
+ *
+ *   2. List all objects in the R2 bucket:
+ *        aws s3 ls "s3://$R2_BUCKET/community/" \
+ *          --endpoint-url "https://$R2_ACCOUNT_ID.r2.cloudflarestorage.com" \
+ *          --recursive
+ *
+ *   3. Any R2 key absent from step 1's output is an orphan candidate. Delete it
+ *      only after review (this script never implemented deletion, and still does not).
+ */
 
-import { getEnv } from "../src/config/env";
-import { getR2Client } from "../src/services/r2Storage";
-
-interface PosePathRow {
-  image_path: string;
+function main(): void {
+  console.error(
+    "[cleanup-r2-orphans] DEPRECATED: SQLite removed. " +
+      "This service now uses Postgres (DATABASE_URL). " +
+      "See the header of this file for the manual orphan-detection steps."
+  );
+  process.exitCode = 2;
 }
 
-function parseDryRun(argv: string[]): boolean {
-  return argv.includes("--dry-run");
-}
-
-function extractCommunityKey(imagePath: string, r2PublicUrl: string): string | null {
-  const raw = imagePath.trim();
-  if (!raw) return null;
-
-  const normalizedBase = r2PublicUrl.replace(/\/+$/, "");
-  if (raw.startsWith(`${normalizedBase}/`)) {
-    return raw.slice(normalizedBase.length + 1).split("?")[0]?.split("#")[0] ?? null;
-  }
-
-  if (/^https?:\/\//i.test(raw)) {
-    return null;
-  }
-
-  const trimmed = raw.split("?")[0]?.split("#")[0]?.replace(/^\/+/, "") ?? "";
-  if (!trimmed) return null;
-  if (trimmed.startsWith("community/")) return trimmed;
-  if (trimmed.startsWith("data/community/")) return `community/${trimmed.slice("data/community/".length)}`;
-  return `community/${trimmed}`;
-}
-
-async function listR2CommunityKeys(bucket: string): Promise<Set<string>> {
-  const client = getR2Client();
-  const keys = new Set<string>();
-
-  let token: string | undefined;
-  do {
-    const response = await client.send(
-      new ListObjectsV2Command({
-        Bucket: bucket,
-        Prefix: "community/",
-        ContinuationToken: token
-      })
-    );
-
-    for (const obj of response.Contents ?? []) {
-      if (obj.Key) {
-        keys.add(obj.Key);
-      }
-    }
-
-    token = response.IsTruncated ? response.NextContinuationToken : undefined;
-  } while (token);
-
-  return keys;
-}
-
-async function main(): Promise<void> {
-  const env = getEnv();
-  const dryRun = parseDryRun(process.argv.slice(2));
-
-  const db = new Database(env.DATABASE_PATH, { readonly: true });
-  const rows = db.prepare("SELECT image_path FROM community_poses").all() as PosePathRow[];
-
-  const referencedKeys = new Set<string>();
-  let skippedNonCommunity = 0;
-
-  for (const row of rows) {
-    const key = extractCommunityKey(row.image_path ?? "", env.R2_PUBLIC_URL);
-    if (key && key.startsWith("community/")) {
-      referencedKeys.add(key);
-    } else {
-      skippedNonCommunity += 1;
-    }
-  }
-
-  let r2Keys = new Set<string>();
-  let r2ListError: string | null = null;
-
-  try {
-    r2Keys = await listR2CommunityKeys(env.R2_BUCKET);
-  } catch (err) {
-    r2ListError = err instanceof Error ? err.message : String(err);
-  }
-
-  const orphans = r2ListError
-    ? []
-    : [...r2Keys].filter((key) => !referencedKeys.has(key)).sort();
-
-  console.log(`[cleanup-r2-orphans] mode=${dryRun ? "dry-run" : "apply"}`);
-  console.log("[cleanup-r2-orphans] deletion is not implemented; reporting candidates only");
-  console.log(`[cleanup-r2-orphans] db_rows=${rows.length}`);
-  console.log(`[cleanup-r2-orphans] referenced_keys=${referencedKeys.size}`);
-  console.log(`[cleanup-r2-orphans] skipped_non_community=${skippedNonCommunity}`);
-
-  if (r2ListError) {
-    console.warn(`[cleanup-r2-orphans] r2_list_error=${r2ListError}`);
-    console.warn("[cleanup-r2-orphans] r2_keys=UNKNOWN (could not list R2 objects)");
-    console.warn("[cleanup-r2-orphans] orphan_candidates=UNKNOWN");
-  } else {
-    console.log(`[cleanup-r2-orphans] r2_keys=${r2Keys.size}`);
-    console.log(`[cleanup-r2-orphans] orphan_candidates=${orphans.length}`);
-
-    if (orphans.length > 0) {
-      console.log("[cleanup-r2-orphans] orphan_list=");
-      for (const key of orphans) {
-        console.log(`- ${key}`);
-      }
-    }
-  }
-
-  db.close();
-}
-
-main().catch((error) => {
-  console.error("[cleanup-r2-orphans] failed", error);
-  process.exitCode = 1;
-});
+main();

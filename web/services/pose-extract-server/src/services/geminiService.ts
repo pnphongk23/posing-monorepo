@@ -1,4 +1,5 @@
 import { GeminiError, GeminiQuotaExceededError } from "./errors";
+import { DEFAULT_EXTRACT_PROMPT } from "./extractPrompt";
 import type { ExtractedImage } from "./types";
 
 const DEFAULT_MODEL = "gemini-2.0-flash-exp";
@@ -151,7 +152,7 @@ export class GeminiService {
               role: "user",
               parts: [
                 {
-                  text: input.prompt ?? "Extract a clean human pose cutout from this image."
+                  text: input.prompt ?? DEFAULT_EXTRACT_PROMPT
                 },
                 {
                   inlineData: {

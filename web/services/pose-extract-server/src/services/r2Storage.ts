@@ -43,6 +43,23 @@ export async function createUploadUrl(input: {
   return { uploadUrl, fileKey };
 }
 
+export async function uploadObject(input: {
+  fileKey: string;
+  body: Buffer;
+  mimeType: string;
+}): Promise<void> {
+  const env = getEnv();
+
+  await getR2Client().send(
+    new PutObjectCommand({
+      Bucket: env.R2_BUCKET,
+      Key: input.fileKey,
+      Body: input.body,
+      ContentType: input.mimeType
+    })
+  );
+}
+
 export async function objectExists(fileKey: string): Promise<boolean> {
   const env = getEnv();
 

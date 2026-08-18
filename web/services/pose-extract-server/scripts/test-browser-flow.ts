@@ -16,14 +16,14 @@ import path from "node:path";
 
 import { chromium, type Page } from "playwright";
 
+import { DEFAULT_EXTRACT_PROMPT } from "../src/services/extractPrompt";
+
 const CHROME_PROFILE = path.join(
   process.env.HOME ?? "/Users/phamnhuphong",
   "Library/Application Support/Google/Chrome/Default"
 );
 const APP_URL = process.env.BROWSER_APP_URL ?? "https://gemini.google.com/app";
-const PROMPT =
-  process.env.BROWSER_PROMPT ??
-  "Extract a clean human pose cutout from this image. Return only the pose image with transparent background.";
+const PROMPT = process.env.BROWSER_PROMPT ?? DEFAULT_EXTRACT_PROMPT;
 const TIMEOUT_MS = Number(process.env.BROWSER_TIMEOUT_MS ?? "90000");
 
 async function findFirstVisible(page: Page, selectors: string[]) {

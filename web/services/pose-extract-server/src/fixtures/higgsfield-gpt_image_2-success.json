@@ -1,0 +1,10 @@
+[
+  {
+    "id": "job-anonymized-001",
+    "job_set_type": "gpt_image_2",
+    "status": "completed",
+    "result_url": "https://cdn.example.com/generated/anonymized-pose-cutout.png",
+    "created_at": "2026-08-17T10:00:00.000Z",
+    "updated_at": "2026-08-17T10:00:45.000Z"
+  }
+]

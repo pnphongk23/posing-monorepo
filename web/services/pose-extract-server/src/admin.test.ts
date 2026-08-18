@@ -1,33 +1,20 @@
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
-
 import request from "supertest";
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { createApp } from "./app";
-import { createDatabase } from "./db/connection";
+import { setupTestDatabase } from "./db/testDb";
 import { KeyStore } from "./services/keyStore";
 
-const tempDirs: string[] = [];
 const ADMIN_SECRET = "super-secret-token";
-
-afterEach(() => {
-  for (const tempDir of tempDirs.splice(0)) {
-    fs.rmSync(tempDir, { recursive: true, force: true });
-  }
-});
 
 interface TestAdminAppOptions {
   adminRateLimitWindowMs?: number;
   adminRateLimitMaxRequests?: number;
 }
 
-function createAdminApp(options: TestAdminAppOptions = {}) {
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "pose-admin-api-"));
-  tempDirs.push(tempDir);
-  const db = createDatabase(path.join(tempDir, "keys.db"));
-  const keyStore = new KeyStore(db);
+async function createAdminApp(options: TestAdminAppOptions = {}) {
+  const sql = await setupTestDatabase();
+  const keyStore = new KeyStore(sql);
   const app = createApp({
     version: "1.0.0-test",
     adminSecret: ADMIN_SECRET,
@@ -41,7 +28,7 @@ function createAdminApp(options: TestAdminAppOptions = {}) {
 
 describe("Admin auth middleware", () => {
   it("rejects missing bearer token", async () => {
-    const { app } = createAdminApp();
+    const { app } = await createAdminApp();
 
     const response = await request(app).get("/api/admin/keys");
 
@@ -50,7 +37,7 @@ describe("Admin auth middleware", () => {
   });
 
   it("rejects invalid bearer token", async () => {
-    const { app } = createAdminApp();
+    const { app } = await createAdminApp();
 
     const response = await request(app)
       .get("/api/admin/keys")
@@ -61,7 +48,7 @@ describe("Admin auth middleware", () => {
   });
 
   it("accepts bearer scheme case-insensitively", async () => {
-    const { app } = createAdminApp();
+    const { app } = await createAdminApp();
 
     const response = await request(app)
       .get("/api/admin/keys")
@@ -72,7 +59,7 @@ describe("Admin auth middleware", () => {
   });
 
   it("rate limits brute-force attempts on admin routes", async () => {
-    const { app } = createAdminApp({
+    const { app } = await createAdminApp({
       adminRateLimitWindowMs: 60_000,
       adminRateLimitMaxRequests: 2
     });
@@ -90,7 +77,7 @@ describe("Admin auth middleware", () => {
 
 describe("Admin key endpoints", () => {
   it("supports list/create/update/delete flow", async () => {
-    const { app } = createAdminApp();
+    const { app } = await createAdminApp();
 
     const createResponse = await request(app)
       .post("/api/admin/keys")
@@ -132,7 +119,7 @@ describe("Admin key endpoints", () => {
   });
 
   it("trims payload fields and rejects whitespace-only inputs", async () => {
-    const { app, keyStore } = createAdminApp();
+    const { app, keyStore } = await createAdminApp();
 
     const createTrimmed = await request(app)
       .post("/api/admin/keys")
@@ -145,7 +132,7 @@ describe("Admin key endpoints", () => {
     expect(createTrimmed.status).toBe(201);
     expect(createTrimmed.body.data.name).toBe("Prod Key 2");
     expect(createTrimmed.body.data.apiKey).toBeUndefined();
-    expect(keyStore.listKeys()[0]?.apiKey).toBe("AIza-trimmed");
+    expect((await keyStore.listKeys())[0]?.apiKey).toBe("AIza-trimmed");
 
     const createWhitespaceOnly = await request(app)
       .post("/api/admin/keys")
@@ -160,7 +147,7 @@ describe("Admin key endpoints", () => {
   });
 
   it("returns proper errors for invalid input and missing key IDs", async () => {
-    const { app } = createAdminApp();
+    const { app } = await createAdminApp();
 
     const invalidStatus = await request(app)
       .patch("/api/admin/keys/some-id")
@@ -184,15 +171,15 @@ describe("Admin key endpoints", () => {
   });
 
   it("resets requests_today and reactivates exhausted keys only", async () => {
-    const { app, keyStore } = createAdminApp();
-    const active = keyStore.createKey({ name: "Active", apiKey: "key-active" });
-    const exhausted = keyStore.createKey({ name: "Exhausted", apiKey: "key-exhausted" });
-    const disabled = keyStore.createKey({ name: "Disabled", apiKey: "key-disabled" });
-    keyStore.incrementRequestsToday(active.id);
-    keyStore.incrementRequestsToday(exhausted.id);
-    keyStore.incrementRequestsToday(disabled.id);
-    keyStore.updateKeyStatus(exhausted.id, "exhausted");
-    keyStore.updateKeyStatus(disabled.id, "disabled");
+    const { app, keyStore } = await createAdminApp();
+    const active = await keyStore.createKey({ name: "Active", apiKey: "key-active" });
+    const exhausted = await keyStore.createKey({ name: "Exhausted", apiKey: "key-exhausted" });
+    const disabled = await keyStore.createKey({ name: "Disabled", apiKey: "key-disabled" });
+    await keyStore.incrementRequestsToday(active.id);
+    await keyStore.incrementRequestsToday(exhausted.id);
+    await keyStore.incrementRequestsToday(disabled.id);
+    await keyStore.updateKeyStatus(exhausted.id, "exhausted");
+    await keyStore.updateKeyStatus(disabled.id, "disabled");
 
     const resetResponse = await request(app)
       .post("/api/admin/keys/reset")
@@ -201,7 +188,7 @@ describe("Admin key endpoints", () => {
     expect(resetResponse.status).toBe(200);
     expect(resetResponse.body.data.updated).toBe(3);
 
-    const keys = keyStore.listKeys();
+    const keys = await keyStore.listKeys();
     const activeAfterReset = keys.find((item) => item.id === active.id);
     const exhaustedAfterReset = keys.find((item) => item.id === exhausted.id);
     const disabledAfterReset = keys.find((item) => item.id === disabled.id);
