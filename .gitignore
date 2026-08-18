@@ -61,3 +61,7 @@ DerivedData/
 
 # worktrees
 .worktrees/
+
+# local docker volumes (credentials + sqlite)
+.docker-persist/
+.kotlin

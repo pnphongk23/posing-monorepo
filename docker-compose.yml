@@ -1,0 +1,40 @@
+services:
+  pose-extract-server:
+    build:
+      context: .
+      dockerfile: web/services/pose-extract-server/Dockerfile
+    container_name: pose-extract-server
+    ports:
+      - "3000:3000"
+    env_file:
+      # DATABASE_URL (Supabase or local Postgres), ADMIN_SECRET, and R2_* vars
+      # must be present in this file. There is no DATABASE_PATH (SQLite removed).
+      - web/services/pose-extract-server/.env
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      BROWSER_PROFILE_DIR: /app/data/browser-profile
+      HIGGSFIELD_CREDENTIALS_PATH: /app/higgsfield/credentials.json
+      HOME: /app/higgsfield
+      HIGGSFIELD_CLI_TIMEOUT_MS: "600000"
+    volumes:
+      # Data volume is for the browser profile only (BROWSER_PROFILE_DIR).
+      # The database lives in Postgres via DATABASE_URL, not on this volume.
+      - ./.docker-persist/data:/app/data
+      - ./.docker-persist/higgsfield:/app/higgsfield
+    restart: unless-stopped
+
+  admin-ui:
+    build:
+      context: web/admin-ui
+      dockerfile: Dockerfile
+    container_name: pose-admin-ui
+    ports:
+      - "3001:3000"
+    environment:
+      NODE_ENV: production
+      POSE_EXTRACT_SERVER_URL: http://pose-extract-server:3000
+      POSE_EXTRACT_ADMIN_SECRET: ${ADMIN_SECRET}
+    depends_on:
+      - pose-extract-server
+    restart: unless-stopped
