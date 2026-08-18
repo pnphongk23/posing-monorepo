@@ -1,7 +1,7 @@
 ---
 work_item: 2
 title: Wire Create Pose (+) to Camera capture entry
-status: pending
+status: completed
 priority: P1
 effort: S
 dependencies:

@@ -1,10 +1,11 @@
 ---
 title: Community title search production
 description: Close the FEAT-003 community title-search slice from authority through backend, mock-first mobile paging, prototype-parity UX, and cross-slice verification.
-status: pending
+status: completed
 approval:
-  status: pending
+  status: approved
   required_by: Repository Maintainer
+  decided: 2026-08-18
 priority: P1
 effort: L
 branch: codex/community-title-search-production
@@ -31,6 +32,7 @@ relationships:
     - "[[REP-002-feature-gap-and-release-readiness-audit|REP-002]]"
     - "[[REP-003-pose-reference-library-convergence-delivery|REP-003]]"
     - "[[REP-004-backend-feature-and-model-entity-scout|REP-004]]"
+    - "[[REP-005-community-title-search-production-delivery|REP-005]]"
   rules: []
   features:
     - "[[FEAT-003-browse-and-search-published-poses|FEAT-003]]"
@@ -50,12 +52,12 @@ relationships:
     - web/services/pose-extract-server/src/db/communityStore.ts
     - web/services/pose-extract-server/src/routes/communityRoutes.test.ts
     - web/services/pose-extract-server/src/db/schema.sql
-    - mobile/shared/src/commonMain/kotlin/com/aipose/data/CommunitySearchProvider.kt
+    - mobile/shared/src/commonMain/kotlin/com/aipose/data/CommunitySearchRepository.kt
     - mobile/shared/src/commonMain/kotlin/com/aipose/data/PoseServiceLocator.kt
     - mobile/shared/src/commonMain/kotlin/com/aipose/data/remote/PoseApiService.kt
     - mobile/composeApp/src/commonMain/kotlin/com/aipose/ui/screens/poses/SearchScreen.kt
     - mobile/composeApp/src/commonTest/kotlin/com/aipose/ui/screens/poses/SearchViewModelTest.kt
-    - mobile/shared/src/iosSimulatorArm64Test/kotlin/com/aipose/data/CommunitySearchProviderTest.kt
+    - mobile/shared/src/iosSimulatorArm64Test/kotlin/com/aipose/data/CommunitySearchRepositoryTest.kt
 created: 2026-08-18T21:12:53+07:00
 createdBy: Harness CLI
 ---
@@ -64,11 +66,10 @@ createdBy: Harness CLI
 
 ## Overview
 
-This pending Plan closes FEAT-003 FR-002 for title search on the public
-community catalogue. It is a planning-only deliverable: no application source,
-tests, configuration, or Git state is changed here. FEAT-003 is approved on
-2026-08-18 by the Repository Maintainer; this Plan itself remains pending and
-has no approval provenance yet.
+This Plan is **approved** on 2026-08-18 by the Repository Maintainer and
+closes FEAT-003 FR-002 for title search on the public community catalogue.
+The Plan itself changes no application source, tests, configuration, or Git
+state; WI-01+ implement the approved slice.
 
 The implementation contract is fixed for this draft: blank `q` requests the
 first page of published community results; every page uses limit 20; search
@@ -77,6 +78,22 @@ matches `q` against `name` case-insensitively; mobile introduces
 wire a live API provider in `PoseServiceLocator`. The UI retains the existing
 mixed Personal/Community identity boundary, while the Community portion is
 paginated through that repository.
+
+### Authority & boundaries
+
+- **Authority:** FEAT-003 FR-002 governs title search on the public community
+  catalogue; the Feature is approved (2026-08-18, Repository Maintainer) and
+  this Plan's approval on the same date consumed that authority for WI-01+.
+- **DEC-003 cited read-only:** it remains `proposed` and is therefore not an
+  approved authority link; its No-Search row is the historical boundary of
+  sibling Plan `260818-2105`, not this slice (non-blocking context, confirmed
+  at Plan approval).
+- **Negative scope unchanged:** browse tabs, `PosesLibraryCoordinator`, camera
+  handoff, Android, Admin UI search, and tag/general full-text search stay out
+  of scope, as listed in Coverage.
+- **Evidence limitation unchanged:** GitNexus graph/impact tooling is not
+  queryable in this session; direct canonical inspection of source, specs,
+  tests, and reports is the grounding fallback (see Verification ledger).
 
 Prototype-visible copy is exact: page title `Search`; placeholder `Type a title`;
 empty title `No matching poses`; blank empty copy `No poses to search yet.`;
@@ -129,14 +146,17 @@ search, and mobile live API provider wiring.
 | FEAT-003 is approved (2026-08-18, Repository Maintainer) and governs title search via FR-002 | **Verified** | `docs/harness/features/FEAT-003-browse-and-search-published-poses.md:26-31,100-110` |
 | The canonical API contract defines `q` as case-insensitive title search on `name`, published-only, with `page`/`limit`/`total` envelope (public default limit 20) | **Verified** | `docs/spec/api/modules/community.md:7-32`; `docs/spec/api/conventions.md:50-61`; `docs/spec/api/openapi.yaml:453-486` |
 | The prototype fixes the exact search copy, count format, empty states, and published-only filtering | **Verified** | `docs/prototype/screens/search.html:44-65`; `docs/prototype/scripts/app.js:447-552` |
-| Existing backend tests cover published filtering and filters but not `q`, wildcard escaping, or page two | **Verified** | `web/services/pose-extract-server/src/routes/communityRoutes.test.ts:36-104` |
-| Current mobile search is a list-returning mock provider; blank query returns all four fixtures | **Verified** | `mobile/shared/src/commonMain/kotlin/com/aipose/data/CommunitySearchProvider.kt:5-56`; `mobile/shared/src/iosSimulatorArm64Test/kotlin/com/aipose/data/CommunitySearchProviderTest.kt:8-37` |
+| Backend tests cover published filtering, `q`, wildcard escaping, and page two | **Verified** | `communityRoutes.test.ts` and `communityStore.test.ts` `describe("title search (q)")`; WI-05 run 43/43 passed |
+| Mobile community search uses paginated `CommunitySearchRepository` mock (replaced list-only provider) | **Verified** | `CommunitySearchRepository.kt`; `CommunitySearchRepositoryTest` 12/12; `CommunitySearchProvider.kt` removed |
 | `PoseServiceLocator` defaults to the mock provider and has no live community-search API wiring | **Verified** | `mobile/shared/src/commonMain/kotlin/com/aipose/data/PoseServiceLocator.kt:12-15,32-49` |
 | Existing search preserves prior results on provider failure and ignores stale completions | **Verified** | `mobile/composeApp/src/commonMain/kotlin/com/aipose/ui/screens/poses/SearchScreen.kt:103-129`; `mobile/composeApp/src/commonTest/kotlin/com/aipose/ui/screens/poses/SearchViewModelTest.kt:178-231` |
-| Backend `GET /api/community/poses` accepts and forwards `q` (FR-002) | **Failed** (gap — closed by WI-02) | `web/services/pose-extract-server/src/routes/communityRoutes.ts:6-11,24-36` — `listQuerySchema` has `page`/`limit`/`difficulty`/`tag`, no `q` |
-| `CommunityStore.listPoses` applies a title predicate | **Failed** (gap — closed by WI-02) | `web/services/pose-extract-server/src/db/communityStore.ts:34-40,94-123` — `ListPosesFilter` has no query field |
-| A paginated `CommunitySearchRepository` exists on mobile | **Failed** (gap — closed by WI-03) | `mobile/shared/src/commonMain/kotlin/com/aipose/data/` contains `CommunitySearchProvider.kt` only; no repository type |
-| `SearchScreen` renders the exact prototype copy and paginates community results | **Failed** (gap — closed by WI-03/WI-04) | `mobile/composeApp/src/commonMain/kotlin/com/aipose/ui/screens/poses/SearchScreen.kt:62-63,213,288,296,312` — old copy (`Type to filter...`, `Clear Search`, `No poses found.`), list-only provider |
+| Backend `GET /api/community/poses` accepts and forwards `q` (FR-002) | **Verified** | `communityRoutes.ts:6-13,28-34` — `q` on `listQuerySchema`, `SEARCH_PAGE_LIMIT` 20 when `q` present; `npm test -- communityRoutes communityStore` 43/43 passed (2026-08-19, WI-05) |
+| `CommunityStore.listPoses` applies a title predicate | **Verified** | `communityStore.ts:39,111-112` — `q` on filter, `ILIKE` with `escapeLikePattern`; store tests `describe("title search (q)")` passed (WI-05) |
+| A paginated `CommunitySearchRepository` exists on mobile | **Verified** | `CommunitySearchRepository.kt` — contract + `MockCommunitySearchRepository`; `CommunitySearchRepositoryTest` 12/12 passed (2026-08-19, WI-05) |
+| `SearchScreen` renders the exact prototype copy and paginates community results | **Verified** | `SearchScreen.kt:60-80,235` — `Type a title`, `Clear search`, count `{n} pose(s)`, empty/no-match copy; `SearchViewModelTest` 10/10 passed (WI-05) |
+| Cross-slice automated verification gate (WI-05) | **Verified** | `[[REP-005-community-title-search-production-delivery|REP-005]]`; `ckh workflow check` passed; `./gradlew :shared:iosSimulatorArm64Test :composeApp:iosSimulatorArm64Test` BUILD SUCCESSFUL — shared 41 / composeApp 33 tests, 0 failures (2026-08-19) |
+| Live API community-search wiring in `PoseServiceLocator` | **Unresolved** (deferred by design) | `PoseServiceLocator.kt:14` — mock default; REP-005 records intentional absence |
+| Screenshot / device / Maestro end-to-end interaction | **Unresolved** | No device or Maestro session in WI-05; ViewModel/contract tests only (REP-005) |
 | DEC-003 is an approved authority governing this slice | **Unresolved** (non-blocking context) | DEC-003 `status: proposed` (2026-08-18); its No-Search row bounds sibling Plan 260818-2105, not this slice; excluded from `relationships.decisions` because only approved Decisions are authority links; grounded recommendation is non-blocking, Maintainer confirms at Plan approval |
 | GitNexus graph/impact tooling is queryable in this session | **Unresolved** (evidence limitation) | Local index artifact exists (`.gitnexus/meta.json`, indexed 2026-08-18T14:25:35Z at HEAD `9ff4b136`) but no GitNexus MCP tool is connected and `ckh graph check` reports the harness retrieval-graph artifact stale; direct canonical inspection is used instead |
 | Sibling pending Plan `260818-2105` owns this search slice | **Failed** (no overlap ownership) | `docs/harness/plans/260818-2105-feat-003-pose-library-slice/plan.md:62-64,96-101` explicitly excludes search; this Plan owns the slice |
@@ -155,13 +175,14 @@ silently repaired.
 
 - `ckh workflow status docs/harness/plans/260818-2112-community-title-search-production/plan.md`
 - `ckh workflow check docs/harness/plans/260818-2112-community-title-search-production/plan.md`
-  (at drafting, the expected residual finding is `Plan is not approved`;
-  schema parse errors and unresolved link findings must be zero).
+  (at drafting, the expected residual finding was `Plan is not approved`;
+  since approval 2026-08-18, `ckh workflow check` must pass clean — schema
+  parse errors and unresolved link findings must be zero).
 - Backend focused route/store tests and TypeScript build from
   `web/services/pose-extract-server`.
 - `./gradlew :shared:iosSimulatorArm64Test :composeApp:iosSimulatorArm64Test`
   for the repository, ViewModel, and UI contract tests.
 
 No command result in this Plan grants approval. Repository Maintainer approval
-is still pending; WI-05 must record any failed test or unavailable device
-evidence rather than infer success.
+was recorded 2026-08-18; WI-05 must record any failed test or unavailable
+device evidence rather than infer success.

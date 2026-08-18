@@ -1,7 +1,7 @@
 ---
 work_item: 5
 title: End-to-end search verification
-status: pending
+status: completed
 priority: P1
 effort: M
 dependencies:
@@ -52,6 +52,10 @@ is recorded as Failed, not silently bypassed.
 
 ## Decision dependencies
 
+**Locked contract reference:** plan.md Overview (approved 2026-08-18) fixes the
+verified contract (blank `q` page one, limit 20, published title match, mock
+default, exact prototype copy); this WI verifies against it.
+
 Verification uses the already locked contract only: blank query page one,
 limit 20, published title match, mock default/no live locator wiring, and exact
 prototype copy. It does not create or approve a new Decision.
@@ -98,3 +102,49 @@ prototype copy. It does not create or approve a new Decision.
   `ckh workflow check docs/harness/plans/260818-2112-community-title-search-production/plan.md`.
 - Maintainer review packet listing Verified, Failed, and Unresolved claims;
   no approval command or approval claim.
+
+## Evidence (WI-05, 2026-08-19)
+
+### Commands
+
+```text
+cd web/services/pose-extract-server && npm test -- communityRoutes communityStore
+→ 43 passed, 0 failed (3 files, ~11.3s)
+
+npm run build && npm run lint
+→ exit 0
+
+./gradlew :shared:iosSimulatorArm64Test :composeApp:iosSimulatorArm64Test --rerun-tasks
+→ BUILD SUCCESSFUL; shared 41 tests / 0 failures; composeApp 33 tests / 0 failures
+
+ckh workflow status docs/harness/plans/260818-2112-community-title-search-production/plan.md
+→ Review State: approved; Execution State: in_progress (pre-completion)
+
+ckh workflow check docs/harness/plans/260818-2112-community-title-search-production/plan.md
+→ Harness validation passed
+```
+
+### Cross-slice trace (automated)
+
+- Blank query → `MockCommunitySearchRepository` page 1 (20 items) → `SearchViewModel`
+  mixed count → `SearchScreen` `No poses to search yet.` when empty personal set.
+- Title query → repository filtered total → count `{n} pose(s) for “{query}”` helpers.
+- Page 2 → `CommunitySearchPagingController` load-more; overlap dedupe tested in
+  `CommunitySearchRepositoryTest` and load-more failure retention in `SearchViewModelTest`.
+- Retry → `retrySearch()` retains prior cards after provider failure (ViewModel tests).
+
+### Negative scope
+
+- No Android target changes (`composeApp/src/androidMain` absent).
+- `PosesLibraryCoordinator` browse refactor not in WI-02/03/04 delivery file list.
+- Admin UI title-search feature not in slice; unrelated admin working-tree edits excluded.
+- Plan `260818-2105` harness docs dirty in working tree but not 2112 delivery evidence.
+
+### Delivery report
+
+- `docs/harness/reports/REP-005-community-title-search-production-delivery.md`
+
+### Unresolved (explicit)
+
+- Mock default; no live `PoseApiService` community-search locator wiring.
+- No Maestro / physical-device / screenshot capture in this WI.

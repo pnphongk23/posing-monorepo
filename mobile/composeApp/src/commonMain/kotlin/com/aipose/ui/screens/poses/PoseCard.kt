@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material3.Icon
@@ -31,32 +32,41 @@ import com.aipose.ui.theme.AiPoseTypography
 import com.aipose.ui.theme.CornerRadius
 import com.aipose.ui.theme.Spacing
 
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import com.aipose.ui.components.NeoBrutalismContainer
+
 @Composable
 fun PoseCard(
     pose: Pose,
+    index: Int,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val aspectRatios = listOf(1f / 1.25f, 1f, 1.25f / 1f)
+    val aspectRatio = aspectRatios[index % 3]
+
     Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick),
+        modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(Spacing.sm)
     ) {
-        Box(
+        NeoBrutalismContainer(
             modifier = Modifier
                 .fillMaxWidth()
-                .aspectRatio(1f)
-                .cardChrome()
-                .clip(androidx.compose.foundation.shape.RoundedCornerShape(CornerRadius.md))
-                .background(AiPoseColors.Surface),
-            contentAlignment = Alignment.Center
+                .aspectRatio(aspectRatio)
+                .testTag("pose-card-personal-${pose.id}")
+                .semantics { contentDescription = pose.name },
+            shape = RoundedCornerShape(CornerRadius.md),
+            backgroundColor = AiPoseColors.Surface,
+            shadowOffset = 4.dp,
+            onClick = onClick
         ) {
             val imageModel = pose.thumbnailPath ?: pose.imagePath
             if (imageModel.isNotBlank()) {
                 AsyncImage(
                     model = imageModel,
-                    contentDescription = pose.name,
+                    contentDescription = null,
                     modifier = Modifier.fillMaxWidth(),
                     contentScale = ContentScale.Crop
                 )
@@ -68,23 +78,15 @@ fun PoseCard(
                     tint = AiPoseColors.Subtext
                 )
             }
-
-            Badge(
-                text = if (pose.isMine == 1L) "Mine" else "Pose",
-                type = BadgeType.MINE,
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .padding(Spacing.sm)
-            )
         }
 
         Text(
-            text = pose.name.uppercase(),
+            text = pose.name,
             style = AiPoseTypography.BodyBold,
             color = AiPoseColors.Foreground,
-            letterSpacing = 0.08.em,
             maxLines = 1,
-            overflow = TextOverflow.Ellipsis
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(start = 2.dp)
         )
     }
 }

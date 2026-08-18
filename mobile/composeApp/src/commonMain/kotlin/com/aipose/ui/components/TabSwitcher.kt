@@ -19,6 +19,9 @@ import com.aipose.ui.theme.AiPoseTypography
 import com.aipose.ui.theme.CornerRadius
 import com.aipose.ui.theme.Spacing
 
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.unit.dp
+
 @Composable
 fun TabSwitcher(
     tabs: List<String>,
@@ -48,22 +51,29 @@ fun TabSwitcher(
                 else -> AiPoseColors.Foreground
             }
 
-            Row(
+            NeoBrutalismContainer(
                 modifier = Modifier
                     .weight(1f)
-                    .clip(RoundedCornerShape(CornerRadius.sm))
-                    .background(backgroundColor)
-                    .clickable(enabled = !isDisabled) { onSelect(index) }
-                    .padding(vertical = Spacing.md),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically
+                    .testTag("tab-${title.lowercase().replace(" ", "-")}"),
+                shape = RoundedCornerShape(CornerRadius.sm),
+                backgroundColor = backgroundColor,
+                borderWidth = 0.dp,
+                hasShadow = false,
+                shadowOffset = 0.dp,
+                onClick = if (!isDisabled) { { onSelect(index) } } else null
             ) {
-                Text(
-                    text = title.uppercase(),
-                    style = AiPoseTypography.CaptionBold,
-                    color = textColor,
-                    letterSpacing = 0.08.em
-                )
+                Row(
+                    modifier = Modifier.padding(vertical = Spacing.md),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = title.uppercase(),
+                        style = AiPoseTypography.CaptionBold,
+                        color = textColor,
+                        letterSpacing = 0.08.em
+                    )
+                }
             }
         }
     }

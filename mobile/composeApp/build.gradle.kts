@@ -28,6 +28,8 @@ kotlin {
         target.binaries.framework {
             baseName = "ComposeApp"
             isStatic = true
+        }
+        target.binaries.all {
             linkerOpts("-lsqlite3")
         }
         target.compilations.all {
@@ -53,6 +55,13 @@ kotlin {
             implementation(libs.stately.common)
             implementation(libs.coil.compose)
             implementation(project(":shared"))
+        }
+        val commonTest by getting {
+            dependencies {
+                implementation(kotlin("test"))
+                implementation(libs.coroutines.test)
+                implementation(libs.ktor.client.mock)
+            }
         }
         all {
             languageSettings.optIn("androidx.compose.ui.ExperimentalComposeUiApi")

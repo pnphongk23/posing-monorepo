@@ -32,6 +32,8 @@ import cafe.adriel.voyager.navigator.tab.Tab
 import cafe.adriel.voyager.navigator.tab.TabOptions
 import com.aipose.Pose
 import com.aipose.camera.CameraScreen
+import com.aipose.data.PreparedPoseReference
+import com.aipose.data.PoseServiceLocator
 import com.aipose.ui.screens.gallery.GalleryScreen
 import com.aipose.ui.screens.gallery.GalleryViewModel
 import com.aipose.ui.screens.poses.PoseDetailScreen
@@ -41,6 +43,8 @@ import com.aipose.ui.screens.poses.PosesViewModel
 import com.aipose.ui.theme.AiPoseColors
 import com.aipose.ui.theme.AiPoseTypography
 import com.aipose.ui.theme.Spacing
+import com.aipose.data.PoseReferenceKey
+import com.aipose.ui.screens.poses.SearchScreen
 
 object CameraTab : Tab {
     override val options: TabOptions
@@ -114,6 +118,42 @@ class GalleryListScreen : Screen {
     }
 }
 
+/** E-CAM-ENTRY (AD-1): Create Pose (+) / empty-state CTA switches to CameraTab; no extractPose. */
+internal fun createPoseCameraEntryAction(setCurrentTab: (Tab) -> Unit): () -> Unit = {
+    setCurrentTab(CameraTab)
+}
+
+/** E-SEARCH-WIRED: poses-list search icon pushes SearchScreen (Plan 2112 owns search behavior). */
+internal fun createSearchNavigationAction(
+    pushScreen: (Screen) -> Unit,
+    popBack: () -> Unit,
+): () -> Unit = {
+    pushScreen(
+        SearchScreen(
+            onPersonalPoseClick = { poseId ->
+                pushScreen(PoseDetailVoyagerScreen(PoseReferenceKey.Personal(poseId)))
+            },
+            onCommunityPoseClick = { communityPose ->
+                pushScreen(PoseDetailVoyagerScreen(PoseReferenceKey.Community(communityPose.id)))
+            },
+            onBack = popBack,
+        ),
+    )
+}
+
+/**
+ * E-TRY-EMIT: Try Pose success stores [PreparedPoseReference] and switches to CameraTab.
+ * E-2241-BOUNDARY: Camera overlay (`CameraScreen.kt:173` stays `if (false)`) and durable
+ * persistence are owned by Plan 260809-2241; WI-04 only emits the typed handoff contract.
+ */
+internal fun createTryPoseCameraHandoffAction(
+    setPreparedReference: (PreparedPoseReference) -> Unit,
+    setCurrentTab: (Tab) -> Unit,
+): (PreparedPoseReference) -> Unit = { prepared ->
+    setPreparedReference(prepared)
+    setCurrentTab(CameraTab)
+}
+
 class PosesListScreen : Screen {
     @Composable
     override fun Content() {
@@ -121,26 +161,32 @@ class PosesListScreen : Screen {
         val tabNavigator = LocalTabNavigator.current
         PosesScreen(
             viewModel = remember { PosesViewModel() },
-            onPoseClick = { poseId -> navigator.push(PoseDetailVoyagerScreen(poseId)) },
-            onExtractPoseClick = {},
+            onPoseClick = { poseId -> navigator.push(PoseDetailVoyagerScreen(PoseReferenceKey.Personal(poseId))) },
+            onCommunityPoseClick = { communityPose -> navigator.push(PoseDetailVoyagerScreen(PoseReferenceKey.Community(communityPose.id))) },
+            onExtractPoseClick = createPoseCameraEntryAction { tabNavigator.current = it },
+            onSearchClick = createSearchNavigationAction(
+                pushScreen = { navigator.push(it) },
+                popBack = { navigator.pop() },
+            ),
             onBack = { tabNavigator.current = CameraTab }
         )
     }
 }
 
 class PoseDetailVoyagerScreen(
-    private val poseId: Long
+    private val poseKey: PoseReferenceKey
 ) : Screen {
     @Composable
     override fun Content() {
         val navigator = LocalNavigator.currentOrThrow
         val tabNavigator = LocalTabNavigator.current
         PoseDetailScreen(
-            poseId = poseId,
-            viewModel = remember { PoseDetailViewModel(poseId) },
-            onUseWithCamera = { _: Pose ->
-                tabNavigator.current = CameraTab
-            },
+            poseKey = poseKey,
+            viewModel = remember { PoseDetailViewModel(poseKey) },
+            onUseWithCamera = createTryPoseCameraHandoffAction(
+                setPreparedReference = { PoseServiceLocator.preparedReference = it },
+                setCurrentTab = { tabNavigator.current = it },
+            ),
             onBack = { navigator.pop() }
         )
     }

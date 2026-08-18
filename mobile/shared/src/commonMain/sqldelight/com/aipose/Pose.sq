@@ -31,3 +31,7 @@ DELETE FROM Pose WHERE id = ?;
 
 updatePose:
 UPDATE Pose SET name = ?, thumbnailPath = ?, likes = ? WHERE id = ?;
+
+insertPoseWithId:
+INSERT INTO Pose(id, name, imagePath, thumbnailPath, originalImagePath, createdAt, isMine, likes)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?);

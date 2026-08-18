@@ -1,7 +1,7 @@
 ---
 work_item: 3
 title: Mobile community search repository mock-first with paging
-status: pending
+status: completed
 priority: P1
 effort: M
 dependencies:
@@ -56,6 +56,10 @@ must wait for this repository state model and fixture shape. WI-03 does not wait
 for a live backend provider because mock-first behavior is locked.
 
 ## Decision dependencies
+
+**Locked contract reference:** plan.md Overview (approved 2026-08-18) fixes
+`CommunitySearchRepository` as the mobile boundary, the mock as default, and no
+live locator wiring; this WI implements that contract.
 
 The repository is replaceable but the default is deterministic mock data. Blank
 query means page one, not an empty “query mode”; page size is 20; title matching

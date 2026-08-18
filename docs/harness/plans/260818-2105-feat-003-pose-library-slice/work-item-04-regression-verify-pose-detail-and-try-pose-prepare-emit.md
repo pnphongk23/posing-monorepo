@@ -1,7 +1,7 @@
 ---
 work_item: 4
 title: Regression verify pose-detail and Try Pose prepare+emit
-status: pending
+status: completed
 priority: P1
 effort: M
 dependencies:
@@ -53,3 +53,9 @@ decision_dependencies: []
 
 - **E-TRY-EMIT**: tests for NOT_FOUND, prepare error, success callback + `preparedReference`.
 - **E-2241-BOUNDARY**: documented note that overlay stays disabled.
+
+## Evidence (2026-08-19)
+
+- **E-TRY-EMIT**: `PoseDetailViewModelTest` covers NOT_FOUND, prepare errors, personal/community success emit. `TryPoseCameraHandoffTest` proves `createTryPoseCameraHandoffAction` sets `PreparedPoseReference` + `CameraTab`.
+- **E-2241-BOUNDARY**: `CameraScreen.kt:173` verified `if (false)` unchanged. Boundary comment on `createTryPoseCameraHandoffAction` in `Navigation.kt`.
+- Full suite: `./gradlew :shared:iosSimulatorArm64Test :composeApp:iosSimulatorArm64Test` green.

@@ -1,7 +1,7 @@
 ---
 work_item: 1
 title: Close FEAT-003 search authority and record Maintainer decisions
-status: pending
+status: completed
 priority: P1
 effort: S
 dependencies: []
@@ -54,10 +54,10 @@ governing authority for FR-002. `DEC-003` is deliberately not a decision
 dependency: it is `proposed` (only approved Decisions are authority links),
 and its No-Search boundary governs sibling Plan `260818-2105`, not this
 slice. Grounded recommendation: DEC-003 is non-blocking context for this
-Plan; the Repository Maintainer confirms or rejects that reading at Plan
-approval. The locked search decisions are authoritative inputs for this
-draft, but they are not represented as invented Maintainer approval; Plan
-approval remains pending.
+Plan; the Repository Maintainer confirmed that reading at Plan approval
+(2026-08-18). The locked search decisions are authoritative inputs consumed
+by this Plan; Plan approval was recorded 2026-08-18 and is now consumed by
+this Work Item.
 
 ## Success criteria
 
@@ -67,8 +67,10 @@ approval remains pending.
   by the Work Items that depend on it.
 - The sibling overlap is explicit, non-blocking, and contains no hidden browse,
   coordinator, camera, Android, Admin UI, or tag/full-text scope.
-- No section claims that the Plan is approved, and no section relies on
-  unavailable GitNexus or retrieval-graph evidence.
+- The Plan's approved status (2026-08-18, Repository Maintainer) is recorded
+  consistently in frontmatter, Overview, and this Work Item, with no stale
+  "approval pending" or "Plan not approved" claims remaining; no section
+  relies on unavailable GitNexus or retrieval-graph evidence.
 
 ## Risks
 
@@ -84,6 +86,53 @@ approval remains pending.
 
 - Direct citations to FEAT-003, DEC-003, the sibling Plan, REP-003, and the
   current source/spec paths in the Plan verification ledger.
-- A whole-Plan consistency read showing status `pending` and approval `pending`.
+- A whole-Plan consistency read showing `approval.status: approved`
+  (2026-08-18, Repository Maintainer) and execution `status: in_progress`,
+  with no stale "approval pending" or "Plan not approved" claims remaining.
 - Consumed results from the required `ckh workflow status` and `ckh workflow
   check` commands; do not run `ckh plan approve`.
+
+## Evidence
+
+### `ckh workflow status` (consumed 2026-08-18)
+
+```
+Target: docs/harness/plans/260818-2112-community-title-search-production/plan.md (plan)
+Title: Community title search production
+Review State: approved
+Execution State: in_progress
+Blockers:
+- None.
+```
+
+Approval provenance in `plan.md` frontmatter: `approval.status: approved`,
+`required_by: Repository Maintainer`, `decided: 2026-08-18`.
+
+### `ckh workflow check` (consumed 2026-08-18)
+
+```
+Harness validation passed
+```
+
+### Citations
+
+- **FEAT-003** — approved 2026-08-18 by Repository Maintainer; FR-002 governs
+  title search on the public community catalogue
+  (`docs/harness/features/FEAT-003-browse-and-search-published-poses.md:26-31,100-110`).
+- **DEC-003** — cited read-only: `status: proposed`, so it is not an approved
+  authority link; its No-Search row is the historical boundary of sibling Plan
+  `260818-2105`, not this slice (non-blocking context, confirmed at Plan
+  approval)
+  (`docs/harness/decisions/DEC-003-feat-003-scoped-parity-matrix.md`).
+- **Sibling Plan `260818-2105`** — pending; its draft scope explicitly excludes
+  SearchScreen, `CommunitySearchProvider`, and server `q`
+  (`docs/harness/plans/260818-2105-feat-003-pose-library-slice/plan.md:62-64,96-101`).
+- **REP-003** — completed-Plan historical evidence only
+  (`docs/harness/reports/REP-003-pose-reference-library-convergence-delivery.md`).
+
+### Consistency
+
+- Whole-Plan read confirms `plan.md` frontmatter (`status: in_progress`,
+  `approval.status: approved`, `decided: 2026-08-18`), Overview approved
+  status, and no remaining "approval pending" / "Plan not approved" claims in
+  plan.md or this Work Item.

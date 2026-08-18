@@ -18,7 +18,7 @@ EXTERNAL SOURCES:
     :path: "../composeApp"
 
 SPEC CHECKSUMS:
-  composeApp: 0299a9239d7b7c14b2011a3bc9947273b28bc15e
+  composeApp: 169c8c3435facb0cccada91e641d99fc396f7c90
   MijickCamera: 9bd0fde4dff1bb3fe4966ec383e29a5ccbf125b0
   MijickTimer: fe5957c755fd8e4e116a71acaba202a1f7b5ada7
 

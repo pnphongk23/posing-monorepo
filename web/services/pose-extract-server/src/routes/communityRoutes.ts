@@ -3,11 +3,14 @@ import { z } from "zod";
 
 import type { CommunityStore } from "../db/communityStore";
 
+const SEARCH_PAGE_LIMIT = 20;
+
 const listQuerySchema = z.object({
   page: z.coerce.number().int().positive().default(1),
   limit: z.coerce.number().int().positive().max(100).default(20),
   difficulty: z.enum(["beginner", "intermediate", "advanced"]).optional(),
   tag: z.string().optional(),
+  q: z.string().optional(),
 });
 
 export function createCommunityRoutes(communityStore: CommunityStore): Router {
@@ -21,11 +24,14 @@ export function createCommunityRoutes(communityStore: CommunityStore): Router {
       return;
     }
 
-    const { page, limit, difficulty, tag } = parsed.data;
+    const { page, difficulty, tag } = parsed.data;
+    const q = parsed.data.q?.trim() || undefined;
+    const limit = q !== undefined ? SEARCH_PAGE_LIMIT : parsed.data.limit;
     const { poses, total } = await communityStore.listPoses({
       status: "published",
       difficulty,
       tag,
+      q,
       page,
       limit,
     });

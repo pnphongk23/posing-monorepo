@@ -17,7 +17,7 @@ evidence from repo state; no product code edits in this pass.
 
 | Screen | Path | Relevant interactions |
 | --- | --- | --- |
-| poses-list | `docs/prototype/screens/poses-list.html:38-53` | My/Community tabs (`data-category`), Create Pose `+` → `camera-live.html:49`, search link **present but OUT OF SCOPE** (`search.html:44`) |
+| poses-list | `docs/prototype/screens/poses-list.html:38-53` | My/Community tabs (`data-category`), Create Pose `+` → `camera-live.html:49`, search icon **retained** on poses-list (WI-03 verify `E-SEARCH-WIRED`); `search.html` prototype **not authoritative** (Plan 2112) |
 | pose-detail | `docs/prototype/screens/pose-detail.html:72-79` | Try Pose CTA, optional Delete for owned poses; **no Save/bookmark controls in actions row** |
 | camera-pose-overlay | `docs/prototype/screens/camera-pose-overlay.html:34-46` | Transparent pose overlay on camera feed; **handoff owned by Plan 2241** |
 
@@ -28,7 +28,7 @@ Prototype Create Pose target: `poses-list.html:49` → `camera-live.html` (FEAT-
 | Finding | File:line | Status |
 | --- | --- | --- |
 | Create Pose callback is no-op | `mobile/composeApp/src/commonMain/kotlin/com/aipose/navigation/Navigation.kt:129` | `onExtractPoseClick = {}` — **gap: WI-02 → CameraTab capture entry (Option A; NOT FEAT-004 extract)** |
-| Search navigation wired | `Navigation.kt:130-136` | **WI-03 delta: hide button + unwire route** (SearchScreen code read-only for Plan 2112) |
+| Search navigation wired | `Navigation.kt:130-136` | **WI-03 regression: verify button visible + route stays wired** (SearchScreen behavior read-only for Plan 2112) |
 | Try Pose sets in-memory handoff | `Navigation.kt:152-156` | Sets `PoseServiceLocator.preparedReference`, switches to `CameraTab` — prep done; overlay still disabled |
 | SearchScreen import | `Navigation.kt:46` | Screen registered — **OUT OF SCOPE** |
 | Camera overlay disabled | `mobile/composeApp/src/commonMain/kotlin/com/aipose/camera/CameraScreen.kt:173` | `if (false) {` wraps overlay block — **Plan 2241 boundary** |
@@ -40,7 +40,7 @@ Prototype Create Pose target: `poses-list.html:49` → `camera-live.html` (FEAT-
 | --- | --- | --- |
 | Tab switcher My/Community | `PosesScreen.kt:161-172` | `ToolbarTab` "My Poses" / "Community" with test tags |
 | Create Pose toolbar button | `PosesScreen.kt:195-208` | `extract-pose-button`, calls `onExtractPoseClick` |
-| Search toolbar button | `PosesScreen.kt:179-193` | `poses-search-button`, calls `onSearchClick` — **OUT OF SCOPE** |
+| Search toolbar button | `PosesScreen.kt:179-193` | `poses-search-button`, calls `onSearchClick` — **retained**; WI-03 verifies wired |
 | Empty My CTA | `PosesScreen.kt:259-262` | "Create Pose" → `onExtractPoseClick` |
 | Community grid + pagination | `PosesScreen.kt:416-457` | Lazy load-more with retry banners |
 | Community refresh | `PosesScreen.kt:392-408`, `298-320` | Refresh control + error banner |
@@ -75,8 +75,7 @@ Prototype Create Pose target: `poses-list.html:49` → `camera-live.html` (FEAT-
 
 ## Explicit exclusions (Plan scope OUT)
 
-- `SearchScreen.kt` and `Navigation.kt:130-136` search push
-- `CommunitySearchProvider.kt` / server `?q=` title search
+- `SearchScreen.kt` / `CommunitySearchProvider.kt` search behavior and server `?q=` title search (read-only; Plan `260818-2112`)
 - Android targets / parity
 - FEAT-008 Save / bookmark UI
 - Camera overlay render (`CameraScreen.kt:173`) and relaunch persistence — Plan `260809-2241`
@@ -84,4 +83,11 @@ Prototype Create Pose target: `poses-list.html:49` → `camera-live.html` (FEAT-
 
 ## Scout conclusion
 
-Two user-visible gaps remain in scope: **Create Pose (+) is unwired** (`Navigation.kt:129`, WI-02 Camera capture entry only) and **search affordance must be removed** (WI-03). Try Pose handoff stops before Camera overlay (`CameraScreen.kt:173`, Plan 2241). FEAT-004 extraction is **explicitly deferred** (Option A).
+One user-visible gap remains in scope: **Create Pose (+) is unwired** (`Navigation.kt:129`, WI-02 Camera capture entry only). The **search affordance is retained** and WI-03 regression-verifies it stays wired (search behavior owned by Plan 2112). Try Pose handoff stops before Camera overlay (`CameraScreen.kt:173`, Plan 2241). FEAT-004 extraction is **explicitly deferred** (Option A).
+
+## Revision note (2026-08-18)
+
+Maintainer: keep the poses-list search icon when Plan 2112 delivers search.
+WI-03 no longer removes search — it regression-verifies the affordance stays
+wired to `SearchScreen`. Search behavior (SearchScreen, provider, server `q`)
+remains owned by Plan `260818-2112`.

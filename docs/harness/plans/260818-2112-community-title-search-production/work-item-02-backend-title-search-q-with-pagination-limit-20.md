@@ -1,7 +1,7 @@
 ---
 work_item: 2
 title: Backend title search q with pagination limit 20
-status: pending
+status: completed
 priority: P1
 effort: M
 dependencies:
@@ -49,6 +49,10 @@ this pagination envelope conceptually, but its default remains a mock and does
 not require live API wiring.
 
 ## Decision dependencies
+
+**Locked contract reference:** plan.md Overview (approved 2026-08-18) fixes
+blank `q` = first published page, limit 20, and case-insensitive `name` match;
+this WI implements that contract.
 
 The route is public and published-only. The fixed page limit is 20. This WI does
 not decide tags, general full-text search, publication readiness, asset linkage,

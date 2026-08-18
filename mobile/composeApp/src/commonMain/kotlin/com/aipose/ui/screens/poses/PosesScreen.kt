@@ -1,20 +1,27 @@
 package com.aipose.ui.screens.poses
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -28,33 +35,30 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import org.jetbrains.compose.resources.painterResource
 import ai_pose.composeapp.generated.resources.Res
-import ai_pose.composeapp.generated.resources.ic_chevron_left
+import ai_pose.composeapp.generated.resources.ic_refresh_cw
 import coil3.compose.AsyncImage
 import com.aipose.Pose
-import com.aipose.data.AiPoseDatabase
 import com.aipose.data.AppConfig
-import com.aipose.data.DatabaseDriverFactory
-import com.aipose.data.PoseRepository
-import com.aipose.data.createDatabase
+import com.aipose.data.CommunityLibraryState
+import com.aipose.data.OperationState
+import com.aipose.data.PoseServiceLocator
+import com.aipose.data.PosesLibraryCoordinator
 import com.aipose.data.remote.CommunityPose
-import com.aipose.data.remote.PoseApiException
-import com.aipose.data.remote.PoseApiService
-import com.aipose.platform.ImagePicker
 import com.aipose.ui.components.NeoBrutalismContainer
 import com.aipose.ui.components.PrimaryButton
-import com.aipose.ui.components.SectionHeader
-import com.aipose.ui.components.TabSwitcher
 import com.aipose.ui.theme.AiPoseColors
 import com.aipose.ui.theme.AiPoseTypography
+import com.aipose.ui.theme.CornerRadius
 import com.aipose.ui.theme.Spacing
-import io.ktor.client.HttpClient
-import io.ktor.client.engine.darwin.Darwin
-import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
-import io.ktor.serialization.kotlinx.json.json
-import io.ktor.util.encodeBase64
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -63,46 +67,38 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
-import kotlinx.datetime.Clock
 
-sealed class UploadState {
-    object Idle : UploadState()
-    object Uploading : UploadState()
-    data class Error(val message: String) : UploadState()
-}
+/** E-SEARCH-WIRED: stable test tag for the poses-list search affordance. */
+internal const val POSES_SEARCH_BUTTON_TEST_TAG = "poses-search-button"
 
 data class PosesUiState(
     val myPoses: List<Pose> = emptyList(),
-    val communityPoses: List<CommunityPose> = emptyList(),
+    val communityState: CommunityLibraryState = CommunityLibraryState(),
     val isLoading: Boolean = true,
-    val isCommunityLoading: Boolean = false,
-    val selectedTab: Int = 0,
-    val uploadState: UploadState = UploadState.Idle,
-    val communityPage: Int = 1,
-    val hasMoreCommunity: Boolean = true
+    val selectedTab: Int = 0
 )
 
-// Module-level singletons — shared HttpClient and ApiService (no Koin required, no per-ViewModel instance)
-private val sharedHttpClient: HttpClient by lazy {
-    HttpClient(Darwin) { install(ContentNegotiation) { json() } }
-}
-private val sharedApiService: PoseApiService by lazy {
-    PoseApiService(sharedHttpClient, AppConfig.SERVER_BASE_URL)
-}
-private val sharedDatabase: AiPoseDatabase by lazy {
-    createDatabase(DatabaseDriverFactory())
-}
-
 class PosesViewModel(
-    private val repository: PoseRepository = PoseRepository(sharedDatabase, sharedApiService),
-    private val apiService: PoseApiService = sharedApiService
+    private val coordinator: PosesLibraryCoordinator = PoseServiceLocator.coordinator,
+    private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main),
 ) {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private val _uiState = MutableStateFlow(PosesUiState())
     val uiState: StateFlow<PosesUiState> = _uiState.asStateFlow()
 
+    init {
+        // Set server base URL from config
+        PoseServiceLocator.baseUrl = AppConfig.SERVER_BASE_URL
+        
+        // Listen to community state changes from coordinator
+        scope.launch {
+            coordinator.communityState.collect { communityState ->
+                _uiState.value = _uiState.value.copy(communityState = communityState)
+            }
+        }
+    }
+
     suspend fun load() {
-        repository.getMyPoses().collectLatest { poses ->
+        coordinator.getMyPoses().collectLatest { poses ->
             _uiState.value = _uiState.value.copy(myPoses = poses, isLoading = false)
         }
     }
@@ -112,74 +108,17 @@ class PosesViewModel(
     }
 
     fun loadCommunityPoses(refresh: Boolean = false) {
-        if (_uiState.value.isCommunityLoading) return
-        scope.launch {
-            _uiState.value = _uiState.value.copy(isCommunityLoading = true)
-            try {
-                val result = repository.getCommunityPoses(page = 1)
-                _uiState.value = _uiState.value.copy(
-                    communityPoses = result.data,
-                    communityPage = 1,
-                    hasMoreCommunity = result.data.size >= 20,
-                    isCommunityLoading = false
-                )
-            } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(isCommunityLoading = false)
-            }
+        if (refresh) {
+            coordinator.refreshCommunity()
+        } else {
+            coordinator.loadCommunityInitial()
         }
     }
 
     fun loadMoreCommunityPoses() {
-        val state = _uiState.value
-        if (state.isCommunityLoading || !state.hasMoreCommunity) return
-        scope.launch {
-            _uiState.value = state.copy(isCommunityLoading = true)
-            try {
-                val nextPage = state.communityPage + 1
-                val result = repository.getCommunityPoses(page = nextPage)
-                _uiState.value = _uiState.value.copy(
-                    communityPoses = state.communityPoses + result.data,
-                    communityPage = nextPage,
-                    hasMoreCommunity = result.data.size >= 20,
-                    isCommunityLoading = false
-                )
-            } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(isCommunityLoading = false)
-            }
-        }
+        coordinator.loadMoreCommunity()
     }
 
-    fun onPickImageResult(imageBytes: ByteArray) {
-        scope.launch {
-            _uiState.value = _uiState.value.copy(uploadState = UploadState.Uploading)
-            try {
-                val outlineBytes = apiService.extractPose(imageBytes, "pose.jpg")
-                val base64 = outlineBytes.encodeBase64()
-                val dataUri = "data:image/png;base64,$base64"
-                repository.insertPose(
-                    name = "Extracted Pose ${Clock.System.now().epochSeconds}",
-                    imagePath = dataUri,
-                    isMine = true
-                )
-                _uiState.value = _uiState.value.copy(uploadState = UploadState.Idle)
-            } catch (e: PoseApiException) {
-                val userMessage = when (e.code) {
-                    "ALL_KEYS_EXHAUSTED" -> "Service unavailable, please try again later."
-                    "INVALID_IMAGE" -> "Invalid image. Please pick a different photo."
-                    else -> e.message ?: "Upload failed"
-                }
-                _uiState.value = _uiState.value.copy(uploadState = UploadState.Error(userMessage))
-            } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(
-                    uploadState = UploadState.Error(e.message ?: "Upload failed")
-                )
-            }
-        }
-    }
-
-    fun clearUploadError() {
-        _uiState.value = _uiState.value.copy(uploadState = UploadState.Idle)
-    }
 }
 
 @Composable
@@ -189,17 +128,17 @@ fun PosesScreen(
     onExtractPoseClick: () -> Unit,
     onCommunityPoseClick: (CommunityPose) -> Unit = {},
     onBack: (() -> Unit)? = null,
+    onSearchClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    val imagePicker = remember { ImagePicker() }
 
     LaunchedEffect(viewModel) {
         viewModel.load()
     }
 
     LaunchedEffect(uiState.selectedTab) {
-        if (uiState.selectedTab == 1 && uiState.communityPoses.isEmpty()) {
+        if (uiState.selectedTab == 1 && uiState.communityState.items.isEmpty()) {
             viewModel.loadCommunityPoses()
         }
     }
@@ -213,88 +152,66 @@ fun PosesScreen(
             verticalArrangement = Arrangement.spacedBy(Spacing.lg)
         ) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier.fillMaxWidth().height(52.dp),
+                horizontalArrangement = Arrangement.Start,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Row(
+                    horizontalArrangement = Arrangement.Start,
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    modifier = Modifier.weight(1f)
                 ) {
-                    if (onBack != null) {
-                        NeoBrutalismContainer(
-                            modifier = Modifier.size(32.dp),
-                            shape = RoundedCornerShape(10.dp),
-                            backgroundColor = AiPoseColors.Background,
-                            shadowOffset = 2.dp,
-                            borderWidth = 2.dp,
-                            onClick = onBack
-                        ) {
-                            Icon(
-                                painter = painterResource(Res.drawable.ic_chevron_left),
-                                contentDescription = "Back",
-                                tint = AiPoseColors.Foreground,
-                                modifier = Modifier.size(16.dp)
-                            )
-                        }
-                    }
-                    Text(
-                        text = "POSES",
-                        style = AiPoseTypography.Heading1,
-                        color = AiPoseColors.Foreground
+                    ToolbarTab(
+                        title = "My Poses",
+                        isSelected = uiState.selectedTab == 0,
+                        onClick = { viewModel.selectTab(0) },
+                        modifier = Modifier.testTag("tab-my-poses")
+                    )
+                    ToolbarTab(
+                        title = "Community",
+                        isSelected = uiState.selectedTab == 1,
+                        onClick = { viewModel.selectTab(1) },
+                        modifier = Modifier.testTag("tab-community")
                     )
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     NeoBrutalismContainer(
-                        modifier = Modifier.size(32.dp),
+                        modifier = Modifier.size(44.dp).testTag(POSES_SEARCH_BUTTON_TEST_TAG),
                         shape = RoundedCornerShape(10.dp),
                         backgroundColor = AiPoseColors.Background,
                         shadowOffset = 2.dp,
                         borderWidth = 2.dp,
-                        onClick = {}
+                        onClick = { onSearchClick?.invoke() }
                     ) {
                         Icon(
                             imageVector = Icons.Default.Search,
-                            contentDescription = "Search",
+                            contentDescription = "Search poses",
                             tint = AiPoseColors.Foreground,
                             modifier = Modifier.size(16.dp)
                         )
                     }
+
                     NeoBrutalismContainer(
-                        modifier = Modifier.size(32.dp),
+                        modifier = Modifier.size(44.dp).testTag("extract-pose-button"),
                         shape = RoundedCornerShape(10.dp),
                         backgroundColor = AiPoseColors.Background,
                         shadowOffset = 2.dp,
                         borderWidth = 2.dp,
-                        onClick = {
-                            imagePicker.pickImageFromGallery { bytes ->
-                                bytes?.let { viewModel.onPickImageResult(it) }
-                            }
-                        }
+                        onClick = onExtractPoseClick
                     ) {
                         Icon(
                             imageVector = Icons.Default.Add,
-                            contentDescription = "Add pose",
+                            contentDescription = "Create Pose",
                             tint = AiPoseColors.Foreground,
                             modifier = Modifier.size(16.dp)
                         )
                     }
                 }
             }
-
-            if (uiState.uploadState is UploadState.Error) {
-                Text(
-                    text = (uiState.uploadState as UploadState.Error).message,
-                    style = AiPoseTypography.Caption,
-                    color = AiPoseColors.Error
-                )
-            }
-
-            TabSwitcher(
-                tabs = listOf("My Poses", "Community"),
-                selectedIndex = uiState.selectedTab,
-                onSelect = viewModel::selectTab
-            )
 
             when (uiState.selectedTab) {
                 0 -> MyPosesContent(
@@ -305,28 +222,12 @@ fun PosesScreen(
                 1 -> CommunityContent(
                     uiState = uiState,
                     onPoseClick = onCommunityPoseClick,
-                    onLoadMore = viewModel::loadMoreCommunityPoses
+                    onLoadMore = viewModel::loadMoreCommunityPoses,
+                    onRefresh = { viewModel.loadCommunityPoses(refresh = true) },
+                    onRetryInitial = { viewModel.loadCommunityPoses(refresh = false) },
+                    onRetryLoadMore = viewModel::loadMoreCommunityPoses,
+                    onRetryRefresh = { viewModel.loadCommunityPoses(refresh = true) }
                 )
-            }
-        }
-
-        // M4: dimmed scrim overlay while uploading
-        if (uiState.uploadState is UploadState.Uploading) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.5f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    CircularProgressIndicator(color = AiPoseColors.Primary)
-                    Text(
-                        text = "Extracting pose...",
-                        style = AiPoseTypography.Caption,
-                        color = Color.White,
-                        modifier = Modifier.padding(top = Spacing.sm)
-                    )
-                }
             }
         }
     }
@@ -352,27 +253,30 @@ private fun MyPosesContent(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center
             ) {
-                Text("NO POSES YET", style = AiPoseTypography.Heading3, color = AiPoseColors.Foreground)
                 Text(
-                    text = "Extract your first pose to start building your library.",
-                    modifier = Modifier.padding(top = Spacing.sm, bottom = Spacing.lg),
+                    text = "No poses found.",
                     style = AiPoseTypography.Body,
-                    color = AiPoseColors.Subtext
+                    color = AiPoseColors.Subtext,
+                    modifier = Modifier.padding(bottom = Spacing.lg).testTag("empty-poses-text")
                 )
-                PrimaryButton(text = "Extract Pose", onClick = onExtractPoseClick)
+                PrimaryButton(
+                    text = "Create Pose",
+                    onClick = onExtractPoseClick,
+                    modifier = Modifier.testTag("extract-pose-cta")
+                )
             }
         }
         else -> {
             Column(verticalArrangement = Arrangement.spacedBy(Spacing.md)) {
-                SectionHeader(title = "Recent", count = uiState.myPoses.size)
+                CountOnlyHeader(count = uiState.myPoses.size)
                 LazyVerticalGrid(
                     modifier = Modifier.fillMaxSize(),
                     columns = GridCells.Fixed(2),
                     horizontalArrangement = Arrangement.spacedBy(Spacing.md),
                     verticalArrangement = Arrangement.spacedBy(Spacing.md)
                 ) {
-                    items(uiState.myPoses, key = { it.id }) { pose ->
-                        PoseCard(pose = pose, onClick = { onPoseClick(pose.id) })
+                    itemsIndexed(uiState.myPoses, key = { _, pose -> pose.id }) { index, pose ->
+                        PoseCard(pose = pose, index = index, onClick = { onPoseClick(pose.id) })
                     }
                 }
             }
@@ -384,34 +288,175 @@ private fun MyPosesContent(
 private fun CommunityContent(
     uiState: PosesUiState,
     onPoseClick: (CommunityPose) -> Unit,
-    onLoadMore: () -> Unit
+    onLoadMore: () -> Unit,
+    onRefresh: () -> Unit,
+    onRetryInitial: () -> Unit,
+    onRetryLoadMore: () -> Unit,
+    onRetryRefresh: () -> Unit
 ) {
-    when {
-        uiState.isCommunityLoading && uiState.communityPoses.isEmpty() -> {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = AiPoseColors.Primary)
-            }
-        }
-        uiState.communityPoses.isEmpty() -> {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("No community poses yet.", style = AiPoseTypography.Body, color = AiPoseColors.Subtext)
-            }
-        }
-        else -> {
-            LazyVerticalGrid(
-                modifier = Modifier.fillMaxSize(),
-                columns = GridCells.Fixed(2),
-                horizontalArrangement = Arrangement.spacedBy(Spacing.md),
-                verticalArrangement = Arrangement.spacedBy(Spacing.md)
+    val state = uiState.communityState
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        // Refresh error banner
+        if (state.refreshState is OperationState.Error) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(AiPoseColors.Error.copy(alpha = 0.15f))
+                    .padding(Spacing.md)
+                    .testTag("retry-refresh-banner"),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                items(uiState.communityPoses, key = { it.id }) { pose ->
-                    CommunityPoseCard(pose = pose, onClick = { onPoseClick(pose) })
+                Text(
+                    text = "Refresh failed. Showing previous catalog.",
+                    style = AiPoseTypography.Caption,
+                    color = AiPoseColors.Error
+                )
+                PrimaryButton(
+                    text = "Retry",
+                    onClick = onRetryRefresh,
+                    modifier = Modifier
+                        .size(width = 80.dp, height = 30.dp)
+                        .testTag("retry-refresh-button")
+                )
+            }
+        }
+
+        when {
+            state.initialLoadState is OperationState.Loading && state.items.isEmpty() -> {
+                Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = AiPoseColors.Primary)
                 }
-                if (uiState.hasMoreCommunity) {
-                    item {
-                        LaunchedEffect(Unit) { onLoadMore() }
-                        Box(contentAlignment = Alignment.Center) {
-                            CircularProgressIndicator(color = AiPoseColors.Primary)
+            }
+            state.initialLoadState is OperationState.Error && state.items.isEmpty() -> {
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .padding(Spacing.lg)
+                        .testTag("initial-load-error-state"),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Text(
+                        text = "FAILED TO LOAD POSES",
+                        style = AiPoseTypography.Heading3,
+                        color = AiPoseColors.Error
+                    )
+                    Text(
+                        text = (state.initialLoadState as OperationState.Error).message,
+                        style = AiPoseTypography.Body,
+                        color = AiPoseColors.Subtext,
+                        modifier = Modifier.padding(top = Spacing.sm, bottom = Spacing.lg)
+                    )
+                    PrimaryButton(
+                        text = "Retry",
+                        onClick = onRetryInitial,
+                        modifier = Modifier.testTag("retry-initial-button")
+                    )
+                }
+            }
+            state.items.isEmpty() -> {
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .padding(Spacing.lg),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Text(
+                        "No poses found.",
+                        style = AiPoseTypography.Body,
+                        color = AiPoseColors.Subtext,
+                        modifier = Modifier.testTag("empty-poses-text")
+                    )
+                    PrimaryButton(
+                        text = "Refresh",
+                        onClick = onRefresh,
+                        modifier = Modifier
+                            .padding(top = Spacing.md)
+                            .testTag("community-empty-refresh-button")
+                    )
+                }
+            }
+            else -> {
+                Column(
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(Spacing.md)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        CountOnlyHeader(count = state.total, modifier = Modifier.weight(1f))
+                        NeoBrutalismContainer(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .testTag("community-refresh-button"),
+                            shape = RoundedCornerShape(8.dp),
+                            backgroundColor = AiPoseColors.Background,
+                            shadowOffset = 2.dp,
+                            borderWidth = 2.dp,
+                            onClick = onRefresh
+                        ) {
+                            Icon(
+                                painter = painterResource(Res.drawable.ic_refresh_cw),
+                                contentDescription = "Refresh community poses",
+                                tint = AiPoseColors.Foreground,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+                    LazyVerticalGrid(
+                        modifier = Modifier.fillMaxSize(),
+                        columns = GridCells.Fixed(2),
+                        horizontalArrangement = Arrangement.spacedBy(Spacing.md),
+                        verticalArrangement = Arrangement.spacedBy(Spacing.md)
+                    ) {
+                        itemsIndexed(state.items, key = { _, pose -> pose.id }) { index, pose ->
+                            CommunityPoseCard(pose = pose, index = index, onClick = { onPoseClick(pose) })
+                        }
+                        if (state.hasMore) {
+                            if (state.loadMoreState is OperationState.Loading) {
+                                item {
+                                    Box(
+                                        modifier = Modifier.fillMaxWidth().padding(Spacing.md),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        CircularProgressIndicator(color = AiPoseColors.Primary)
+                                    }
+                                }
+                            } else if (state.loadMoreState is OperationState.Error) {
+                                item {
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(Spacing.md)
+                                            .testTag("load-more-error-state"),
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        verticalArrangement = Arrangement.spacedBy(Spacing.xs)
+                                    ) {
+                                        Text(
+                                            text = "Load more failed.",
+                                            style = AiPoseTypography.Caption,
+                                            color = AiPoseColors.Error
+                                        )
+                                        PrimaryButton(
+                                            text = "Retry",
+                                            onClick = onRetryLoadMore,
+                                            modifier = Modifier.testTag("retry-load-more-button")
+                                        )
+                                    }
+                                }
+                            } else {
+                                item {
+                                    LaunchedEffect(Unit) { onLoadMore() }
+                                    Box(modifier = Modifier.size(1.dp))
+                                }
+                            }
                         }
                     }
                 }
@@ -423,25 +468,119 @@ private fun CommunityContent(
 @Composable
 fun CommunityPoseCard(
     pose: CommunityPose,
+    index: Int,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val aspectRatios = listOf(1f / 1.25f, 1f, 1.25f / 1f)
+    val aspectRatio = aspectRatios[index % 3]
+
     Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(Spacing.xs),
+        modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(Spacing.sm)
     ) {
-        AsyncImage(
-            model = pose.thumbnailPath ?: pose.imagePath,
-            contentDescription = pose.name,
-            modifier = Modifier.fillMaxWidth()
-        )
+        NeoBrutalismContainer(
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(aspectRatio)
+                .testTag("pose-card-community-${pose.id}")
+                .semantics { contentDescription = pose.name },
+            shape = RoundedCornerShape(CornerRadius.md),
+            backgroundColor = AiPoseColors.Surface,
+            shadowOffset = 4.dp,
+            onClick = onClick
+        ) {
+            val imageModel = pose.thumbnailPath ?: pose.imagePath
+            if (imageModel.isNotBlank()) {
+                AsyncImage(
+                    model = imageModel,
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxWidth(),
+                    contentScale = ContentScale.Crop
+                )
+            } else {
+                Icon(
+                    imageVector = Icons.Default.Image,
+                    contentDescription = null,
+                    modifier = Modifier.size(40.dp),
+                    tint = AiPoseColors.Subtext
+                )
+            }
+        }
+
         Text(
             text = pose.name,
-            style = AiPoseTypography.Caption,
+            style = AiPoseTypography.BodyBold,
             color = AiPoseColors.Foreground,
-            maxLines = 1
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(start = 2.dp)
         )
+    }
+}
+
+@Composable
+fun CountOnlyHeader(
+    count: Int,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.End,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = "$count Poses",
+            style = AiPoseTypography.Caption,
+            color = AiPoseColors.Subtext,
+            modifier = Modifier.testTag("poses-count-label")
+        )
+    }
+}
+
+@Composable
+fun ToolbarTab(
+    title: String,
+    isSelected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    Box(
+        modifier = modifier
+            .selectable(
+                selected = isSelected,
+                interactionSource = interactionSource,
+                indication = null,
+                role = Role.Tab,
+                onClick = onClick
+            )
+            .padding(horizontal = Spacing.sm, vertical = 8.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Text(
+                text = title,
+                style = AiPoseTypography.BodyBold,
+                color = if (isSelected) AiPoseColors.Foreground else AiPoseColors.Subtext
+            )
+            Box(
+                modifier = Modifier
+                    .width(48.dp)
+                    .height(4.dp)
+                    .background(
+                        color = if (isSelected) AiPoseColors.AccentBlue else Color.Transparent,
+                        shape = RoundedCornerShape(topStart = 2.dp, topEnd = 2.dp)
+                    )
+                    .border(
+                        width = 1.5.dp,
+                        color = if (isSelected) AiPoseColors.Foreground else Color.Transparent,
+                        shape = RoundedCornerShape(topStart = 2.dp, topEnd = 2.dp)
+                    )
+            )
+        }
     }
 }

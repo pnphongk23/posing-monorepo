@@ -1,7 +1,7 @@
 ---
 work_item: 4
 title: Search screen prototype parity and paging UX
-status: pending
+status: completed
 priority: P1
 effort: M
 dependencies:
@@ -57,6 +57,10 @@ repository contract, mock page-two fixture, and failure semantics are available.
 WI-04 does not depend on a live API provider and must not add one.
 
 ## Decision dependencies
+
+**Locked contract reference:** plan.md Overview (approved 2026-08-18) locks the
+exact prototype copy and community paging through the repository; this WI
+implements that contract.
 
 The exact prototype strings and the fixed community paging decisions are locked.
 The existing error/retry behavior is a compatibility constraint: confirmed cards

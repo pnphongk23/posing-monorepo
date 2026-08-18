@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { setupTestDatabase } from "./testDb";
-import { CommunityStore } from "./communityStore";
+import { CommunityStore, escapeLikePattern } from "./communityStore";
 
 async function createTestStore(): Promise<CommunityStore> {
   const sql = await setupTestDatabase();
@@ -174,5 +174,247 @@ describe("CommunityStore", () => {
 
     const updated = await store.getPoseById(pose.id);
     expect(updated?.downloadCount).toBe(2);
+  });
+
+  describe("title search (q)", () => {
+    it("escapeLikePattern escapes backslash, percent, and underscore", () => {
+      expect(escapeLikePattern("100%")).toBe("100\\%");
+      expect(escapeLikePattern("a_b")).toBe("a\\_b");
+      expect(escapeLikePattern("path\\to")).toBe("path\\\\to");
+      expect(escapeLikePattern("mix\\%_")).toBe("mix\\\\\\%\\_");
+    });
+
+    it("blank q returns all published poses (no name filter)", async () => {
+      const store = await createTestStore();
+      await store.createPose({
+        name: "Alpha Pose",
+        imagePath: "community/alpha.png",
+        thumbnailPath: null,
+        tags: [],
+        difficulty: "beginner",
+        description: null,
+        bodyParts: [],
+        status: "published"
+      });
+      await store.createPose({
+        name: "Beta Pose",
+        imagePath: "community/beta.png",
+        thumbnailPath: null,
+        tags: [],
+        difficulty: "beginner",
+        description: null,
+        bodyParts: [],
+        status: "published"
+      });
+
+      const { poses, total } = await store.listPoses({ status: "published", q: "", page: 1, limit: 20 });
+      expect(poses).toHaveLength(2);
+      expect(total).toBe(2);
+    });
+
+    it("matches name case-insensitively", async () => {
+      const store = await createTestStore();
+      await store.createPose({
+        name: "Warrior II",
+        imagePath: "community/warrior.png",
+        thumbnailPath: null,
+        tags: [],
+        difficulty: "beginner",
+        description: null,
+        bodyParts: [],
+        status: "published"
+      });
+      await store.createPose({
+        name: "Tree Pose",
+        imagePath: "community/tree.png",
+        thumbnailPath: null,
+        tags: [],
+        difficulty: "beginner",
+        description: null,
+        bodyParts: [],
+        status: "published"
+      });
+
+      const { poses, total } = await store.listPoses({ status: "published", q: "warrior", page: 1, limit: 20 });
+      expect(poses).toHaveLength(1);
+      expect(poses[0].name).toBe("Warrior II");
+      expect(total).toBe(1);
+    });
+
+    it("excludes draft poses when searching", async () => {
+      const store = await createTestStore();
+      await store.createPose({
+        name: "Secret Warrior",
+        imagePath: "community/secret.png",
+        thumbnailPath: null,
+        tags: [],
+        difficulty: "beginner",
+        description: null,
+        bodyParts: [],
+        status: "draft"
+      });
+      await store.createPose({
+        name: "Public Warrior",
+        imagePath: "community/public.png",
+        thumbnailPath: null,
+        tags: [],
+        difficulty: "beginner",
+        description: null,
+        bodyParts: [],
+        status: "published"
+      });
+
+      const { poses, total } = await store.listPoses({ status: "published", q: "warrior", page: 1, limit: 20 });
+      expect(poses).toHaveLength(1);
+      expect(poses[0].name).toBe("Public Warrior");
+      expect(total).toBe(1);
+    });
+
+    it("returns empty result when no name matches", async () => {
+      const store = await createTestStore();
+      await store.createPose({
+        name: "Tree Pose",
+        imagePath: "community/tree.png",
+        thumbnailPath: null,
+        tags: [],
+        difficulty: "beginner",
+        description: null,
+        bodyParts: [],
+        status: "published"
+      });
+
+      const { poses, total } = await store.listPoses({ status: "published", q: "nonexistent", page: 1, limit: 20 });
+      expect(poses).toEqual([]);
+      expect(total).toBe(0);
+    });
+
+    it("returns filtered total matching count query", async () => {
+      const store = await createTestStore();
+      for (let i = 0; i < 3; i++) {
+        await store.createPose({
+          name: `Yoga Flow ${i}`,
+          imagePath: `community/flow${i}.png`,
+          thumbnailPath: null,
+          tags: [],
+          difficulty: "beginner",
+          description: null,
+          bodyParts: [],
+          status: "published"
+        });
+      }
+      await store.createPose({
+        name: "Stretch Session",
+        imagePath: "community/stretch.png",
+        thumbnailPath: null,
+        tags: [],
+        difficulty: "beginner",
+        description: null,
+        bodyParts: [],
+        status: "published"
+      });
+
+      const { poses, total } = await store.listPoses({ status: "published", q: "yoga", page: 1, limit: 20 });
+      expect(poses).toHaveLength(3);
+      expect(total).toBe(3);
+    });
+
+    it("paginates 21+ search results without overlapping IDs between pages", async () => {
+      const store = await createTestStore();
+      for (let i = 0; i < 25; i++) {
+        await store.createPose({
+          name: `Search Match ${String(i).padStart(2, "0")}`,
+          imagePath: `community/match${i}.png`,
+          thumbnailPath: null,
+          tags: [],
+          difficulty: "beginner",
+          description: null,
+          bodyParts: [],
+          status: "published"
+        });
+      }
+      await store.createPose({
+        name: "Unrelated Pose",
+        imagePath: "community/other.png",
+        thumbnailPath: null,
+        tags: [],
+        difficulty: "beginner",
+        description: null,
+        bodyParts: [],
+        status: "published"
+      });
+
+      const page1 = await store.listPoses({ status: "published", q: "search", page: 1, limit: 20 });
+      const page2 = await store.listPoses({ status: "published", q: "search", page: 2, limit: 20 });
+
+      expect(page1.poses).toHaveLength(20);
+      expect(page2.poses).toHaveLength(5);
+      expect(page1.total).toBe(25);
+
+      const page1Ids = new Set(page1.poses.map((p) => p.id));
+      const page2Ids = page2.poses.map((p) => p.id);
+      for (const id of page2Ids) {
+        expect(page1Ids.has(id)).toBe(false);
+      }
+    });
+
+    it("treats percent, underscore, and backslash as literal characters", async () => {
+      const store = await createTestStore();
+      await store.createPose({
+        name: "100% Complete",
+        imagePath: "community/percent.png",
+        thumbnailPath: null,
+        tags: [],
+        difficulty: "beginner",
+        description: null,
+        bodyParts: [],
+        status: "published"
+      });
+      await store.createPose({
+        name: "Pose_a",
+        imagePath: "community/underscore.png",
+        thumbnailPath: null,
+        tags: [],
+        difficulty: "beginner",
+        description: null,
+        bodyParts: [],
+        status: "published"
+      });
+      await store.createPose({
+        name: "path\\file",
+        imagePath: "community/backslash.png",
+        thumbnailPath: null,
+        tags: [],
+        difficulty: "beginner",
+        description: null,
+        bodyParts: [],
+        status: "published"
+      });
+      await store.createPose({
+        name: "Wildcard Flood",
+        imagePath: "community/flood.png",
+        thumbnailPath: null,
+        tags: [],
+        difficulty: "beginner",
+        description: null,
+        bodyParts: [],
+        status: "published"
+      });
+
+      const percent = await store.listPoses({ status: "published", q: "100%", page: 1, limit: 20 });
+      expect(percent.poses).toHaveLength(1);
+      expect(percent.poses[0].name).toBe("100% Complete");
+
+      const underscore = await store.listPoses({ status: "published", q: "Pose_a", page: 1, limit: 20 });
+      expect(underscore.poses).toHaveLength(1);
+      expect(underscore.poses[0].name).toBe("Pose_a");
+
+      const backslash = await store.listPoses({ status: "published", q: "path\\file", page: 1, limit: 20 });
+      expect(backslash.poses).toHaveLength(1);
+      expect(backslash.poses[0].name).toBe("path\\file");
+
+      const lonePercent = await store.listPoses({ status: "published", q: "%", page: 1, limit: 20 });
+      expect(lonePercent.poses).toHaveLength(1);
+      expect(lonePercent.poses[0].name).toBe("100% Complete");
+    });
   });
 });

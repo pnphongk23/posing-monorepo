@@ -35,8 +35,15 @@ export interface ListPosesFilter {
   status: PoseStatus;
   difficulty?: PoseDifficulty;
   tag?: string;
+  /** Case-insensitive substring match on name; omit or blank for no title filter. */
+  q?: string;
   page: number;
   limit: number;
+}
+
+/** Escape SQL LIKE metacharacters so user input is matched literally. */
+export function escapeLikePattern(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_");
 }
 
 export interface ListPosesResult {
@@ -100,11 +107,15 @@ export class CommunityStore {
     const tagCondition = filter.tag
       ? this.db` AND tags LIKE ${`%"${filter.tag}"%`}`
       : this.db``;
+    const nameCondition =
+      filter.q !== undefined && filter.q.length > 0
+        ? this.db` AND name ILIKE ${`%${escapeLikePattern(filter.q)}%`} ESCAPE '\\'`
+        : this.db``;
 
     const countRows = (await this.db`
       SELECT COUNT(*) AS count
       FROM community_poses
-      WHERE status = ${filter.status}${difficultyCondition}${tagCondition}
+      WHERE status = ${filter.status}${difficultyCondition}${tagCondition}${nameCondition}
     `) as Array<{ count: string | number }>;
 
     const total = Number(countRows[0]?.count ?? 0);
@@ -112,8 +123,8 @@ export class CommunityStore {
     const rows = (await this.db`
       SELECT *
       FROM community_poses
-      WHERE status = ${filter.status}${difficultyCondition}${tagCondition}
-      ORDER BY uploaded_at DESC
+      WHERE status = ${filter.status}${difficultyCondition}${tagCondition}${nameCondition}
+      ORDER BY uploaded_at DESC, id ASC
       LIMIT ${filter.limit} OFFSET ${offset}
     `) as CommunityPoseRow[];
 
