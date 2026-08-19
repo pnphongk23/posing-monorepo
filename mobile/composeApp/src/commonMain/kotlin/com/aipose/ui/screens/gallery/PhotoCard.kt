@@ -1,12 +1,14 @@
 package com.aipose.ui.screens.gallery
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -47,8 +49,18 @@ import com.aipose.ui.theme.Spacing
 fun PhotoCard(
     photo: Photo,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    dense: Boolean = false,
 ) {
+    if (dense) {
+        GalleryDensePhotoCard(
+            photo = photo,
+            onClick = onClick,
+            modifier = modifier,
+        )
+        return
+    }
+
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -127,6 +139,44 @@ fun PhotoCard(
                 contentDescription = null,
                 modifier = Modifier.size(10.dp),
                 tint = if (photo.isFavorite == 1L) AiPoseColors.Primary else AiPoseColors.Foreground.copy(alpha = 0.3f)
+            )
+        }
+    }
+}
+
+/** Prototype `.nb-card--gallery-dense`: square tile, cover crop, hairline border, no shadow. */
+@Composable
+private fun GalleryDensePhotoCard(
+    photo: Photo,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val shape = RoundedCornerShape(DensePhotoCardDefaults.BORDER_RADIUS)
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .aspectRatio(DensePhotoCardDefaults.ASPECT_RATIO)
+            .clip(shape)
+            .border(DensePhotoCardDefaults.BORDER_WIDTH, AiPoseColors.Foreground.copy(alpha = 0.15f), shape)
+            .background(AiPoseColors.Surface)
+            .clickable(onClick = onClick)
+            .semantics { testTag = "gallery-photo-item" },
+        contentAlignment = Alignment.Center,
+    ) {
+        val resolvedPath = remember(photo.imagePath) { resolveImagePath(photo.imagePath) }
+        if (resolvedPath != null) {
+            AsyncImage(
+                model = resolvedPath,
+                contentDescription = photo.poseName.ifBlank { "Gallery photo" },
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop,
+            )
+        } else {
+            Icon(
+                imageVector = Icons.Default.Image,
+                contentDescription = null,
+                modifier = Modifier.size(32.dp),
+                tint = AiPoseColors.Subtext,
             )
         }
     }

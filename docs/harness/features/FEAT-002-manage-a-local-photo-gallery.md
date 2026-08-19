@@ -1,10 +1,6 @@
 ---
 schema_version: 1
-type: feature
-id: FEAT-002
 title: Manage a Local Photo Gallery
-status: draft
-created: 2026-08-09
 relationships:
   specs:
     - "[[product-feature-inventory]]"
@@ -13,8 +9,10 @@ relationships:
     - "[[model-entity-catalogue]]"
     - "[[erd]]"
     - "[[api-catalogue]]"
-  decisions: []
-  plans: []
+  decisions:
+    - "[[DEC-004-feat-002-gallery-parity-matrix|DEC-004]]"
+  plans:
+    - "[[260819-0735-feat-002-local-photo-gallery/plan|260819-0735]]"
   reports:
     - "[[REP-002-feature-gap-and-release-readiness-audit|REP-002]]"
   rules: []
@@ -26,6 +24,12 @@ relationships:
     - mobile/shared/src/commonMain/sqldelight/com/aipose/Photo.sq
     - mobile/shared/src/commonMain/sqldelight/com/aipose/Pose.sq
     - mobile/composeApp/src/iosMain/kotlin/com/aipose/platform/SaveToPhotos.ios.kt
+type: feature
+id: FEAT-002
+status: approved
+created: 2026-08-09
+approved: 2026-08-19
+approved_by: phongpn
 ---
 
 # FEAT-002: Manage a Local Photo Gallery
@@ -99,7 +103,18 @@ The Photographer opens Gallery or selects a photo action.
 
 - **FR-001:** Gallery presentation reads local `Photo` records reactively.
 - **FR-002:** Favorite, delete, and export outcomes must be confirmed before success is shown.
-- **BR-001:** Deleting a photo must not be documented as complete while an owned file remains.
+- **FR-003:** Gallery search filters photos by case-insensitive substring on
+  `Photo.poseName` and linked `Pose.name` when `poseId` is set (prototype
+  title/tag semantics map to pose-name text; Plan `260819-0735` Option A).
+- **BR-001:** Deleting a photo removes the Photo row and owned `imagePath` file;
+  deletion is not complete while owned photo files remain.
+- **BR-002:** When `Photo.poseId` references a `PersonalPose`, cascade delete of
+  the Pose and owned assets occurs only when no other `Photo` rows still
+  reference that `poseId` after the delete (last-reference rule; explicit
+  orchestration — FK `ON DELETE SET NULL` is not relied upon).
+- **BR-003:** Export to the native Photos library is Save to Photos only (no
+  share sheet or generic file export). iOS delivery is in scope for Plan
+  `260819-0735`; Android parity is deferred to a future slice.
 
 ## Acceptance
 

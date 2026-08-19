@@ -25,6 +25,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import com.aipose.data.resolveImagePath
 import androidx.compose.ui.Alignment
@@ -41,16 +42,18 @@ import com.aipose.ui.components.neoBorder
 import com.aipose.ui.components.neoShadow
 import com.aipose.ui.theme.AiPoseColors
 import com.aipose.ui.theme.Spacing
+import kotlinx.coroutines.launch
 
 @Composable
 fun PhotoDetailDialog(
     photo: Photo,
     onDismiss: () -> Unit,
-    onDelete: (Long) -> Unit,
+    onDelete: suspend (Long) -> Boolean,
     onToggleFavorite: (Long) -> Unit,
     onSave: (Photo) -> Unit,
 ) {
     var showDeleteConfirm by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
     val resolvedPath = remember(photo.imagePath) { resolveImagePath(photo.imagePath) }
 
     Box(
@@ -170,8 +173,17 @@ fun PhotoDetailDialog(
             confirmButton = {
                 TextButton(
                     onClick = {
-                        onDelete(photo.id)
-                        onDismiss()
+                        scope.launch {
+                            val deleted = onDelete(photo.id)
+                            // Dismiss the detail dialog only on success; on
+                            // failure the caller shows a snackbar and this
+                            // dialog stays open so the user can retry.
+                            if (deleted) {
+                                onDismiss()
+                            } else {
+                                showDeleteConfirm = false
+                            }
+                        }
                     }
                 ) {
                     Text("DELETE", color = AiPoseColors.Error)

@@ -25,13 +25,19 @@ import ai_pose.composeapp.generated.resources.Res
 import ai_pose.composeapp.generated.resources.ic_chevron_left
 import ai_pose.composeapp.generated.resources.ic_layout_grid
 import ai_pose.composeapp.generated.resources.ic_list
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -41,6 +47,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.testTag
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
@@ -56,10 +63,14 @@ import com.aipose.ui.theme.AiPoseColors
 import com.aipose.ui.theme.AiPoseTypography
 import com.aipose.ui.theme.CornerRadius
 import com.aipose.ui.theme.Spacing
-import com.aipose.platform.saveImageToPhotos
+import com.aipose.platform.deletePhotoConfirmation
+import com.aipose.platform.saveToPhotos
+import com.aipose.platform.saveToPhotosConfirmation
 import com.aipose.data.resolveImagePath
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GalleryScreen(
     viewModel: GalleryViewModel,
@@ -169,6 +180,60 @@ fun GalleryScreen(
                 }
             }
 
+            // ── Search (WI-02) ───────────────────────────────────────────────
+            // Only shown when the gallery has at least one photo; the gallery
+            // empty state has nothing to search. Filter semantics (title-tag
+            // substring, case-insensitive) live in GalleryViewModel.
+            if (uiState.photos.isNotEmpty()) {
+                OutlinedTextField(
+                    value = uiState.searchQuery,
+                    onValueChange = viewModel::setSearchQuery,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = Spacing.xs)
+                        .semantics { testTag = "gallery-search-field" }
+                        .semantics { contentDescription = "Search photos by pose" },
+                    placeholder = {
+                        Text(
+                            "Search poses",
+                            style = AiPoseTypography.Body,
+                            color = AiPoseColors.Subtext,
+                        )
+                    },
+                    textStyle = AiPoseTypography.Body,
+                    singleLine = true,
+                    colors = TextFieldDefaults.outlinedTextFieldColors(
+                        focusedBorderColor = AiPoseColors.Foreground,
+                        unfocusedBorderColor = AiPoseColors.Foreground,
+                        containerColor = AiPoseColors.Surface,
+                        cursorColor = AiPoseColors.Foreground,
+                    ),
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Default.Search,
+                            contentDescription = null,
+                            tint = AiPoseColors.Foreground,
+                        )
+                    },
+                    trailingIcon = {
+                        if (uiState.searchQuery.isNotEmpty()) {
+                            IconButton(
+                                onClick = { viewModel.setSearchQuery("") },
+                                modifier = Modifier
+                                    .size(44.dp)
+                                    .semantics { testTag = "gallery-search-clear" },
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "Clear",
+                                    tint = AiPoseColors.Foreground,
+                                )
+                            }
+                        }
+                    },
+                )
+            }
+
             // ── Content states ───────────────────────────────────────────────
             when {
                 uiState.isLoading -> {
@@ -177,6 +242,7 @@ fun GalleryScreen(
                     }
                 }
 
+                // Gallery-empty: there are genuinely no photos at all.
                 uiState.photos.isEmpty() -> {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Column(
@@ -193,16 +259,27 @@ fun GalleryScreen(
                     }
                 }
 
+                // Filter-empty: photos exist but none match the active query.
+                uiState.groupedByDate.isEmpty() -> {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text(
+                            "No photos found",
+                            style = AiPoseTypography.Heading3,
+                            color = AiPoseColors.Subtext,
+                        )
+                    }
+                }
+
                 else -> {
                     if (uiState.viewMode == ViewMode.GRID) {
                         LazyVerticalGrid(
-                            columns = GridCells.Fixed(2),
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            columns = GridCells.Fixed(GalleryGridDefaults.DENSE_COLUMN_COUNT),
+                            verticalArrangement = Arrangement.spacedBy(GalleryGridDefaults.DENSE_GAP),
+                            horizontalArrangement = Arrangement.spacedBy(GalleryGridDefaults.DENSE_GAP),
                             modifier = Modifier.fillMaxSize()
                         ) {
                             uiState.groupedByDate.forEach { (dateKey, photos) ->
-                                item(span = { GridItemSpan(2) }) {
+                                item(span = { GridItemSpan(GalleryGridDefaults.DENSE_COLUMN_COUNT) }) {
                                     SectionHeader(
                                         title = dateKey,
                                         count = photos.size,
@@ -214,7 +291,8 @@ fun GalleryScreen(
                                 items(photos) { photo ->
                                     PhotoCard(
                                         photo = photo,
-                                        onClick = { viewModel.selectPhoto(photo) }
+                                        onClick = { viewModel.selectPhoto(photo) },
+                                        dense = true,
                                     )
                                 }
                             }
@@ -255,12 +333,28 @@ fun GalleryScreen(
         PhotoDetailDialog(
             photo = photo,
             onDismiss = { viewModel.selectPhoto(null) },
-            onDelete = { id -> scope.launch { viewModel.deletePhoto(id) } },
+            onDelete = { id ->
+                // DEL-UI-01: repository restores metadata and rethrows on
+                // failure; surface it as a snackbar and report `false` so the
+                // detail dialog stays open for a retry. Cancellation must
+                // propagate (never be reported as a delete failure).
+                try {
+                    viewModel.deletePhoto(id)
+                    true
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    snackbarHostState.showSnackbar(deletePhotoConfirmation(false))
+                    false
+                }
+            },
             onToggleFavorite = { id -> scope.launch { viewModel.toggleFavorite(id) } },
             onSave = { p ->
                     val resolvedPath = resolveImagePath(p.imagePath) ?: p.imagePath
-                    val result = saveImageToPhotos(resolvedPath, null)
-                    if (!result) scope.launch { snackbarHostState.showSnackbar("Save failed") }
+                    val saved = saveToPhotos(resolvedPath, null)
+                    scope.launch {
+                        snackbarHostState.showSnackbar(saveToPhotosConfirmation(saved))
+                    }
                 }
         )
     }

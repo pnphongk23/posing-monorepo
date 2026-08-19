@@ -7,11 +7,11 @@ import kotlinx.cinterop.ExperimentalForeignApi
 
 @OptIn(ExperimentalForeignApi::class)
 actual fun saveImageToPhotos(imagePath: String, context: Any?): Boolean {
-    var success = false
     val url = NSURL.fileURLWithPath(imagePath)
-    PHPhotoLibrary.sharedPhotoLibrary().performChangesAndWait({
+    // performChangesAndWait returns true only when the change block was
+    // successfully applied to the shared photo library, so we surface that
+    // real outcome instead of assuming success inside the change block.
+    return PHPhotoLibrary.sharedPhotoLibrary().performChangesAndWait({
         PHAssetChangeRequest.creationRequestForAssetFromImageAtFileURL(url)
-        success = true
     }, null)
-    return success
 }

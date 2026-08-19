@@ -32,6 +32,13 @@ insertPhoto:
 INSERT INTO Photo(imagePath, poseId, poseName, createdAt, isFavorite)
 VALUES (?, ?, ?, ?, ?);
 
+-- WI-03: restores a Photo row with its original id after a partial deletion
+-- failure (atomic + recoverable, BR-001 / FEAT-002 E). AUTOINCREMENT would
+-- assign a new id, breaking the UI's reference to the surviving item.
+insertPhotoWithId:
+INSERT INTO Photo(id, imagePath, poseId, poseName, createdAt, isFavorite)
+VALUES (?, ?, ?, ?, ?, ?);
+
 deletePhoto:
 DELETE FROM Photo WHERE id = ?;
 

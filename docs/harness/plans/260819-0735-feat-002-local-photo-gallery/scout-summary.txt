@@ -1,0 +1,118 @@
+# FEAT-002 Scout Summary (2026-08-19)
+
+Lead scout for Plan `260819-0735-feat-002-local-photo-gallery`. Read-only
+evidence from repo state; no product code edits in this pass.
+
+## Authority and prerequisites
+
+| Artifact | Path | Status | Notes |
+| --- | --- | --- | --- |
+| FEAT-002 | `docs/harness/features/FEAT-002-manage-a-local-photo-gallery.md` | **draft** (no `approved` date) | Plan **cannot be execution-approved** until Product Authority approves FEAT-002. WI-01 documents prerequisite + recommended updates. |
+| REP-002 GAP-004 | `docs/harness/reports/REP-002-feature-gap-and-release-readiness-audit.md:80-86` | read-only evidence | Deletion leaves private image files behind; P1 / High. |
+| Reference plan | `docs/harness/plans/260818-2105-feat-003-pose-library-slice/` | completed | Plan structure, DEC-003 parity-matrix pattern, WI/evidence-ID shape. |
+| Completed pattern | `docs/harness/plans/260809-2240-pose-reference-library-convergence/work-item-05-*.md` | completed | Atomic PersonalPose deletion (`PoseRepository.kt:39-58`). |
+| Camera convergence | `docs/harness/plans/260809-1806-camera-source-of-truth-convergence/` | relationship only | Documented relationship; **no `blockedBy`** (no scout evidence of hard dependency). |
+
+## Deletion contract (Cook target, Lead decision)
+
+| Concern | File:line | Evidence |
+| --- | --- | --- |
+| `deletePhoto` removes SQL row only | `mobile/shared/src/commonMain/kotlin/com/aipose/data/PhotoRepository.kt:35-37` | `queries.deletePhoto(id)`; **no file delete, no storage dependency** |
+| Dialog promises permanent deletion | `mobile/composeApp/src/commonMain/kotlin/com/aipose/ui/screens/gallery/PhotoDetailDialog.kt:165-175` | `"This photo will be permanently deleted."` + `onDelete(photo.id)` |
+| FK is `ON DELETE SET NULL`, not cascade | `mobile/shared/src/commonMain/sqldelight/com/aipose/Photo.sq:5` | `FOREIGN KEY (poseId) REFERENCES Pose(id) ON DELETE SET NULL` |
+| Pose owned asset fields | `mobile/shared/src/commonMain/sqldelight/com/aipose/Pose.sq` | `imagePath` (NOT NULL), `thumbnailPath`, `originalImagePath` |
+| Reference atomic pattern | `mobile/shared/src/commonMain/kotlin/com/aipose/data/PoseRepository.kt:39-58` | metadata-first + `deleteOwnedFile` + `restorePose` compensation (70-86) |
+| Ownership boundary | `mobile/shared/src/commonMain/kotlin/com/aipose/data/PoseStorage.kt` | `isOwned` guards http/data-URI/`..`/`//`; iOS actual `IosPoseStorage` resolves `Application Support/aipose` |
+| Photo spec BR-PHOTO-003 | `docs/spec/data/entities/photo.md` | Delete completes only when metadata **and** owned file are removed; leftover file ⇒ no success claim |
+| Photo spec BR-PHOTO-006 | `docs/spec/data/entities/photo.md` | Deleting PersonalPose does **not** delete Photo (`poseId` SET NULL) — opposite direction, no conflict with Lead cascade |
+
+**Gap:** `PhotoRepository` has no storage injection and no access to `Pose` queries;
+the cascade contract requires both (Cook change). `insertCapturedPhoto`
+(`PhotoRepository.kt:14-24`) sets `poseId = null`; no code currently sets a
+non-null `poseId`, so the cascade is a forward-looking contract (FEAT-004
+extraction persistence). `getPhotosByPoseId` exists in `Photo.sq`, implying a
+Pose may be referenced by multiple Photos — multi-reference cascade semantics
+need a Maintainer confirmation (see design.md Risks).
+
+## Search (IN scope — Maintainer closed)
+
+| Concern | File:line | Evidence |
+| --- | --- | --- |
+| Prototype filter semantics | `docs/prototype/scripts/app.js:343-352` | `gallerySearchQuery` → `titleMatch = photo.title` **OR** `tagMatch = photo.tag`, case-insensitive (`toLowerCase`) |
+| Search listener removed | `docs/prototype/scripts/app.js:384` | `// Search listener removed (plumbing moved to dedicated search screen)` — gallery.html has **no visible search input** |
+| Fixture fields | `docs/prototype/scripts/fixtures.js:248` `GALLERY_FIXTURES` | `title` = "Pose Match 1..6"; `tag` = pose name ("DANCING", "STANDING", …) |
+| Production: no search | `GalleryScreen.kt` / `GalleryViewModel.kt` (full read) | **No** `query`/`filter` state; `GalleryUiState` has no search field — true delta |
+| Production fields | `Photo.sq` + `docs/spec/data/entities/photo.md` | `poseName` (snapshot, default `''`), `poseId` optional FK → `Pose.name` |
+
+**Mapping (Lead decision, document not re-litigate):** `Photo.poseName` ≈ title;
+tag derives from linked pose name (`Pose.name` via `poseId`) or stored metadata
+(`Photo.poseName`). Nuance: prototype fixture `title` ("Pose Match N") is
+distinct from `tag` (pose name); production `Photo` has a single name-like field
+(`poseName`), so title and tag both resolve to pose-name text in practice — flag
+for Maintainer in DEC-004 / design.md.
+
+## Export — Save to Photos (IN scope)
+
+| Concern | File:line | Evidence |
+| --- | --- | --- |
+| `expect` only (no Android actual) | `mobile/composeApp/src/commonMain/kotlin/com/aipose/platform/SaveToPhotos.kt:3` | `expect fun saveImageToPhotos(imagePath, context): Boolean` |
+| iOS actual | `mobile/composeApp/src/iosMain/kotlin/com/aipose/platform/SaveToPhotos.ios.kt:9` | `PHPhotoLibrary.performChangesAndWait`; `success = true` set **inside** the change block (potential false success — REP-002 line 46) |
+| No Android actual | `find mobile -name "SaveToPhotos*"` | only commonMain expect + iosMain actual |
+| Gallery save wiring | `GalleryScreen.kt` `onSave` lambda | `resolveImagePath` → `saveImageToPhotos`; shows "Save failed" only on `false`; **no success confirmation** |
+| Save icon semantic | `PhotoDetailDialog.kt:113-118` | Uses `Icons.Default.Share` for the Save button (prototype uses `#icon-share` too, but semantics must be "Save to Photos", not a share sheet) |
+
+## Platform parity — MATERIAL FINDING
+
+| Concern | Evidence |
+| --- | --- |
+| No Android target | `mobile/composeApp/build.gradle.kts:10-12` and `mobile/shared/build.gradle.kts:9-11` declare **only** `iosX64/iosArm64/iosSimulatorArm64` |
+| No `androidMain` source sets | `find mobile -type d -name androidMain` → none |
+| No Android actuals | `getPlatformPoseStorage()`, `DatabaseDriverFactory`, `saveImageToPhotos` have iOS actuals only |
+| No AGP / Android plugin | `libs.versions.toml` has no Android plugin; no `AndroidManifest.xml` |
+
+**Implication:** "Android parity" is **not** a single `SaveToPhotos.android.kt`
+actual. It requires adding an Android KMP target + AGP + `androidMain` source
+sets + Android actuals for `saveImageToPhotos`, `getPlatformPoseStorage`, and
+`DatabaseDriverFactory`, plus an Android app host. This is a material
+build-platform addition — surfaced to Maintainer (see design.md Risks and
+verification ledger `E-ANDROID-TARGET`).
+
+**Resolution (2026-08-19):** Maintainer directs **iOS-first** — Android parity is
+**deferred** to a future FEAT-002 slice, planned only after an Android KMP target
+exists. `E-ANDROID-TARGET` and `E-ANDROID` are **Excluded** from this Plan.
+
+## UI parity (prototype authority)
+
+| Prototype | Production | Status |
+| --- | --- | --- |
+| Dense 3-col grid `nb-gallery-grid-dense` (`gallery.html`, `grid.css:213-219`, gap 3px) | `GalleryScreen.kt` `GridCells.Fixed(2)` | **Gap** — column density |
+| Scroll area `nb-gallery-scroll` / `nb-grid-scroll-area` | `LazyVerticalGrid` / `LazyColumn` | Aligned |
+| Group titles `nb-grid-group-title` | `SectionHeader` + `groupPhotosByDate` (TODAY/YESTERDAY/MONTH DAY) | Aligned |
+| No visible grid/list toggle in `gallery.html` (list CSS exists `grid.css:68-76`) | `gallery-grid-toggle` / `gallery-list-toggle` test tags | Production has toggle; prototype gallery omits it — document |
+| `gallery-detail.html` back + `gallery-save-btn` + `gallery-delete-btn` + delete modal | `PhotoDetailDialog.kt` back / Save / trash + `AlertDialog` | Aligned (export semantics = Gap, WI-04) |
+| Empty gallery | prototype empty tip | `GalleryScreen.kt` "NO PHOTOS YET" + "OPEN CAMERA" | Aligned |
+| `.nb-card--gallery-dense` (`card.css:174`) | `PhotoCard` (dense card) | Gap/Partial — dense style |
+
+## Verification ledger (summary)
+
+| Claim | Verdict | Evidence |
+| --- | --- | --- |
+| `deletePhoto` deletes row only | **Verified** | `PhotoRepository.kt:35-37` |
+| Dialog claims permanent delete | **Verified** | `PhotoDetailDialog.kt:169` |
+| FK `ON DELETE SET NULL` (no cascade) | **Verified** | `Photo.sq:5` |
+| Atomic pose-delete pattern exists | **Verified** | `PoseRepository.kt:39-58` |
+| No gallery search in production | **Verified** | `GalleryScreen.kt` / `GalleryViewModel.kt` full read |
+| Prototype filter = title OR tag | **Verified** | `app.js:348-352` |
+| Save to Photos iOS-only, no Android actual | **Verified** | `SaveToPhotos.ios.kt:9`; `find` returns iOS only |
+| Android parity = write one actual fn | **Failed** | No Android target in `build.gradle.kts` (iOS only) |
+| title/tag field mapping (poseName ≈ title) | **Unresolved** | fixture `title` ≠ `tag`; production has single name field |
+| PersonalPose shared by >1 Photo on cascade | **Unresolved** | `getPhotosByPoseId` implies N:1; no code sets `poseId` today |
+
+## Scout conclusion
+
+Five true deltas in scope: (1) gallery **search** is absent in production,
+(2) **deletion** removes only the SQL row, (3) **Save to Photos** is iOS-only with
+no success confirmation, (4) **dense 3-col grid** parity, (5) **Android** build
+target parity. FEAT-002 is **draft**, so the Plan is non-executable until Product
+Authority approves it. Two material items require Maintainer confirmation before
+Cook: the Android build-target scope and the title/tag field mapping.
