@@ -176,6 +176,116 @@ describe("CommunityStore", () => {
     expect(updated?.downloadCount).toBe(2);
   });
 
+  describe("updatePose", () => {
+    async function createBasePose(store: CommunityStore) {
+      return store.createPose({
+        name: "Warrior II",
+        imagePath: "community/warrior2.png",
+        thumbnailPath: "community/warrior2_thumb.png",
+        tags: ["standing", "balance"],
+        difficulty: "intermediate",
+        description: "Classic yoga pose",
+        bodyParts: ["legs", "arms"],
+        status: "draft"
+      });
+    }
+
+    it("updates all metadata fields and returns updated record", async () => {
+      const store = await createTestStore();
+      const pose = await createBasePose(store);
+
+      const updated = await store.updatePose(pose.id, {
+        name: "Warrior II Advanced",
+        tags: ["standing", "advanced", "power"],
+        difficulty: "advanced",
+        description: "Updated description",
+        bodyParts: ["legs"],
+        status: "published"
+      });
+
+      expect(updated).not.toBeNull();
+      expect(updated?.name).toBe("Warrior II Advanced");
+      expect(updated?.tags).toEqual(["standing", "advanced", "power"]);
+      expect(updated?.difficulty).toBe("advanced");
+      expect(updated?.description).toBe("Updated description");
+      expect(updated?.bodyParts).toEqual(["legs"]);
+      expect(updated?.status).toBe("published");
+      // Immutable fields are preserved
+      expect(updated?.id).toBe(pose.id);
+      expect(updated?.imagePath).toBe(pose.imagePath);
+      expect(updated?.downloadCount).toBe(0);
+    });
+
+    it("clears nullable fields when set to null", async () => {
+      const store = await createTestStore();
+      const pose = await createBasePose(store);
+
+      const updated = await store.updatePose(pose.id, {
+        difficulty: null,
+        description: null
+      });
+
+      expect(updated?.difficulty).toBeNull();
+      expect(updated?.description).toBeNull();
+      // Untouched fields stay the same
+      expect(updated?.name).toBe("Warrior II");
+      expect(updated?.tags).toEqual(["standing", "balance"]);
+      expect(updated?.status).toBe("draft");
+    });
+
+    it("leaves unspecified fields unchanged", async () => {
+      const store = await createTestStore();
+      const pose = await createBasePose(store);
+
+      const updated = await store.updatePose(pose.id, { name: "Renamed Only" });
+
+      expect(updated?.name).toBe("Renamed Only");
+      expect(updated?.tags).toEqual(["standing", "balance"]);
+      expect(updated?.difficulty).toBe("intermediate");
+      expect(updated?.description).toBe("Classic yoga pose");
+      expect(updated?.bodyParts).toEqual(["legs", "arms"]);
+      expect(updated?.status).toBe("draft");
+    });
+
+    it("returns null for unknown id", async () => {
+      const store = await createTestStore();
+      expect(await store.updatePose("nonexistent", { name: "X" })).toBeNull();
+    });
+
+    it("returns the current record when no fields are provided", async () => {
+      const store = await createTestStore();
+      const pose = await createBasePose(store);
+
+      const updated = await store.updatePose(pose.id, {});
+      expect(updated).toEqual(pose);
+    });
+  });
+
+  describe("deletePose", () => {
+    it("deletes a pose and returns true", async () => {
+      const store = await createTestStore();
+      const pose = await store.createPose({
+        name: "Doomed Pose",
+        imagePath: "community/doomed.png",
+        thumbnailPath: null,
+        tags: [],
+        difficulty: "beginner",
+        description: null,
+        bodyParts: ["legs"],
+        status: "draft"
+      });
+
+      const deleted = await store.deletePose(pose.id);
+      expect(deleted).toBe(true);
+      expect(await store.getPoseById(pose.id)).toBeNull();
+    });
+
+    it("returns false for unknown id", async () => {
+      const store = await createTestStore();
+      expect(await store.deletePose("nonexistent")).toBe(false);
+    });
+  });
+
   describe("title search (q)", () => {
     it("escapeLikePattern escapes backslash, percent, and underscore", () => {
       expect(escapeLikePattern("100%")).toBe("100\\%");

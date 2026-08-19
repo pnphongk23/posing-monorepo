@@ -149,6 +149,35 @@ describe("POST /api/admin/community/poses", () => {
     expect((uploadCall?.body as Buffer).toString("base64")).toBe(PNG_PIXEL_BASE64);
   });
 
+  it("creates pose without bodyParts or difficulty", async () => {
+    const { app } = await createTestApp();
+
+    const res = await request(app)
+      .post("/api/admin/community/poses")
+      .set("Authorization", `Bearer ${ADMIN_SECRET}`)
+      .field("name", "Minimal Pose")
+      .attach("image", PNG_PIXEL_BUFFER, { filename: "minimal.png", contentType: "image/png" });
+
+    expect(res.status).toBe(202);
+    expect(res.body.data.pose.name).toBe("Minimal Pose");
+    expect(res.body.data.pose.bodyParts).toEqual([]);
+    expect(res.body.data.pose.difficulty).toBeNull();
+  });
+
+  it("creates pose with explicit empty bodyParts array", async () => {
+    const { app } = await createTestApp();
+
+    const res = await request(app)
+      .post("/api/admin/community/poses")
+      .set("Authorization", `Bearer ${ADMIN_SECRET}`)
+      .field("name", "Empty Parts Pose")
+      .field("bodyParts", JSON.stringify([]))
+      .attach("image", PNG_PIXEL_BUFFER, { filename: "empty.png", contentType: "image/png" });
+
+    expect(res.status).toBe(202);
+    expect(res.body.data.pose.bodyParts).toEqual([]);
+  });
+
   it("returns 400 when image is missing", async () => {
     const { app } = await createTestApp();
 
@@ -223,5 +252,256 @@ describe("POST /api/admin/community/poses", () => {
     expect(res.status).toBe(500);
     expect(res.body.error.code).toBe("QUEUE_WRITE_FAILED");
     expect(after).toBe(before);
+  });
+});
+
+describe("GET /api/admin/community/poses/:id", () => {
+  it("rejects request without auth", async () => {
+    const { app } = await createTestApp();
+
+    const res = await request(app).get("/api/admin/community/poses/some-id");
+
+    expect(res.status).toBe(401);
+  });
+
+  it("returns pose by id", async () => {
+    const { app, communityStore } = await createTestApp();
+    const pose = await communityStore.createPose({
+      name: "Retrievable Pose",
+      imagePath: "community/retrieve.png",
+      thumbnailPath: null,
+      tags: ["standing"],
+      difficulty: "beginner",
+      description: "Can I find you?",
+      bodyParts: ["legs"],
+      status: "published"
+    });
+
+    const res = await request(app)
+      .get(`/api/admin/community/poses/${pose.id}`)
+      .set("Authorization", `Bearer ${ADMIN_SECRET}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.data).toMatchObject({
+      id: pose.id,
+      name: "Retrievable Pose",
+      tags: ["standing"],
+      difficulty: "beginner",
+      description: "Can I find you?",
+      bodyParts: ["legs"],
+      status: "published"
+    });
+  });
+
+  it("returns 404 for unknown id", async () => {
+    const { app } = await createTestApp();
+
+    const res = await request(app)
+      .get("/api/admin/community/poses/nonexistent-id")
+      .set("Authorization", `Bearer ${ADMIN_SECRET}`);
+
+    expect(res.status).toBe(404);
+    expect(res.body.error.code).toBe("NOT_FOUND");
+  });
+});
+
+describe("PATCH /api/admin/community/poses/:id", () => {
+  it("rejects request without auth", async () => {
+    const { app } = await createTestApp();
+
+    const res = await request(app)
+      .patch("/api/admin/community/poses/some-id")
+      .send({ name: "Hacked" });
+
+    expect(res.status).toBe(401);
+  });
+
+  it("updates pose metadata", async () => {
+    const { app, communityStore } = await createTestApp();
+    const pose = await communityStore.createPose({
+      name: "Before Edit",
+      imagePath: "community/edit.png",
+      thumbnailPath: null,
+      tags: ["old"],
+      difficulty: "beginner",
+      description: "Old description",
+      bodyParts: ["legs"],
+      status: "draft"
+    });
+
+    const res = await request(app)
+      .patch(`/api/admin/community/poses/${pose.id}`)
+      .set("Authorization", `Bearer ${ADMIN_SECRET}`)
+      .send({
+        name: "After Edit",
+        tags: ["new", "improved"],
+        difficulty: "advanced",
+        description: "New description",
+        bodyParts: ["legs", "arms"],
+        status: "published"
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data).toMatchObject({
+      id: pose.id,
+      name: "After Edit",
+      tags: ["new", "improved"],
+      difficulty: "advanced",
+      description: "New description",
+      bodyParts: ["legs", "arms"],
+      status: "published"
+    });
+    expect(res.body.data.imagePath).toBe(pose.imagePath);
+
+    const stored = await communityStore.getPoseById(pose.id);
+    expect(stored?.name).toBe("After Edit");
+  });
+
+  it("supports partial updates leaving other fields unchanged", async () => {
+    const { app, communityStore } = await createTestApp();
+    const pose = await communityStore.createPose({
+      name: "Partial Pose",
+      imagePath: "community/partial.png",
+      thumbnailPath: null,
+      tags: ["a"],
+      difficulty: "beginner",
+      description: "Keep me",
+      bodyParts: ["legs"],
+      status: "draft"
+    });
+
+    const res = await request(app)
+      .patch(`/api/admin/community/poses/${pose.id}`)
+      .set("Authorization", `Bearer ${ADMIN_SECRET}`)
+      .send({ status: "published" });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.status).toBe("published");
+    expect(res.body.data.name).toBe("Partial Pose");
+    expect(res.body.data.description).toBe("Keep me");
+  });
+
+  it("clears nullable fields with explicit null", async () => {
+    const { app, communityStore } = await createTestApp();
+    const pose = await communityStore.createPose({
+      name: "Nullable Pose",
+      imagePath: "community/nullable.png",
+      thumbnailPath: null,
+      tags: [],
+      difficulty: "intermediate",
+      description: "Will be cleared",
+      bodyParts: ["legs"],
+      status: "draft"
+    });
+
+    const res = await request(app)
+      .patch(`/api/admin/community/poses/${pose.id}`)
+      .set("Authorization", `Bearer ${ADMIN_SECRET}`)
+      .send({ difficulty: null, description: null });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.difficulty).toBeNull();
+    expect(res.body.data.description).toBeNull();
+  });
+
+  it("returns 400 for invalid payload", async () => {
+    const { app, communityStore } = await createTestApp();
+    const pose = await communityStore.createPose({
+      name: "Valid Pose",
+      imagePath: "community/valid.png",
+      thumbnailPath: null,
+      tags: [],
+      difficulty: null,
+      description: null,
+      bodyParts: ["legs"],
+      status: "draft"
+    });
+
+    const res = await request(app)
+      .patch(`/api/admin/community/poses/${pose.id}`)
+      .set("Authorization", `Bearer ${ADMIN_SECRET}`)
+      .send({ name: "" });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe("BAD_REQUEST");
+  });
+
+  it("allows clearing bodyParts with an empty array", async () => {
+    const { app, communityStore } = await createTestApp();
+    const pose = await communityStore.createPose({
+      name: "Parts Pose",
+      imagePath: "community/parts.png",
+      thumbnailPath: null,
+      tags: [],
+      difficulty: null,
+      description: null,
+      bodyParts: ["legs"],
+      status: "draft"
+    });
+
+    const res = await request(app)
+      .patch(`/api/admin/community/poses/${pose.id}`)
+      .set("Authorization", `Bearer ${ADMIN_SECRET}`)
+      .send({ bodyParts: [] });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.bodyParts).toEqual([]);
+
+    const stored = await communityStore.getPoseById(pose.id);
+    expect(stored?.bodyParts).toEqual([]);
+  });
+
+  it("returns 404 for unknown id", async () => {
+    const { app } = await createTestApp();
+
+    const res = await request(app)
+      .patch("/api/admin/community/poses/nonexistent-id")
+      .set("Authorization", `Bearer ${ADMIN_SECRET}`)
+      .send({ name: "Ghost" });
+
+    expect(res.status).toBe(404);
+    expect(res.body.error.code).toBe("NOT_FOUND");
+  });
+});
+
+describe("DELETE /api/admin/community/poses/:id", () => {
+  it("rejects request without auth", async () => {
+    const { app } = await createTestApp();
+
+    const res = await request(app).delete("/api/admin/community/poses/some-id");
+
+    expect(res.status).toBe(401);
+  });
+
+  it("deletes a pose", async () => {
+    const { app, communityStore } = await createTestApp();
+    const pose = await communityStore.createPose({
+      name: "Delete Me",
+      imagePath: "community/delete.png",
+      thumbnailPath: null,
+      tags: [],
+      difficulty: null,
+      description: null,
+      bodyParts: ["legs"],
+      status: "draft"
+    });
+
+    const res = await request(app)
+      .delete(`/api/admin/community/poses/${pose.id}`)
+      .set("Authorization", `Bearer ${ADMIN_SECRET}`);
+
+    expect(res.status).toBe(204);
+    expect(await communityStore.getPoseById(pose.id)).toBeNull();
+  });
+
+  it("returns 404 for unknown id", async () => {
+    const { app } = await createTestApp();
+
+    const res = await request(app)
+      .delete("/api/admin/community/poses/nonexistent-id")
+      .set("Authorization", `Bearer ${ADMIN_SECRET}`);
+
+    expect(res.status).toBe(404);
+    expect(res.body.error.code).toBe("NOT_FOUND");
   });
 });

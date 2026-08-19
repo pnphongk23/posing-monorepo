@@ -21,8 +21,18 @@ const metadataSchema = z.object({
   tags: z.array(z.string()).optional().default([]),
   difficulty: z.enum(["beginner", "intermediate", "advanced"]).nullable().optional(),
   description: z.string().optional().nullable(),
-  bodyParts: z.array(z.string()).min(1),
+  bodyParts: z.array(z.string()).optional().default([]),
   status: z.enum(["draft", "published"]).default("draft"),
+});
+
+/** All fields optional: undefined fields are left unchanged by CommunityStore.updatePose. */
+const updateMetadataSchema = z.object({
+  name: z.string().trim().min(1).optional(),
+  tags: z.array(z.string()).optional(),
+  difficulty: z.enum(["beginner", "intermediate", "advanced"]).nullable().optional(),
+  description: z.string().optional().nullable(),
+  bodyParts: z.array(z.string()).optional(),
+  status: z.enum(["draft", "published"]).optional(),
 });
 
 export interface CreateAdminCommunityRoutesOptions {
@@ -76,7 +86,12 @@ export function createAdminCommunityRoutes(options: CreateAdminCommunityRoutesOp
   const upload = createUploadMiddleware();
   const router = Router();
 
-  router.get("/", auth, async (req, res) => {
+  // Auth applies to every route on this router (all are admin-only), matching
+  // the adminRoutes.ts pattern. Per-route auth in the handler list would defeat
+  // Express 5 param typing for `req.params`.
+  router.use(auth);
+
+  router.get("/", async (req, res) => {
     const page = Math.max(1, Number(req.query.page) || 1);
     const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 50));
     const allStatuses: Array<"draft" | "published"> = ["draft", "published"];
@@ -90,7 +105,43 @@ export function createAdminCommunityRoutes(options: CreateAdminCommunityRoutesOp
     res.json({ data: paginated, pagination: { page, limit, total: results.length } });
   });
 
-  router.post("/upload-url", auth, async (req, res) => {
+  router.get("/:id", async (req, res) => {
+    const pose = await communityStore.getPoseById(req.params.id);
+    if (!pose) {
+      res.status(404).json({ error: { code: "NOT_FOUND", message: "Pose not found" } });
+      return;
+    }
+    res.json({ data: pose });
+  });
+
+  router.patch("/:id", async (req, res) => {
+    const parsed = updateMetadataSchema.safeParse(req.body);
+    if (!parsed.success) {
+      const messages = parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join(", ");
+      res.status(400).json({ error: { code: "BAD_REQUEST", message: messages } });
+      return;
+    }
+
+    const updated = await communityStore.updatePose(req.params.id, parsed.data);
+    if (!updated) {
+      res.status(404).json({ error: { code: "NOT_FOUND", message: "Pose not found" } });
+      return;
+    }
+
+    res.json({ data: updated });
+  });
+
+  router.delete("/:id", async (req, res) => {
+    const deleted = await communityStore.deletePose(req.params.id);
+    if (!deleted) {
+      res.status(404).json({ error: { code: "NOT_FOUND", message: "Pose not found" } });
+      return;
+    }
+
+    res.status(204).send();
+  });
+
+  router.post("/upload-url", async (req, res) => {
     const parsed = uploadUrlBodySchema.safeParse(req.body);
     if (!parsed.success) {
       const messages = parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join(", ");
@@ -114,7 +165,7 @@ export function createAdminCommunityRoutes(options: CreateAdminCommunityRoutesOp
     res.json({ data: payload });
   });
 
-  router.post("/", auth, (req, res, next) => {
+  router.post("/", (req, res, next) => {
     upload.single("image")(req, res, (error) => {
       if (!error) {
         next();

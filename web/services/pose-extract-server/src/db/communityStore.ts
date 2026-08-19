@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 
+import type { Fragment } from "postgres";
+
 import type { Sql } from "./connection";
 import { pgTimestamp } from "./pgTypes";
 
@@ -29,6 +31,19 @@ export interface CreatePoseInput {
   description: string | null;
   bodyParts: string[];
   status: PoseStatus;
+}
+
+/**
+ * Partial fields for updating pose metadata. Undefined fields are left unchanged;
+ * explicit `null` clears nullable columns (difficulty, description).
+ */
+export interface UpdatePoseInput {
+  name?: string;
+  tags?: string[];
+  difficulty?: PoseDifficulty | null;
+  description?: string | null;
+  bodyParts?: string[];
+  status?: PoseStatus;
 }
 
 export interface ListPosesFilter {
@@ -140,6 +155,43 @@ export class CommunityStore {
       SET download_count = download_count + 1
       WHERE id = ${id}
     `;
+  }
+
+  async updatePose(id: string, input: UpdatePoseInput): Promise<CommunityPoseRecord | null> {
+    const assignments: Fragment[] = [];
+
+    if (input.name !== undefined) assignments.push(this.db`name = ${input.name}`);
+    if (input.tags !== undefined) assignments.push(this.db`tags = ${JSON.stringify(input.tags)}`);
+    if (input.difficulty !== undefined) assignments.push(this.db`difficulty = ${input.difficulty}`);
+    if (input.description !== undefined) assignments.push(this.db`description = ${input.description}`);
+    if (input.bodyParts !== undefined) assignments.push(this.db`body_parts = ${JSON.stringify(input.bodyParts)}`);
+    if (input.status !== undefined) assignments.push(this.db`status = ${input.status}`);
+
+    if (assignments.length === 0) {
+      return this.getPoseById(id);
+    }
+
+    let setClause = assignments[0];
+    for (let i = 1; i < assignments.length; i += 1) {
+      setClause = this.db`${setClause}, ${assignments[i]}`;
+    }
+
+    const rows = (await this.db`
+      UPDATE community_poses
+      SET ${setClause}
+      WHERE id = ${id}
+      RETURNING *
+    `) as CommunityPoseRow[];
+
+    const row = rows[0];
+    return row ? this.toRecord(row) : null;
+  }
+
+  async deletePose(id: string): Promise<boolean> {
+    const result = await this.db`
+      DELETE FROM community_poses WHERE id = ${id}
+    `;
+    return result.count > 0;
   }
 
   private toRecord(row: CommunityPoseRow): CommunityPoseRecord {
