@@ -10,7 +10,10 @@
     "backend:dev": "npm --prefix web/services/pose-extract-server run dev",
     "backend:build": "npm --prefix web/services/pose-extract-server run build",
     "backend:start": "npm --prefix web/services/pose-extract-server run start",
-    "backend:test": "npm --prefix web/services/pose-extract-server run test"
+    "backend:test": "npm --prefix web/services/pose-extract-server run test",
+    "docker:dev": "bash scripts/docker-dev.sh up --build",
+    "docker:dev:down": "bash scripts/docker-dev.sh down",
+    "docker:dev:logs": "bash scripts/docker-dev.sh logs -f"
   },
   "dependencies": {
     "playwright": "^1.59.1"

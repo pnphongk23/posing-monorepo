@@ -46,9 +46,27 @@ ckh graph check --workspace .
 The root npm scripts route to the correct web workspace:
 
 ```sh
-npm run dev          # Next.js admin UI
-npm run backend:dev  # Express service
+npm run dev          # Next.js admin UI (host)
+npm run backend:dev  # Express service (host)
 ```
+
+### Docker dev (hot reload)
+
+Use this when you want both services in Docker **without rebuilding images** on every edit:
+
+```sh
+npm run docker:dev        # build once, then live reload on file save
+npm run docker:dev:logs   # follow logs
+npm run docker:dev:down   # stop dev stack
+```
+
+- Admin UI: http://localhost:3001/admin
+- Backend API: http://localhost:3000/api/health
+- Frontend: `next dev` with bind-mounted `web/admin-ui/`
+- Backend: `tsx watch` with bind-mounted `web/services/pose-extract-server/src/`
+- `ADMIN_SECRET` for the admin proxy is read from `web/services/pose-extract-server/.env` (must match server `ADMIN_SECRET`)
+
+Production-like Docker (no hot reload): `docker compose up --build` from repo root.
 
 The Next.js server-side proxies require:
 

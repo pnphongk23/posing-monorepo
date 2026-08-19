@@ -1,0 +1,79 @@
+# Development stack with hot reload — no production image rebuild per code change.
+#
+# Usage:
+#   npm run docker:dev
+#   npm run docker:dev:down
+#
+# Admin UI:  http://localhost:3001/admin
+# Backend API: http://localhost:3000/api/health
+#
+# ADMIN_SECRET for the admin proxy is loaded from web/services/pose-extract-server/.env
+# via scripts/docker-dev.sh (must match the server's ADMIN_SECRET).
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: pose-postgres-dev
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: pose
+    ports:
+      - "5433:5432"
+    volumes:
+      - pose_postgres_dev_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d pose"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  pose-extract-server:
+    build:
+      context: .
+      dockerfile: web/services/pose-extract-server/Dockerfile.dev
+    container_name: pose-extract-server-dev
+    ports:
+      - "3000:3000"
+    env_file:
+      - web/services/pose-extract-server/.env
+    environment:
+      NODE_ENV: development
+      PORT: 3000
+      # Override legacy DATABASE_PATH-only .env files; dev stack uses bundled Postgres.
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/pose
+    volumes:
+      - ./web/services/pose-extract-server/src:/app/src
+      - ./web/services/pose-extract-server/scripts:/app/scripts
+      - pose_extract_dev_node_modules:/app/node_modules
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  admin-ui:
+    build:
+      context: web/admin-ui
+      dockerfile: Dockerfile.dev
+    container_name: pose-admin-ui-dev
+    ports:
+      - "3001:3000"
+    environment:
+      NODE_ENV: development
+      POSE_EXTRACT_SERVER_URL: http://pose-extract-server:3000
+      POSE_EXTRACT_ADMIN_SECRET: ${ADMIN_SECRET}
+      # Reliable file watching when source is bind-mounted (macOS / Docker Desktop)
+      WATCHPACK_POLLING: "true"
+      CHOKIDAR_USEPOLLING: "true"
+    volumes:
+      - ./web/admin-ui:/app
+      - admin_ui_dev_node_modules:/app/node_modules
+    depends_on:
+      - pose-extract-server
+    restart: unless-stopped
+
+volumes:
+  pose_postgres_dev_data:
+  pose_extract_dev_node_modules:
+  admin_ui_dev_node_modules:

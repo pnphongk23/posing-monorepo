@@ -1,0 +1,13 @@
+FROM node:20-bookworm-slim
+
+WORKDIR /app
+
+COPY web/services/pose-extract-server/package.json web/services/pose-extract-server/package-lock.json ./
+RUN npm ci
+
+COPY web/services/pose-extract-server/tsconfig.json web/services/pose-extract-server/vitest.config.ts ./
+
+EXPOSE 3000
+
+# `src/` and `scripts/` are bind-mounted at runtime for tsx watch hot reload.
+CMD ["npm", "run", "dev"]

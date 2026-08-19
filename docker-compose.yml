@@ -1,3 +1,7 @@
+# Production-oriented images (no hot reload). For local dev with live reload, use:
+#   npm run docker:dev
+# See docker-compose.dev.yml
+
 services:
   pose-extract-server:
     build:
