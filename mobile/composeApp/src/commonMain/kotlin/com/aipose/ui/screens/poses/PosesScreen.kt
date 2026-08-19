@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -53,6 +54,7 @@ import com.aipose.data.OperationState
 import com.aipose.data.PoseServiceLocator
 import com.aipose.data.PosesLibraryCoordinator
 import com.aipose.data.remote.CommunityPose
+import com.aipose.navigation.MainDockContentInset
 import com.aipose.ui.components.NeoBrutalismContainer
 import com.aipose.ui.components.PrimaryButton
 import com.aipose.ui.theme.AiPoseColors
@@ -272,6 +274,7 @@ private fun MyPosesContent(
                 LazyVerticalGrid(
                     modifier = Modifier.fillMaxSize(),
                     columns = GridCells.Fixed(2),
+                    contentPadding = PaddingValues(bottom = MainDockContentInset),
                     horizontalArrangement = Arrangement.spacedBy(Spacing.md),
                     verticalArrangement = Arrangement.spacedBy(Spacing.md)
                 ) {
@@ -413,6 +416,7 @@ private fun CommunityContent(
                     LazyVerticalGrid(
                         modifier = Modifier.fillMaxSize(),
                         columns = GridCells.Fixed(2),
+                        contentPadding = PaddingValues(bottom = MainDockContentInset),
                         horizontalArrangement = Arrangement.spacedBy(Spacing.md),
                         verticalArrangement = Arrangement.spacedBy(Spacing.md)
                     ) {

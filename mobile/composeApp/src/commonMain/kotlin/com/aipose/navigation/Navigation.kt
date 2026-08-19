@@ -1,16 +1,21 @@
 package com.aipose.navigation
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Person
@@ -18,11 +23,28 @@ import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
+import androidx.compose.ui.unit.sp
+import org.jetbrains.compose.resources.painterResource
+import ai_pose.composeapp.generated.resources.Res
+import ai_pose.composeapp.generated.resources.ic_grid
+import ai_pose.composeapp.generated.resources.ic_layout_grid
 import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.Navigator
@@ -44,7 +66,19 @@ import com.aipose.ui.theme.AiPoseColors
 import com.aipose.ui.theme.AiPoseTypography
 import com.aipose.ui.theme.Spacing
 import com.aipose.data.PoseReferenceKey
+import com.aipose.ui.components.NeoBrutalismContainer
 import com.aipose.ui.screens.poses.SearchScreen
+
+/** Space reserved above the floating [MainDock] so scrollable content is not obscured. */
+val MainDockContentInset = 72.dp
+
+val LocalMainDockVisible = compositionLocalOf { true }
+
+/** E-DOCK: stable test tags for the floating dock (overlaid by App.kt on non-Camera tabs). */
+internal const val MAIN_DOCK_TEST_TAG = "main-dock"
+internal const val MAIN_DOCK_POSES_TEST_TAG = "main-dock-poses"
+internal const val MAIN_DOCK_GALLERY_TEST_TAG = "main-dock-gallery"
+internal const val MAIN_DOCK_CAMERA_TEST_TAG = "main-dock-camera"
 
 object CameraTab : Tab {
     override val options: TabOptions
@@ -113,7 +147,6 @@ class GalleryListScreen : Screen {
         GalleryScreen(
             viewModel = remember { GalleryViewModel() },
             onOpenCamera = { tabNavigator.current = CameraTab },
-            onBack = { tabNavigator.current = CameraTab },
         )
     }
 }
@@ -168,7 +201,6 @@ class PosesListScreen : Screen {
                 pushScreen = { navigator.push(it) },
                 popBack = { navigator.pop() },
             ),
-            onBack = { tabNavigator.current = CameraTab }
         )
     }
 }
@@ -192,60 +224,125 @@ class PoseDetailVoyagerScreen(
     }
 }
 
+/**
+ * E-DOCK: floating bottom dock matching `docs/prototype` tab-bar — a white pill
+ * (Poses + Gallery) plus a standalone pink camera button. Hidden on [CameraTab]
+ * by App.kt via [LocalMainDockVisible].
+ */
 @Composable
-fun BottomNavigation() {
+fun MainDock(modifier: Modifier = Modifier) {
     val tabNavigator = LocalTabNavigator.current
 
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
-            .background(AiPoseColors.Background)
-            .padding(Spacing.lg),
-        horizontalArrangement = Arrangement.SpaceEvenly
+            .navigationBarsPadding()
+            .padding(horizontal = Spacing.lg, vertical = Spacing.sm)
+            .testTag(MAIN_DOCK_TEST_TAG),
+        horizontalArrangement = Arrangement.spacedBy(Spacing.xs),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        TabItem(
-            title = "Camera",
-            icon = Icons.Default.CameraAlt,
-            isSelected = tabNavigator.current == CameraTab,
+        // Pill: Poses + Gallery (prototype `.nb-dock__pill`).
+        NeoBrutalismContainer(
+            modifier = Modifier
+                .weight(1f)
+                .height(48.dp),
+            shape = RoundedCornerShape(24.dp),
+            backgroundColor = AiPoseColors.Surface,
+            shadowOffset = 2.dp,
+            borderWidth = 2.dp
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(2.dp),
+                horizontalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                DockItem(
+                    title = "Poses",
+                    icon = painterResource(Res.drawable.ic_grid),
+                    isSelected = tabNavigator.current == PosesTab,
+                    onClick = { tabNavigator.current = PosesTab },
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .testTag(MAIN_DOCK_POSES_TEST_TAG)
+                )
+                DockItem(
+                    title = "Gallery",
+                    icon = painterResource(Res.drawable.ic_layout_grid),
+                    isSelected = tabNavigator.current == GalleryTab,
+                    onClick = { tabNavigator.current = GalleryTab },
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .testTag(MAIN_DOCK_GALLERY_TEST_TAG)
+                )
+            }
+        }
+
+        // Standalone camera button (prototype `.nb-dock__camera-btn`).
+        NeoBrutalismContainer(
+            modifier = Modifier
+                .size(48.dp)
+                .testTag(MAIN_DOCK_CAMERA_TEST_TAG),
+            shape = CircleShape,
+            backgroundColor = AiPoseColors.Primary,
+            shadowOffset = 2.dp,
+            borderWidth = 2.dp,
             onClick = { tabNavigator.current = CameraTab }
-        )
-        TabItem(
-            title = "Poses",
-            icon = Icons.Default.Person,
-            isSelected = tabNavigator.current == PosesTab,
-            onClick = { tabNavigator.current = PosesTab }
-        )
-        TabItem(
-            title = "Gallery",
-            icon = Icons.Default.PhotoLibrary,
-            isSelected = tabNavigator.current == GalleryTab,
-            onClick = { tabNavigator.current = GalleryTab }
-        )
+        ) {
+            Icon(
+                imageVector = Icons.Default.CameraAlt,
+                contentDescription = "Open Camera",
+                tint = AiPoseColors.Foreground,
+                modifier = Modifier.size(20.dp)
+            )
+        }
     }
 }
 
+/**
+ * E-DOCK: one pill item — active state mirrors the prototype
+ * (accent-blue chip + thin border + dark icon/label vs gray idle).
+ */
 @Composable
-private fun TabItem(
+private fun DockItem(
     title: String,
-    icon: ImageVector,
+    icon: Painter,
     isSelected: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
+    val shape = RoundedCornerShape(20.dp)
     Column(
-        modifier = Modifier
-            .clickable(onClick = onClick)
-            .padding(Spacing.sm),
-        horizontalAlignment = Alignment.CenterHorizontally
+        modifier = modifier
+            .clip(shape)
+            .background(
+                color = if (isSelected) AiPoseColors.AccentBlue else Color.Transparent,
+                shape = shape
+            )
+            .border(
+                width = if (isSelected) 1.dp else 0.dp,
+                color = AiPoseColors.Foreground,
+                shape = shape
+            )
+            .clickable(onClick = onClick),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
     ) {
         Icon(
-            imageVector = icon,
+            painter = icon,
             contentDescription = title,
-            tint = if (isSelected) AiPoseColors.Primary else AiPoseColors.Subtext
+            tint = if (isSelected) AiPoseColors.Foreground else AiPoseColors.Subtext,
+            modifier = Modifier.size(18.dp)
         )
-        Spacer(modifier = Modifier.height(Spacing.xs))
         Text(
             text = title.uppercase(),
-            style = AiPoseTypography.Caption,
+            fontSize = 8.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 0.05.em,
+            lineHeight = 10.sp,
             color = if (isSelected) AiPoseColors.Foreground else AiPoseColors.Subtext
         )
     }

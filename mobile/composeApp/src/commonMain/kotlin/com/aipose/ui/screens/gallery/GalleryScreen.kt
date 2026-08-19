@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -67,6 +68,7 @@ import com.aipose.platform.deletePhotoConfirmation
 import com.aipose.platform.saveToPhotos
 import com.aipose.platform.saveToPhotosConfirmation
 import com.aipose.data.resolveImagePath
+import com.aipose.navigation.MainDockContentInset
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
@@ -274,6 +276,7 @@ fun GalleryScreen(
                     if (uiState.viewMode == ViewMode.GRID) {
                         LazyVerticalGrid(
                             columns = GridCells.Fixed(GalleryGridDefaults.DENSE_COLUMN_COUNT),
+                            contentPadding = PaddingValues(bottom = MainDockContentInset),
                             verticalArrangement = Arrangement.spacedBy(GalleryGridDefaults.DENSE_GAP),
                             horizontalArrangement = Arrangement.spacedBy(GalleryGridDefaults.DENSE_GAP),
                             modifier = Modifier.fillMaxSize()
@@ -300,6 +303,7 @@ fun GalleryScreen(
                     } else {
                         LazyColumn(
                             modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(bottom = MainDockContentInset),
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             uiState.groupedByDate.forEach { (dateKey, photos) ->
