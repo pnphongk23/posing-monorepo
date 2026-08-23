@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 
-import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
-import { HeadObjectCommand } from "@aws-sdk/client-s3";
+import { DeleteObjectCommand, GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import type { GetObjectCommandOutput } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 import { getEnv } from "../config/env";
@@ -10,6 +10,19 @@ import { getEnv } from "../config/env";
 export interface UploadUrlPayload {
   uploadUrl: string;
   fileKey: string;
+}
+
+export type CommunityObjectRole = "original" | "skeleton" | "thumbnail";
+
+const IMMUTABLE_CACHE_CONTROL = "public, max-age=31536000, immutable";
+
+export function buildCommunityObjectKey(
+  role: CommunityObjectRole,
+  extension: string,
+  objectId: string = randomUUID()
+): string {
+  const normalizedExtension = extension.startsWith(".") ? extension.toLowerCase() : `.${extension.toLowerCase()}`;
+  return `community/${objectId}/${role}${normalizedExtension}`;
 }
 
 export function getR2Client(): S3Client {
@@ -27,15 +40,19 @@ export function getR2Client(): S3Client {
 export async function createUploadUrl(input: {
   fileName: string;
   mimeType: string;
+  role?: CommunityObjectRole;
+  objectId?: string;
 }): Promise<UploadUrlPayload> {
   const env = getEnv();
   const ext = path.extname(input.fileName) || ".bin";
-  const fileKey = `community/${randomUUID()}${ext.toLowerCase()}`;
+  const fileKey = buildCommunityObjectKey(input.role ?? "original", ext, input.objectId);
 
   const command = new PutObjectCommand({
     Bucket: env.R2_BUCKET,
     Key: fileKey,
-    ContentType: input.mimeType
+    ContentType: input.mimeType,
+    CacheControl: IMMUTABLE_CACHE_CONTROL,
+    ContentDisposition: "inline"
   });
 
   const uploadUrl = await getSignedUrl(getR2Client(), command, { expiresIn: 60 });
@@ -55,7 +72,29 @@ export async function uploadObject(input: {
       Bucket: env.R2_BUCKET,
       Key: input.fileKey,
       Body: input.body,
-      ContentType: input.mimeType
+      ContentType: input.mimeType,
+      CacheControl: IMMUTABLE_CACHE_CONTROL,
+      ContentDisposition: "inline"
+    })
+  );
+}
+
+export async function getObject(fileKey: string): Promise<GetObjectCommandOutput> {
+  const env = getEnv();
+  return getR2Client().send(
+    new GetObjectCommand({
+      Bucket: env.R2_BUCKET,
+      Key: fileKey
+    })
+  );
+}
+
+export async function deleteObject(fileKey: string): Promise<void> {
+  const env = getEnv();
+  await getR2Client().send(
+    new DeleteObjectCommand({
+      Bucket: env.R2_BUCKET,
+      Key: fileKey
     })
   );
 }
