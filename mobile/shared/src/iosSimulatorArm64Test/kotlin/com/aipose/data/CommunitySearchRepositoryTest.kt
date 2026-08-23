@@ -10,12 +10,78 @@ import kotlinx.coroutines.test.runTest
 import com.aipose.data.remote.CommunityPose
 import com.aipose.data.remote.PaginatedResult
 import com.aipose.data.remote.PaginationInfo
+import com.aipose.data.remote.PoseApiService
+import com.aipose.data.remote.sharedJson
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.mock.MockEngine
+import io.ktor.client.engine.mock.respond
+import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.client.request.HttpRequestData
+import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpStatusCode
+import io.ktor.http.headersOf
+import io.ktor.serialization.kotlinx.json.json
+import io.ktor.utils.io.ByteReadChannel
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class CommunitySearchRepositoryTest {
+
+    @Test
+    fun liveRepositoryForwardsSearchAndMapsPublishedResponse() = runTest {
+        var capturedRequest: HttpRequestData? = null
+        val client = HttpClient(MockEngine) {
+            engine {
+                addHandler { request ->
+                    capturedRequest = request
+                    respond(
+                        content = ByteReadChannel(
+                            """{"data":[{"poseId":"live-1","name":"Live Pose","skeletonUrl":"https://cdn/skeleton.png","thumbnailUrl":"https://cdn/thumb.png","status":"published"}],"pagination":{"page":1,"limit":20,"total":1}}"""
+                        ),
+                        status = HttpStatusCode.OK,
+                        headers = headersOf(HttpHeaders.ContentType, "application/json")
+                    )
+                }
+            }
+            install(ContentNegotiation) { json(sharedJson) }
+        }
+        try {
+            val repository = LiveCommunitySearchRepository(PoseApiService(client, "https://test.server"))
+            val result = repository.searchCommunityPoses("live pose+%", page = 1)
+            assertEquals("live pose+%", capturedRequest!!.url.parameters["q"])
+            assertEquals("live-1", result.data.single().poseId)
+            assertEquals("published", result.data.single().status)
+        } finally {
+            client.close()
+        }
+    }
+
+    @Test
+    fun liveRepositoryOmitsBlankQueryForCatalogueBrowse() = runTest {
+        var capturedRequest: HttpRequestData? = null
+        val client = HttpClient(MockEngine) {
+            engine {
+                addHandler { request ->
+                    capturedRequest = request
+                    respond(
+                        content = ByteReadChannel("{\"data\":[],\"pagination\":{\"page\":1,\"limit\":20,\"total\":0}}"),
+                        status = HttpStatusCode.OK,
+                        headers = headersOf(HttpHeaders.ContentType, "application/json")
+                    )
+                }
+            }
+            install(ContentNegotiation) { json(sharedJson) }
+        }
+        try {
+            LiveCommunitySearchRepository(PoseApiService(client, "https://test.server"))
+                .searchCommunityPoses("   ", page = 1)
+            assertEquals(null, capturedRequest!!.url.parameters["q"])
+        } finally {
+            client.close()
+        }
+    }
 
     @Test
     fun blankQueryReturnsPageOneWithLimitTwenty() = runTest {
@@ -26,7 +92,7 @@ class CommunitySearchRepositoryTest {
         assertEquals(1, result.pagination.page)
         assertEquals(COMMUNITY_SEARCH_PAGE_LIMIT, result.pagination.limit)
         assertEquals(21, result.pagination.total)
-        assertEquals("community-mock-01", result.data.first().id)
+        assertEquals("community-mock-01", result.data.first().poseId)
     }
 
     @Test
@@ -47,14 +113,14 @@ class CommunitySearchRepositoryTest {
         assertEquals(20, pageOne.data.size)
         assertEquals(1, pageTwo.data.size)
         assertEquals(21, pageTwo.pagination.total)
-        assertEquals("community-mock-21", pageTwo.data.single().id)
+        assertEquals("community-mock-21", pageTwo.data.single().poseId)
     }
 
     @Test
     fun draftFixtureNeverSurfaces() = runTest {
         val repository = MockCommunitySearchRepository()
         val allIds = (1..2).flatMap { page ->
-            repository.searchCommunityPoses(query = "", page = page).data.map { it.id }
+            repository.searchCommunityPoses(query = "", page = page).data.map { it.poseId }
         }
         assertFalse(allIds.any { it.contains("draft") })
         assertEquals(21, allIds.size)
@@ -81,8 +147,8 @@ class CommunitySearchRepositoryTest {
     @Test
     fun stableOrderingAcrossRepeatedCalls() = runTest {
         val repository = MockCommunitySearchRepository()
-        val first = repository.searchCommunityPoses(query = "", page = 1).data.map { it.id }
-        val second = repository.searchCommunityPoses(query = "", page = 1).data.map { it.id }
+        val first = repository.searchCommunityPoses(query = "", page = 1).data.map { it.poseId }
+        val second = repository.searchCommunityPoses(query = "", page = 1).data.map { it.poseId }
         assertEquals(first, second)
     }
 
@@ -113,12 +179,12 @@ class CommunitySearchRepositoryTest {
         try {
             val controller = CommunitySearchPagingController(overlapRepo, scope)
             controller.search("")
-            waitForPaging(controller) { !it.isInitialLoading }
+            waitForPaging(controller) { !it.isInitialLoading && it.items.isNotEmpty() }
 
             controller.loadMore()
             val loaded = waitForPaging(controller) { !it.isLoadingMore }
             assertEquals(2, loaded.items.size)
-            assertEquals(listOf("dup-1", "dup-2"), loaded.items.map { it.id })
+            assertEquals(listOf("dup-1", "dup-2"), loaded.items.map { it.poseId })
         } finally {
             job.cancel()
         }
@@ -136,7 +202,7 @@ class CommunitySearchRepositoryTest {
                     limit: Int,
                 ): PaginatedResult<CommunityPose> {
                     return PaginatedResult(
-                        data = listOf(CommunityPose(id = "$query-id", name = query, imagePath = "")),
+                        data = listOf(CommunityPose(poseId = "$query-id", name = query, skeletonUrl = "")),
                         pagination = PaginationInfo(page = page, limit = limit, total = 1),
                     )
                 }
@@ -149,7 +215,7 @@ class CommunitySearchRepositoryTest {
                 !it.isInitialLoading && it.query == "second" && it.items.isNotEmpty()
             }
             assertEquals("second", settled.query)
-            assertEquals("second-id", settled.items.single().id)
+            assertEquals("second-id", settled.items.single().poseId)
         } finally {
             job.cancel()
         }
@@ -164,12 +230,12 @@ class CommunitySearchRepositoryTest {
             val controller = CommunitySearchPagingController(failingRepo, scope)
             controller.search("")
             val loaded = waitForPaging(controller) { !it.isInitialLoading && it.items.size == 1 && it.hasMore }
-            assertEquals("keep-1", loaded.items.single().id)
+            assertEquals("keep-1", loaded.items.single().poseId)
 
             controller.loadMore()
             val failed = waitForPaging(controller) { !it.isLoadingMore && it.loadMoreError != null }
             assertEquals(1, failed.items.size)
-            assertEquals("keep-1", failed.items.single().id)
+            assertEquals("keep-1", failed.items.single().poseId)
             assertTrue(failed.loadMoreError!!.isNotBlank())
         } finally {
             job.cancel()
@@ -231,7 +297,7 @@ class CommunitySearchRepositoryTest {
             }
         }
 
-        private fun pose(id: String) = CommunityPose(id = id, name = id, imagePath = "")
+        private fun pose(id: String) = CommunityPose(poseId = id, name = id, skeletonUrl = "")
     }
 
     private class FailingLoadMoreRepository : CommunitySearchRepository {
@@ -242,7 +308,7 @@ class CommunitySearchRepositoryTest {
         ): PaginatedResult<CommunityPose> {
             if (page > 1) throw IllegalStateException("Load more failed")
             return PaginatedResult(
-                data = listOf(CommunityPose(id = "keep-1", name = "Keep", imagePath = "")),
+                data = listOf(CommunityPose(poseId = "keep-1", name = "Keep", skeletonUrl = "")),
                 pagination = PaginationInfo(page = 1, limit = 1, total = 2),
             )
         }
@@ -261,7 +327,7 @@ class CommunitySearchRepositoryTest {
                 throw IllegalStateException("Search provider unavailable")
             }
             return PaginatedResult(
-                data = listOf(CommunityPose(id = "retry-ok", name = query, imagePath = "")),
+                data = listOf(CommunityPose(poseId = "retry-ok", name = query, skeletonUrl = "")),
                 pagination = PaginationInfo(page = page, limit = limit, total = 1),
             )
         }

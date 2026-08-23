@@ -7,8 +7,9 @@ import io.ktor.client.request.forms.*
 import io.ktor.client.statement.readBytes
 import io.ktor.client.statement.*
 import io.ktor.http.*
-import io.ktor.util.decodeBase64Bytes
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonNames
 import kotlinx.serialization.json.Json
 
 val sharedJson = Json {
@@ -19,12 +20,6 @@ val sharedJson = Json {
 }
 
 @Serializable
-data class ExtractPoseResponse(
-    val success: Boolean,
-    val data: ExtractPoseData
-)
-
-@Serializable
 data class ExtractPoseData(
     val imageBase64: String,
     val mimeType: String,
@@ -32,15 +27,49 @@ data class ExtractPoseData(
 )
 
 @Serializable
+data class PoseExtractionStartResponse(
+    val success: Boolean,
+    val data: PoseExtractionJob,
+    val meta: PoseExtractionMeta? = null
+)
+
+@Serializable
+data class PoseExtractionJob(
+    val jobId: String,
+    val status: String
+)
+
+@Serializable
+data class PoseExtractionMeta(
+    val pollUrl: String? = null
+)
+
+@Serializable
+data class PoseExtractionJobStatus(
+    val success: Boolean = true,
+    val data: PoseExtractionJobData
+)
+
+@Serializable
+data class PoseExtractionJobData(
+    val jobId: String,
+    val status: String,
+    val result: ExtractPoseData? = null,
+    val error: ApiErrorResponse? = null
+)
+
+/** Published-only DTO/view over the canonical Pose entity. */
+@Serializable
 data class CommunityPose(
-    val id: String = "",
+    @SerialName("poseId") @JsonNames("id") val poseId: String = "",
     val name: String = "",
-    val imagePath: String = "",
-    val thumbnailPath: String? = null,
+    @SerialName("skeletonUrl") @JsonNames("imagePath") val skeletonUrl: String = "",
+    @SerialName("thumbnailUrl") @JsonNames("thumbnailPath") val thumbnailUrl: String = "",
     val difficulty: String? = null,
     val tags: List<String> = emptyList(),
     val description: String? = null,
     val bodyParts: List<String> = emptyList(),
+    val status: String = "published",
     val uploadedAt: String? = null,
     val downloadCount: Int? = null
 )
@@ -85,7 +114,12 @@ class PoseApiService(
     private val httpClient: HttpClient,
     private val baseUrl: String
 ) {
-    suspend fun extractPose(imageBytes: ByteArray, fileName: String): ByteArray {
+    /**
+     * Enqueues canonical async extraction. HTTP 202 means only that the job
+     * started; no Pose exists until the caller polls the job to `succeeded`
+     * and finalizes Pose creation with the returned jobId.
+     */
+    suspend fun startPoseExtraction(imageBytes: ByteArray, fileName: String): PoseExtractionStartResponse {
         val mimeType = mimeTypeFromFileName(fileName)
         val httpResponse: HttpResponse = httpClient.submitFormWithBinaryData(
             url = "$baseUrl/api/extract-pose",
@@ -96,7 +130,7 @@ class PoseApiService(
                 })
             }
         )
-        if (!httpResponse.status.isSuccess()) {
+        if (httpResponse.status != HttpStatusCode.Accepted) {
             val errorEnvelope = try {
                 httpResponse.body<ApiErrorEnvelope>()
             } catch (_: Exception) {
@@ -107,21 +141,34 @@ class PoseApiService(
                 message = errorEnvelope?.error?.message ?: "Server error: ${httpResponse.status}"
             )
         }
-        val response: ExtractPoseResponse = httpResponse.body()
-        return response.data.imageBase64.decodeBase64Bytes()
+        return httpResponse.body()
+    }
+
+    suspend fun getPoseExtractionJob(jobId: String): PoseExtractionJobStatus {
+        val httpResponse: HttpResponse = httpClient.get("$baseUrl/api/extract-jobs/$jobId")
+        if (!httpResponse.status.isSuccess()) {
+            val errorEnvelope = try { httpResponse.body<ApiErrorEnvelope>() } catch (_: Exception) { null }
+            throw PoseApiException(
+                code = errorEnvelope?.error?.code ?: httpResponse.status.value.toString(),
+                message = errorEnvelope?.error?.message ?: "Server error: ${httpResponse.status}"
+            )
+        }
+        return httpResponse.body()
     }
 
     suspend fun getCommunityPoses(
         page: Int = 1,
         limit: Int = 20,
         difficulty: String? = null,
-        tag: String? = null
+        tag: String? = null,
+        q: String? = null,
     ): PaginatedResult<CommunityPose> {
         val httpResponse: HttpResponse = httpClient.get("$baseUrl/api/community/poses") {
             parameter("page", page)
             parameter("limit", limit)
             difficulty?.let { parameter("difficulty", it) }
             tag?.let { parameter("tag", it) }
+            q?.let { parameter("q", it) }
         }
         if (!httpResponse.status.isSuccess()) {
             val errorEnvelope = try {
@@ -181,4 +228,3 @@ class PoseApiService(
         return httpResponse.readBytes()
     }
 }
-

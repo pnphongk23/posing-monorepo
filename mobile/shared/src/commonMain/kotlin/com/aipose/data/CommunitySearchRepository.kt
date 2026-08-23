@@ -3,6 +3,7 @@ package com.aipose.data
 import com.aipose.data.remote.CommunityPose
 import com.aipose.data.remote.PaginatedResult
 import com.aipose.data.remote.PaginationInfo
+import com.aipose.data.remote.PoseApiService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -73,8 +74,8 @@ class CommunitySearchPagingController(
             try {
                 val result = repository.searchCommunityPoses(current.query, page = nextPage)
                 if (generationId != currentGen) return@launch
-                val existingIds = _state.value.items.map { it.id }.toSet()
-                val uniqueNew = result.data.filter { it.id !in existingIds }
+                val existingIds = _state.value.items.map { it.poseId }.toSet()
+                val uniqueNew = result.data.filter { it.poseId !in existingIds }
                 val merged = _state.value.items + uniqueNew
                 _state.value = _state.value.copy(
                     items = merged,
@@ -126,9 +127,9 @@ internal data class MockCommunityFixture(
 internal fun buildMockCommunityFixtures(): List<MockCommunityFixture> = listOf(
     MockCommunityFixture(
         CommunityPose(
-            id = "community-mock-01",
+            poseId = "community-mock-01",
             name = "T-Pose",
-            imagePath = "",
+            skeletonUrl = "",
             difficulty = "beginner",
             tags = listOf("basic", "standing"),
             description = "Standard calibration T-pose with arms extended horizontally.",
@@ -137,9 +138,9 @@ internal fun buildMockCommunityFixtures(): List<MockCommunityFixture> = listOf(
     ),
     MockCommunityFixture(
         CommunityPose(
-            id = "community-mock-02",
+            poseId = "community-mock-02",
             name = "Warrior Pose",
-            imagePath = "",
+            skeletonUrl = "",
             difficulty = "intermediate",
             tags = listOf("yoga", "standing"),
             description = "Classical yoga pose targeting legs and core stability.",
@@ -148,9 +149,9 @@ internal fun buildMockCommunityFixtures(): List<MockCommunityFixture> = listOf(
     ),
     MockCommunityFixture(
         CommunityPose(
-            id = "community-mock-03",
+            poseId = "community-mock-03",
             name = "Tree Pose",
-            imagePath = "",
+            skeletonUrl = "",
             difficulty = "beginner",
             tags = listOf("yoga", "balance"),
             description = "Single-leg balance pose improving equilibrium and focus.",
@@ -159,9 +160,9 @@ internal fun buildMockCommunityFixtures(): List<MockCommunityFixture> = listOf(
     ),
     MockCommunityFixture(
         CommunityPose(
-            id = "community-mock-04",
+            poseId = "community-mock-04",
             name = "Cobra Pose",
-            imagePath = "",
+            skeletonUrl = "",
             difficulty = "intermediate",
             tags = listOf("yoga", "lying"),
             description = "Prone backbend pose strengthening the spine and stretching chest.",
@@ -170,9 +171,9 @@ internal fun buildMockCommunityFixtures(): List<MockCommunityFixture> = listOf(
     ),
     MockCommunityFixture(
         CommunityPose(
-            id = "community-mock-05",
+            poseId = "community-mock-05",
             name = "Chair Pose",
-            imagePath = "",
+            skeletonUrl = "",
             difficulty = "beginner",
             tags = listOf("yoga", "standing"),
             description = "Squat-like standing pose building leg strength.",
@@ -181,9 +182,9 @@ internal fun buildMockCommunityFixtures(): List<MockCommunityFixture> = listOf(
     ),
     MockCommunityFixture(
         CommunityPose(
-            id = "community-mock-06",
+            poseId = "community-mock-06",
             name = "Downward Dog",
-            imagePath = "",
+            skeletonUrl = "",
             difficulty = "beginner",
             tags = listOf("yoga", "stretch"),
             description = "Inverted V-shape stretch for hamstrings and shoulders.",
@@ -192,9 +193,9 @@ internal fun buildMockCommunityFixtures(): List<MockCommunityFixture> = listOf(
     ),
     MockCommunityFixture(
         CommunityPose(
-            id = "community-mock-07",
+            poseId = "community-mock-07",
             name = "Mountain Pose",
-            imagePath = "",
+            skeletonUrl = "",
             difficulty = "beginner",
             tags = listOf("yoga", "standing"),
             description = "Foundational standing alignment pose.",
@@ -203,9 +204,9 @@ internal fun buildMockCommunityFixtures(): List<MockCommunityFixture> = listOf(
     ),
     MockCommunityFixture(
         CommunityPose(
-            id = "community-mock-08",
+            poseId = "community-mock-08",
             name = "Bridge Pose",
-            imagePath = "",
+            skeletonUrl = "",
             difficulty = "intermediate",
             tags = listOf("yoga", "lying"),
             description = "Supine backbend opening the chest and hips.",
@@ -214,9 +215,9 @@ internal fun buildMockCommunityFixtures(): List<MockCommunityFixture> = listOf(
     ),
     MockCommunityFixture(
         CommunityPose(
-            id = "community-mock-09",
+            poseId = "community-mock-09",
             name = "Plank Pose",
-            imagePath = "",
+            skeletonUrl = "",
             difficulty = "intermediate",
             tags = listOf("core", "strength"),
             description = "Isometric core hold for full-body stability.",
@@ -225,9 +226,9 @@ internal fun buildMockCommunityFixtures(): List<MockCommunityFixture> = listOf(
     ),
     MockCommunityFixture(
         CommunityPose(
-            id = "community-mock-10",
+            poseId = "community-mock-10",
             name = "Side Plank",
-            imagePath = "",
+            skeletonUrl = "",
             difficulty = "intermediate",
             tags = listOf("core", "balance"),
             description = "Lateral core strengthener with shoulder support.",
@@ -236,9 +237,9 @@ internal fun buildMockCommunityFixtures(): List<MockCommunityFixture> = listOf(
     ),
     MockCommunityFixture(
         CommunityPose(
-            id = "community-mock-11",
+            poseId = "community-mock-11",
             name = "Lotus Pose",
-            imagePath = "",
+            skeletonUrl = "",
             difficulty = "advanced",
             tags = listOf("yoga", "seated"),
             description = "Seated hip opener for meditation posture.",
@@ -247,9 +248,9 @@ internal fun buildMockCommunityFixtures(): List<MockCommunityFixture> = listOf(
     ),
     MockCommunityFixture(
         CommunityPose(
-            id = "community-mock-12",
+            poseId = "community-mock-12",
             name = "Camel Pose",
-            imagePath = "",
+            skeletonUrl = "",
             difficulty = "intermediate",
             tags = listOf("yoga", "backbend"),
             description = "Kneeling backbend stretching the front body.",
@@ -258,9 +259,9 @@ internal fun buildMockCommunityFixtures(): List<MockCommunityFixture> = listOf(
     ),
     MockCommunityFixture(
         CommunityPose(
-            id = "community-mock-13",
+            poseId = "community-mock-13",
             name = "Child Pose",
-            imagePath = "",
+            skeletonUrl = "",
             difficulty = "beginner",
             tags = listOf("yoga", "rest"),
             description = "Restorative forward fold resting pose.",
@@ -269,9 +270,9 @@ internal fun buildMockCommunityFixtures(): List<MockCommunityFixture> = listOf(
     ),
     MockCommunityFixture(
         CommunityPose(
-            id = "community-mock-14",
+            poseId = "community-mock-14",
             name = "Eagle Pose",
-            imagePath = "",
+            skeletonUrl = "",
             difficulty = "intermediate",
             tags = listOf("yoga", "balance"),
             description = "Wrapped balance pose improving focus and stability.",
@@ -280,9 +281,9 @@ internal fun buildMockCommunityFixtures(): List<MockCommunityFixture> = listOf(
     ),
     MockCommunityFixture(
         CommunityPose(
-            id = "community-mock-15",
+            poseId = "community-mock-15",
             name = "Half Moon Pose",
-            imagePath = "",
+            skeletonUrl = "",
             difficulty = "intermediate",
             tags = listOf("yoga", "balance"),
             description = "Standing balance with lateral opening.",
@@ -291,9 +292,9 @@ internal fun buildMockCommunityFixtures(): List<MockCommunityFixture> = listOf(
     ),
     MockCommunityFixture(
         CommunityPose(
-            id = "community-mock-16",
+            poseId = "community-mock-16",
             name = "Pigeon Pose",
-            imagePath = "",
+            skeletonUrl = "",
             difficulty = "intermediate",
             tags = listOf("yoga", "stretch"),
             description = "Deep hip opener for glutes and piriformis.",
@@ -302,9 +303,9 @@ internal fun buildMockCommunityFixtures(): List<MockCommunityFixture> = listOf(
     ),
     MockCommunityFixture(
         CommunityPose(
-            id = "community-mock-17",
+            poseId = "community-mock-17",
             name = "Triangle Pose",
-            imagePath = "",
+            skeletonUrl = "",
             difficulty = "beginner",
             tags = listOf("yoga", "standing"),
             description = "Side stretch improving hamstring and torso length.",
@@ -313,9 +314,9 @@ internal fun buildMockCommunityFixtures(): List<MockCommunityFixture> = listOf(
     ),
     MockCommunityFixture(
         CommunityPose(
-            id = "community-mock-18",
+            poseId = "community-mock-18",
             name = "Warrior Two",
-            imagePath = "",
+            skeletonUrl = "",
             difficulty = "beginner",
             tags = listOf("yoga", "standing"),
             description = "Open-hip warrior stance for leg endurance.",
@@ -324,9 +325,9 @@ internal fun buildMockCommunityFixtures(): List<MockCommunityFixture> = listOf(
     ),
     MockCommunityFixture(
         CommunityPose(
-            id = "community-mock-19",
+            poseId = "community-mock-19",
             name = "Warrior Three",
-            imagePath = "",
+            skeletonUrl = "",
             difficulty = "intermediate",
             tags = listOf("yoga", "balance"),
             description = "Single-leg balance warrior variation.",
@@ -335,9 +336,9 @@ internal fun buildMockCommunityFixtures(): List<MockCommunityFixture> = listOf(
     ),
     MockCommunityFixture(
         CommunityPose(
-            id = "community-mock-20",
+            poseId = "community-mock-20",
             name = "Sun Salutation A",
-            imagePath = "",
+            skeletonUrl = "",
             difficulty = "beginner",
             tags = listOf("yoga", "flow"),
             description = "Classic vinyasa warm-up sequence.",
@@ -346,9 +347,9 @@ internal fun buildMockCommunityFixtures(): List<MockCommunityFixture> = listOf(
     ),
     MockCommunityFixture(
         CommunityPose(
-            id = "community-mock-21",
+            poseId = "community-mock-21",
             name = "Sun Salutation B",
-            imagePath = "",
+            skeletonUrl = "",
             difficulty = "intermediate",
             tags = listOf("yoga", "flow"),
             description = "Extended sun salutation with warrior transitions.",
@@ -357,9 +358,9 @@ internal fun buildMockCommunityFixtures(): List<MockCommunityFixture> = listOf(
     ),
     MockCommunityFixture(
         CommunityPose(
-            id = "community-draft-hidden",
+            poseId = "community-draft-hidden",
             name = "Draft Studio Pose",
-            imagePath = "",
+            skeletonUrl = "",
             difficulty = "beginner",
             tags = listOf("draft"),
             description = "Unpublished draft fixture that must never surface.",
@@ -371,6 +372,24 @@ internal fun buildMockCommunityFixtures(): List<MockCommunityFixture> = listOf(
 
 internal val MOCK_PUBLISHED_COMMUNITY_FIXTURES: List<CommunityPose> =
     buildMockCommunityFixtures().filter { it.published }.map { it.pose }
+
+class LiveCommunitySearchRepository(
+    private val apiService: PoseApiService,
+) : CommunitySearchRepository {
+    override suspend fun searchCommunityPoses(
+        query: String,
+        page: Int,
+        limit: Int,
+    ): PaginatedResult<CommunityPose> {
+        require(page >= 1) { "page must be >= 1" }
+        require(limit > 0) { "limit must be > 0" }
+        return apiService.getCommunityPoses(
+            page = page,
+            limit = limit,
+            q = query.takeIf { it.isNotBlank() },
+        )
+    }
+}
 
 class MockCommunitySearchRepository : CommunitySearchRepository {
     private val fixtures: List<MockCommunityFixture> = buildMockCommunityFixtures()
