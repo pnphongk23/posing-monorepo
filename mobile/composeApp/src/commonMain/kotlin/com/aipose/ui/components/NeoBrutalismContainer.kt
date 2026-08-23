@@ -37,9 +37,9 @@ fun NeoBrutalismContainer(
     hasShadow: Boolean = true,
     contentAlignment: Alignment = Alignment.Center,
     onClick: (() -> Unit)? = null,
+    interactionSource: MutableInteractionSource = remember { MutableInteractionSource() },
     content: @Composable BoxScope.() -> Unit
 ) {
-    val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
 
     val animatedTranslation by animateDpAsState(

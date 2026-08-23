@@ -68,9 +68,9 @@ import MijickCamera
             case "detach":
                 detach(bridgeId: bridgeId)
             case "start":
-                break
+                controllers[bridgeId]?.setSessionActive(true)
             case "stop":
-                break
+                controllers[bridgeId]?.setSessionActive(false)
             case "capture":
                 controllers[bridgeId]?.capture()
             case "switch":
@@ -244,10 +244,17 @@ final class CameraViewController: UIViewController {
     }
 
     func setSessionActive(_ isActive: Bool) {
+        bridgeModel.setPreviewActive(isActive)
     }
 
     func capture() {
-#if targetEnvironment(simulator)
+#if targetEnvironment(simulator) && DEBUG
+        // Debug simulator fixture only: exercise the ordinary persistence
+        // bridge without pretending the simulator has a physical camera.
+        let fixtureBase64 = "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////2wBDAf//////////////////////////////////////////////////////////////////////////////////////wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAX/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIQAxAAAAH/AP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAT8Af//EABQRAQAAAAAAAAAAAAAAAAAAABD/2gAIAQIBAT8Af//EABQRAQAAAAAAAAAAAAAAAAAAABD/2gAIAQMBAT8Af//Z"
+        let fixture = Data(base64Encoded: fixtureBase64) ?? Data()
+        AIPoseCameraBridgeRuntime.postCapturedImage(bridgeId: bridgeId, data: fixture)
+#elseif targetEnvironment(simulator)
         AIPoseCameraBridgeRuntime.postCapturedImage(bridgeId: bridgeId, data: Data())
 #else
         bridgeModel.capture()
@@ -273,6 +280,8 @@ final class CameraViewController: UIViewController {
 
 @MainActor
 private final class CameraBridgeModel: ObservableObject {
+    @Published var isPreviewActive = false
+
     private var captureAction: (() -> Void)?
     private var switchAction: (() -> Void)?
     private var flashAction: ((CameraFlashMode) -> Void)?
@@ -282,6 +291,10 @@ private final class CameraBridgeModel: ObservableObject {
     private var pendingGridVisible = false
     private var pendingZoomFactor: CGFloat = 1
     private var isGridReady = false
+
+    func setPreviewActive(_ active: Bool) {
+        isPreviewActive = active
+    }
 
     func attachActions(
         capture: @escaping () -> Void,
@@ -352,24 +365,32 @@ private struct CameraRootView: View {
 #if targetEnvironment(simulator)
             Color.black
 #else
-            MCamera()
-                .setAudioAvailability(false)
-                .setCapturedMediaScreen(nil)
-                .setFlashMode(.off)
-                .setCameraScreen {
-                    BridgeCameraScreen(
-                        cameraManager: $0,
-                        namespace: $1,
-                        closeMCameraAction: $2,
-                        bridgeModel: bridgeModel
-                    )
-                }
-                .onImageCaptured { image, _ in
-                    if let data = image.jpegData(compressionQuality: 0.92) {
-                        onImageCaptured(data)
+            // WI-04: the MCamera session is mounted only while the preview is
+            // active. Removing it triggers Mijick's onDisappear → cancel(),
+            // which stops the AVCaptureSession (start/stop preview are now
+            // effective, driven by the Kotlin start/stop bridge commands).
+            if bridgeModel.isPreviewActive {
+                MCamera()
+                    .setAudioAvailability(false)
+                    .setCapturedMediaScreen(nil)
+                    .setFlashMode(.off)
+                    .setCameraScreen {
+                        BridgeCameraScreen(
+                            cameraManager: $0,
+                            namespace: $1,
+                            closeMCameraAction: $2,
+                            bridgeModel: bridgeModel
+                        )
                     }
-                }
-                .startSession()
+                    .onImageCaptured { image, _ in
+                        if let data = image.jpegData(compressionQuality: 0.92) {
+                            onImageCaptured(data)
+                        }
+                    }
+                    .startSession()
+            } else {
+                Color.black
+            }
 #endif
         }
     }

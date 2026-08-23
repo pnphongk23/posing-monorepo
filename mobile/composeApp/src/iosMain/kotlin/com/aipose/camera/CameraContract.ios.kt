@@ -3,9 +3,14 @@ package com.aipose.camera
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import platform.Foundation.NSNotificationCenter
+import platform.Foundation.NSOperationQueue
 import platform.Foundation.NSURL
 import platform.UIKit.UIApplication
+import platform.UIKit.UIApplicationDidEnterBackgroundNotification
 import platform.UIKit.UIApplicationOpenSettingsURLString
+import platform.UIKit.UIApplicationWillEnterForegroundNotification
+import platform.darwin.NSObjectProtocol
 
 actual class CameraController {
     internal val impl = IOSCameraController()
@@ -26,8 +31,12 @@ actual class CameraController {
         impl.stopPreview()
     }
 
-    actual fun capture(onResult: (ByteArray) -> Unit) {
-        impl.capture(onResult)
+    actual fun capture(captureId: String, onResult: (CameraCaptureResult) -> Unit) {
+        impl.capture(captureId, onResult)
+    }
+
+    actual fun cancelCapture() {
+        impl.cancelCapture()
     }
 
     actual fun switchCamera() {
@@ -64,4 +73,30 @@ actual fun CameraPreview(
         modifier = modifier,
         cameraController = cameraController.impl,
     )
+}
+
+/**
+ * WI-04: observes UIKit DidEnterBackground / WillEnterForeground so the
+ * coordinator can cancel an in-flight capture and stop/restart the preview.
+ * Callbacks arrive on the main queue. Returns a cancel function.
+ */
+actual fun observeAppLifecycle(
+    onBackground: () -> Unit,
+    onForeground: () -> Unit,
+): () -> Unit {
+    val center = NSNotificationCenter.defaultCenter
+    val backgroundObserver: NSObjectProtocol = center.addObserverForName(
+        name = UIApplicationDidEnterBackgroundNotification,
+        `object` = null,
+        queue = NSOperationQueue.mainQueue,
+    ) { _ -> onBackground() }
+    val foregroundObserver: NSObjectProtocol = center.addObserverForName(
+        name = UIApplicationWillEnterForegroundNotification,
+        `object` = null,
+        queue = NSOperationQueue.mainQueue,
+    ) { _ -> onForeground() }
+    return {
+        center.removeObserver(backgroundObserver)
+        center.removeObserver(foregroundObserver)
+    }
 }

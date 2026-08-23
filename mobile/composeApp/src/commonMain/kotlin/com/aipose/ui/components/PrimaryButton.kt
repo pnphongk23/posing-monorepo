@@ -26,7 +26,7 @@ fun PrimaryButton(
         enabled = enabled,
         modifier = modifier
             .height(48.dp)
-            .neoShadow()
+            .neoShadow(cornerRadius = CornerRadius.sm)
             .neoBorder(),
         shape = RoundedCornerShape(CornerRadius.sm),
         colors = ButtonDefaults.buttonColors(

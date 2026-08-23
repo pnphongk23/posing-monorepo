@@ -10,23 +10,16 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 
-enum class ViewMode { GRID, LIST }
-
 data class GalleryUiState(
     val photos: List<Photo> = emptyList(),
     val groupedByDate: Map<String, List<Photo>> = emptyMap(),
     val isLoading: Boolean = true,
-    val viewMode: ViewMode = ViewMode.GRID,
     val selectedPhoto: Photo? = null,
-    val searchQuery: String = ""
 )
 
 class GalleryViewModel(
     database: AiPoseDatabase = createDatabase(DatabaseDriverFactory()),
     private val repository: PhotoRepository = PhotoRepository(database),
-    private val poseNameResolver: (Long) -> String? = { id ->
-        database.poseQueries.getPoseById(id).executeAsOneOrNull()?.name
-    },
 ) {
     private val _uiState = MutableStateFlow(GalleryUiState())
     val uiState: StateFlow<GalleryUiState> = _uiState.asStateFlow()
@@ -35,31 +28,10 @@ class GalleryViewModel(
         repository.getAllPhotos().collectLatest { photos ->
             _uiState.value = _uiState.value.copy(
                 photos = photos,
-                groupedByDate = groupPhotosByDate(
-                    filterPhotos(photos, _uiState.value.searchQuery)
-                ),
+                groupedByDate = groupPhotosByDate(photos),
                 isLoading = false
             )
         }
-    }
-
-    /**
-     * WI-02 (Option A): case-insensitive substring filter on `Photo.poseName`
-     * OR the linked `Pose.name` when `poseId != null`. `photos` stays the
-     * unfiltered source; `groupedByDate` carries the filtered grouping so the
-     * UI can distinguish gallery-empty from filter-empty.
-     */
-    fun setSearchQuery(query: String) {
-        val state = _uiState.value
-        _uiState.value = state.copy(
-            searchQuery = query,
-            groupedByDate = groupPhotosByDate(filterPhotos(state.photos, query))
-        )
-    }
-
-    fun toggleViewMode() {
-        val newMode = if (_uiState.value.viewMode == ViewMode.GRID) ViewMode.LIST else ViewMode.GRID
-        _uiState.value = _uiState.value.copy(viewMode = newMode)
     }
 
     suspend fun deletePhoto(id: Long) {
@@ -72,18 +44,6 @@ class GalleryViewModel(
 
     fun selectPhoto(photo: Photo?) {
         _uiState.value = _uiState.value.copy(selectedPhoto = photo)
-    }
-
-    private fun filterPhotos(photos: List<Photo>, query: String): List<Photo> {
-        val trimmed = query.trim()
-        if (trimmed.isEmpty()) return photos
-        return photos.filter { photo ->
-            val poseNameMatch = photo.poseName.contains(trimmed, ignoreCase = true)
-            val poseId = photo.poseId
-            val linkedPoseNameMatch = poseId != null &&
-                (poseNameResolver(poseId)?.contains(trimmed, ignoreCase = true) ?: false)
-            poseNameMatch || linkedPoseNameMatch
-        }
     }
 
     private fun groupPhotosByDate(photos: List<Photo>): Map<String, List<Photo>> {

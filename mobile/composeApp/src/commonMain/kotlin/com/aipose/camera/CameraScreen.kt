@@ -1,27 +1,26 @@
 package com.aipose.camera
 
 import com.aipose.ui.components.NeoBrutalismContainer
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
@@ -38,9 +37,10 @@ import ai_pose.composeapp.generated.resources.ic_users
 
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
-import androidx.compose.ui.unit.IntOffset as UiIntOffset
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -50,6 +50,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
@@ -61,6 +62,8 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTag
 import cafe.adriel.voyager.navigator.tab.LocalTabNavigator
+import coil3.compose.AsyncImage
+import com.aipose.data.PoseServiceLocator
 import com.aipose.data.DatabaseDriverFactory
 import com.aipose.data.DatabaseProvider
 import com.aipose.data.ImageStorage
@@ -78,33 +81,57 @@ fun CameraScreen(
     modifier: Modifier = Modifier,
 ) {
     val tabNavigator = LocalTabNavigator.current
-    val controller = remember { CameraController() }
+
+    // Native/DB dependencies are assembled here once; the coordinator owns all
+    // capture/persistence behavior behind explicit ports (WI-02).
+    val cameraController = remember { CameraController() }
     val database = remember { DatabaseProvider.getOrCreate(DatabaseDriverFactory()) }
     val photoRepository = remember { PhotoRepository(database) }
     val imageStorage = remember { ImageStorage() }
 
-    var uiState by remember {
-        mutableStateOf(CameraUiState(permissionState = controller.currentPermissionState()))
+    val coordinator = remember {
+        CameraCoordinator(
+            controller = CameraControllerAdapter(cameraController),
+            imageStorage = ImageStorageWriterAdapter(imageStorage),
+            photoMetadata = PhotoMetadataAdapter(photoRepository),
+            clock = SystemClock(),
+            idGenerator = TimestampCounterIdGenerator(SystemClock()),
+        )
+    }
+    val coordState by coordinator.state.collectAsState()
+
+    val preparedReference = PoseServiceLocator.preparedReference
+    var uiState by remember(preparedReference) {
+        mutableStateOf(
+            CameraUiState(
+                permissionState = coordState.permission,
+                overlaySource = preparedReference?.let {
+                    OverlaySourceState.PoseImage(it.poseId, it.skeletonPath)
+                } ?: OverlaySourceState.None,
+            )
+        )
     }
     var zoomUiState by remember {
         mutableStateOf(CameraZoomUiState())
     }
+    var flashVisible by remember { mutableStateOf(false) }
 
-    val fallbackOverlaySource = remember {
-        OverlaySourceState.PlaceholderAsset("camera_overlay_placeholder")
+    val poseOverlay = uiState.overlaySource as? OverlaySourceState.PoseImage
+    val guideAsset = poseOverlay?.let { guide ->
+        remember(guide.skeletonPath) { cameraGuideAsset(guide.skeletonPath) }
     }
+    val hasOverlay = poseOverlay != null && uiState.isOverlayVisible && guideAsset !is CameraGuideAsset.Invalid
 
-    val effectiveOverlaySource = remember(uiState.overlaySource, fallbackOverlaySource) {
-        when (uiState.overlaySource) {
-            is OverlaySourceState.PoseImage -> uiState.overlaySource
-            OverlaySourceState.None -> fallbackOverlaySource
-            is OverlaySourceState.PlaceholderAsset -> uiState.overlaySource
-        }
-    }
-    val hasOverlay = uiState.overlaySource !is OverlaySourceState.None
+    // Derived render state from the coordinator (WI-02): the composable never
+    // performs persistence itself.
+    val permissionState = coordState.permission
+    val isCaptureInFlight = coordState.isCaptureInFlight
+    val cameraControlsEnabled = !isCaptureInFlight && permissionState == CameraPermissionState.AUTHORIZED
+    val captureStatus = coordState.statusText()
+    val thumbnailState = coordState.thumbnailState()
 
     fun updateFlashMode(mode: FlashMode) {
-        controller.setFlashMode(mode)
+        cameraController.setFlashMode(mode)
         uiState = uiState.copy(flashMode = mode)
     }
 
@@ -114,105 +141,166 @@ fun CameraScreen(
 
     fun toggleGrid() {
         val nextValue = !uiState.isGridVisible
-        controller.setGridVisible(nextValue)
+        cameraController.setGridVisible(nextValue)
         uiState = uiState.copy(isGridVisible = nextValue)
     }
 
+    // WI-04 frame-ratio scope: no Maintainer approval was found to expose a
+    // user-facing ratio control, so this stays DEVELOPER-ONLY (no UI entry
+    // point; not wired to the native AVCaptureSession preset). If a future
+    // decision grants user control, wire to Mijick .setResolution().
     fun selectFrameRatio(ratio: CameraFrameRatio) {
         uiState = uiState.copy(frameRatio = ratio, isMoreMenuVisible = false)
     }
 
     fun flipCamera() {
-        controller.switchCamera()
+        cameraController.switchCamera()
         uiState = uiState.copy(
             cameraFacing = if (uiState.cameraFacing == CameraFacing.BACK) CameraFacing.FRONT else CameraFacing.BACK,
         )
     }
 
     LaunchedEffect(Unit) {
-        val latestPath = photoRepository.getLatestPhotoPath()
-        if (latestPath != null) {
-            uiState = uiState.copy(thumbnailState = ThumbnailState.Available(latestPath))
+        coordinator.onLaunch()
+        coordinator.refreshLatestThumbnail()
+        cameraController.setFlashMode(FlashMode.OFF)
+    }
+
+    // Start the native preview after permission is authorized, including the
+    // initial authorized-entry and the completion of a permission request.
+    LaunchedEffect(permissionState) {
+        if (permissionState == CameraPermissionState.AUTHORIZED) {
+            cameraController.startPreview()
+        } else {
+            cameraController.stopPreview()
         }
     }
 
-    LaunchedEffect(Unit) {
-        controller.setFlashMode(FlashMode.OFF)
-        if (uiState.permissionState == CameraPermissionState.NOT_DETERMINED) {
-            controller.requestPermission { grantedState ->
-                uiState = uiState.copy(permissionState = grantedState)
-            }
+    // WI-04: app background/foreground → cancel in-flight capture, stop/restart
+    // the native preview session; the coordinator restores controls on re-entry.
+    DisposableEffect(coordinator) {
+        val cancel = observeAppLifecycle(
+            onBackground = {
+                coordinator.onBackground()
+                cameraController.stopPreview()
+            },
+            onForeground = {
+                coordinator.onForeground()
+                cameraController.startPreview()
+            },
+        )
+        onDispose { cancel() }
+    }
+
+    // Capture timeout: invalidate the in-flight capture after the coordinator
+    // timeout window; late native callbacks are then ignored by the coordinator.
+    LaunchedEffect(coordState.phase) {
+        val phase = coordState.phase
+        if (phase is CameraPhase.Capturing) {
+            delay(coordinator.captureTimeoutMillis)
+            coordinator.onCaptureTimeoutTick()
+        } else if (phase is CameraPhase.CaptureSucceeded || phase is CameraPhase.CaptureError) {
+            delay(600)
+            coordinator.dismissResult()
         }
     }
 
-    LaunchedEffect(uiState.isCaptureFlashVisible) {
-        if (uiState.isCaptureFlashVisible) {
-            delay(140)
-            uiState = uiState.copy(isCaptureFlashVisible = false)
+    LaunchedEffect(flashVisible) {
+        if (flashVisible) {
+            // WI-03: align capture-flash duration to the prototype's ~250ms
+            // white overlay (prototype reference app.js:300-312).
+            delay(250)
+            flashVisible = false
         }
     }
 
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(AiPoseColors.SurfaceVariant)
-            .padding(bottom = 24.dp),
+            .background(AiPoseColors.SurfaceVariant),
     ) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)
-                .padding(horizontal = 0.dp) // allow extending via -mx style
-                .border(2.dp, AiPoseColors.Border)
-        ) {            CameraPreview(
+                .clip(RoundedCornerShape(14.dp))
+                .border(2.dp, AiPoseColors.Foreground, RoundedCornerShape(14.dp))
+        ) {
+            CameraPreview(
                 modifier = Modifier.fillMaxSize(),
-                controller = controller,
+                controller = cameraController,
             )
 
-            // Overlays
-            if (false) {
-                Box(
-                    modifier = Modifier
-                        .matchParentSize()
-                        .background(AiPoseColors.SurfaceVariant.copy(alpha = 0.2f))
-                )
-
-                if (uiState.isGridVisible) {
-                    CameraGridOverlay()
-                }
+            // Overlays — explicit UI states (WI-03).
+            // Static face guide mirrors the prototype and is replaced by the
+            // verified selected skeleton when a PreparedPoseReference exists.
+            if (poseOverlay == null) {
                 CenterCrosshair()
-
-                if (hasOverlay || effectiveOverlaySource is OverlaySourceState.PlaceholderAsset) {
-                    OverlayPlaceholder(
-                        modifier = Modifier
-                            .align(Alignment.Center)
-                            .offset {
-                                IntOffset(
-                                    uiState.overlayOffset.x.roundToInt(),
-                                    uiState.overlayOffset.y.roundToInt(),
-                                )
-                            }
-                            .pointerInput(Unit) {
-                                detectTransformGestures { _, pan, zoom, _ ->
-                                    uiState = uiState.copy(
-                                        overlayOffset = uiState.overlayOffset + pan,
-                                        overlayScale = (uiState.overlayScale * zoom).coerceIn(0.4f, 2.5f),
-                                    )
-                                }
-                            }
-                            .alpha(uiState.overlayOpacity),
-                        scale = uiState.overlayScale,
-                    )
-                }
             }
 
-            // Top Right
+            // Grid overlay — rule-of-thirds; default OFF, enabled via
+            // more/settings popup (grid default OFF production correction).
+            if (uiState.isGridVisible) {
+                CameraGridOverlay()
+            }
+
+            // The prepared reference is session-scoped and already verified by
+            // Try Pose. Render it above the preview without intercepting camera
+            // gestures or changing capture semantics.
+            if (poseOverlay != null && guideAsset is CameraGuideAsset.Invalid) {
+                CameraGuideUnavailable(message = guideAsset.message)
+            }
+
+            if (hasOverlay && guideAsset != null) {
+                AsyncImage(
+                    model = when (guideAsset) {
+                        is CameraGuideAsset.Bytes -> guideAsset.value
+                        is CameraGuideAsset.LocalFile -> guideAsset.path
+                        is CameraGuideAsset.Invalid -> null
+                    },
+                    contentDescription = "Pose guide: ${preparedReference?.poseName ?: "selected pose"}",
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(24.dp)
+                        .offset {
+                            IntOffset(
+                                uiState.overlayOffset.x.roundToInt(),
+                                uiState.overlayOffset.y.roundToInt(),
+                            )
+                        }
+                        .pointerInput(poseOverlay.poseId) {
+                            detectTransformGestures { _, pan, zoom, _ ->
+                                uiState = uiState.copy(
+                                    overlayOffset = uiState.overlayOffset + pan,
+                                    overlayScale = (uiState.overlayScale * zoom).coerceIn(0.4f, 2.5f),
+                                )
+                            }
+                        }
+                        .graphicsLayer {
+                            alpha = uiState.overlayOpacity
+                            scaleX = uiState.overlayScale
+                            scaleY = uiState.overlayScale
+                        },
+                )
+            }
+
+            // Top Left — close returns to the Poses tab without changing the
+            // current-session prepared reference.
+            CameraCloseButton(
+                modifier = Modifier.align(Alignment.TopStart).statusBarsPadding().padding(16.dp),
+                onClick = { tabNavigator.current = PosesTab },
+            )
+
+            // Top Right — More/settings; behind the status bar/notch.
             Box(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
-                    .padding(top = 64.dp, end = 12.dp)
+                    .statusBarsPadding()
+                    .padding(top = 8.dp, end = 12.dp)
             ) {
                 CameraMoreButton(
+                    enabled = cameraControlsEnabled,
                     onClick = { uiState = uiState.copy(isMoreMenuVisible = !uiState.isMoreMenuVisible) }
                 )
             }
@@ -221,7 +309,8 @@ fun CameraScreen(
                 Box(
                     modifier = Modifier
                         .align(Alignment.TopEnd)
-                        .padding(top = 116.dp, end = 12.dp)
+                        .statusBarsPadding()
+                        .padding(top = 60.dp, end = 12.dp)
                 ) {
                     Popup(
                         alignment = Alignment.TopEnd,
@@ -229,8 +318,9 @@ fun CameraScreen(
                         properties = PopupProperties(focusable = true)
                     ) {
                         CameraMorePopup(
-                            modifier = Modifier.width(144.dp),
+                            modifier = Modifier.width(220.dp),
                             uiState = uiState,
+                            hasPoseGuide = poseOverlay != null,
                             onFlashSelected = { mode: FlashMode ->
                                 updateFlashMode(mode)
                                 uiState = uiState.copy(isMoreMenuVisible = false)
@@ -239,6 +329,8 @@ fun CameraScreen(
                                 toggleGrid()
                                 uiState = uiState.copy(isMoreMenuVisible = false)
                             },
+                            onTogglePoseGuide = { uiState = uiState.copy(isOverlayVisible = !uiState.isOverlayVisible) },
+                            onOpacityChanged = { uiState = uiState.copy(overlayOpacity = it) },
                             onFrameRatioSelected = { ratio: CameraFrameRatio -> selectFrameRatio(ratio) }
                         )
                     }
@@ -250,7 +342,7 @@ fun CameraScreen(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
                     .padding(end = 12.dp, bottom = 12.dp),
-                onClick = { tabNavigator.current = PosesTab }
+                onClick = if (cameraControlsEnabled) { { tabNavigator.current = PosesTab } } else null
             )
 
             // Bottom Center
@@ -259,8 +351,9 @@ fun CameraScreen(
                     .align(Alignment.BottomCenter)
                     .padding(bottom = 12.dp)
             ) {
-                 CameraZoomIndicator(
+                CameraZoomIndicator(
                     value = zoomUiState.zoomValue,
+                    enabled = cameraControlsEnabled,
                     onClick = { zoomUiState = toggleCameraZoomSlider(zoomUiState) }
                 )
             }
@@ -280,14 +373,14 @@ fun CameraScreen(
                             value = zoomUiState.zoomValue,
                             onValueChange = {
                                 zoomUiState = setCameraZoomValue(zoomUiState, it)
-                                controller.setZoomFactor(zoomUiState.zoomValue)
+                                cameraController.setZoomFactor(zoomUiState.zoomValue)
                             }
                         )
                     }
                 }
             }
 
-            if (uiState.isCaptureFlashVisible) {
+            if (flashVisible) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
@@ -296,155 +389,158 @@ fun CameraScreen(
             }
         }
 
-        if (uiState.captureStatus != null) {
-            Text(
-                text = uiState.captureStatus ?: "",
-                color = AiPoseColors.Foreground,
-                style = AiPoseTypography.Caption,
-                modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 8.dp),
-            )
-        }
-
+        // Shutter bar: gallery thumbnail 48dp | capture 64dp | flip 48dp
+        // (prototype layout reference). Home-indicator safe area via
+        // navigationBarsPadding (WI-03).
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .height(110.dp)
+                .navigationBarsPadding()
+                .border(2.dp, AiPoseColors.Foreground)
                 .padding(horizontal = 24.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
             GalleryThumbnailButton(
-                thumbnailState = uiState.thumbnailState,
-                onClick = { tabNavigator.current = GalleryTab },
+                thumbnailState = thumbnailState,
+                onClick = if (cameraControlsEnabled) { { tabNavigator.current = GalleryTab } } else null,
             )
 
             CaptureButton(
-                enabled = !uiState.isCaptureInFlight && uiState.permissionState == CameraPermissionState.AUTHORIZED,
+                enabled = !isCaptureInFlight && permissionState == CameraPermissionState.AUTHORIZED,
                 onClick = {
-                    if (uiState.isCaptureInFlight || uiState.permissionState != CameraPermissionState.AUTHORIZED) return@CaptureButton
-                    uiState = uiState.copy(
-                        isCaptureInFlight = true,
-                        captureStatus = null,
-                        isCaptureFlashVisible = true,
-                    )
-
-                    controller.capture { bytes ->
-                        if (bytes.isNotEmpty()) {
-                            val path = imageStorage.writeJpeg(bytes)
-                            if (path != null) {
-                                photoRepository.insertCapturedPhoto(path)
-                                val latestPath = photoRepository.getLatestPhotoPath()
-                                uiState = uiState.copy(
-                                    thumbnailState = latestPath?.let { ThumbnailState.Available(it) } ?: uiState.thumbnailState,
-                                    isCaptureInFlight = false,
-                                )
-                            } else {
-                                uiState = uiState.copy(
-                                    captureStatus = "Failed to save photo",
-                                    isCaptureInFlight = false,
-                                )
-                            }
-                        } else {
-                            uiState = uiState.copy(
-                                captureStatus = "Capture unavailable",
-                                isCaptureInFlight = false,
-                            )
-                        }
+                    val accepted = coordinator.onCaptureRequested()
+                    if (accepted) {
+                        flashVisible = true
                     }
                 },
             )
 
-            FlipShortcutButton(onClick = ::flipCamera)
+            FlipShortcutButton(enabled = cameraControlsEnabled, onClick = ::flipCamera)
         }
 
-        if (uiState.permissionState == CameraPermissionState.DENIED || uiState.permissionState == CameraPermissionState.RESTRICTED) {
-            PermissionDeniedOverlay(controller = controller)
+        // Status text comes last in composition order → VoiceOver traversal
+        // follows preview → controls → shutter bar → status (WI-03).
+        if (captureStatus != null) {
+            Text(
+                text = captureStatus,
+                color = AiPoseColors.Foreground,
+                style = AiPoseTypography.Caption,
+                modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 8.dp, bottom = 8.dp),
+            )
+        }
+
+        if (permissionState == CameraPermissionState.DENIED || permissionState == CameraPermissionState.RESTRICTED) {
+            PermissionDeniedOverlay(controller = cameraController)
         }
     }
 }
-
-
-
 @Composable
 private fun CameraGridOverlay() {
-    Box(modifier = Modifier.fillMaxSize()) {
-        Box(
-            modifier = Modifier
-                .fillMaxHeight()
-                .width(1.dp)
-                .background(AiPoseColors.Foreground.copy(alpha = 0.15f))
-                .align(Alignment.CenterStart)
-                .offset(x = 126.dp),
-        )
-        Box(
-            modifier = Modifier
-                .fillMaxHeight()
-                .width(1.dp)
-                .background(AiPoseColors.Foreground.copy(alpha = 0.15f))
-                .align(Alignment.CenterEnd)
-                .offset(x = (-126).dp),
-        )
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(1.dp)
-                .background(AiPoseColors.Foreground.copy(alpha = 0.15f))
-                .align(Alignment.TopCenter)
-                .offset(y = 180.dp),
-        )
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(1.dp)
-                .background(AiPoseColors.Foreground.copy(alpha = 0.15f))
-                .align(Alignment.BottomCenter)
-                .offset(y = (-180).dp),
-        )
+    Canvas(
+        modifier = Modifier.fillMaxSize().semantics {
+            contentDescription = "Camera grid, 3 by 3 rule of thirds"
+        },
+    ) {
+        val lineColor = AiPoseColors.Surface.copy(alpha = 0.3f)
+        drawLine(lineColor, androidx.compose.ui.geometry.Offset(size.width / 3f, 0f), androidx.compose.ui.geometry.Offset(size.width / 3f, size.height), 1.dp.toPx())
+        drawLine(lineColor, androidx.compose.ui.geometry.Offset(size.width * 2f / 3f, 0f), androidx.compose.ui.geometry.Offset(size.width * 2f / 3f, size.height), 1.dp.toPx())
+        drawLine(lineColor, androidx.compose.ui.geometry.Offset(0f, size.height / 3f), androidx.compose.ui.geometry.Offset(size.width, size.height / 3f), 1.dp.toPx())
+        drawLine(lineColor, androidx.compose.ui.geometry.Offset(0f, size.height * 2f / 3f), androidx.compose.ui.geometry.Offset(size.width, size.height * 2f / 3f), 1.dp.toPx())
     }
 }
 
 @Composable
 private fun CenterCrosshair() {
     Box(
-        contentAlignment = Alignment.Center, 
-        modifier = Modifier.fillMaxSize().alpha(0.8f)
+        contentAlignment = Alignment.Center,
+        modifier = Modifier.fillMaxSize().alpha(0.9f),
     ) {
-        NeoBrutalismContainer(
-            modifier = Modifier.size(40.dp),
-            shape = CircleShape,
-            backgroundColor = Color.Transparent,
-            borderColor = AiPoseColors.Foreground,
-            borderWidth = 2.dp,
-            shadowColor = AiPoseColors.Foreground.copy(alpha = 0.6f),
-            shadowOffset = 0.dp
-        ) {}
-        
-        Box(modifier = Modifier.width(2.dp).height(80.dp).background(AiPoseColors.Foreground))
-        Box(modifier = Modifier.offset(y = (-56).dp)) {
-            Box(modifier = Modifier.width(64.dp).height(2.dp).background(AiPoseColors.Foreground).graphicsLayer { rotationZ = -50f }.offset(x = (-8).dp))
-            Box(modifier = Modifier.width(64.dp).height(2.dp).background(AiPoseColors.Foreground).graphicsLayer { rotationZ = 30f }.offset(x = 8.dp))
+        Box(
+            modifier = Modifier
+                .size(140.dp)
+                .offset(y = (-48).dp),
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(70.dp)
+                    .align(Alignment.Center)
+                    .border(2.dp, AiPoseColors.Surface.copy(alpha = 0.9f), CircleShape)
+                    .background(AiPoseColors.Surface.copy(alpha = 0.1f), CircleShape),
+            )
+            FaceGuideLine(Modifier.align(Alignment.BottomStart).offset(x = 30.dp, y = (-17).dp).graphicsLayer { rotationZ = 35f })
+            FaceGuideLine(Modifier.align(Alignment.BottomEnd).offset(x = (-30).dp, y = (-17).dp).graphicsLayer { rotationZ = -35f })
+            FaceGuideLine(Modifier.align(Alignment.BottomCenter).offset(y = (-7).dp).height(35.dp))
+            FaceGuideLine(Modifier.align(Alignment.BottomStart).offset(x = 42.dp, y = (-20).dp).height(35.dp).graphicsLayer { rotationZ = 15f })
+            FaceGuideLine(Modifier.align(Alignment.BottomEnd).offset(x = (-42).dp, y = (-20).dp).height(35.dp).graphicsLayer { rotationZ = -15f })
         }
-        Box(modifier = Modifier.offset(y = (-4).dp)) {
-            Box(modifier = Modifier.width(80.dp).height(2.dp).background(AiPoseColors.Foreground).graphicsLayer { rotationZ = -60f })
-            Box(modifier = Modifier.width(80.dp).height(2.dp).background(AiPoseColors.Foreground).graphicsLayer { rotationZ = 20f })
-        }
+    }
+}
+
+@Composable
+private fun FaceGuideLine(modifier: Modifier = Modifier) {
+    Box(modifier = modifier.width(2.dp).height(48.dp).background(AiPoseColors.Surface.copy(alpha = 0.9f)))
+}
+
+@Composable
+private fun CameraGuideUnavailable(message: String) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(24.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = "POSE GUIDE UNAVAILABLE\\n$message",
+            color = AiPoseColors.Surface,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.semantics {
+                contentDescription = "Pose guide unavailable: $message"
+            },
+        )
+    }
+}
+
+@Composable
+private fun CameraCloseButton(
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    NeoBrutalismContainer(
+        modifier = modifier.semantics {
+            testTag = "camera-close-btn"
+            contentDescription = "Close Camera"
+        }.size(44.dp),
+        shape = RoundedCornerShape(10.dp),
+        backgroundColor = AiPoseColors.Surface,
+        shadowColor = AiPoseColors.Foreground,
+        shadowOffset = 3.dp,
+        onClick = onClick,
+    ) {
+        Text("×", color = AiPoseColors.Foreground, fontSize = 26.sp, fontWeight = FontWeight.Bold)
     }
 }
 
 @Composable
 private fun CameraMoreButton(
     modifier: Modifier = Modifier,
+    enabled: Boolean = true,
     onClick: () -> Unit,
 ) {
     NeoBrutalismContainer(
-        modifier = modifier.semantics { testTag = "overlayAction_More" }.size(40.dp),
+        modifier = modifier.semantics {
+            testTag = "overlayAction_More"
+            contentDescription = "Camera Settings"
+        }.size(44.dp),
         shape = RoundedCornerShape(10.dp),
-        backgroundColor = AiPoseColors.SurfaceVariant,
+        backgroundColor = AiPoseColors.Surface,
         shadowColor = AiPoseColors.Foreground,
         shadowOffset = 2.dp,
-        onClick = onClick
+        onClick = if (enabled) onClick else null
     ) {
         Box(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().alpha(if (enabled) 1f else 0.45f),
             contentAlignment = Alignment.Center,
         ) {
             Icon(
@@ -460,10 +556,13 @@ private fun CameraMoreButton(
 @Composable
 private fun CameraUsersButton(
     modifier: Modifier = Modifier,
-    onClick: () -> Unit,
+    onClick: (() -> Unit)?,
 ) {
     NeoBrutalismContainer(
-        modifier = modifier.semantics { testTag = "poseButton" }.size(40.dp),
+        modifier = modifier.semantics {
+            testTag = "poseButton"
+            contentDescription = "Browse poses"
+        }.size(48.dp),
         shape = CircleShape,
         backgroundColor = AiPoseColors.AccentBlue,
         shadowColor = AiPoseColors.Foreground,
@@ -476,7 +575,7 @@ private fun CameraUsersButton(
         ) {
             Icon(
                 painter = painterResource(Res.drawable.ic_users),
-                contentDescription = "Users",
+                contentDescription = "Browse poses",
                 tint = AiPoseColors.Foreground,
                 modifier = Modifier.size(16.dp)
             )
@@ -488,18 +587,19 @@ private fun CameraUsersButton(
 private fun CameraZoomIndicator(
     modifier: Modifier = Modifier,
     value: Float,
+    enabled: Boolean = true,
     onClick: () -> Unit,
 ) {
     NeoBrutalismContainer(
-        modifier = modifier.semantics { testTag = "zoomButton" }.size(36.dp),
+        modifier = modifier.semantics { testTag = "zoomButton" }.size(44.dp),
         shape = CircleShape,
         backgroundColor = AiPoseColors.SurfaceVariant,
         shadowColor = AiPoseColors.Foreground,
         shadowOffset = 2.dp,
-        onClick = onClick
+        onClick = if (enabled) onClick else null
     ) {
         Box(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().alpha(if (enabled) 1f else 0.45f),
             contentAlignment = Alignment.Center,
         ) {
             Text(cameraZoomLabel(value), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = AiPoseColors.Foreground)
@@ -515,7 +615,7 @@ private fun CameraZoomSlider(
 ) {
     Column(
         modifier = modifier
-            .semantics(mergeDescendants = true) { 
+            .semantics(mergeDescendants = true) {
                 testTag = "zoomSlider"
                 contentDescription = "zoomSlider"
             }
@@ -563,7 +663,6 @@ private fun OverlayPlaceholder(
     }
 }
 
-
 @Composable
 private fun PermissionDeniedOverlay(
     controller: CameraController,
@@ -590,20 +689,25 @@ private fun CaptureButton(
     onClick: () -> Unit,
 ) {
     NeoBrutalismContainer(
-        modifier = Modifier.size(64.dp).semantics { testTag = "camera-capture-btn" },
+        modifier = Modifier
+            .size(72.dp)
+            .semantics {
+                testTag = "camera-capture-btn"
+                contentDescription = if (enabled) "Capture photo" else "Capture photo unavailable"
+            },
         shape = RoundedCornerShape(18.dp),
-        backgroundColor = AiPoseColors.SurfaceVariant,
-        shadowColor = AiPoseColors.Primary,
-        shadowOffset = 4.dp,
+        backgroundColor = AiPoseColors.Primary,
+        shadowColor = AiPoseColors.Foreground,
+        shadowOffset = 5.dp,
         onClick = if (enabled) onClick else null
     ) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(4.dp)
-                .clip(RoundedCornerShape(13.dp))
+                .clip(RoundedCornerShape(18.dp))
                 .background(AiPoseColors.Primary)
-                .border(2.dp, AiPoseColors.Foreground, RoundedCornerShape(13.dp))
+                .border(2.dp, AiPoseColors.Foreground, RoundedCornerShape(18.dp))
                 .alpha(if (enabled) 1f else 0.35f),
         )
     }
@@ -612,10 +716,13 @@ private fun CaptureButton(
 @Composable
 private fun GalleryThumbnailButton(
     thumbnailState: ThumbnailState,
-    onClick: () -> Unit,
+    onClick: (() -> Unit)?,
 ) {
     NeoBrutalismContainer(
-        modifier = Modifier.size(48.dp).semantics { testTag = "camera-gallery-thumbnail" },
+        modifier = Modifier.size(48.dp).semantics {
+            testTag = "camera-gallery-thumbnail"
+            contentDescription = if (thumbnailState is ThumbnailState.Available) "Open Gallery, latest photo available" else "Open Gallery, no latest photo"
+        },
         shape = RoundedCornerShape(10.dp),
         backgroundColor = AiPoseColors.SurfaceVariant,
         shadowColor = AiPoseColors.Warning,
@@ -623,101 +730,140 @@ private fun GalleryThumbnailButton(
         onClick = onClick
     ) {
         when (thumbnailState) {
-            is ThumbnailState.Available -> Box(
+            is ThumbnailState.Available -> AsyncImage(
+                model = thumbnailState.imagePath,
+                contentDescription = "Latest captured photo",
+                contentScale = ContentScale.Crop,
                 modifier = Modifier
                     .fillMaxSize()
                     .clip(RoundedCornerShape(10.dp))
-                    .border(2.dp, AiPoseColors.Foreground, RoundedCornerShape(10.dp))
-                    .background(AiPoseColors.Warning),
+                    .border(2.dp, AiPoseColors.Foreground, RoundedCornerShape(10.dp)),
             )
-            ThumbnailState.Empty -> Text("G", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = AiPoseColors.Foreground)
+            ThumbnailState.Empty -> Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text("G", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = AiPoseColors.Foreground)
+            }
         }
     }
 }
 
 @Composable
-private fun FlipShortcutButton(onClick: () -> Unit) {
+private fun FlipShortcutButton(enabled: Boolean = true, onClick: () -> Unit) {
     NeoBrutalismContainer(
-        modifier = Modifier.size(48.dp),
+        modifier = Modifier.size(48.dp).semantics { testTag = "camera-flip-btn" },
         shape = RoundedCornerShape(10.dp),
-        backgroundColor = AiPoseColors.SurfaceVariant,
-        shadowColor = AiPoseColors.Warning,
+        backgroundColor = AiPoseColors.Surface,
+        shadowColor = AiPoseColors.Foreground,
         shadowOffset = 3.dp,
-        onClick = onClick
+        onClick = if (enabled) onClick else null
     ) {
         Icon(
             painter = painterResource(Res.drawable.ic_refresh_cw),
-            contentDescription = "Flip Camera",
+            contentDescription = "Switch camera facing",
             tint = AiPoseColors.Foreground,
             modifier = Modifier.size(22.dp)
         )
     }
 }
 
-
 @Composable
 private fun CameraMorePopup(
     modifier: Modifier = Modifier,
     uiState: CameraUiState,
+    hasPoseGuide: Boolean,
     onFlashSelected: (FlashMode) -> Unit,
     onToggleGrid: () -> Unit,
+    onTogglePoseGuide: () -> Unit,
+    onOpacityChanged: (Float) -> Unit,
     onFrameRatioSelected: (CameraFrameRatio) -> Unit,
 ) {
     Column(
         modifier = modifier
-            .width(144.dp)
-            .clip(RoundedCornerShape(16.dp))
+            .clip(RoundedCornerShape(14.dp))
             .background(AiPoseColors.Foreground)
-            .border(2.dp, AiPoseColors.Foreground, RoundedCornerShape(16.dp))
-            .padding(6.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp)
+            .border(2.dp, AiPoseColors.Foreground, RoundedCornerShape(14.dp))
+            .padding(8.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        // Flash
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(12.dp))
-                .clickable {
-                    val nextMode = when (uiState.flashMode) {
-                        FlashMode.OFF -> FlashMode.AUTO
-                        FlashMode.AUTO -> FlashMode.ON
-                        FlashMode.ON -> FlashMode.OFF
-                    }
-                    onFlashSelected(nextMode)
+        NeoBrutalismContainer(
+            modifier = Modifier.fillMaxWidth().height(44.dp).semantics {
+                contentDescription = "Flash ${uiState.flashMode.name.lowercase()}, tap to change"
+            },
+            shape = RoundedCornerShape(10.dp),
+            backgroundColor = AiPoseColors.Surface,
+            shadowColor = AiPoseColors.Surface,
+            shadowOffset = 2.dp,
+            onClick = {
+                val nextMode = when (uiState.flashMode) {
+                    FlashMode.OFF -> FlashMode.AUTO
+                    FlashMode.AUTO -> FlashMode.ON
+                    FlashMode.ON -> FlashMode.OFF
                 }
-                .padding(horizontal = 12.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+                onFlashSelected(nextMode)
+            },
         ) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(painter = painterResource(Res.drawable.ic_zap), contentDescription = null, tint = AiPoseColors.Surface, modifier = Modifier.size(16.dp))
-                Text("Flash", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = AiPoseColors.Surface, letterSpacing = 0.5.sp)
+            Row(
+                modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(painter = painterResource(Res.drawable.ic_zap), contentDescription = null, tint = AiPoseColors.Foreground, modifier = Modifier.size(18.dp))
+                    Text("Flash", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = AiPoseColors.Foreground)
+                }
+                Text(uiState.flashMode.name, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = AiPoseColors.Primary900)
             }
-            Text(uiState.flashMode.name, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = AiPoseColors.Warning, letterSpacing = 0.5.sp)
         }
 
-        Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(AiPoseColors.Surface.copy(alpha = 0.1f)))
-
-        // Grid Toggle
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(12.dp))
-                .clickable { onToggleGrid() }
-                .padding(horizontal = 12.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+        NeoBrutalismContainer(
+            modifier = Modifier.fillMaxWidth().height(44.dp).semantics {
+                contentDescription = "Grid ${if (uiState.isGridVisible) "on" else "off"}, tap to toggle"
+            },
+            shape = RoundedCornerShape(10.dp),
+            backgroundColor = AiPoseColors.Surface,
+            shadowColor = AiPoseColors.Surface,
+            shadowOffset = 2.dp,
+            onClick = onToggleGrid,
         ) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(painter = painterResource(Res.drawable.ic_grid), contentDescription = null, tint = AiPoseColors.Surface, modifier = Modifier.size(16.dp))
-                Text("Grid", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = AiPoseColors.Surface, letterSpacing = 0.5.sp)
-            }
-            Box(
-                modifier = Modifier.width(28.dp).height(16.dp).clip(CircleShape).background(if (uiState.isGridVisible) AiPoseColors.AccentBlue else AiPoseColors.Surface.copy(alpha = 0.2f)).padding(horizontal = 2.dp),
-                contentAlignment = if (uiState.isGridVisible) Alignment.CenterEnd else Alignment.CenterStart
+            Row(
+                modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Box(modifier = Modifier.size(12.dp).clip(CircleShape).background(AiPoseColors.Surface))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(painter = painterResource(Res.drawable.ic_grid), contentDescription = null, tint = AiPoseColors.Foreground, modifier = Modifier.size(18.dp))
+                    Text("Grid", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = AiPoseColors.Foreground)
+                }
+                Text(if (uiState.isGridVisible) "ON" else "OFF", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = AiPoseColors.Primary900)
             }
+        }
+
+        if (hasPoseGuide) {
+            Box(modifier = Modifier.fillMaxWidth().height(2.dp).background(AiPoseColors.Surface.copy(alpha = 0.2f)))
+            Text("POSE GUIDE", color = AiPoseColors.Surface, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            NeoBrutalismContainer(
+                modifier = Modifier.fillMaxWidth().height(44.dp).semantics {
+                    contentDescription = if (uiState.isOverlayVisible) "Hide pose guide" else "Show pose guide"
+                },
+                shape = RoundedCornerShape(10.dp),
+                backgroundColor = AiPoseColors.Surface,
+                shadowColor = AiPoseColors.Surface,
+                shadowOffset = 2.dp,
+                onClick = onTogglePoseGuide,
+            ) {
+                Text(if (uiState.isOverlayVisible) "Hide" else "Show", color = AiPoseColors.Foreground, fontSize = 13.sp)
+            }
+            Text("Opacity ${(uiState.overlayOpacity * 100).roundToInt()}%", color = AiPoseColors.Surface, fontSize = 12.sp)
+            Slider(
+                value = uiState.overlayOpacity,
+                onValueChange = onOpacityChanged,
+                valueRange = 0.1f..1f,
+                modifier = Modifier.semantics {
+                    contentDescription = "Pose guide opacity ${(uiState.overlayOpacity * 100).roundToInt()} percent"
+                },
+            )
         }
     }
 }

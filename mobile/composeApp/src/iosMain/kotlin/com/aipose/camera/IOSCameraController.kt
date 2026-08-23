@@ -23,7 +23,7 @@ internal class IOSCameraController {
     private val bridgeId: String = NSUUID().UUIDString
     private val notificationCenter = NSNotificationCenter.defaultCenter
 
-    private var pendingCaptureCallback: ((ByteArray) -> Unit)? = null
+    private var pendingCaptureCallback: ((CameraCaptureResult) -> Unit)? = null
     private var pendingPermissionCallback: ((CameraPermissionState) -> Unit)? = null
     private var bridgeEventObserver: NSObjectProtocol? = null
 
@@ -91,16 +91,29 @@ internal class IOSCameraController {
         )
     }
 
-    fun capture(onResult: (ByteArray) -> Unit) {
+    fun capture(captureId: String, onResult: (CameraCaptureResult) -> Unit) {
         if (pendingCaptureCallback != null) {
+            // A capture is already in flight; report an explicit failure instead
+            // of an undifferentiated empty-bytes signal (WI-04).
             dispatch_async(dispatch_get_main_queue()) {
-                onResult(ByteArray(0))
+                onResult(CameraCaptureResult.Failure(CameraCaptureFailureReason.CaptureFailed))
             }
             return
         }
 
         pendingCaptureCallback = onResult
+        // captureId is bound by the calling closure, preserving capture identity
+        // without a separate native round-trip (single outstanding capture).
         postBridgeCommand(command = "capture")
+    }
+
+    /**
+     * Clears the pending capture callback so a stale native "captured" event
+     * or a subsequent capture request cannot propagate an invalid result.
+     * WI-02 cancellation hook; WI-04 wires the native session cancellation.
+     */
+    fun cancelCapture() {
+        pendingCaptureCallback = null
     }
 
     private fun observeBridgeEvents() {
@@ -128,7 +141,13 @@ internal class IOSCameraController {
                 val data = userInfo[KEY_IMAGE_DATA] as? NSData
                 val callback = pendingCaptureCallback
                 pendingCaptureCallback = null
-                callback?.invoke(data?.toByteArray() ?: ByteArray(0))
+                val result = if (data == null || data.length.toInt() == 0) {
+                    // Explicit failure — never an undifferentiated empty payload (WI-04).
+                    CameraCaptureResult.Failure(CameraCaptureFailureReason.CaptureFailed)
+                } else {
+                    CameraCaptureResult.Success(data.toByteArray())
+                }
+                callback?.invoke(result)
             }
 
             "permissionState" -> {
