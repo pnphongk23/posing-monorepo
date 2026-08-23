@@ -55,7 +55,7 @@ function mockSpawn(stdout: string, stderr = "", exitCode = 0) {
 }
 
 describe("HiggsfieldCliProvider", () => {
-  it("spawns CLI with kling_omni_image and fetches result URL", async () => {
+  it("spawns CLI with text2image_gpt (UI ChatGPT) and fetches result URL", async () => {
     const spawnImpl = mockSpawn(JSON.stringify({ url: "https://cdn.example.com/out.png" }));
     const fetchImpl = vi.fn().mockResolvedValue({
       ok: true,
@@ -79,11 +79,12 @@ describe("HiggsfieldCliProvider", () => {
 
     expect(spawnImpl).toHaveBeenCalled();
     const [, args] = spawnImpl.mock.calls[0] as [string, string[]];
-    expect(args).toContain("kling_omni_image");
+    expect(args).toContain("text2image_gpt");
     expect(args).toContain("--prompt");
     expect(args).toContain(DEFAULT_EXTRACT_PROMPT);
-    expect(args).toContain("--resolution");
-    expect(args).toContain("1k");
+    expect(args).toContain("--quality");
+    expect(args).toContain("medium");
+    expect(args).not.toContain("--resolution");
     expect(args).toContain("--wait");
     expect(args).toContain("--wait-timeout");
     expect(args).toContain("9m");

@@ -14,8 +14,12 @@ import { DEFAULT_EXTRACT_PROMPT } from "./extractPrompt";
 import type { PoseExtractorProvider } from "./poseExtractorProvider";
 import type { ExtractedImage } from "./types";
 
-const DEFAULT_MODEL = "kling_omni_image";
+/** Higgsfield UI label "ChatGPT" → job_type text2image_gpt (GPT Image). */
+const DEFAULT_MODEL = "text2image_gpt";
 const DEFAULT_RESOLUTION = "1k";
+const DEFAULT_GPT_IMAGE_QUALITY = "medium";
+/** Models that reject `--resolution` on the Higgsfield CLI. */
+const MODELS_WITHOUT_RESOLUTION = new Set(["openai_hazel", "text2image_gpt"]);
 const DEFAULT_TIMEOUT_MS = 600_000;
 const DEFAULT_WAIT_TIMEOUT = "9m";
 
@@ -173,7 +177,7 @@ export class HiggsfieldCliProvider implements PoseExtractorProvider {
     this.fetchImpl = options.fetchImpl ?? fetch;
     this.credentialsPath = options.credentialsPath ?? process.env.HIGGSFIELD_CREDENTIALS_PATH ?? path.join(os.homedir(), ".higgsfield", "credentials.json");
     this.timeoutMs = options.timeoutMs ?? Number(process.env.HIGGSFIELD_CLI_TIMEOUT_MS ?? DEFAULT_TIMEOUT_MS);
-    this.model = options.model ?? DEFAULT_MODEL;
+    this.model = options.model ?? process.env.HIGGSFIELD_CLI_MODEL ?? DEFAULT_MODEL;
     this.tmpDir = options.tmpDir ?? path.join(os.tmpdir(), "extract-jobs");
   }
 
@@ -189,6 +193,9 @@ export class HiggsfieldCliProvider implements PoseExtractorProvider {
       await fs.mkdir(jobDir, { recursive: true });
       await fs.writeFile(sourcePath, Buffer.from(input.sourceImageBase64, "base64"));
 
+      const modelArgs = MODELS_WITHOUT_RESOLUTION.has(this.model)
+        ? ["--quality", DEFAULT_GPT_IMAGE_QUALITY]
+        : ["--resolution", DEFAULT_RESOLUTION];
       const args = [
         "generate",
         "create",
@@ -197,8 +204,7 @@ export class HiggsfieldCliProvider implements PoseExtractorProvider {
         DEFAULT_EXTRACT_PROMPT,
         "--image",
         sourcePath,
-        "--resolution",
-        DEFAULT_RESOLUTION,
+        ...modelArgs,
         "--wait",
         "--wait-timeout",
         DEFAULT_WAIT_TIMEOUT,
