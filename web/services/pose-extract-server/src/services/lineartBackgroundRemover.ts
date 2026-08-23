@@ -8,7 +8,7 @@ import { AppError } from "./errors";
 import type { ExtractedImage } from "./types";
 
 const DEFAULT_STRENGTH = 1.0;
-const DEFAULT_THRESHOLD = 250;
+const DEFAULT_THRESHOLD = 245;
 const DEFAULT_SOFTNESS = 24;
 const DEFAULT_TIMEOUT_MS = 30_000;
 
@@ -143,7 +143,8 @@ export function createLineartBackgroundRemover(options: LineartBackgroundRemover
           "--softness",
           String(softness),
           "--strength",
-          String(strength)
+          String(strength),
+          "--preserve-color"
         ];
 
         const { stdout, stderr, exitCode } = await runPython(spawnImpl, pythonBin, args, timeoutMs);

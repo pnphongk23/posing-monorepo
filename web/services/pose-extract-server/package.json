@@ -15,6 +15,7 @@
     "start:worker:preflight": "node dist/worker/preflight-auth.js",
     "start:worker:login": "node dist/worker/login-auth.js",
     "test": "vitest run",
+    "test:lineart-bg": "python3 -m unittest discover -s scripts -p 'test_*.py'",
     "test:watch": "vitest",
     "lint": "tsc --noEmit -p tsconfig.json",
     "spike:boot-check": "npm run build && node scripts/check-boot-with-mounted-path.mjs",

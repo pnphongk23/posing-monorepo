@@ -27,15 +27,18 @@ describe("createLineartBackgroundRemover", () => {
     tempDirs.push(tmpDir);
 
     const scriptPath = path.join(tmpDir, "remove_bg_lineart.py");
+    const argsPath = path.join(tmpDir, "args.json");
 
     await fs.writeFile(
       scriptPath,
       `#!/usr/bin/env python3
+import json
 import sys
 from pathlib import Path
 out = Path(sys.argv[sys.argv.index("-o") + 1])
 out.parent.mkdir(parents=True, exist_ok=True)
 out.write_bytes(b"processed-png")
+Path(${JSON.stringify(argsPath)}).write_text(json.dumps(sys.argv[1:]))
 print(f"OK: {sys.argv[1]} -> {out}")
 `
     );
@@ -54,6 +57,11 @@ print(f"OK: {sys.argv[1]} -> {out}")
 
     expect(result.mimeType).toBe("image/png");
     expect(Buffer.from(result.imageBase64, "base64").toString()).toBe("processed-png");
+
+    const args = JSON.parse(await fs.readFile(argsPath, "utf8")) as string[];
+    expect(args).toContain("--threshold");
+    expect(args[args.indexOf("--threshold") + 1]).toBe("245");
+    expect(args).toContain("--preserve-color");
   });
 
   it("throws when python exits non-zero", async () => {
@@ -62,7 +70,7 @@ print(f"OK: {sys.argv[1]} -> {out}")
         stdout: { on: vi.fn() },
         stderr: { on: vi.fn((event: string, cb: (chunk: Buffer) => void) => {
           if (event === "data") {
-            queueMicrotask(() => cb(Buffer.from("python failed")));
+            queueMicrotask(() => cb(Buffer.from("line-art quality gate failed")));
           }
         }) },
         kill: vi.fn(),
@@ -83,6 +91,9 @@ print(f"OK: {sys.argv[1]} -> {out}")
 
     await expect(
       remover.removeBackground({ imageBase64: "c291cmNl", mimeType: "image/png" })
-    ).rejects.toMatchObject({ code: "LINEART_BG_REMOVAL_FAILED" });
+    ).rejects.toMatchObject({
+      code: "LINEART_BG_REMOVAL_FAILED",
+      message: "line-art quality gate failed"
+    });
   });
 });

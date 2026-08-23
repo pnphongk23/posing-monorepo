@@ -21,6 +21,7 @@ Requirements:
 from __future__ import annotations
 
 import argparse
+from collections import deque
 from pathlib import Path
 import sys
 
@@ -33,25 +34,18 @@ SUPPORTED_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff"}
 def remove_white_background(
     src: Path,
     dst: Path,
-    threshold: int = 250,
+    threshold: int = 245,
     softness: int = 24,
     strength: float = 1.0,
-    preserve_color: bool = False,
+    preserve_color: bool = True,  # deprecated compatibility parameter; ignored
 ) -> None:
-    """
-    Convert white / near-white pixels to transparency.
+    """Remove near-white pixels, preserving visible RGB and line strength.
 
-    For line-art, the default output color is black and the original line
-    intensity is represented by alpha. This avoids white halos around
-    anti-aliased strokes.
-
-    Args:
-        src: input image path
-        dst: output PNG path
-        threshold: pixels brighter than this are treated as background
-        softness: width of the fade zone below threshold
-        strength: multiplier for stroke opacity
-        preserve_color: keep original RGB instead of forcing line color to black
+    Alpha is foreground confidence: the tolerance band from
+    ``threshold - softness`` through ``threshold`` maps linearly from opaque
+    to transparent. Source alpha is applied once (never multiplied by a
+    second darkness term), preserving anti-aliased strokes. ``preserve_color``
+    is deprecated and ignored; RGB is always preserved.
     """
     img = Image.open(src).convert("RGBA")
     arr = np.asarray(img).astype(np.float32)
@@ -66,39 +60,71 @@ def remove_white_background(
         + 0.0722 * rgb[..., 2]
     )
 
-    # Background mask with a soft transition.
-    # threshold=250, softness=24 means:
-    # >= 250       => fully transparent
-    # <= 226       => line opacity based on darkness
-    # between them => smoothly faded
-    soft_start = max(0, threshold - softness)
-
-    # Base alpha from "ink darkness".
-    # This reconstructs anti-aliased gray strokes cleanly on any background.
-    ink_alpha = (255.0 - luminance) / 255.0
-
     if softness > 0:
-        fade = (threshold - luminance) / float(softness)
-        fade = np.clip(fade, 0.0, 1.0)
+        # Do not multiply by darkness as well: that double-attenuates faint
+        # anti-aliased strokes and was the cause of the nearly empty output.
+        alpha = np.clip((threshold - luminance) / float(softness), 0.0, 1.0)
     else:
-        fade = (luminance < threshold).astype(np.float32)
-
-    alpha = ink_alpha * fade * strength * original_alpha
-    alpha = np.clip(alpha, 0.0, 1.0)
-
-    # Kill tiny background noise.
+        alpha = (luminance < threshold).astype(np.float32)
+    alpha = np.clip(alpha * strength * original_alpha, 0.0, 1.0)
     alpha[alpha < (2.0 / 255.0)] = 0.0
 
+    alpha8 = np.round(alpha * 255.0).astype(np.uint8)
+    strong = alpha8 >= 160
+    strong_pixels = int(np.count_nonzero(strong))
+    max_alpha = int(alpha8.max())
+
+    # Quality gate: 0.0005% of pixels is the minimum area-aware coverage,
+    # with an absolute floor of 8. Noise pixels must also form one connected
+    # (8-neighbor) ink component of at least 8 pixels whose bbox spans 5px.
+    # This accepts sparse but continuous pose strokes while rejecting eight
+    # scattered dark pixels in a 1MP image. max_alpha protects against faint
+    # technically-valid output. Thresholds are absolute because source pose
+    # images are commonly 1024px and legitimate strokes remain continuous.
+    area = alpha8.shape[0] * alpha8.shape[1]
+    min_strong_pixels = max(8, int(np.ceil(area * 0.000005)))
+    visited = np.zeros_like(strong, dtype=bool)
+    largest_component = 0
+    largest_span = 0
+    height, width = strong.shape
+    for y, x in zip(*np.nonzero(strong)):
+        if visited[y, x]:
+            continue
+        queue = deque([(int(y), int(x))])
+        visited[y, x] = True
+        count = 0
+        min_y = max_y = int(y)
+        min_x = max_x = int(x)
+        while queue:
+            cy, cx = queue.popleft()
+            count += 1
+            min_y, max_y = min(min_y, cy), max(max_y, cy)
+            min_x, max_x = min(min_x, cx), max(max_x, cx)
+            for dy in (-1, 0, 1):
+                for dx in (-1, 0, 1):
+                    ny, nx = cy + dy, cx + dx
+                    if (0 <= ny < height and 0 <= nx < width
+                            and not visited[ny, nx] and strong[ny, nx]):
+                        visited[ny, nx] = True
+                        queue.append((ny, nx))
+        largest_component = max(largest_component, count)
+        largest_span = max(largest_span, max(max_y - min_y, max_x - min_x) + 1)
+
+    min_span = max(5, int(np.ceil(np.sqrt(area) * 0.005)))
+    if (strong_pixels < min_strong_pixels or max_alpha < 192
+            or largest_component < 8 or largest_span < min_span):
+        raise ValueError(
+            "line-art quality gate failed: output contains no meaningful ink "
+            f"(strong_pixels={strong_pixels}, min_strong_pixels={min_strong_pixels}, "
+            f"largest_component={largest_component}, largest_span={largest_span}, "
+            f"min_span={min_span}, max_alpha={max_alpha})"
+        )
+
+    # Always retain source RGB; transparent-pixel RGB is harmless and keeps
+    # visible anti-aliased colors lossless.
     out = np.zeros_like(arr, dtype=np.uint8)
-
-    if preserve_color:
-        out[..., :3] = np.clip(rgb, 0, 255).astype(np.uint8)
-    else:
-        # Black RGB + alpha gives the cleanest line-art result
-        # and prevents white fringes around strokes.
-        out[..., :3] = 0
-
-    out[..., 3] = np.round(alpha * 255.0).astype(np.uint8)
+    out[..., :3] = np.clip(rgb, 0, 255).astype(np.uint8)
+    out[..., 3] = alpha8
 
     dst.parent.mkdir(parents=True, exist_ok=True)
     Image.fromarray(out, "RGBA").save(dst, "PNG")
@@ -110,7 +136,7 @@ def process_path(
     threshold: int,
     softness: int,
     strength: float,
-    preserve_color: bool,
+    preserve_color: bool,  # deprecated compatibility parameter; ignored
 ) -> None:
     if input_path.is_file():
         if input_path.suffix.lower() not in SUPPORTED_EXTS:
@@ -186,8 +212,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--threshold",
         type=int,
-        default=250,
-        help="White cutoff 0-255. Lower removes more near-white pixels. Default: 250"
+        default=245,
+        help="White cutoff 0-255. Lower removes more near-white pixels. Default: 245"
     )
     parser.add_argument(
         "--softness",
@@ -204,7 +230,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--preserve-color",
         action="store_true",
-        help="Keep original RGB colors instead of converting strokes to black"
+        help="Retained for compatibility; source RGB is always preserved"
     )
     return parser
 
@@ -229,7 +255,7 @@ def main() -> None:
             threshold=args.threshold,
             softness=args.softness,
             strength=args.strength,
-            preserve_color=args.preserve_color,
+            preserve_color=True,
         )
     except Exception as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
