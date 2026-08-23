@@ -171,6 +171,7 @@ export function createApp(options: CreateAppOptions): express.Express {
         adminSecret: options.adminSecret,
         communityStore: options.communityStore,
         createUploadUrl,
+        publicUrlBase: process.env.R2_PUBLIC_URL,
         jobStore: options.extractionJobStore,
       })
     );

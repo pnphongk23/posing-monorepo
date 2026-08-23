@@ -30,11 +30,11 @@ The MVP covers Phase 1/2 only. Extraction-job result schema and API migration be
 
 ## Current state
 
-The extraction worker stores generated results as base64 in the database through `ExtractionJobStore.markSucceeded`. This mission does not reinterpret that field, dual-write it, or change the worker, schema, admin routes, or job API.
+The extraction worker stores generated results as base64 in the database through `ExtractionJobStore.markSucceeded`. This mission does not reinterpret that field, dual-write it, or change the worker, schema, or extraction job API. The backend development admin materialization boundary is separately R2-backed: when an administrator materializes a succeeded job into a canonical Pose, it uploads original, skeleton, and thumbnail bytes to the configured R2 bucket and persists stable public locators. This does not move upload work into the extraction worker or change Community public APIs.
 
 ## Future prerequisite
 
-Phase 5/6 must add a `result_image_url` column, update `markSucceeded`, and update the API response contract before worker output can become an R2 locator.
+Phase 5/6 must add a `result_image_url` column, update `markSucceeded`, and update the API response contract before worker output itself can become an R2 locator. Until then, only the admin materialization boundary performs this R2 upload.
 
 ## Risk
 

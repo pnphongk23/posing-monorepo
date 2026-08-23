@@ -1,10 +1,19 @@
+import crypto from "node:crypto";
+
 import { Router } from "express";
 import { z } from "zod";
 
 import type { PoseStore } from "../db/communityStore";
 import type { ExtractionJobStore } from "../db/extractionJobStore";
 import { createAdminAuthMiddleware } from "../middleware/adminAuth";
-import type { UploadUrlPayload } from "../services/r2Storage";
+import {
+  buildCommunityObjectKey,
+  buildPublicUrl,
+  deleteObject,
+  uploadObject,
+  type CommunityObjectRole,
+  type UploadUrlPayload
+} from "../services/r2Storage";
 
 const ALLOWED_MIME_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
 
@@ -37,15 +46,24 @@ export interface CreateAdminCommunityRoutesOptions {
   adminSecret: string;
   communityStore: PoseStore;
   createUploadUrl: (input: { fileName: string; mimeType: string }) => Promise<UploadUrlPayload>;
+  uploadObject?: (input: { fileKey: string; body: Buffer; mimeType: string }) => Promise<void>;
+  deleteObject?: (fileKey: string) => Promise<void>;
+  buildObjectKey?: (role: CommunityObjectRole, extension: string, objectId: string) => string;
+  publicUrlBase?: string;
   jobStore: ExtractionJobStore;
 }
 
-function asDataUrl(mimeType: string, imageBase64: string): string {
-  return `data:${mimeType};base64,${imageBase64}`;
-}
-
 export function createAdminCommunityRoutes(options: CreateAdminCommunityRoutesOptions): Router {
-  const { adminSecret, communityStore, createUploadUrl, jobStore } = options;
+  const {
+    adminSecret,
+    communityStore,
+    createUploadUrl,
+    uploadObject: putObject = uploadObject,
+    deleteObject: removeObject = deleteObject,
+    buildObjectKey = buildCommunityObjectKey,
+    publicUrlBase,
+    jobStore
+  } = options;
   const auth = createAdminAuthMiddleware(adminSecret);
   const router = Router();
 
@@ -146,22 +164,51 @@ export function createAdminCommunityRoutes(options: CreateAdminCommunityRoutesOp
       return;
     }
 
-    const originalUrl = asDataUrl(job.sourceMimeType, job.sourceImageBase64);
-    const skeletonUrl = asDataUrl(job.resultMimeType, job.resultImageBase64);
-    const pose = await communityStore.createPose({
-      ownerAccountId: parsed.data.ownerAccountId,
-      name: parsed.data.name,
-      originalUrl,
-      skeletonUrl,
-      thumbnailUrl: skeletonUrl,
-      tags: parsed.data.tags,
-      difficulty: parsed.data.difficulty ?? null,
-      description: parsed.data.description ?? null,
-      bodyParts: parsed.data.bodyParts,
-      currentJobId: job.id
-    });
+    if (!publicUrlBase) {
+      res.status(503).json({ error: { code: "R2_NOT_CONFIGURED", message: "Community media storage is not configured" } });
+      return;
+    }
 
-    res.status(201).json({ data: { pose } });
+    const poseId = crypto.randomUUID();
+    const assets = [
+      { role: "original" as const, body: Buffer.from(job.sourceImageBase64, "base64"), mimeType: job.sourceMimeType },
+      { role: "skeleton" as const, body: Buffer.from(job.resultImageBase64, "base64"), mimeType: job.resultMimeType },
+      { role: "thumbnail" as const, body: Buffer.from(job.resultImageBase64, "base64"), mimeType: job.resultMimeType }
+    ];
+    const uploadedKeys: string[] = [];
+
+    try {
+      const locators = Object.fromEntries(
+        await Promise.all(
+          assets.map(async (asset) => {
+            const extension = asset.mimeType.split("/")[1] ?? "bin";
+            const fileKey = buildObjectKey(asset.role, extension, poseId);
+            await putObject({ fileKey, body: asset.body, mimeType: asset.mimeType });
+            uploadedKeys.push(fileKey);
+            return [asset.role, buildPublicUrl(publicUrlBase, fileKey)] as const;
+          })
+        )
+      ) as Record<CommunityObjectRole, string>;
+
+      const pose = await communityStore.createPose({
+        poseId,
+        ownerAccountId: parsed.data.ownerAccountId,
+        name: parsed.data.name,
+        originalUrl: locators.original,
+        skeletonUrl: locators.skeleton,
+        thumbnailUrl: locators.thumbnail,
+        tags: parsed.data.tags,
+        difficulty: parsed.data.difficulty ?? null,
+        description: parsed.data.description ?? null,
+        bodyParts: parsed.data.bodyParts,
+        currentJobId: job.id
+      });
+
+      res.status(201).json({ data: { pose } });
+    } catch (error) {
+      await Promise.allSettled(uploadedKeys.map((fileKey) => removeObject(fileKey)));
+      throw error;
+    }
   });
 
   return router;

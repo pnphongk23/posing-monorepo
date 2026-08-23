@@ -19,13 +19,26 @@ async function createTestApp() {
     fileKey: `community/${fileName}`,
     fields: { "Content-Type": mimeType }
   }));
+  const uploaded: string[] = [];
+  const uploadObject = vi.fn(async ({ fileKey }: { fileKey: string; body: Buffer; mimeType: string }) => {
+    uploaded.push(fileKey);
+  });
+  const deleteObject = vi.fn(async (_fileKey: string) => undefined);
   const app = express();
   app.use(express.json());
   app.use(
     "/api/admin/community/poses",
-    createAdminCommunityRoutes({ adminSecret: ADMIN_SECRET, communityStore: poseStore, createUploadUrl, jobStore })
+    createAdminCommunityRoutes({
+      adminSecret: ADMIN_SECRET,
+      communityStore: poseStore,
+      createUploadUrl,
+      uploadObject,
+      deleteObject,
+      publicUrlBase: "https://cdn.example.com",
+      jobStore
+    })
   );
-  return { app, poseStore, jobStore, createUploadUrl };
+  return { app, poseStore, jobStore, createUploadUrl, uploadObject, deleteObject, uploaded };
 }
 
 async function succeededJob(jobStore: ExtractionJobStore) {
@@ -68,11 +81,42 @@ describe("admin canonical Pose routes", () => {
       ownerAccountId: OWNER_ID,
       status: "local",
       currentJobId: jobId,
-      originalUrl: "data:image/jpeg;base64,b3JpZ2luYWw=",
-      skeletonUrl: "data:image/png;base64,c2tlbGV0b24=",
-      thumbnailUrl: "data:image/png;base64,c2tlbGV0b24="
+      originalUrl: expect.stringMatching(/^https:\/\/cdn\.example\.com\/community\/.+\/original\.jpeg$/),
+      skeletonUrl: expect.stringMatching(/^https:\/\/cdn\.example\.com\/community\/.+\/skeleton\.png$/),
+      thumbnailUrl: expect.stringMatching(/^https:\/\/cdn\.example\.com\/community\/.+\/thumbnail\.png$/)
     });
     expect(response.body.data.pose.poseId).toMatch(/^[0-9a-f-]{36}$/);
+  });
+
+  it("removes uploaded objects when one upload fails", async () => {
+    const { app, jobStore, poseStore, uploadObject, deleteObject } = await createTestApp();
+    const jobId = await succeededJob(jobStore);
+    uploadObject.mockImplementationOnce(async () => undefined).mockRejectedValueOnce(new Error("R2 unavailable"));
+
+    await request(app)
+      .post("/api/admin/community/poses")
+      .set("Authorization", `Bearer ${ADMIN_SECRET}`)
+      .send(createBody(jobId))
+      .expect(500);
+
+    expect(deleteObject).toHaveBeenCalled();
+    expect(await poseStore.getPoseByCurrentJobId(jobId)).toBeNull();
+  });
+
+  it("removes all uploaded objects when database materialization fails", async () => {
+    const { app, jobStore, poseStore, deleteObject, uploaded } = await createTestApp();
+    const jobId = await succeededJob(jobStore);
+    vi.spyOn(poseStore, "createPose").mockRejectedValueOnce(new Error("database unavailable"));
+
+    await request(app)
+      .post("/api/admin/community/poses")
+      .set("Authorization", `Bearer ${ADMIN_SECRET}`)
+      .send(createBody(jobId))
+      .expect(500);
+
+    expect(uploaded).toHaveLength(3);
+    expect(deleteObject).toHaveBeenCalledTimes(3);
+    expect(await poseStore.getPoseByCurrentJobId(jobId)).toBeNull();
   });
 
   it("rejects a queued job and does not create a Pose", async () => {
