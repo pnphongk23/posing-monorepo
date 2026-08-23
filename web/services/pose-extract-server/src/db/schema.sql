@@ -29,6 +29,9 @@ CREATE INDEX IF NOT EXISTS idx_api_keys_status ON api_keys(status);
 CREATE INDEX IF NOT EXISTS idx_request_logs_key_id ON request_logs(key_id);
 CREATE INDEX IF NOT EXISTS idx_request_logs_timestamp ON request_logs(timestamp);
 
+-- Deprecated compatibility source only. Runtime code never reads or writes
+-- this table. It remains so existing installations can be migrated without a
+-- destructive reset or data loss.
 CREATE TABLE IF NOT EXISTS community_poses (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
@@ -45,6 +48,110 @@ CREATE TABLE IF NOT EXISTS community_poses (
 
 CREATE INDEX IF NOT EXISTS idx_community_poses_status ON community_poses(status);
 CREATE INDEX IF NOT EXISTS idx_community_poses_difficulty ON community_poses(difficulty);
+
+CREATE TABLE IF NOT EXISTS poses (
+  pose_id TEXT PRIMARY KEY,
+  owner_account_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  tags TEXT NOT NULL DEFAULT '[]',
+  difficulty TEXT CHECK(difficulty IN ('beginner', 'intermediate', 'advanced')),
+  description TEXT,
+  body_parts TEXT NOT NULL DEFAULT '[]',
+  status TEXT NOT NULL DEFAULT 'local' CHECK(status IN ('local', 'published')),
+  current_job_id TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  download_count INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_poses_owner_account_id ON poses(owner_account_id);
+CREATE INDEX IF NOT EXISTS idx_poses_status ON poses(status);
+CREATE INDEX IF NOT EXISTS idx_poses_difficulty ON poses(difficulty);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_poses_current_job_id ON poses(current_job_id) WHERE current_job_id IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS media_assets (
+  media_id TEXT PRIMARY KEY,
+  pose_id TEXT NOT NULL REFERENCES poses(pose_id) ON DELETE CASCADE,
+  role TEXT NOT NULL CHECK(role IN ('original', 'skeleton', 'thumbnail')),
+  locator TEXT NOT NULL,
+  mime_type TEXT NOT NULL DEFAULT 'image/png',
+  readiness TEXT NOT NULL DEFAULT 'ready' CHECK(readiness IN ('pending', 'ready', 'failed')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(pose_id, role)
+);
+
+CREATE INDEX IF NOT EXISTS idx_media_assets_pose_id ON media_assets(pose_id);
+
+-- One-way, idempotent compatibility migration. Legacy rows did not carry an
+-- owner or distinct original/skeleton media, so the nil UUID denotes the
+-- isolated legacy owner and the old image is materialized into both roles.
+INSERT INTO poses (
+  pose_id,
+  owner_account_id,
+  name,
+  tags,
+  difficulty,
+  description,
+  body_parts,
+  status,
+  created_at,
+  updated_at,
+  download_count
+)
+SELECT
+  id,
+  '00000000-0000-0000-0000-000000000000',
+  name,
+  tags,
+  difficulty,
+  description,
+  body_parts,
+  CASE WHEN status = 'published' THEN 'published' ELSE 'local' END,
+  uploaded_at,
+  uploaded_at,
+  download_count
+FROM community_poses
+ON CONFLICT (pose_id) DO NOTHING;
+
+INSERT INTO media_assets (media_id, pose_id, role, locator)
+SELECT
+  SUBSTRING(MD5(id || ':original'), 1, 8) || '-' ||
+    SUBSTRING(MD5(id || ':original'), 9, 4) || '-' ||
+    SUBSTRING(MD5(id || ':original'), 13, 4) || '-' ||
+    SUBSTRING(MD5(id || ':original'), 17, 4) || '-' ||
+    SUBSTRING(MD5(id || ':original'), 21, 12),
+  id,
+  'original',
+  image_path
+FROM community_poses
+ON CONFLICT (pose_id, role) DO NOTHING;
+
+INSERT INTO media_assets (media_id, pose_id, role, locator)
+SELECT
+  SUBSTRING(MD5(id || ':skeleton'), 1, 8) || '-' ||
+    SUBSTRING(MD5(id || ':skeleton'), 9, 4) || '-' ||
+    SUBSTRING(MD5(id || ':skeleton'), 13, 4) || '-' ||
+    SUBSTRING(MD5(id || ':skeleton'), 17, 4) || '-' ||
+    SUBSTRING(MD5(id || ':skeleton'), 21, 12),
+  id,
+  'skeleton',
+  image_path
+FROM community_poses
+ON CONFLICT (pose_id, role) DO NOTHING;
+
+INSERT INTO media_assets (media_id, pose_id, role, locator)
+SELECT
+  SUBSTRING(MD5(id || ':thumbnail'), 1, 8) || '-' ||
+    SUBSTRING(MD5(id || ':thumbnail'), 9, 4) || '-' ||
+    SUBSTRING(MD5(id || ':thumbnail'), 13, 4) || '-' ||
+    SUBSTRING(MD5(id || ':thumbnail'), 17, 4) || '-' ||
+    SUBSTRING(MD5(id || ':thumbnail'), 21, 12),
+  id,
+  'thumbnail',
+  COALESCE(thumbnail_path, image_path)
+FROM community_poses
+ON CONFLICT (pose_id, role) DO NOTHING;
 
 CREATE TABLE IF NOT EXISTS extraction_jobs (
   id TEXT PRIMARY KEY,

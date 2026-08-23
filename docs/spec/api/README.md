@@ -4,6 +4,15 @@ Nguồn sự thật cho API contract product. Paths, schemas, status codes nằm
 
 Tài liệu mô tả **hợp đồng mà Features yêu cầu**. Tên path/field tiếng Anh; mô tả tiếng Việt. URL thật `/api/...`, không có `/v1/`.
 
+Domain có **một entity trung tâm duy nhất**: `Pose` (mô hình hợp nhất của `PoseGuide`/`CommunityPose`/`PersonalPose`). Catalogue công khai là DTO/view đọc kết quả trên các `Pose` `published`.
+
+**Creation timing & status codes:** `Pose` được tạo **chỉ sau khi extraction
+`succeeded`** — `202 Accepted` là job start (`jobId`, chưa có Pose); `201 Created`
+là Pose creation/completion (pose được tạo với `poseId` stable và ba media role
+`original`, `skeleton`, `thumbnail` materialize ngay). `ownerAccountId` bắt buộc
+trên mọi Pose; response dùng camelCase `poseId`, `ownerAccountId`, `originalUrl`,
+`skeletonUrl`, `thumbnailUrl`. `CommunityPose` là published-only DTO.
+
 ## Cấu trúc
 
 | Tệp/Thư mục | Nội dung |

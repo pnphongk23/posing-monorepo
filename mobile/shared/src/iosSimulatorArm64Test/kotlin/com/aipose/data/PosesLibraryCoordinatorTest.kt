@@ -46,7 +46,7 @@ class PosesLibraryCoordinatorTest {
     private fun clearDatabase(database: AiPoseDatabase) {
         val queries = database.poseQueries
         queries.getAllPoses().executeAsList().forEach {
-            queries.deletePose(it.id)
+            queries.deletePose(it.poseId)
         }
     }
 
@@ -97,8 +97,8 @@ class PosesLibraryCoordinatorTest {
 
             val state = coordinator.communityState.value
             assertEquals(2, state.items.size)
-            assertEquals("p1", state.items[0].id)
-            assertEquals("p2", state.items[1].id)
+            assertEquals("p1", state.items[0].poseId)
+            assertEquals("p2", state.items[1].poseId)
             assertEquals(1, state.page)
             assertEquals(2, state.total)
             assertEquals(false, state.hasMore)
@@ -174,9 +174,9 @@ class PosesLibraryCoordinatorTest {
 
             val state = coordinator.communityState.value
             assertEquals(3, state.items.size)
-            assertEquals("p1", state.items[0].id)
-            assertEquals("p2", state.items[1].id)
-            assertEquals("p3", state.items[2].id)
+            assertEquals("p1", state.items[0].poseId)
+            assertEquals("p2", state.items[1].poseId)
+            assertEquals("p3", state.items[2].poseId)
             assertEquals(2, state.page)
             assertEquals(4, state.total)
             assertEquals(false, state.hasMore) // 2 * 2 = 4 (limit * page = total)
@@ -294,7 +294,7 @@ class PosesLibraryCoordinatorTest {
 
             coordinator.loadCommunityInitial()
             awaitCommunitySettled(coordinator)
-            assertEquals("p_fresh", coordinator.communityState.value.items[0].id)
+            assertEquals("p_fresh", coordinator.communityState.value.items[0].poseId)
             assertTrue(coordinator.communityState.value.hasMore)
 
             coordinator.loadMoreCommunity()
@@ -312,7 +312,7 @@ class PosesLibraryCoordinatorTest {
 
             val finalState = coordinator.communityState.value
             assertEquals(1, finalState.items.size)
-            assertEquals("p_fresh", finalState.items[0].id)
+            assertEquals("p_fresh", finalState.items[0].poseId)
         } finally {
             client.close()
             driver.close()
@@ -353,7 +353,7 @@ class PosesLibraryCoordinatorTest {
 
             val state = coordinator.communityState.value
             assertEquals(1, state.items.size)
-            assertEquals("p1", state.items[0].id)
+            assertEquals("p1", state.items[0].poseId)
         } finally {
             client.close()
             driver.close()
@@ -519,14 +519,14 @@ class PosesLibraryCoordinatorTest {
             coordinator.loadCommunityInitial()
             awaitCommunitySettled(coordinator)
 
-            assertEquals("p1", coordinator.communityState.value.items[0].id)
+            assertEquals("p1", coordinator.communityState.value.items[0].poseId)
 
             coordinator.refreshCommunity()
             awaitCommunitySettled(coordinator)
 
             val state = coordinator.communityState.value
             assertEquals(1, state.items.size)
-            assertEquals("p2", state.items[0].id)
+            assertEquals("p2", state.items[0].poseId)
         } finally {
             client.close()
             driver.close()
@@ -538,8 +538,8 @@ class PosesLibraryCoordinatorTest {
         val driver = DatabaseDriverFactory().createDriver()
         val fakeStorage = FakePoseStorage()
         fakeStorage.existsFunc = { true }
-        var deletedPath: String? = null
-        fakeStorage.deleteFunc = { deletedPath = it }
+        val deletedPaths = mutableListOf<String>()
+        fakeStorage.deleteFunc = { deletedPaths += it }
 
         try {
             val database = AiPoseDatabase(driver)
@@ -547,16 +547,23 @@ class PosesLibraryCoordinatorTest {
             val queries = database.poseQueries
             val repository = PoseRepository(database, null, fakeStorage)
 
-            repository.insertPose("Pose A", "/documents/pose_a.jpg", isMine = true)
+            repository.createPoseAfterExtraction("Pose A", "/documents/pose_a-original.jpg", "/documents/pose_a-skeleton.jpg", "/documents/pose_a-thumbnail.jpg")
             val posesBefore = queries.getAllPoses().executeAsList()
             assertEquals(1, posesBefore.size)
-            val targetId = posesBefore[0].id
+            val targetId = posesBefore[0].poseId
 
             repository.deletePose(targetId)
 
             val posesAfter = queries.getAllPoses().executeAsList()
             assertEquals(0, posesAfter.size)
-            assertEquals("/documents/pose_a.jpg", deletedPath)
+            assertEquals(
+                setOf(
+                    "/documents/pose_a-original.jpg",
+                    "/documents/pose_a-skeleton.jpg",
+                    "/documents/pose_a-thumbnail.jpg",
+                ),
+                deletedPaths.toSet(),
+            )
         } finally {
             driver.close()
         }
@@ -571,7 +578,7 @@ class PosesLibraryCoordinatorTest {
             val repository = PoseRepository(database, null, FakePoseStorage())
 
             assertFailsWith<NoSuchElementException> {
-                repository.deletePose(9999L)
+                repository.deletePose("99999999-9999-4999-8999-999999999999")
             }
         } finally {
             driver.close()
@@ -592,8 +599,8 @@ class PosesLibraryCoordinatorTest {
             val queries = database.poseQueries
             val repository = PoseRepository(database, null, fakeStorage)
 
-            repository.insertPose("Pose B", "/documents/pose_b.jpg", isMine = true)
-            val targetId = queries.getAllPoses().executeAsOne().id
+            repository.createPoseAfterExtraction("Pose B", "/documents/pose_b-original.jpg", "/documents/pose_b-skeleton.jpg", "/documents/pose_b-thumbnail.jpg")
+            val targetId = queries.getAllPoses().executeAsOne().poseId
 
             repository.deletePose(targetId)
 
@@ -620,8 +627,8 @@ class PosesLibraryCoordinatorTest {
             val queries = database.poseQueries
             val repository = PoseRepository(database, null, fakeStorage)
 
-            repository.insertPose("Pose C", "data:image/png;base64,123", isMine = true)
-            val targetId = queries.getAllPoses().executeAsOne().id
+            repository.createPoseAfterExtraction("Pose C", "data:image/png;base64,123-original", "data:image/png;base64,123", "data:image/png;base64,123-thumbnail")
+            val targetId = queries.getAllPoses().executeAsOne().poseId
 
             repository.deletePose(targetId)
 
@@ -646,8 +653,8 @@ class PosesLibraryCoordinatorTest {
             val queries = database.poseQueries
             val repository = PoseRepository(database, null, fakeStorage)
 
-            repository.insertPose("Pose D", "/documents/pose_d.jpg", isMine = true)
-            val targetId = queries.getAllPoses().executeAsOne().id
+            repository.createPoseAfterExtraction("Pose D", "/documents/pose_d-original.jpg", "/documents/pose_d-skeleton.jpg", "/documents/pose_d-thumbnail.jpg")
+            val targetId = queries.getAllPoses().executeAsOne().poseId
 
             assertFailsWith<RuntimeException> {
                 repository.deletePose(targetId)
@@ -679,8 +686,8 @@ class PosesLibraryCoordinatorTest {
             val queries = database.poseQueries
             val repository = PoseRepository(database, null, fakeStorage)
 
-            repository.insertPose("Pose E", "/documents/pose_e.jpg", isMine = true)
-            val targetId = queries.getAllPoses().executeAsOne().id
+            repository.createPoseAfterExtraction("Pose E", "/documents/pose_e-original.jpg", "/documents/pose_e-skeleton.jpg", "/documents/pose_e-thumbnail.jpg")
+            val targetId = queries.getAllPoses().executeAsOne().poseId
 
             assertFailsWith<IllegalStateException> {
                 repository.deletePose(targetId)

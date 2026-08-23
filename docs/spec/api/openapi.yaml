@@ -1,7 +1,7 @@
 openapi: "3.1.0"
 info:
   title: AI Pose — Pose Extract Server API
-  version: "0.3.0"
+  version: "0.5.0"
   description: |
     Hợp đồng API product theo FEAT-001–008.
     Next.js proxy và legacy POST /api/extract: conventions.md.
@@ -108,22 +108,23 @@ components:
 
     CommunityPose:
       type: object
-      description: Public projection of a published PoseGuide (same id)
-      required: [id, name, imagePath, tags, bodyParts, status, uploadedAt, downloadCount]
+      description: Published-only public DTO/view of a Pose (status=published, same poseId). Not a separate entity; never represents a local Pose.
+      required: [poseId, name, skeletonUrl, thumbnailUrl, tags, bodyParts, status, uploadedAt, downloadCount]
       properties:
-        id:
+        poseId:
           type: string
           format: uuid
-          description: Same as PoseGuide.id
+          description: Same as Pose.poseId (DTO uses poseId, not id)
         name:
           type: string
-        imagePath:
+        skeletonUrl:
           type: string
           format: uri
-          description: "Full URL — use directly as <img src>"
-        thumbnailPath:
-          type: [string, "null"]
+          description: "Skeleton (extraction result) URL — use directly as <img src>"
+        thumbnailUrl:
+          type: string
           format: uri
+          description: "Thumbnail (preview) URL — non-nullable: the three media roles are materialized at Pose creation"
         tags:
           type: array
           items:
@@ -139,7 +140,8 @@ components:
             type: string
         status:
           type: string
-          enum: [draft, published]
+          enum: [published]
+          description: Always published on the public catalogue
         uploadedAt:
           type: string
           format: date-time
@@ -150,17 +152,17 @@ components:
 
     MediaAsset:
       type: object
-      required: [id, guideId, role, locator, mimeType, readiness, createdAt, updatedAt]
+      required: [mediaId, poseId, role, locator, mimeType, readiness, createdAt, updatedAt]
       properties:
-        id:
+        mediaId:
           type: string
           format: uuid
-        guideId:
+        poseId:
           type: string
           format: uuid
         role:
           type: string
-          enum: [source, render, thumbnail]
+          enum: [original, skeleton, thumbnail]
         locator:
           type: string
           format: uri
@@ -177,16 +179,23 @@ components:
           type: string
           format: date-time
 
-    PoseGuide:
+    Pose:
       type: object
-      required: [id, ownerAccountId, name, tags, bodyParts, status, sourceAssetId, createdAt, updatedAt]
+      description: >-
+        Canonical single Pose entity (PoseResponse for local/admin endpoints).
+        poseId is stable from creation through publication. The Pose is created
+        only after extraction succeeds; the three media roles (original, skeleton,
+        thumbnail) are materialized immediately at creation and exposed as
+        camelCase URLs derived from MediaAsset locators.
+      required: [poseId, ownerAccountId, name, tags, bodyParts, status, originalUrl, skeletonUrl, thumbnailUrl, createdAt, updatedAt]
       properties:
-        id:
+        poseId:
           type: string
           format: uuid
         ownerAccountId:
           type: string
           format: uuid
+          description: REQUIRED on every Pose, including Admin-created ones
         name:
           type: string
         description:
@@ -204,19 +213,23 @@ components:
             type: string
         status:
           type: string
-          enum: [draft, published]
-        sourceAssetId:
+          enum: [local, published]
+        originalUrl:
           type: string
-          format: uuid
-        renderAssetId:
-          type: [string, "null"]
-          format: uuid
-        thumbnailAssetId:
-          type: [string, "null"]
-          format: uuid
+          format: uri
+          description: Locator of the MediaAsset with role original
+        skeletonUrl:
+          type: string
+          format: uri
+          description: Locator of the MediaAsset with role skeleton (extraction result)
+        thumbnailUrl:
+          type: string
+          format: uri
+          description: Locator of the MediaAsset with role thumbnail
         currentJobId:
           type: [string, "null"]
           format: uuid
+          description: ExtractionJob that produced the current skeleton (tracked by jobId before the Pose existed)
         createdAt:
           type: string
           format: date-time
@@ -241,22 +254,17 @@ components:
           type: string
           format: date-time
 
-    GuideAccepted:
+    PoseCreated:
       type: object
+      description: "201 Created response after extraction succeeded: the Pose is created with its stable poseId and the three media roles (original, skeleton, thumbnail) materialized."
       required: [data]
       properties:
         data:
           type: object
-          required: [guide, jobId, status]
+          required: [pose]
           properties:
-            guide:
-              $ref: "#/components/schemas/PoseGuide"
-            jobId:
-              type: string
-              format: uuid
-            status:
-              type: string
-              enum: [queued]
+            pose:
+              $ref: "#/components/schemas/Pose"
 
     ApiKeyPublic:
       type: object
@@ -797,7 +805,7 @@ paths:
   /api/admin/community/poses:
     get:
       operationId: listAdminCommunityPoses
-      summary: List all community poses (draft + published) sorted by uploadedAt DESC
+      summary: List all community poses (local + published) sorted by uploadedAt DESC
       tags: [Admin Community]
       security:
         - AdminBearer: []
@@ -817,7 +825,7 @@ paths:
             default: 50
       responses:
         "200":
-          description: Paginated list including draft and published poses
+          description: Paginated list including local and published poses (canonical PoseResponse)
           content:
             application/json:
               schema:
@@ -827,7 +835,7 @@ paths:
                   data:
                     type: array
                     items:
-                      $ref: "#/components/schemas/CommunityPose"
+                      $ref: "#/components/schemas/Pose"
                   pagination:
                     $ref: "#/components/schemas/Pagination"
         "401":
@@ -850,61 +858,57 @@ paths:
                 $ref: "#/components/schemas/ErrorEnvelope"
     post:
       operationId: createAdminCommunityPose
-      summary: Create draft PoseGuide and enqueue extraction (same contract as POST /api/guides)
+      summary: Create a local Pose after a succeeded extraction job (post-extraction, 201)
+      description: >-
+        Two-phase contract per the canonical domain model: the image was submitted
+        earlier via POST /api/extract-pose (202 + jobId); once that job is 'succeeded'
+        this call creates the Pose (stable poseId, status=local) with the three media
+        roles (original, skeleton, thumbnail) materialized. Same contract as POST /api/guides.
       tags: [Admin Community]
       security:
         - AdminBearer: []
       requestBody:
         required: true
         content:
-          multipart/form-data:
+          application/json:
             schema:
               type: object
-              required: [image, name, bodyParts]
+              required: [jobId, name, bodyParts, ownerAccountId]
               properties:
-                image:
+                jobId:
                   type: string
-                  format: binary
-                  description: PNG, JPEG, or WEBP; max 10 MB
+                  format: uuid
+                  description: jobId of a 'succeeded' ExtractionJob (correlation key; no Pose existed before it)
+                ownerAccountId:
+                  type: string
+                  format: uuid
+                  description: REQUIRED for admin-created poses — owning Account of the Pose (authenticated actor is the Admin operator, owner differs)
                 name:
                   type: string
                   minLength: 1
                 bodyParts:
-                  type: string
-                  description: JSON array string or comma-separated; at least 1 item
+                  type: array
+                  items:
+                    type: string
+                  minItems: 1
                 tags:
-                  type: string
-                  description: JSON array string or comma-separated; optional
+                  type: array
+                  items:
+                    type: string
                 difficulty:
-                  type: string
-                  enum: [beginner, intermediate, advanced]
-                  nullable: true
+                  type: [string, "null"]
+                  enum: [beginner, intermediate, advanced, null]
                 description:
-                  type: string
-                  nullable: true
+                  type: [string, "null"]
       responses:
-        "202":
-          description: Queued acceptance only — not ready, not public. Publish is POST /api/guides/{id}/publish.
+        "201":
+          description: Pose created (post-extraction) with three media roles materialized; not yet public.
           content:
             application/json:
               schema:
-                type: object
-                required: [data]
-                properties:
-                  data:
-                    type: object
-                    required: [pose, jobId, status]
-                    properties:
-                      pose:
-                        $ref: "#/components/schemas/CommunityPose"
-                      jobId:
-                        type: string
-                        format: uuid
-                      status:
-                        type: string
-                        example: queued
+                $ref: "#/components/schemas/PoseCreated"
         "400":
-          description: Invalid image (INVALID_IMAGE) or invalid metadata (BAD_REQUEST)
+          description: Invalid jobId (JOB_NOT_SUCCEEDED / BAD_REQUEST) or invalid metadata
           content:
             application/json:
               schema:
@@ -922,14 +926,11 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
         "500":
-          description: QUEUE_WRITE_FAILED or internal server error
+          description: Internal server error
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
-              examples:
-                queue_failed:
-                  value: { error: { code: QUEUE_WRITE_FAILED, message: "Failed to enqueue extraction job" } }
 
   /api/admin/community/poses/upload-url:
     post:
@@ -1077,7 +1078,7 @@ paths:
   /api/guides:
     get:
       operationId: listGuides
-      summary: List PoseGuides owned by the caller (My Poses)
+      summary: List Poses owned by the caller (My Poses)
       tags: [Guides]
       security:
         - AccountSession: []
@@ -1098,7 +1099,7 @@ paths:
             default: 20
       responses:
         "200":
-          description: Paginated guides
+          description: Paginated poses
           content:
             application/json:
               schema:
@@ -1108,7 +1109,7 @@ paths:
                   data:
                     type: array
                     items:
-                      $ref: "#/components/schemas/PoseGuide"
+                      $ref: "#/components/schemas/Pose"
                   pagination:
                     $ref: "#/components/schemas/Pagination"
         "401":
@@ -1119,7 +1120,12 @@ paths:
                 $ref: "#/components/schemas/ErrorEnvelope"
     post:
       operationId: createGuide
-      summary: Create draft PoseGuide and enqueue extraction
+      summary: Create a local Pose after a succeeded extraction job (post-extraction, 201)
+      description: >-
+        Two-phase contract per the canonical domain model: first submit the image
+        via POST /api/extract-pose (202 + jobId) and poll until 'succeeded'; then
+        create the Pose here (stable poseId, status=local) with the three media
+        roles (original, skeleton, thumbnail) materialized.
       tags: [Guides]
       security:
         - AccountSession: []
@@ -1127,47 +1133,68 @@ paths:
       requestBody:
         required: true
         content:
-          multipart/form-data:
+          application/json:
             schema:
               type: object
-              required: [image, name, bodyParts]
+              required: [jobId, name, bodyParts]
               properties:
-                image:
+                jobId:
                   type: string
-                  format: binary
+                  format: uuid
+                  description: jobId of a 'succeeded' ExtractionJob (correlation key; no Pose existed before it)
+                ownerAccountId:
+                  type: string
+                  format: uuid
+                  description: >-
+                    Required when authenticated as Admin (authenticated actor differs from owner);
+                    for AccountSession the owner is the session account and this field is omitted.
                 name:
                   type: string
                   minLength: 1
                 bodyParts:
-                  type: string
+                  type: array
+                  items:
+                    type: string
+                  minItems: 1
                 tags:
-                  type: string
+                  type: array
+                  items:
+                    type: string
                 difficulty:
-                  type: string
-                  enum: [beginner, intermediate, advanced]
+                  type: [string, "null"]
+                  enum: [beginner, intermediate, advanced, null]
                 description:
-                  type: string
+                  type: [string, "null"]
       responses:
-        "202":
-          description: Queued — not ready, not public
+        "201":
+          description: Pose created (post-extraction) with three media roles materialized; not yet public
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/GuideAccepted"
+                $ref: "#/components/schemas/PoseCreated"
         "400":
-          description: INVALID_IMAGE or BAD_REQUEST
+          description: JOB_NOT_SUCCEEDED or BAD_REQUEST
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
+              examples:
+                job_not_succeeded:
+                  value: { error: { code: JOB_NOT_SUCCEEDED, message: "Extraction job is not succeeded" } }
         "401":
           description: Unauthorized
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: Job not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "500":
-          description: QUEUE_WRITE_FAILED
+          description: Internal server error
           content:
             application/json:
               schema:
@@ -1176,7 +1203,7 @@ paths:
   /api/guides/{id}:
     get:
       operationId: getGuide
-      summary: Get one PoseGuide (owner or admin)
+      summary: Get one Pose (owner or admin)
       tags: [Guides]
       security:
         - AccountSession: []
@@ -1190,7 +1217,7 @@ paths:
             format: uuid
       responses:
         "200":
-          description: Guide
+          description: Pose
           content:
             application/json:
               schema:
@@ -1198,7 +1225,7 @@ paths:
                 required: [data]
                 properties:
                   data:
-                    $ref: "#/components/schemas/PoseGuide"
+                    $ref: "#/components/schemas/Pose"
         "401":
           description: Unauthorized
           content:
@@ -1219,7 +1246,7 @@ paths:
                 $ref: "#/components/schemas/ErrorEnvelope"
     patch:
       operationId: updateGuide
-      summary: Update guide metadata (not visibility)
+      summary: Update Pose metadata (not visibility)
       tags: [Guides]
       security:
         - AccountSession: []
@@ -1255,7 +1282,7 @@ paths:
                     type: string
       responses:
         "200":
-          description: Updated guide
+          description: Updated pose
           content:
             application/json:
               schema:
@@ -1263,7 +1290,7 @@ paths:
                 required: [data]
                 properties:
                   data:
-                    $ref: "#/components/schemas/PoseGuide"
+                    $ref: "#/components/schemas/Pose"
         "401":
           description: Unauthorized
           content:
@@ -1335,11 +1362,11 @@ paths:
             format: uuid
       responses:
         "202":
-          description: Requeued
+          description: Requeued as a new job — job start, not Pose creation
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/GuideAccepted"
+                $ref: "#/components/schemas/ExtractionJobAccepted"
         "401":
           description: Unauthorized
           content:
@@ -1376,11 +1403,11 @@ paths:
             format: uuid
       responses:
         "202":
-          description: New job queued
+          description: New job queued — job start, not Pose creation; Pose is unchanged until the new job succeeds and a re-extract finalize is performed
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/GuideAccepted"
+                $ref: "#/components/schemas/ExtractionJobAccepted"
         "401":
           description: Unauthorized
           content:
@@ -1397,7 +1424,7 @@ paths:
   /api/guides/{id}/revert:
     post:
       operationId: revertGuide
-      summary: Restore previous ready render; does not publish
+      summary: Restore previous ready skeleton; does not publish
       tags: [Guides]
       security:
         - AccountSession: []
@@ -1419,7 +1446,7 @@ paths:
                 required: [data]
                 properties:
                   data:
-                    $ref: "#/components/schemas/PoseGuide"
+                    $ref: "#/components/schemas/Pose"
         "401":
           description: Unauthorized
           content:
@@ -1433,7 +1460,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
         "409":
-          description: No previous ready render
+          description: No previous ready skeleton
           content:
             application/json:
               schema:
@@ -1442,7 +1469,7 @@ paths:
   /api/guides/{id}/publish:
     post:
       operationId: publishGuide
-      summary: Make a ready PoseGuide publicly discoverable
+      summary: Make a ready Pose publicly discoverable
       tags: [Publish]
       security:
         - AccountSession: []
@@ -1464,7 +1491,7 @@ paths:
                 required: [data]
                 properties:
                   data:
-                    $ref: "#/components/schemas/PoseGuide"
+                    $ref: "#/components/schemas/Pose"
         "401":
           description: Unauthorized
           content:
@@ -1491,12 +1518,12 @@ paths:
                 $ref: "#/components/schemas/ErrorEnvelope"
               examples:
                 not_ready:
-                  value: { error: { code: ASSET_NOT_READY, message: "Render asset is not ready" } }
+                  value: { error: { code: ASSET_NOT_READY, message: "Skeleton asset is not ready" } }
 
   /api/guides/{id}/unpublish:
     post:
       operationId: unpublishGuide
-      summary: Remove a PoseGuide from public discovery
+      summary: Remove a Pose from public discovery
       tags: [Publish]
       security:
         - AccountSession: []
@@ -1510,7 +1537,7 @@ paths:
             format: uuid
       responses:
         "200":
-          description: Now draft
+          description: Now local
           content:
             application/json:
               schema:
@@ -1518,7 +1545,7 @@ paths:
                 required: [data]
                 properties:
                   data:
-                    $ref: "#/components/schemas/PoseGuide"
+                    $ref: "#/components/schemas/Pose"
         "401":
           description: Unauthorized
           content:
@@ -1561,7 +1588,7 @@ paths:
             default: 20
       responses:
         "200":
-          description: Paginated published poses still valid in the saved collection
+          description: Paginated CommunityPose DTO items — read-only view projection of the published saved Poses (status=published, same poseId); not a separate entity
           content:
             application/json:
               schema:
@@ -1649,7 +1676,7 @@ tags:
   - name: Community
     description: Public catalogue browse and title search (FEAT-003)
   - name: Guides
-    description: PoseGuide lifecycle (FEAT-005)
+    description: Pose lifecycle (FEAT-005)
   - name: Publish
     description: Public visibility (FEAT-006)
   - name: Saved
@@ -1657,7 +1684,7 @@ tags:
   - name: Admin Keys
     description: Provider key operations (FEAT-007)
   - name: Admin Community
-    description: Admin intake onto the same PoseGuide model (FEAT-007)
+    description: Admin intake onto the same Pose model (FEAT-007)
   - name: Admin Jobs
     description: Job status polling (FEAT-005, FEAT-007)
 

@@ -1,7 +1,7 @@
 package com.aipose.data
 
 /**
- * Storage boundary for the local assets of personal poses.
+ * Storage boundary for the local assets of local poses.
  *
  * Ownership contract (FEAT-003 FR-006 / BR-001): a path is *owned* only when it
  * is an app-local file reference. Remote URLs and embedded data URIs are never

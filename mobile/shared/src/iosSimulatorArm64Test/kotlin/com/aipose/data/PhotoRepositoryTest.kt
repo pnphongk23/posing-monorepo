@@ -2,6 +2,7 @@ package com.aipose.data
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 class PhotoRepositoryTest {
     @Test
@@ -11,10 +12,13 @@ class PhotoRepositoryTest {
             val database = AiPoseDatabase(driver)
             val repository = PhotoRepository(database)
 
-            repository.insertCapturedPhoto("/tmp/first.jpg")
-            repository.insertCapturedPhoto("/tmp/second.jpg")
+            val firstId = repository.insertCapturedPhoto("/tmp/first.jpg")
+            val secondId = repository.insertCapturedPhoto("/tmp/second.jpg")
 
+            assertTrue(secondId > firstId)
             assertEquals("/tmp/second.jpg", repository.getLatestPhotoPath())
+            assertEquals("/tmp/first.jpg", database.photoQueries.getPhotoById(firstId).executeAsOne().imagePath)
+            assertEquals("/tmp/second.jpg", database.photoQueries.getPhotoById(secondId).executeAsOne().imagePath)
         } finally {
             driver.close()
         }

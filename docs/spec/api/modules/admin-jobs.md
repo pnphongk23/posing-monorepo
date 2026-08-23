@@ -12,7 +12,10 @@ Bearer admin. Không gắn admin rate-limit — Admin Web phải poll được.
 
 **Response:** `200`. `result` chỉ khi `status = succeeded`; `error` chỉ khi `status = failed`.
 
-Khi `succeeded`, Admin/owner vẫn phải có render [`MediaAsset`](../../data/entities/media-asset.md) `ready` trước khi publish. Job `succeeded` ≠ catalogue public.
+Khi `succeeded`, Pose vẫn chưa tồn tại/quy đổi: phải **tạo [`Pose`](../../data/entities/pose.md)
+sau đó** (qua `POST /api/guides` / admin intake, `201`) và có skeleton
+[`MediaAsset`](../../data/entities/media-asset.md) `ready` trước khi publish.
+Job `succeeded` ≠ catalogue public.
 
 **Business Rules:**
 
@@ -21,5 +24,6 @@ Khi `succeeded`, Admin/owner vẫn phải có render [`MediaAsset`](../../data/e
 | BR-JOB-004 | `result` và `error` mutually exclusive theo status. |
 | BR-JOB-001 | Phân biệt `queued`, `processing`, `succeeded`, `failed`. |
 | BR-ADMJOB-001 | UI không đổi `202` submission thành complete/public khi poll. |
+| BR-ADMJOB-002 | `succeeded` phải dẫn tới bước tạo `Pose` (`201`) và skeleton `ready` trước publish; poll job không tạo pose. |
 
 **Errors:** `401 UNAUTHORIZED`, `404 JOB_NOT_FOUND`, `500`.

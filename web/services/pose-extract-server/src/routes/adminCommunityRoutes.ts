@@ -1,108 +1,71 @@
 import { Router } from "express";
-import multer from "multer";
 import { z } from "zod";
 
-import type { CommunityStore } from "../db/communityStore";
+import type { PoseStore } from "../db/communityStore";
 import type { ExtractionJobStore } from "../db/extractionJobStore";
 import { createAdminAuthMiddleware } from "../middleware/adminAuth";
-import { buildPublicUrl } from "../services/r2Storage";
 import type { UploadUrlPayload } from "../services/r2Storage";
 
 const ALLOWED_MIME_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
-const MAX_IMAGE_SIZE_BYTES = 10 * 1024 * 1024;
 
 const uploadUrlBodySchema = z.object({
   fileName: z.string().min(1),
-  mimeType: z.string().min(1),
+  mimeType: z.string().min(1)
 });
 
-const metadataSchema = z.object({
+const createPoseSchema = z.object({
+  jobId: z.string().uuid(),
+  ownerAccountId: z.string().uuid(),
   name: z.string().trim().min(1),
   tags: z.array(z.string()).optional().default([]),
   difficulty: z.enum(["beginner", "intermediate", "advanced"]).nullable().optional(),
   description: z.string().optional().nullable(),
-  bodyParts: z.array(z.string()).optional().default([]),
-  status: z.enum(["draft", "published"]).default("draft"),
+  bodyParts: z.array(z.string()).min(1)
 });
 
-/** All fields optional: undefined fields are left unchanged by CommunityStore.updatePose. */
+/** All fields optional: undefined fields are left unchanged by PoseStore.updatePose. */
 const updateMetadataSchema = z.object({
   name: z.string().trim().min(1).optional(),
   tags: z.array(z.string()).optional(),
   difficulty: z.enum(["beginner", "intermediate", "advanced"]).nullable().optional(),
   description: z.string().optional().nullable(),
-  bodyParts: z.array(z.string()).optional(),
-  status: z.enum(["draft", "published"]).optional(),
+  bodyParts: z.array(z.string()).min(1).optional(),
+  status: z.enum(["local", "published"]).optional()
 });
 
 export interface CreateAdminCommunityRoutesOptions {
   adminSecret: string;
-  communityStore: CommunityStore;
-  r2PublicUrl: string;
+  communityStore: PoseStore;
   createUploadUrl: (input: { fileName: string; mimeType: string }) => Promise<UploadUrlPayload>;
-  objectExists: (fileKey: string) => Promise<boolean>;
-  uploadObject: (input: { fileKey: string; body: Buffer; mimeType: string }) => Promise<void>;
   jobStore: ExtractionJobStore;
 }
 
-function createUploadMiddleware() {
-  return multer({
-    storage: multer.memoryStorage(),
-    limits: { files: 1, fileSize: MAX_IMAGE_SIZE_BYTES },
-    fileFilter(_req, file, callback) {
-      if (!ALLOWED_MIME_TYPES.has(file.mimetype)) {
-        callback(new Error("INVALID_IMAGE"));
-        return;
-      }
-      callback(null, true);
-    },
-  });
-}
-
-function parseStringList(value: unknown): string[] {
-  if (typeof value !== "string" || value.trim().length === 0) {
-    return [];
-  }
-
-  try {
-    const parsed = JSON.parse(value) as unknown;
-    if (Array.isArray(parsed)) {
-      return parsed.map((item) => String(item).trim()).filter(Boolean);
-    }
-  } catch {
-    return value
-      .split(",")
-      .map((item) => item.trim())
-      .filter(Boolean);
-  }
-
-  return [];
+function asDataUrl(mimeType: string, imageBase64: string): string {
+  return `data:${mimeType};base64,${imageBase64}`;
 }
 
 export function createAdminCommunityRoutes(options: CreateAdminCommunityRoutesOptions): Router {
-  const { adminSecret, communityStore, r2PublicUrl, createUploadUrl, objectExists, uploadObject, jobStore } = options;
-
+  const { adminSecret, communityStore, createUploadUrl, jobStore } = options;
   const auth = createAdminAuthMiddleware(adminSecret);
-  const upload = createUploadMiddleware();
   const router = Router();
 
-  // Auth applies to every route on this router (all are admin-only), matching
-  // the adminRoutes.ts pattern. Per-route auth in the handler list would defeat
-  // Express 5 param typing for `req.params`.
   router.use(auth);
 
   router.get("/", async (req, res) => {
     const page = Math.max(1, Number(req.query.page) || 1);
     const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 50));
-    const allStatuses: Array<"draft" | "published"> = ["draft", "published"];
     const listResults = await Promise.all(
-      allStatuses.map((s) => communityStore.listPoses({ status: s, page: 1, limit: 200 }))
+      (["local", "published"] as const).map((status) =>
+        communityStore.listPoses({ status, page: 1, limit: 200 })
+      )
     );
     const results = listResults.flatMap((result) => result.poses);
-    results.sort((a, b) => (a.uploadedAt < b.uploadedAt ? 1 : -1));
+    results.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
     const offset = (page - 1) * limit;
-    const paginated = results.slice(offset, offset + limit);
-    res.json({ data: paginated, pagination: { page, limit, total: results.length } });
+    res.json({
+      data: results.slice(offset, offset + limit),
+      pagination: { page, limit, total: results.length }
+    });
   });
 
   router.get("/:id", async (req, res) => {
@@ -117,7 +80,7 @@ export function createAdminCommunityRoutes(options: CreateAdminCommunityRoutesOp
   router.patch("/:id", async (req, res) => {
     const parsed = updateMetadataSchema.safeParse(req.body);
     if (!parsed.success) {
-      const messages = parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join(", ");
+      const messages = parsed.error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`).join(", ");
       res.status(400).json({ error: { code: "BAD_REQUEST", message: messages } });
       return;
     }
@@ -127,7 +90,6 @@ export function createAdminCommunityRoutes(options: CreateAdminCommunityRoutesOp
       res.status(404).json({ error: { code: "NOT_FOUND", message: "Pose not found" } });
       return;
     }
-
     res.json({ data: updated });
   });
 
@@ -137,94 +99,69 @@ export function createAdminCommunityRoutes(options: CreateAdminCommunityRoutesOp
       res.status(404).json({ error: { code: "NOT_FOUND", message: "Pose not found" } });
       return;
     }
-
     res.status(204).send();
   });
 
   router.post("/upload-url", async (req, res) => {
     const parsed = uploadUrlBodySchema.safeParse(req.body);
     if (!parsed.success) {
-      const messages = parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join(", ");
+      const messages = parsed.error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`).join(", ");
       res.status(400).json({ error: { code: "BAD_REQUEST", message: messages } });
       return;
     }
-
-    const { fileName, mimeType } = parsed.data;
-
-    if (!ALLOWED_MIME_TYPES.has(mimeType)) {
+    if (!ALLOWED_MIME_TYPES.has(parsed.data.mimeType)) {
       res.status(400).json({
         error: {
           code: "BAD_REQUEST",
-          message: `mimeType "${mimeType}" is not allowed. Allowed types: ${[...ALLOWED_MIME_TYPES].join(", ")}`,
-        },
+          message: `mimeType "${parsed.data.mimeType}" is not allowed. Allowed types: ${[...ALLOWED_MIME_TYPES].join(", ")}`
+        }
       });
       return;
     }
-
-    const payload = await createUploadUrl({ fileName, mimeType });
-    res.json({ data: payload });
+    res.json({ data: await createUploadUrl(parsed.data) });
   });
 
-  router.post("/", (req, res, next) => {
-    upload.single("image")(req, res, (error) => {
-      if (!error) {
-        next();
-        return;
-      }
-      if (error instanceof multer.MulterError && error.code === "LIMIT_FILE_SIZE") {
-        res.status(400).json({ error: { code: "INVALID_IMAGE", message: "Image exceeds 10MB limit" } });
-        return;
-      }
-      res.status(400).json({ error: { code: "INVALID_IMAGE", message: "Only PNG/JPEG/WEBP images are supported" } });
-    });
-  }, async (req, res) => {
-    if (!req.file) {
-      res.status(400).json({ error: { code: "INVALID_IMAGE", message: "Image field is required" } });
-      return;
-    }
-
-    const parsed = metadataSchema.safeParse({
-      name: req.body?.name,
-      tags: parseStringList(req.body?.tags),
-      difficulty: req.body?.difficulty || null,
-      description: req.body?.description || null,
-      bodyParts: parseStringList(req.body?.bodyParts),
-      status: req.body?.status || "draft",
-    });
-
+  /** Materializes a canonical local Pose only after the referenced extraction succeeded. */
+  router.post("/", async (req, res) => {
+    const parsed = createPoseSchema.safeParse(req.body);
     if (!parsed.success) {
-      const messages = parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join(", ");
+      const messages = parsed.error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`).join(", ");
       res.status(400).json({ error: { code: "BAD_REQUEST", message: messages } });
       return;
     }
 
-    try {
-      const { name, tags, difficulty, description, bodyParts, status } = parsed.data;
-
-      const fileKey = `community/${Date.now()}-${req.file.originalname.replace(/[^a-zA-Z0-9._-]/g, "-")}`;
-      await uploadObject({ fileKey, body: req.file.buffer, mimeType: req.file.mimetype });
-
-      const job = await jobStore.enqueue({
-        sourceImageBase64: req.file.buffer.toString("base64"),
-        sourceMimeType: req.file.mimetype,
-      });
-
-      const imagePath = buildPublicUrl(r2PublicUrl, fileKey);
-      const pose = await communityStore.createPose({
-        name,
-        imagePath,
-        thumbnailPath: null,
-        tags,
-        difficulty: difficulty ?? null,
-        description: description ?? null,
-        bodyParts,
-        status,
-      });
-
-      res.status(202).json({ data: { pose, jobId: job.id, status: job.status } });
-    } catch {
-      res.status(500).json({ error: { code: "QUEUE_WRITE_FAILED", message: "Failed to enqueue extraction job" } });
+    const existing = await communityStore.getPoseByCurrentJobId(parsed.data.jobId);
+    if (existing) {
+      res.status(201).json({ data: { pose: existing } });
+      return;
     }
+
+    const job = await jobStore.getById(parsed.data.jobId);
+    if (!job) {
+      res.status(404).json({ error: { code: "JOB_NOT_FOUND", message: "Extraction job not found" } });
+      return;
+    }
+    if (job.status !== "succeeded" || !job.resultImageBase64 || !job.resultMimeType) {
+      res.status(400).json({ error: { code: "JOB_NOT_SUCCEEDED", message: "Extraction job is not succeeded" } });
+      return;
+    }
+
+    const originalUrl = asDataUrl(job.sourceMimeType, job.sourceImageBase64);
+    const skeletonUrl = asDataUrl(job.resultMimeType, job.resultImageBase64);
+    const pose = await communityStore.createPose({
+      ownerAccountId: parsed.data.ownerAccountId,
+      name: parsed.data.name,
+      originalUrl,
+      skeletonUrl,
+      thumbnailUrl: skeletonUrl,
+      tags: parsed.data.tags,
+      difficulty: parsed.data.difficulty ?? null,
+      description: parsed.data.description ?? null,
+      bodyParts: parsed.data.bodyParts,
+      currentJobId: job.id
+    });
+
+    res.status(201).json({ data: { pose } });
   });
 
   return router;

@@ -2,9 +2,16 @@
 
 Một ảnh nguồn → một ảnh pose dùng lại được. [FEAT-004](../../../harness/features/FEAT-004-extract-reusable-pose-images.md).
 
-Persistence thuộc caller hoặc [`PoseGuide`](../../data/entities/pose-guide.md) ([FEAT-005](../../../harness/features/FEAT-005-manage-a-pose-guide.md)). Route này không publish.
+Persistence thuộc caller hoặc [`Pose`](../../data/entities/pose.md) ([FEAT-005](../../../harness/features/FEAT-005-manage-a-pose-guide.md)). Route này không publish.
+
+Kết quả job (`result`) là ảnh **skeleton** — ảnh pose dùng lại được do AI chiết tách từ ảnh nguồn.
 
 Engine xử lý được chọn toàn cục bởi Admin qua [FEAT-009](../../../harness/features/FEAT-009-configure-extraction-provider.md) và [DEC-001](../../../harness/decisions/DEC-001-extraction-provider-selection-policy.md); caller không chọn provider.
+
+**Creation timing:** `POST /api/extract-pose` chỉ **enqueue job** (`202` + `jobId`)
+— **không tạo `Pose`** tại đây. `Pose` (với `poseId` stable) chỉ được tạo sau khi
+job `succeeded`, qua `POST /api/guides` (owner) hoặc admin intake (`201 Created`)
+— xem [guides.md](guides.md). `jobId` là correlation key trong lúc extraction.
 
 ## Phase 1 contract (async)
 
@@ -65,6 +72,9 @@ Canonical extract enqueue một `ExtractionJob` và trả `202 Accepted`; client
 ```
 
 `result` chỉ có khi `status === "succeeded"`. Trường `error` (object `{ code, message }`) chỉ có khi `status === "failed"`.
+
+Sau khi `succeeded`, client dùng `jobId` này để **tạo `Pose`** (`POST /api/guides`,
+`201`) — `Pose` chưa tồn tại trong lúc extraction.
 
 **Job `error_code` values (provider-neutral):**
 

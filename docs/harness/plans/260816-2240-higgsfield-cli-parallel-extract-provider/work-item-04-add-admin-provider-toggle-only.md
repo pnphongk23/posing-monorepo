@@ -13,11 +13,11 @@ decision_dependencies: []
 
 **Kind:** story
 
-**Feature ownership:** This Work Item implements the **[FEAT-009](../../../features/FEAT-009-configure-extraction-provider.md)**
-admin provider-toggle surface. **[FEAT-007](../../../features/FEAT-007-operate-pose-content-from-admin-web.md)**
+**Feature ownership:** This Work Item implements the **[FEAT-009](../../features/FEAT-009-configure-extraction-provider.md)**
+admin provider-toggle surface. **[FEAT-007](../../features/FEAT-007-operate-pose-content-from-admin-web.md)**
 Admin Web **invokes** FEAT-009 (proxy routes + UI host); FEAT-007 does **not**
 own provider configuration or selection policy (see
-[DEC-001](../../../decisions/DEC-001-extraction-provider-selection-policy.md)).
+[DEC-001](../../decisions/DEC-001-extraction-provider-selection-policy.md)).
 
 ## Tasks
 

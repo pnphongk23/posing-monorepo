@@ -23,7 +23,6 @@ relationships:
     - "[[FEAT-003-browse-and-search-published-poses|FEAT-003]]"
     - "[[FEAT-006-publish-a-pose|FEAT-006]]"
   source_paths:
-    - mobile/shared/src/commonMain/kotlin/com/aipose/data/PoseReferenceKey.kt
     - mobile/shared/src/commonMain/kotlin/com/aipose/data/PreparedPoseReference.kt
     - mobile/composeApp/src/commonMain/kotlin/com/aipose/ui/screens/poses/PoseDetailScreen.kt
     - mobile/composeApp/src/commonMain/kotlin/com/aipose/camera/CameraState.kt
@@ -50,7 +49,7 @@ ownership or management rights.
 
 ### Preconditions
 
-- A published pose detail is available and its render can be prepared; account/session support is not implemented in this repository.
+- A published pose detail is available and its skeleton can be prepared; account/session support is not implemented in this repository.
 
 ### Trigger
 
@@ -59,7 +58,7 @@ The user chooses Save, Unsave, Saved, or Try Pose.
 ### Main flow
 
 1. **Actor:** The user opens published detail. **System:** The app presents the source-qualified pose reference.
-2. **Actor:** The user chooses Try Pose. **System:** The app downloads/verifies the render before handing it to Camera.
+2. **Actor:** The user chooses Try Pose. **System:** The app downloads/verifies the skeleton before handing it to Camera.
 3. **System:** Camera receives `PreparedPoseReference`. **System:** Final persistence/overlay behavior remains a separate unresolved contract.
 
 ### Alternative flows
@@ -69,7 +68,7 @@ The user chooses Save, Unsave, Saved, or Try Pose.
 
 ### Exception flows
 
-- **E1 — Render unavailable.** Source step: 2. Failure: download or image verification fails. Handling: remain on detail and offer retry. Prohibited: opening Camera with an invalid guide.
+- **E1 — Skeleton unavailable.** Source step: 2. Failure: download or image verification fails. Handling: remain on detail and offer retry. Prohibited: opening Camera with an invalid pose.
 - **E2 — Saved/account state unavailable.** Source step: 1. Failure: no implementation can confirm account state. Handling: label Save/Unsave as unresolved. Prohibited: claiming a persisted Saved result.
 
 ### Postconditions
@@ -79,7 +78,7 @@ The user chooses Save, Unsave, Saved, or Try Pose.
 
 ### Current evidence
 
-- **Observed:** Mobile has `PoseReferenceKey.Personal|Community`, community
+- **Observed:** Mobile has `PoseReferenceKey.Personal|Community` (deprecated; replaced by simple `poseId`), community
   detail/download, verified image preparation, `PreparedPoseReference`, and
   navigation handoff state.
 - **Partial:** Camera state contains overlay fields and UI paths, but the
@@ -93,14 +92,14 @@ The user chooses Save, Unsave, Saved, or Try Pose.
 
 | Concern | Canonical reference | Evidence |
 | --- | --- | --- |
-| Entities/contracts | [`PoseReferenceKey`](../../spec/data/entities/pose-reference-key.md), [`PreparedPoseReference`](../../spec/data/entities/prepared-pose-reference.md), [`Account`](../../spec/data/entities/account.md), [`SavedEntry`](../../spec/data/entities/saved-entry.md) | [`PoseReferenceKey.kt`](../../../mobile/shared/src/commonMain/kotlin/com/aipose/data/PoseReferenceKey.kt), [`PreparedPoseReference.kt`](../../../mobile/shared/src/commonMain/kotlin/com/aipose/data/PreparedPoseReference.kt) |
+| Entities/contracts | [`PreparedPoseReference`](../../spec/data/entities/prepared-pose-reference.md), [`Account`](../../spec/data/entities/account.md), [`SavedEntry`](../../spec/data/entities/saved-entry.md) | [`PreparedPoseReference.kt`](../../../mobile/shared/src/commonMain/kotlin/com/aipose/data/PreparedPoseReference.kt) |
 | ERD | [Conceptual overlay](../../spec/data/erd/conceptual.md) | No account/saved schema found |
 | APIs | [Community detail](../../spec/api/modules/community.md); [Saved](../../spec/api/modules/saved.md). Try Pose is local. | [`PoseApiService.kt`](../../../mobile/shared/src/commonMain/kotlin/com/aipose/data/remote/PoseApiService.kt#L140), [conventions](../../spec/api/conventions.md) |
 | Supporting mobile flow | Detail, download/verify, navigation, camera state | [`PoseDetailScreen.kt`](../../../mobile/composeApp/src/commonMain/kotlin/com/aipose/ui/screens/poses/PoseDetailScreen.kt), [`Navigation.kt`](../../../mobile/composeApp/src/commonMain/kotlin/com/aipose/navigation/Navigation.kt), [`CameraState.kt`](../../../mobile/composeApp/src/commonMain/kotlin/com/aipose/camera/CameraState.kt) |
 
 ## Requirements
 
-- **FR-001:** Try Pose preparation verifies the selected render before handoff.
+- **FR-001:** Try Pose preparation verifies the selected skeleton before handoff.
 - **FR-002:** Save/Unsave uses [`SavedEntry`](../../spec/data/entities/saved-entry.md) and [`/api/me/saved`](../../spec/api/modules/saved.md). `PreparedPoseReference` does not persist across relaunch.
 - **BR-001:** Use never grants ownership or publication rights.
 
@@ -112,7 +111,7 @@ The user chooses Save, Unsave, Saved, or Try Pose.
 
 ## Relationships
 
-- Shared references: [PoseReferenceKey](../../spec/data/entities/pose-reference-key.md), [ERD conceptual](../../spec/data/erd/conceptual.md), [Community API](../../spec/api/modules/community.md).
+- Shared references: [PoseReferenceKey](../../spec/data/entities/pose-reference-key.md) (deprecated), [ERD conceptual](../../spec/data/erd/conceptual.md), [Community API](../../spec/api/modules/community.md).
 - Related features: [FEAT-003](FEAT-003-browse-and-search-published-poses.md), [FEAT-006](FEAT-006-publish-a-pose.md).
 ### Supporting evidence
 

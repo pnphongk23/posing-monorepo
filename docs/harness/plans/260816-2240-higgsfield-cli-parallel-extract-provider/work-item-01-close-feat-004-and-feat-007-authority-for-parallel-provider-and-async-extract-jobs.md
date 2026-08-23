@@ -16,7 +16,7 @@ decision_dependencies: []
 
 | Concern | Owner | Notes |
 | --- | --- | --- |
-| Global extraction engine selection (Admin toggle, persistence, policy axes) | **FEAT-009** | Product policy in [DEC-001](../../../decisions/DEC-001-extraction-provider-selection-policy.md) (**approved** 2026-08-17) |
+| Global extraction engine selection (Admin toggle, persistence, policy axes) | **FEAT-009** | Product policy in [DEC-001](../../decisions/DEC-001-extraction-provider-selection-policy.md) (**approved** 2026-08-17) |
 | Dual-engine **processing** + async `ExtractionJob` contract | **FEAT-004** | Uses the engine configured per FEAT-009/DEC-001; does **not** own which-engine selection |
 | Admin Web operating surface (keys, community, proxies) | **FEAT-007** | **Invokes** FEAT-009 for engine configuration; must **not** document or own the admin provider toggle |
 
@@ -30,8 +30,8 @@ Implementation intent: [Plan 260816-2240](./plan.md).
 - Update draft **FEAT-004** to document: (a) dual-provider **processing**
   (`gemini_native`, `higgsfield_cli`) behind `PoseExtractorProvider`, (b) phase-1
   async canonical extract via `ExtractionJob` enqueue + poll, (c) processing uses
-  the globally configured engine per [FEAT-009](../../../features/FEAT-009-configure-extraction-provider.md)
-  and [DEC-001](../../../decisions/DEC-001-extraction-provider-selection-policy.md)
+  the globally configured engine per [FEAT-009](../../features/FEAT-009-configure-extraction-provider.md)
+  and [DEC-001](../../decisions/DEC-001-extraction-provider-selection-policy.md)
   (FEAT-004 does not own engine selection), (d) link this Plan in
   `relationships.plans`.
 - Confirm **FEAT-009** (approved) linkage to this Plan and DEC-001 in frontmatter

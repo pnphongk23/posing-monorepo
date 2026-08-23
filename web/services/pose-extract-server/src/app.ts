@@ -11,11 +11,11 @@ import { createCommunityRoutes } from "./routes/communityRoutes";
 import { createAdminCommunityRoutes } from "./routes/adminCommunityRoutes";
 import { createJobStatusRoutes } from "./routes/jobStatusRoutes";
 import type { ExtractionJobStore } from "./db/extractionJobStore";
-import { createUploadUrl, objectExists, uploadObject } from "./services/r2Storage";
+import { createUploadUrl } from "./services/r2Storage";
 import { AppError } from "./services/errors";
 import type { KeyPoolManager } from "./services/keyPoolManager";
 import type { KeyStore } from "./services/keyStore";
-import type { CommunityStore } from "./db/communityStore";
+import type { PoseStore } from "./db/communityStore";
 import { logger } from "./utils/logger";
 
 interface GeminiServiceLike {
@@ -48,7 +48,7 @@ interface CreateAppOptions {
   adminRateLimitMaxRequests?: number;
   extractRateLimitWindowMs?: number;
   extractRateLimitMaxRequests?: number;
-  communityStore?: CommunityStore;
+  communityStore?: PoseStore;
   communityUploadDir?: string;
   extractionJobStore?: ExtractionJobStore;
   providerSettingsStore?: ProviderSettingsStore;
@@ -170,10 +170,7 @@ export function createApp(options: CreateAppOptions): express.Express {
       createAdminCommunityRoutes({
         adminSecret: options.adminSecret,
         communityStore: options.communityStore,
-        r2PublicUrl: process.env.R2_PUBLIC_URL ?? "",
         createUploadUrl,
-        objectExists,
-        uploadObject,
         jobStore: options.extractionJobStore,
       })
     );

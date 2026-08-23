@@ -1,7 +1,9 @@
 ---
 title: Higgsfield CLI parallel extract provider
 description: Add Higgsfield CLI as a parallel extract provider behind PoseExtractorProvider factory, route canonical extract through async ExtractionJob worker polling, expose FEAT-009 admin provider toggle (invoked via Admin Web) with Docker/Railway credential operations.
-status: completed
+status: in_progress
+# Corrected from completed (manual recovery): WI-06 is blocked and no delivery report is linked,
+# so 'completed' was inconsistent. See Plan 260823-0045 validation gate.
 approval:
   status: approved
   required_by: Repository Maintainer

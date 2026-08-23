@@ -13,9 +13,9 @@ import kotlinx.serialization.Serializable
  * WI-04 does not render the Camera overlay and does not persist the reference
  * across relaunch.
  *
- * @param key source-qualified key of the selected pose (Personal or Community).
- * @param name display name of the selected pose.
- * @param renderLocator verified render asset locator: the original data URI for
+ * @param poseId stable canonical UUID of the selected Pose.
+ * @param poseName display name of the selected pose.
+ * @param skeletonPath verified skeleton asset locator: the original data URI for
  *   personal data-URI assets, the resolved absolute local path for personal
  *   file assets, or a fresh `data:` URI built from the just-downloaded
  *   community image bytes. Never a remote URL, so the handoff cannot consume a
@@ -23,9 +23,9 @@ import kotlinx.serialization.Serializable
  */
 @Serializable
 data class PreparedPoseReference(
-    val key: PoseReferenceKey,
-    val name: String,
-    val renderLocator: String
+    val poseId: String,
+    val poseName: String,
+    val skeletonPath: String
 )
 
 /**

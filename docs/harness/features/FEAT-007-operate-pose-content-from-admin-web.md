@@ -67,7 +67,7 @@ The operator manages keys, lists community poses, or submits a pose.
 
 1. **Actor:** The operator opens an Admin page. **System:** Next.js calls the protected upstream service.
 2. **Actor:** The operator submits an action. **System:** The proxy forwards the request and returns the upstream status/payload.
-3. **System:** The Admin UI presents the confirmed response. **System:** Async `202` remains an accepted queue state, not completion.
+3. **System:** The Admin UI presents the confirmed response. **System:** Async `202` remains an accepted queue state, not completion — the `Pose` is created only after the extraction job reports `succeeded` (`201`), and Admin-created poses carry an explicit `ownerAccountId` (authenticated actor = Admin operator, owner = indicated `Account`).
 
 ### Alternative flows
 
@@ -91,7 +91,7 @@ The operator manages keys, lists community poses, or submits a pose.
   multipart submission proxies are implemented.
 - **Not observed:** Admin polling of API-013, owner assignment, publication
   update/unpublish actions, or a confirmed truthful UI state for the async job.
-- **Planned (draft):** [Plan 260816-2240](../../plans/260816-2240-higgsfield-cli-parallel-extract-provider/plan.md)
+- **Planned (draft):** [Plan 260816-2240](../plans/260816-2240-higgsfield-cli-parallel-extract-provider/plan.md)
   adds Admin Web proxy routes and UI host for the
   [FEAT-009](FEAT-009-configure-extraction-provider.md) extraction-engine
   toggle; FEAT-007 invokes FEAT-009 and does not own provider configuration.
@@ -100,7 +100,7 @@ The operator manages keys, lists community poses, or submits a pose.
 
 | Concern | Canonical reference | Evidence |
 | --- | --- | --- |
-| Entities | [`CommunityPose`](../../spec/data/entities/community-pose.md), [`ExtractionJob`](../../spec/data/entities/extraction-job.md), [`ApiKeyCredential`](../../spec/data/entities/api-key-credential.md) | [`schema.sql`](../../../web/services/pose-extract-server/src/db/schema.sql), [`KeyStore`](../../../web/services/pose-extract-server/src/services/keyStore.ts) |
+| Entities | canonical [`Pose`](../../spec/data/entities/pose.md) (the public catalogue reads `Pose.status = 'published'` through the `CommunityPose` read-only DTO), [`ExtractionJob`](../../spec/data/entities/extraction-job.md), [`ApiKeyCredential`](../../spec/data/entities/api-key-credential.md) | [`schema.sql`](../../../web/services/pose-extract-server/src/db/schema.sql), [`KeyStore`](../../../web/services/pose-extract-server/src/services/keyStore.ts) |
 | ERD | [Server physical graph](../../spec/data/erd/server.md) and [unresolved job/asset links](../../spec/data/erd/conceptual.md) | [`app.ts`](../../../web/services/pose-extract-server/src/app.ts) |
 | APIs | [Next.js proxies](../../spec/api/conventions.md), upstream [admin keys](../../spec/api/modules/admin-keys.md) / [community](../../spec/api/modules/admin-community.md) / [jobs](../../spec/api/modules/admin-jobs.md) | [`web/admin-ui/src/app/api/admin`](../../../web/admin-ui/src/app/api/admin), [`poseExtractAdminServer.js`](../../../web/admin-ui/src/lib/poseExtractAdminServer.js) |
 | Supporting UI | Key and community admin pages | [`keys/page.js`](../../../web/admin-ui/src/app/admin/keys/page.js), [`community/page.js`](../../../web/admin-ui/src/app/admin/community/page.js) |
@@ -115,11 +115,11 @@ The operator manages keys, lists community poses, or submits a pose.
 
 - [ ] Key and community proxy paths are traceable to upstream APIs.
 - [ ] Invalid/auth failures are not shown as confirmed success.
-- [ ] `202` community submission is labelled accepted/queued, not complete/public.
+- [ ] `202` community submission is labelled accepted/queued, not complete/public; Pose is created post-`succeeded` (`201`) with `ownerAccountId` set.
 
 ## Relationships
 
-- Shared references: [CommunityPose](../../spec/data/entities/community-pose.md), [ERD server](../../spec/data/erd/server.md), [proxies](../../spec/api/conventions.md).
+- Shared references: [CommunityPose](../../spec/data/entities/community-pose.md) (published view/DTO), [ERD server](../../spec/data/erd/server.md), [proxies](../../spec/api/conventions.md).
 - Related features: [FEAT-004](FEAT-004-extract-reusable-pose-images.md), [FEAT-005](FEAT-005-manage-a-pose-guide.md), [FEAT-006](FEAT-006-publish-a-pose.md), [FEAT-009](FEAT-009-configure-extraction-provider.md) (Admin Web invokes FEAT-009 for global extraction-engine configuration).
 ### Supporting evidence
 

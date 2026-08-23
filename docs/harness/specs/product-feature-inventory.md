@@ -10,6 +10,7 @@ relationships:
     - "[[model-entity-catalogue]]"
     - "[[erd]]"
     - "[[api-catalogue]]"
+    - "[[product-delivery-roadmap]]"
   decisions: []
   plans: []
   reports: []
@@ -46,12 +47,12 @@ Harness stubs remain at [model catalogue](model-entity-catalogue.md),
 | Feature | Business capability | Primary actor or owner | Boundary |
 | --- | --- | --- | --- |
 | [[FEAT-001-capture-a-photo-on-mobile\|FEAT-001]] | Capture a photo on mobile | Photographer | Capture a source photo for later use; pose extraction is FEAT-004. |
-| [[FEAT-002-manage-a-local-photo-gallery\|FEAT-002]] | Manage a local photo gallery | Photographer | Organize personal photos; pose-guide management is FEAT-005. |
+| [[FEAT-002-manage-a-local-photo-gallery\|FEAT-002]] | Manage a local photo gallery | Photographer | Organize personal photos; pose management is FEAT-005. |
 | [[FEAT-003-browse-and-search-published-poses\|FEAT-003]] | Browse and search published poses | Visitor or signed-in user | Browse, search, inspect, refresh, and recover the public catalogue; no Save, Try Pose, extraction, or publication. |
 | [[FEAT-004-extract-reusable-pose-images\|FEAT-004]] | Extract one reusable pose image | Signed-in user or Admin operator | One common extraction contract and ownership assignment for both creator roles. |
-| [[FEAT-005-manage-a-pose-guide\|FEAT-005]] | Manage a pose guide | Pose Guide Owner | My Poses, guide metadata, re-extraction, retry, revert, and terminal deletion around a FEAT-004 result. |
+| [[FEAT-005-manage-a-pose-guide\|FEAT-005]] | Manage a pose guide | Pose Owner | My Poses, pose metadata, re-extraction, retry, revert, and terminal deletion around a FEAT-004 result. |
 | [[FEAT-006-publish-a-pose\|FEAT-006]] | Publish or unpublish a pose | Pose Owner | Public-data acknowledgement, publication eligibility, and confirmed public visibility lifecycle. |
-| [[FEAT-007-operate-pose-content-from-admin-web\|FEAT-007]] | Operate pose content from Admin Web | Admin operator | Admin surface for intake, status, ownership, guide management in FEAT-005, and invoking FEAT-004 and FEAT-006; no alternate extraction or publication model. |
+| [[FEAT-007-operate-pose-content-from-admin-web\|FEAT-007]] | Operate pose content from Admin Web | Admin operator | Admin surface for intake, status, ownership, pose management in FEAT-005, and invoking FEAT-004 and FEAT-006; no alternate extraction or publication model. |
 | [[FEAT-008-use-published-poses\|FEAT-008]] | Use published poses | Signed-in user | Save, Unsave, Saved collection, Try Pose, camera guide lifecycle, and consequences of publication removal. |
 | [[FEAT-009-configure-extraction-provider\|FEAT-009]] | Configure extraction provider | Admin operator | Select and persist the global extraction engine (Gemini native or Higgsfield CLI) for extract jobs; timing, default, and credential policy in DEC-001. |
 

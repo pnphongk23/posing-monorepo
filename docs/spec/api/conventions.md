@@ -6,7 +6,7 @@ Quy ước product cho `pose-extract-server`. Chi tiết schema: [`openapi.yaml`
 
 - Mọi business route mount `/api/...`. Không có prefix `/v1/`.
 - Public catalogue: `/api/community/poses`
-- Pose guide: `/api/guides`
+- Pose (`PoseGuide` cũ — model hợp nhất thành `Pose`): `/api/guides`
 - Signed-in collection: `/api/me/saved`
 - Admin: `/api/admin/keys`, `/api/admin/community/poses`, `/api/admin/jobs`
 - Health: `/api/health`
@@ -17,15 +17,17 @@ Quy ước product cho `pose-extract-server`. Chi tiết schema: [`openapi.yaml`
 | Trường hợp | Method | Status |
 |---|---|---|
 | Đọc | GET | 200 |
-| Tạo resource | POST | 201 |
-| Nhận job/guide vào hàng đợi | POST | 202 |
+| **Job start** (enqueue extraction, retry, re-extract) | POST | **202** |
+| **Pose creation/completion** (post-extraction: `POST /api/guides`, admin intake) | POST | **201** |
 | Cập nhật partial | PATCH | 200 |
-| Publish / unpublish / retry / re-extract / revert | POST | 200 |
+| Publish / unpublish / revert (đổi trạng thái, không tạo pose) | POST | 200 |
 | Xóa | DELETE | 204 (empty body) |
 | Upsert saved | PUT | 200 |
 | Reset counters | POST | 200 |
 
-`202` = đã nhận, chưa complete, chưa public.
+`202` = đã nhận job, chưa complete, chưa public, **chưa có `Pose`**. `201` = `Pose`
+được tạo với `poseId` stable và ba media role (`original`, `skeleton`, `thumbnail`)
+materialize ngay — pose chỉ tồn tại sau khi extraction `succeeded`.
 
 ## Authentication
 
@@ -34,6 +36,12 @@ Quy ước product cho `pose-extract-server`. Chi tiết schema: [`openapi.yaml`
 | Visitor | Không auth | `GET /api/community/poses`, `GET /api/community/poses/:id`, `POST /api/extract-pose`, `GET /api/health` |
 | Signed-in `Account` | Session của Account (cơ chế cụ thể ngoài catalogue này) | `/api/me/saved`, `/api/guides` (owner) |
 | Admin operator | `Authorization: Bearer <ADMIN_SECRET>` | `/api/admin/*`; Admin cũng được gọi `/api/guides` và publish như operator |
+
+**authenticated actor vs owner:** `ownerAccountId` là **bắt buộc** (non-nullable)
+trên mọi `Pose`. Với `AccountSession` (mobile/local), owner = session account và
+không gửi trong body. Với Admin `Bearer` (không có session account), request tạo
+pose phải kèm `ownerAccountId` tường minh — authenticated actor (Admin operator)
+khác owner (`Account` được chỉ định).
 
 Secret admin không bao giờ gửi từ browser. Next.js Admin Web inject Bearer phía server — xem mục proxy.
 
@@ -68,7 +76,7 @@ Không có rate-limit header bắt buộc trên response.
 - `tag`: khớp tag
 - `q`: tìm theo title trên published records ([FEAT-003](../../harness/features/FEAT-003-browse-and-search-published-poses.md))
 
-Không trả draft trên public search/list.
+Không trả pose `local` (legacy `draft`) trên public search/list.
 
 ## Error envelope
 

@@ -1,6 +1,11 @@
 # Module: Community (Public)
 
-Catalogue published poses. [FEAT-003](../../../harness/features/FEAT-003-browse-and-search-published-poses.md). Không auth. Chỉ `status = published`.
+Catalogue published [Pose](../../data/entities/pose.md). [FEAT-003](../../../harness/features/FEAT-003-browse-and-search-published-poses.md). Không auth. Chỉ `status = published`.
+
+Catalogue là **DTO/view đọc kết quả** (`CommunityPose`) lọc các `Pose` có
+`status = published`, không phải entity lưu trữ riêng. DTO **published-only**:
+field `poseId` (cùng `Pose.poseId`), `status` luôn `published`; không bao gồm
+`ownerAccountId`, `originalUrl`, hay job.
 
 Save / Try Pose: [FEAT-008](../../../harness/features/FEAT-008-use-published-poses.md). Publication: [FEAT-006](../../../harness/features/FEAT-006-publish-a-pose.md).
 
@@ -24,8 +29,8 @@ Danh sách published, pagination, filter, tìm theo title.
 | ID | Rule |
 |---|---|
 | BR-COMMUNITY-001 | Chỉ `published`. |
-| BR-COMMUNITY-005 | `q` không trả draft. |
-| BR-COMMUNITY-006 | Kết quả không trùng `id` đang active trên một trang response. |
+| BR-COMMUNITY-005 | `q` không trả pose `local` (chưa public). |
+| BR-COMMUNITY-006 | Kết quả không trùng `poseId` đang active trên một trang response. |
 
 **Errors:** `400 BAD_REQUEST`, `500 INTERNAL_SERVER_ERROR`.
 
@@ -48,7 +53,7 @@ Chi tiết một published pose. Tăng `downloadCount`.
 | ID | Rule |
 |---|---|
 | BR-COMMUNITY-002 | `downloadCount` +1 khi thành công. |
-| BR-COMMUNITY-007 | Tồn tại nhưng không `published` → `404` (không leak draft). |
-| BR-COMMUNITY-004 | `imagePath` là locator render `ready`. |
+| BR-COMMUNITY-007 | Tồn tại nhưng không `published` → `404` (không leak pose `local`). |
+| BR-COMMUNITY-004 | `skeletonUrl` là locator skeleton `ready`. `thumbnailUrl` non-nullable — ba media role materialize tại lúc tạo pose. |
 
 **Errors:** `404 NOT_FOUND`, `500 INTERNAL_SERVER_ERROR`.

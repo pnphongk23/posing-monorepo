@@ -5,16 +5,23 @@
 ## [Unreleased]
 
 ### Added
-- Hợp đồng product cho `PoseGuide`, `MediaAsset`, `Account`, `SavedEntry` (FEAT-005, FEAT-006, FEAT-008).
-- Enum `MediaAssetRole`, `MediaAssetReadiness`.
-- ERD server mô tả aggregate guide, catalogue projection, saved collection.
+- Canonical `Pose` entity duy nhất (`entities/pose.md`) với `poseId` (UUID) ổn định từ lúc tạo (post-extraction) tới published.
+- Glossary canonical: `docs/harness/specs/pose-domain-glossary.md` — đánh số phân cấp (1., 1.1…).
+- Ba media role canonical: `original`, `skeleton`, `thumbnail` — materialize tại lúc tạo pose, non-nullable.
 
 ### Changed
-- Chuyển cây data vào `docs/spec/data/`.
-- Domain model lấy Features làm nguồn sự thật, không còn mục TBD theo implementation.
-- `CommunityPose` là projection published của `PoseGuide`.
-- `ExtractionJob` gắn `guideId` và kết quả bền là `MediaAsset` render `ready`.
-- Business rules Photo/Gallery theo FEAT-001/002 (atomic capture, xóa file+metadata).
+- **Creation timing:** `Pose` chỉ được tạo sau khi extraction `succeeded`; trong lúc extraction chỉ có `ExtractionJob` với `jobId` (correlation key). `ExtractionJob.poseId` nullable tới khi pose tạo.
+- **Mandatory owner:** `ownerAccountId` bắt buộc (non-nullable) trên mọi `Pose`, kể cả pose admin; authenticated actor (Admin Bearer) có thể khác owner.
+- Unify domain: bỏ entity song song `PoseGuide`, `CommunityPose`, `PersonalPose`; catalogue công khai là view/DTO (`CommunityPose` published-only, field `poseId`).
+- `MediaAssetRole`: `source` → `original`, `render` → `skeleton`.
+- `PoseStatus`: `draft` → `local` (deprecated alias).
+- `ExtractionJob` gắn `poseId` (was `guideId`); kết quả bền là `MediaAsset` skeleton `ready`.
+- ID đơn giản `poseId` / `mediaId` (+ `jobId` làm correlation key); bỏ `PoseReferenceKey.Personal|Community` khỏi canonical model.
+- Thuật ngữ extraction-result chuyển sang `skeleton`. **(Legacy/deprecated terms: `render`, `extracted pose image`, `result image`)**.
+
+### Deprecated
+- `PoseGuide` → alias của `Pose`.
+- `PersonalPose`, `PoseReferenceKey`, `CommunityPose`(entity) → deprecate; chuyển sang `Pose` + view/DTO.
 
 ### Deprecated
 ### Removed

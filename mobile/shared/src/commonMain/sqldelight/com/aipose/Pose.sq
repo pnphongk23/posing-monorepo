@@ -1,37 +1,76 @@
 -- shared/src/commonMain/sqldelight/com/aipose/Pose.sq
 CREATE TABLE Pose (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    poseId TEXT PRIMARY KEY,
+    ownerAccountId TEXT NOT NULL,
     name TEXT NOT NULL,
-    imagePath TEXT NOT NULL,
-    thumbnailPath TEXT,
-    originalImagePath TEXT,
+    description TEXT,
+    tags TEXT NOT NULL DEFAULT '[]',
+    difficulty TEXT,
+    bodyParts TEXT NOT NULL DEFAULT '[]',
+    status TEXT NOT NULL DEFAULT 'local' CHECK(status IN ('local', 'published')),
+    originalPath TEXT NOT NULL,
+    skeletonPath TEXT NOT NULL,
+    thumbnailPath TEXT NOT NULL,
+    currentJobId TEXT,
     createdAt TEXT NOT NULL,
-    isMine INTEGER NOT NULL DEFAULT 1,
-    likes INTEGER NOT NULL DEFAULT 0
+    updatedAt TEXT NOT NULL
 );
 
 CREATE INDEX idx_pose_createdAt ON Pose(createdAt);
-CREATE INDEX idx_pose_isMine ON Pose(isMine);
+CREATE INDEX idx_pose_ownerAccountId ON Pose(ownerAccountId);
+CREATE INDEX idx_pose_status ON Pose(status);
 
 getAllPoses:
 SELECT * FROM Pose ORDER BY createdAt DESC;
 
 getPoseById:
-SELECT * FROM Pose WHERE id = ?;
+SELECT * FROM Pose WHERE poseId = ?;
 
 getMyPoses:
-SELECT * FROM Pose WHERE isMine = 1 ORDER BY createdAt DESC;
+SELECT * FROM Pose WHERE status = 'local' ORDER BY createdAt DESC;
 
 insertPose:
-INSERT INTO Pose(name, imagePath, thumbnailPath, originalImagePath, createdAt, isMine, likes)
-VALUES (?, ?, ?, ?, ?, ?, ?);
+INSERT INTO Pose(
+    poseId,
+    ownerAccountId,
+    name,
+    description,
+    tags,
+    difficulty,
+    bodyParts,
+    status,
+    originalPath,
+    skeletonPath,
+    thumbnailPath,
+    currentJobId,
+    createdAt,
+    updatedAt
+)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 deletePose:
-DELETE FROM Pose WHERE id = ?;
+DELETE FROM Pose WHERE poseId = ?;
 
 updatePose:
-UPDATE Pose SET name = ?, thumbnailPath = ?, likes = ? WHERE id = ?;
+UPDATE Pose
+SET name = ?, description = ?, tags = ?, difficulty = ?, bodyParts = ?, status = ?, updatedAt = ?
+WHERE poseId = ?;
 
 insertPoseWithId:
-INSERT INTO Pose(id, name, imagePath, thumbnailPath, originalImagePath, createdAt, isMine, likes)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+INSERT INTO Pose(
+    poseId,
+    ownerAccountId,
+    name,
+    description,
+    tags,
+    difficulty,
+    bodyParts,
+    status,
+    originalPath,
+    skeletonPath,
+    thumbnailPath,
+    currentJobId,
+    createdAt,
+    updatedAt
+)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);

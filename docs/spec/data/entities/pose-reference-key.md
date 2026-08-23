@@ -1,28 +1,33 @@
-# PoseReferenceKey
+# PoseReferenceKey (deprecated)
 
 ## Description
 
-Discriminated union trên mobile phân biệt pose cá nhân (ID số) và pose cộng đồng (UUID). Hợp đồng in-memory của [FEAT-008](../../../harness/features/FEAT-008-use-published-poses.md). Không persist.
+> **Deprecated.** `PoseReferenceKey` là union cũ Personal-vs-Community trên mobile
+> (ID số local cho `PersonalPose`, UUID server cho `CommunityPose`). Khái niệm này
+> đã **bị gỡ khỏi canonical model**; replaced bằng ID đơn giản `poseId` (UUID) và
+> `mediaId` (UUID) — xem glossary
+> [`pose-domain-glossary.md`](../../../harness/specs/pose-domain-glossary.md) mục 5.
 
-## Fields
+Không persist. Trước đây dùng làm hợp đồng in-memory của
+[FEAT-008](../../../harness/features/FEAT-008-use-published-poses.md).
 
-Hai variant:
+## Migration
 
-| Field | Type | Required | Description |
-|---|---|---|---|
-| `Personal.id` | Long | ✓ | ID local của [`PersonalPose`](personal-pose.md) |
-| `Community.id` | String | ✓ | UUID của [`CommunityPose`](community-pose.md) / [`PoseGuide`](pose-guide.md) |
-
-## Relationships
-
-- `Personal(id)` → `PersonalPose.id`
-- `Community(id)` → `CommunityPose.id`
-- Embed trong [`PreparedPoseReference.key`](prepared-pose-reference.md)
+| `PoseReferenceKey` cũ | Canonical mới |
+|---|---|
+| `Personal.id` (Long) | `poseId` (UUID) của canonical [`Pose`](pose.md) |
+| `Community.id` (String) | `poseId` (UUID) — cùng namespace, không phân biệt |
+| Embed trong `PreparedPoseReference.key` | `PreparedPoseReference.poseId` + `mediaId` |
 
 ## Business Rules
 
 | ID | Rule |
 |---|---|
-| BR-REF-001 | Không phải bảng SQL; không persist. |
-| BR-REF-002 | Không được nhầm ID số `PersonalPose` với UUID `CommunityPose`. |
-| BR-REF-003 | Use published pose không đổi variant thành quyền sở hữu guide. |
+| BR-REF-001 | Không nằm trong canonical model; không persist. |
+| BR-REF-002 | Không còn phân biệt Personal/Community key — mọi pose dùng `poseId` UUID. |
+| BR-REF-003 | Use published pose không cấp quyền sở hữu pose. |
+
+## Relationships
+
+- Entities canonical: [`pose.md`](pose.md), [`prepared-pose-reference.md`](prepared-pose-reference.md)
+- Glossary: [`pose-domain-glossary.md`](../../../harness/specs/pose-domain-glossary.md)

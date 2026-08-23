@@ -1,6 +1,8 @@
 package com.aipose.ui.screens.poses
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
@@ -12,6 +14,8 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -47,8 +51,8 @@ import ai_pose.composeapp.generated.resources.ic_chevron_left
 
 data class SearchUiState(
     val query: String = "",
-    val personalResults: List<Pose> = emptyList(),
-    val communityResults: List<CommunityPose> = emptyList(),
+    val localResults: List<Pose> = emptyList(),
+    val publishedResults: List<CommunityPose> = emptyList(),
     val communityHasMore: Boolean = false,
     val isInitialLoading: Boolean = false,
     val isLoadingMore: Boolean = false,
@@ -80,8 +84,8 @@ internal fun emptySearchSubtitle(query: String): String {
 internal fun clearSearchActionLabel(): String = "Clear search"
 
 sealed class SearchItem {
-    data class Personal(val pose: Pose) : SearchItem()
-    data class Community(val pose: CommunityPose) : SearchItem()
+    data class Local(val pose: Pose) : SearchItem()
+    data class Published(val pose: CommunityPose) : SearchItem()
 }
 
 class SearchViewModel(
@@ -94,19 +98,19 @@ class SearchViewModel(
     private val _uiState = MutableStateFlow(SearchUiState())
     val uiState: StateFlow<SearchUiState> = _uiState.asStateFlow()
 
-    private var allPersonalPoses: List<Pose> = emptyList()
+    private var allLocalPoses: List<Pose> = emptyList()
 
     init {
         scope.launch {
             repository.getMyPoses().collectLatest { poses ->
-                allPersonalPoses = poses
-                applyPersonalFilter(_uiState.value.query)
+                allLocalPoses = poses
+                applyLocalFilter(_uiState.value.query)
             }
         }
         scope.launch {
             communityPaging.state.collectLatest { paging ->
                 _uiState.value = _uiState.value.copy(
-                    communityResults = paging.items,
+                    publishedResults = paging.items,
                     communityHasMore = paging.hasMore,
                     isInitialLoading = paging.isInitialLoading,
                     isLoadingMore = paging.isLoadingMore,
@@ -120,7 +124,7 @@ class SearchViewModel(
 
     fun onQueryChange(newQuery: String) {
         _uiState.value = _uiState.value.copy(query = newQuery)
-        applyPersonalFilter(newQuery)
+        applyLocalFilter(newQuery)
         communityPaging.search(newQuery)
     }
 
@@ -140,19 +144,19 @@ class SearchViewModel(
         communityPaging.retryLoadMore()
     }
 
-    private fun applyPersonalFilter(query: String) {
-        val filteredPersonal = if (query.isBlank()) {
-            allPersonalPoses
+    private fun applyLocalFilter(query: String) {
+        val filteredLocal = if (query.isBlank()) {
+            allLocalPoses
         } else {
-            allPersonalPoses.filter { it.name.contains(query, ignoreCase = true) }
+            allLocalPoses.filter { it.name.contains(query, ignoreCase = true) }
         }
-        _uiState.value = _uiState.value.copy(personalResults = filteredPersonal)
+        _uiState.value = _uiState.value.copy(localResults = filteredLocal)
     }
 }
 
 class SearchScreen(
-    private val onPersonalPoseClick: (Long) -> Unit,
-    private val onCommunityPoseClick: (CommunityPose) -> Unit,
+    private val onLocalPoseClick: (String) -> Unit,
+    private val onPublishedPoseClick: (CommunityPose) -> Unit,
     private val onBack: () -> Unit,
 ) : Screen {
 
@@ -162,15 +166,17 @@ class SearchScreen(
         val viewModel = remember { SearchViewModel() }
         val uiState by viewModel.uiState.collectAsState()
         val focusRequester = remember { FocusRequester() }
+        val focusManager = LocalFocusManager.current
+        val keyboardController = LocalSoftwareKeyboardController.current
 
         LaunchedEffect(Unit) {
             focusRequester.requestFocus()
         }
 
-        val mixedItems = remember(uiState.personalResults, uiState.communityResults) {
+        val mixedItems = remember(uiState.localResults, uiState.publishedResults) {
             val list = mutableListOf<SearchItem>()
-            list.addAll(uiState.personalResults.map { SearchItem.Personal(it) })
-            list.addAll(uiState.communityResults.map { SearchItem.Community(it) })
+            list.addAll(uiState.localResults.map { SearchItem.Local(it) })
+            list.addAll(uiState.publishedResults.map { SearchItem.Published(it) })
             list
         }
         val mixedCount = mixedItems.size
@@ -184,7 +190,15 @@ class SearchScreen(
                 .fillMaxSize()
                 .background(AiPoseColors.Background)
                 .statusBarsPadding()
-                .padding(Spacing.lg),
+                .padding(Spacing.lg)
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = {
+                        focusManager.clearFocus()
+                        keyboardController?.hide()
+                    }
+                ),
         ) {
             Column(
                 modifier = Modifier.fillMaxSize(),
@@ -353,38 +367,25 @@ class SearchScreen(
                         horizontalArrangement = Arrangement.spacedBy(Spacing.md),
                         verticalArrangement = Arrangement.spacedBy(Spacing.md),
                     ) {
-                        if (uiState.communityResults.isNotEmpty()) {
-                            item(span = { GridItemSpan(2) }) {
-                                Text(
-                                    text = "Mock / Non-production search results",
-                                    style = AiPoseTypography.Caption,
-                                    color = AiPoseColors.Subtext,
-                                    modifier = Modifier
-                                        .padding(bottom = Spacing.xs)
-                                        .testTag("mock-results-label"),
-                                )
-                            }
-                        }
-
                         itemsIndexed(
                             mixedItems,
                             key = { _, item ->
                                 when (item) {
-                                    is SearchItem.Personal -> "personal-${item.pose.id}"
-                                    is SearchItem.Community -> "community-${item.pose.id}"
+                                    is SearchItem.Local -> "local-${item.pose.poseId}"
+                                    is SearchItem.Published -> "published-${item.pose.poseId}"
                                 }
                             },
                         ) { index, item ->
                             when (item) {
-                                is SearchItem.Personal -> PoseCard(
+                                is SearchItem.Local -> PoseCard(
                                     pose = item.pose,
                                     index = index,
-                                    onClick = { onPersonalPoseClick(item.pose.id) },
+                                    onClick = { onLocalPoseClick(item.pose.poseId) },
                                 )
-                                is SearchItem.Community -> CommunityPoseCard(
+                                is SearchItem.Published -> CommunityPoseCard(
                                     pose = item.pose,
                                     index = index,
-                                    onClick = { onCommunityPoseClick(item.pose) },
+                                    onClick = { onPublishedPoseClick(item.pose) },
                                 )
                             }
                         }
@@ -426,7 +427,7 @@ class SearchScreen(
                                 }
                             } else {
                                 item(span = { GridItemSpan(2) }) {
-                                    LaunchedEffect(uiState.communityResults.size) {
+                                    LaunchedEffect(uiState.publishedResults.size) {
                                         viewModel.loadMoreCommunity()
                                     }
                                     Box(modifier = Modifier.size(1.dp))

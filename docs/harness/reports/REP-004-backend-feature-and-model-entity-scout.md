@@ -28,7 +28,6 @@ relationships:
     - web/admin-ui/src/app/admin/community/page.js
     - mobile/shared/src/commonMain/sqldelight/com/aipose/Pose.sq
     - mobile/shared/src/commonMain/kotlin/com/aipose/data/remote/PoseApiService.kt
-    - mobile/shared/src/commonMain/kotlin/com/aipose/data/PoseReferenceKey.kt
     - mobile/shared/src/commonMain/kotlin/com/aipose/data/PreparedPoseReference.kt
 type: report
 id: REP-004
@@ -160,7 +159,6 @@ CommunityPose-to-MediaAsset lifecycle, not inferred from HTTP 202.
 - `web/services/pose-extract-server/src/worker/job-processor.ts` — claims a job, invokes the browser client, and marks only the job result.
 - `mobile/shared/src/commonMain/kotlin/com/aipose/data/remote/PoseApiService.kt` — mobile extraction/community DTOs and server error envelope.
 - `mobile/shared/src/commonMain/sqldelight/com/aipose/Pose.sq` — local `PersonalPose` storage shape.
-- `mobile/shared/src/commonMain/kotlin/com/aipose/data/PoseReferenceKey.kt` — source-qualified Personal/Community identity.
 - `mobile/shared/src/commonMain/kotlin/com/aipose/data/PreparedPoseReference.kt` — verified render locator prepared for Camera handoff.
 
 ## Findings and risks

@@ -55,14 +55,14 @@ fun PoseCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(aspectRatio)
-                .testTag("pose-card-personal-${pose.id}")
+                .testTag("pose-card-personal-${pose.poseId}")
                 .semantics { contentDescription = pose.name },
             shape = RoundedCornerShape(CornerRadius.md),
             backgroundColor = AiPoseColors.Surface,
             shadowOffset = 4.dp,
             onClick = onClick
         ) {
-            val imageModel = pose.thumbnailPath ?: pose.imagePath
+            val imageModel = pose.thumbnailPath
             if (imageModel.isNotBlank()) {
                 AsyncImage(
                     model = imageModel,

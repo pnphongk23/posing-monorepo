@@ -6,26 +6,27 @@ Quan hệ Try Pose và ranh giới mobile/server. [FEAT-008](../../../harness/fe
 
 ```mermaid
 erDiagram
-    POSE_REFERENCE_KEY ||--|| PERSONAL_POSE : "Personal(id)"
-    POSE_REFERENCE_KEY ||--|| COMMUNITY_POSE : "Community(id)"
-    POSE_REFERENCE_KEY ||--o| PREPARED_POSE_REFERENCE : "embedded as key"
+    PREPARED_POSE_REFERENCE ||--o| POSE : "references poseId"
+    PREPARED_POSE_REFERENCE ||--o| MEDIA_ASSET : "references mediaId (skeleton ready)"
 
-    POSE_REFERENCE_KEY {
-        string variant
-    }
-    PERSONAL_POSE {
-        integer local_id
-    }
-    COMMUNITY_POSE {
-        string server_uuid
-    }
     PREPARED_POSE_REFERENCE {
-        string renderLocator
+        string poseId
+        string mediaId
+        string skeletonLocator
         string name
+    }
+    POSE {
+        string poseId PK
+        string skeletonMediaId FK
+    }
+    MEDIA_ASSET {
+        string mediaId PK
+        string role
     }
 ```
 
-`PreparedPoseReference.renderLocator` luôn local/data URI sau khi verify. Không persist relaunch.
+`PreparedPoseReference.skeletonLocator` luôn local/data URI sau khi verify. Không
+persist relaunch. Không còn `PoseReferenceKey.Personal|Community`.
 
 ## Ranh giới layer
 
@@ -33,21 +34,20 @@ erDiagram
 flowchart LR
   subgraph mobile [Mobile local]
     Photo
-    PersonalPose
+    Pose
     PreparedPoseReference
   end
   subgraph server [Server]
-    PoseGuide
-    CommunityPose
+    Pose
     MediaAsset
     Account
     SavedEntry
   end
-  CommunityPose -.->|download + verify| PreparedPoseReference
+  Pose -.->|download + verify skeleton| PreparedPoseReference
   Account -->|saves| SavedEntry
-  SavedEntry --> CommunityPose
-  PoseGuide -->|publish| CommunityPose
-  PoseGuide --> MediaAsset
+  SavedEntry --> Pose
+  Pose --> MediaAsset
 ```
 
-Không có FK từ `Photo` / `PersonalPose` sang server. `SavedEntry` không cấp ownership `PoseGuide`.
+Không có FK bắt buộc từ `Photo` sang server. `SavedEntry` không cấp ownership
+`Pose`. Catalogue công khai là view/DTO — không phải entity riêng.

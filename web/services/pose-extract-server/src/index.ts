@@ -2,7 +2,7 @@ import "dotenv/config";
 import { createApp } from "./app";
 import { getEnv } from "./config/env";
 import { applySchema, closeDatabase, createDatabase, type Sql } from "./db/connection";
-import { CommunityStore } from "./db/communityStore";
+import { PoseStore } from "./db/communityStore";
 import { ExtractionJobStore } from "./db/extractionJobStore";
 import { ProviderSettingsStore } from "./db/providerSettingsStore";
 import { GeminiService } from "./services/geminiService";
@@ -18,7 +18,7 @@ async function main(): Promise<void> {
   await applySchema(sql);
 
   const keyStore = new KeyStore(sql);
-  const communityStore = new CommunityStore(sql);
+  const communityStore = new PoseStore(sql);
   const extractionJobStore = new ExtractionJobStore(sql);
   const providerSettingsStore = new ProviderSettingsStore(sql);
   const keyPoolManager = new KeyPoolManager(keyStore);

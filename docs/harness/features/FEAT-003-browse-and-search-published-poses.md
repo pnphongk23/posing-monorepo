@@ -79,7 +79,7 @@ The user opens the catalogue, refreshes, searches, or opens a pose card.
 
 ### Current evidence
 
-- **Observed:** `CommunityPose` DTOs, public list/detail routes with pagination,
+- **Observed:** `CommunityPose` DTOs (the published-`Pose` view/DTO), public list/detail routes with pagination,
   mobile list/detail client calls, refresh/load-more states, and source-qualified
   detail exist.
 - **Partial:** `MockCommunitySearchProvider` backs title search; no server title
@@ -101,7 +101,7 @@ The user opens the catalogue, refreshes, searches, or opens a pose card.
 
 - **FR-001:** Public list/detail responses use the shared `CommunityPose` and pagination DTOs.
 - **FR-002:** Title search uses query `q` on `GET /api/community/poses` and only matches published records.
-- **BR-001:** A draft or unverified pose must not be described as public/ready.
+- **BR-001:** A `local` (legacy `draft` alias) or unverified pose must not be described as public/ready.
 
 ## Acceptance
 
@@ -111,12 +111,12 @@ The user opens the catalogue, refreshes, searches, or opens a pose card.
 
 ## Relationships
 
-- Shared references: [CommunityPose](../../spec/data/entities/community-pose.md), [ERD server](../../spec/data/erd/server.md), [Community API](../../spec/api/modules/community.md).
+- Shared references: [CommunityPose](../../spec/data/entities/community-pose.md) (published-`Pose` view/DTO), [ERD server](../../spec/data/erd/server.md), [Community API](../../spec/api/modules/community.md).
 - Related features: [FEAT-006](FEAT-006-publish-a-pose.md), [FEAT-008](FEAT-008-use-published-poses.md).
 ### Supporting evidence
 
 - [`communityRoutes.ts`](../../../web/services/pose-extract-server/src/routes/communityRoutes.ts)
 - [`communityRoutes.test.ts`](../../../web/services/pose-extract-server/src/routes/communityRoutes.test.ts)
 - [`PosesLibraryCoordinator.kt`](../../../mobile/shared/src/commonMain/kotlin/com/aipose/data/PosesLibraryCoordinator.kt)
-- [`CommunitySearchProvider.kt`](../../../mobile/shared/src/commonMain/kotlin/com/aipose/data/CommunitySearchProvider.kt)
+- [`CommunitySearchRepository.kt`](../../../mobile/shared/src/commonMain/kotlin/com/aipose/data/CommunitySearchRepository.kt)
 - [`REP-003`](../reports/REP-003-pose-reference-library-convergence-delivery.md)

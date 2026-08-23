@@ -136,7 +136,7 @@ submits a change to the global extraction engine.
   L148–166; `job-processor.ts` hardcodes Playwright today).
 - **Observed:** Next.js admin proxy injects Bearer secret server-side
   (`web/admin-ui/src/lib/poseExtractAdminServer.js` L39–60).
-- **Planned:** [Plan 260816-2240](../../plans/260816-2240-higgsfield-cli-parallel-extract-provider/plan.md)
+- **Planned:** [Plan 260816-2240](../plans/260816-2240-higgsfield-cli-parallel-extract-provider/plan.md)
   and [DEC-001](../decisions/DEC-001-extraction-provider-selection-policy.md)
   define admin toggle API, persistence, and confirmed policy axes B1, C1, D2.
 
@@ -203,6 +203,6 @@ B1; in-flight jobs already claimed are not re-routed to a newly saved engine.
 - Policy: [DEC-001 Extraction provider selection policy](../decisions/DEC-001-extraction-provider-selection-policy.md)
 - Invokes / consumed by: [FEAT-004 Extract Reusable Pose Images](FEAT-004-extract-reusable-pose-images.md) (extract jobs use configured engine; contract unchanged)
 - Operating surface: [FEAT-007 Operate Pose Content from Admin Web](FEAT-007-operate-pose-content-from-admin-web.md) (Admin Web invokes this Feature; FEAT-007 does not own provider configuration)
-- Plan: [260816-2240 Higgsfield CLI parallel extract provider](../../plans/260816-2240-higgsfield-cli-parallel-extract-provider/plan.md)
+- Plan: [260816-2240 Higgsfield CLI parallel extract provider](../plans/260816-2240-higgsfield-cli-parallel-extract-provider/plan.md)
 - Inventory: [[product-feature-inventory]]
 - Specs: [[technical-architecture]], [[api-catalogue]]

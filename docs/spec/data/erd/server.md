@@ -1,15 +1,16 @@
 # ERD — Server
 
-Hợp đồng quan hệ phía server theo [domain model](../domain-model.md).
+Hợp đồng quan hệ phía server theo [domain model](../domain-model.md). Entity
+canonical duy nhất là `Pose`; catalogue công khai là view/DTO (`status=published`),
+không phải entity riêng.
 
 ```mermaid
 erDiagram
-    ACCOUNT ||--o{ POSE_GUIDE : "owns"
+    ACCOUNT ||--o{ POSE : "owns"
     ACCOUNT ||--o{ SAVED_ENTRY : "saves"
-    POSE_GUIDE ||--|{ MEDIA_ASSET : "has"
-    POSE_GUIDE ||--o{ EXTRACTION_JOB : "tracks"
-    POSE_GUIDE ||--o| COMMUNITY_POSE : "publishes as"
-    COMMUNITY_POSE ||--o{ SAVED_ENTRY : "saved as"
+    POSE ||--|{ MEDIA_ASSET : "has exactly 3 (original|skeleton|thumbnail)"
+    POSE ||--o{ EXTRACTION_JOB : "tracks"
+    POSE ||--o{ SAVED_ENTRY : "saved as"
     API_KEY_CREDENTIAL ||--o{ PROVIDER_REQUEST_LOG : "logged as"
 
     ACCOUNT {
@@ -17,41 +18,32 @@ erDiagram
         text displayName
         datetime createdAt
     }
-    POSE_GUIDE {
-        text id PK
-        text ownerAccountId FK
+    POSE {
+        text poseId PK
+        text ownerAccountId FK "REQUIRED on every Pose"
         text name
         text status
-        text sourceAssetId FK
-        text renderAssetId FK
-        text thumbnailAssetId FK
+        text originalMediaId FK
+        text skeletonMediaId FK
+        text thumbnailMediaId FK
         text currentJobId FK
         datetime createdAt
         datetime updatedAt
     }
-    COMMUNITY_POSE {
-        text id PK
-        text name
-        text imagePath
-        text thumbnailPath
-        text status
-        datetime uploadedAt
-        integer downloadCount
-    }
     MEDIA_ASSET {
-        text id PK
-        text guideId FK
+        text mediaId PK
+        text poseId FK
         text role
         text locator
         text mimeType
         text readiness
     }
     EXTRACTION_JOB {
-        text id PK
-        text guideId FK
+        text id PK "jobId (correlation key)"
+        text poseId FK "nullable until pose created"
         text status
-        text sourceAssetId FK
-        text resultAssetId FK
+        text sourceMediaId FK
+        text skeletonMediaId FK
         integer attempts
         integer maxAttempts
     }
@@ -75,4 +67,9 @@ erDiagram
     }
 ```
 
-`CommunityPose` là projection: cùng `id` với `PoseGuide` khi `status = published`. Public API không trả owner hay job.
+`Pose.status = published` chỉ có trên public view (DTO `CommunityPose`); public API
+không trả owner, original, hay job. `poseId` ổn định từ `local` → `published` và
+được gán tại lúc tạo — **`Pose` chỉ được tạo sau khi extraction `succeeded`**
+(trong lúc extraction, job được theo dõi bằng `jobId`). `ownerAccountId` bắt buộc
+(non-nullable) trên mọi `Pose`; `ExtractionJob.poseId` nullable tới khi pose tạo.
+Xem glossary [`pose-domain-glossary.md`](../../../harness/specs/pose-domain-glossary.md).

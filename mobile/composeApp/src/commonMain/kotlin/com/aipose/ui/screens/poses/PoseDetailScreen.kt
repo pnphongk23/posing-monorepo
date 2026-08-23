@@ -34,7 +34,6 @@ import coil3.compose.AsyncImage
 import com.aipose.Pose
 import com.aipose.data.PreparedPoseReference
 import com.aipose.data.PoseImageVerification
-import com.aipose.data.PoseReferenceKey
 import com.aipose.data.PoseRepository
 import com.aipose.data.PoseServiceLocator
 import com.aipose.data.remote.CommunityPose
@@ -70,7 +69,7 @@ sealed interface PoseDetailUiState {
     data class Error(val message: String) : PoseDetailUiState
     data class Success(
         val name: String,
-        val imagePath: String,
+        val skeletonPath: String,
         val thumbnailPath: String?,
         val difficulty: String?,
         val author: String?,
@@ -88,7 +87,7 @@ sealed interface DetailActionState {
 }
 
 class PoseDetailViewModel(
-    private val poseKey: PoseReferenceKey,
+    private val poseId: String,
     private val repository: PoseRepository = PoseServiceLocator.repository,
     private val apiService: PoseApiService = PoseServiceLocator.apiService
 ) {
@@ -100,48 +99,40 @@ class PoseDetailViewModel(
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
+
     suspend fun load() {
-        when (poseKey) {
-            is PoseReferenceKey.Personal -> {
-                repository.getPoseById(poseKey.id).collectLatest { pose ->
-                    _uiState.value = if (pose == null) {
-                        PoseDetailUiState.NotFound
-                    } else {
-                        PoseDetailUiState.Success(
-                            name = pose.name,
-                            imagePath = pose.imagePath,
-                            thumbnailPath = pose.thumbnailPath,
-                            difficulty = null,
-                            author = null,
-                            isMine = true,
-                            pose = pose
-                        )
-                    }
-                }
+        repository.getPoseById(poseId).collectLatest { pose ->
+            if (pose != null) {
+                _uiState.value = PoseDetailUiState.Success(
+                    name = pose.name,
+                    skeletonPath = pose.skeletonPath,
+                    thumbnailPath = pose.thumbnailPath,
+                    difficulty = pose.difficulty,
+                    author = pose.ownerAccountId,
+                    isMine = pose.status == "local",
+                    pose = pose
+                )
+                return@collectLatest
             }
-            is PoseReferenceKey.Community -> {
-                try {
-                    val communityPose = apiService.getCommunityPoseDetail(poseKey.id)
-                    _uiState.value = PoseDetailUiState.Success(
-                        name = communityPose.name,
-                        imagePath = communityPose.imagePath,
-                        thumbnailPath = communityPose.thumbnailPath,
-                        difficulty = communityPose.difficulty,
-                        author = null, // author is absent from community database model, resolves to null
-                        isMine = false,
-                        communityPose = communityPose
-                    )
-                } catch (e: PoseApiException) {
-                    // Missing or unpublished community records are not-found;
-                    // everything else (transport, 5xx) is a retryable failure.
-                    _uiState.value = if (e.code == "NOT_FOUND" || e.code == "404") {
-                        PoseDetailUiState.NotFound
-                    } else {
-                        PoseDetailUiState.Error(e.message ?: "Failed to load community pose")
-                    }
-                } catch (e: Exception) {
-                    _uiState.value = PoseDetailUiState.Error(e.message ?: "Failed to load community pose")
+            try {
+                val communityPose = apiService.getCommunityPoseDetail(poseId)
+                _uiState.value = PoseDetailUiState.Success(
+                    name = communityPose.name,
+                    skeletonPath = communityPose.skeletonUrl,
+                    thumbnailPath = communityPose.thumbnailUrl,
+                    difficulty = communityPose.difficulty,
+                    author = null,
+                    isMine = false,
+                    communityPose = communityPose
+                )
+            } catch (e: PoseApiException) {
+                _uiState.value = if (e.code == "NOT_FOUND" || e.code == "404") {
+                    PoseDetailUiState.NotFound
+                } else {
+                    PoseDetailUiState.Error(e.message ?: "Failed to load pose")
                 }
+            } catch (e: Exception) {
+                _uiState.value = PoseDetailUiState.Error(e.message ?: "Failed to load pose")
             }
         }
     }
@@ -149,9 +140,9 @@ class PoseDetailViewModel(
     /**
      * Prepares a verified typed reference for the selected pose and emits it
      * via [onSuccess] only when preparation succeeds (E4). On any unreadable
-     * personal asset or failed community download/decode, the view model stays
+     * local asset or failed published download/decode, the view model stays
      * on detail and exposes a recoverable [DetailActionState.Error] so the user
-     * can retry; it never navigates with a missing or wrong render.
+     * can retry; it never navigates with a missing skeleton.
      */
     suspend fun tryPose(onSuccess: (PreparedPoseReference) -> Unit) {
         val state = _uiState.value
@@ -168,58 +159,42 @@ class PoseDetailViewModel(
         }
     }
 
-    private suspend fun prepareReference(state: PoseDetailUiState.Success): PreparedPoseReference =
-        when (val key = poseKey) {
-            is PoseReferenceKey.Personal -> {
-                val imagePath = state.pose?.imagePath.orEmpty()
-                if (imagePath.isBlank()) {
-                    throw IllegalStateException("This pose has no image to prepare.")
-                }
-                val renderLocator = if (imagePath.startsWith("data:")) {
-                    // Data URIs are self-contained: decode and structurally verify.
-                    val bytes = PoseImageVerification.decodeDataUriPayload(imagePath)
-                        ?: throw IllegalStateException("The pose image could not be read.")
-                    if (!PoseImageVerification.isValidImage(bytes)) {
-                        throw IllegalStateException("The pose image is not a supported image format.")
-                    }
-                    imagePath
-                } else {
-                    // Local file assets are app-owned; resolveImagePath returns
-                    // the absolute path only when the file actually exists.
-                    resolveImagePath(imagePath)
-                        ?: throw IllegalStateException("The pose image file could not be found.")
-                }
-                PreparedPoseReference(key = key, name = state.name, renderLocator = renderLocator)
+    private suspend fun prepareReference(state: PoseDetailUiState.Success): PreparedPoseReference {
+        val skeletonPath = state.pose?.skeletonPath ?: state.communityPose?.skeletonUrl ?: state.skeletonPath
+        if (skeletonPath.isBlank()) throw IllegalStateException("This pose has no skeleton to prepare.")
+        val verifiedSkeletonPath = if (skeletonPath.startsWith("data:")) {
+            val bytes = PoseImageVerification.decodeDataUriPayload(skeletonPath)
+                ?: throw IllegalStateException("The skeleton image could not be read.")
+            if (!PoseImageVerification.isValidImage(bytes)) {
+                throw IllegalStateException("The skeleton image is not supported.")
             }
-            is PoseReferenceKey.Community -> {
-                val imagePath = state.imagePath
-                if (imagePath.isBlank()) {
-                    throw IllegalStateException("This pose has no image to prepare.")
-                }
-                val bytes = apiService.downloadImageBytes(imagePath)
-                val mimeType = PoseImageVerification.detectImageMimeType(bytes)
-                    ?: throw IllegalStateException("The pose image could not be downloaded or decoded.")
-                PreparedPoseReference(
-                    key = key,
-                    name = state.name,
-                    renderLocator = PoseImageVerification.toDataUri(bytes, mimeType)
-                )
-            }
+            skeletonPath
+        } else if (state.pose != null) {
+            resolveImagePath(skeletonPath)
+                ?: throw IllegalStateException("The skeleton file could not be found.")
+        } else {
+            val bytes = apiService.downloadImageBytes(skeletonPath)
+            val mimeType = PoseImageVerification.detectImageMimeType(bytes)
+                ?: throw IllegalStateException("The skeleton image could not be decoded.")
+            PoseImageVerification.toDataUri(bytes, mimeType)
         }
+        return PreparedPoseReference(poseId = poseId, poseName = state.name, skeletonPath = verifiedSkeletonPath)
+    }
 
     private val deleteMutex = Mutex()
 
     /**
-     * Deletes the personal pose locally. Community references never delete and
+     * Deletes the local pose locally. Published references never delete and
      * no server request is made (FR-006/BR-001). A second confirm while a
      * delete is already in flight is ignored: it cannot start another delete.
      */
     suspend fun delete(): Boolean {
-        if (poseKey !is PoseReferenceKey.Personal) return false
+        val state = _uiState.value
+        if (state !is PoseDetailUiState.Success || state.pose == null) return false
         if (!deleteMutex.tryLock()) return false // double-confirm/double-delete guard
         _actionState.value = DetailActionState.Deleting
         return try {
-            repository.deletePose(poseKey.id)
+            repository.deletePose(poseId)
             _actionState.value = DetailActionState.Idle
             true
         } catch (e: Exception) {
@@ -237,7 +212,7 @@ class PoseDetailViewModel(
 
 @Composable
 fun PoseDetailScreen(
-    poseKey: PoseReferenceKey,
+    poseId: String,
     viewModel: PoseDetailViewModel,
     onUseWithCamera: (PreparedPoseReference) -> Unit,
     onBack: () -> Unit,
@@ -370,9 +345,9 @@ fun PoseDetailScreen(
                             .background(AiPoseColors.Surface, RoundedCornerShape(CornerRadius.md)),
                         contentAlignment = Alignment.Center
                     ) {
-                        if (state.imagePath.isNotBlank()) {
+                        if (state.skeletonPath.isNotBlank()) {
                             AsyncImage(
-                                model = state.imagePath,
+                                model = state.skeletonPath,
                                 contentDescription = state.name,
                                 modifier = Modifier.fillMaxSize(),
                                 contentScale = ContentScale.Fit

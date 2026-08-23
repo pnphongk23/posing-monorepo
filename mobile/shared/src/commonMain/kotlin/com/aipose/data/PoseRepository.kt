@@ -4,12 +4,29 @@ import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
 import app.cash.sqldelight.coroutines.mapToOneOrNull
 import com.aipose.Pose
-import com.aipose.data.remote.CommunityPose
 import com.aipose.data.remote.PaginatedResult
 import com.aipose.data.remote.PoseApiService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.datetime.Clock
+import kotlin.random.Random
+
+private const val LOCAL_OWNER_ACCOUNT_ID = "00000000-0000-0000-0000-000000000001"
+
+private fun newPoseId(): String {
+    val bytes = ByteArray(16).also { Random.nextBytes(it) }
+    bytes[6] = ((bytes[6].toInt() and 0x0f) or 0x40).toByte()
+    bytes[8] = ((bytes[8].toInt() and 0x3f) or 0x80).toByte()
+    val hexChars = "0123456789abcdef"
+    val hex = buildString(32) {
+        bytes.forEach { byte ->
+            val value = byte.toInt() and 0xff
+            append(hexChars[value ushr 4])
+            append(hexChars[value and 0x0f])
+        }
+    }
+    return "${hex.substring(0, 8)}-${hex.substring(8, 12)}-${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20)}"
+}
 
 class PoseRepository(
     private val database: AiPoseDatabase,
@@ -23,89 +40,87 @@ class PoseRepository(
         .asFlow()
         .mapToList(Dispatchers.Default)
 
-    fun getPoseById(id: Long): Flow<Pose?> = queries
-        .getPoseById(id)
+    fun getPoseById(poseId: String): Flow<Pose?> = queries
+        .getPoseById(poseId)
         .asFlow()
         .mapToOneOrNull(Dispatchers.Default)
 
-    /**
-     * Deletes the personal pose's metadata and every owned local asset exactly
-     * once (FEAT-003 FR-006). Remote URLs and embedded data URIs are never
-     * deleted, no server delete request is made, and community state is never
-     * mutated (BR-001). On any owned-file failure the metadata row is restored
-     * so the item stays usable and the failure is reported (FEAT-003 E3); a
-     * reported success leaves neither metadata nor owned files.
-     */
-    suspend fun deletePose(id: Long) {
-        val pose = queries.getPoseById(id).executeAsOneOrNull()
-            ?: throw NoSuchElementException("Pose with ID $id not found")
-
-        // 1. Delete database metadata first
-        queries.deletePose(id)
-
-        // 2. Delete every owned local asset field exactly once. The primary
-        // image is deleted last so a partial failure keeps the main display
-        // asset, and the file that failed to delete always survives for retry.
+    suspend fun deletePose(poseId: String) {
+        val pose = queries.getPoseById(poseId).executeAsOneOrNull()
+            ?: throw NoSuchElementException("Pose $poseId not found")
+        queries.deletePose(poseId)
         try {
-            deleteOwnedFile(pose.originalImagePath)
+            deleteOwnedFile(pose.originalPath)
+            deleteOwnedFile(pose.skeletonPath)
             deleteOwnedFile(pose.thumbnailPath)
-            deleteOwnedFile(pose.imagePath)
         } catch (e: Exception) {
-            // 3. Compensation: restore metadata if any owned-file delete fails
             restorePose(pose)
             throw RuntimeException("Deletion failed: ${e.message}", e)
         }
     }
 
-    /** Deletes an owned local file if present; data URIs and remote URLs are skipped. */
     private fun deleteOwnedFile(path: String?) {
-        if (path.isNullOrBlank()) return
-        if (!storage.isOwned(path)) return
-        if (storage.exists(path)) {
-            storage.delete(path)
-        }
+        if (path.isNullOrBlank() || !storage.isOwned(path)) return
+        if (storage.exists(path)) storage.delete(path)
     }
 
-    /** Restores the metadata row after a partial local deletion failure. */
     private fun restorePose(pose: Pose) {
         try {
             queries.insertPoseWithId(
-                id = pose.id,
+                poseId = pose.poseId,
+                ownerAccountId = pose.ownerAccountId,
                 name = pose.name,
-                imagePath = pose.imagePath,
+                description = pose.description,
+                tags = pose.tags,
+                difficulty = pose.difficulty,
+                bodyParts = pose.bodyParts,
+                status = pose.status,
+                originalPath = pose.originalPath,
+                skeletonPath = pose.skeletonPath,
                 thumbnailPath = pose.thumbnailPath,
-                originalImagePath = pose.originalImagePath,
+                currentJobId = pose.currentJobId,
                 createdAt = pose.createdAt,
-                isMine = pose.isMine,
-                likes = pose.likes
+                updatedAt = pose.updatedAt
             )
         } catch (dbEx: Exception) {
             throw IllegalStateException("Deletion failed and database restoration failed: ${dbEx.message}", dbEx)
         }
     }
 
-    suspend fun insertPose(name: String, imagePath: String, isMine: Boolean = true) {
+    /** Creates the canonical Pose only after extraction has succeeded. */
+    suspend fun createPoseAfterExtraction(
+        name: String,
+        originalPath: String,
+        skeletonPath: String,
+        thumbnailPath: String,
+        ownerAccountId: String = LOCAL_OWNER_ACCOUNT_ID
+    ): String {
+        val now = Clock.System.now().toString()
+        val poseId = newPoseId()
         queries.insertPose(
+            poseId = poseId,
+            ownerAccountId = ownerAccountId,
             name = name,
-            imagePath = imagePath,
-            thumbnailPath = null,
-            originalImagePath = null,
-            createdAt = Clock.System.now().toString(),
-            isMine = if (isMine) 1L else 0L,
-            likes = 0L
+            description = null,
+            tags = "[]",
+            difficulty = null,
+            bodyParts = "[]",
+            status = "local",
+            originalPath = originalPath,
+            skeletonPath = skeletonPath,
+            thumbnailPath = thumbnailPath,
+            currentJobId = null,
+            createdAt = now,
+            updatedAt = now
         )
+        return poseId
     }
 
-    suspend fun getCommunityPoses(
-        page: Int = 1,
-        pageSize: Int = 20
-    ): PaginatedResult<CommunityPose> {
-        val service = requireNotNull(apiService) { "PoseApiService must be provided to use getCommunityPoses" }
-        return service.getCommunityPoses(page = page, limit = pageSize)
-    }
+    suspend fun getCommunityPoses(page: Int = 1, pageSize: Int = 20) =
+        requireNotNull(apiService) { "PoseApiService must be provided to use getCommunityPoses" }
+            .getCommunityPoses(page = page, limit = pageSize)
 
-    suspend fun getCommunityPoseDetail(id: String): CommunityPose {
-        val service = requireNotNull(apiService) { "PoseApiService must be provided to use getCommunityPoseDetail" }
-        return service.getCommunityPoseDetail(id)
-    }
+    suspend fun getCommunityPoseDetail(poseId: String) =
+        requireNotNull(apiService) { "PoseApiService must be provided to use getCommunityPoseDetail" }
+            .getCommunityPoseDetail(poseId)
 }

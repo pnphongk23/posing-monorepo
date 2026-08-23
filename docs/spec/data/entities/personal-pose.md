@@ -1,31 +1,36 @@
-# PersonalPose
+# PersonalPose (deprecated — folded into Pose)
 
 ## Description
 
-Pose/reference cá nhân lưu local trên thiết bị. Dùng trong gallery ([FEAT-002](../../../harness/features/FEAT-002-manage-a-local-photo-gallery.md)) và khi mobile persist kết quả extraction ([FEAT-004](../../../harness/features/FEAT-004-extract-reusable-pose-images.md)). Không đồng bộ lên [`CommunityPose`](community-pose.md).
+> **Deprecated as entity.** `PersonalPose` không còn là entity domain riêng trong
+> canonical model. Khái niệm pose cá nhân được hợp nhất vào [`Pose`](pose.md)
+> với một `poseId` (UUID) ổn định. Không tạo entity `PersonalPose` song song.
+> Transition ghi nhận tại glossary
+> [`pose-domain-glossary.md`](../../../harness/specs/pose-domain-glossary.md).
 
-## Fields
+Trước đây dùng trong gallery ([FEAT-002](../../../harness/features/FEAT-002-manage-a-local-photo-gallery.md))
+và khi mobile persist kết quả extraction ([FEAT-004](../../../harness/features/FEAT-004-extract-reusable-pose-images.md)).
+Nay pose local dùng `Pose` với `status = local`.
 
-| Field | Type | Required | Description |
-|---|---|---|---|
-| `id` | INTEGER | PK | Local unique ID |
-| `name` | TEXT | ✓ | Tên pose |
-| `imagePath` | TEXT | ✓ | Locator render local (file path hoặc data URI) |
-| `thumbnailPath` | TEXT | — | Thumbnail local |
-| `originalImagePath` | TEXT | — | Ảnh nguồn local |
-| `createdAt` | TEXT | ✓ | ISO 8601 |
-| `isMine` | INTEGER | ✓ (default `1`) | `1` do user tạo; `0` bản cache community (nếu có) |
-| `likes` | INTEGER | ✓ (default `0`) | Đếm local |
+## Migration
 
-## Relationships
-
-- Được `Photo.poseId` tham chiếu
-- Variant `PoseReferenceKey.Personal(id)` trên mobile
+| `PersonalPose` cũ | `Pose` mới |
+|---|---|
+| `id` (INTEGER local) | `poseId` (UUID) |
+| `imagePath` (local render) | `skeletonMediaId` → `MediaAsset` role `skeleton` |
+| `thumbnailPath` | `thumbnailMediaId` |
+| `originalImagePath` | `originalMediaId` |
+| `isMine` / `likes` | Không phải canonical domain; loại bỏ khỏi canonical model |
 
 ## Business Rules
 
 | ID | Rule |
 |---|---|
-| BR-POSE-001 | `PersonalPose` không có server identity và không FK tới `CommunityPose`. |
-| BR-POSE-002 | `isMine = 1` cho pose user tạo trên máy; không nhầm với pose cộng đồng published. |
-| BR-POSE-003 | Persist kết quả FEAT-004 trên mobile tạo `PersonalPose` local; không publish hộ. |
+| BR-PERSONAL-001 | Canonical model không tạo `PersonalPose` tách biệt; dùng `Pose` (`status = local`). |
+| BR-PERSONAL-002 | `Photo.poseId` trỏ canonical `Pose.poseId` (UUID), không trỏ integer local. |
+| BR-PERSONAL-003 | Persist kết quả FEAT-004 trên mobile tạo `Pose` local; không publish hộ. |
+
+## Relationships
+
+- Entity canonical: [`pose.md`](pose.md)
+- Glossary: [`pose-domain-glossary.md`](../../../harness/specs/pose-domain-glossary.md)

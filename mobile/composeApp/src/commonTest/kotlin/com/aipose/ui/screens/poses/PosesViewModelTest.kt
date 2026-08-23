@@ -201,7 +201,7 @@ class PosesViewModelTest {
 
             viewModel.loadCommunityPoses(refresh = false)
             val loaded = waitForState(viewModel) { it.communityState.items.isNotEmpty() }
-            assertEquals("p1", loaded.communityState.items.first().id)
+            assertEquals("p1", loaded.communityState.items.first().poseId)
 
             // Trigger refresh; while in flight the previously loaded items stay visible.
             viewModel.loadCommunityPoses(refresh = true)
@@ -209,14 +209,14 @@ class PosesViewModelTest {
                 it.communityState.refreshState is OperationState.Loading
             }
             assertEquals(1, duringRefresh.communityState.items.size)
-            assertEquals("p1", duringRefresh.communityState.items.first().id)
+            assertEquals("p1", duringRefresh.communityState.items.first().poseId)
 
             // Refresh completes and replaces the items.
             val refreshed = waitForState(viewModel) {
                 it.communityState.refreshState is OperationState.Idle &&
-                    it.communityState.items.firstOrNull()?.id == "p2"
+                    it.communityState.items.firstOrNull()?.poseId == "p2"
             }
-            assertEquals("p2", refreshed.communityState.items.first().id)
+            assertEquals("p2", refreshed.communityState.items.first().poseId)
         } finally {
             job.cancel()
             driver.close()

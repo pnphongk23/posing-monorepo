@@ -1,10 +1,15 @@
 package com.aipose.navigation
 
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -12,8 +17,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -25,11 +32,11 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.platform.testTag
@@ -38,6 +45,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
@@ -65,7 +73,6 @@ import com.aipose.ui.screens.poses.PosesViewModel
 import com.aipose.ui.theme.AiPoseColors
 import com.aipose.ui.theme.AiPoseTypography
 import com.aipose.ui.theme.Spacing
-import com.aipose.data.PoseReferenceKey
 import com.aipose.ui.components.NeoBrutalismContainer
 import com.aipose.ui.screens.poses.SearchScreen
 
@@ -163,11 +170,11 @@ internal fun createSearchNavigationAction(
 ): () -> Unit = {
     pushScreen(
         SearchScreen(
-            onPersonalPoseClick = { poseId ->
-                pushScreen(PoseDetailVoyagerScreen(PoseReferenceKey.Personal(poseId)))
+            onLocalPoseClick = { poseId ->
+                pushScreen(PoseDetailVoyagerScreen(poseId))
             },
-            onCommunityPoseClick = { communityPose ->
-                pushScreen(PoseDetailVoyagerScreen(PoseReferenceKey.Community(communityPose.id)))
+            onPublishedPoseClick = { communityPose ->
+                pushScreen(PoseDetailVoyagerScreen(communityPose.poseId))
             },
             onBack = popBack,
         ),
@@ -194,8 +201,8 @@ class PosesListScreen : Screen {
         val tabNavigator = LocalTabNavigator.current
         PosesScreen(
             viewModel = remember { PosesViewModel() },
-            onPoseClick = { poseId -> navigator.push(PoseDetailVoyagerScreen(PoseReferenceKey.Personal(poseId))) },
-            onCommunityPoseClick = { communityPose -> navigator.push(PoseDetailVoyagerScreen(PoseReferenceKey.Community(communityPose.id))) },
+            onPoseClick = { poseId -> navigator.push(PoseDetailVoyagerScreen(poseId)) },
+            onPublishedPoseClick = { communityPose -> navigator.push(PoseDetailVoyagerScreen(communityPose.poseId)) },
             onExtractPoseClick = createPoseCameraEntryAction { tabNavigator.current = it },
             onSearchClick = createSearchNavigationAction(
                 pushScreen = { navigator.push(it) },
@@ -206,15 +213,15 @@ class PosesListScreen : Screen {
 }
 
 class PoseDetailVoyagerScreen(
-    private val poseKey: PoseReferenceKey
+    private val poseId: String
 ) : Screen {
     @Composable
     override fun Content() {
         val navigator = LocalNavigator.currentOrThrow
         val tabNavigator = LocalTabNavigator.current
         PoseDetailScreen(
-            poseKey = poseKey,
-            viewModel = remember { PoseDetailViewModel(poseKey) },
+            poseId = poseId,
+            viewModel = remember { PoseDetailViewModel(poseId) },
             onUseWithCamera = createTryPoseCameraHandoffAction(
                 setPreparedReference = { PoseServiceLocator.preparedReference = it },
                 setCurrentTab = { tabNavigator.current = it },
@@ -252,32 +259,67 @@ fun MainDock(modifier: Modifier = Modifier) {
             shadowOffset = 2.dp,
             borderWidth = 2.dp
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(2.dp),
-                horizontalArrangement = Arrangement.spacedBy(2.dp)
+            BoxWithConstraints(
+                modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(22.dp))
             ) {
-                DockItem(
-                    title = "Poses",
-                    icon = painterResource(Res.drawable.ic_grid),
-                    isSelected = tabNavigator.current == PosesTab,
-                    onClick = { tabNavigator.current = PosesTab },
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                        .testTag(MAIN_DOCK_POSES_TEST_TAG)
+                val pillWidth = maxWidth
+                // Animate the indicator offset between the two dock slots:
+                // 0f = Poses (left), 1f = Gallery (right).
+                val indicatorFraction by animateFloatAsState(
+                    targetValue = if (tabNavigator.current == GalleryTab) 1f else 0f,
+                    animationSpec = spring(
+                        dampingRatio = Spring.DampingRatioNoBouncy,
+                        stiffness = Spring.StiffnessMedium
+                    ),
+                    label = "mainDockIndicator"
                 )
-                DockItem(
-                    title = "Gallery",
-                    icon = painterResource(Res.drawable.ic_layout_grid),
-                    isSelected = tabNavigator.current == GalleryTab,
-                    onClick = { tabNavigator.current = GalleryTab },
+
+                // Sliding tab indicator drawn behind the items.
+                NeoBrutalismContainer(
                     modifier = Modifier
-                        .weight(1f)
+                        .padding(2.dp)
                         .fillMaxHeight()
-                        .testTag(MAIN_DOCK_GALLERY_TEST_TAG)
-                )
+                        .width(pillWidth / 2)
+                        .offset {
+                            IntOffset(
+                                x = ((pillWidth / 2) * indicatorFraction).roundToPx(),
+                                y = 0
+                            )
+                        },
+                    shape = RoundedCornerShape(20.dp),
+                    backgroundColor = AiPoseColors.AccentBlue,
+                    borderWidth = 1.5.dp,
+                    shadowOffset = 1.5.dp
+                ) {
+                }
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(2.dp),
+                    horizontalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    DockItem(
+                        title = "Poses",
+                        icon = painterResource(Res.drawable.ic_grid),
+                        isSelected = tabNavigator.current == PosesTab,
+                        onClick = { tabNavigator.current = PosesTab },
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .testTag(MAIN_DOCK_POSES_TEST_TAG)
+                    )
+                    DockItem(
+                        title = "Gallery",
+                        icon = painterResource(Res.drawable.ic_layout_grid),
+                        isSelected = tabNavigator.current == GalleryTab,
+                        onClick = { tabNavigator.current = GalleryTab },
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .testTag(MAIN_DOCK_GALLERY_TEST_TAG)
+                    )
+                }
             }
         }
 
@@ -303,8 +345,9 @@ fun MainDock(modifier: Modifier = Modifier) {
 }
 
 /**
- * E-DOCK: one pill item — active state mirrors the prototype
- * (accent-blue chip + thin border + dark icon/label vs gray idle).
+ * E-DOCK: one pill item — the selected background/border come from the
+ * sliding indicator drawn behind the items in [MainDock]; the item itself
+ * only switches its icon/label color between idle and active.
  */
 @Composable
 private fun DockItem(
@@ -314,20 +357,13 @@ private fun DockItem(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val shape = RoundedCornerShape(20.dp)
+    val dockInteractionSource = remember { MutableInteractionSource() }
     Column(
-        modifier = modifier
-            .clip(shape)
-            .background(
-                color = if (isSelected) AiPoseColors.AccentBlue else Color.Transparent,
-                shape = shape
-            )
-            .border(
-                width = if (isSelected) 1.dp else 0.dp,
-                color = AiPoseColors.Foreground,
-                shape = shape
-            )
-            .clickable(onClick = onClick),
+        modifier = modifier.clickable(
+            interactionSource = dockInteractionSource,
+            indication = null,
+            onClick = onClick
+        ),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {

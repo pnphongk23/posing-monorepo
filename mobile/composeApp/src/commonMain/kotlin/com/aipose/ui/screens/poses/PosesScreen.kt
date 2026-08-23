@@ -2,6 +2,7 @@ package com.aipose.ui.screens.poses
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.Arrangement
@@ -9,6 +10,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -126,9 +128,9 @@ class PosesViewModel(
 @Composable
 fun PosesScreen(
     viewModel: PosesViewModel,
-    onPoseClick: (Long) -> Unit,
+    onPoseClick: (String) -> Unit,
     onExtractPoseClick: () -> Unit,
-    onCommunityPoseClick: (CommunityPose) -> Unit = {},
+    onPublishedPoseClick: (CommunityPose) -> Unit = {},
     onBack: (() -> Unit)? = null,
     onSearchClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
@@ -181,36 +183,64 @@ fun PosesScreen(
                     horizontalArrangement = Arrangement.spacedBy(2.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    NeoBrutalismContainer(
-                        modifier = Modifier.size(44.dp).testTag(POSES_SEARCH_BUTTON_TEST_TAG),
-                        shape = RoundedCornerShape(10.dp),
-                        backgroundColor = AiPoseColors.Background,
-                        shadowOffset = 2.dp,
-                        borderWidth = 2.dp,
-                        onClick = { onSearchClick?.invoke() }
+                    // Prototype `.nb-btn--compact-action`: 44dp touch target
+                    // wrapping a 32dp `.nb-btn__compact-surface` chip.
+                    val searchInteractionSource = remember { MutableInteractionSource() }
+                    Box(
+                        modifier = Modifier
+                            .size(44.dp)
+                            .clickable(
+                                interactionSource = searchInteractionSource,
+                                indication = null,
+                                role = Role.Button,
+                                onClick = { onSearchClick?.invoke() }
+                            ),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Search,
-                            contentDescription = "Search poses",
-                            tint = AiPoseColors.Foreground,
-                            modifier = Modifier.size(16.dp)
-                        )
+                        NeoBrutalismContainer(
+                            modifier = Modifier.size(32.dp).testTag(POSES_SEARCH_BUTTON_TEST_TAG),
+                            shape = RoundedCornerShape(10.dp),
+                            backgroundColor = AiPoseColors.Surface,
+                            shadowOffset = 1.5.dp,
+                            borderWidth = 2.dp,
+                            interactionSource = searchInteractionSource
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Search,
+                                contentDescription = "Search poses",
+                                tint = AiPoseColors.Foreground,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
                     }
 
-                    NeoBrutalismContainer(
-                        modifier = Modifier.size(44.dp).testTag("extract-pose-button"),
-                        shape = RoundedCornerShape(10.dp),
-                        backgroundColor = AiPoseColors.Background,
-                        shadowOffset = 2.dp,
-                        borderWidth = 2.dp,
-                        onClick = onExtractPoseClick
+                    val addInteractionSource = remember { MutableInteractionSource() }
+                    Box(
+                        modifier = Modifier
+                            .size(44.dp)
+                            .clickable(
+                                interactionSource = addInteractionSource,
+                                indication = null,
+                                role = Role.Button,
+                                onClick = onExtractPoseClick
+                            ),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Add,
-                            contentDescription = "Create Pose",
-                            tint = AiPoseColors.Foreground,
-                            modifier = Modifier.size(16.dp)
-                        )
+                        NeoBrutalismContainer(
+                            modifier = Modifier.size(32.dp).testTag("extract-pose-button"),
+                            shape = RoundedCornerShape(10.dp),
+                            backgroundColor = AiPoseColors.Warning,
+                            shadowOffset = 1.5.dp,
+                            borderWidth = 2.dp,
+                            interactionSource = addInteractionSource
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Add,
+                                contentDescription = "Create Pose",
+                                tint = AiPoseColors.Foreground,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
                     }
                 }
             }
@@ -223,7 +253,7 @@ fun PosesScreen(
                 )
                 1 -> CommunityContent(
                     uiState = uiState,
-                    onPoseClick = onCommunityPoseClick,
+                    onPoseClick = onPublishedPoseClick,
                     onLoadMore = viewModel::loadMoreCommunityPoses,
                     onRefresh = { viewModel.loadCommunityPoses(refresh = true) },
                     onRetryInitial = { viewModel.loadCommunityPoses(refresh = false) },
@@ -238,7 +268,7 @@ fun PosesScreen(
 @Composable
 private fun MyPosesContent(
     uiState: PosesUiState,
-    onPoseClick: (Long) -> Unit,
+    onPoseClick: (String) -> Unit,
     onExtractPoseClick: () -> Unit
 ) {
     when {
@@ -278,8 +308,8 @@ private fun MyPosesContent(
                     horizontalArrangement = Arrangement.spacedBy(Spacing.md),
                     verticalArrangement = Arrangement.spacedBy(Spacing.md)
                 ) {
-                    itemsIndexed(uiState.myPoses, key = { _, pose -> pose.id }) { index, pose ->
-                        PoseCard(pose = pose, index = index, onClick = { onPoseClick(pose.id) })
+                    itemsIndexed(uiState.myPoses, key = { _, pose -> pose.poseId }) { index, pose ->
+                        PoseCard(pose = pose, index = index, onClick = { onPoseClick(pose.poseId) })
                     }
                 }
             }
@@ -420,7 +450,7 @@ private fun CommunityContent(
                         horizontalArrangement = Arrangement.spacedBy(Spacing.md),
                         verticalArrangement = Arrangement.spacedBy(Spacing.md)
                     ) {
-                        itemsIndexed(state.items, key = { _, pose -> pose.id }) { index, pose ->
+                        itemsIndexed(state.items, key = { _, pose -> pose.poseId }) { index, pose ->
                             CommunityPoseCard(pose = pose, index = index, onClick = { onPoseClick(pose) })
                         }
                         if (state.hasMore) {
@@ -487,14 +517,14 @@ fun CommunityPoseCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(aspectRatio)
-                .testTag("pose-card-community-${pose.id}")
+                .testTag("pose-card-community-${pose.poseId}")
                 .semantics { contentDescription = pose.name },
             shape = RoundedCornerShape(CornerRadius.md),
             backgroundColor = AiPoseColors.Surface,
             shadowOffset = 4.dp,
             onClick = onClick
         ) {
-            val imageModel = pose.thumbnailPath ?: pose.imagePath
+            val imageModel = pose.thumbnailUrl
             if (imageModel.isNotBlank()) {
                 AsyncImage(
                     model = imageModel,
@@ -534,8 +564,8 @@ fun CountOnlyHeader(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
-            text = "$count Poses",
-            style = AiPoseTypography.Caption,
+            text = "$count poses",
+            style = AiPoseTypography.CaptionBold,
             color = AiPoseColors.Subtext,
             modifier = Modifier.testTag("poses-count-label")
         )
@@ -564,16 +594,18 @@ fun ToolbarTab(
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(4.dp)
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+            modifier = Modifier.width(IntrinsicSize.Max)
         ) {
             Text(
                 text = title,
                 style = AiPoseTypography.BodyBold,
-                color = if (isSelected) AiPoseColors.Foreground else AiPoseColors.Subtext
+                color = if (isSelected) AiPoseColors.Foreground else AiPoseColors.Subtext,
+                maxLines = 1
             )
             Box(
                 modifier = Modifier
-                    .width(48.dp)
+                    .fillMaxWidth()
                     .height(4.dp)
                     .background(
                         color = if (isSelected) AiPoseColors.AccentBlue else Color.Transparent,

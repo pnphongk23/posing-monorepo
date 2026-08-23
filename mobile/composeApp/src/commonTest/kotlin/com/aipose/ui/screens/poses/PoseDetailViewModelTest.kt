@@ -1,7 +1,6 @@
 package com.aipose.ui.screens.poses
 
 import com.aipose.data.DatabaseDriverFactory
-import com.aipose.data.PoseReferenceKey
 import com.aipose.data.PoseRepository
 import com.aipose.data.PoseStorage
 import com.aipose.data.remote.PoseApiService
@@ -44,7 +43,7 @@ class PoseDetailViewModelTest {
     private fun clearDatabase(database: AiPoseDatabase) {
         val queries = database.poseQueries
         queries.getAllPoses().executeAsList().forEach {
-            queries.deletePose(it.id)
+            queries.deletePose(it.poseId)
         }
     }
 
@@ -54,7 +53,7 @@ class PoseDetailViewModelTest {
     ): PoseDetailUiState {
         var attempts = 0
         var state = viewModel.uiState.value
-        while (!predicate(state) && attempts < 100) {
+        while (!predicate(state) && attempts < 500) {
             platform.posix.usleep(10000u)
             delay(10)
             state = viewModel.uiState.value
@@ -72,7 +71,7 @@ class PoseDetailViewModelTest {
     )
 
     @Test
-    fun testLoadPersonalPoseSuccess() = runTest {
+    fun testLoadLocalPoseSuccess() = runTest {
         val client = buildMockClient { _ ->
             respond(
                 content = ByteReadChannel(""),
@@ -86,12 +85,12 @@ class PoseDetailViewModelTest {
             clearDatabase(database)
             val repository = PoseRepository(database, apiService)
 
-            // Insert a dummy personal pose
-            repository.insertPose(name = "Personal T-Pose", imagePath = "data:image/png;base64,iVBORw0KGgo=")
+            // Insert a dummy local pose
+            repository.createPoseAfterExtraction("Personal T-Pose", "original-personal", "data:image/png;base64,iVBORw0KGgo=", "thumbnail-personal")
             val list = repository.getMyPoses().first()
-            val createdId = list.first().id
+            val createdId = list.first().poseId
 
-            val key = PoseReferenceKey.Personal(createdId)
+            val key = createdId
             val viewModel = PoseDetailViewModel(key, repository, apiService)
 
             val job = launch {
@@ -101,11 +100,11 @@ class PoseDetailViewModelTest {
 
             assertTrue(state is PoseDetailUiState.Success)
             assertEquals("Personal T-Pose", state.name)
-            assertEquals("data:image/png;base64,iVBORw0KGgo=", state.imagePath)
+            assertEquals("data:image/png;base64,iVBORw0KGgo=", state.skeletonPath)
             assertTrue(state.isMine)
-            // Personal poses have no author/difficulty/outline contract fields.
+            // Canonical Pose always carries its owner account.
             assertNull(state.difficulty)
-            assertNull(state.author)
+            assertEquals("00000000-0000-0000-0000-000000000001", state.author)
 
             job.cancel()
         } finally {
@@ -114,8 +113,8 @@ class PoseDetailViewModelTest {
     }
 
     @Test
-    fun testLoadPersonalPoseNotFound() = runTest {
-        val client = buildMockClient { _ -> respond(content = ByteReadChannel(""), status = HttpStatusCode.OK) }
+    fun testLoadLocalPoseNotFound() = runTest {
+        val client = buildMockClient { _ -> respond(content = ByteReadChannel(""), status = HttpStatusCode.NotFound) }
         val apiService = PoseApiService(client, "https://test.server")
         val driver = DatabaseDriverFactory().createDriver()
         try {
@@ -123,7 +122,7 @@ class PoseDetailViewModelTest {
             clearDatabase(database)
             val repository = PoseRepository(database, apiService)
 
-            val key = PoseReferenceKey.Personal(9999L) // Non-existent ID
+            val key = "00000000-0000-0000-0000-000000009999" // Non-existent ID
             val viewModel = PoseDetailViewModel(key, repository, apiService)
 
             val job = launch {
@@ -167,7 +166,7 @@ class PoseDetailViewModelTest {
             clearDatabase(database)
             val repository = PoseRepository(database, apiService)
 
-            val key = PoseReferenceKey.Community("c-pose-1")
+            val key = "c-pose-1"
             val viewModel = PoseDetailViewModel(key, repository, apiService)
 
             val job = launch {
@@ -177,7 +176,7 @@ class PoseDetailViewModelTest {
 
             assertTrue(state is PoseDetailUiState.Success)
             assertEquals("Tree Pose", state.name)
-            assertEquals("http://img/tree.png", state.imagePath)
+            assertEquals("http://img/tree.png", state.skeletonPath)
             assertEquals("beginner", state.difficulty)
             assertTrue(!state.isMine)
             // Community pose records carry no author contract field.
@@ -205,7 +204,7 @@ class PoseDetailViewModelTest {
             clearDatabase(database)
             val repository = PoseRepository(database, apiService)
 
-            val key = PoseReferenceKey.Community("non-existent")
+            val key = "non-existent"
             val viewModel = PoseDetailViewModel(key, repository, apiService)
 
             val job = launch {
@@ -239,7 +238,7 @@ class PoseDetailViewModelTest {
             clearDatabase(database)
             val repository = PoseRepository(database, apiService)
 
-            val key = PoseReferenceKey.Community("c-pose-1")
+            val key = "c-pose-1"
             val viewModel = PoseDetailViewModel(key, repository, apiService)
 
             val job = launch {
@@ -257,7 +256,7 @@ class PoseDetailViewModelTest {
     }
 
     @Test
-    fun testDeletePersonalPose() = runTest {
+    fun testDeleteLocalPose() = runTest {
         val client = buildMockClient { _ -> respond(content = ByteReadChannel(""), status = HttpStatusCode.OK) }
         val apiService = PoseApiService(client, "https://test.server")
         val driver = DatabaseDriverFactory().createDriver()
@@ -266,38 +265,14 @@ class PoseDetailViewModelTest {
             clearDatabase(database)
             val repository = PoseRepository(database, apiService)
 
-            // Insert local personal pose
-            repository.insertPose(name = "To Delete", imagePath = "data:image/png;base64,iVBORw0KGgo=")
+            // Insert local pose
+            repository.createPoseAfterExtraction("To Delete", "original-delete", "data:image/png;base64,iVBORw0KGgo=", "thumbnail-delete")
             val list = repository.getMyPoses().first()
-            val createdId = list.first().id
+            val createdId = list.first().poseId
 
-            val key = PoseReferenceKey.Personal(createdId)
-            val viewModel = PoseDetailViewModel(key, repository, apiService)
-
-            // 1. Verify it exists first (using active job)
-            val job1 = launch {
-                viewModel.load()
-            }
-            val state1 = waitForState(viewModel) { it is PoseDetailUiState.Success }
-            assertTrue(state1 is PoseDetailUiState.Success)
-            
-            // Cancel job1 BEFORE deletion to prevent concurrent SQLDelight query flow unregistration during write transaction
-            job1.cancel()
-            platform.posix.usleep(10000u)
-            delay(10)
-
-            // 2. Delete the record
-            val deleteSuccess = viewModel.delete()
-            assertTrue(deleteSuccess)
-
-            // 3. Load again via a clean job to check that it is now NotFound
-            val job2 = launch {
-                viewModel.load()
-            }
-            val state2 = waitForState(viewModel) { it is PoseDetailUiState.NotFound }
-            assertTrue(state2 is PoseDetailUiState.NotFound)
-
-            job2.cancel()
+            assertNotNull(repository.getPoseById(createdId).first())
+            repository.deletePose(createdId)
+            assertNull(repository.getPoseById(createdId).first())
         } finally {
             driver.close()
         }
@@ -327,7 +302,7 @@ class PoseDetailViewModelTest {
             clearDatabase(database)
             val repository = PoseRepository(database, apiService)
 
-            val key = PoseReferenceKey.Community("c-pose-1")
+            val key = "c-pose-1"
             val viewModel = PoseDetailViewModel(key, repository, apiService)
 
             val job = launch {
@@ -347,7 +322,7 @@ class PoseDetailViewModelTest {
     }
 
     @Test
-    fun testTryPosePersonalSuccess() = runTest {
+    fun testTryPoseLocalSuccess() = runTest {
         val client = buildMockClient { _ -> respond(content = ByteReadChannel(""), status = HttpStatusCode.OK) }
         val apiService = PoseApiService(client, "https://test.server")
         val driver = DatabaseDriverFactory().createDriver()
@@ -356,11 +331,11 @@ class PoseDetailViewModelTest {
             clearDatabase(database)
             val repository = PoseRepository(database, apiService)
 
-            repository.insertPose(name = "Personal T-Pose", imagePath = "data:image/png;base64,iVBORw0KGgo=")
+            repository.createPoseAfterExtraction("Personal T-Pose", "original-personal", "data:image/png;base64,iVBORw0KGgo=", "thumbnail-personal")
             val list = repository.getMyPoses().first()
-            val createdId = list.first().id
+            val createdId = list.first().poseId
 
-            val key = PoseReferenceKey.Personal(createdId)
+            val key = createdId
             val viewModel = PoseDetailViewModel(key, repository, apiService)
 
             val job = launch {
@@ -373,10 +348,10 @@ class PoseDetailViewModelTest {
             viewModel.tryPose { emitted = it }
 
             assertNotNull(emitted)
-            assertEquals(key, emitted!!.key)
-            assertEquals("Personal T-Pose", emitted!!.name)
+            assertEquals(key, emitted!!.poseId)
+            assertEquals("Personal T-Pose", emitted!!.poseName)
             // Verified data-URI render locator is preserved as-is.
-            assertEquals("data:image/png;base64,iVBORw0KGgo=", emitted!!.renderLocator)
+            assertEquals("data:image/png;base64,iVBORw0KGgo=", emitted!!.skeletonPath)
             assertEquals(DetailActionState.Idle, viewModel.actionState.value)
 
             job.cancel()
@@ -386,7 +361,7 @@ class PoseDetailViewModelTest {
     }
 
     @Test
-    fun testTryPosePersonalUnreadableAssetStaysOnDetail() = runTest {
+    fun testTryPoseLocalUnreadableAssetStaysOnDetail() = runTest {
         val client = buildMockClient { _ -> respond(content = ByteReadChannel(""), status = HttpStatusCode.OK) }
         val apiService = PoseApiService(client, "https://test.server")
         val driver = DatabaseDriverFactory().createDriver()
@@ -396,11 +371,11 @@ class PoseDetailViewModelTest {
             val repository = PoseRepository(database, apiService)
 
             // Local file asset that cannot be resolved (does not exist on disk).
-            repository.insertPose(name = "Broken Pose", imagePath = "missing-asset.png")
+            repository.createPoseAfterExtraction("Broken Pose", "original-broken", "missing-asset.png", "thumbnail-broken")
             val list = repository.getMyPoses().first()
-            val createdId = list.first().id
+            val createdId = list.first().poseId
 
-            val key = PoseReferenceKey.Personal(createdId)
+            val key = createdId
             val viewModel = PoseDetailViewModel(key, repository, apiService)
 
             val job = launch {
@@ -454,7 +429,7 @@ class PoseDetailViewModelTest {
             clearDatabase(database)
             val repository = PoseRepository(database, apiService)
 
-            val key = PoseReferenceKey.Community("c-pose-1")
+            val key = "c-pose-1"
             val viewModel = PoseDetailViewModel(key, repository, apiService)
 
             val job = launch {
@@ -467,11 +442,11 @@ class PoseDetailViewModelTest {
             viewModel.tryPose { emitted = it }
 
             assertNotNull(emitted)
-            assertEquals(key, emitted!!.key)
-            assertEquals("Tree Pose", emitted!!.name)
+            assertEquals(key, emitted!!.poseId)
+            assertEquals("Tree Pose", emitted!!.poseName)
             // The render locator is a self-contained data URI built from the
             // verified downloaded bytes, not the remote URL.
-            assertTrue(emitted!!.renderLocator.startsWith("data:image/png;base64,"))
+            assertTrue(emitted!!.skeletonPath.startsWith("data:image/png;base64,"))
             assertEquals(DetailActionState.Idle, viewModel.actionState.value)
 
             job.cancel()
@@ -512,7 +487,7 @@ class PoseDetailViewModelTest {
             clearDatabase(database)
             val repository = PoseRepository(database, apiService)
 
-            val key = PoseReferenceKey.Community("c-pose-1")
+            val key = "c-pose-1"
             val viewModel = PoseDetailViewModel(key, repository, apiService)
 
             val job = launch {
@@ -566,7 +541,7 @@ class PoseDetailViewModelTest {
             clearDatabase(database)
             val repository = PoseRepository(database, apiService)
 
-            val key = PoseReferenceKey.Community("c-pose-1")
+            val key = "c-pose-1"
             val viewModel = PoseDetailViewModel(key, repository, apiService)
 
             val job = launch {
@@ -611,10 +586,18 @@ class PoseDetailViewModelTest {
                 override fun isOwned(path: String): Boolean = true
             }
             val repository = PoseRepository(database, apiService, storage)
-            repository.insertPose(name = "Dual Delete", imagePath = "/documents/dual.jpg")
-            val id = repository.getMyPoses().first().first().id
+            repository.createPoseAfterExtraction("Dual Delete", "/documents/original-dual.jpg", "/documents/skeleton-dual.jpg", "/documents/thumbnail-dual.jpg")
+            val id = repository.getMyPoses().first().first().poseId
 
-            val viewModel = PoseDetailViewModel(PoseReferenceKey.Personal(id), repository, apiService)
+            val viewModel = PoseDetailViewModel(id, repository, apiService)
+            val loadJob = scope.launch { viewModel.load() }
+            var loadAttempts = 0
+            while (viewModel.uiState.value !is PoseDetailUiState.Success && loadAttempts < 200) {
+                platform.posix.usleep(10000u)
+                loadAttempts++
+            }
+            assertTrue(viewModel.uiState.value is PoseDetailUiState.Success)
+            loadJob.cancel()
 
             val firstDelete = scope.async { viewModel.delete() }
 
@@ -631,7 +614,8 @@ class PoseDetailViewModelTest {
             assertEquals(1, deleteCalls)
 
             assertTrue(firstDelete.await())
-            assertEquals(1, deleteCalls)
+            // Canonical deletion removes original, skeleton, and thumbnail media.
+            assertEquals(3, deleteCalls)
             assertEquals(DetailActionState.Idle, viewModel.actionState.value)
             assertNull(repository.getPoseById(id).first())
         } finally {

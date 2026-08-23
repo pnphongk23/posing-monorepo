@@ -6,9 +6,10 @@ import NavButton from '@/components/NavButton';
 import ActionButton from '@/components/ActionButton';
 
 const STATUS_BADGE = {
-  draft: 'bg-accent-yellow',
+  local: 'bg-accent-yellow',
   published: 'bg-accent-green',
 };
+const DEFAULT_OWNER_ACCOUNT_ID = '00000000-0000-0000-0000-000000000001';
 
 const COMMUNITY_ADMIN_API = '/api/admin/community/poses';
 
@@ -41,7 +42,8 @@ export default function AdminCommunityPage() {
     name: '',
     tags: '',
     description: '',
-    status: 'draft',
+    status: 'local',
+    ownerAccountId: DEFAULT_OWNER_ACCOUNT_ID,
   });
   const [selectedFile, setSelectedFile] = useState(null);
   const [poses, setPoses] = useState([]);
@@ -97,27 +99,46 @@ export default function AdminCommunityPage() {
   const submitForm = useCallback(async () => {
     if (!selectedFile) { setError('Vui lòng chọn hình ảnh.'); return; }
     if (!form.name.trim()) { setError('Vui lòng nhập tên pose.'); return; }
+    if (!form.ownerAccountId.trim()) { setError('ownerAccountId là bắt buộc.'); return; }
 
     setSubmitting(true);
     setError('');
-    setNotice('');
+    setNotice('Đang chạy extraction...');
 
     try {
-      const formData = new FormData();
-      formData.append('image', selectedFile);
-      formData.append('name', form.name.trim());
-      formData.append('tags', JSON.stringify(normalizeList(form.tags)));
-      formData.append('description', form.description || '');
-      formData.append('status', form.status);
+      const extractForm = new FormData();
+      extractForm.append('image', selectedFile);
+      const extractResponse = await fetch('/api/admin/extract-pose', { method: 'POST', body: extractForm });
+      const extractPayload = await parseResponse(extractResponse);
+      const jobId = extractPayload.data?.jobId;
+      if (!jobId) throw new Error('Extraction did not return jobId.');
+
+      let job;
+      for (let attempt = 0; attempt < 60; attempt += 1) {
+        const jobResponse = await fetch(`/api/admin/extract-jobs/${jobId}`, { cache: 'no-store' });
+        const jobPayload = await parseResponse(jobResponse);
+        job = jobPayload.data;
+        if (job.status === 'succeeded' || job.status === 'failed') break;
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
+      if (!job || job.status !== 'succeeded') throw new Error('Extraction did not succeed.');
 
       const response = await fetch(COMMUNITY_ADMIN_API, {
         method: 'POST',
-        body: formData,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jobId,
+          ownerAccountId: form.ownerAccountId.trim(),
+          name: form.name.trim(),
+          tags: normalizeList(form.tags),
+          description: form.description.trim() || null,
+          bodyParts: ['full-body'],
+          difficulty: null,
+        }),
       });
-
       await parseResponse(response);
-      setNotice('Đã tải pose lên thành công.');
-      setForm({ name: '', tags: '', description: '', status: 'draft' });
+      setNotice('Đã extraction và tạo Pose thành công.');
+      setForm({ name: '', tags: '', description: '', status: 'local', ownerAccountId: DEFAULT_OWNER_ACCOUNT_ID });
       setSelectedFile(null);
       setImagePreview('');
       fetchPoses();
@@ -134,7 +155,7 @@ export default function AdminCommunityPage() {
       name: pose.name || '',
       tags: Array.isArray(pose.tags) ? pose.tags.join(', ') : '',
       description: pose.description ?? '',
-      status: pose.status || 'draft',
+      status: pose.status || 'local',
     });
     setEditError('');
     setEditNotice('');
@@ -162,7 +183,7 @@ export default function AdminCommunityPage() {
     setEditNotice('');
 
     try {
-      const response = await fetch(`${COMMUNITY_ADMIN_API}/${selectedPose.id}`, {
+      const response = await fetch(`${COMMUNITY_ADMIN_API}/${selectedPose.poseId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -195,7 +216,7 @@ export default function AdminCommunityPage() {
     setEditNotice('');
 
     try {
-      const response = await fetch(`${COMMUNITY_ADMIN_API}/${selectedPose.id}`, {
+      const response = await fetch(`${COMMUNITY_ADMIN_API}/${selectedPose.poseId}`, {
         method: 'DELETE',
       });
       await parseResponse(response);
@@ -268,6 +289,12 @@ export default function AdminCommunityPage() {
                 rows={3}
                 className="w-full px-3 py-2 rounded-xl neo-border text-[12px] font-medium focus:outline-none resize-none"
               />
+              <input
+                value={form.ownerAccountId}
+                onChange={(e) => setForm((p) => ({ ...p, ownerAccountId: e.target.value }))}
+                placeholder="Owner account UUID *"
+                className="w-full px-3 py-2 rounded-xl neo-border text-[12px] font-medium focus:outline-none"
+              />
               <select
                 value={form.status}
                 onChange={(e) => setForm((p) => ({ ...p, status: e.target.value }))}
@@ -331,7 +358,7 @@ export default function AdminCommunityPage() {
               <div className="grid grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3">
                 {poses.map((pose) => (
                   <div
-                    key={pose.id}
+                    key={pose.poseId}
                     onClick={() => openEdit(pose)}
                     className="rounded-xl neo-border bg-gray-50 overflow-hidden group cursor-pointer hover:shadow-md transition-shadow"
                     role="button"
@@ -345,9 +372,9 @@ export default function AdminCommunityPage() {
                   >
                     {/* Image */}
                     <div className="aspect-square bg-gray-100 overflow-hidden relative">
-                      {pose.imagePath ? (
+                      {pose.skeletonUrl ? (
                         <img
-                          src={pose.imagePath}
+                          src={pose.skeletonUrl}
                           alt={pose.name}
                           className="w-full h-full object-cover"
                         />
@@ -403,9 +430,9 @@ export default function AdminCommunityPage() {
             </div>
 
             <div className="rounded-xl neo-border bg-gray-50 overflow-hidden mb-3">
-              {selectedPose.imagePath ? (
+              {selectedPose.skeletonUrl ? (
                 <img
-                  src={selectedPose.imagePath}
+                  src={selectedPose.skeletonUrl}
                   alt={selectedPose.name}
                   className="w-full h-40 object-contain bg-gray-100"
                 />

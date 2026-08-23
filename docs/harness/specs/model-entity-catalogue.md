@@ -28,7 +28,6 @@ relationships:
     - mobile/shared/src/commonMain/sqldelight/com/aipose/Pose.sq
     - mobile/shared/src/commonMain/kotlin/com/aipose/data/PhotoRepository.kt
     - mobile/shared/src/commonMain/kotlin/com/aipose/data/PoseRepository.kt
-    - mobile/shared/src/commonMain/kotlin/com/aipose/data/PoseReferenceKey.kt
     - mobile/shared/src/commonMain/kotlin/com/aipose/data/PreparedPoseReference.kt
     - mobile/shared/src/commonMain/kotlin/com/aipose/data/remote/PoseApiService.kt
     - web/services/pose-extract-server/src/db/schema.sql
@@ -69,14 +68,14 @@ _Mapping ID cũ (tham chiếu nhanh cho harness features):_
 | ID cũ | Entity mới |
 |---|---|
 | ME-001 | [Photo](../../spec/data/entities/photo.md) |
-| ME-002 | [PersonalPose](../../spec/data/entities/personal-pose.md) |
-| ME-003 | [CommunityPose](../../spec/data/entities/community-pose.md) |
+| ME-002 | [PersonalPose](../../spec/data/entities/personal-pose.md) (deprecated — folded into `Pose` `local`) |
+| ME-003 | [CommunityPose](../../spec/data/entities/community-pose.md) (public DTO/view on published `Pose`) |
 | ME-004 | [MediaAsset](../../spec/data/entities/media-asset.md) |
 | ME-005 | [ExtractionJob](../../spec/data/entities/extraction-job.md) |
 | ME-006 | [ApiKeyCredential](../../spec/data/entities/api-key-credential.md) |
 | ME-007 | [ProviderRequestLog](../../spec/data/entities/provider-request-log.md) |
-| ME-008 | [PoseReferenceKey](../../spec/data/entities/pose-reference-key.md) |
+| ME-008 | [PoseReferenceKey](../../spec/data/entities/pose-reference-key.md) (deprecated — replaced by simple `poseId`) |
 | ME-009 | [PreparedPoseReference](../../spec/data/entities/prepared-pose-reference.md) |
 | ME-010–ME-012 | Transport DTOs — xem [openapi.yaml](../../spec/api/openapi.yaml) |
-| ME-013 | [PoseGuide](../../spec/data/entities/pose-guide.md) |
+| ME-013 | [Pose](../../spec/data/entities/pose.md) (canonical alias for PoseGuide) |
 | ME-014 | [Account](../../spec/data/entities/account.md), [SavedEntry](../../spec/data/entities/saved-entry.md) |

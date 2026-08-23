@@ -114,8 +114,8 @@ class PosesLibraryCoordinator(
                 if (_communityState.value.generationId == currentGen) {
                     val updatedState = _communityState.value
                     // Deduplicate by ID and maintain stable first-seen order
-                    val existingIds = updatedState.items.map { it.id }.toSet()
-                    val uniqueNew = result.data.filter { it.id !in existingIds }
+                    val existingIds = updatedState.items.map { it.poseId }.toSet()
+                    val uniqueNew = result.data.filter { it.poseId !in existingIds }
                     val updatedItems = updatedState.items + uniqueNew
                     
                     _communityState.value = updatedState.copy(

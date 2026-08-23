@@ -5,6 +5,7 @@ import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.usePinned
 import platform.Foundation.NSApplicationSupportDirectory
 import platform.Foundation.NSData
+import platform.Foundation.NSNumber
 import platform.Foundation.NSFileManager
 import platform.Foundation.NSString
 import platform.Foundation.NSURL
@@ -12,13 +13,36 @@ import platform.Foundation.NSUserDomainMask
 import platform.Foundation.create
 import platform.Foundation.stringByAppendingPathComponent
 import platform.Foundation.writeToFile
-import platform.posix.time
 
 @OptIn(ExperimentalForeignApi::class)
 actual class ImageStorage actual constructor() {
-    actual fun writeJpeg(bytes: ByteArray): String? {
+    actual fun writeJpeg(bytes: ByteArray, captureId: String): String? {
         if (bytes.isEmpty()) return null
 
+        val aiposePath = captureDirectoryPath() ?: return null
+        val filename = "capture_${captureId}.jpg"
+        val fullPath = (aiposePath as NSString).stringByAppendingPathComponent(filename)
+
+        val data = bytes.toNSData()
+        val written = data.writeToFile(fullPath, atomically = true)
+        return if (written) filename else null
+    }
+
+    actual fun verify(filename: String): Boolean {
+        val aiposePath = captureDirectoryPath() ?: return false
+        val fullPath = (aiposePath as NSString).stringByAppendingPathComponent(filename)
+        val attributes = NSFileManager.defaultManager.attributesOfItemAtPath(fullPath, error = null)
+        val size = attributes?.get("NSFileSize") as? NSNumber
+        return size != null && size.longLongValue > 0L
+    }
+
+    actual fun delete(filename: String): Boolean {
+        val aiposePath = captureDirectoryPath() ?: return false
+        val fullPath = (aiposePath as NSString).stringByAppendingPathComponent(filename)
+        return NSFileManager.defaultManager.removeItemAtPath(fullPath, error = null)
+    }
+
+    private fun captureDirectoryPath(): String? {
         val directoryUrl = NSFileManager.defaultManager.URLForDirectory(
             directory = NSApplicationSupportDirectory,
             inDomain = NSUserDomainMask,
@@ -36,13 +60,7 @@ actual class ImageStorage actual constructor() {
             attributes = null,
             error = null,
         )
-
-        val filename = "capture_${time(null).toLong()}.jpg"
-        val fullPath = (aiposePath as NSString).stringByAppendingPathComponent(filename)
-
-        val data = bytes.toNSData()
-        val written = data.writeToFile(fullPath, atomically = true)
-        return if (written) filename else null
+        return aiposePath
     }
 }
 

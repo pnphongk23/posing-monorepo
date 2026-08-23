@@ -40,6 +40,8 @@ stores one local [`Photo`](../../spec/data/entities/photo.md)
 record. Camera controls, permission outcomes, capture feedback, and the handoff
 to Gallery belong here. Pose extraction is [FEAT-004](FEAT-004-extract-reusable-pose-images.md);
 gallery management is [FEAT-002](FEAT-002-manage-a-local-photo-gallery.md).
+CameraScreen does not own extraction intake; mobile extraction reuses the
+camera/library image source entry points via [FEAT-004](FEAT-004-extract-reusable-pose-images.md)/[FEAT-005](FEAT-005-manage-a-pose-guide.md).
 
 ## Business Understanding
 

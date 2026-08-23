@@ -4,7 +4,6 @@ import com.aipose.data.AiPoseDatabase
 import com.aipose.data.CommunitySearchRepository
 import com.aipose.data.COMMUNITY_SEARCH_PAGE_LIMIT
 import com.aipose.data.DatabaseDriverFactory
-import com.aipose.data.PoseReferenceKey
 import com.aipose.data.PoseRepository
 import com.aipose.data.remote.CommunityPose
 import com.aipose.data.remote.PaginatedResult
@@ -48,7 +47,7 @@ class SearchViewModelTest {
     private fun clearDatabase(database: AiPoseDatabase) {
         val queries = database.poseQueries
         queries.getAllPoses().executeAsList().forEach {
-            queries.deletePose(it.id)
+            queries.deletePose(it.poseId)
         }
     }
 
@@ -100,7 +99,7 @@ class SearchViewModelTest {
     }
 
     @Test
-    fun testEmptyQueryReturnsAllPersonalAndCommunityPoses() = runBlocking {
+    fun testEmptyQueryReturnsAllLocalAndPublishedPoses() = runBlocking {
         val driver = DatabaseDriverFactory().createDriver()
         val job = SupervisorJob()
         val scope = CoroutineScope(job + Dispatchers.Default)
@@ -110,21 +109,21 @@ class SearchViewModelTest {
             val apiService = PoseApiService(buildMockClient(), "https://test.server")
             val repository = PoseRepository(database, apiService)
 
-            repository.insertPose(name = "T-Pose", imagePath = "img1")
-            repository.insertPose(name = "Warrior Pose", imagePath = "img2")
+            repository.createPoseAfterExtraction("T-Pose", "img1", "img1-skeleton", "img1-thumbnail")
+            repository.createPoseAfterExtraction("Warrior Pose", "img2", "img2-skeleton", "img2-thumbnail")
 
             val fakeCommunity = FakeCommunitySearchRepository(
-                listOf(CommunityPose("c-1", "T-Pose", "", null, "beginner", emptyList(), "", emptyList())),
+                listOf(CommunityPose("c-1", "T-Pose", "", "", "beginner", emptyList(), "", emptyList())),
             )
 
             val viewModel = SearchViewModel(repository, fakeCommunity, scope)
             val state = waitForState(viewModel) {
-                it.personalResults.size == 2 && it.communityResults.size == 1 && !it.isInitialLoading
+                it.localResults.size == 2 && it.publishedResults.size == 1 && !it.isInitialLoading
             }
 
-            assertEquals(2, state.personalResults.size)
-            assertEquals(1, state.communityResults.size)
-            assertEquals("T-Pose", state.communityResults.first().name)
+            assertEquals(2, state.localResults.size)
+            assertEquals(1, state.publishedResults.size)
+            assertEquals("T-Pose", state.publishedResults.first().name)
         } finally {
             job.cancel()
             driver.close()
@@ -132,7 +131,7 @@ class SearchViewModelTest {
     }
 
     @Test
-    fun testCaseInsensitivePersonalFilteringAndCommunityHits() = runBlocking {
+    fun testCaseInsensitiveLocalFilteringAndPublishedHits() = runBlocking {
         val driver = DatabaseDriverFactory().createDriver()
         val job = SupervisorJob()
         val scope = CoroutineScope(job + Dispatchers.Default)
@@ -142,29 +141,29 @@ class SearchViewModelTest {
             val apiService = PoseApiService(buildMockClient(), "https://test.server")
             val repository = PoseRepository(database, apiService)
 
-            repository.insertPose(name = "T-Pose", imagePath = "img1")
-            repository.insertPose(name = "Warrior Pose", imagePath = "img2")
+            repository.createPoseAfterExtraction("T-Pose", "img1", "img1-skeleton", "img1-thumbnail")
+            repository.createPoseAfterExtraction("Warrior Pose", "img2", "img2-skeleton", "img2-thumbnail")
 
             val fakeCommunity = FakeCommunitySearchRepository(
                 listOf(
-                    CommunityPose("c-1", "T-Pose", "", null, "beginner", emptyList(), "", emptyList()),
-                    CommunityPose("c-2", "Tree Pose", "", null, "beginner", emptyList(), "", emptyList()),
+                    CommunityPose("c-1", "T-Pose", "", "", "beginner", emptyList(), "", emptyList()),
+                    CommunityPose("c-2", "Tree Pose", "", "", "beginner", emptyList(), "", emptyList()),
                 ),
             )
 
             val viewModel = SearchViewModel(repository, fakeCommunity, scope)
-            waitForState(viewModel) { it.personalResults.size == 2 && !it.isInitialLoading }
+            waitForState(viewModel) { it.localResults.size == 2 && !it.isInitialLoading }
 
             viewModel.onQueryChange("t-pose")
             val state = waitForState(viewModel) {
                 it.query == "t-pose" && !it.isInitialLoading &&
-                    it.personalResults.size == 1 && it.communityResults.size == 1
+                    it.localResults.size == 1 && it.publishedResults.size == 1
             }
 
-            assertEquals(1, state.personalResults.size)
-            assertEquals("T-Pose", state.personalResults.first().name)
-            assertEquals(1, state.communityResults.size)
-            assertEquals("T-Pose", state.communityResults.first().name)
+            assertEquals(1, state.localResults.size)
+            assertEquals("T-Pose", state.localResults.first().name)
+            assertEquals(1, state.publishedResults.size)
+            assertEquals("T-Pose", state.publishedResults.first().name)
         } finally {
             job.cancel()
             driver.close()
@@ -190,8 +189,8 @@ class SearchViewModelTest {
                 it.query == "not-matching-anything" && !it.isInitialLoading
             }
 
-            assertTrue(state.personalResults.isEmpty())
-            assertTrue(state.communityResults.isEmpty())
+            assertTrue(state.localResults.isEmpty())
+            assertTrue(state.publishedResults.isEmpty())
         } finally {
             job.cancel()
             driver.close()
@@ -211,7 +210,7 @@ class SearchViewModelTest {
 
             val failingProvider = FakeCommunitySearchRepository(
                 fixtures = listOf(
-                    CommunityPose("c-1", "Sun Salutation", "", null, "beginner", emptyList(), "", emptyList()),
+                    CommunityPose("c-1", "Sun Salutation", "", "", "beginner", emptyList(), "", emptyList()),
                 ),
                 failOnceOnQueries = mutableSetOf(""),
             )
@@ -219,14 +218,14 @@ class SearchViewModelTest {
             val viewModel = SearchViewModel(repository, failingProvider, scope)
             val failed = waitForState(viewModel) { !it.isInitialLoading && it.searchError != null }
             assertNotNull(failed.searchError)
-            assertTrue(failed.communityResults.isEmpty())
+            assertTrue(failed.publishedResults.isEmpty())
 
             viewModel.retrySearch()
             val recovered = waitForState(viewModel) {
-                !it.isInitialLoading && it.searchError == null && it.communityResults.size == 1
+                !it.isInitialLoading && it.searchError == null && it.publishedResults.size == 1
             }
             assertNull(recovered.searchError)
-            assertEquals("Sun Salutation", recovered.communityResults.first().name)
+            assertEquals("Sun Salutation", recovered.publishedResults.first().name)
         } finally {
             job.cancel()
             driver.close()
@@ -248,8 +247,8 @@ class SearchViewModelTest {
             val state = waitForState(viewModel) { !it.isInitialLoading }
 
             assertTrue(state.query.isBlank())
-            assertTrue(state.personalResults.isEmpty())
-            assertTrue(state.communityResults.isEmpty())
+            assertTrue(state.localResults.isEmpty())
+            assertTrue(state.publishedResults.isEmpty())
             assertNull(state.searchError)
             assertEquals("No poses to search yet.", emptySearchSubtitle(state.query))
             assertEquals("No matching poses", emptySearchTitle())
@@ -285,28 +284,25 @@ class SearchViewModelTest {
             val apiService = PoseApiService(buildMockClient(), "https://test.server")
             val repository = PoseRepository(database, apiService)
 
-            repository.insertPose(name = "Shared Name Pose", imagePath = "img1")
-            val personalId = database.poseQueries.getAllPoses().executeAsList().first().id
-            val sharedId = personalId.toString()
+            repository.createPoseAfterExtraction("Shared Name Pose", "img1", "img1-skeleton", "img1-thumbnail")
+            val personalId = database.poseQueries.getAllPoses().executeAsList().first().poseId
+            val sharedId = "00000000-0000-0000-0000-000000000002"
 
             val communityProvider = FakeCommunitySearchRepository(
                 listOf(
-                    CommunityPose(sharedId, "Shared Name Pose", "", null, "beginner", emptyList(), "", emptyList()),
+                    CommunityPose(sharedId, "Shared Name Pose", "", "", "beginner", emptyList(), "", emptyList()),
                 ),
             )
 
             val viewModel = SearchViewModel(repository, communityProvider, scope)
             waitForState(viewModel) {
-                it.personalResults.size == 1 && it.communityResults.size == 1 && !it.isInitialLoading
+                it.localResults.size == 1 && it.publishedResults.size == 1 && !it.isInitialLoading
             }
 
             val state = viewModel.uiState.value
-            assertEquals(personalId, state.personalResults.single().id)
-            assertEquals(sharedId, state.communityResults.single().id)
-            assertNotEquals<PoseReferenceKey>(
-                PoseReferenceKey.Personal(personalId),
-                PoseReferenceKey.Community(sharedId),
-            )
+            assertEquals(personalId, state.localResults.single().poseId)
+            assertEquals(sharedId, state.publishedResults.single().poseId)
+            assertNotEquals(personalId, sharedId)
         } finally {
             job.cancel()
             driver.close()
@@ -325,20 +321,20 @@ class SearchViewModelTest {
             val repository = PoseRepository(database, apiService)
 
             val fixtures = (1..21).map { index ->
-                CommunityPose("c-$index", "Fixture Pose $index", "", null, "beginner", emptyList(), "", emptyList())
+                CommunityPose("c-$index", "Fixture Pose $index", "", "", "beginner", emptyList(), "", emptyList())
             }
             val viewModel = SearchViewModel(repository, FakeCommunitySearchRepository(fixtures), scope)
 
             val pageOne = waitForState(viewModel) {
-                !it.isInitialLoading && it.communityResults.size == COMMUNITY_SEARCH_PAGE_LIMIT
+                !it.isInitialLoading && it.publishedResults.size == COMMUNITY_SEARCH_PAGE_LIMIT
             }
             assertTrue(pageOne.communityHasMore)
 
             viewModel.loadMoreCommunity()
             val pageTwo = waitForState(viewModel) {
-                !it.isLoadingMore && it.communityResults.size == 21
+                !it.isLoadingMore && it.publishedResults.size == 21
             }
-            assertEquals(21, pageTwo.communityResults.size)
+            assertEquals(21, pageTwo.publishedResults.size)
             assertFalse(pageTwo.communityHasMore)
         } finally {
             job.cancel()
@@ -358,7 +354,7 @@ class SearchViewModelTest {
             val repository = PoseRepository(database, apiService)
 
             val fixtures = (1..21).map { index ->
-                CommunityPose("c-$index", "Fixture Pose $index", "", null, "beginner", emptyList(), "", emptyList())
+                CommunityPose("c-$index", "Fixture Pose $index", "", "", "beginner", emptyList(), "", emptyList())
             }
             val viewModel = SearchViewModel(
                 repository,
@@ -367,19 +363,19 @@ class SearchViewModelTest {
             )
 
             waitForState(viewModel) {
-                !it.isInitialLoading && it.communityResults.size == COMMUNITY_SEARCH_PAGE_LIMIT
+                !it.isInitialLoading && it.publishedResults.size == COMMUNITY_SEARCH_PAGE_LIMIT
             }
 
             viewModel.loadMoreCommunity()
             val failed = waitForState(viewModel) { it.loadMoreError != null }
-            assertEquals(COMMUNITY_SEARCH_PAGE_LIMIT, failed.communityResults.size)
+            assertEquals(COMMUNITY_SEARCH_PAGE_LIMIT, failed.publishedResults.size)
             assertNotNull(failed.loadMoreError)
 
             viewModel.retryLoadMore()
             val recovered = waitForState(viewModel) {
-                it.loadMoreError == null && it.communityResults.size == 21
+                it.loadMoreError == null && it.publishedResults.size == 21
             }
-            assertEquals(21, recovered.communityResults.size)
+            assertEquals(21, recovered.publishedResults.size)
         } finally {
             job.cancel()
             driver.close()
@@ -398,17 +394,17 @@ class SearchViewModelTest {
             val repository = PoseRepository(database, apiService)
 
             val fixtures = listOf(
-                CommunityPose("c-1", "Alpha Pose", "", null, "beginner", emptyList(), "", emptyList()),
-                CommunityPose("c-2", "Beta Pose", "", null, "beginner", emptyList(), "", emptyList()),
+            CommunityPose("c-1", "Alpha Pose", "", "", "beginner", emptyList(), "", emptyList()),
+            CommunityPose("c-2", "Beta Pose", "", "", "beginner", emptyList(), "", emptyList()),
             )
             val viewModel = SearchViewModel(repository, FakeCommunitySearchRepository(fixtures), scope)
-            waitForState(viewModel) { !it.isInitialLoading && it.communityResults.size == 2 }
+            waitForState(viewModel) { !it.isInitialLoading && it.publishedResults.size == 2 }
 
             viewModel.onQueryChange("alpha")
             val filtered = waitForState(viewModel) {
-                it.query == "alpha" && !it.isInitialLoading && it.communityResults.size == 1
+                it.query == "alpha" && !it.isInitialLoading && it.publishedResults.size == 1
             }
-            assertEquals("Alpha Pose", filtered.communityResults.single().name)
+            assertEquals("Alpha Pose", filtered.publishedResults.single().name)
         } finally {
             job.cancel()
             driver.close()
