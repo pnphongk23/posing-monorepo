@@ -11,7 +11,6 @@ import kotlinx.coroutines.SupervisorJob
 
 object PoseServiceLocator {
     var baseUrl: String = "https://pose-extract-server-production.up.railway.app"
-    var communitySearchRepository: CommunitySearchRepository = MockCommunitySearchRepository()
 
     /**
      * Holder for the last successfully prepared Try Pose selection so the
@@ -32,6 +31,8 @@ object PoseServiceLocator {
     val apiService: PoseApiService by lazy {
         PoseApiService(httpClient, baseUrl)
     }
+
+    var communitySearchRepository: CommunitySearchRepository = LiveCommunitySearchRepository(apiService)
 
     val database: AiPoseDatabase by lazy {
         DatabaseProvider.getOrCreate(DatabaseDriverFactory())
