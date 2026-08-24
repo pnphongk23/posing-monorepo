@@ -260,6 +260,7 @@ fun CameraScreen(
                     },
                     contentDescription = "Pose guide: ${preparedReference?.poseName ?: "selected pose"}",
                     contentScale = ContentScale.Fit,
+                    colorFilter = uiState.poseLineColor.toColorFilter(),
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(24.dp)
@@ -331,6 +332,8 @@ fun CameraScreen(
                             },
                             onTogglePoseGuide = { uiState = uiState.copy(isOverlayVisible = !uiState.isOverlayVisible) },
                             onOpacityChanged = { uiState = uiState.copy(overlayOpacity = it) },
+                            poseLineColor = uiState.poseLineColor,
+                            onColorChanged = { uiState = uiState.copy(poseLineColor = it) },
                             onFrameRatioSelected = { ratio: CameraFrameRatio -> selectFrameRatio(ratio) }
                         )
                     }
@@ -777,6 +780,8 @@ private fun CameraMorePopup(
     onToggleGrid: () -> Unit,
     onTogglePoseGuide: () -> Unit,
     onOpacityChanged: (Float) -> Unit,
+    poseLineColor: PoseLineColor,
+    onColorChanged: (PoseLineColor) -> Unit,
     onFrameRatioSelected: (CameraFrameRatio) -> Unit,
 ) {
     Column(
@@ -864,6 +869,40 @@ private fun CameraMorePopup(
                     contentDescription = "Pose guide opacity ${(uiState.overlayOpacity * 100).roundToInt()} percent"
                 },
             )
+            Text("Line color", color = AiPoseColors.Surface, fontSize = 12.sp)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                listOf(PoseLineColor.Black, PoseLineColor.White).forEach { colorOption ->
+                    val selected = poseLineColor == colorOption
+                    NeoBrutalismContainer(
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(44.dp)
+                            .semantics {
+                                contentDescription = "Line color ${colorOption.name}, ${if (selected) "selected" else "not selected"}"
+                            },
+                        shape = RoundedCornerShape(10.dp),
+                        backgroundColor = if (selected) AiPoseColors.Primary900 else AiPoseColors.Surface,
+                        shadowColor = AiPoseColors.Surface,
+                        shadowOffset = 2.dp,
+                        onClick = { onColorChanged(colorOption) },
+                    ) {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                text = colorOption.name,
+                                color = if (selected) AiPoseColors.Surface else AiPoseColors.Foreground,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 }

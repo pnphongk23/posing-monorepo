@@ -1,6 +1,9 @@
 package com.aipose.camera
 
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
 
 enum class CameraFrameRatio(val width: Int, val height: Int) {
     RATIO_4_3(3, 4),
@@ -17,10 +20,13 @@ data class CameraUiState(
     val isMoreMenuVisible: Boolean = false,
     val isOverlayVisible: Boolean = true,
     val overlayOpacity: Float = 0.5f,
+    val poseLineColor: PoseLineColor = PoseLineColor.Black,
     val overlayOffset: Offset = Offset.Zero,
     val overlayScale: Float = 1f,
     val overlaySource: OverlaySourceState = OverlaySourceState.None,
 )
+
+enum class PoseLineColor { White, Black }
 
 sealed interface OverlaySourceState {
     data object None : OverlaySourceState
@@ -59,3 +65,15 @@ fun CameraCoordinatorState.statusText(): String? = when (val current = phase) {
 
 /** Failure-only status (success path handled separately). */
 fun CameraCoordinatorState.captureStatusText(): String? = lastFailure?.userMessage()
+
+/**
+ * Render-time tint for the pose overlay. Presentation-only: re-tints the
+ * existing overlay image without re-encoding the source PNG, preserving
+ * anti-aliased alpha edges. Pure derivation so it is unit-testable without
+ * Compose rendering.
+ */
+fun PoseLineColor.toColorFilter(): ColorFilter =
+    when (this) {
+        PoseLineColor.White -> ColorFilter.tint(Color.White, BlendMode.SrcIn)
+        PoseLineColor.Black -> ColorFilter.tint(Color.Black, BlendMode.SrcIn)
+    }
