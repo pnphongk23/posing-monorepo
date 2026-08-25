@@ -4,10 +4,10 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.GridItemSpan
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
+import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
+import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridItemSpan
+import androidx.compose.foundation.lazy.staggeredgrid.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
@@ -155,8 +155,8 @@ class SearchViewModel(
 }
 
 class SearchScreen(
-    private val onLocalPoseClick: (String) -> Unit,
-    private val onPublishedPoseClick: (CommunityPose) -> Unit,
+    private val onLocalPoseClick: (PosePreview) -> Unit,
+    private val onPublishedPoseClick: (PosePreview) -> Unit,
     private val onBack: () -> Unit,
 ) : Screen {
 
@@ -361,38 +361,39 @@ class SearchScreen(
                         CircularProgressIndicator(color = AiPoseColors.Primary)
                     }
                 } else {
-                    LazyVerticalGrid(
+                    LazyVerticalStaggeredGrid(
                         modifier = Modifier.fillMaxSize(),
-                        columns = GridCells.Fixed(2),
-                        horizontalArrangement = Arrangement.spacedBy(Spacing.md),
-                        verticalArrangement = Arrangement.spacedBy(Spacing.md),
+                        columns = StaggeredGridCells.Fixed(2),
+                        horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+                        verticalItemSpacing = Spacing.sm,
                     ) {
                         itemsIndexed(
                             mixedItems,
-                            key = { _, item ->
+                            key = { index, item ->
                                 when (item) {
                                     is SearchItem.Local -> "local-${item.pose.poseId}"
-                                    is SearchItem.Published -> "published-${item.pose.poseId}"
+                                    is SearchItem.Published -> "published-${communityPoseGridKey(item.pose, index)}"
                                 }
                             },
+                            contentType = { _, item -> item::class },
                         ) { index, item ->
                             when (item) {
                                 is SearchItem.Local -> PoseCard(
                                     pose = item.pose,
                                     index = index,
-                                    onClick = { onLocalPoseClick(item.pose.poseId) },
+                                    onClick = onLocalPoseClick,
                                 )
                                 is SearchItem.Published -> CommunityPoseCard(
                                     pose = item.pose,
                                     index = index,
-                                    onClick = { onPublishedPoseClick(item.pose) },
+                                    onClick = onPublishedPoseClick,
                                 )
                             }
                         }
 
                         if (uiState.communityHasMore) {
                             if (uiState.isLoadingMore) {
-                                item(span = { GridItemSpan(2) }) {
+                                item(span = StaggeredGridItemSpan.FullLine) {
                                     Box(
                                         modifier = Modifier
                                             .fillMaxWidth()
@@ -400,11 +401,11 @@ class SearchScreen(
                                             .testTag("search-load-more-loading"),
                                         contentAlignment = Alignment.Center,
                                     ) {
-                                        CircularProgressIndicator(color = AiPoseColors.Primary)
+                                        CommunityLoadingIndicator()
                                     }
                                 }
                             } else if (uiState.loadMoreError != null) {
-                                item(span = { GridItemSpan(2) }) {
+                                item(span = StaggeredGridItemSpan.FullLine) {
                                     Column(
                                         modifier = Modifier
                                             .fillMaxWidth()
@@ -426,7 +427,7 @@ class SearchScreen(
                                     }
                                 }
                             } else {
-                                item(span = { GridItemSpan(2) }) {
+                                item(span = StaggeredGridItemSpan.FullLine) {
                                     LaunchedEffect(uiState.publishedResults.size) {
                                         viewModel.loadMoreCommunity()
                                     }

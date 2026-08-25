@@ -9,6 +9,9 @@ targets:
     platform: iOS
     sources:
       - iosApp
+    resources:
+      - iosApp/Assets.xcassets
+      - iosApp/LaunchScreen.storyboard
     settings:
-      PRODUCT_BUNDLE_IDENTIFIER: com.aipose.app
+      PRODUCT_BUNDLE_IDENTIFIER: camerapose.app
       INFOPLIST_FILE: iosApp/Info.plist

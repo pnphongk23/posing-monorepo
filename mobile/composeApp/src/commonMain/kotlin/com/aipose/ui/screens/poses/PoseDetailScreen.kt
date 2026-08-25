@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
@@ -40,6 +42,8 @@ import com.aipose.data.remote.CommunityPose
 import com.aipose.data.remote.PoseApiException
 import com.aipose.data.remote.PoseApiService
 import com.aipose.ui.components.NeoBrutalismContainer
+import com.aipose.navigation.MatchedImageDestination
+import com.aipose.navigation.destinationChromeVisible
 import com.aipose.ui.components.PrimaryButton
 import com.aipose.ui.theme.AiPoseColors
 import com.aipose.ui.theme.AiPoseTypography
@@ -84,6 +88,172 @@ sealed interface DetailActionState {
     data object Preparing : DetailActionState
     data class Error(val message: String) : DetailActionState
     data object Deleting : DetailActionState
+}
+
+internal fun posePreviewModel(state: PoseDetailUiState.Success): String? {
+    val preview = state.thumbnailPath
+    if (!preview.isNullOrBlank()) {
+        return if (state.pose != null) resolveImagePath(preview) ?: preview else preview
+    }
+    val skeleton = state.skeletonPath
+    if (skeleton.isNotBlank()) {
+        return if (state.pose != null) resolveImagePath(skeleton) ?: skeleton else skeleton
+    }
+    return null
+}
+
+/**
+ * Canonical hero image model for the detail state (Pose). While still [Loading]
+ * the hero composes from the navigation [PosePreview.imageModel] (preview-first);
+ * once enriched ([PoseDetailUiState.Success]) it uses [posePreviewModel]. Both are
+ * the SAME canonical asset (the card's resolved thumbnail / remote URL), so the hero
+ * model — and therefore the Coil cache identity — is never replaced or flashed across
+ * Loading -> Success. The transition key `pose:<poseId>` and hero bounds stay stable too.
+ */
+internal fun poseHeroModel(state: PoseDetailUiState, preview: PosePreview): String? = when (state) {
+    is PoseDetailUiState.Success -> posePreviewModel(state)
+    else -> preview.imageModel
+}
+
+/**
+ * Shared detail hero. Coil owns all decode/cache for the detail AND the flyer:
+ * it renders the stable preview/[posePreviewModel] [coil3.compose.AsyncImage] directly,
+ * so there is never a second full-resolution bitmap decoded by hand and no local
+ * staging path. The single [MatchedImageDestination] wrapper measures the hero bounds
+ * for the forward flight (even when [model] is null) and hides it while a flight is
+ * active. Chrome/background and readiness are gated by [destinationChromeVisible] in
+ * [PoseDetailHeroRegion] so no blank/spinner/stroke frame is exposed behind/after the
+ * flyer — the unified Pose/Gallery readiness rule (see [com.aipose.navigation.destinationChromeVisible]).
+ */
+@Composable
+private fun PoseDetailHero(
+    poseId: String,
+    name: String,
+    model: String?,
+    onImageReady: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var failed by remember(model) { mutableStateOf(false) }
+    MatchedImageDestination(
+        key = "pose:$poseId",
+        imageModel = model,
+        cornerRadius = CornerRadius.md,
+        modifier = modifier.fillMaxSize(),
+    ) {
+        if (model != null && !failed) {
+            // Coil-driven root: no local file staging, no hand-decoded bitmap, no
+            // second decode. Readiness (Coil-painted media) drives the chrome/border
+            // gate so no empty framed box is ever shown.
+            AsyncImage(
+                model = model,
+                contentDescription = name,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop,
+                onLoading = { onImageReady(false) },
+                onError = { failed = true; onImageReady(false) },
+                onSuccess = { onImageReady(true) },
+            )
+        } else {
+            Icon(
+                imageVector = Icons.Default.Image,
+                contentDescription = null,
+                modifier = Modifier.size(64.dp),
+                tint = AiPoseColors.Subtext
+            )
+        }
+    }
+}
+
+/**
+ * Persistent hero container. Composed OUTSIDE the state `when` (at the same slot
+ * across Loading -> Success) so the hero wrapper — and its measured window bounds —
+ * is never recreated or moved mid-flight. Its chrome (Surface background + rounded
+ * shape) is gated on [destinationChromeVisible], the unified Pose/Gallery readiness
+ * rule, so no empty/blank/spinner/stroke frame is exposed behind/after the flyer.
+ */
+@Composable
+private fun PoseDetailHeroRegion(
+    poseId: String,
+    name: String,
+    model: String?,
+    modifier: Modifier = Modifier,
+) {
+    var imageReady by remember(poseId) { mutableStateOf(false) }
+    val ready = destinationChromeVisible("pose:$poseId", imageReady)
+    Box(
+        modifier = modifier.then(
+            if (ready) {
+                Modifier.background(AiPoseColors.Surface, RoundedCornerShape(CornerRadius.md))
+            } else {
+                Modifier
+            }
+        ),
+        contentAlignment = Alignment.Center
+    ) {
+        PoseDetailHero(
+            poseId = poseId,
+            name = name,
+            model = model,
+            onImageReady = { imageReady = it },
+        )
+    }
+}
+
+/**
+ * Shared Loading/Success detail scaffold with a structurally-stable hero. The hero
+ * container ([PoseDetailHeroRegion]) lives at a fixed slot in this Column, so the
+ * Pose hero wrapper survives Loading -> Success unchanged (same key, model, bounds).
+ * Only the header-trailing actions and the body below the hero are state-specific.
+ */
+@Composable
+private fun PoseDetailScaffold(
+    poseId: String,
+    heroName: String,
+    heroModel: String?,
+    onBack: () -> Unit,
+    headerTrailing: @Composable () -> Unit = {},
+    body: @Composable () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .statusBarsPadding()
+            .navigationBarsPadding()
+            .padding(Spacing.lg),
+        verticalArrangement = Arrangement.spacedBy(Spacing.lg)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            NeoBrutalismContainer(
+                modifier = Modifier.size(44.dp),
+                shape = RoundedCornerShape(10.dp),
+                backgroundColor = AiPoseColors.Background,
+                shadowOffset = 2.dp,
+                borderWidth = 2.dp,
+                onClick = onBack
+            ) {
+                Icon(
+                    painter = painterResource(Res.drawable.ic_chevron_left),
+                    contentDescription = "Back",
+                    tint = AiPoseColors.Foreground,
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+            headerTrailing()
+        }
+
+        PoseDetailHeroRegion(
+            poseId = poseId,
+            name = heroName,
+            model = heroModel,
+            modifier = Modifier.fillMaxWidth().weight(1f),
+        )
+
+        body()
+    }
 }
 
 class PoseDetailViewModel(
@@ -213,6 +383,7 @@ class PoseDetailViewModel(
 @Composable
 fun PoseDetailScreen(
     poseId: String,
+    preview: PosePreview,
     viewModel: PoseDetailViewModel,
     onUseWithCamera: (PreparedPoseReference) -> Unit,
     onBack: () -> Unit,
@@ -228,10 +399,136 @@ fun PoseDetailScreen(
     }
 
     Box(modifier = modifier.fillMaxSize().background(AiPoseColors.Background)) {
-        when (val state = uiState) {
+        // The detail body scaffold (header + persistent hero + body) is composed
+        // OUTSIDE the state `when` so the hero wrapper/key/model/bounds survive
+        // Loading -> Success unchanged (no recreate, no target movement mid-flight).
+        // Only for Loading-with-preview (preview-first) and enriched Success.
+        val showDetailBody = when (val s = uiState) {
+            is PoseDetailUiState.Success -> true
+            PoseDetailUiState.Loading -> preview.imageModel != null
+            else -> false
+        }
+        if (showDetailBody) {
+            val heroName = when (val s = uiState) {
+                is PoseDetailUiState.Success -> s.name
+                else -> preview.name
+            }
+            val successState = uiState as? PoseDetailUiState.Success
+            PoseDetailScaffold(
+                poseId = poseId,
+                heroName = heroName,
+                heroModel = poseHeroModel(uiState, preview),
+                onBack = onBack,
+                headerTrailing = {
+                    if (successState?.isMine == true) {
+                        NeoBrutalismContainer(
+                            modifier = Modifier.size(44.dp),
+                            shape = RoundedCornerShape(10.dp),
+                            backgroundColor = AiPoseColors.Background,
+                            shadowOffset = 2.dp,
+                            borderWidth = 2.dp,
+                            onClick = {
+                                // Do not open the delete dialog while a delete is in flight.
+                                if (actionState !is DetailActionState.Deleting) {
+                                    showDeleteDialog = true
+                                }
+                            }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Delete,
+                                contentDescription = "Delete pose",
+                                tint = AiPoseColors.Foreground,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+                },
+                body = {
+                    when (val s = uiState) {
+                        is PoseDetailUiState.Success -> {
+                            Column(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalArrangement = Arrangement.spacedBy(Spacing.xs)
+                            ) {
+                                Text(
+                                    text = s.name,
+                                    style = AiPoseTypography.Heading2,
+                                    color = AiPoseColors.Foreground
+                                )
+
+                                if (s.difficulty != null) {
+                                    Text(
+                                        text = "Difficulty: ${s.difficulty}",
+                                        style = AiPoseTypography.BodyBold,
+                                        color = AiPoseColors.Primary
+                                    )
+                                }
+                                if (s.author != null) {
+                                    Text(
+                                        text = "Author: ${s.author}",
+                                        style = AiPoseTypography.Body,
+                                        color = AiPoseColors.Subtext
+                                    )
+                                }
+                                if (s.pose != null) {
+                                    Text(
+                                        text = "Created: ${s.pose.createdAt}",
+                                        style = AiPoseTypography.Caption,
+                                        color = AiPoseColors.Subtext
+                                    )
+                                }
+                            }
+
+                            if (actionState is DetailActionState.Error) {
+                                Text(
+                                    text = (actionState as DetailActionState.Error).message,
+                                    style = AiPoseTypography.Caption,
+                                    color = AiPoseColors.Error,
+                                    modifier = Modifier.padding(vertical = Spacing.xs)
+                                )
+                            }
+
+                            PrimaryButton(
+                                text = "Try Pose",
+                                onClick = {
+                                    coroutineScope.launch {
+                                        viewModel.tryPose(onSuccess = onUseWithCamera)
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                        else -> {
+                            // Preview-first Loading body below the persistent hero.
+                            Column(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalArrangement = Arrangement.spacedBy(Spacing.xs)
+                            ) {
+                                Text(
+                                    text = preview.name,
+                                    style = AiPoseTypography.Heading2,
+                                    color = AiPoseColors.Foreground
+                                )
+                                Text(
+                                    text = "Loading details…",
+                                    style = AiPoseTypography.Body,
+                                    color = AiPoseColors.Subtext
+                                )
+                            }
+                        }
+                    }
+                }
+            )
+        }
+
+        when (val s = uiState) {
             PoseDetailUiState.Loading -> {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator(color = AiPoseColors.Primary)
+                // No navigation preview model (blank/error card, deep link): the
+                // standalone initial-load spinner remains (not a transition frame).
+                if (preview.imageModel == null) {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = AiPoseColors.Primary)
+                    }
                 }
             }
 
@@ -242,7 +539,7 @@ fun PoseDetailScreen(
                     verticalArrangement = Arrangement.Center
                 ) {
                     Text(
-                        text = "POSE NOT FOUND",
+                        text = "Pose not found",
                         style = AiPoseTypography.Heading3,
                         color = AiPoseColors.Foreground
                     )
@@ -263,12 +560,12 @@ fun PoseDetailScreen(
                     verticalArrangement = Arrangement.Center
                 ) {
                     Text(
-                        text = "FAILED TO LOAD DETAIL",
+                        text = "Failed to load detail",
                         style = AiPoseTypography.Heading3,
                         color = AiPoseColors.Error
                     )
                     Text(
-                        text = state.message,
+                        text = s.message,
                         style = AiPoseTypography.Body,
                         color = AiPoseColors.Subtext,
                         modifier = Modifier.padding(top = Spacing.sm, bottom = Spacing.lg)
@@ -286,163 +583,35 @@ fun PoseDetailScreen(
                 }
             }
 
-            is PoseDetailUiState.Success -> {
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(Spacing.lg),
-                    verticalArrangement = Arrangement.spacedBy(Spacing.lg)
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        NeoBrutalismContainer(
-                            modifier = Modifier.size(32.dp),
-                            shape = RoundedCornerShape(10.dp),
-                            backgroundColor = AiPoseColors.Background,
-                            shadowOffset = 2.dp,
-                            borderWidth = 2.dp,
-                            onClick = onBack
-                        ) {
-                            Icon(
-                                painter = painterResource(Res.drawable.ic_chevron_left),
-                                contentDescription = "Back",
-                                tint = AiPoseColors.Foreground,
-                                modifier = Modifier.size(16.dp)
-                            )
-                        }
+            is PoseDetailUiState.Success -> Unit
+        }
 
-                        if (state.isMine) {
-                            NeoBrutalismContainer(
-                                modifier = Modifier.size(32.dp),
-                                shape = RoundedCornerShape(10.dp),
-                                backgroundColor = AiPoseColors.Background,
-                                shadowOffset = 2.dp,
-                                borderWidth = 2.dp,
-                                onClick = {
-                                    // Do not open the delete dialog while a delete is in flight.
-                                    if (actionState !is DetailActionState.Deleting) {
-                                        showDeleteDialog = true
-                                    }
-                                }
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Delete,
-                                    contentDescription = "Delete pose",
-                                    tint = AiPoseColors.Foreground,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                            }
-                        }
-                    }
-
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f)
-                            .background(AiPoseColors.Surface, RoundedCornerShape(CornerRadius.md)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        if (state.skeletonPath.isNotBlank()) {
-                            AsyncImage(
-                                model = state.skeletonPath,
-                                contentDescription = state.name,
-                                modifier = Modifier.fillMaxSize(),
-                                contentScale = ContentScale.Fit
-                            )
-                        } else {
-                            Icon(
-                                imageVector = Icons.Default.Image,
-                                contentDescription = null,
-                                modifier = Modifier.size(64.dp),
-                                tint = AiPoseColors.Subtext
-                            )
-                        }
-                    }
-
-                    Column(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalArrangement = Arrangement.spacedBy(Spacing.xs)
-                    ) {
-                        Text(
-                            text = state.name.uppercase(),
-                            style = AiPoseTypography.Heading2,
-                            color = AiPoseColors.Foreground
-                        )
-
-                        if (state.difficulty != null) {
-                            Text(
-                                text = "Difficulty: ${state.difficulty.uppercase()}",
-                                style = AiPoseTypography.BodyBold,
-                                color = AiPoseColors.Primary
-                            )
-                        }
-                        if (state.author != null) {
-                            Text(
-                                text = "Author: ${state.author}",
-                                style = AiPoseTypography.Body,
-                                color = AiPoseColors.Subtext
-                            )
-                        }
-                        if (state.pose != null) {
-                            Text(
-                                text = "Created: ${state.pose.createdAt}",
-                                style = AiPoseTypography.Caption,
-                                color = AiPoseColors.Subtext
-                            )
-                        }
-                    }
-
-                    if (actionState is DetailActionState.Error) {
-                        Text(
-                            text = (actionState as DetailActionState.Error).message,
-                            style = AiPoseTypography.Caption,
-                            color = AiPoseColors.Error,
-                            modifier = Modifier.padding(vertical = Spacing.xs)
-                        )
-                    }
-
-                    PrimaryButton(
-                        text = "Try Pose",
+        if (showDeleteDialog) {
+            AlertDialog(
+                onDismissRequest = { showDeleteDialog = false },
+                title = { Text("Delete pose?") },
+                text = { Text("This will permanently remove ${(uiState as? PoseDetailUiState.Success)?.name ?: ""} from your library.") },
+                confirmButton = {
+                    TextButton(
                         onClick = {
+                            showDeleteDialog = false
                             coroutineScope.launch {
-                                viewModel.tryPose(onSuccess = onUseWithCamera)
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-
-                if (showDeleteDialog) {
-                    AlertDialog(
-                        onDismissRequest = { showDeleteDialog = false },
-                        title = { Text("Delete pose?") },
-                        text = { Text("This will permanently remove ${state.name} from your library.") },
-                        confirmButton = {
-                            TextButton(
-                                onClick = {
-                                    showDeleteDialog = false
-                                    coroutineScope.launch {
-                                        val success = viewModel.delete()
-                                        if (success) {
-                                            onBack()
-                                        }
-                                    }
+                                val success = viewModel.delete()
+                                if (success) {
+                                    onBack()
                                 }
-                            ) {
-                                Text("Delete")
-                            }
-                        },
-                        dismissButton = {
-                            TextButton(onClick = { showDeleteDialog = false }) {
-                                Text("Cancel")
                             }
                         }
-                    )
+                    ) {
+                        Text("Delete")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showDeleteDialog = false }) {
+                        Text("Cancel")
+                    }
                 }
-            }
+            )
         }
 
         // Overlay spinner for preparing or deleting state

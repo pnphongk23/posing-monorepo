@@ -54,6 +54,7 @@ kotlin {
             implementation(libs.koin.compose)
             implementation(libs.stately.common)
             implementation(libs.coil.compose)
+            implementation(libs.coil.network.ktor2)
             implementation(project(":shared"))
         }
         val commonTest by getting {

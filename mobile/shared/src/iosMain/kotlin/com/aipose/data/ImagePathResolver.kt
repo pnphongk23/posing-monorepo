@@ -10,27 +10,55 @@ import platform.Foundation.lastPathComponent
 
 @OptIn(ExperimentalForeignApi::class)
 actual fun resolveImagePath(storedPath: String): String? {
-    // Get current Application Support directory (current UUID)
-    val directoryUrl = NSFileManager.defaultManager.URLForDirectory(
+    if (storedPath.isBlank()) return null
+
+    // 1. Remote HTTP/HTTPS URLs: return as-is
+    if (storedPath.startsWith("http://", ignoreCase = true) ||
+        storedPath.startsWith("https://", ignoreCase = true)
+    ) {
+        return storedPath
+    }
+
+    val fileManager = NSFileManager.defaultManager
+
+    // 2. Handle file:// URIs
+    if (storedPath.startsWith("file://", ignoreCase = true)) {
+        val rawPath = storedPath.substring(7)
+        if (fileManager.fileExistsAtPath(rawPath)) {
+            return rawPath
+        }
+    }
+
+    // 3. Absolute local file path (starts with /)
+    if (storedPath.startsWith("/")) {
+        if (fileManager.fileExistsAtPath(storedPath)) {
+            return storedPath
+        }
+    }
+
+    // 4. Look inside Application Support / aipose directory
+    val directoryUrl = fileManager.URLForDirectory(
         directory = NSApplicationSupportDirectory,
         inDomain = NSUserDomainMask,
         appropriateForURL = null,
         create = false,
         error = null,
-    ) ?: return null
-    val folderPath = directoryUrl.path ?: return null
-    val aiposePath = (folderPath as NSString).stringByAppendingPathComponent("aipose")
+    )
+    val folderPath = directoryUrl?.path
+    if (folderPath != null) {
+        val aiposePath = (folderPath as NSString).stringByAppendingPathComponent("aipose")
 
-    // Extract filename: if storedPath is absolute path, take lastPathComponent
-    // If storedPath is already just a filename, use it directly
-    val filename = if (storedPath.contains("/")) {
-        (storedPath as NSString).lastPathComponent
-    } else {
-        storedPath
+        val filename = if (storedPath.contains("/")) {
+            (storedPath as NSString).lastPathComponent
+        } else {
+            storedPath
+        }
+        val fullPath = (aiposePath as NSString).stringByAppendingPathComponent(filename)
+        if (fileManager.fileExistsAtPath(fullPath)) {
+            return fullPath
+        }
     }
 
-    val fullPath = (aiposePath as NSString).stringByAppendingPathComponent(filename)
-
-    // Verify file exists
-    return if (NSFileManager.defaultManager.fileExistsAtPath(fullPath)) fullPath else null
+    // 5. Fallback for non-blank stored paths
+    return if (storedPath.startsWith("/")) storedPath else null
 }

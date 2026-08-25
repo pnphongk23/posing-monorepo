@@ -64,6 +64,7 @@ import androidx.compose.ui.semantics.testTag
 import cafe.adriel.voyager.navigator.tab.LocalTabNavigator
 import coil3.compose.AsyncImage
 import com.aipose.data.PoseServiceLocator
+import com.aipose.data.resolveImagePath
 import com.aipose.data.DatabaseDriverFactory
 import com.aipose.data.DatabaseProvider
 import com.aipose.data.ImageStorage
@@ -400,7 +401,6 @@ fun CameraScreen(
                 .fillMaxWidth()
                 .height(110.dp)
                 .navigationBarsPadding()
-                .border(2.dp, AiPoseColors.Foreground)
                 .padding(horizontal = 24.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
@@ -495,7 +495,7 @@ private fun CameraGuideUnavailable(message: String) {
         contentAlignment = Alignment.Center,
     ) {
         Text(
-            text = "POSE GUIDE UNAVAILABLE\\n$message",
+            text = "Pose guide unavailable\\n$message",
             color = AiPoseColors.Surface,
             fontWeight = FontWeight.Bold,
             modifier = Modifier.semantics {
@@ -733,15 +733,25 @@ private fun GalleryThumbnailButton(
         onClick = onClick
     ) {
         when (thumbnailState) {
-            is ThumbnailState.Available -> AsyncImage(
-                model = thumbnailState.imagePath,
-                contentDescription = "Latest captured photo",
-                contentScale = ContentScale.Crop,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .clip(RoundedCornerShape(10.dp))
-                    .border(2.dp, AiPoseColors.Foreground, RoundedCornerShape(10.dp)),
-            )
+            is ThumbnailState.Available -> {
+                var thumbnailFailed by remember(thumbnailState.imagePath) { mutableStateOf(false) }
+                if (!thumbnailFailed) {
+                    AsyncImage(
+                        model = resolveImagePath(thumbnailState.imagePath) ?: thumbnailState.imagePath,
+                        contentDescription = "Latest captured photo",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clip(RoundedCornerShape(10.dp))
+                            .border(2.dp, AiPoseColors.Foreground, RoundedCornerShape(10.dp)),
+                        onError = { thumbnailFailed = true }
+                    )
+                } else {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text("!", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = AiPoseColors.Error)
+                    }
+                }
+            }
             ThumbnailState.Empty -> Box(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center,
@@ -847,7 +857,7 @@ private fun CameraMorePopup(
 
         if (hasPoseGuide) {
             Box(modifier = Modifier.fillMaxWidth().height(2.dp).background(AiPoseColors.Surface.copy(alpha = 0.2f)))
-            Text("POSE GUIDE", color = AiPoseColors.Surface, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            Text("Pose guide", color = AiPoseColors.Surface, fontSize = 12.sp, fontWeight = FontWeight.Bold)
             NeoBrutalismContainer(
                 modifier = Modifier.fillMaxWidth().height(44.dp).semantics {
                     contentDescription = if (uiState.isOverlayVisible) "Hide pose guide" else "Show pose guide"

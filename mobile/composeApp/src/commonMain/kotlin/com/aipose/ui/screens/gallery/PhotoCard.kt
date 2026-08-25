@@ -22,6 +22,9 @@ import androidx.compose.material.icons.filled.Image
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import com.aipose.data.resolveImagePath
@@ -30,6 +33,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTag
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
@@ -37,6 +42,9 @@ import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import com.aipose.Photo
 import com.aipose.ui.components.NeoBrutalismContainer
+import com.aipose.navigation.MatchedImageTransitionState
+import com.aipose.navigation.SharedTransitionPhase
+import androidx.compose.ui.graphics.graphicsLayer
 import com.aipose.ui.components.cardChrome
 import com.aipose.ui.components.neoBorder
 import com.aipose.ui.components.neoShadow
@@ -52,6 +60,7 @@ fun PhotoCard(
     modifier: Modifier = Modifier,
     dense: Boolean = false,
 ) {
+    var sourceBounds by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
     if (dense) {
         GalleryDensePhotoCard(
             photo = photo,
@@ -67,6 +76,13 @@ fun PhotoCard(
             .semantics { testTag = "gallery-photo-item" },
         verticalArrangement = Arrangement.spacedBy(Spacing.xs)
     ) {
+        val resolvedPath = remember(photo.imagePath) {
+            resolveImagePath(photo.imagePath) ?: photo.imagePath.takeIf { it.isNotBlank() }
+        }
+
+        val isTransitioning = MatchedImageTransitionState.source?.key == "photo:${photo.id}" &&
+                MatchedImageTransitionState.transitionPhase != SharedTransitionPhase.IDLE
+
         NeoBrutalismContainer(
             modifier = Modifier
                 .fillMaxWidth()
@@ -76,14 +92,26 @@ fun PhotoCard(
             backgroundColor = AiPoseColors.Surface,
             shadowOffset = 2.dp,
             borderWidth = 2.dp,
-            onClick = onClick
+            onClick = {
+                sourceBounds?.let {
+                    MatchedImageTransitionState.capture(
+                        key = "photo:${photo.id}",
+                        bounds = it,
+                        imageModel = resolvedPath,
+                        cornerRadius = 12.dp
+                    )
+                }
+                onClick()
+            }
         ) {
-            val resolvedPath = remember(photo.imagePath) { resolveImagePath(photo.imagePath) }
-            if (resolvedPath != null) {
+            if (!resolvedPath.isNullOrBlank()) {
                 AsyncImage(
                     model = resolvedPath,
                     contentDescription = photo.poseName,
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .onGloballyPositioned { sourceBounds = it.boundsInWindow() }
+                        .graphicsLayer { alpha = if (isTransitioning) 0f else 1f },
                     contentScale = ContentScale.Crop
                 )
             } else {
@@ -103,7 +131,7 @@ fun PhotoCard(
                     else -> AiPoseColors.Success
                 }
                 Text(
-                    text = photo.poseName.uppercase(),
+                    text = photo.poseName,
                     style = AiPoseTypography.Caption,
                     fontSize = 8.sp,
                     fontWeight = FontWeight.Bold,
@@ -151,7 +179,14 @@ private fun GalleryDensePhotoCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    var sourceBounds by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
     val shape = RoundedCornerShape(DensePhotoCardDefaults.BORDER_RADIUS)
+    val resolvedPath = remember(photo.imagePath) {
+        resolveImagePath(photo.imagePath) ?: photo.imagePath.takeIf { it.isNotBlank() }
+    }
+    val isTransitioning = MatchedImageTransitionState.source?.key == "photo:${photo.id}" &&
+            MatchedImageTransitionState.transitionPhase != SharedTransitionPhase.IDLE
+
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -159,16 +194,28 @@ private fun GalleryDensePhotoCard(
             .clip(shape)
             .border(DensePhotoCardDefaults.BORDER_WIDTH, AiPoseColors.Foreground.copy(alpha = 0.15f), shape)
             .background(AiPoseColors.Surface)
-            .clickable(onClick = onClick)
+            .clickable {
+                sourceBounds?.let {
+                    MatchedImageTransitionState.capture(
+                        key = "photo:${photo.id}",
+                        bounds = it,
+                        imageModel = resolvedPath,
+                        cornerRadius = DensePhotoCardDefaults.BORDER_RADIUS
+                    )
+                }
+                onClick()
+            }
             .semantics { testTag = "gallery-photo-item" },
         contentAlignment = Alignment.Center,
     ) {
-        val resolvedPath = remember(photo.imagePath) { resolveImagePath(photo.imagePath) }
-        if (resolvedPath != null) {
+        if (!resolvedPath.isNullOrBlank()) {
             AsyncImage(
                 model = resolvedPath,
                 contentDescription = photo.poseName.ifBlank { "Gallery photo" },
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .onGloballyPositioned { sourceBounds = it.boundsInWindow() }
+                    .graphicsLayer { alpha = if (isTransitioning) 0f else 1f },
                 contentScale = ContentScale.Crop,
             )
         } else {

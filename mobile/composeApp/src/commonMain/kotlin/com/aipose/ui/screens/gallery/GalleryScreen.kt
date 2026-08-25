@@ -11,8 +11,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import org.jetbrains.compose.resources.painterResource
 import ai_pose.composeapp.generated.resources.Res
@@ -50,6 +52,7 @@ import com.aipose.platform.saveToPhotos
 import com.aipose.platform.saveToPhotosConfirmation
 import com.aipose.data.resolveImagePath
 import com.aipose.navigation.MainDockContentInset
+import com.aipose.navigation.listShouldAutoLoad
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
@@ -57,11 +60,16 @@ import kotlinx.coroutines.launch
 @Composable
 fun GalleryScreen(
     viewModel: GalleryViewModel,
+    gridState: LazyGridState = rememberLazyGridState(),
     onOpenCamera: () -> Unit,
     onBack: (() -> Unit)? = null,
+    onPhotoClick: ((com.aipose.Photo) -> Unit)? = null,
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    LaunchedEffect(Unit) { viewModel.load() }
+    // Guard on the hoisted ViewModel's load state: ordinary Back re-enters this
+    // list with state already loaded, so the DB is not re-queried. Refreshes stay
+    // explicit.
+    LaunchedEffect(Unit) { if (listShouldAutoLoad(uiState.isLoading)) viewModel.load() }
 
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -111,7 +119,7 @@ fun GalleryScreen(
                     }
 
                     Text(
-                        text = "GALLERY",
+                        text = "Gallery",
                         fontSize = 22.sp,
                         fontWeight = FontWeight.ExtraBold,
                         color = AiPoseColors.Foreground,
@@ -139,8 +147,8 @@ fun GalleryScreen(
                             verticalArrangement = Arrangement.spacedBy(Spacing.md)
                         ) {
                             Text("📸", fontSize = 48.sp)
-                            Text("NO PHOTOS YET", style = AiPoseTypography.Heading3)
-                            PrimaryButton(text = "OPEN CAMERA", onClick = { onOpenCamera() })
+                            Text("No photos yet", style = AiPoseTypography.Heading3)
+                            PrimaryButton(text = "Open camera", onClick = { onOpenCamera() })
                         }
                     }
                 }
@@ -149,13 +157,18 @@ fun GalleryScreen(
                 else -> {
                     LazyVerticalGrid(
                         columns = GridCells.Fixed(GalleryGridDefaults.DENSE_COLUMN_COUNT),
+                        state = gridState,
                         contentPadding = PaddingValues(bottom = MainDockContentInset),
                         verticalArrangement = Arrangement.spacedBy(GalleryGridDefaults.DENSE_GAP),
                         horizontalArrangement = Arrangement.spacedBy(GalleryGridDefaults.DENSE_GAP),
                         modifier = Modifier.fillMaxSize()
                     ) {
                         uiState.groupedByDate.forEach { (dateKey, photos) ->
-                            item(span = { GridItemSpan(GalleryGridDefaults.DENSE_COLUMN_COUNT) }) {
+                            item(
+                                key = "gallery-section-$dateKey",
+                                contentType = "gallery:section",
+                                span = { GridItemSpan(GalleryGridDefaults.DENSE_COLUMN_COUNT) },
+                            ) {
                                 SectionHeader(
                                     title = dateKey,
                                     count = photos.size,
@@ -164,10 +177,14 @@ fun GalleryScreen(
                                         .padding(vertical = Spacing.xs)
                                 )
                             }
-                            items(photos) { photo ->
+                            items(
+                                items = photos,
+                                key = { photo -> photo.id },
+                                contentType = { "gallery:photo" },
+                            ) { photo ->
                                 PhotoCard(
                                     photo = photo,
-                                    onClick = { viewModel.selectPhoto(photo) },
+                                    onClick = { onPhotoClick?.invoke(photo) ?: viewModel.selectPhoto(photo) },
                                     dense = true,
                                 )
                             }
@@ -178,7 +195,8 @@ fun GalleryScreen(
         }
     }
 
-    // ── PhotoDetailDialog ────────────────────────────────────────────────────
+    // Legacy inline detail remains available only to callers that do not provide
+    // navigation; list roots provide onPhotoClick and therefore never overlay it.
     uiState.selectedPhoto?.let { photo ->
         PhotoDetailDialog(
             photo = photo,
