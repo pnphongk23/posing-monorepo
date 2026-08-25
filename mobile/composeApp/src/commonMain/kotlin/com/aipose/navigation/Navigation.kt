@@ -23,6 +23,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.lazy.grid.LazyGridState
+import androidx.compose.foundation.lazy.staggeredgrid.LazyStaggeredGridState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Person
@@ -33,7 +35,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -61,13 +65,16 @@ import cafe.adriel.voyager.navigator.tab.LocalTabNavigator
 import cafe.adriel.voyager.navigator.tab.Tab
 import cafe.adriel.voyager.navigator.tab.TabOptions
 import com.aipose.Pose
+import com.aipose.Photo
 import com.aipose.camera.CameraScreen
 import com.aipose.data.PreparedPoseReference
 import com.aipose.data.PoseServiceLocator
 import com.aipose.ui.screens.gallery.GalleryScreen
 import com.aipose.ui.screens.gallery.GalleryViewModel
+import com.aipose.ui.screens.gallery.GalleryPhotoDetailScreen
 import com.aipose.ui.screens.poses.PoseDetailScreen
 import com.aipose.ui.screens.poses.PoseDetailViewModel
+import com.aipose.ui.screens.poses.PosePreview
 import com.aipose.ui.screens.poses.PosesScreen
 import com.aipose.ui.screens.poses.PosesViewModel
 import com.aipose.ui.theme.AiPoseColors
@@ -86,6 +93,58 @@ internal const val MAIN_DOCK_TEST_TAG = "main-dock"
 internal const val MAIN_DOCK_POSES_TEST_TAG = "main-dock-poses"
 internal const val MAIN_DOCK_GALLERY_TEST_TAG = "main-dock-gallery"
 internal const val MAIN_DOCK_CAMERA_TEST_TAG = "main-dock-camera"
+
+// ── Pop-first persistent list state ───────────────────────────────────────────
+//
+// Each list's data owner (ViewModel) + scroll/viewport state are hoisted ABOVE the
+// nested per-tab [Navigator]. The tab owner composes the holder with `remember` once;
+// when a detail screen is pushed and then popped, the list [Screen] re-enters
+// composition with the SAME holder — so the ViewModel (and its DB collectors) and the
+// exact first-visible index + pixel offset all survive. One mechanism for Pose and
+// Gallery. The Poses holder is Community-only (the My Poses tab was removed).
+
+/**
+ * Auto-load guard for a list whose data owner outlives detail push/pop. Returns
+ * true only while the list has never loaded, so re-entering composition after Back
+ * does not re-query the DB / re-trigger Community initial load (refreshes stay
+ * explicit via pull-to-refresh / action buttons). Pure + unit-tested.
+ */
+internal fun listShouldAutoLoad(isLoading: Boolean): Boolean = isLoading
+
+/**
+ * Community initial-load guard: auto-load only when the feed has never loaded
+ * (no items). Community is the only Poses pane (the tab bar was removed), so
+ * there is no selected-tab check anymore. After ordinary Back the hoisted state
+ * keeps items, so this returns false and no duplicate initial load happens.
+ */
+internal fun shouldAutoLoadCommunity(hasItems: Boolean): Boolean = !hasItems
+
+/** Hoisted Poses-tab list state (survives detail push/pop). */
+class PosesListStateHolder(
+    val viewModel: PosesViewModel,
+    val communityGridState: LazyStaggeredGridState,
+) {
+    companion object {
+        fun create(
+            viewModel: PosesViewModel = PosesViewModel(),
+            communityGridState: LazyStaggeredGridState = LazyStaggeredGridState(),
+        ): PosesListStateHolder =
+            PosesListStateHolder(viewModel, communityGridState)
+    }
+}
+
+/** Hoisted Gallery-tab list state (survives detail push/pop). */
+class GalleryListStateHolder(
+    val viewModel: GalleryViewModel,
+    val gridState: LazyGridState,
+) {
+    companion object {
+        fun create(
+            viewModel: GalleryViewModel = GalleryViewModel(),
+            gridState: LazyGridState = LazyGridState(),
+        ): GalleryListStateHolder = GalleryListStateHolder(viewModel, gridState)
+    }
+}
 
 object CameraTab : Tab {
     override val options: TabOptions
@@ -123,7 +182,10 @@ object PosesTab : Tab {
 
     @Composable
     override fun Content() {
-        Navigator(PosesListScreen())
+        // State hoisted here (above the Navigator): detail push/pop never recreates
+        // the list ViewModel, its DB collectors, or the grid viewport.
+        val state = remember { PosesListStateHolder.create() }
+        Navigator(PosesListScreen(state))
     }
 }
 
@@ -143,17 +205,51 @@ object GalleryTab : Tab {
 
     @Composable
     override fun Content() {
-        Navigator(GalleryListScreen())
+        // State hoisted here (above the Navigator): detail push/pop never recreates
+        // the list ViewModel, its DB collectors, or the grid viewport.
+        val state = remember { GalleryListStateHolder.create() }
+        Navigator(GalleryListScreen(state))
     }
 }
 
-class GalleryListScreen : Screen {
+class GalleryListScreen(private val state: GalleryListStateHolder) : Screen {
     @Composable
     override fun Content() {
+        val navigator = LocalNavigator.currentOrThrow
         val tabNavigator = LocalTabNavigator.current
-        GalleryScreen(
-            viewModel = remember { GalleryViewModel() },
-            onOpenCamera = { tabNavigator.current = CameraTab },
+        Box(Modifier.fillMaxSize()) {
+            GalleryScreen(
+                viewModel = state.viewModel,
+                gridState = state.gridState,
+                onOpenCamera = { tabNavigator.current = CameraTab },
+                onPhotoClick = { photo -> navigator.push(GalleryDetailVoyagerScreen(photo)) },
+            )
+            MainDock(modifier = Modifier.align(Alignment.BottomCenter))
+        }
+    }
+}
+
+class GalleryDetailVoyagerScreen(private val photo: Photo) : Screen {
+    @Composable
+    override fun Content() {
+        val navigator = LocalNavigator.currentOrThrow
+        var backOwned by remember { mutableStateOf(false) }
+        GalleryPhotoDetailScreen(
+            photo = photo,
+            onBack = {
+                // Pop-first: request the reverse and perform the exactly-one pop
+                // immediately. The root overlay owns the reverse completion + cleanup;
+                // this detail scope never awaits it (pop disposes this screen). A rapid
+                // duplicate press during an active reverse (or a no-source immediate
+                // pop) resolves to NONE and performs no second navigator.pop().
+                val owned = backOwned
+                backOwned = true
+                when (resolveBackAction(owned, MatchedImageTransitionState.requestReverse())) {
+                    BackDecision.REVERSE_POP -> navigator.pop()
+                    BackDecision.POP -> navigator.pop()
+                    BackDecision.NONE -> backOwned = owned
+                }
+            },
         )
     }
 }
@@ -170,11 +266,11 @@ internal fun createSearchNavigationAction(
 ): () -> Unit = {
     pushScreen(
         SearchScreen(
-            onLocalPoseClick = { poseId ->
-                pushScreen(PoseDetailVoyagerScreen(poseId))
+            onLocalPoseClick = { preview ->
+                pushScreen(PoseDetailVoyagerScreen(preview))
             },
-            onPublishedPoseClick = { communityPose ->
-                pushScreen(PoseDetailVoyagerScreen(communityPose.poseId))
+            onPublishedPoseClick = { preview ->
+                pushScreen(PoseDetailVoyagerScreen(preview))
             },
             onBack = popBack,
         ),
@@ -194,39 +290,56 @@ internal fun createTryPoseCameraHandoffAction(
     setCurrentTab(CameraTab)
 }
 
-class PosesListScreen : Screen {
+class PosesListScreen(private val state: PosesListStateHolder) : Screen {
     @Composable
     override fun Content() {
         val navigator = LocalNavigator.currentOrThrow
         val tabNavigator = LocalTabNavigator.current
+        Box(Modifier.fillMaxSize()) {
         PosesScreen(
-            viewModel = remember { PosesViewModel() },
-            onPoseClick = { poseId -> navigator.push(PoseDetailVoyagerScreen(poseId)) },
-            onPublishedPoseClick = { communityPose -> navigator.push(PoseDetailVoyagerScreen(communityPose.poseId)) },
+            viewModel = state.viewModel,
+            communityGridState = state.communityGridState,
+            onPublishedPoseClick = { preview -> navigator.push(PoseDetailVoyagerScreen(preview)) },
             onExtractPoseClick = createPoseCameraEntryAction { tabNavigator.current = it },
             onSearchClick = createSearchNavigationAction(
                 pushScreen = { navigator.push(it) },
                 popBack = { navigator.pop() },
             ),
         )
+        MainDock(modifier = Modifier.align(Alignment.BottomCenter))
+        }
     }
 }
 
 class PoseDetailVoyagerScreen(
-    private val poseId: String
+    private val previewItem: PosePreview
 ) : Screen {
     @Composable
     override fun Content() {
         val navigator = LocalNavigator.currentOrThrow
         val tabNavigator = LocalTabNavigator.current
+        var backOwned by remember { mutableStateOf(false) }
         PoseDetailScreen(
-            poseId = poseId,
-            viewModel = remember { PoseDetailViewModel(poseId) },
+            poseId = previewItem.poseId,
+            preview = previewItem,
+            viewModel = remember { PoseDetailViewModel(previewItem.poseId) },
             onUseWithCamera = createTryPoseCameraHandoffAction(
                 setPreparedReference = { PoseServiceLocator.preparedReference = it },
                 setCurrentTab = { tabNavigator.current = it },
             ),
-            onBack = { navigator.pop() }
+            onBack = {
+                // Pop-first: request the reverse and perform the exactly-one pop
+                // immediately. The root overlay owns the reverse completion + cleanup;
+                // this detail scope never awaits it (pop disposes this screen). A rapid
+                // duplicate press resolves to NONE and never performs a second pop.
+                val owned = backOwned
+                backOwned = true
+                when (resolveBackAction(owned, MatchedImageTransitionState.requestReverse())) {
+                    BackDecision.REVERSE_POP -> navigator.pop()
+                    BackDecision.POP -> navigator.pop()
+                    BackDecision.NONE -> backOwned = owned
+                }
+            }
         )
     }
 }

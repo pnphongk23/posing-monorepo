@@ -1,6 +1,5 @@
 package com.aipose.ui.screens.poses
 
-import com.aipose.Pose
 import com.aipose.data.DatabaseDriverFactory
 import com.aipose.data.PoseRepository
 import com.aipose.data.AiPoseDatabase
@@ -15,10 +14,12 @@ import io.ktor.client.plugins.contentnegotiation.*
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
 import io.ktor.utils.io.*
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlin.test.Test
@@ -59,23 +60,68 @@ class PosesViewModelTest {
     }
 
     @Test
-    fun testTabSelection() = runBlocking<Unit> {
+    fun testPullToRefreshSingleFlightNoDuplicateLoad() = runBlocking<Unit> {
         val driver = DatabaseDriverFactory().createDriver()
         val job = SupervisorJob()
         val scope = CoroutineScope(job)
+        var callCount = 0
+        val requestStarted = CompletableDeferred<Unit>()
+        val responseGate = CompletableDeferred<Unit>()
+        val client = HttpClient(MockEngine) {
+            engine {
+                addHandler { _ ->
+                    callCount++
+                    requestStarted.complete(Unit)
+                    responseGate.await()
+                    respond(
+                        """
+                            {
+                                "data": [
+                                    {"id": "p1", "name": "Pose 1", "imagePath": "http://img1"}
+                                ],
+                                "pagination": {"page": 1, "limit": 20, "total": 1}
+                            }
+                        """.trimIndent(),
+                        HttpStatusCode.OK,
+                        headersOf(HttpHeaders.ContentType, "application/json")
+                    )
+                }
+            }
+            install(ContentNegotiation) {
+                json(Json { ignoreUnknownKeys = true })
+            }
+        }
         try {
             val database = AiPoseDatabase(driver)
-            val apiService = PoseApiService(buildMockClient(""), "https://test.server")
+            val apiService = PoseApiService(client, "https://test.server")
             val repository = PoseRepository(database, apiService)
             val coordinator = PosesLibraryCoordinator(repository, apiService, scope)
             val viewModel = PosesViewModel(coordinator, scope)
 
-            assertEquals(0, viewModel.uiState.value.selectedTab)
+            // Two overlapping manual refresh calls while the first is still in flight.
+            viewModel.loadCommunityPoses(refresh = true)
+            viewModel.loadCommunityPoses(refresh = true)
 
-            viewModel.selectTab(1)
-            assertEquals(1, viewModel.uiState.value.selectedTab)
+            // Deterministic, event-driven wait for the single request to be issued.
+            requestStarted.await()
+            // Single-flight: exactly one backend call was issued, refresh still active.
+            assertEquals(1, callCount)
+            assertEquals(OperationState.Loading, coordinator.communityState.value.refreshState)
+
+            // Release the response and wait (event-driven) for the refresh to settle.
+            responseGate.complete(Unit)
+            coordinator.communityState.first {
+                it.refreshState is OperationState.Idle && it.items.isNotEmpty()
+            }
+
+            val s = coordinator.communityState.value
+            assertEquals(1, s.items.size)
+            assertEquals(OperationState.Idle, s.refreshState)
+            // Single-flight ensures only 1 HTTP request was issued in total.
+            assertEquals(1, callCount)
         } finally {
             job.cancel()
+            client.close()
             driver.close()
         }
     }
@@ -237,12 +283,10 @@ class PosesViewModelTest {
 
             val state = viewModel.uiState.value
             // WI-03 boundary: library UI state carries only browsing concerns.
-            // FEAT-004 extraction orchestration (UploadState / onPickImageResult) is
-            // not part of PosesViewModel; the Create Pose CTA stays a screen callback.
-            assertEquals(emptyList<Pose>(), state.myPoses)
+            // The Poses screen is Community-only (My Poses tab removed), so the state
+            // no longer carries a My Poses list, a loading flag for it, or a selected
+            // tab. FEAT-004 extraction orchestration stays a screen callback.
             assertEquals(CommunityLibraryState(), state.communityState)
-            assertEquals(true, state.isLoading)
-            assertEquals(0, state.selectedTab)
         } finally {
             job.cancel()
             driver.close()

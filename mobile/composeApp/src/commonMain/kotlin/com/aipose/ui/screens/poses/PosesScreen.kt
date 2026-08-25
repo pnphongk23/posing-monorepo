@@ -1,16 +1,13 @@
 package com.aipose.ui.screens.poses
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -18,38 +15,48 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
+import androidx.compose.foundation.lazy.staggeredgrid.LazyStaggeredGridState
+import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
+import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridItemSpan
+import androidx.compose.foundation.lazy.staggeredgrid.itemsIndexed
+import androidx.compose.foundation.lazy.staggeredgrid.rememberLazyStaggeredGridState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import androidx.compose.material3.pulltorefresh.PullToRefreshContainer
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
-import org.jetbrains.compose.resources.painterResource
-import ai_pose.composeapp.generated.resources.Res
-import ai_pose.composeapp.generated.resources.ic_refresh_cw
-import coil3.compose.AsyncImage
-import com.aipose.Pose
+import coil3.compose.LocalPlatformContext
+import coil3.compose.SubcomposeAsyncImage
+import coil3.request.ImageRequest
 import com.aipose.data.AppConfig
 import com.aipose.data.CommunityLibraryState
 import com.aipose.data.OperationState
@@ -57,6 +64,8 @@ import com.aipose.data.PoseServiceLocator
 import com.aipose.data.PosesLibraryCoordinator
 import com.aipose.data.remote.CommunityPose
 import com.aipose.navigation.MainDockContentInset
+import com.aipose.navigation.MatchedImageTransitionState
+import com.aipose.navigation.shouldAutoLoadCommunity
 import com.aipose.ui.components.NeoBrutalismContainer
 import com.aipose.ui.components.PrimaryButton
 import com.aipose.ui.theme.AiPoseColors
@@ -69,19 +78,83 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
 /** E-SEARCH-WIRED: stable test tag for the poses-list search affordance. */
 internal const val POSES_SEARCH_BUTTON_TEST_TAG = "poses-search-button"
 
+/**
+ * Thumbnail fill policy. Crop fills the rounded card viewport while preserving
+ * intrinsic aspect ratio — no letterbox white strips, no distortion.
+ */
+internal fun poseThumbnailContentScale(): ContentScale = ContentScale.Crop
+
+/**
+ * Masonry card height variation, mirroring the prototype `.nb-card--aspect-*`
+ * classes (`card.css`). Cycles a tall / square / short ratio so a true two-
+ * column [LazyVerticalStaggeredGrid] renders uneven column heights (RedNote /
+ * Pinterest feed) instead of row-banded whitespace. Kept pure and deterministic
+ * so the masonry ratio policy is unit-testable without a UI host.
+ */
+internal fun communityCardAspectRatio(index: Int): Float = when (index % 3) {
+    0 -> 1f / 1.25f // nb-card--aspect-tall
+    1 -> 1f          // nb-card--aspect-square
+    else -> 1.25f / 1f // nb-card--aspect-short
+}
+
+/**
+ * Community item loading indicator dimensions / tone. Intentionally small
+ * (16dp), thin (1.5dp stroke) and low-contrast (muted subtext, never the
+ * primary/error red): a calm, non-diagnostic placeholder. The card image region
+ * is already bounded by its aspect-ratio box, so the indicator never shifts
+ * layout when it swaps in/out. Sizes stay pure so the focused test can pin them.
+ */
+internal const val COMMUNITY_LOADING_SIZE = 16 // dp
+internal const val COMMUNITY_LOADING_STROKE = 1.5f // dp
+internal const val COMMUNITY_LOADING_ALPHA = 0.65f
+
+/**
+ * Resolve the Coil image model for a community card: prefer the thumbnail URL,
+ * falling back to the skeleton URL when the thumbnail is blank, else null. Both
+ * are http(s) remote URLs that the shared Coil singleton drives directly — no
+ * per-card fetch-and-stage to a local path.
+ */
+internal fun resolveCommunityImageModel(pose: CommunityPose): String? = when {
+    pose.thumbnailUrl.isNotBlank() -> pose.thumbnailUrl
+    pose.skeletonUrl.isNotBlank() -> pose.skeletonUrl
+    else -> null
+}
+
+/**
+ * Bounded, deterministic downsampling target (px) for a community thumbnail:
+ * at most the displayed grid cell, never the full remote image. Coil decodes
+ * to this size (source larger than target is downsampled).
+ */
+internal fun communityImageTargetSize(cell: IntSize): IntSize =
+    IntSize(width = cell.width.coerceAtLeast(1), height = cell.height.coerceAtLeast(1))
+
+/**
+ * Stable, collision-safe LazyGrid key for a community pose. Prefers the stable
+ * [CommunityPose.poseId], then the thumbnail/skeleton URLs, with an index
+ * fallback so the key is always non-blank and unique within its grid.
+ */
+internal fun communityPoseGridKey(pose: CommunityPose, index: Int): String =
+    pose.poseId.ifBlank {
+        pose.thumbnailUrl.ifBlank {
+            pose.skeletonUrl.ifBlank { "community-idx-$index" }
+        }
+    }
+
 data class PosesUiState(
-    val myPoses: List<Pose> = emptyList(),
     val communityState: CommunityLibraryState = CommunityLibraryState(),
-    val isLoading: Boolean = true,
-    val selectedTab: Int = 0
 )
 
+/**
+ * Community-only Poses feed ViewModel. The My Poses pane/tab was removed, so the
+ * screen never queries/collects the local DB via [PosesLibraryCoordinator.getMyPoses]
+ * and carries no tab selection state. The only browsable catalog is Community, whose
+ * state is mirrored from the hoisted coordinator and auto-loaded on first composition.
+ */
 class PosesViewModel(
     private val coordinator: PosesLibraryCoordinator = PoseServiceLocator.coordinator,
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main),
@@ -101,16 +174,6 @@ class PosesViewModel(
         }
     }
 
-    suspend fun load() {
-        coordinator.getMyPoses().collectLatest { poses ->
-            _uiState.value = _uiState.value.copy(myPoses = poses, isLoading = false)
-        }
-    }
-
-    fun selectTab(index: Int) {
-        _uiState.value = _uiState.value.copy(selectedTab = index)
-    }
-
     fun loadCommunityPoses(refresh: Boolean = false) {
         if (refresh) {
             coordinator.refreshCommunity()
@@ -128,21 +191,20 @@ class PosesViewModel(
 @Composable
 fun PosesScreen(
     viewModel: PosesViewModel,
-    onPoseClick: (String) -> Unit,
+    communityGridState: LazyStaggeredGridState = rememberLazyStaggeredGridState(),
     onExtractPoseClick: () -> Unit,
-    onPublishedPoseClick: (CommunityPose) -> Unit = {},
+    onPublishedPoseClick: (PosePreview) -> Unit = {},
     onBack: (() -> Unit)? = null,
     onSearchClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val uiState by viewModel.uiState.collectAsState()
 
+    // Community auto-loads only the first time the feed is composed (never loaded);
+    // after ordinary Back the hoisted state keeps items, so this does not duplicate
+    // the initial Community load. Refreshes stay explicit.
     LaunchedEffect(viewModel) {
-        viewModel.load()
-    }
-
-    LaunchedEffect(uiState.selectedTab) {
-        if (uiState.selectedTab == 1 && uiState.communityState.items.isEmpty()) {
+        if (shouldAutoLoadCommunity(uiState.communityState.items.isNotEmpty())) {
             viewModel.loadCommunityPoses()
         }
     }
@@ -155,30 +217,13 @@ fun PosesScreen(
                 .padding(Spacing.lg),
             verticalArrangement = Arrangement.spacedBy(Spacing.lg)
         ) {
+            // Community is the only pane: the header holds just the search + create
+            // pose (+) affordances, right-aligned above the masonry feed.
             Row(
                 modifier = Modifier.fillMaxWidth().height(52.dp),
-                horizontalArrangement = Arrangement.Start,
+                horizontalArrangement = Arrangement.End,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(
-                    horizontalArrangement = Arrangement.Start,
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.weight(1f)
-                ) {
-                    ToolbarTab(
-                        title = "My Poses",
-                        isSelected = uiState.selectedTab == 0,
-                        onClick = { viewModel.selectTab(0) },
-                        modifier = Modifier.testTag("tab-my-poses")
-                    )
-                    ToolbarTab(
-                        title = "Community",
-                        isSelected = uiState.selectedTab == 1,
-                        onClick = { viewModel.selectTab(1) },
-                        modifier = Modifier.testTag("tab-community")
-                    )
-                }
-
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(2.dp),
                     verticalAlignment = Alignment.CenterVertically
@@ -245,82 +290,26 @@ fun PosesScreen(
                 }
             }
 
-            when (uiState.selectedTab) {
-                0 -> MyPosesContent(
-                    uiState = uiState,
-                    onPoseClick = onPoseClick,
-                    onExtractPoseClick = onExtractPoseClick
-                )
-                1 -> CommunityContent(
-                    uiState = uiState,
-                    onPoseClick = onPublishedPoseClick,
-                    onLoadMore = viewModel::loadMoreCommunityPoses,
-                    onRefresh = { viewModel.loadCommunityPoses(refresh = true) },
-                    onRetryInitial = { viewModel.loadCommunityPoses(refresh = false) },
-                    onRetryLoadMore = viewModel::loadMoreCommunityPoses,
-                    onRetryRefresh = { viewModel.loadCommunityPoses(refresh = true) }
-                )
-            }
+            CommunityContent(
+                uiState = uiState,
+                gridState = communityGridState,
+                onPoseClick = onPublishedPoseClick,
+                onLoadMore = viewModel::loadMoreCommunityPoses,
+                onRefresh = { viewModel.loadCommunityPoses(refresh = true) },
+                onRetryInitial = { viewModel.loadCommunityPoses(refresh = false) },
+                onRetryLoadMore = viewModel::loadMoreCommunityPoses,
+                onRetryRefresh = { viewModel.loadCommunityPoses(refresh = true) }
+            )
         }
     }
 }
 
-@Composable
-private fun MyPosesContent(
-    uiState: PosesUiState,
-    onPoseClick: (String) -> Unit,
-    onExtractPoseClick: () -> Unit
-) {
-    when {
-        uiState.isLoading -> {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = AiPoseColors.Primary)
-            }
-        }
-        uiState.myPoses.isEmpty() -> {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = Spacing.lg),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
-            ) {
-                Text(
-                    text = "No poses found.",
-                    style = AiPoseTypography.Body,
-                    color = AiPoseColors.Subtext,
-                    modifier = Modifier.padding(bottom = Spacing.lg).testTag("empty-poses-text")
-                )
-                PrimaryButton(
-                    text = "Create Pose",
-                    onClick = onExtractPoseClick,
-                    modifier = Modifier.testTag("extract-pose-cta")
-                )
-            }
-        }
-        else -> {
-            Column(verticalArrangement = Arrangement.spacedBy(Spacing.md)) {
-                CountOnlyHeader(count = uiState.myPoses.size)
-                LazyVerticalGrid(
-                    modifier = Modifier.fillMaxSize(),
-                    columns = GridCells.Fixed(2),
-                    contentPadding = PaddingValues(bottom = MainDockContentInset),
-                    horizontalArrangement = Arrangement.spacedBy(Spacing.md),
-                    verticalArrangement = Arrangement.spacedBy(Spacing.md)
-                ) {
-                    itemsIndexed(uiState.myPoses, key = { _, pose -> pose.poseId }) { index, pose ->
-                        PoseCard(pose = pose, index = index, onClick = { onPoseClick(pose.poseId) })
-                    }
-                }
-            }
-        }
-    }
-}
-
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun CommunityContent(
     uiState: PosesUiState,
-    onPoseClick: (CommunityPose) -> Unit,
+    gridState: LazyStaggeredGridState,
+    onPoseClick: (PosePreview) -> Unit,
     onLoadMore: () -> Unit,
     onRefresh: () -> Unit,
     onRetryInitial: () -> Unit,
@@ -328,6 +317,20 @@ private fun CommunityContent(
     onRetryRefresh: () -> Unit
 ) {
     val state = uiState.communityState
+    val pullToRefreshState = rememberPullToRefreshState()
+    val isRefreshing = state.refreshState is OperationState.Loading && state.items.isNotEmpty()
+
+    LaunchedEffect(pullToRefreshState.isRefreshing) {
+        if (pullToRefreshState.isRefreshing) {
+            onRefresh()
+        }
+    }
+
+    LaunchedEffect(isRefreshing) {
+        if (!isRefreshing && pullToRefreshState.isRefreshing) {
+            pullToRefreshState.endRefresh()
+        }
+    }
 
     Column(modifier = Modifier.fillMaxSize()) {
         // Refresh error banner
@@ -373,7 +376,7 @@ private fun CommunityContent(
                     verticalArrangement = Arrangement.Center
                 ) {
                     Text(
-                        text = "FAILED TO LOAD POSES",
+                        text = "Failed to load poses",
                         style = AiPoseTypography.Heading3,
                         color = AiPoseColors.Error
                     )
@@ -405,13 +408,6 @@ private fun CommunityContent(
                         color = AiPoseColors.Subtext,
                         modifier = Modifier.testTag("empty-poses-text")
                     )
-                    PrimaryButton(
-                        text = "Refresh",
-                        onClick = onRefresh,
-                        modifier = Modifier
-                            .padding(top = Spacing.md)
-                            .testTag("community-empty-refresh-button")
-                    )
                 }
             }
             else -> {
@@ -419,79 +415,75 @@ private fun CommunityContent(
                     modifier = Modifier.weight(1f).fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(Spacing.md)
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                    CountOnlyHeader(count = state.total, modifier = Modifier.fillMaxWidth())
+
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .nestedScroll(pullToRefreshState.nestedScrollConnection)
                     ) {
-                        CountOnlyHeader(count = state.total, modifier = Modifier.weight(1f))
-                        NeoBrutalismContainer(
-                            modifier = Modifier
-                                .size(36.dp)
-                                .testTag("community-refresh-button"),
-                            shape = RoundedCornerShape(8.dp),
-                            backgroundColor = AiPoseColors.Background,
-                            shadowOffset = 2.dp,
-                            borderWidth = 2.dp,
-                            onClick = onRefresh
+                        LazyVerticalStaggeredGrid(
+                            modifier = Modifier.fillMaxSize(),
+                            state = gridState,
+                            columns = StaggeredGridCells.Fixed(2),
+                            contentPadding = PaddingValues(bottom = MainDockContentInset),
+                            horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+                            verticalItemSpacing = Spacing.sm,
                         ) {
-                            Icon(
-                                painter = painterResource(Res.drawable.ic_refresh_cw),
-                                contentDescription = "Refresh community poses",
-                                tint = AiPoseColors.Foreground,
-                                modifier = Modifier.size(16.dp)
-                            )
-                        }
-                    }
-                    LazyVerticalGrid(
-                        modifier = Modifier.fillMaxSize(),
-                        columns = GridCells.Fixed(2),
-                        contentPadding = PaddingValues(bottom = MainDockContentInset),
-                        horizontalArrangement = Arrangement.spacedBy(Spacing.md),
-                        verticalArrangement = Arrangement.spacedBy(Spacing.md)
-                    ) {
-                        itemsIndexed(state.items, key = { _, pose -> pose.poseId }) { index, pose ->
-                            CommunityPoseCard(pose = pose, index = index, onClick = { onPoseClick(pose) })
-                        }
-                        if (state.hasMore) {
-                            if (state.loadMoreState is OperationState.Loading) {
-                                item {
-                                    Box(
-                                        modifier = Modifier.fillMaxWidth().padding(Spacing.md),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        CircularProgressIndicator(color = AiPoseColors.Primary)
+                            itemsIndexed(
+                                state.items,
+                                key = { index, pose -> communityPoseGridKey(pose, index) },
+                                contentType = { _, _ -> CommunityPose::class },
+                            ) { index, pose ->
+                                CommunityPoseCard(pose = pose, index = index, onClick = onPoseClick)
+                            }
+                            if (state.hasMore) {
+                                if (state.loadMoreState is OperationState.Loading) {
+                                    item(span = StaggeredGridItemSpan.FullLine) {
+                                        Box(
+                                            modifier = Modifier.fillMaxWidth().padding(Spacing.md),
+                                            contentAlignment = Alignment.Center,
+                                        ) {
+                                            CommunityLoadingIndicator()
+                                        }
                                     }
-                                }
-                            } else if (state.loadMoreState is OperationState.Error) {
-                                item {
-                                    Column(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(Spacing.md)
-                                            .testTag("load-more-error-state"),
-                                        horizontalAlignment = Alignment.CenterHorizontally,
-                                        verticalArrangement = Arrangement.spacedBy(Spacing.xs)
-                                    ) {
-                                        Text(
-                                            text = "Load more failed.",
-                                            style = AiPoseTypography.Caption,
-                                            color = AiPoseColors.Error
-                                        )
-                                        PrimaryButton(
-                                            text = "Retry",
-                                            onClick = onRetryLoadMore,
-                                            modifier = Modifier.testTag("retry-load-more-button")
-                                        )
+                                } else if (state.loadMoreState is OperationState.Error) {
+                                    item(span = StaggeredGridItemSpan.FullLine) {
+                                        Column(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(Spacing.md)
+                                                .testTag("load-more-error-state"),
+                                            horizontalAlignment = Alignment.CenterHorizontally,
+                                            verticalArrangement = Arrangement.spacedBy(Spacing.xs),
+                                        ) {
+                                            Text(
+                                                text = "Load more failed.",
+                                                style = AiPoseTypography.Caption,
+                                                color = AiPoseColors.Error,
+                                            )
+                                            PrimaryButton(
+                                                text = "Retry",
+                                                onClick = onRetryLoadMore,
+                                                modifier = Modifier.testTag("retry-load-more-button"),
+                                            )
+                                        }
                                     }
-                                }
-                            } else {
-                                item {
-                                    LaunchedEffect(Unit) { onLoadMore() }
-                                    Box(modifier = Modifier.size(1.dp))
+                                } else {
+                                    item(span = StaggeredGridItemSpan.FullLine) {
+                                        LaunchedEffect(Unit) { onLoadMore() }
+                                        Box(modifier = Modifier.size(1.dp))
+                                    }
                                 }
                             }
                         }
+
+                        PullToRefreshContainer(
+                            state = pullToRefreshState,
+                            modifier = Modifier.align(Alignment.TopCenter),
+                            containerColor = AiPoseColors.Surface,
+                            contentColor = AiPoseColors.Primary
+                        )
                     }
                 }
             }
@@ -500,14 +492,57 @@ private fun CommunityContent(
 }
 
 @Composable
+internal fun CommunityLoadingIndicator(modifier: Modifier = Modifier) {
+    CircularProgressIndicator(
+        color = AiPoseColors.Subtext.copy(alpha = COMMUNITY_LOADING_ALPHA),
+        modifier = modifier.size(COMMUNITY_LOADING_SIZE.dp),
+        strokeWidth = COMMUNITY_LOADING_STROKE.dp,
+        trackColor = AiPoseColors.Subtext.copy(alpha = 0.1f),
+    )
+}
+
+@Composable
 fun CommunityPoseCard(
     pose: CommunityPose,
     index: Int,
-    onClick: () -> Unit,
+    onClick: (PosePreview) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val aspectRatios = listOf(1f / 1.25f, 1f, 1.25f / 1f)
-    val aspectRatio = aspectRatios[index % 3]
+    var sourceBounds by remember { androidx.compose.runtime.mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
+    val aspectRatio = communityCardAspectRatio(index)
+    val cardShape = RoundedCornerShape(CornerRadius.md)
+
+    // Single Coil model driven directly by AsyncImage/ImageRequest — thumbnail URL
+    // with the skeleton URL as fallback when the thumbnail is blank. The shared
+    // singleton ImageLoader (bounded memory + disk caches) owns all caching, so
+    // there is no per-card fetch-and-stage / manual bitmap decode anymore.
+    val model = remember(pose.thumbnailUrl, pose.skeletonUrl) {
+        resolveCommunityImageModel(pose)
+    }
+
+    // Measured grid cell (already in px). Drives deterministic bounded sizing so
+    // Coil downsamples to at most the displayed cell instead of the full remote image.
+    var cellSizePx by remember { androidx.compose.runtime.mutableStateOf<IntSize?>(null) }
+
+    val platformContext = LocalPlatformContext.current
+    val request = remember(model, cellSizePx, platformContext) {
+        val cell = cellSizePx
+        if (model == null || cell == null) null
+        else {
+            val target = communityImageTargetSize(cell)
+            ImageRequest.Builder(platformContext)
+                .data(model)
+                .size(target.width, target.height)
+                .build()
+        }
+    }
+
+    val isTransitioning = MatchedImageTransitionState.source?.key == "pose:${pose.poseId}" &&
+            MatchedImageTransitionState.transitionPhase != com.aipose.navigation.SharedTransitionPhase.IDLE
+    val contentModifier = Modifier
+        .fillMaxSize()
+        .onSizeChanged { cellSizePx = it }
+        .onGloballyPositioned { sourceBounds = it.boundsInWindow() }
 
     Column(
         modifier = modifier.fillMaxWidth(),
@@ -519,26 +554,66 @@ fun CommunityPoseCard(
                 .aspectRatio(aspectRatio)
                 .testTag("pose-card-community-${pose.poseId}")
                 .semantics { contentDescription = pose.name },
-            shape = RoundedCornerShape(CornerRadius.md),
+            shape = cardShape,
             backgroundColor = AiPoseColors.Surface,
             shadowOffset = 4.dp,
-            onClick = onClick
+            onClick = {
+                sourceBounds?.let {
+                    MatchedImageTransitionState.capture(
+                        key = "pose:${pose.poseId}",
+                        bounds = it,
+                        imageModel = model,
+                        cornerRadius = CornerRadius.md,
+                        contentScale = poseThumbnailContentScale()
+                    )
+                }
+                onClick(
+                    communityPosePreview(
+                        pose = pose,
+                        aspectRatio = aspectRatio,
+                        cornerRadius = CornerRadius.md,
+                    )
+                )
+            }
         ) {
-            val imageModel = pose.thumbnailUrl
-            if (imageModel.isNotBlank()) {
-                AsyncImage(
-                    model = imageModel,
-                    contentDescription = null,
-                    modifier = Modifier.fillMaxWidth(),
-                    contentScale = ContentScale.Crop
-                )
-            } else {
-                Icon(
-                    imageVector = Icons.Default.Image,
-                    contentDescription = null,
-                    modifier = Modifier.size(40.dp),
-                    tint = AiPoseColors.Subtext
-                )
+            // Rounded, neutral loading / error surface (never a full-card red diagnostic
+            // in release). PNG alpha is preserved by Coil + ContentScale.Crop.
+            val imageModifier = contentModifier
+                .graphicsLayer { alpha = if (isTransitioning) 0f else 1f }
+                .clip(cardShape)
+            when {
+                model == null -> {
+                    Icon(
+                        imageVector = Icons.Default.Image,
+                        contentDescription = null,
+                        tint = AiPoseColors.Subtext,
+                        modifier = imageModifier.size(40.dp)
+                    )
+                }
+                request == null -> {
+                    Box(modifier = imageModifier, contentAlignment = Alignment.Center) {
+                        CommunityLoadingIndicator()
+                    }
+                }
+                else -> {
+                    SubcomposeAsyncImage(
+                        model = request,
+                        contentDescription = null,
+                        modifier = imageModifier,
+                        contentScale = poseThumbnailContentScale(),
+                        loading = {
+                            CommunityLoadingIndicator()
+                        },
+                        error = {
+                            Icon(
+                                imageVector = Icons.Default.Image,
+                                contentDescription = null,
+                                tint = AiPoseColors.Subtext,
+                                modifier = Modifier.size(40.dp)
+                            )
+                        }
+                    )
+                }
             }
         }
 
@@ -569,54 +644,5 @@ fun CountOnlyHeader(
             color = AiPoseColors.Subtext,
             modifier = Modifier.testTag("poses-count-label")
         )
-    }
-}
-
-@Composable
-fun ToolbarTab(
-    title: String,
-    isSelected: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val interactionSource = remember { MutableInteractionSource() }
-    Box(
-        modifier = modifier
-            .selectable(
-                selected = isSelected,
-                interactionSource = interactionSource,
-                indication = null,
-                role = Role.Tab,
-                onClick = onClick
-            )
-            .padding(horizontal = Spacing.sm, vertical = 8.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-            modifier = Modifier.width(IntrinsicSize.Max)
-        ) {
-            Text(
-                text = title,
-                style = AiPoseTypography.BodyBold,
-                color = if (isSelected) AiPoseColors.Foreground else AiPoseColors.Subtext,
-                maxLines = 1
-            )
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(4.dp)
-                    .background(
-                        color = if (isSelected) AiPoseColors.AccentBlue else Color.Transparent,
-                        shape = RoundedCornerShape(topStart = 2.dp, topEnd = 2.dp)
-                    )
-                    .border(
-                        width = 1.5.dp,
-                        color = if (isSelected) AiPoseColors.Foreground else Color.Transparent,
-                        shape = RoundedCornerShape(topStart = 2.dp, topEnd = 2.dp)
-                    )
-            )
-        }
     }
 }
