@@ -21,7 +21,6 @@ relationships:
     - docs/community-poses-api.md
     - docs/design-reference
     - docs/prototype
-    - docs/superpowers
     - mobile
     - web
 type: report

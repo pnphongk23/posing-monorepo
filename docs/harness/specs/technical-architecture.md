@@ -81,7 +81,7 @@ This document describes the code-backed architecture of the `ai-pose` monorepo. 
 ## Repository authority
 
 - `docs/harness/` is the current-state product and engineering source of truth.
-- `docs/superpowers/` and root `plans/` preserve design and implementation history; their completion claims require confirmation against current code.
+- Historical design records and root `plans/` preserve design and implementation history; their completion claims require confirmation against current code.
 - `docs/prototype/` is an interactive UI reference, not production behavior.
 - `docs/privacy-ugc-compliance.md` is a pre-release checklist, not evidence that public UGC controls are implemented.
 

@@ -23,7 +23,6 @@
    • Reference: Subframe Tailwind theme exported
 
 ✅ Design Spec Located
-   • File: docs/superpowers/specs/2026-04-14-kmp-compose-migration-design.md
    • Status: Draft, comprehensive architecture plan
 
 

@@ -74,7 +74,6 @@ val accentYellow = Color(0xFFF4C542)   // Tertiary
 
 - **Subframe Project:** https://app.subframe.com/6f0b27e61709/design/54e0d2b4-5e3d-4793-9f09-dddb5544874b/edit
 - **Web App Theme:** `src/app/globals.css`
-- **Architecture Spec:** `docs/superpowers/specs/2026-04-14-kmp-compose-migration-design.md`
 
 ## Implementation Phases
 

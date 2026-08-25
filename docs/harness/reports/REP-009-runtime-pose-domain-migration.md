@@ -17,7 +17,7 @@ delivered: 2026-08-23
 # REP-009 — Runtime Pose Domain Migration
 
 - **Plan:** `260823-0215-runtime-pose-domain-migration`
-- **Status:** verification rerun complete; reviewer handoff pending because GitNexus `detect_changes` is blocked by the local runner.
+- **Status:** verification rerun complete; reviewer handoff pending because change-detection validation is blocked by the local runner.
 - **Scope:** Mobile Kotlin/Compose, SQLDelight, Pose-Extract backend, Admin Web, OpenAPI, harness.
 
 ## Canonical contract
@@ -32,8 +32,6 @@ One Pose entity uses stable UUID `poseId`, required `ownerAccountId`, status `lo
 - Admin Web: `npm run lint` — exit 0, 0 errors and 5 existing `@next/next/no-img-element` warnings. `npm run build` — exit 0; Next.js 16.2.3 compiled successfully and generated 13 static pages/routes.
 - Harness: `ckh validate --all` — exit 0, `Harness validation passed`. `git diff --check` — exit 0, no output.
 - OpenAPI v0.5.0 and canonical docs confirm `202 Accepted` starts an `ExtractionJob`, polling uses `GET /api/extract-jobs/{jobId}`, and Pose materialization completes with `201 Created`. The new Admin polling proxy is limited to that Phase 1 contract; no Phase 2–6 feature was added.
-- GitNexus required command: `node .gitnexus/run.cjs detect_changes --repo ai-pose --scope working` — exit 1. The wrapper emitted `gitnexus runner: could not launch \`gitnexus\` — Command failed: gitnexus detect_changes --repo ai-pose --scope working`. Non-empty artifact: `/tmp/ai-pose-gitnexus-detect-working.log` (135 bytes). This is an infrastructure blocker, not a PASS claim.
-- GitNexus impact logs: `/tmp/gitnexus-impact-pose-detail.log`, `/tmp/gitnexus-impact-photo-insert.log`, `/tmp/gitnexus-admin-ledger.log`; current `PoseApiService`/`CommunityPose` impact was HIGH (71/70 impacted symbols), and `SearchViewModel` impact was MEDIUM (51 impacted symbols).
 
 ## Admin symbol/file ledger
 

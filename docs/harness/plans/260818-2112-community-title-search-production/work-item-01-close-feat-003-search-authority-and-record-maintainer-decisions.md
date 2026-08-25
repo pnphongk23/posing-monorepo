@@ -27,11 +27,8 @@ decision_dependencies: []
 - Record the sibling Plan's pending status and explicit search exclusion as an
   overlap constraint. Keep browse tabs, `PosesLibraryCoordinator`, camera
   handoff, Android, and Admin UI search outside this Plan.
-- Record the evidence limitation: a local `.gitnexus` index exists
-  (`.gitnexus/meta.json`, indexed 2026-08-18T14:25:35Z at HEAD `9ff4b136`),
-  but no GitNexus MCP tool is connected in this session and `ckh graph check`
-  reports the harness retrieval-graph artifact as stale, so direct canonical
-  inspection is the grounding fallback.
+- Record the evidence limitation: the harness retrieval-graph artifact is
+  stale, so direct canonical inspection is the grounding fallback.
 
 ## Scope and affected files
 
@@ -70,7 +67,7 @@ this Work Item.
 - The Plan's approved status (2026-08-18, Repository Maintainer) is recorded
   consistently in frontmatter, Overview, and this Work Item, with no stale
   "approval pending" or "Plan not approved" claims remaining; no section
-  relies on unavailable GitNexus or retrieval-graph evidence.
+  relies on unavailable graph or retrieval-graph evidence.
 
 ## Risks
 
@@ -78,7 +75,7 @@ this Work Item.
   its read-only exclusion boundary explicit.
 - A pending sibling Plan can create duplicate edits if its excluded search scope
   is reopened; do not touch sibling files.
-- While GitNexus MCP tooling is unconnected and the harness graph artifact is
+- While graph tooling is unconnected and the harness graph artifact is
   stale, graph-derived impact claims cannot be made; use cited direct source,
   spec, test, and report inspection instead.
 

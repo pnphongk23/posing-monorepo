@@ -12,7 +12,6 @@ AI Pose is a monorepo for an iOS pose-reference camera, a local photo/pose libra
 | `web/admin-ui/` | Next.js admin UI and server-side API proxies |
 | `web/services/pose-extract-server/` | Express extraction/community API and worker |
 | `docs/harness/` | Current product, technical, feature, and UI/UX source of truth |
-| `docs/superpowers/`, `plans/` | Historical designs and implementation plans |
 | `docs/prototype/` | Interactive UI reference; not production behavior |
 
 Start with the generated [Harness index](docs/harness/index.md), then read:

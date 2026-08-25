@@ -193,7 +193,6 @@ CommunityPose-to-MediaAsset lifecycle, not inferred from HTTP 202.
 
 ## Verification evidence
 
-- `npx gitnexus status` — repository index is up-to-date at commit `5011daa`.
 - `npm run backend:test` — 14 test files and 78 tests passed.
 - `npm run backend:build` — TypeScript build passed.
 - `npm --prefix web/services/pose-extract-server run lint` — TypeScript lint passed.

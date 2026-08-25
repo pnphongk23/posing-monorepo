@@ -91,7 +91,7 @@ paginated through that repository.
 - **Negative scope unchanged:** browse tabs, `PosesLibraryCoordinator`, camera
   handoff, Android, Admin UI search, and tag/general full-text search stay out
   of scope, as listed in Coverage.
-- **Evidence limitation unchanged:** GitNexus graph/impact tooling is not
+- **Evidence limitation unchanged:** graph/impact tooling is not
   queryable in this session; direct canonical inspection of source, specs,
   tests, and reports is the grounding fallback (see Verification ledger).
 
@@ -107,13 +107,7 @@ The sibling Plan `260818-2105` is still pending, but its declared draft scope
 explicitly excludes SearchScreen, `CommunitySearchProvider`, and server `q`.
 That is an overlap boundary, not a blocking dependency: this Plan must not
 reopen its browse-tabs, coordinator, camera-handoff, Android, or admin-search
-scope. The completed Plan `260809-2240` and REP-003 are historical evidence
-only. Evidence limitation: a local GitNexus index artifact exists
-(`.gitnexus/meta.json`, `indexedAt` 2026-08-18T14:25:35Z, `lastCommit`
-`9ff4b136` = current HEAD), but no GitNexus MCP tool is connected in this
-session and `ckh graph check` reports the harness retrieval-graph artifact
-as stale; graph-derived impact evidence is therefore withheld and direct
-canonical inspection of source, specs, tests, and reports is the grounding.
+scope. The completed Plan `260809-2240` and REP-003 are historical evidence.
 
 ## Work Items
 
@@ -158,7 +152,7 @@ search, and mobile live API provider wiring.
 | Live API community-search wiring in `PoseServiceLocator` | **Unresolved** (deferred by design) | `PoseServiceLocator.kt:14` — mock default; REP-005 records intentional absence |
 | Screenshot / device / Maestro end-to-end interaction | **Unresolved** | No device or Maestro session in WI-05; ViewModel/contract tests only (REP-005) |
 | DEC-003 is an approved authority governing this slice | **Unresolved** (non-blocking context) | DEC-003 `status: proposed` (2026-08-18); its No-Search row bounds sibling Plan 260818-2105, not this slice; excluded from `relationships.decisions` because only approved Decisions are authority links; grounded recommendation is non-blocking, Maintainer confirms at Plan approval |
-| GitNexus graph/impact tooling is queryable in this session | **Unresolved** (evidence limitation) | Local index artifact exists (`.gitnexus/meta.json`, indexed 2026-08-18T14:25:35Z at HEAD `9ff4b136`) but no GitNexus MCP tool is connected and `ckh graph check` reports the harness retrieval-graph artifact stale; direct canonical inspection is used instead |
+| Graph/impact tooling is queryable in this session | **Unresolved** (evidence limitation) | Direct canonical inspection of source, specs, tests, and reports is the grounding fallback used instead |
 | Sibling pending Plan `260818-2105` owns this search slice | **Failed** (no overlap ownership) | `docs/harness/plans/260818-2105-feat-003-pose-library-slice/plan.md:62-64,96-101` explicitly excludes search; this Plan owns the slice |
 
 **Ledger semantics.** Verified rows are grounding facts the Plan relies on.
@@ -166,7 +160,7 @@ Failed rows are implementation gaps owned by the named Work Items, not failed
 planning assumptions; they are the reason this Plan exists. Unresolved rows
 remain open at submission: DEC-003's blocking status is a Maintainer
 confirmation at Plan approval (grounded recommendation: non-blocking,
-evidence-only), and GitNexus/graph tooling is recorded as an evidence
+evidence-only), and graph tooling is recorded as an evidence
 limitation rather than silently skipped. No Verified grounding fact is
 contradicted, and no Work Item depends on a Failed or Unresolved claim being
 silently repaired.

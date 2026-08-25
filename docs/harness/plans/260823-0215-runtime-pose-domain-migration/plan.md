@@ -56,7 +56,7 @@ Migrate mobile Kotlin/Compose, SQLDelight, pose-extract backend, Admin Web, Open
 4. Align backend PoseStore, media assets, extraction finalization, routes, and tests.
 5. Align Admin Web API proxy and pages with 202/201 and canonical fields.
 6. Refresh OpenAPI and harness source-of-truth documents.
-7. Run full mobile, backend, web, harness, diff, and GitNexus validation.
+7. Run full mobile, backend, web, harness, and diff validation.
 
 ## Validation
 
@@ -66,4 +66,3 @@ Migrate mobile Kotlin/Compose, SQLDelight, pose-extract backend, Admin Web, Open
 - Admin Web `npm run build`, `npm run lint`
 - `ckh validate --all`
 - `git diff --check`
-- `gitnexus detect_changes --repo ai-pose --scope working`

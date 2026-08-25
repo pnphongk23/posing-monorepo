@@ -88,7 +88,7 @@ repository contract).
 | Live API end-to-end against production/staging backend | **Unresolved** | Mock default by design; no locator wiring to `PoseApiService` community search |
 | Screenshot / device / Maestro interaction evidence | **Unresolved** | No Maestro run or physical-device session in WI-05; Compose UI screenshot automation absent (same as REP-003) |
 | DEC-003 as approved authority for this slice | **Unresolved** (non-blocking) | DEC-003 remains `proposed`; bounds sibling Plan 260818-2105 only |
-| GitNexus graph/impact queryable in verification session | **Unresolved** (evidence limitation) | Direct canonical inspection and test output used instead |
+| Graph/impact analysis queryable in verification session | **Unresolved** (evidence limitation) | Direct canonical inspection and test output used instead |
 
 ## Plan variance
 

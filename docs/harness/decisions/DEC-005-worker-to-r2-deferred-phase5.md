@@ -38,4 +38,4 @@ Phase 5/6 must add a `result_image_url` column, update `markSucceeded`, and upda
 
 ## Risk
 
-**MEDIUM** — `ExtractionJobStore` has 12 direct callers according to GitNexus impact analysis.
+**MEDIUM** — `ExtractionJobStore` has 12 direct callers according to prior code-impact analysis.

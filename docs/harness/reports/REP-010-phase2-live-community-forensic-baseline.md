@@ -22,7 +22,6 @@ relationships:
 - RTK.md: **MIA** at pre-flight; no file was created.
 - Baseline status count: 133 porcelain entries; 108 tracked paths in `git diff --name-only`; 133 total entries including untracked/deleted paths.
 - Baseline status capture: `/tmp/ai-pose-status-baseline.txt`.
-- Baseline GitNexus preflight logs: `/tmp/ai-pose-gitnexus-query.log`, `/tmp/ai-pose-gitnexus-impact-targets.log`, `/tmp/ai-pose-impact-api.txt`, `/tmp/ai-pose-impact-repo.txt`, `/tmp/ai-pose-impact-locator.txt`.
 
 ## Owned paths (only paths this lane may change)
 - `mobile/shared/src/commonMain/kotlin/com/aipose/data/remote/PoseApiService.kt` — baseline sha256 `958bf3ab371b8da97c6b74464950d640e77a3957503eaa9d97823914d23a786c`; pre-existing dirty: yes
