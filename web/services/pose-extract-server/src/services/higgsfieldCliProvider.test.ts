@@ -55,7 +55,7 @@ function mockSpawn(stdout: string, stderr = "", exitCode = 0) {
 }
 
 describe("HiggsfieldCliProvider", () => {
-  it("spawns CLI with text2image_gpt (UI ChatGPT) and fetches result URL", async () => {
+  it("spawns CLI with seedream_v5_lite (no resolution, Seedream quality) and fetches result URL", async () => {
     const spawnImpl = mockSpawn(JSON.stringify({ url: "https://cdn.example.com/out.png" }));
     const fetchImpl = vi.fn().mockResolvedValue({
       ok: true,
@@ -79,11 +79,11 @@ describe("HiggsfieldCliProvider", () => {
 
     expect(spawnImpl).toHaveBeenCalled();
     const [, args] = spawnImpl.mock.calls[0] as [string, string[]];
-    expect(args).toContain("text2image_gpt");
+    expect(args).toContain("seedream_v5_lite");
     expect(args).toContain("--prompt");
     expect(args).toContain(DEFAULT_EXTRACT_PROMPT);
     expect(args).toContain("--quality");
-    expect(args).toContain("medium");
+    expect(args).toContain("high");
     expect(args).not.toContain("--resolution");
     expect(args).toContain("--wait");
     expect(args).toContain("--wait-timeout");
@@ -92,6 +92,47 @@ describe("HiggsfieldCliProvider", () => {
     expect(fetchImpl).toHaveBeenCalledWith("https://cdn.example.com/out.png");
     expect(result.mimeType).toBe("image/png");
     expect(result.imageBase64).toBe(Buffer.from([1, 2, 3]).toString("base64"));
+  });
+
+  it("keeps GPT-style quality medium for globally-set GPT model", async () => {
+    const spawnImpl = mockSpawn(JSON.stringify({ url: "https://cdn.example.com/out.png" }));
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true, status: 200, headers: { get: () => "image/png" }, arrayBuffer: async () => Uint8Array.from([1]).buffer
+    });
+    const provider = new HiggsfieldCliProvider({
+      spawnImpl: spawnImpl as never,
+      fetchImpl: fetchImpl as typeof fetch,
+      tmpDir: "/tmp/higgsfield-test-gpt",
+      model: "openai_hazel"
+    });
+    await provider.extractPoseImage({ sourceImageBase64: Buffer.from("s").toString("base64"), sourceMimeType: "image/png" });
+    const [, args] = spawnImpl.mock.calls[0] as [string, string[]];
+    expect(args).toContain("--quality");
+    expect(args).toContain("medium");
+    expect(args).not.toContain("--aspect-ratio");
+  });
+
+  it("adds --aspect-ratio matching the source image for seedream_v5_lite", async () => {
+    const spawnImpl = mockSpawn(JSON.stringify({ url: "https://cdn.example.com/out.png" }));
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true, status: 200, headers: { get: () => "image/png" }, arrayBuffer: async () => Uint8Array.from([1]).buffer
+    });
+    // Minimal valid PNG shell: signature + width=9, height=12 → 3:4.
+    const sig = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    const png = Buffer.alloc(24);
+    sig.copy(png, 0);
+    png.writeUInt32BE(9, 16);
+    png.writeUInt32BE(12, 20);
+    const provider = new HiggsfieldCliProvider({
+      spawnImpl: spawnImpl as never, fetchImpl: fetchImpl as typeof fetch,
+      tmpDir: "/tmp/higgsfield-test-ar", model: "seedream_v5_lite"
+    });
+    await provider.extractPoseImage({ sourceImageBase64: png.toString("base64"), sourceMimeType: "image/png" });
+    const [, args] = spawnImpl.mock.calls[0] as [string, string[]];
+    expect(args).toContain("--aspect-ratio");
+    expect(args[args.indexOf("--aspect-ratio") + 1]).toBe("3:4");
+    expect(args).toContain("--quality");
+    expect(args[args.indexOf("--quality") + 1]).toBe("high");
   });
 
   it("maps auth failures to PROVIDER_AUTH_REQUIRED", async () => {

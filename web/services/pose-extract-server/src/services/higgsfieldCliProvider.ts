@@ -14,12 +14,25 @@ import { DEFAULT_EXTRACT_PROMPT } from "./extractPrompt";
 import type { PoseExtractorProvider } from "./poseExtractorProvider";
 import type { ExtractedImage } from "./types";
 
-/** Higgsfield UI label "ChatGPT" → job_type text2image_gpt (GPT Image). */
-const DEFAULT_MODEL = "text2image_gpt";
+/** Default generation model → Seedream 5.0 Lite (no `--resolution`, quality `basic`|`high`). */
+const DEFAULT_MODEL = "seedream_v5_lite";
 const DEFAULT_RESOLUTION = "1k";
 const DEFAULT_GPT_IMAGE_QUALITY = "medium";
+/** Model-specific quality value used when `--resolution` is omitted. */
+const DEFAULT_SEEDREAM_QUALITY = "high";
 /** Models that reject `--resolution` on the Higgsfield CLI. */
-const MODELS_WITHOUT_RESOLUTION = new Set(["openai_hazel", "text2image_gpt"]);
+const MODELS_WITHOUT_RESOLUTION = new Set(["openai_hazel", "text2image_gpt", "seedream_v4_5", "seedream_v5_lite"]);
+/** GPT-style models that expect `--quality medium` (vs Seedream's basic|high). */
+const GPT_STYLE_QUALITY = new Set(["openai_hazel", "text2image_gpt"]);
+/** Allowed `--aspect-ratio` values per Seedream model (from `higgsfield model get`). */
+const ASPECT_RATIOS: Record<string, string[]> = {
+  seedream_v4_5: ["1:1", "4:3", "16:9", "3:2", "21:9", "3:4", "9:16", "2:3"],
+  seedream_v5_lite: ["1:1", "4:3", "3:4", "16:9", "9:16", "21:9"]
+};
+const ASPECT_VALUES: Record<string, number> = {
+  "1:1": 1, "4:3": 4 / 3, "16:9": 16 / 9, "3:2": 1.5, "21:9": 21 / 9,
+  "3:4": 3 / 4, "9:16": 9 / 16, "2:3": 2 / 3
+};
 const DEFAULT_TIMEOUT_MS = 600_000;
 const DEFAULT_WAIT_TIMEOUT = "9m";
 
@@ -54,6 +67,60 @@ function mimeFromContentType(contentType: string | null): ExtractedImage["mimeTy
     return normalized;
   }
   return "image/png";
+}
+
+/** Read image pixel dimensions (PNG/JPEG) without external deps. WebP → null. */
+async function readImageDimensions(
+  filePath: string,
+  mimeType: string
+): Promise<{ width: number; height: number } | null> {
+  const handle = await fs.open(filePath, "r");
+  try {
+    if (mimeType === "image/png") {
+      const sig = Buffer.alloc(8);
+      await handle.read(sig, 0, 8, 0);
+      if (!sig.equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return null;
+      const b = Buffer.alloc(8);
+      await handle.read(b, 0, 8, 16);
+      return { width: b.readUInt32BE(0), height: b.readUInt32BE(4) };
+    }
+    if (mimeType === "image/jpeg") {
+      const head = Buffer.alloc(2);
+      await handle.read(head, 0, 2, 0);
+      if (head[0] !== 0xff || head[1] !== 0xd8) return null;
+      const buf = Buffer.alloc(65536);
+      const n = (await handle.read(buf, 0, buf.length, 0)).bytesRead;
+      let off = 2;
+      while (off + 9 < n) {
+        if (buf[off] !== 0xff) { off++; continue; }
+        const marker = buf[off + 1];
+        const isSof = (marker >= 0xc0 && marker <= 0xc3) || (marker >= 0xc5 && marker <= 0xc7) ||
+          (marker >= 0xc9 && marker <= 0xcb) || (marker >= 0xcd && marker <= 0xcf);
+        if (isSof) return { height: (buf[off + 5] << 8) | buf[off + 6], width: (buf[off + 7] << 8) | buf[off + 8] };
+        if (marker === 0xda || marker === 0xd9) return null;
+        const len = (buf[off + 2] << 8) | buf[off + 3];
+        off += 2 + len;
+      }
+      return null;
+    }
+    return null;
+  } finally {
+    await handle.close();
+  }
+}
+
+/** Map source pixel ratio to the nearest allowed `--aspect-ratio` for the model. */
+function pickAspectRatio(model: string, dims: { width: number; height: number } | null): string | null {
+  const allowed = ASPECT_RATIOS[model];
+  if (!allowed || !dims || dims.width <= 0 || dims.height <= 0) return null;
+  const target = dims.width / dims.height;
+  let best = allowed[0];
+  let bestErr = Infinity;
+  for (const a of allowed) {
+    const err = Math.abs(Math.log2(ASPECT_VALUES[a]) - Math.log2(target));
+    if (err < bestErr) { bestErr = err; best = a; }
+  }
+  return best;
 }
 
 export function extractResultUrlFromCliJson(payload: unknown): string | null {
@@ -193,9 +260,12 @@ export class HiggsfieldCliProvider implements PoseExtractorProvider {
       await fs.mkdir(jobDir, { recursive: true });
       await fs.writeFile(sourcePath, Buffer.from(input.sourceImageBase64, "base64"));
 
+      const dims = await readImageDimensions(sourcePath, input.sourceMimeType);
       const modelArgs = MODELS_WITHOUT_RESOLUTION.has(this.model)
-        ? ["--quality", DEFAULT_GPT_IMAGE_QUALITY]
+        ? ["--quality", GPT_STYLE_QUALITY.has(this.model) ? DEFAULT_GPT_IMAGE_QUALITY : DEFAULT_SEEDREAM_QUALITY]
         : ["--resolution", DEFAULT_RESOLUTION];
+      const aspect = pickAspectRatio(this.model, dims);
+      if (aspect) modelArgs.push("--aspect-ratio", aspect);
       const args = [
         "generate",
         "create",

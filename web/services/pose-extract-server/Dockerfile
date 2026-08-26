@@ -22,16 +22,13 @@ RUN apt-get update \
 RUN npm install -g @higgsfield/cli@1.1.23 \
   && higgsfield --version
 
-# Install OS dependencies for Playwright
-RUN npx playwright install-deps chromium
-
-# Install Playwright browser
 ENV PLAYWRIGHT_BROWSERS_PATH=/root/.cache/ms-playwright
-RUN npx playwright install chromium
 
 WORKDIR /app
 COPY web/services/pose-extract-server/package.json web/services/pose-extract-server/package-lock.json ./
-RUN npm ci --omit=dev
+RUN npm ci --omit=dev \
+  && ./node_modules/.bin/playwright install-deps chromium \
+  && ./node_modules/.bin/playwright install chromium
 
 COPY --from=build /app/dist ./dist
 COPY web/services/pose-extract-server/scripts/remove_bg_lineart.py ./scripts/remove_bg_lineart.py

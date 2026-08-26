@@ -1,16 +1,25 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { RefreshCcw, Shield, Trash2, Plus } from 'lucide-react';
+import { RefreshCcw, Shield, Trash2, Plus, Cpu } from 'lucide-react';
 import NavButton from '@/components/NavButton';
 import ActionButton from '@/components/ActionButton';
 
 const STATUS_OPTIONS = ['active', 'disabled', 'exhausted'];
 
+const PROVIDER_OPTIONS = [
+  { id: 'gemini_native', label: 'Gemini Native' },
+  { id: 'higgsfield_cli', label: 'Higgsfield CLI' },
+];
+
 async function parseResponse(response) {
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    const message = payload.error || payload.message || `Request failed (${response.status})`;
+    const message =
+      payload.error?.message ||
+      payload.error ||
+      payload.message ||
+      `Request failed (${response.status})`;
     throw new Error(message);
   }
   return payload;
@@ -23,11 +32,52 @@ export default function AdminKeysPage() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [form, setForm] = useState({ name: '', apiKey: '' });
+  const [provider, setProvider] = useState('gemini_native');
+  const [providerLoading, setProviderLoading] = useState(true);
+  const [providerSaving, setProviderSaving] = useState(false);
+  const [providerError, setProviderError] = useState('');
+  const [providerNotice, setProviderNotice] = useState('');
 
   const activeCount = useMemo(
     () => keys.filter((key) => key.status === 'active').length,
     [keys]
   );
+
+  const fetchProvider = useCallback(async () => {
+    setProviderLoading(true);
+    setProviderError('');
+    try {
+      const response = await fetch('/api/admin/settings/extraction-provider', {
+        cache: 'no-store',
+      });
+      const payload = await parseResponse(response);
+      setProvider(payload.data?.provider || 'gemini_native');
+    } catch (err) {
+      setProviderError(err.message);
+    } finally {
+      setProviderLoading(false);
+    }
+  }, []);
+
+  const saveProvider = useCallback(async () => {
+    setProviderSaving(true);
+    setProviderError('');
+    setProviderNotice('');
+    try {
+      const response = await fetch('/api/admin/settings/extraction-provider', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider }),
+      });
+      const payload = await parseResponse(response);
+      setProvider(payload.data?.provider || provider);
+      setProviderNotice('Đã lưu extract engine. Áp dụng cho job được claim sau khi lưu.');
+    } catch (err) {
+      setProviderError(err.message);
+    } finally {
+      setProviderSaving(false);
+    }
+  }, [provider]);
 
   const fetchKeys = useCallback(async () => {
     setLoading(true);
@@ -45,7 +95,8 @@ export default function AdminKeysPage() {
 
   useEffect(() => {
     fetchKeys();
-  }, [fetchKeys]);
+    fetchProvider();
+  }, [fetchKeys, fetchProvider]);
 
   const createKey = useCallback(async () => {
     if (!form.name.trim() || !form.apiKey.trim()) {
@@ -137,6 +188,61 @@ export default function AdminKeysPage() {
             <RefreshCcw size={14} />
           </button>
         </div>
+      </div>
+
+      <div className="rounded-2xl neo-border bg-white p-4 neo-shadow-md mb-4">
+        <div className="flex items-center justify-between pb-3">
+          <div className="flex items-center gap-2">
+            <Cpu size={14} />
+            <span className="text-[12px] font-bold tracking-neo-wide uppercase">
+              Extract Engine
+            </span>
+          </div>
+          <button
+            onClick={fetchProvider}
+            className="rounded-lg neo-border bg-white p-1.5 neo-press"
+            title="Refresh provider"
+          >
+            <RefreshCcw size={12} />
+          </button>
+        </div>
+        <p className="text-[11px] opacity-60 pb-3">
+          Chọn engine xử lý extract job. Thay đổi chỉ áp dụng cho job được worker claim sau khi lưu — job đang chạy giữ engine cũ.
+        </p>
+        {providerLoading ? (
+          <div className="text-[11px] font-bold opacity-50 py-2">LOADING ENGINE...</div>
+        ) : (
+          <div className="flex flex-col gap-2">
+            <select
+              value={provider}
+              onChange={(e) => setProvider(e.target.value)}
+              className="rounded-xl neo-border px-3 py-2 text-[12px] font-bold"
+            >
+              {PROVIDER_OPTIONS.map((option) => (
+                <option key={option.id} value={option.id}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+            <ActionButton
+              onClick={saveProvider}
+              bg="bg-accent-yellow"
+              disabled={providerSaving}
+            >
+              {providerSaving ? 'SAVING...' : 'SAVE EXTRACT ENGINE'}
+            </ActionButton>
+          </div>
+        )}
+        {providerError && (
+          <div className="rounded-xl neo-border bg-accent-pink px-3 py-2 text-[11px] font-bold mt-3">
+            {providerError}
+          </div>
+        )}
+        {providerNotice && (
+          <div className="rounded-xl neo-border bg-accent-green px-3 py-2 text-[11px] font-bold mt-3">
+            {providerNotice}
+          </div>
+        )}
       </div>
 
       <div className="rounded-2xl neo-border bg-white p-4 neo-shadow-md mb-4">
