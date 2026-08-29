@@ -9,6 +9,7 @@ import { GeminiService } from "./services/geminiService";
 import { KeyPoolManager } from "./services/keyPoolManager";
 import { KeyStore } from "./services/keyStore";
 import { logger } from "./utils/logger";
+import { sanitizeError } from "./utils/sanitizeError";
 
 const SHUTDOWN_TIMEOUT_MS = 10_000;
 
@@ -64,7 +65,8 @@ async function main(): Promise<void> {
         await closeDatabase(sql);
         process.exit(0);
       } catch (error) {
-        logger.error({ err: error }, "Failed to close database during shutdown");
+        const info = sanitizeError(error);
+        logger.error({ name: info.name, code: info.code, message: info.message }, "Failed to close database during shutdown");
         process.exit(1);
       }
     });
@@ -75,6 +77,7 @@ async function main(): Promise<void> {
 }
 
 main().catch((error) => {
-  logger.error({ err: error }, "server failed to start");
+  const info = sanitizeError(error);
+  logger.error({ name: info.name, code: info.code, message: info.message }, "server failed to start");
   process.exit(1);
 });

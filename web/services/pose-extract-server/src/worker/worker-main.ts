@@ -10,6 +10,8 @@ import { KeyStore } from "../services/keyStore";
 import { createPoseExtractorProvider } from "../services/poseExtractorProvider";
 import { logger } from "../utils/logger";
 import { processNextJob } from "./job-processor";
+import { runWorkerLoop } from "./worker-loop";
+import { sanitizeError } from "../utils/sanitizeError";
 
 const POLL_INTERVAL_MS = Number(process.env.WORKER_POLL_INTERVAL_MS ?? "1000");
 const STALE_LOCK_SECONDS = Number(process.env.WORKER_STALE_LOCK_SECONDS ?? "120");
@@ -58,20 +60,22 @@ async function run(): Promise<void> {
     void shutdown(signal);
   });
 
-  while (!shuttingDown) {
-    const processed = await processNextJob({
-      jobStore,
-      providerSettingsStore,
-      createProvider,
-      staleLockSeconds: STALE_LOCK_SECONDS
-    });
-    if (!processed) {
-      await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
-    }
-  }
+  // The loop (in worker-loop.ts) contains each iteration with bounded backoff so
+  // a transient poll/DB error cannot crash the worker. Graceful shutdown is
+  // preserved via the isShuttingDown predicate wired to SIGINT/SIGTERM above.
+  await runWorkerLoop({
+    processNextJob,
+    jobStore,
+    providerSettingsStore,
+    createProvider,
+    staleLockSeconds: STALE_LOCK_SECONDS,
+    pollIntervalMs: POLL_INTERVAL_MS,
+    isShuttingDown: () => shuttingDown
+  });
 }
 
 run().catch((error) => {
-  logger.error({ err: error }, "worker crashed");
+  const info = sanitizeError(error);
+  logger.error({ name: info.name, code: info.code, message: info.message }, "worker crashed");
   process.exit(1);
 });

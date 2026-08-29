@@ -101,4 +101,13 @@ describe("createDatabase / applySchema (Postgres via PGlite)", () => {
 
     expect(rows.map((row) => row.success)).toEqual([true, false]);
   });
+
+  it("configures the shared postgres client with prepare:false", async () => {
+    const sql = await setupDatabase();
+
+    // The single shared factory must disable prepared statements so it works
+    // behind the Supabase transaction-mode pooler (port 6543), which resets
+    // sessions and rejects prepared statements with PostgresError 26000.
+    expect(sql.options.prepare).toBe(false);
+  });
 });

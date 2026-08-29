@@ -17,6 +17,7 @@ import type { KeyPoolManager } from "./services/keyPoolManager";
 import type { KeyStore } from "./services/keyStore";
 import type { PoseStore } from "./db/communityStore";
 import { logger } from "./utils/logger";
+import { sanitizeError } from "./utils/sanitizeError";
 
 interface GeminiServiceLike {
   extractPoseImage(input: {
@@ -214,7 +215,8 @@ export function createApp(options: CreateAppOptions): express.Express {
       return;
     }
 
-    logger.error({ err: error }, "Unhandled application error");
+    const info = sanitizeError(error);
+    logger.error({ name: info.name, code: info.code, message: info.message }, "Unhandled application error");
     res.status(500).json({
       error: {
         code: "INTERNAL_SERVER_ERROR",

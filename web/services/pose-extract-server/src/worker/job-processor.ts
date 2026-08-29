@@ -13,6 +13,7 @@ import {
 } from "../services/errors";
 import { createLineartBackgroundRemover, type LineartBackgroundRemoverOptions } from "../services/lineartBackgroundRemover";
 import type { ExtractionProviderId, PoseExtractorProvider } from "../services/poseExtractorProvider";
+import { sanitizeError } from "../utils/sanitizeError";
 import { logger } from "../utils/logger";
 import { WORKER_ERROR_CODES } from "./error-codes";
 
@@ -74,7 +75,11 @@ export async function processNextJob(input: {
   } catch (error) {
     const { code, message } = mapProviderError(error);
     await input.jobStore.markFailedOrRequeue(job.id, lockToken, code, message);
-    logger.error({ jobId: job.id, providerId, err: error }, "worker job failed");
+    const info = sanitizeError(error);
+    logger.error(
+      { jobId: job.id, providerId, name: info.name, code: info.code, message: info.message },
+      "worker job failed"
+    );
   }
 
   return true;

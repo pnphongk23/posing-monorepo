@@ -15,7 +15,10 @@ function resolveSchemaPath(): string {
 }
 
 export function createDatabase(databaseUrl: string): Sql {
-  return postgres(databaseUrl);
+  // prepare:false disables the extended-query protocol prepared statements.
+  // Required for the Supabase transaction-mode pooler (port 6543): a pooled
+  // session reset rejects prepared statements with PostgresError 26000.
+  return postgres(databaseUrl, { prepare: false });
 }
 
 export async function applySchema(sql: Sql): Promise<void> {
