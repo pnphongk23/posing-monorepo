@@ -6,6 +6,15 @@ target 'iosApp' do
   pod 'composeApp', :path => '../composeApp'
   pod 'MijickCamera', '~> 3.0.0'
 
+  # FEAT-010 / DEC-007: native iOS Firebase SDKs via the existing CocoaPods lane.
+  # Versions are resolved by CocoaPods against this toolchain (Xcode 26.1.1,
+  # CocoaPods 1.16.2) and pinned in Podfile.lock; no unrelated upgrades.
+  # The composeApp KMP podspec declares the same deps for cinterop generation.
+  pod 'FirebaseCore'
+  pod 'FirebaseAnalytics'
+  pod 'FirebaseCrashlytics'
+  pod 'FirebaseRemoteConfig'
+
   post_install do |installer|
     installer.pods_project.targets.each do |target|
       target.build_configurations.each do |config|
@@ -42,6 +51,44 @@ target 'iosApp' do
         end
       end
       aggregate_target.user_project.save
+    end
+
+    # FEAT-011 / lane app-icon-testflight-resubmit: strip CFBundleExecutable from
+    # every *_Privacy resource bundle (FBLPromises, Firebase*, Google*, ...).
+    # Root cause: the archive passes INFOPLIST_FILE=<temp plist> on the command
+    # line to force CFBundleVersion (build number). That override also reaches the
+    # Pods resource-bundle targets, so their generated Info.plist inherits the app
+    # plist's `CFBundleExecutable = $(EXECUTABLE_NAME)`, which expands to the
+    # bundle product name. The bundle ships no executable, and App Store Connect
+    # validation rejects the IPA with -19241 ("Unexpected CFBundleExecutable Key",
+    # e.g. FBLPromises_Privacy.bundle).
+    # Fix: (1) a Run Script build phase on every *_Privacy target removes the key
+    # from the BUILT bundle before it is embedded into its framework and
+    # code-signed (signature therefore covers the stripped plist); (2) strip the
+    # key from the generated ResourceBundle-*_Privacy plists as well.
+    privacy_targets = installer.pods_project.targets.select { |t| t.name =~ /_Privacy\z/ }
+    privacy_targets.each do |target|
+      target.build_configurations.each do |config|
+        # Let the strip script write inside the product dir on Xcode 15+.
+        config.build_settings['ENABLE_USER_SCRIPT_SANDBOXING'] = 'NO'
+      end
+      next if target.build_phases.any? { |p| p.respond_to?(:display_name) && p.display_name == 'Strip CFBundleExecutable from Privacy Bundle' }
+      phase = target.new_shell_script_build_phase('Strip CFBundleExecutable from Privacy Bundle')
+      phase.always_out_of_date = '1'
+      phase.shell_script = <<~STRIP
+        # Remove CFBundleExecutable from every *_Privacy.bundle Info.plist: the
+        # bundle declares an executable it does not contain, which App Store
+        # Connect validation rejects (-19241). Runs before embedding + codesign.
+        for info in "${BUILT_PRODUCTS_DIR}"/*_Privacy.bundle/Info.plist; do
+          [ -f "$info" ] || continue
+          /usr/libexec/PlistBuddy -c "Delete :CFBundleExecutable" "$info" 2>/dev/null || true
+        done
+      STRIP
+    end
+
+    # Belt & braces: strip the key from the generated resource-bundle plists.
+    Dir[File.join(installer.sandbox.root, 'Target Support Files', '**', 'ResourceBundle-*_Privacy-*-Info.plist')].each do |plist|
+      system('/usr/libexec/PlistBuddy', '-c', 'Delete :CFBundleExecutable', plist)
     end
   end
 end

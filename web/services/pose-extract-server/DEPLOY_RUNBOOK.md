@@ -10,7 +10,7 @@
 
 **Secrets:** Never print, embed, or report secret values. `DATABASE_URL`, `ADMIN_SECRET`, `R2_*` and Higgsfield credentials are referenced **by name only** below. Do not add their values to this file or to logs.
 
-**Deployable workspace rule:** An uncommitted or unpushed workspace is **NOT deployable**. See the Provenance Gate (section 0). Railway builds from its configured source; only a pushed commit can become an active deployment.
+**Deployable workspace rule:** Deploy only from a clean, committed workspace. This service is currently deployed from a CLI-uploaded source snapshot (`source.repo` and `source.image` are unset), so the canonical code deploy is `railway up` from the repository root. A `railway redeploy --from-source` build log is not sufficient evidence that the current local source became the active image.
 
 ---
 
@@ -28,23 +28,25 @@ All Railway commands below use these exact identifiers.
 
 ## 0. Provenance Gate (REQUIRED before any deploy)
 
-The fix must be committed **and** available in Railway's configured source (pushed) before deploying. Record the exact fix commit and confirm a clean tree:
+The fix must be committed before deploying. Because this service uses a CLI-uploaded snapshot, the deploy command—not a Railway Git source—selects the workspace. Record the exact fix commit and confirm the files used by the build are clean:
 
 ```bash
 # 1. Record the exact fix commit and branch.
 git rev-parse HEAD            # -> record this as the FIX_COMMIT (e.g. abc123...)
 git rev-parse --abbrev-ref HEAD
 
-# 2. Confirm the working tree is clean (no uncommitted changes).
-git status --short            # MUST be empty for the deployable scope.
+# 2. Confirm the deployable files are clean (no uncommitted changes).
+git status --short -- railway.toml web/services/pose-extract-server
+# MUST be empty. Unrelated workspace changes may remain outside this scope.
 git log -1 --oneline          # sanity check the recorded commit.
 
-# 3. Ensure the commit is pushed to the branch Railway builds from.
+# 3. Push for repository/audit consistency when required by team policy.
+#    This is not the deploy trigger for this CLI-uploaded service.
 git push origin "$(git rev-parse --abbrev-ref HEAD)"
 ```
 
 - If `git status --short` is non-empty for in-scope files, **do not deploy** — commit and push first.
-- Keep `FIX_COMMIT` handy; you will verify it matches the active deployment in section 3e.
+- Keep `FIX_COMMIT` handy; you will associate it with the uploaded snapshot, deployment ID, build log, image digest, and live compiled artifact in section 3.
 
 ---
 
@@ -73,21 +75,23 @@ Verify current logs show the crash-loop signature before deploy (for before/afte
 
 ## 2. Deploy (apply the fix)
 
-> **Terminology — `redeploy` is NOT `rollback`.** `railway redeploy` re-deploys the **latest configured deployment** (with `--from-source` it builds the latest commit/image from the configured source). It does **not** select a previous deployment. Rolling back to a prior deployment is a separate action documented in section 4.
+> **Canonical workflow for this service:** `railway up` uploads the current source snapshot. Do not use `railway redeploy --from-source` for this service: the previous incident showed that it can produce fresh-looking build output while the active instance still serves an older image. `railway redeploy` and `rollback` are also different operations; rollback to a prior deployment is documented in section 4.
 
-Run from `web/services/pose-extract-server` (after passing the Provenance Gate):
+Run from the repository root—the directory containing `railway.toml`—after passing the Provenance Gate:
 
 ```bash
-# Build & deploy the FIX_COMMIT (latest source) as a fresh deployment.
-railway redeploy \
+# Upload and deploy the current FIX_COMMIT source snapshot as a fresh deployment.
+railway up \
   --project 8a60334e-9f62-44df-ac02-2f3d7eec1f7b \
   --environment production \
   --service c4350044-7a2f-4d48-9d37-f6ecb665ba29 \
-  --from-source \
-  --yes
+  --detach \
+  --yes \
+  --json \
+  --message "deploy ${FIX_COMMIT}: pose-extract-server"
 ```
 
-> The exact deploy trigger depends on the project's configured source (Railway repo build vs. image). If your pipeline deploys via git push/webhook instead, push `FIX_COMMIT` (section 0) and confirm a new deployment spins up. Either way, the source must contain the committed fix.
+Record the returned `deploymentId` as `DEPLOYMENT_ID`. Capture the currently active image digest before deploying when available; the new deployment must report a new digest and become the active running deployment.
 
 **This runbook documents the operator deploy steps. The fix itself must NOT be deployed by the implementer (production deploy is out of scope for this packet).**
 
@@ -97,15 +101,50 @@ railway redeploy \
 
 Wait for the new deployment to reach a `SUCCESS` state, then verify:
 
-### 3a. No worker crash loop
+### 3a. Build logs
+
+Inspect the build log for the exact deployment:
 
 ```bash
-railway logs --service c4350044-7a2f-4d48-9d37-f6ecb665ba29 --tail 500 \
+railway logs "$DEPLOYMENT_ID" --build --lines 250 --json
+```
+
+Require the expected Dockerfile steps (`COPY src`, `RUN npm run build`, and `COPY --from=build /app/dist ./dist`) and no build error. A build log alone does not prove that the active instance uses that image.
+
+### 3b. Active image and compiled artifact
+
+Confirm that `DEPLOYMENT_ID` is active, successful, and running:
+
+```bash
+railway status \
+  --project 8a60334e-9f62-44df-ac02-2f3d7eec1f7b \
+  --environment production \
+  --service c4350044-7a2f-4d48-9d37-f6ecb665ba29 \
+  --json
+```
+
+Record the active instance ID as `INSTANCE_ID`, then verify the compiled files inside that instance:
+
+```bash
+railway ssh \
+  --project 8a60334e-9f62-44df-ac02-2f3d7eec1f7b \
+  --environment production \
+  --service c4350044-7a2f-4d48-9d37-f6ecb665ba29 \
+  --deployment-instance "$INSTANCE_ID" \
+  -- sh -lc 'test -f /app/dist/worker/worker-loop.js && grep -q "prepare: false" /app/dist/db/connection.js && grep -q "runWorkerLoop" /app/dist/worker/worker-main.js'
+```
+
+The SSH check must pass for the compiled worker loop, `prepare: false`, and the worker entrypoint. The active image digest must match the new deployment and differ from the pre-deploy digest when one was captured.
+
+### 3c. No worker crash loop
+
+```bash
+railway logs "$DEPLOYMENT_ID" --tail 500 \
   | grep -i "worker crashed"
 # EXPECTED: no output (grep exits non-zero / no lines)
 ```
 
-### 3b. API health returns HTTP 200
+### 3d. API health returns HTTP 200
 
 ```bash
 # Replace <PUBLIC_HOST> with the service's production host (do not print secrets).
@@ -113,7 +152,7 @@ curl -i https://<PUBLIC_HOST>/api/health
 # EXPECTED: HTTP/1.1 200 OK  (body: {"status":"ok", ...})
 ```
 
-### 3c. GET /api/community/poses reaches Express
+### 3e. GET /api/community/poses reaches Express
 
 ```bash
 curl -i https://<PUBLIC_HOST>/api/community/poses
@@ -121,22 +160,30 @@ curl -i https://<PUBLIC_HOST>/api/community/poses
 # not a 502/504 from an upstream or crashed worker).
 ```
 
-### 3d. Positive watch (prolonged)
+### 3f. Positive watch (prolonged)
 
-Monitor `railway logs` for ~10–15 minutes and confirm **all** of:
+Monitor the logs for `DEPLOYMENT_ID` for ~10–15 minutes and confirm **all** of:
 - **No** `worker crashed` lines.
 - **No** Postgres error code `26000` (prepared-statement rejection after pooler reset).
 - **No sustained/repeated** `worker poll iteration failed; backing off before retry` (occasional transient blips are expected and must NOT crash the worker; the `consecutiveErrors` field should not climb unboundedly).
 - `/api/health` stays 200 and `/api/community/poses` keeps returning 200.
 
-### 3e. Confirm the active deployment matches the committed fix
+### 3g. Confirm deployment provenance
 
 ```bash
 railway deployment list --service c4350044-7a2f-4d48-9d37-f6ecb665ba29 \
   --project 8a60334e-9f62-44df-ac02-2f3d7eec1f7b --environment production --limit 5 --json
 ```
 
-Verify the **active** deployment's source revision equals `FIX_COMMIT` from section 0. If they differ, the deploy did not pick up the committed fix — do not trust the result; redeploy `--from-source` again or stop and reassess.
+For a CLI-uploaded service, deployment metadata may not expose a source revision. Require all of the following before declaring success:
+
+- the deploy was launched from the clean workspace whose `FIX_COMMIT` was recorded in section 0;
+- the build log belongs to `DEPLOYMENT_ID` and contains the expected compile/copy steps;
+- the active deployment is `DEPLOYMENT_ID`, successful, and running;
+- the new image digest differs from the pre-deploy digest when one was captured;
+- the compiled-artifact SSH check, health check, API smoke test, and bounded runtime-log check all pass.
+
+Do not use an absent or stale source-revision field as the sole verification signal.
 
 ---
 

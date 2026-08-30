@@ -217,13 +217,19 @@ fun PosesScreen(
                 .padding(Spacing.lg),
             verticalArrangement = Arrangement.spacedBy(Spacing.lg)
         ) {
-            // Community is the only pane: the header holds just the search + create
-            // pose (+) affordances, right-aligned above the masonry feed.
+            // Community is the only pane: the header holds the static screen title
+            // at the left, plus the search + create pose (+) affordances right-aligned
+            // above the masonry feed.
             Row(
                 modifier = Modifier.fillMaxWidth().height(52.dp),
-                horizontalArrangement = Arrangement.End,
+                horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                Text(
+                    text = "Community",
+                    style = AiPoseTypography.Heading2,
+                    color = AiPoseColors.Foreground,
+                )
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(2.dp),
                     verticalAlignment = Alignment.CenterVertically

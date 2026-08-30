@@ -32,7 +32,13 @@ object PoseServiceLocator {
         PoseApiService(httpClient, baseUrl)
     }
 
-    var communitySearchRepository: CommunitySearchRepository = LiveCommunitySearchRepository(apiService)
+    // FEAT-010 / DEC-006: lazy so that merely touching this locator does not
+    // force `apiService` during object initialization. The startup gate applies
+    // the resolved endpoint to `baseUrl` before any of these are first used,
+    // so the API service always captures the resolved endpoint.
+    val communitySearchRepository: CommunitySearchRepository by lazy {
+        LiveCommunitySearchRepository(apiService)
+    }
 
     val database: AiPoseDatabase by lazy {
         DatabaseProvider.getOrCreate(DatabaseDriverFactory())

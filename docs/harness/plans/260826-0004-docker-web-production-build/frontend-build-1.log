@@ -1,0 +1,133 @@
+--progress is a global compose flag, better use `docker compose --progress xx build ...
+ Image ai-pose-admin-ui Building 
+ Image ai-pose-pose-extract-server Building 
+#1 [internal] load local bake definitions
+#1 reading from stdin 1.03kB done
+#1 DONE 0.0s
+
+#2 [internal] load build definition from Dockerfile
+#2 transferring dockerfile: 557B 0.0s done
+#2 DONE 0.0s
+
+#3 [internal] load metadata for docker.io/library/node:22-alpine
+#3 DONE 2.3s
+
+#4 [internal] load .dockerignore
+#4 transferring context: 137B done
+#4 DONE 0.0s
+
+#5 [deps 1/4] FROM docker.io/library/node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32
+#5 resolve docker.io/library/node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32 done
+#5 DONE 0.0s
+
+#6 [internal] load build context
+#6 transferring context: 370.91kB 0.0s done
+#6 DONE 0.0s
+
+#7 [deps 2/4] WORKDIR /app
+#7 DONE 0.0s
+
+#8 [deps 3/4] COPY package.json package-lock.json ./
+#8 DONE 0.0s
+
+#9 [deps 4/4] RUN npm ci
+#9 9.034 
+#9 9.034 added 378 packages, and audited 379 packages in 9s
+#9 9.034 
+#9 9.034 151 packages are looking for funding
+#9 9.034   run `npm fund` for details
+#9 9.168 
+#9 9.168 12 vulnerabilities (1 low, 11 high)
+#9 9.168 
+#9 9.168 To address issues that do not require attention, run:
+#9 9.168   npm audit fix
+#9 9.168 
+#9 9.168 To address all issues (including breaking changes), run:
+#9 9.168   npm audit fix --force
+#9 9.168 
+#9 9.168 Run `npm audit` for details.
+#9 9.170 npm notice
+#9 9.170 npm notice New major version of npm available! 10.9.8 -> 12.0.2
+#9 9.170 npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.0.2
+#9 9.170 npm notice To update run: npm install -g npm@12.0.2
+#9 9.170 npm notice
+#9 DONE 15.4s
+
+#10 [builder 3/5] COPY --from=deps /app/node_modules ./node_modules
+#10 DONE 5.5s
+
+#11 [builder 4/5] COPY . .
+#11 DONE 0.1s
+
+#12 [builder 5/5] RUN npm run build
+#12 0.245 
+#12 0.245 > ai-pose@0.1.0 build
+#12 0.245 > next build
+#12 0.245 
+#12 0.485 ▲ Next.js 16.2.3 (Turbopack)
+#12 0.485 - Environments: .env.local
+#12 0.485 
+#12 0.499   Creating an optimized production build ...
+#12 2.304 ✓ Compiled successfully in 1706ms
+#12 2.332   Running TypeScript ...
+#12 2.372   Finished TypeScript in 40ms ...
+#12 2.375   Collecting page data using 9 workers ...
+#12 2.725   Generating static pages using 9 workers (0/13) ...
+#12 2.764   Generating static pages using 9 workers (3/13) 
+#12 2.842   Generating static pages using 9 workers (6/13) 
+#12 2.845   Generating static pages using 9 workers (9/13) 
+#12 2.859 ✓ Generating static pages using 9 workers (13/13) in 134ms
+#12 2.862   Finalizing page optimization ...
+#12 3.160 
+#12 3.162 Route (app)
+#12 3.162 ┌ ○ /
+#12 3.162 ├ ○ /_not-found
+#12 3.162 ├ ○ /admin
+#12 3.162 ├ ○ /admin/community
+#12 3.162 ├ ○ /admin/keys
+#12 3.162 ├ ƒ /api/admin/community/poses
+#12 3.162 ├ ƒ /api/admin/community/poses/[id]
+#12 3.162 ├ ƒ /api/admin/extract-jobs/[jobId]
+#12 3.162 ├ ƒ /api/admin/extract-pose
+#12 3.162 ├ ƒ /api/admin/keys
+#12 3.162 ├ ƒ /api/admin/keys/[id]
+#12 3.162 ├ ƒ /api/admin/keys/reset
+#12 3.162 ├ ƒ /api/admin/settings/extraction-provider
+#12 3.162 └ ƒ /api/extract
+#12 3.162 
+#12 3.162 
+#12 3.162 ○  (Static)   prerendered as static content
+#12 3.162 ƒ  (Dynamic)  server-rendered on demand
+#12 3.162 
+#12 3.178 npm notice
+#12 3.178 npm notice New major version of npm available! 10.9.8 -> 12.0.2
+#12 3.178 npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.0.2
+#12 3.178 npm notice To update run: npm install -g npm@12.0.2
+#12 3.178 npm notice
+#12 DONE 3.4s
+
+#13 [runner 3/5] COPY --from=builder /app/public ./public
+#13 DONE 0.0s
+
+#14 [runner 4/5] COPY --from=builder /app/.next/standalone ./
+#14 DONE 0.5s
+
+#15 [runner 5/5] COPY --from=builder /app/.next/static ./.next/static
+#15 DONE 0.1s
+
+#16 exporting to image
+#16 exporting layers
+#16 exporting layers 1.1s done
+#16 exporting manifest sha256:7afd7621b214084d6eaa593074e442504bdebc4fba1db95babaa90d69ad9a422
+#16 exporting manifest sha256:7afd7621b214084d6eaa593074e442504bdebc4fba1db95babaa90d69ad9a422 done
+#16 exporting config sha256:dc5e5bb7a3dca162b06a75460b04f4a71fc3421e2b14dcaefa77071c3eff7657 done
+#16 exporting attestation manifest sha256:9588e0cee4597e044c66038ef7f219a6fa0d0102073e0620178c3838bff63033 0.0s done
+#16 exporting manifest list sha256:ee94043f49c0bc871584ebc37dfe05ad5a2426fd58cd6aa78d84244e9f334f37 done
+#16 naming to docker.io/library/ai-pose-admin-ui:latest done
+#16 unpacking to docker.io/library/ai-pose-admin-ui:latest
+#16 unpacking to docker.io/library/ai-pose-admin-ui:latest 0.2s done
+#16 DONE 1.4s
+
+#17 resolving provenance for metadata file
+#17 DONE 0.0s
+ Image ai-pose-admin-ui Built 

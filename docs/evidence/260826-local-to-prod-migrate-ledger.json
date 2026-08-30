@@ -1,0 +1,738 @@
+{
+  "mode": "dry-run",
+  "runAt": "2026-08-26T17:37:58.285Z",
+  "target": "prod",
+  "sources": [
+    {
+      "label": "local.db:api_keys",
+      "path": "/Users/phamnhuphong/Git/ai-pose/web/services/pose-extract-server/data/local.db",
+      "count": 1
+    },
+    {
+      "label": "keys.db:request_logs",
+      "path": "/Users/phamnhuphong/Git/ai-pose/web/services/pose-extract-server/data/keys.db",
+      "count": 92
+    },
+    {
+      "label": "docker-keys.db:extraction_jobs",
+      "path": "/Users/phamnhuphong/Git/ai-pose/.docker-persist/data/keys.db",
+      "count": 5
+    },
+    {
+      "label": "dev.db:community_poses",
+      "path": "/Users/phamnhuphong/Git/ai-pose/web/services/pose-extract-server/data/dev.db",
+      "count": 1
+    }
+  ],
+  "items": [
+    {
+      "source": "local.db:api_keys",
+      "kind": "api_key",
+      "id": "3f360925…369e",
+      "hash": "3238ce93a0f2cba0abdf178d74180c84",
+      "outcome": "dry-run",
+      "note": "name=79ai.001"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "1",
+      "hash": "b218224c317a0e6234f26797c94c59b4",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "2",
+      "hash": "d0352a84a98ac98881d830327a7b87e1",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "3",
+      "hash": "d52adf9fc7d1289e759e00c7a4c05966",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "4",
+      "hash": "e6413587e69d3b6ec68fe6372876d61d",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "5",
+      "hash": "3f12274f8fa363f55c04a11671ab863f",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "6",
+      "hash": "551c9a2a1cccd0b7a39c578a2aa95da0",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "7",
+      "hash": "ad5cf816bd6245f7684c270e7970d4e2",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "8",
+      "hash": "2a0a5260a5721ec77c3d41246ddf2f43",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "9",
+      "hash": "66fb5fd45f0622802320a2c395284d5b",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "10",
+      "hash": "032e4adbd51d0773801a0bdf33c95a2c",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "11",
+      "hash": "5478125b4d1d94c9ca1505892f367702",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "12",
+      "hash": "134bbe298c26ebc37185268172399f29",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "13",
+      "hash": "97692f6d11c1b54f0626f5a49ec26cbf",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "14",
+      "hash": "83a9199d78662ea34b4d775ff00647c4",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "15",
+      "hash": "87f704d25782da40d8a41bcc8db952ab",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "16",
+      "hash": "ce865b865e8f55e60d76e5d2ce528605",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "17",
+      "hash": "6437a238f9770d9041331ba38b52f88e",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "18",
+      "hash": "893488fac6e8a7ffbc50364bfa2858ce",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "19",
+      "hash": "0dbdd8f0d2ea5edb0017831aac434113",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "20",
+      "hash": "d95fd67adaa6ad5fadd56b543126bd5a",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "21",
+      "hash": "3ea91dadb60da705ba0e5169fcacf536",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "22",
+      "hash": "45cf4635ad33421e26232d4ba48c2bb0",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "23",
+      "hash": "4887ca2928d6540d3204d99f8aca58cf",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "24",
+      "hash": "26fbd55a822462b3d17ff17ef5f93acc",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "25",
+      "hash": "cf1c9336f2231e1c6d7c3dbfd7a7e398",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "26",
+      "hash": "372521f956be39d62821a199a2d64b46",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "27",
+      "hash": "c90a2e0b51aea590d3c7e8afea8ae219",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "28",
+      "hash": "b9a83b363476d5942c77a961fabb96af",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "29",
+      "hash": "8b89ebfefde11dfd676b22f9fedc1752",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "30",
+      "hash": "f26a401099c8e1c5ead4daca0f10cdd3",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "31",
+      "hash": "bed86374add7f9dca55a0fdcb16c031c",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "32",
+      "hash": "34d04f651d29ee0a94bf02cdf34e211e",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "33",
+      "hash": "711c70753d6cb7a82484d2a67d3f8307",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "34",
+      "hash": "bb0903b164494d94c3109feb7898b009",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "35",
+      "hash": "6ec941688f9fd9d0d72e814d22c3d174",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "36",
+      "hash": "5d0c0a16fd057be08a9f3fccd45bf7bf",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "37",
+      "hash": "76270324b204f857a7c4e1f05bc43fb2",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "38",
+      "hash": "6f55f91c5559675aa404d5071f9cb692",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "39",
+      "hash": "5670f2ec4ab1a067c227a9337008ac79",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "40",
+      "hash": "3f4472ede1f96a90d6bf7cd60f0a9983",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "41",
+      "hash": "79524a1d0711c73338d9122e27908f68",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "42",
+      "hash": "ff6bbed4ffe48aadc4215ecfafc6587b",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "43",
+      "hash": "9fea08c443237e4f2fab06f6d73f7e1d",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "44",
+      "hash": "c11b9df628a7d04b4ebce4cf178cf623",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "45",
+      "hash": "4816477fd1b7b987b1b839d84a7e82d5",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "46",
+      "hash": "ec40a60887afac5a020e2c6aee80f120",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "47",
+      "hash": "339e01e2076ae7b950e31c3c6c8dcfeb",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "48",
+      "hash": "08dec287dec6be520e3cfdb800fb7cad",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "49",
+      "hash": "7ce18d820e1a3e1b8b3f2895ac513540",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "50",
+      "hash": "38591e86299b0391d75785a490666116",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "51",
+      "hash": "52ce0dbfe8b495c12e2bb0872ab45650",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "52",
+      "hash": "ab6e1a735a634f9d64cf8786ac963e55",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "53",
+      "hash": "a5ae7250b6f3c474b066df47e37604dc",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "54",
+      "hash": "a73131f4a0eb238e73a23230702fefb9",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "55",
+      "hash": "7daec7d7673336404ac096c9eebca46c",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "56",
+      "hash": "adb9de679db46f218d3265b84569d247",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "57",
+      "hash": "4d1a53787b7f5b30797a2f057ad0f8f6",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "58",
+      "hash": "c34193dfe3290fb83199bed0dbdd87ad",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "59",
+      "hash": "01d48988cefe5bb9f8ad2eae733905a8",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "60",
+      "hash": "86a183e10bfac4ea84ad2f8bb5188b16",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "61",
+      "hash": "08cf603c5d679fa1a1d1d4bd7a632d61",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "62",
+      "hash": "b8bf4edc791cad128e36e8e78717a5cd",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "63",
+      "hash": "0d8ac09137c3d86486a9f06b534841e1",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "64",
+      "hash": "a9aea78aa950f3d3af5f07400c964930",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "65",
+      "hash": "b1eb748ec8298bca878abbc27e602deb",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "66",
+      "hash": "050519684e98604fd52ed659b3a1d661",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "67",
+      "hash": "c945eea699b6c427ca423e4ceee927b2",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "68",
+      "hash": "685a5f09375842bbb756f4c11e0f94cf",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "69",
+      "hash": "87b19a7c9d6919b0635e673cddbe02f5",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "70",
+      "hash": "e0e83eea958926ad283ec8974a7e3276",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "71",
+      "hash": "89bbcd74a2d982d8926615d1078d7606",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "72",
+      "hash": "16418879208db33e717ed7d8ee3f6636",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "73",
+      "hash": "0fa32359256f68b8cffce9c7f7c33095",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "74",
+      "hash": "5847d587ac6ebee6677e931206d9b7f2",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "75",
+      "hash": "a8b795ff18924aa8477b533f275509b5",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "76",
+      "hash": "03e7b4001284103adaaf55d5e08273b8",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "77",
+      "hash": "90ca4e7f24b733fc6583c1dff46a2285",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "78",
+      "hash": "d5fed7af3876f8778e77c46bfff8c546",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "79",
+      "hash": "8718449d23a92b24d87e50c0f0c36fd0",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "80",
+      "hash": "cf2757fdfd530260e6457589d8325f42",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "81",
+      "hash": "72c5bbf1c991ea80bfbc775249ae11cb",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "82",
+      "hash": "740489e4cf81eec10db99068b9b0275b",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "83",
+      "hash": "9b05cc0e035c6d0d340020a3f5d1dc22",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "84",
+      "hash": "9d342a7fd74620a4a8a16bbd12631e59",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "85",
+      "hash": "d5280dd1a30250e02bc16fa051404c9b",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "86",
+      "hash": "7c527f0bbaab052c5d2ac1ae47de5a75",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "87",
+      "hash": "17b062b2f443fcacd7beccba5467d349",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "88",
+      "hash": "e30fefb94ec483ebf6c352f199dc374e",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "89",
+      "hash": "13f8a3c00dfadd88d5d22d26c12dee0f",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "90",
+      "hash": "5a24af633c11e4dd494d5385e80279dc",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "91",
+      "hash": "8ae9a42d4e57abe6b135f26096bb4d16",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "keys.db:request_logs",
+      "kind": "request_log",
+      "id": "92",
+      "hash": "7ab1a72a11238dd5530fa410d978a0e7",
+      "outcome": "dry-run"
+    },
+    {
+      "source": "docker-keys.db:extraction_jobs",
+      "kind": "extraction_job",
+      "id": "f5351cdc…6aa5",
+      "hash": "6fc3b3daba7116ffee50c0d50a895d46",
+      "outcome": "skipped-junk",
+      "note": "status=failed"
+    },
+    {
+      "source": "docker-keys.db:extraction_jobs",
+      "kind": "extraction_job",
+      "id": "d23528bb…0a12",
+      "hash": "87afb758b76ac087314df16c83f54cb8",
+      "outcome": "skipped-junk",
+      "note": "status=failed"
+    },
+    {
+      "source": "docker-keys.db:extraction_jobs",
+      "kind": "extraction_job",
+      "id": "12901de9…0e4d",
+      "hash": "b51c77262bcacf29edc4680e7d86d099",
+      "outcome": "skipped-junk",
+      "note": "status=failed"
+    },
+    {
+      "source": "docker-keys.db:extraction_jobs",
+      "kind": "extraction_job",
+      "id": "da09f9bd…4145",
+      "hash": "48ce0a4905e4988e81caacf31d53baca",
+      "outcome": "skipped-junk",
+      "note": "status=processing"
+    },
+    {
+      "source": "docker-keys.db:extraction_jobs",
+      "kind": "extraction_job",
+      "id": "15b00720…ae5c",
+      "hash": "b465fccdec8a382be39865dcf6ae90f5",
+      "outcome": "dry-run",
+      "note": "status=succeeded"
+    },
+    {
+      "source": "dev.db:community_poses",
+      "kind": "community_pose",
+      "id": "46fa9b5a…8064",
+      "hash": "180618725b5a48bc5f41d4b101839538",
+      "outcome": "skipped-junk",
+      "note": "name=Test Pose"
+    }
+  ],
+  "plan": {
+    "api_keys": 1,
+    "request_logs": 92,
+    "extraction_jobs": 1,
+    "community_poses": 0,
+    "local_files": 0,
+    "skipped_junk": 5,
+    "skipped_protected": 0
+  }
+}

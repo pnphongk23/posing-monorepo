@@ -59,6 +59,9 @@ mobile/iosApp/*.xcodeproj/xcuserdata/
 *.xcuserstate
 DerivedData/
 
+# FEAT-010: real Firebase config is supplied out of band, never committed.
+GoogleService-Info.plist
+
 # worktrees
 .worktrees/
 

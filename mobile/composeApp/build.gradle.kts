@@ -17,6 +17,13 @@ kotlin {
         homepage = "https://github.com/pnphongk23/ai-pose"
         ios.deploymentTarget = "15.0"
         podfile = project.file("../iosApp/Podfile")
+        // FEAT-010 / DEC-007: Firebase SDKs are resolved by the existing Podfile and
+        // consumed from native Swift (AppDelegate.swift), which compiles with
+        // Xcode/clang. The Kotlin side is a pure contract/test seam only
+        // (EndpointPolicy.validate, AppStartupConfig.resolveEndpointValue /
+        // applyEndpoint); Kotlin cinterop (pod()) is intentionally NOT declared
+        // because the pinned Kotlin wrapper (1.9.20) cannot parse the Xcode 26.1 SDK modulemap. See
+        // mobile/iosApp/FIREBASE_SETUP.md.
         framework {
             baseName = "ComposeApp"
             isStatic = true

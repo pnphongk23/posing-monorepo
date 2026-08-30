@@ -1,0 +1,4 @@
+interface:
+  display_name: "Mobile MCP iPhone Testing"
+  short_description: "Run evidence-backed iPhone tests via Mobile MCP"
+  default_prompt: "Use $mobile-mcp-iphone-testing to verify this iPhone flow and collect reproducible evidence."

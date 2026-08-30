@@ -12,6 +12,7 @@ targets:
     resources:
       - iosApp/Assets.xcassets
       - iosApp/LaunchScreen.storyboard
+      - iosApp/GoogleService-Info.plist
     settings:
       PRODUCT_BUNDLE_IDENTIFIER: camerapose.app
       INFOPLIST_FILE: iosApp/Info.plist
