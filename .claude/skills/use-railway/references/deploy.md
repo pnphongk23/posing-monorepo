@@ -10,7 +10,15 @@ Ship code, manage releases, and configure builds.
 railway up --detach -m "<release summary>"
 ```
 
-`--detach` returns immediately instead of streaming build logs. Without it, the deploy blocks execution until the build finishes. Always include `-m` with a release summary for auditability.
+Run from the directory containing `railway.toml` (for this monorepo, the repository root). `railway up` uploads the current source snapshot and returns a deployment ID. Record that ID and use it for build-log and runtime verification. `--detach` returns immediately instead of streaming build logs. Without it, the deploy blocks execution until the build finishes. Always include `-m` with a release summary for auditability.
+
+Before choosing a deploy command, inspect the service source:
+
+```bash
+railway status --project <project-id> --environment <environment> --service <service-id> --json
+```
+
+If `source.repo` and `source.image` are both null, use `railway up` from the repository root for code deploys. Do not use `railway redeploy --from-source` as a substitute: it can show a successful build while the active instance still serves an older image. If a repository or image source is configured, use its normal source-triggered workflow and still verify the active deployment.
 
 ### Watch the build
 
@@ -43,11 +51,11 @@ railway up --project <project-id> --environment <environment> --detach -m "<summ
 ### Redeploy and restart
 
 ```bash
-railway redeploy --service <service> --yes       # rebuild and deploy from same source
+railway redeploy --service <service> --yes       # rebuild from configured repository/image source
 railway restart --service <service> --yes         # restart without rebuilding
 ```
 
-Redeploy triggers a full build cycle. Restart only restarts the running container. Use restart when the code hasn't changed but the service needs a fresh process (for example, after variable changes).
+`redeploy` triggers a full build cycle from the configured source; it is not a guarantee that the current local workspace was uploaded. Use `railway up` for a CLI-uploaded service when deploying local code. `restart` only restarts the running container. Use restart when the code hasn't changed but the service needs a fresh process (for example, after variable changes).
 
 ### Remove latest deployment
 
@@ -67,6 +75,15 @@ railway logs --latest --lines 200 --json                         # latest deploy
 ```
 
 `railway logs` streams indefinitely when no bounding flags are given. An open stream blocks execution and never returns. Always use `--lines`, `--since`, or `--until` to get a bounded fetch.
+
+For a code deploy, prefer the exact deployment ID returned by `railway up`:
+
+```bash
+railway logs <deployment-id> --build --lines 200 --json
+railway logs <deployment-id> --tail 200
+```
+
+Then verify the active instance contains the expected compiled artifact (for example with `railway ssh`), because a fresh build log alone does not prove that the active image changed.
 
 ## Build configuration
 
@@ -174,6 +191,7 @@ railway environment edit --service-config <service> build.watchPatterns '["packa
 - **Build fails before compile**: check dependency graph, lockfiles, and whether the right builder is selected
 - **Build succeeds but app crashes**: verify start command and required runtime variables
 - **Wrong files in build**: check root directory and watch patterns
+- **Build logs show fresh Docker steps but the active instance has old code**: inspect `source.repo`/`source.image`; for a CLI-uploaded service, run `railway up` from the repository root and verify the active deployment, image digest, and compiled artifact.
 - **`railway down` treated as delete**: `down` only removes the latest deployment. For full service deletion, use `isDeleted` in config patch (see [configure.md](configure.md))
 - **Wrong Node/Python version detected**: set `RAILPACK_NODE_VERSION` or `RAILPACK_PYTHON_VERSION` as a service variable to pin the version
 - **Missing system package at runtime**: add the package to `RAILPACK_DEPLOY_APT_PACKAGES`

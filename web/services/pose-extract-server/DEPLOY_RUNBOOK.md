@@ -36,7 +36,7 @@ git rev-parse HEAD            # -> record this as the FIX_COMMIT (e.g. abc123...
 git rev-parse --abbrev-ref HEAD
 
 # 2. Confirm the deployable files are clean (no uncommitted changes).
-git status --short -- railway.toml web/services/pose-extract-server
+git status --short -- railway.toml package.json package-lock.json web/services/pose-extract-server
 # MUST be empty. Unrelated workspace changes may remain outside this scope.
 git log -1 --oneline          # sanity check the recorded commit.
 
@@ -189,7 +189,7 @@ Do not use an absent or stale source-revision field as the sole verification sig
 
 ## 4. Rollback (recover to a VERIFIED healthy deployment)
 
-**Distinction (keep):** `railway redeploy` (section 2) re-deploys the latest configured deployment. **Rollback** means selecting a *prior* deployment from history and making it active again. There is **no** `railway rollback` CLI command, so use the dashboard deployment history. Never use `railway redeploy` to mean rollback.
+**Distinction (keep):** `railway up` (section 2) uploads the current source snapshot and creates a fresh deployment. `railway redeploy` is for the latest configured repository/image source. **Rollback** means selecting a *prior* deployment from history and making it active again. There is **no** `railway rollback` CLI command, so use the dashboard deployment history. Never use `railway redeploy` to mean rollback.
 
 ### Historical diagnostic context ONLY — do NOT use as a target
 
@@ -212,14 +212,16 @@ railway deployment list \
   --project 8a60334e-9f62-44df-ac02-2f3d7eec1f7b \
   --environment production --limit 5 --json
 
-# Status must be SUCCESS and source revision must match the recorded healthy commit.
+# Status must be SUCCESS and the active deployment must be the recorded healthy target.
+# For CLI-uploaded deployments, source-revision metadata may be unavailable; use
+# the deployment ID/image and the same health/artifact checks as section 3.
 railway status --project 8a60334e-9f62-44df-ac02-2f3d7eec1f7b --environment production
 ```
 
 6. Verify endpoints (substitute `<PUBLIC_HOST>`; never print secrets):
    - `curl -i https://<PUBLIC_HOST>/api/health` → 200
    - `curl -i https://<PUBLIC_HOST>/api/community/poses` → 200
-   - `railway logs --service c4350044-7a2f-4d48-9d37-f6ecb665ba29 --tail 200` → no `worker crashed`, no `26000`.
+   - `railway logs VERIFIED_HEALTHY_DEPLOYMENT_ID --tail 200` → no `worker crashed`, no `26000`.
 
 ### If no verified healthy deployment exists
 
@@ -234,6 +236,7 @@ If `prepare:false` **plus** loop-level resilience (A + C) does not stop the cras
 ## 5. Notes / out-of-scope
 
 - **Not changed:** `Dockerfile` `wait -n` coupling, mobile/iOS files, schema/data migrations, domain/URLs, and any files outside `pose-extract-server`.
+- **Local Docker unavailable:** this is a local verification limitation, not a production deploy blocker. `railway up` uploads the source snapshot and Railway builds the Docker image remotely; a local `docker build` is optional for this workflow.
 - **Out of scope for this fix:** a worker supervisor / separate Railway service (explicitly deferred per frozen plan; escalate if evidence later shows `wait -n` is unsafe).
 - **Fallback only (not in this deploy):** switching the production `DATABASE_URL` to the Supabase session pooler / direct DB — only if `prepare:false` + loop containment is insufficient, and only with lead approval.
 

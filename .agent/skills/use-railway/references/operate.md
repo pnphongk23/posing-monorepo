@@ -151,8 +151,11 @@ After identifying the cause, fix and verify:
 railway environment edit --service-config <service> deploy.startCommand "<correct-command>"
 railway variable set MISSING_VAR=value --service <service>
 
-# Redeploy
+# Redeploy (for a configured repository/image source)
 railway redeploy --service <service> --yes
+
+# For a CLI-uploaded service whose source.repo and source.image are null,
+# run `railway up` from the repository root and record its deployment ID.
 
 # Verify
 railway service status --service <service> --json

@@ -98,6 +98,8 @@ railway bucket info --bucket <name> --json               # bucket storage and ob
 railway bucket credentials --bucket <name> --json        # S3-compatible credentials
 ```
 
+For a CLI-uploaded service whose `railway status --json` shows `source.repo` and `source.image` as null, run `railway up` from the repository root as the canonical code deploy. `redeploy --from-source` is not a substitute for uploading the current local workspace. After deploying, verify the deployment ID/image and a live compiled artifact, not only the health endpoint.
+
 ## Routing
 
 For anything beyond quick operations, load the reference that matches the user's intent. Load only what you need, one reference is usually enough, two at most.
@@ -119,7 +121,7 @@ If the request spans two areas (for example, "deploy and then check if it's heal
 2. Use `--json` output where available for reliable parsing.
 3. Resolve context before mutation. Know which project, environment, and service you're acting on.
 4. For destructive actions (delete service, remove deployment, drop database), confirm intent and state impact before executing.
-5. After mutations, verify the result with a read-back command.
+5. After mutations, verify the result with read-back commands (status, build logs, deployment list, and—for code deploys—the live compiled artifact), not only the CLI success response.
 
 ## User-only commands (NEVER execute directly)
 
