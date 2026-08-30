@@ -1,71 +1,62 @@
 ---
 phase: 5
-title: "Verification and rollout"
+title: "Verification handoff"
 status: pending
 priority: P0
 effort: "4h"
 dependencies: ["phase-04"]
 ---
 
-# Phase 5: Verification & Rollout
+# Phase 5: Verification Handoff
 
 ## Mục tiêu
 
-Real-iPhone evidence và closure gates (Harness WI-05 + backlog lane acceptance).
+Real-iPhone evidence + Harness workflow closure — **future execution cook**, không approval từ docs lane.
 
 ## Goals
 
-- End-to-end scenario: browse/detail → Try Pose → Camera overlay → capture → gallery.
-- Document evidence paths; sync harness plan 2241 workflow check.
+- Scenario: detail → Try Pose → promote → Camera overlay (pan/zoom/opacity) → capture → gallery.
+- Relaunch mid-flow: restore durable overlay.
+- Document evidence; run `ckh workflow check 260809-2241`.
 
 ## Non-goals
 
 - App Store release.
-- Load testing extract server.
+- Sửa README limitations trong docs-only lane (ghi note cho cook PR).
 
 ## Contracts
 
-- Evidence contract: Mobile MCP plan 260809-1805 format (screenshot, a11y snapshot, crash delta).
-
-## UI / Admin / Ops
-
-- Ops runbook: none server-side; iOS install via existing gradle/iosApp path.
+- Evidence: Mobile MCP plan 260809-1805 format.
+- Relaunch acceptance: FEAT-008 + plan 2241 — **không** gán cho README § limitations là sole authority.
 
 ## Tasks
 
-1. Execute Mobile MCP scenario on real iPhone.
-2. Run full mobile test suite relevant to navigation + camera.
-3. Update harness delivery report stub or link REP-012 follow-up.
-4. Maintainer approval harness plan 2241 if criteria met.
+1. Mobile MCP real iPhone scenario.
+2. KMP tests: navigation, durable store, overlay regression including pan/zoom.
+3. Delivery report follow-up (post-cook) linking REP-006 boundary update.
+4. Maintainer approval Harness 2241 if criteria met.
 
-## Acceptance
+## Acceptance (future cook)
 
-- [ ] Real-iPhone recording/screenshots attached to report.
-- [ ] Zero new crashes in scenario delta.
+- [ ] Real-iPhone screenshots/recording attached.
 - [ ] `ckh workflow check 260809-2241-selected-pose-camera-handoff` pass.
-- [ ] README § Current limitations updated at cook time (out of docs lane scope note).
+- [ ] No regression FEAT-001 capture tests.
 
 ## Verification
 
 | Check | Command |
 | --- | --- |
-| KMP tests | `./gradlew :composeApp:compileKotlinIosSimulatorArm64 :shared:iosSimulatorArm64Test` |
-| Mobilewright | existing camera test per ui-ux-system |
+| KMP | `./gradlew :composeApp:compileKotlinIosSimulatorArm64 :shared:iosSimulatorArm64Test` |
 | Harness | `ckh workflow check 260809-2241-selected-pose-camera-handoff --workspace .` |
 
 ## Risks
 
-- Device farm unavailable → BLOCKED_NEEDS_LEAD for release claim.
+- Device unavailable → BLOCKED_NEEDS_LEAD for release **claim** (cook can still merge with simulator-only if Maintainer accepts).
 
-## Rollout
+## Rollout / Rollback (future execution)
 
-1. Merge backlog + harness branches per Maintainer.
-2. Monitor crash-free sessions post-ship (FEAT-010 separate).
-
-## Rollback
-
-Revert Phases 2–4; user sees pre-handoff behavior documented in README.
+Cook PR merge per Maintainer; monitor crashes (FEAT-010 separate). **Ship** language chỉ dùng sau evidence + approval — không từ plan docs.
 
 ## Gate
 
-**Human Approval Gate** — Repository Maintainer approves harness plan 2241 before marketing Phase 2 business roadmap complete.
+**Human Approval Gate** — Maintainer approves Harness 2241 before business roadmap Phase 2 “complete” marketing.

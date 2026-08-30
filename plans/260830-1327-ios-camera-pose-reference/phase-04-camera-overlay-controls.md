@@ -1,73 +1,71 @@
 ---
 phase: 4
-title: "Camera overlay and controls"
+title: "Durable overlay ownership"
 status: pending
 priority: P0
 effort: "5h"
 dependencies: ["phase-03"]
 ---
 
-# Phase 4: Camera Overlay & Controls
+# Phase 4: Durable Overlay Ownership
 
 ## Mục tiêu
 
-Render active pose overlay on Camera with controls (Harness WI-04); re-enable overlay path currently disabled.
+Rebind `CameraScreen` overlay từ session-only `PreparedPoseReference` sang **`ActivePoseReference` single owner**; giữ behavior render/controls hiện hữu (Harness WI-04 scope adjustment).
 
 ## Goals
 
-- Transparent PNG overlay aligned to viewport; default 50% opacity.
-- Toggle visibility, adjust opacity, clear active pose.
-- Overlay non-interactive; shutter/capture unchanged.
+- Read overlay asset from durable store + managed cache (restore after relaunch).
+- **Preserve:** opacity default ~50%, Show/Hide toggle, opacity slider, line color, **pan/zoom** (`detectTransformGestures`).
+- Add explicit **clear** action: clear durable reference + hide overlay (2241) — không chỉ đóng tab về Poses.
+- Capture/shutter unchanged (FEAT-001).
 
 ## Non-goals
 
-- Dual-layer source photo background (plan 260510-1726).
-- Live skeleton joint detection on camera feed.
+- Remove pan/zoom (không có authority ngược lại).
+- Dual-layer source background (plan `260510-1726`).
+- Re-enable fictional `if (false)` guard — **không tồn tại** trong code hiện tại; chỉ stale comments.
 
 ## Contracts
 
 ### UI
 
-- Prototype: `camera-pose-overlay.html` — banner, joint colors scoped per `design.md` § Camera viewport.
-- Harness: FEAT-001 capture semantics unchanged.
+- Prototype visual reference: `camera-pose-overlay.html`.
+- Overlay gestures **interactive** cho pan/zoom/opacity — camera preview gestures coexist; không claim “non-interactive overlay”.
 
 ### Data
 
-- Read active reference from Phase 2 store only; Camera không giữ parallel copy lâu dài.
-
-## Admin / Ops
-
-- N/A.
+- Camera composable consumes `ActivePoseReference` only after Phase 2/3; no parallel stale session copy after relaunch.
 
 ## Tasks
 
-1. Connect `CameraScreen` to active reference flow (remove `if (false)` guard at cook).
-2. Implement opacity slider or stepped toggle per parity matrix.
-3. Clear action resets store + hides overlay.
-4. Orientation/layout tests; reduced motion respect.
+1. Replace `PoseServiceLocator.preparedReference`-only `remember` keying with durable store observer.
+2. Implement clear control per 2241 (More menu or dedicated control per parity matrix).
+3. Update stale `Navigation.kt` / harness docs comments at cook (optional separate hygiene).
+4. Regression tests: pan/zoom/opacity/toggle with durable fixture.
 
-## Acceptance
+## Acceptance (future cook)
 
-- [ ] Overlay visible at 50% default when reference ready.
-- [ ] Toggle/clear match prototype semantics.
-- [ ] Shutter still captures Photo; overlay not burned into capture unless spec says otherwise (verify FEAT-001).
+- [ ] Relaunch → overlay restored from durable store.
+- [ ] Clear → empty state + cache evicted.
+- [ ] Pan/zoom/opacity/toggle match pre-cook behavior snapshots/tests.
 
 ## Verification
 
-- Compose UI tests (Harness WI-04 list).
-- Visual compare prototype screenshot optional.
+- Compose UI tests (Harness WI-04 adapted).
+- Manual pan/zoom smoke on device.
 
 ## Risks
 
 | Risk | Impact | Mitigation |
 | --- | --- | --- |
-| Overlay aspect mismatch | Medium | Letterbox scale; maintain aspect |
-| Performance on old devices | Medium | Bitmap size cap at prepare |
+| Gesture conflict | Medium | Keep existing `pointerInput` pattern |
+| Aspect mismatch | Medium | Existing `ContentScale.Fit` + padding |
 
-## Rollout / Rollback
+## Rollout / Rollback (future execution)
 
-Disable overlay via revert Phase 4 commits; state store may remain harmless.
+Revert durable binding; session overlay remains as today.
 
 ## Gate
 
-Phase 3 navigation merged + device smoke test.
+Phase 3 promotion merged + device smoke.

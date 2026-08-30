@@ -1,6 +1,10 @@
 ---
 schema_version: 1
-title: Backlog Lane Documentation Survey
+type: report
+id: REP-012
+title: Backlog lane documentation survey
+status: completed
+delivered: 2026-08-30
 relationships:
   specs:
     - "[[technical-architecture]]"
@@ -12,7 +16,6 @@ relationships:
     - "[[260809-2241-selected-pose-camera-handoff/plan|260809-2241]]"
     - "[[260826-0003-integrate-revenuecat-paid-access-and-iap-for-feat-011/plan|260826-0003]]"
   reports:
-    - "[[REP-002-feature-gap-and-release-readiness-audit|REP-002]]"
     - "[[REP-006-feat-003-pose-library-slice-delivery|REP-006]]"
     - "[[REP-010-phase2-live-community-forensic-baseline|REP-010]]"
   rules: []
@@ -23,16 +26,13 @@ relationships:
     - README.md
     - design.md
     - TODO.md
+    - mobile/composeApp/src/commonMain/kotlin/com/aipose/camera/CameraScreen.kt
+    - mobile/composeApp/src/commonMain/kotlin/com/aipose/navigation/Navigation.kt
+    - mobile/shared/src/commonMain/kotlin/com/aipose/data/PoseServiceLocator.kt
     - docs/spec
     - docs/harness
     - docs/prototype
     - plans
-type: report
-id: REP-012
-status: completed
-delivered: 2026-08-30
-lane: backlog
-persona: "Lính · Bàng Đức"
 ---
 
 # REP-012: Khảo sát tài liệu lane BACKLOG
@@ -70,14 +70,28 @@ persona: "Lính · Bàng Đức"
 
 | Evidence | Nội dung |
 | --- | --- |
-| `README.md` § Current limitations | “Use with Camera” chưa chuyển pose overlay |
 | `product-delivery-roadmap.md` Phase 1–2 | North Star: chọn pose → Camera → chụp → xem ảnh |
-| `docs/harness/plans/260809-2241-selected-pose-camera-handoff/plan.md` | Plan Harness pending: persist selection, overlay 50%, relaunch |
-| `REP-006` | Try Pose prepare+emit đã có; overlay deferred sang 2241 |
-| `docs/spec/data/entities/prepared-pose-reference.md` | Hợp đồng transient Try Pose handoff |
-| `docs/prototype/screens/camera-pose-overlay.html` | Visual reference overlay |
+| `docs/harness/plans/260809-2241-selected-pose-camera-handoff/plan.md` | Plan Harness pending: **durable** selection, relaunch restore, clear lifecycle |
+| `REP-006` (`E-TRY-EMIT`) | Try Pose prepare + emit `PreparedPoseReference` + chuyển `CameraTab` — **đã delivered slice** |
+| `REP-006` (`E-2241-BOUNDARY`) | Ghi nhận tại thời điểm 2026-08-19 overlay guard `if (false)` — **stale so với code hiện tại** |
+| `CameraScreen.kt` | Overlay render, opacity/toggle, pan/zoom khi có `PreparedPoseReference` session-scoped |
+| `Navigation.kt` | Comment `E-2241-BOUNDARY` vẫn cite `if (false)` tại line 173 — line 173 hiện là `LaunchedEffect(permissionState)` |
+| `docs/spec/data/entities/prepared-pose-reference.md` | Transient contract; `BR-PREPREF-002` cấm persist qua relaunch |
+| `FEAT-008` + plan 2241 | Relaunch persistence thuộc durable `ActivePoseReference` (app-level), chưa ship |
+| `README.md` § Current limitations | Câu “Use with Camera” / overlay — **có thể lệch** so với `E-TRY-EMIT`; authority relaunch là FEAT-008/2241 |
 
-**Gap:** End-to-end handoff Camera overlay chưa delivered; overlay rendering bị tắt trong code (REP-002/2241 mô tả `if (false)`).
+**Gap còn lại (residual, không claim ship):** partial session handoff đã có evidence runtime; **chưa** có durable persistence qua relaunch, canonical promotion `PreparedPoseReference` → `ActivePoseReference`, managed cache lifecycle, clear/replace authority thống nhất theo plan 2241. Đây là P0 backlog lane — **future cook handoff**, không phải approval ship.
+
+#### Parity matrix — camera handoff (tối thiểu)
+
+| Khía cạnh | Prototype | Harness 2241 | Current code (evidence) | Residual gap |
+| --- | --- | --- | --- | --- |
+| Try Pose → Camera | Mock notice only (`docs/prototype/README.md` §10) | Prepare + navigate sau verify | `createTryPoseCameraHandoffAction` → `PoseServiceLocator.preparedReference` + `CameraTab` (`REP-006` `E-TRY-EMIT`) | Chỉ session-scoped; chưa promote sang durable store |
+| Overlay render | `camera-pose-overlay.html` | Transparent PNG, default 50% opacity | `CameraScreen.kt:255-287` `AsyncImage` khi `hasOverlay` | Đọc từ transient reference, không restore sau relaunch |
+| Opacity / toggle | Static demo | Toggle + opacity controls | More menu Show/Hide + `Slider` 0.1–1.0 (`CameraScreen.kt:858-881`) | Giữ behavior hiện hữu; gắn durable reference |
+| Pan / zoom overlay | Không interactive | Không cấm gesture | `detectTransformGestures` pan + scale 0.4–2.5 (`CameraScreen.kt:274-280`) | **Không thuộc scope loại bỏ** |
+| Relaunch persist | N/A | Survive termination | `BR-PREPREF-002`: không persist | **Gap P0 chính** — `ActivePoseReference` + managed cache |
+| Clear lifecycle | N/A | Clear until replaced | Close về PosesTab **không** xóa reference (`CameraScreen.kt:290-291`) | Explicit clear + cache cleanup theo 2241 |
 
 ### 2. Community poses
 
@@ -138,7 +152,7 @@ Deliverable 2 chuẩn hoá `docs/prototype/README.md` theo `tokens.css` và `des
 
 | ID | Gap | Severity | Nhóm |
 | --- | --- | --- | --- |
-| BL-GAP-01 | Camera pose overlay handoff chưa end-to-end | P0 product | iOS camera |
+| BL-GAP-01 | Durable camera handoff: relaunch restore, `ActivePoseReference`, clear/cache lifecycle (partial session overlay đã có) | P0 product | iOS camera |
 | BL-GAP-02 | Prototype README lệch token geometry | P2 docs | design |
 | BL-GAP-03 | Admin community CRUD incomplete | P1 ops | admin UI |
 | BL-GAP-04 | Dual-layer source image pending | P1 UX | community |
@@ -154,7 +168,7 @@ Deliverable 2 chuẩn hoá `docs/prototype/README.md` theo `tokens.css` và `des
 1. Khớp North Star Phase 1–2 trong `product-delivery-roadmap.md`.
 2. Harness plan `260809-2241` đã có authority và work items — backlog lane bổ sung plan phase-XX executable tại `plans/` root.
 3. Không phụ thuộc login, paywall, hay admin CRUD mới.
-4. Community catalogue đã có slice delivery (REP-006); blocker còn lại là Camera consumption.
+4. Community catalogue đã có slice delivery (REP-006); blocker còn lại là **durable** Camera consumption (relaunch), không phải render overlay session-scoped.
 
 ## Liên kết deliverable tiếp theo
 
@@ -169,3 +183,13 @@ Deliverable 2 chuẩn hoá `docs/prototype/README.md` theo `tokens.css` và `des
 - Khảo sát chỉ đọc markdown/yaml trong phạm vi Task Contract.
 - Không sửa source, tests, configs, assets, CI.
 - Báo cáo này là input cho design diff và roadmap/plan commits tiếp theo.
+
+### `ckh validate` (targeted)
+
+| Target | Kết quả |
+| --- | --- |
+| `ckh validate docs/harness/reports/REP-012-backlog-lane-documentation-survey.md --workspace .` | **Pass** sau remediation (frontmatter khớp REP-006/REP-011; bỏ `lane`/`persona`) |
+| `ckh validate docs/harness/reports/REP-006-feat-003-pose-library-slice-delivery.md --workspace .` | Pass (mẫu frontmatter hợp lệ) |
+| `ckh validate --all --workspace .` | **Fail baseline repo** — không do REP-012: `DEC-008` unapproved trên plan 260826-0003 WI; `runbook PREP.md` / `PLAN.md` / `CHECKLIST.md` thiếu frontmatter delimiter |
+
+Lane executor: chỉ sửa artifact backlog; baseline failures ghi nhận, không mở rộng scope.

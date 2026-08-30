@@ -1,68 +1,64 @@
 ---
 phase: 3
-title: "Try Pose navigation wiring"
+title: "Try Pose promotion wiring"
 status: pending
 priority: P0
 effort: "3h"
 dependencies: ["phase-02"]
 ---
 
-# Phase 3: Try Pose Navigation Wiring
+# Phase 3: Try Pose Promotion Wiring
 
 ## Mục tiêu
 
-Wire local và community Try Pose flows (Harness WI-03): prepare → success → Camera tab only.
+Sau prepare OK, **promote** transient → durable rồi mới handoff Camera (Harness WI-03 extension). Session emit (`REP-006` `E-TRY-EMIT`) đã có — phase này thêm durable layer.
 
 ## Goals
 
-- Detail screens call prepare pipeline before navigation.
-- Never open Camera with missing/unresolvable reference.
-- Preserve existing tab order and back stack.
+- Detail prepare pipeline (local + community) unchanged verify step.
+- On success: write `ActivePoseReference` + managed cache; then navigate `CameraTab`.
+- Never open Camera if promote fails.
+- Deprecate sole reliance on `PoseServiceLocator.preparedReference` as long-lived owner (có thể giữ transient emit tạm trong cook).
 
 ## Non-goals
 
-- Overlay draw logic.
-- Search/list Try Pose shortcuts (future).
+- Reimplement overlay draw (Phase 4).
+- Search/list Try Pose shortcuts.
 
 ## Contracts
 
-- Navigation: `PreparedPoseReference` emit already in REP-006 — extend to await ready state.
-- API: community skeleton/thumbnail URLs from catalogue DTO.
+- Transient: `PreparedPoseReference` per `prepared-pose-reference.md`.
+- Durable: promotion output `ActivePoseReference` (Phase 2).
+- API: community skeleton via catalogue — canonical `Pose` / `MediaAsset`, không DTO entity mới.
 
 ## UI
 
-- Loading indicator on Try Pose button during prepare.
-- Error snackbar/dialog with retry on fetch/decode fail.
-
-## Admin / Ops
-
-- N/A.
+- Loading on Try Pose during prepare **and** promote/cache write.
+- Error stays on detail with retry.
 
 ## Tasks
 
-1. Unify local file read vs community download in prepare use case.
-2. Navigation tests: both detail variants set state before `CameraTab`.
-3. Negative tests: offline, 404 image, corrupt bytes.
+1. Hook promote step after existing prepare (`PoseDetailScreen.kt` paths).
+2. Navigation tests: durable record exists before `CameraTab`.
+3. Negative: offline, corrupt cache write, promote failure → no Camera.
 
-## Acceptance
+## Acceptance (future cook)
 
-- [ ] Navigation tests pass (Harness WI-03).
-- [ ] Camera never shown with `empty` active reference after Try Pose tap.
-- [ ] Community + local paths covered.
+- [ ] `TryPoseCameraHandoffTest` + new promotion tests green.
+- [ ] Camera not shown without durable `ready` state.
 
 ## Verification
 
-- `TryPoseCameraHandoffTest` extended (existing test file per REP-006).
-- Manual: Try Pose → observe loading → Camera.
+- Extend `TryPoseCameraHandoffTest`; manual Try Pose → Camera.
 
 ## Risks
 
-- Race: double-tap Try Pose → disable button while preparing.
+- Double-tap Try Pose → disable while preparing/promoting.
 
-## Rollout / Rollback
+## Rollout / Rollback (future execution)
 
-Revert navigation guard → prior tab-switch-only behavior.
+Revert promote hook → current session-only `E-TRY-EMIT` behavior.
 
 ## Gate
 
-Phase 2 state store merged.
+Phase 2 store merged in cook branch.

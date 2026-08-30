@@ -11,50 +11,49 @@ dependencies: []
 
 ## Mục tiêu
 
-Đóng authority gap giữa FEAT-003, FEAT-008, Harness plan 2241, và prototype Camera overlay trước khi sửa code.
+Đóng authority gap giữa FEAT-003, FEAT-008, Harness plan 2241, prototype, và **evidence code hiện tại** trước future cook.
 
 ## Goals
 
-- Parity matrix: Try Pose, relaunch persistence, overlay controls vs prototype + harness WI.
-- Xác nhận prerequisite plans 2240/1806 status với Maintainer.
+- Parity matrix đầy đủ (Prototype | Harness | Current code | Residual gap) — xem `plan.md` § Parity matrix.
+- Phân biệt rõ: partial session overlay **đã có** vs durable relaunch **chưa có**.
+- Xác nhận prerequisite plans 2240/1806 với Maintainer.
 
 ## Non-goals
 
-- Implementation code.
-- Thay đổi API/data spec.
+- Sửa code (kể cả comment stale `Navigation.kt:282`).
+- Thay đổi API/data spec ngoài ghi chú migration field names.
 
 ## Contracts
 
-- FEAT-003: browse/detail/Try Pose prepare boundary.
-- FEAT-008: camera guide lifecycle ownership (không redefine FEAT-003 catalogue).
-- `PreparedPoseReference`: field semantics frozen.
+- FEAT-003: browse/detail/Try Pose prepare boundary (`REP-006`).
+- FEAT-008: relaunch persistence acceptance — authority durable handoff.
+- `PreparedPoseReference`: transient; `ActivePoseReference`: app-level (2241 design).
+- **Không** tạo entity catalogue mới.
 
 ## Tasks
 
-1. Đọc Harness WI-01 và `design.md` trong plan 2241; liệt kê acceptance còn open.
-2. So sánh `camera-pose-overlay.html` controls với `ui-ux-system.md` Camera section.
-3. Ghi parity matrix vào plan 2241 hoặc phase notes (link-only, không duplicate spec).
-4. Maintainer sign-off prerequisite closure.
+1. Reconcile `REP-006` `E-2241-BOUNDARY` với `CameraScreen.kt` hiện tại (không còn `if (false)` render guard).
+2. Ghi field migration: code `poseName`/`skeletonPath` → spec `name`/`skeletonLocator` + `mediaId`.
+3. Maintainer sign-off prerequisite + Harness 2241 approval path.
 
 ## Acceptance
 
-- [ ] Matrix có cột: Prototype | Harness | Current code | Gap.
-- [ ] Mọi gap P0 có owner phase 2–4.
-- [ ] Không claim runtime mới ngoài harness/spec.
+- [ ] Matrix trong `plan.md` reviewed; mọi residual gap P0 map phase 2–5.
+- [ ] Không claim ship durable; không cite REP-002 `if (false)` là current state.
 
 ## Verification
 
-- `ckh validate --kind feature --workspace .` cho FEAT-003/008 (read-only).
-- Reviewer checklist trong phase doc.
+- Docs review; `ckh validate` targeted REP-012 pass.
 
 ## Risks
 
-- Unapproved FEAT → BLOCKED_NEEDS_LEAD.
+- Unapproved FEAT → BLOCKED_NEEDS_LEAD cho cook.
 
 ## Rollout / Rollback
 
-Docs-only phase; rollback = discard matrix draft.
+Docs-only; rollback = revert plan edits.
 
 ## Gate
 
-**Authority Closure Gate** — không bắt đầu Phase 2 cook nếu FEAT-003 governing acceptance cho relaunch chưa approved.
+**Authority Closure Gate** — future cook Phase 2+ cần FEAT-008 relaunch acceptance + Maintainer approve 2241.

@@ -1,17 +1,13 @@
 ---
 title: "ios-camera-pose-reference"
-description: "Lane BACKLOG — durable Try Pose → Camera overlay handoff trên iOS; bổ sung executable phases cho Harness plan 260809-2241."
+description: "Lane BACKLOG — durable Try Pose → Camera handoff trên iOS; bổ sung executable phases cho Harness plan 260809-2241."
 status: pending
 priority: P0
 branch: "backlog/ios-camera-pose-reference"
-lane: backlog
-persona: "Lính · Bàng Đức"
 tags: ["ios", "camera", "pose-overlay", "try-pose", "feat-003", "feat-008"]
 blockedBy:
   - "docs/harness/plans/260809-2240-pose-reference-library-convergence"
   - "docs/harness/plans/260809-1806-camera-source-of-truth-convergence"
-blocks:
-  - "product-delivery-roadmap Phase 2 complete"
 created: "2026-08-30T13:27:00+07:00"
 source_report: "docs/harness/reports/REP-012-backlog-lane-documentation-survey.md"
 harness_plan: "docs/harness/plans/260809-2241-selected-pose-camera-handoff/plan.md"
@@ -21,18 +17,26 @@ harness_plan: "docs/harness/plans/260809-2241-selected-pose-camera-handoff/plan.
 
 ## Overview
 
-**Vấn đề:** User chọn Try Pose từ pose detail (My Poses hoặc Community) nhưng Camera không nhận overlay; selection không survive relaunch (`README.md` § Current limitations).
+**Hiện trạng (evidence, không claim ship durable):**
 
-**Giải pháp:** Hoàn thiện handoff theo Harness plan `260809-2241`: persist active pose reference + managed render asset, chuyển tab Camera sau khi resolve thành công, render overlay trong suốt với điều khiển prototype-parity, không đổi capture semantics.
+- `REP-006` `E-TRY-EMIT`: Try Pose thành công → `PoseServiceLocator.preparedReference` + chuyển `CameraTab`.
+- `CameraScreen.kt`: đã render overlay khi có reference session-scoped — opacity/toggle, **pan/zoom** (`detectTransformGestures`), line color.
+- `REP-006` `E-2241-BOUNDARY` (2026-08-19) ghi `CameraScreen.kt:173` = `if (false)` — **stale**; line 173 hiện là `LaunchedEffect(permissionState)`. Comment tương tự còn trong `Navigation.kt:282`.
+- `prepared-pose-reference.md` `BR-PREPREF-002`: transient — **không** persist qua relaunch.
 
-Plan lane BACKLOG này **không thay** Harness authority — map work items 2241 sang phase executable và ghi gates/verification cho cook lane.
+**Vấn đề còn lại:** thiếu **durable** `ActivePoseReference` (app-level), promotion/migration từ transient `PreparedPoseReference`, managed cache path, clear/replace lifecycle, restore sau relaunch theo FEAT-008 + Harness plan `260809-2241`.
+
+**Phạm vi plan lane BACKLOG:** ghi contract freeze + phases cho **future cook handoff** — không phải Maintainer approval hay ship claim.
+
+Plan này **không thay** Harness authority — map WI 2241 sang phase executable tại `plans/` root.
 
 ## Goals
 
-- Try Pose từ local và community detail set active reference trước khi vào Camera.
-- Camera hiển thị pose overlay (default opacity 50%), toggle visibility, clear selection.
-- Selection và render asset survive app termination + relaunch until replaced/cleared.
-- Loading/failure có fallback rõ ràng; shutter behavior unchanged (FEAT-001).
+- Promote Try Pose success → durable `ActivePoseReference` + managed render asset trước/sau vào Camera.
+- Giữ overlay behavior hiện hữu: default opacity ~50%, toggle, **pan/zoom**, line color — không loại bỏ gesture overlay trừ khi Harness đảo authority.
+- Selection + render asset survive app termination + relaunch until replaced/cleared.
+- Clear lifecycle explicit (clear action + cache cleanup); không chỉ ẩn overlay trong session.
+- Shutter / capture semantics unchanged (FEAT-001).
 
 ## Non-goals
 
@@ -41,32 +45,62 @@ Plan lane BACKLOG này **không thay** Harness authority — map work items 2241
 - Dual-layer source image background (plan `260510-1726`).
 - Admin UI hoặc extract server changes.
 - Android build target.
+- Re-build overlay render từ đầu (đã partial — scope là ownership + persistence).
 
-## Contracts
+## Contracts (frozen)
 
 ### API
 
-- **Không HTTP mới.** Try Pose là local prepare từ detail; public catalogue đã có `GET /api/community/poses` khi nguồn community.
-- Error envelope khi fetch image: tuân `docs/spec/api/conventions.md` nếu community CDN/API fail.
+- **Không HTTP mới.** Try Pose local prepare; community skeleton qua catalogue URL hiện có.
+- Lỗi fetch/decode: `docs/spec/api/conventions.md` khi community fail.
 
-### Data
+### Data — hai lớp reference
 
-| Contract | Authority | Vai trò |
-| --- | --- | --- |
-| `PreparedPoseReference` | `docs/spec/data/entities/prepared-pose-reference.md` | Transient emit từ Try Pose |
-| Active pose reference (app-level) | Harness plan 2241 `design.md` + WI-02 | Persistent selection + managed cache path |
-| `Photo` local link | `docs/spec/data/entities/photo.md` | Capture output; không gán ownership pose |
+| Contract | Layer | Authority | Fields / semantics |
+| --- | --- | --- | --- |
+| `PreparedPoseReference` | **Transient** (in-memory emit) | `docs/spec/data/entities/prepared-pose-reference.md` | `poseId`, `mediaId`, `name`, `skeletonLocator` (spec); runtime code hiện `poseId`, `poseName`, `skeletonPath` — **migration target** align spec tại cook |
+| `ActivePoseReference` | **App-level durable** | Harness plan 2241 `design.md` + FEAT-008 | `poseId`, `mediaId`, `skeletonLocator` → **managed cache path** on disk; `source` discriminator: `local` \| `community`; lifecycle: `select` → persist → restore → `clear` \| `replace` |
+
+**Promotion mapping (cook):**
+
+```text
+Try Pose prepare OK
+  → emit PreparedPoseReference (transient, BR-PREPREF-003 verify)
+  → promote/copy to ActivePoseReference
+  → write managed cache file (collision-resistant path)
+  → Camera reads ActivePoseReference (single owner), not parallel PoseServiceLocator-only session
+```
+
+**Không tạo** entity `CommunityPose` mới — dùng canonical `Pose` + `MediaAsset` terminology; community chỉ là `source = community` trên reference.
+
+**Migration / clear / restore:**
+
+- Relaunch: read durable store → restore `ActivePoseReference` + validate cache file → render or empty state + recovery.
+- Clear: null durable record + delete managed cache (best-effort).
+- Replace: atomic swap reference + evict prior cache.
+- **Authority gate:** Phase 1 parity + Maintainer approve Harness 2241 trước cook Phase 2+.
 
 ### UI
 
-- Visual overlay: `docs/prototype/screens/camera-pose-overlay.html`, tokens `design.md` / `tokens.css`.
-- Production interaction: `docs/harness/specs/ui-ux-system.md` § Camera + FEAT-003/008 acceptance.
-- Controls: clear, toggle overlay, opacity adjustment per prototype/harness WI-04.
+- Visual: `docs/prototype/screens/camera-pose-overlay.html`, `design.md` / `tokens.css`.
+- Interaction: `docs/harness/specs/ui-ux-system.md` § Camera; **preserve** pan/zoom overlay gestures (`CameraScreen.kt:274-280`).
+- Controls hiện hữu: Show/Hide, opacity slider, line color — gắn durable reference, không rewrite UX.
 
 ### Admin / Ops
 
-- Không thay đổi admin surface.
-- Ops: không deploy server; evidence Mobile MCP real iPhone.
+- Không đổi admin surface.
+- Future cook: Mobile MCP real iPhone evidence (Harness WI-05).
+
+## Parity matrix (camera handoff)
+
+| Khía cạnh | Prototype | Harness 2241 | Current code | Residual gap (scope plan) |
+| --- | --- | --- | --- | --- |
+| Try Pose → Camera | Mock notice | Prepare + navigate | `E-TRY-EMIT` session handoff | Durable promotion + store |
+| Overlay render | Static HTML | 50% default PNG | `AsyncImage` when `hasOverlay` | Bind `ActivePoseReference` |
+| Opacity / toggle | Demo controls | Toggle + opacity | More menu + Slider | Wire to durable owner |
+| Pan / zoom | N/A | Not forbidden | `detectTransformGestures` | **Keep** — out of removal scope |
+| Relaunch | N/A | Must restore | BR-PREPREF-002 no persist | **Primary gap** |
+| Clear | N/A | Clear until replaced | Close tab keeps reference | Explicit clear + cache |
 
 ## Phases
 
@@ -74,60 +108,62 @@ Plan lane BACKLOG này **không thay** Harness authority — map work items 2241
 | --- | --- | --- | --- |
 | 1 | Authority & parity matrix | [phase-01-authority-and-parity.md](./phase-01-authority-and-parity.md) | 2h |
 | 2 | Active pose reference state | [phase-02-active-pose-reference-state.md](./phase-02-active-pose-reference-state.md) | 4h |
-| 3 | Try Pose navigation wiring | [phase-03-try-pose-navigation-wiring.md](./phase-03-try-pose-navigation-wiring.md) | 3h |
-| 4 | Camera overlay & controls | [phase-04-camera-overlay-controls.md](./phase-04-camera-overlay-controls.md) | 5h |
-| 5 | Verification & rollout | [phase-05-verification-rollout.md](./phase-05-verification-rollout.md) | 4h |
+| 3 | Try Pose promotion wiring | [phase-03-try-pose-navigation-wiring.md](./phase-03-try-pose-navigation-wiring.md) | 3h |
+| 4 | Durable overlay ownership | [phase-04-camera-overlay-controls.md](./phase-04-camera-overlay-controls.md) | 5h |
+| 5 | Verification handoff | [phase-05-verification-rollout.md](./phase-05-verification-rollout.md) | 4h |
 
 ## Phase dependencies
 
 ```text
 Phase 1 → Phase 2 → Phase 3 → Phase 4 → Phase 5
-Prerequisites (external): 260809-2240, 260809-1806 land or equivalent authority closure
+Prerequisites (Harness): 260809-2240, 260809-1806 authority closure
 ```
 
-## Acceptance (plan-level)
+## Acceptance (plan-level — future cook)
 
-- [ ] Try Pose local + community routes Camera chỉ sau resolve asset thành công.
-- [ ] Overlay visible default 50% opacity; toggle/clear hoạt động trên real iPhone.
-- [ ] Kill app → relaunch → overlay restored hoặc explicit empty state.
-- [ ] Capture vẫn tạo Photo local; không regression FEAT-001 tests.
-- [ ] Harness `ckh workflow check 260809-2241-selected-pose-camera-handoff` pass khi cook harness plan.
+- [ ] Try Pose promote `ActivePoseReference` trước/khi vào Camera; transient không phải sole owner sau relaunch.
+- [ ] Relaunch restore overlay hoặc explicit empty/recovery state (FEAT-008 / 2241).
+- [ ] Clear/replace lifecycle + managed cache cleanup.
+- [ ] Pan/zoom/opacity/toggle behavior preserved vs current `CameraScreen.kt`.
+- [ ] Capture Photo local không regression FEAT-001.
+- [ ] `ckh workflow check 260809-2241-selected-pose-camera-handoff` pass tại cook time.
 
 ## Verification
 
-| Layer | Command / evidence |
+| Layer | Evidence |
 | --- | --- |
-| Unit | State store select/replace/clear; navigation tests (Harness WI-02/03) |
-| Compose | Camera presentation overlay tests (Harness WI-04) |
-| Device | Mobile MCP real iPhone scenario (Harness WI-05) |
-| Docs | Plan phase checklists; no drift vs FEAT-003 relaunch acceptance |
+| Unit | Active reference store select/replace/clear/relaunch |
+| Navigation | Promotion after Try Pose prepare |
+| Compose | Overlay bound to durable reference; pan/zoom regression |
+| Device | Mobile MCP real iPhone (Harness WI-05) |
 
 ## Risks
 
 | Risk | Impact | Mitigation |
 | --- | --- | --- |
-| Prerequisite plans chưa land | High | Gate Phase 2+ cook; track harness approval |
-| Large image decode memory | Medium | Downscale managed render asset; cache eviction |
-| Community fetch fail | Medium | Inline error on detail; không navigate Camera |
-| Overlay blocks gestures | High | Non-interactive overlay layer (prototype parity) |
+| Prerequisite plans chưa land | High | Gate Phase 2+ cook |
+| Spec/code field drift (`skeletonPath` vs `skeletonLocator`) | Medium | Migration table in Phase 2 |
+| Large image decode | Medium | Managed cache downscale at promote |
+| Stale Navigation comment | Low | Update comment at cook; docs không sửa code trong lane này |
 
-## Rollout / Rollback
+## Rollout / Rollback (future execution)
 
-**Rollout:** Feature flag không bắt buộc — behavior là completion MVP loop. Ship sau real-iPhone evidence.
+**Rollout (cook handoff):** ship sau real-iPhone evidence + Maintainer approve 2241 — **không** approval từ plan docs lane.
 
-**Rollback:** Revert active reference store + overlay branch; Try Pose lại chỉ switch tab (hiện trạng). Không migration server.
+**Rollback:** revert durable store; fallback session `PreparedPoseReference` behavior như hiện tại.
 
 ## Gates
 
-| Gate | Owner | Blocker |
-| --- | --- | --- |
-| Harness 2241 approval | Repository Maintainer | Cook harness track |
-| Prerequisites 2240/1806 | Maintainer | Authority closure Phase 1 |
-| REP-012 accepted | Lead | Docs lane closure |
-| Real-iPhone evidence | QA / executor | Release claim overlay |
+| Gate | Owner |
+| --- | --- |
+| Harness 2241 approval | Repository Maintainer |
+| Prerequisites 2240/1806 | Maintainer |
+| REP-012 remediation | Lead |
+| Real-iPhone evidence | Executor / QA at cook |
 
 ## Cross-references
 
 - Roadmap: [`../260830-1327-snap-pose-roadmap/roadmap.md`](../260830-1327-snap-pose-roadmap/roadmap.md)
 - Survey: [`docs/harness/reports/REP-012-backlog-lane-documentation-survey.md`](../../docs/harness/reports/REP-012-backlog-lane-documentation-survey.md)
-- Harness plan: [`docs/harness/plans/260809-2241-selected-pose-camera-handoff/plan.md`](../../docs/harness/plans/260809-2241-selected-pose-camera-handoff/plan.md)
+- Harness: [`docs/harness/plans/260809-2241-selected-pose-camera-handoff/plan.md`](../../docs/harness/plans/260809-2241-selected-pose-camera-handoff/plan.md)
+- Relaunch authority: FEAT-008; session emit: `REP-006` `E-TRY-EMIT`

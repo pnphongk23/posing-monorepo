@@ -7,65 +7,69 @@ effort: "4h"
 dependencies: ["phase-01"]
 ---
 
-# Phase 2: Active Pose Reference State
+# Phase 2: Active Pose Reference State (durable)
 
 ## Mục tiêu
 
-Introduce shared persistent active pose reference + managed render asset (Harness WI-02).
+Introduce `ActivePoseReference` app-level + managed cache path (Harness WI-02). **Future cook handoff** — không ship từ docs lane.
 
 ## Goals
 
-- Typed state: source identity (local vs community), poseId/mediaId, cache path.
-- Atomic persist; corrupt state recovery; cache cleanup on clear/replace.
+- Typed durable record: `poseId`, `mediaId`, `skeletonLocator` (managed cache path), `source`: `local` | `community`.
+- Promotion rules: `PreparedPoseReference` → `ActivePoseReference` sau verify.
+- Atomic persist; corrupt recovery; cache cleanup on clear/replace.
+- Relaunch restore path (authority FEAT-008 / plan 2241).
 
 ## Non-goals
 
-- UI overlay rendering (Phase 4).
-- Server SavedEntry.
+- Thay overlay render logic (Phase 4 chỉ rebind owner).
+- Server `SavedEntry` / HTTP.
 
 ## Contracts
 
-### Data
+### Data (frozen)
 
-- Align `PreparedPoseReference` → durable active reference promotion rules.
-- File cache naming collision-resistant (learn from REP-002 GAP-005 pattern).
+| | PreparedPoseReference | ActivePoseReference |
+| --- | --- | --- |
+| Lifetime | Session / in-memory emit | Disk-backed until clear/replace |
+| Authority | `prepared-pose-reference.md` | Harness 2241 `design.md` |
+| Persist relaunch | **Forbidden** (BR-PREPREF-002) | **Required** (2241 / FEAT-008) |
+| Entity terms | `Pose.poseId`, `MediaAsset.mediaId` | Same — không `CommunityPose` entity |
+
+Managed cache path: collision-resistant file under app cache; `skeletonLocator` in durable record points to local file only (never remote URL post-promote).
 
 ### API
 
-- Community image fetch uses existing community URLs; no new endpoints.
-
-## UI / Admin / Ops
-
-- N/A implementation in docs phase; cook targets `mobile/shared` state + persistence.
+- Community fetch at prepare time only; durable store holds local cache path.
 
 ## Tasks
 
-1. Define state machine: empty → preparing → ready → error.
-2. Map storage keys and migration from session-only patterns.
-3. Unit test matrix: select, replace, clear, relaunch restore, corrupt file.
+1. Define state machine: `empty` → `preparing` → `ready` → `error`; promotion edge from transient.
+2. Storage schema + migration from `PoseServiceLocator.preparedReference`-only pattern.
+3. Unit tests: select, replace, clear, relaunch restore, corrupt cache, evict on replace.
 
-## Acceptance
+## Acceptance (future cook)
 
-- [ ] State store tests pass (Harness WI-02 success criteria).
-- [ ] terminate/relaunch restores ready reference.
-- [ ] Clear removes managed cache best-effort.
+- [ ] Relaunch restores `ActivePoseReference` or explicit empty/recovery.
+- [ ] Clear deletes durable record + managed cache best-effort.
+- [ ] Field names align spec (`mediaId`, `skeletonLocator`) or documented shim.
 
 ## Verification
 
-- `./gradlew :shared:iosSimulatorArm64Test` (target tests TBD at cook).
-- Review against `prepared-pose-reference.md`.
+- `./gradlew :shared:iosSimulatorArm64Test` (tests added at cook).
+- Cross-check `prepared-pose-reference.md` + 2241 design.
 
 ## Risks
 
 | Risk | Mitigation |
 | --- | --- |
-| Disk full | Fail prepare with user-visible error |
-| Stale community URL | TTL re-fetch on prepare |
+| Disk full | Fail promote with user-visible error |
+| Field shim drift | Migration table in cook PR |
 
-## Rollout / Rollback
+## Rollout / Rollback (future execution)
 
-Ship behind existing app version bump; rollback clears new storage keys (document migration note at cook).
+Cook PR ships store; rollback clears new storage keys (document in cook PR).
 
 ## Gate
 
-Phase 1 parity matrix approved.
+Phase 1 matrix + Maintainer approve 2241.
