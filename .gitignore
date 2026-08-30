@@ -68,3 +68,5 @@ GoogleService-Info.plist
 # local docker volumes (credentials + sqlite)
 .docker-persist/
 .kotlin
+# Local runtime data — never commit
+.docker-data/
