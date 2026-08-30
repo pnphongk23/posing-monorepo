@@ -468,7 +468,9 @@ Android; social feed; collaborative publishing.
   cleanup unless the change serves Account or the content pipeline.
 - Backend and web changes are allowed only when they serve Account, Saved
   Poses, Albums, or the content pipeline.
-- Monetization lanes (FEAT-010, FEAT-011) are out of scope for this brainstorm.
+- Monetization/IAP lane (FEAT-011) is out of scope for this brainstorm. FEAT-010
+  (Firebase observability + Remote Config) is shipped iOS infrastructure, not
+  monetization.
 - Android parity is out of scope; no decision to open Android work here.
 - Open and deferred items in this section are recorded, not resolved.
 
@@ -480,7 +482,7 @@ Android; social feed; collaborative publishing.
 | Color filters / presets v1 | chưa chốt / deferred — quyết định khi tới phase |
 | Auth method (Sign in with Apple suggested) | chưa chốt / deferred — quyết định khi tới phase |
 | Guidance language (Vietnamese assumed) | chưa chốt / deferred — quyết định khi tới phase |
-| Monetization (FEAT-010, FEAT-011) | out of scope — không quyết định mở |
+| Monetization / IAP (FEAT-011) | out of scope — không quyết định mở |
 | Android parity | out of scope — không quyết định mở |
 
 ## Verification
