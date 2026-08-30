@@ -37,8 +37,10 @@ status: active
 
 # Product Delivery Roadmap
 
-**Revision:** Product Roadmap v1.0  
-**Baseline:** `main` @ `ca33cc2585dd62f66999555cf60c93343189efca` (2026-08-30)  
+**Revision:** Product Roadmap v1.0
+
+**Baseline:** `main` @ `ca33cc2585dd62f66999555cf60c93343189efca` (2026-08-30)
+
 **Published scope:** Snap Pose iOS 1.0 — phản ánh trạng thái code trên `main` tại
 baseline. Không claim hành vi App Store Connect / production runtime nếu không có
 evidence ASC hoặc báo cáo delivery tương ứng (xem
@@ -339,7 +341,8 @@ routes/store hiện có.
 
 ### Brainstorm lanes
 
-**Frozen:** 2026-08-30  
+**Frozen:** 2026-08-30
+
 **Reconciled:** 2026-08-30 (Product Roadmap v1.0)
 
 Frozen brainstorm cho delivery sequencing **post-v1.0**. Phần Wave/Milestone dưới
