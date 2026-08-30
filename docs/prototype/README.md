@@ -3,8 +3,11 @@
 A static HTML/CSS/JS mobile user interface prototype running directly as a standalone web application. This prototype serves as a design and layout reference. It does not connect to a real database or replicate production business flows.
 
 ## 📱 Design System (Neo-brutalism)
-- **Borders**: Thick `3px` solid black contours (`var(--nb-border-thick)`) and `2px` small lines (`var(--nb-border-thin)`).
-- **Shadows**: Rigid, hard offset shadows (`4px 4px 0px #000`) that simulate tactile elevation.
+
+Canonical token values live in `styles/tokens.css` and are summarized in repo-root [`design.md`](../../design.md). Production Compose/web styling follows [`docs/harness/specs/ui-ux-system.md`](../harness/specs/ui-ux-system.md) — do not copy prototype hex values into mobile or admin without that spec.
+
+- **Borders**: Primary `2px` solid black contours (`var(--nb-border-thick)`) and `1.5px` secondary lines (`var(--nb-border-thin)`).
+- **Shadows**: Rigid, hard offset shadows (`3px 3px 0 #000` default; `1.5px` compact; `5px` large) that simulate tactile elevation.
 - **Accents**: Soft pastel color tokens for visual variety:
   - Pink (`#E89CAE`) — Primaries like shutter, tries, and saves.
   - Blue (`#7FBBE6`) — Secondary filters, toggles, and tracks.
