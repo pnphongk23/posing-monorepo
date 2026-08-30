@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Pose Premium</title>
+  <link rel="stylesheet" href="../styles/reset.css">
+  <link rel="stylesheet" href="../styles/base.css">
+  <link rel="stylesheet" href="../styles/utilities.css">
+  <link rel="stylesheet" href="../styles/components.css">
+    <link rel="stylesheet" href="../styles/components/paywall.css?v=hig-v8">
+</head>
+  <body class="paywall-preview-body">
+    <div class="paywall-shell">
+      <div class="paywall-viewport-container">
+        <div class="paywall-device paywall-device--mobile" id="paywall-device">
+          <div class="paywall-container" id="paywall-app-surface">
+              <header class="paywall-header">
+                <div class="paywall-header__brand" aria-label="AI Pose Premium">
+                  <span class="paywall-header__accent" aria-hidden="true"></span>
+                  <span class="paywall-header__identity">
+                    <span class="paywall-header__wordmark">AI Pose</span>
+                    <strong class="paywall-header__edition">Premium studio</strong>
+                  </span>
+                </div>
+              <button type="button" id="paywall-close-btn" class="paywall-close" aria-label="Close Premium and go back">
+                <svg aria-hidden="true"><use href="#icon-close"></use></svg>
+              </button>
+            </header>
+
+            <main class="paywall-content" id="paywall-main">
+              <section class="paywall-story" aria-labelledby="paywall-title">
+                <h1 class="paywall-story__title" id="paywall-title">Pose with confidence.</h1>
+                <p class="paywall-story__copy">
+                  Explore poses, frame the shot, and keep every favorite.
+                </p>
+
+                <ul class="paywall-benefits" aria-label="Premium benefits">
+                  <li class="paywall-benefits__item">
+                    <svg aria-hidden="true"><use href="#icon-grid"></use></svg>
+                    <span class="paywall-benefits__text">
+                      <strong>Discover</strong>
+                      <small>Community poses</small>
+                    </span>
+                  </li>
+                  <li class="paywall-benefits__item">
+                    <svg aria-hidden="true"><use href="#icon-camera"></use></svg>
+                    <span class="paywall-benefits__text">
+                      <strong>Frame</strong>
+                      <small>Full pose camera</small>
+                    </span>
+                  </li>
+                  <li class="paywall-benefits__item">
+                    <svg aria-hidden="true"><use href="#icon-share"></use></svg>
+                    <span class="paywall-benefits__text">
+                      <strong>Keep</strong>
+                      <small>Save and share</small>
+                    </span>
+                  </li>
+                </ul>
+              </section>
+
+              <section class="paywall-offer" aria-labelledby="paywall-offer-title">
+                <h2 class="paywall-offer__title" id="paywall-offer-title">Choose your plan</h2>
+
+                <fieldset class="paywall-chooser">
+                  <legend class="sr-only">Premium plans. Annual is recommended and selected by default.</legend>
+
+                  <label class="paywall-option paywall-option--annual">
+                    <input type="radio" name="premium-plan" value="annual" class="paywall-option__input" checked>
+                    <span class="paywall-option__surface">
+                      <span class="paywall-option__topline">
+                        <span class="paywall-option__radio" aria-hidden="true"></span>
+                        <span class="paywall-option__name">Annual</span>
+                        <span class="paywall-option__badge">Recommended</span>
+                      </span>
+                      <span class="paywall-option__price" data-plan-price="annual"><strong>$39.99</strong><span> / year</span></span>
+                      <span class="paywall-option__equiv" data-plan-equiv="annual">$3.33 / month equivalent</span>
+                      <span class="paywall-option__terms" data-plan-terms="annual">Billed today. Auto-renews yearly until you cancel.</span>
+                    </span>
+                  </label>
+
+                  <label class="paywall-option paywall-option--monthly">
+                    <input type="radio" name="premium-plan" value="monthly" class="paywall-option__input">
+                    <span class="paywall-option__surface">
+                      <span class="paywall-option__topline">
+                        <span class="paywall-option__radio" aria-hidden="true"></span>
+                        <span class="paywall-option__name">Monthly</span>
+                      </span>
+                      <span class="paywall-option__row-price">
+                        <span class="paywall-option__price paywall-option__price--row" data-plan-price="monthly"><strong>$5.99</strong><span> / month</span></span>
+                        <span class="paywall-option__terms" data-plan-terms="monthly">Billed today. Auto-renews monthly until you cancel.</span>
+                      </span>
+                    </span>
+                  </label>
+                </fieldset>
+
+                <p class="sr-only" id="paywall-plan-announcement" role="status" aria-live="polite" aria-atomic="true"></p>
+              </section>
+            </main>
+
+          <div class="paywall-dock">
+            <div class="paywall-purchase">
+              <button type="button" class="nb-btn nb-btn--block nb-btn--pink paywall-cta" id="paywall-cta-btn">
+                <span class="paywall-spinner" id="paywall-cta-spinner" hidden aria-hidden="true"></span>
+                <span id="paywall-cta-text">Continue with Annual</span>
+              </button>
+              <p class="paywall-selection-summary" id="paywall-selection-summary">$39.99 billed today. Auto-renews yearly until you cancel.</p>
+            </div>
+            <div class="paywall-legal">
+              <div class="paywall-legal__links">
+                <button type="button" class="paywall-legal__link" id="paywall-restore-btn">Restore purchases</button>
+                <button type="button" class="paywall-legal__link" id="paywall-terms-btn" aria-label="Terms of Use">Terms</button>
+                <button type="button" class="paywall-legal__link" id="paywall-privacy-btn" aria-label="Privacy Policy">Privacy</button>
+              </div>
+              <p>Cancel anytime in App Store settings. No free trial.</p>
+            </div>
+          </div>
+
+          <div class="nb-phone__footer paywall-home-bar" aria-hidden="true">
+            <div class="nb-phone__home-indicator"></div>
+          </div>
+        </div>
+
+        <div class="nb-modal-overlay" id="paywall-success-modal" role="dialog" aria-modal="true" aria-labelledby="success-modal-title" aria-describedby="success-modal-message" aria-hidden="true" inert>
+          <div class="nb-modal paywall-modal">
+            <div class="paywall-modal__icon paywall-modal__icon--success" aria-hidden="true">
+              <svg fill="none" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"></path></svg>
+            </div>
+            <p class="paywall-modal__eyebrow">Simulation complete</p>
+            <h2 id="success-modal-title">Premium unlocked</h2>
+            <p id="success-modal-message">Capture, Try Pose, and Gallery save or share are now available in this prototype session.</p>
+            <button type="button" class="nb-btn nb-btn--block nb-btn--green" data-close-modal>Continue to AI Pose</button>
+          </div>
+        </div>
+
+        <div class="nb-modal-overlay" id="paywall-error-modal" role="dialog" aria-modal="true" aria-labelledby="error-modal-title" aria-describedby="error-modal-message" aria-hidden="true" inert>
+          <div class="nb-modal paywall-modal">
+            <div class="paywall-modal__icon paywall-modal__icon--error" aria-hidden="true">
+              <svg fill="none" viewBox="0 0 24 24"><path d="M8 8l8 8M16 8l-8 8"></path></svg>
+            </div>
+            <p class="paywall-modal__eyebrow">Nothing was charged</p>
+            <h2 id="error-modal-title">Purchase not completed</h2>
+            <p id="error-modal-message">No access was unlocked. Check your connection and try again.</p>
+            <div class="paywall-modal__actions">
+              <button type="button" class="nb-btn nb-btn--block nb-btn--pink" id="paywall-error-retry-btn">Try purchase again</button>
+              <button type="button" class="nb-btn nb-btn--block nb-btn--white" data-close-modal>Close</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="nb-modal-overlay" id="paywall-unconfigured-modal" role="dialog" aria-modal="true" aria-labelledby="unconfigured-modal-title" aria-describedby="unconfigured-modal-message" aria-hidden="true" inert>
+          <div class="nb-modal paywall-modal">
+            <div class="paywall-modal__icon paywall-modal__icon--warning" aria-hidden="true">
+              <svg fill="none" viewBox="0 0 24 24"><path d="M12 8v5M12 17h.01"></path><circle cx="12" cy="12" r="9"></circle></svg>
+            </div>
+            <p class="paywall-modal__eyebrow">SDK unconfigured</p>
+            <h2 id="unconfigured-modal-title">Purchases unavailable</h2>
+            <p id="unconfigured-modal-message">This state cannot purchase or restore, and no access will be unlocked. Switch back to the purchase simulation to continue testing.</p>
+            <div class="paywall-modal__actions">
+              <button type="button" class="nb-btn nb-btn--block nb-btn--yellow" id="paywall-unconfigured-sandbox-btn">Use purchase simulation</button>
+              <button type="button" class="nb-btn nb-btn--block nb-btn--white" data-close-modal>Close</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="nb-modal-overlay" id="paywall-terms-modal" role="dialog" aria-modal="true" aria-labelledby="terms-modal-title" aria-describedby="terms-modal-message" aria-hidden="true" inert>
+          <div class="nb-modal paywall-modal paywall-modal--legal">
+            <p class="paywall-modal__eyebrow">Non-production mock</p>
+            <h2 id="terms-modal-title">Terms of Use</h2>
+            <p id="terms-modal-message">This prototype simulates purchase behavior only. Prices and billing terms are planning content. No App Store transaction occurs here. Production Terms of Use will be the live URL required by App Review 3.1.2.</p>
+            <button type="button" class="nb-btn nb-btn--block nb-btn--white" data-close-modal>Close Terms of Use</button>
+          </div>
+        </div>
+
+        <div class="nb-modal-overlay" id="paywall-privacy-modal" role="dialog" aria-modal="true" aria-labelledby="privacy-modal-title" aria-describedby="privacy-modal-message" aria-hidden="true" inert>
+          <div class="nb-modal paywall-modal paywall-modal--legal">
+            <p class="paywall-modal__eyebrow">Non-production mock</p>
+            <h2 id="privacy-modal-title">Privacy Policy</h2>
+            <p id="privacy-modal-message">This static prototype stores only a mock Premium flag in this browser session. It does not process a real purchase or transmit camera data. Production will link the live Privacy Policy URL.</p>
+            <button type="button" class="nb-btn nb-btn--block nb-btn--white" data-close-modal>Close Privacy Policy</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="../scripts/icons.js"></script>
+  <script src="../scripts/paywall.js?v=hig-v7"></script>
+</body>
+</html>

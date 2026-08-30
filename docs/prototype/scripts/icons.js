@@ -119,7 +119,19 @@
       <path d="M14 11v6"/>
       <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
     </symbol>
+
+    <!-- Icon: Crown -->
+    <symbol id="icon-crown" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M2 4l3 12h14l3-12-6 7-4-7-4 7-6-7z"/>
+      <path d="M3 20h18"/>
+    </symbol>
+
+    <!-- Icon: Check -->
+    <symbol id="icon-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="20 6 9 17 4 12"/>
+    </symbol>
   </svg>
+
   `;
 
   function injectSprites() {
