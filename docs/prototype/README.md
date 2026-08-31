@@ -33,6 +33,9 @@ docs/prototype/
 │   ├── poses-list.html         # Tabbed poses inventory list with category filters, a link to search, and main navigation
 │   ├── search.html             # Dedicated search screen dynamically filtering mock poses by title
 │   ├── pose-detail.html        # Source-aware pose detail, personal delete, and bounded handoff
+│   ├── saved-list.html         # FEAT-013 Saved collection state prototype
+│   ├── pose-detail-saved.html  # FEAT-013 saved detail/save/try states
+│   ├── sign-in-prompt.html     # FEAT-013 shared auth gate simulation
 │   └── gallery.html            # Captured matches history with list/grid toggle and main navigation
 ├── styles/                     # Design System & Component Outlines
 │   ├── tokens.css              # Custom properties layer (colors, spacing, radii)
@@ -53,6 +56,7 @@ docs/prototype/
 │       ├── camera-viewport.css # Grids, alignment guides, & shutter panels
 │       ├── pose-overlay.css    # SVG bone line links & joint node decorators
 │       └── view-toggle.css     # Gallery grid/list layout controllers
+│   └── saved-poses.css         # Token-based FEAT-013 prototype additions
 └── scripts/                    # Modular Interaction Code
     ├── icons.js                # DOM injector for reusable SVG symbol definitions
     ├── fixtures.js             # Local mock pose/photo catalog and session-only pose state
@@ -62,7 +66,10 @@ docs/prototype/
     ├── progress.js             # Dynamic percentage tick-count & fill interpolation
     ├── modal.js                # Open/close overlay bindings
     ├── view-toggle.js          # Gallery grid-to-list layout swapping
-    └── app.js                  # Main orchestrator initializing components
+    ├── app.js                  # Main orchestrator initializing components
+    ├── saved-list.js            # Saved pagination and list state simulation
+    ├── pose-detail-saved.js     # Saved detail mutation/auth state simulation
+    └── sign-in-prompt.js        # Auth prompt intent and outcome simulation
 ```
 
 ---
@@ -82,6 +89,15 @@ The prototype features several interactive controls. However, due to its static,
 9. **Source-aware Details**: Cards route with `source` and `id` query parameters. Detail only renders metadata present in the fixture, handles missing/unavailable records with a return path, and confirms personal deletion before removing it from the current `sessionStorage` prototype session.
 10. **Bounded Try Pose Handoff**: `Try Pose` records a mock handoff notice on the detail screen only. It does not navigate to or render `camera-pose-overlay.html`; Camera overlay persistence, rendering, controls, and extraction remain deferred to the pending handoff plan.
 11. **Existing Camera/Gallery Shortcuts**: The standalone `camera-pose-overlay.html` and the camera-facing shortcut remain historical prototype screens outside this Pose Library update. The gallery layout toggle remains **inert** because its buttons are missing from `gallery.html`; camera settings still use `camera-live.html?settings=open`.
+
+### FEAT-013 Saved Poses prototype
+
+These screens are prototype-only visual/navigation simulations; they do not call
+the Saved API, persist account data, or implement production authentication.
+
+- [Saved list](screens/saved-list.html): `?state=loading`, `ready`, `empty`, `error`, `refresh-error`, `load-more-loading`, `load-more-error`, `offline-stale`, `offline-no-cache`, or `unavailable`; inspect pagination with `?page=1&limit=20`.
+- [Saved pose detail](screens/pose-detail-saved.html?id=dancing): `?state=unsaved`, `pending-save`, `pending-unsave`, `error`, `offline`, `unavailable`, or the default confirmed saved state. Add `auth=guest` to gate Save/Try.
+- [Sign-in prompt](screens/sign-in-prompt.html?intent=saved): use `intent=saved`, `save`, or `try`; `state=fail` simulates a retryable auth failure. Continue resumes Saved or the encoded `return` detail URL; Not now keeps the gated context.
 
 ---
 
