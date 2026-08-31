@@ -1,61 +1,76 @@
-# Selected Pose Camera Handoff Design
+# Pose and Camera Settings Relaunch Restore — Design
+
+Ponytail comparison (minimal reuse, no new dependency unless evidence bắt buộc).
 
 ## Approaches considered
 
-### A — Pass image path directly through callbacks
+### A — Session-only (current on `main`)
 
-Set Camera-local state immediately before changing tabs. This is a small change,
-but tab recreation, source identity, missing community data, and clear/replace
-behavior become implicit and difficult to test.
+**Observed:** `PoseServiceLocator.preparedReference` + `remember(preparedReference)`
+khởi tạo `CameraUiState` (`CameraScreen.kt:104-114`). Zoom trong
+`CameraZoomUiState` riêng (`115-117`). Mất toàn bộ khi process death.
 
-### B — Session-only app-scoped active reference store
+**Pros:** đơn giản, đã ship overlay/handoff. **Cons:** không đáp ứng FEAT-012
+cold relaunch.
 
-Keep an injected store at the application/tab-navigation composition boundary.
-It holds a source-qualified key plus immutable render descriptor, exposes a
-state flow, and is consumed by the Camera coordinator. Detail screens dispatch
-`Select(reference)` before switching tabs; Camera renders, toggles, replaces, or
-clears the reference explicitly. This does not satisfy the approved relaunch
-persistence requirement.
+### B — Minimal single-device persisted snapshot (recommended)
 
-### C — Persistent active reference with managed render cache (approved)
+Một snapshot nhỏ trên device (ví dụ preferences/DataStore/SQLDelight bảng có
+sẵn — **Unresolved:** chọn store cụ thể ở WI-02, reuse existing mobile
+persistence nếu có):
 
-Persist a source-qualified key plus validated immutable render descriptor and a
-managed local copy of the decoded transparent pose image. This survives relaunch
-without trusting remote URL lifetime. Persistence and cache updates are treated
-as one recoverable operation; invalid or corrupt persisted state is cleared
-without affecting Camera capture or the source pose.
+| Field group | Persist | Restore |
+| --- | --- | --- |
+| Pose (optional) | `poseId`, `poseName`, verified `skeletonPath` hoặc managed local copy key | Rebuild `PreparedPoseReference` |
+| Settings (always when changed) | facing, flash, grid, overlay visible, opacity, line color, offset x/y, scale, zoom | Map vào `CameraUiState` + `CameraZoomUiState` + native controller (`setFlashMode`, `setGridVisible`, `setZoomFactor`, `switchCamera` as needed) |
+
+Atomic write: pose + settings commit cùng version/schema; corrupt → clear pose
+portion và/hoặc fallback defaults (**FEAT-012** E1/E2).
+
+**Pros:** đúng scope FEAT-012; không contract mới; không account sync.
+**Cons:** cần managed local copy khi `skeletonPath` là data URI lớn — copy vào
+app-managed file trước persist (**Inferred** từ BR-PREPREF-001).
+
+### C — Account / history sync
+
+Cloud hoặc account-backed history cho poses và settings.
+
+**Rejected:** explicit out-of-scope FEAT-012 FR-006; không dependency mới.
 
 ## Recommended invariants
 
-- One active reference or none; selecting a new pose replaces the previous one.
-- The active reference survives app termination/relaunch until replaced or
-  cleared. Clear removes persisted selection/cache only, never the source pose.
-- Source-qualified identity prevents local/community ID collision and prohibits
-  community deletion through the personal path.
-- The existing transparent pose image is downloaded/read, decoded, placed in the
-  managed cache, and durably committed before Camera navigation. Any failure
-  leaves the user on detail with a recoverable error rather than showing the
-  wrong overlay.
-- Overlay rendering is visual-only and must not block preview gestures, shutter,
-  lifecycle, or offline capture.
-- Clear/toggle affects the overlay, not the underlying pose record.
-- Remote URLs are not assumed permanently available or usable during relaunch.
-- Camera renders at 50% default opacity. Toggle and clear use the approved
-  prototype placement/presentation; overlay layout follows viewport orientation
-  and preserves aspect ratio without intercepting preview or shutter input.
+1. **Transport:** `PreparedPoseReference` remains the handoff type; relaunch
+   rehydrates into `PoseServiceLocator.preparedReference` (or equivalent single
+   reader) — **không** introduce `ActivePoseReference`.
+2. **Settings independence:** restore settings even when pose portion missing/
+   invalid.
+3. **Replace:** new Try Pose overwrites pose snapshot only; settings preserved.
+4. **Clear:** removes pose snapshot/overlay only; settings and source Pose record
+   untouched; no save/publish.
+5. **Transient exclusion:** permission, capture phase, flash animation, popup open
+   state — không persist.
+6. **frameRatio:** explicit out-of-scope until user-facing control approved
+   (FEAT-012 BR-004).
+7. **Capture:** `CameraCoordinator`, shutter, persistence pipeline — no semantic
+   change; overlay remains visual-only.
 
-## Approved Maintainer choices
+## Out of scope
 
-1. **Lifetime:** persist across app termination and relaunch until replaced or
-   cleared; test this as a named FEAT-003 acceptance scenario.
-2. **Render payload:** use the existing transparent pose image, not a fabricated
-   vector/joint skeleton model.
-3. **Community preparation:** download and decode successfully, then cache and
-   commit, before navigating to Camera. Failure remains on detail with recovery.
-4. **Overlay controls:** default opacity is 50%; toggle/clear placement and visual
-   presentation follow the approved prototype, while documented behavior remains
-   authoritative. Rotation follows viewport orientation, preserves aspect ratio,
-   and does not alter Camera controls or capture.
+- New runtime model or third-party dependency for persistence (unless WI-02 proves
+  existing stack insufficient — must cite path).
+- Account sync, multi-device history.
+- Auto-save / publish / ownership side effects on clear or restore.
+- Re-implementing overlay rendering (already **Observed** on `main`).
 
-The Camera Plan deliberately excludes selected-pose overlay behavior, so this
-Plan owns integration without silently rewriting Camera capture contracts.
+## Affected symbols (current evidence)
+
+| Symbol / area | Path | Role |
+| --- | --- | --- |
+| `CameraUiState` | `CameraState.kt:14-27` | Settings restore target |
+| `CameraZoomUiState` | `CameraLayoutModel.kt:14-25` | Zoom restore |
+| `CameraScreen` init + controls | `CameraScreen.kt:104-124`, `134-168`, `248-287`, `310-381` | Wire restore + persist hooks |
+| `CameraFacing`, `FlashMode` | `CameraContract.kt:13-22` | Enum values |
+| `PreparedPoseReference` | `PreparedPoseReference.kt:25-29` | Rehydrate transport |
+| `PoseServiceLocator` | `PoseServiceLocator.kt:12-21` | Session holder |
+| `createTryPoseCameraHandoffAction` | `Navigation.kt:285-291` | Select/replace entry |
+| `PoseDetailScreen.tryPose` | `PoseDetailScreen.kt:317-351` | Verify before emit |
