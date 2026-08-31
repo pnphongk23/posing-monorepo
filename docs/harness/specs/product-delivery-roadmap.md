@@ -30,6 +30,7 @@ relationships:
     - "[[FEAT-007-operate-pose-content-from-admin-web|FEAT-007]]"
     - "[[FEAT-008-use-published-poses|FEAT-008]]"
     - "[[FEAT-009-configure-extraction-provider|FEAT-009]]"
+    - "[[FEAT-013-saved-poses-albums-account-backed|FEAT-013]]"
   source_paths: []
 type: spec
 status: active
@@ -188,12 +189,18 @@ cần**; không biến capability đã ship thành pending.
 
 ### P2 — Saved Poses & Albums
 
-**Mục tiêu:** account-based Save → Album → Try Pose reuse.
+**Mục tiêu:** Account-based Saved Poses v1: Save → Saved list → Try Pose reuse.
+Albums là future boundary, chưa có trong v1; một pose có thể thuộc nhiều Album
+khi Albums được mở trong một Feature/Plan tương lai.
 
 - Thứ tự: Account infrastructure → Saved Poses → Albums (không local-first).
-- Auth method (Sign in with Apple gợi ý): **chưa chốt**.
-- Feature: [[FEAT-008-use-published-poses|FEAT-008]].
-- Backend/web chỉ khi phục vụ Account hoặc Saved/Album.
+- Auth: Google via Supabase cho auth và Account/session; quyết định này đã frozen.
+- Current Feature: [[FEAT-013-saved-poses-albums-account-backed|FEAT-013]];
+  [[FEAT-008-use-published-poses|FEAT-008]] là predecessor/boundary cho published
+  pose và Try Pose flow hiện hữu.
+- Trong Saved Poses flow, Guest chưa có signed-in Account bắt buộc sign-in và
+  không được Try Pose.
+- V1 chỉ phục vụ Account/Saved; backend/web chỉ khi phục vụ Account hoặc Saved.
 
 ### P2 — Personal extraction UX
 
@@ -218,7 +225,7 @@ Poses được chốt.
 | Android parity | out of scope — chưa mở quyết định |
 | Social feed / collaborative publishing | out of scope |
 | Color filters / presets v1 | chưa chốt |
-| Auth method / guidance language | chưa chốt khi tới Saved Poses |
+| Auth method | Google via Supabase — frozen cho Saved Poses v1 |
 | FEAT-011 IAP | chờ approve — không mở ngầm |
 
 ## Nguyên tắc
