@@ -25,7 +25,7 @@ relationships:
   decisions: []
   plans: []
   reports:
-    - "[[REP-012-backlog-lane-documentation-survey|REP-012]]"
+    - "REP-012 (survey evidence xem docs/harness/specs hoặc plans/)"
   rules: []
   features:
     - "[[FEAT-012-restore-pose-and-camera-settings-across-relaunch|FEAT-012]]"
