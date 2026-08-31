@@ -1,0 +1,44 @@
+/* Feature prototype additions. All values stay on the canonical token layer. */
+.nb-saved-banner {
+  background: var(--nb-color-accent-yellow);
+  border: var(--nb-border-thin);
+  border-radius: var(--nb-radius-small);
+  padding: var(--nb-space-sm) var(--nb-space-compact);
+  margin-bottom: var(--nb-space-md);
+  font-size: var(--nb-font-size-sm);
+  line-height: var(--nb-line-height-normal);
+}
+
+.nb-saved-card {
+  position: relative;
+}
+
+.nb-saved-card__badge {
+  position: absolute;
+  top: var(--nb-space-sm);
+  right: var(--nb-space-sm);
+  width: var(--nb-touch-min);
+  height: var(--nb-touch-min);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--nb-color-dark);
+  background: var(--nb-color-accent-pink);
+  border: var(--nb-border-thin);
+  border-radius: var(--nb-radius-small);
+}
+
+.nb-saved-card__badge svg { width: 18px; height: 18px; fill: currentColor; }
+.nb-saved-end { margin: 0 0 var(--nb-space-md); }
+.nb-saved-end .nb-btn { margin-top: var(--nb-space-xs); }
+.nb-saved-actions { align-items: stretch; }
+.nb-saved-bookmark.is-confirmed { background: var(--nb-color-accent-pink); }
+.nb-saved-bookmark svg { width: 18px; height: 18px; }
+.nb-saved-readonly { opacity: .62; cursor: not-allowed; }
+.nb-prompt-context { opacity: .72; }
+.nb-modal__close { margin-left: auto; display: block; }
+.nb-auth-success { text-align: center; }
+
+@media (prefers-reduced-motion: reduce) {
+  .nb-saved-card, .nb-saved-bookmark { transition: none; }
+}

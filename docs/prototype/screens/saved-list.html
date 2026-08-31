@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Saved Poses - Snap Pose</title>
+  <link rel="stylesheet" href="../styles/reset.css"><link rel="stylesheet" href="../styles/base.css">
+  <link rel="stylesheet" href="../styles/utilities.css"><link rel="stylesheet" href="../styles/components.css">
+  <link rel="stylesheet" href="../styles/saved-poses.css">
+</head>
+<body><div class="nb-phone">
+  <div class="nb-phone__header"><span class="nb-phone__time">9:41</span><div class="nb-phone__status-icons"><span aria-hidden="true">▰</span><span aria-hidden="true">▮</span><span aria-hidden="true">▰</span></div></div>
+  <main class="nb-phone__content" id="saved-list-screen">
+    <header class="nb-nav-bar"><div class="nb-nav-bar__left"><a href="poses-list.html" class="nb-btn nb-btn--square nb-btn--white" aria-label="Back to poses"><svg aria-hidden="true"><use href="#icon-back"></use></svg></a></div><h1 class="nb-nav-bar__title nb-nav-bar__title--page">Saved</h1><div class="nb-nav-bar__right"><button id="saved-refresh" class="nb-btn nb-btn--square nb-btn--white" aria-label="Refresh saved poses"><svg aria-hidden="true"><use href="#icon-flip"></use></svg></button></div></header>
+    <div id="saved-offline-banner" class="nb-saved-banner" role="status" hidden>Offline · showing saved poses from last confirmed read.</div>
+    <div class="nb-grid-group-title nb-grid-group-title--count-only" style="margin-top:0"><span id="saved-count" class="nb-grid-group-count">Page 1 · limit 20 · total 0</span></div>
+    <div id="saved-state" class="nb-state-message" role="status" aria-live="polite" hidden></div>
+    <div class="nb-grid-scroll-area"><div id="saved-grid" class="nb-grid--masonry" aria-label="Saved poses"></div><div id="saved-end" class="nb-saved-end" aria-live="polite"></div></div>
+  </main>
+  <div class="nb-phone__footer"><div class="nb-phone__home-indicator"></div></div>
+</div>
+<script src="../scripts/icons.js"></script><script src="../scripts/fixtures.js"></script><script src="../scripts/modal.js"></script><script src="../scripts/button-press.js"></script><script src="../scripts/app.js"></script><script src="../scripts/saved-list.js"></script>
+</body></html>
