@@ -217,7 +217,11 @@ function getPoseSourceLabel(pose) {
 }
 
 function getPoseRoute(pose) {
-  return `pose-detail.html?source=${encodeURIComponent(pose.category)}&id=${encodeURIComponent(pose.id)}`;
+  const source = encodeURIComponent(pose.category);
+  const id = encodeURIComponent(pose.id);
+  return pose.category === "community"
+    ? `pose-detail-saved.html?state=unsaved&source=${source}&id=${id}`
+    : `pose-detail.html?source=${source}&id=${id}`;
 }
 
 function getPrototypeState() {

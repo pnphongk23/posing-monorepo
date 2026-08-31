@@ -17,8 +17,8 @@
   position: absolute;
   top: var(--nb-space-sm);
   right: var(--nb-space-sm);
-  width: var(--nb-touch-min);
-  height: var(--nb-touch-min);
+  width: 24px;
+  height: 24px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -37,7 +37,6 @@
 .nb-saved-readonly { opacity: .62; cursor: not-allowed; }
 .nb-prompt-context { opacity: .72; }
 .nb-modal__close { margin-left: auto; display: block; }
-.nb-auth-success { text-align: center; }
 
 @media (prefers-reduced-motion: reduce) {
   .nb-saved-card, .nb-saved-bookmark { transition: none; }
