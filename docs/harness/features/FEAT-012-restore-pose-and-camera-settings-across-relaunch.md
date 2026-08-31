@@ -11,7 +11,7 @@ relationships:
     - "[[260831-0000-feat-012-relaunch-restore/plan|260831-0000 current governing plan]]"
     - "[[260809-2241-selected-pose-camera-handoff/plan|260809-2241 historical superseded plan]]"
   reports:
-    - "REP-012 (survey evidence xem docs/harness/specs hoặc plans/)"
+    []
   rules: []
   features:
     - "[[FEAT-008-use-published-poses|FEAT-008]]"
