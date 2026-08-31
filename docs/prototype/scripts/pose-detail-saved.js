@@ -1,13 +1,24 @@
 (function () {
   document.addEventListener('DOMContentLoaded', function () {
     const proto = window.PosePrototype, params = new URLSearchParams(location.search), state = params.get('state') || 'saved';
-    const pose = proto && proto.getPoseByReference(params.get('id') || 'dancing', 'community');
+    const source = params.get('source') || 'saved', origin = params.get('origin') || source;
+    const pose = proto && proto.getPoseByReference(params.get('id') || 'dancing', source === 'saved' ? 'community' : source);
     const content = document.getElementById('saved-detail-content'), unavailable = document.getElementById('saved-detail-state');
     const toggle = document.getElementById('saved-toggle'), tryBtn = document.getElementById('saved-try'), live = document.getElementById('saved-detail-live');
     const esc = proto ? proto.escapeHtml : String;
-    function unavailableState() { content.hidden = true; unavailable.innerHTML = '<strong>Pose unavailable</strong><p>Pose này đã xoá hoặc đã ẩn.</p><button class="nb-btn nb-btn--pink nb-saved-readonly" type="button" disabled>Try Pose</button><button class="nb-btn nb-btn--white" type="button" id="detail-unavailable-back">Back to Saved</button>'; unavailable.hidden = false; document.getElementById('saved-detail-title').textContent = 'Unavailable'; document.getElementById('detail-unavailable-back').onclick = () => location.href = 'saved-list.html'; }
+    const back = document.getElementById('detail-back'), sourceBadge = document.getElementById('saved-detail-source'), context = document.getElementById('saved-detail-context');
+    const backDestination = origin === 'saved' || source === 'saved'
+        ? { href: 'saved-list.html', label: 'Back to Saved' }
+        : origin === 'search'
+          ? { href: 'search.html' + (params.get('q') ? '?q=' + encodeURIComponent(params.get('q')) : ''), label: 'Back to Search' }
+          : { href: 'poses-list.html?tab=community', label: 'Back to Community' };
+    if (back) { back.href = backDestination.href; back.setAttribute('aria-label', backDestination.label); }
+    function unavailableState() { content.hidden = true; unavailable.innerHTML = '<strong>Pose unavailable</strong><p>Pose này đã xoá hoặc đã ẩn.</p><button class="nb-btn nb-btn--pink nb-saved-readonly" type="button" disabled>Try Pose</button><button class="nb-btn nb-btn--white" type="button" id="detail-unavailable-back">' + backDestination.label + '</button>'; unavailable.hidden = false; document.getElementById('saved-detail-title').textContent = 'Unavailable'; document.getElementById('detail-unavailable-back').onclick = () => location.href = backDestination.href; }
     if (state === 'unavailable' || !pose) { unavailableState(); return; }
     document.getElementById('saved-detail-title').textContent = pose.title; document.getElementById('saved-detail-name').textContent = pose.title; document.getElementById('saved-detail-art').innerHTML = pose.svg;
+    const isSavedContext = origin === 'saved' || source === 'saved';
+    sourceBadge.textContent = isSavedContext ? 'Saved' : 'Community';
+    context.textContent = isSavedContext ? 'Saved · Community' : 'Published · Community';
     const meta = pose.metadata || {}; document.getElementById('saved-detail-meta').innerHTML = ['Author: ' + meta.author, 'Difficulty: ' + meta.difficulty, 'Saves: ' + meta.saves].filter(v => !v.endsWith('null')).map(v => '<span class="nb-tag nb-tag--pill" role="listitem">' + esc(v) + '</span>').join('');
     let saved = state !== 'unsaved' && state !== 'pending-save'; const readonly = state === 'offline';
     if (readonly) { document.getElementById('saved-detail-offline').hidden = false; toggle.disabled = true; tryBtn.disabled = true; toggle.classList.add('nb-saved-readonly'); }
