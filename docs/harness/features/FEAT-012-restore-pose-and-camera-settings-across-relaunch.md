@@ -11,7 +11,7 @@ relationships:
     - "[[260831-0000-feat-012-relaunch-restore/plan|260831-0000 current governing plan]]"
     - "[[260809-2241-selected-pose-camera-handoff/plan|260809-2241 historical superseded plan]]"
   reports:
-    - "[[REP-012-backlog-lane-documentation-survey|REP-012]]"
+    - "REP-012 (survey evidence xem docs/harness/specs hoặc plans/)"
   rules: []
   features:
     - "[[FEAT-008-use-published-poses|FEAT-008]]"
@@ -229,5 +229,5 @@ Then không còn overlay; flash vẫn ON; pose nguồn không bị save/publish.
 - Specs: [[technical-architecture]], [[ui-ux-system]], [[product-feature-inventory]]
 - Data contract: `docs/spec/data/entities/prepared-pose-reference.md` (transport;
   BR-PREPREF-002 sẽ cần align khi durable restore ship)
-- Survey evidence: [[REP-012-backlog-lane-documentation-survey|REP-012]] BL-GAP-01
+- Survey evidence: REP-012 BL-GAP-01
 - Source paths: listed in frontmatter `source_paths`
