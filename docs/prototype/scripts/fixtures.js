@@ -216,11 +216,11 @@ function getPoseSourceLabel(pose) {
   return pose.category === "community" ? "Community" : "My Pose";
 }
 
-function getPoseRoute(pose) {
+function getPoseRoute(pose, origin) {
   const source = encodeURIComponent(pose.category);
   const id = encodeURIComponent(pose.id);
   return pose.category === "community"
-    ? `pose-detail-saved.html?state=unsaved&source=${source}&id=${id}`
+    ? `pose-detail-saved.html?state=unsaved&source=${source}&origin=${encodeURIComponent(origin || "community")}&id=${id}`
     : `pose-detail.html?source=${source}&id=${id}`;
 }
 

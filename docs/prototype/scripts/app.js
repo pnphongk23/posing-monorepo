@@ -28,13 +28,13 @@ document.addEventListener('DOMContentLoaded', function() {
   const escapeHtml = posePrototype ? posePrototype.escapeHtml : value => String(value);
   const poseSourceLabel = posePrototype ? posePrototype.getPoseSourceLabel : pose => pose.category;
 
-  function createPoseCard(pose, index) {
+  function createPoseCard(pose, index, origin) {
     const item = document.createElement('div');
     item.className = 'nb-grid-pose-item';
 
     const aspectClasses = ['nb-card--aspect-tall', 'nb-card--aspect-short', 'nb-card--aspect-square'];
     const aspectClass = aspectClasses[index % aspectClasses.length];
-    const route = posePrototype ? posePrototype.getPoseRoute(pose) : `pose-detail.html?id=${encodeURIComponent(pose.id)}`;
+    const route = posePrototype ? posePrototype.getPoseRoute(pose, origin) : `pose-detail.html?id=${encodeURIComponent(pose.id)}`;
 
     item.innerHTML = `
       <a href="${route}" class="nb-card nb-card--pose-grid ${aspectClass} u-w-full" aria-label="${escapeHtml(pose.title)}" style="text-decoration: none; color: inherit;">
@@ -99,7 +99,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function renderPoseCards(poses) {
       posesGrid.innerHTML = '';
-      poses.forEach((pose, index) => posesGrid.appendChild(createPoseCard(pose, index)));
+      poses.forEach((pose, index) => posesGrid.appendChild(createPoseCard(pose, index, currentCategory === 'community' ? 'community' : 'personal')));
       posesGrid.hidden = false;
       posesGrid.removeAttribute('aria-busy');
       if (posesCountLabel) posesCountLabel.textContent = `${poses.length} ${poses.length === 1 ? 'pose' : 'poses'}`;
@@ -521,7 +521,16 @@ document.addEventListener('DOMContentLoaded', function() {
         return;
       }
 
-      filtered.forEach((pose, index) => searchResultsGrid.appendChild(createPoseCard(pose, index)));
+      filtered.forEach((pose, index) => {
+        const card = createPoseCard(pose, index, 'search');
+        if (pose.category === 'community' && searchQuery.trim()) {
+          const link = card.querySelector('a');
+          const route = new URL(link.href, window.location.href);
+          route.searchParams.set('q', searchQuery.trim());
+          link.href = route.href;
+        }
+        searchResultsGrid.appendChild(card);
+      });
       clearStateMessage(searchStateMessage);
     }
 
