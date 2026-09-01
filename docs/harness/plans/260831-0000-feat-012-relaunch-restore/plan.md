@@ -1,10 +1,11 @@
 ---
 title: FEAT-012 Relaunch Restore
 description: "Kế hoạch docs-only cho FEAT-012: khôi phục pose identity và đúng tám nhóm Camera settings sau cold relaunch, dùng lại contract và persistence hiện có."
-status: pending
+status: completed
 approval:
-  status: pending
+  status: approved
   required_by: Repository Maintainer
+  decided: 2026-09-01
 priority: P1
 effort: M
 branch: codex/feat-012-relaunch-restore
@@ -23,7 +24,8 @@ relationships:
     - "[[product-feature-inventory]]"
   decisions: []
   plans: []
-  reports: []
+  reports:
+    - "[[REP-012-feat-012-relaunch-restore-delivery|REP-012]]"
   rules: []
   features:
     - "[[FEAT-012-restore-pose-and-camera-settings-across-relaunch|FEAT-012]]"
@@ -85,6 +87,6 @@ Dependencies chỉ gồm các flow/model và persistence layer đã có trong mo
 
 ## Verification
 
-- Plan status là `pending`; approval vẫn `pending` và `required_by: Repository Maintainer`. Plan này chưa được formal approve.
+- Plan status là `in_progress`; approval là `approved`, `decided: 2026-09-01`, `required_by: Repository Maintainer`.
 - Chạy targeted `ckh validate` cho plan root và từng Work Item; `ckh workflow status/check` cho Feature, plan cũ và plan mới.
 - WI-04 ghi verification ledger với snapshot round-trip/corrupt, select/replace/clear, cold relaunch valid/no-pose/invalid, capture regression, và real-iPhone evidence. Unresolved item phải ghi blocker thay vì claim Verified.

@@ -1,7 +1,7 @@
 ---
 work_item: 3
 title: Integrate select replace clear and relaunch behavior
-status: pending
+status: completed
 priority: P2
 effort: TBD
 dependencies:

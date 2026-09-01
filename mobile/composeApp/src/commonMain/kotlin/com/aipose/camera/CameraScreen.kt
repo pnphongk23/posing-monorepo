@@ -102,8 +102,9 @@ fun CameraScreen(
     // capture/persistence behavior behind explicit ports (WI-02).
     val cameraController = remember { CameraController() }
     val database = remember { DatabaseProvider.getOrCreate(DatabaseDriverFactory()) }
-    val photoRepository = remember { PhotoRepository(database) }
-    val imageStorage = remember { ImageStorage() }
+      val photoRepository = remember { PhotoRepository(database) }
+      val imageStorage = remember { ImageStorage() }
+      val snapshotRepository = remember { CameraSnapshotRepository(database) }
 
     val coordinator = remember {
         CameraCoordinator(
@@ -116,23 +117,22 @@ fun CameraScreen(
     }
     val coordState by coordinator.state.collectAsState()
 
-    val preparedReference = PoseServiceLocator.preparedReference
-    var uiState by remember(preparedReference) {
-        mutableStateOf(
-            CameraUiState(
-                permissionState = coordState.permission,
-                overlaySource = preparedReference?.let {
-                    OverlaySourceState.PoseImage(it.poseId, it.skeletonPath)
-                } ?: OverlaySourceState.None,
-            )
-        )
-    }
-    var zoomUiState by remember {
-        mutableStateOf(CameraZoomUiState())
-    }
+      val restoredSnapshot = remember { snapshotRepository.load() }
+      val restoredReference = remember(restoredSnapshot.pose) {
+          restoredSnapshot.pose?.toPreparedPoseReferenceIfVerified()
+      }
+      var activeReference by remember {
+          mutableStateOf(PoseServiceLocator.preparedReference ?: restoredReference)
+      }
+      var uiState by remember(restoredSnapshot.settings) {
+          mutableStateOf(restoredSnapshot.settings.toCameraUiState(coordState.permission, activeReference))
+      }
+      var zoomUiState by remember {
+          mutableStateOf(CameraZoomUiState(zoomValue = restoredSnapshot.settings.zoom))
+      }
     var flashVisible by remember { mutableStateOf(false) }
 
-    val poseOverlay = uiState.overlaySource as? OverlaySourceState.PoseImage
+      val poseOverlay = uiState.overlaySource as? OverlaySourceState.PoseImage
     val guideAsset = poseOverlay?.let { guide ->
         remember(guide.skeletonPath) { cameraGuideAsset(guide.skeletonPath) }
     }
@@ -169,18 +169,34 @@ fun CameraScreen(
         uiState = uiState.copy(frameRatio = ratio, isMoreMenuVisible = false)
     }
 
-    fun flipCamera() {
+      fun flipCamera() {
         cameraController.switchCamera()
         uiState = uiState.copy(
             cameraFacing = if (uiState.cameraFacing == CameraFacing.BACK) CameraFacing.FRONT else CameraFacing.BACK,
         )
-    }
+      }
 
-    LaunchedEffect(Unit) {
-        coordinator.onLaunch()
-        coordinator.refreshLatestThumbnail()
-        cameraController.setFlashMode(FlashMode.OFF)
-    }
+      fun clearPose() {
+            snapshotRepository.clearPose()
+            PoseServiceLocator.preparedReference = null
+            activeReference = null
+            uiState = uiState.withoutPose()
+        }
+
+      LaunchedEffect(Unit) {
+          coordinator.onLaunch()
+          coordinator.refreshLatestThumbnail()
+          cameraController.setFlashMode(uiState.flashMode)
+          cameraController.setGridVisible(uiState.isGridVisible)
+          cameraController.setZoomFactor(zoomUiState.zoomValue)
+      }
+
+      LaunchedEffect(uiState, zoomUiState.zoomValue, activeReference) {
+          snapshotRepository.save(
+              settings = uiState.toPersistedCameraSettings(zoomUiState.zoomValue),
+              pose = activeReference?.toPersistedPoseIdentity(),
+          )
+      }
 
     // Start the native preview after permission is authorized, including the
     // initial authorized-entry and the completion of a permission request.
@@ -274,7 +290,7 @@ fun CameraScreen(
                         is CameraGuideAsset.LocalFile -> guideAsset.path
                         is CameraGuideAsset.Invalid -> null
                     },
-                    contentDescription = "Pose guide: ${preparedReference?.poseName ?: "selected pose"}",
+              contentDescription = "Pose guide: ${activeReference?.poseName ?: "selected pose"}",
                     contentScale = ContentScale.Fit,
                     colorFilter = uiState.poseLineColor.toColorFilter(),
                     modifier = Modifier
@@ -346,7 +362,8 @@ fun CameraScreen(
                                 toggleGrid()
                                 uiState = uiState.copy(isMoreMenuVisible = false)
                             },
-                            onTogglePoseGuide = { uiState = uiState.copy(isOverlayVisible = !uiState.isOverlayVisible) },
+                              onTogglePoseGuide = { uiState = uiState.copy(isOverlayVisible = !uiState.isOverlayVisible) },
+                              onClearPose = ::clearPose,
                             onOpacityChanged = { uiState = uiState.copy(overlayOpacity = it) },
                             poseLineColor = uiState.poseLineColor,
                             onColorChanged = { uiState = uiState.copy(poseLineColor = it) },
@@ -804,6 +821,7 @@ private fun CameraMorePopup(
     onFlashSelected: (FlashMode) -> Unit,
     onToggleGrid: () -> Unit,
     onTogglePoseGuide: () -> Unit,
+    onClearPose: () -> Unit,
     onOpacityChanged: (Float) -> Unit,
     poseLineColor: PoseLineColor,
     onColorChanged: (PoseLineColor) -> Unit,
@@ -894,6 +912,16 @@ private fun CameraMorePopup(
                     contentDescription = "Pose guide opacity ${(uiState.overlayOpacity * 100).roundToInt()} percent"
                 },
             )
+            NeoBrutalismContainer(
+                modifier = Modifier.fillMaxWidth().height(44.dp),
+                shape = RoundedCornerShape(10.dp),
+                backgroundColor = AiPoseColors.Surface,
+                shadowColor = AiPoseColors.Surface,
+                shadowOffset = 2.dp,
+                onClick = onClearPose,
+            ) {
+                Text("Clear pose", color = AiPoseColors.Foreground, fontSize = 13.sp)
+            }
             Text("Line color", color = AiPoseColors.Surface, fontSize = 12.sp)
             Row(
                 modifier = Modifier.fillMaxWidth(),

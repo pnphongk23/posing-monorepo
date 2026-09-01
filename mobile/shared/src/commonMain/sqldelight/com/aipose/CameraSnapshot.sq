@@ -1,0 +1,22 @@
+-- FEAT-012: one device-local camera restore snapshot.
+-- The singleton row deliberately has no foreign key: pose validity is checked
+-- by the restore consumer before the transport is rehydrated.
+CREATE TABLE CameraSnapshot (
+    id INTEGER NOT NULL PRIMARY KEY CHECK (id = 1),
+    schemaVersion INTEGER NOT NULL,
+    settings_json TEXT NOT NULL,
+    pose_json TEXT
+);
+
+getSnapshot:
+SELECT * FROM CameraSnapshot WHERE id = 1;
+
+upsertSnapshot:
+INSERT OR REPLACE INTO CameraSnapshot(id, schemaVersion, settings_json, pose_json)
+VALUES (1, ?, ?, ?);
+
+updatePose:
+UPDATE CameraSnapshot SET pose_json = ? WHERE id = 1;
+
+clearPose:
+UPDATE CameraSnapshot SET pose_json = NULL WHERE id = 1;

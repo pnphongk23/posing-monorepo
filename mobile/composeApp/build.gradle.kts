@@ -1,6 +1,7 @@
 // composeApp/build.gradle.kts
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
+    kotlin("plugin.serialization") version "2.0.0"
     alias(libs.plugins.compose)
     alias(libs.plugins.compose.compiler)
     id("org.jetbrains.kotlin.native.cocoapods")
@@ -69,6 +70,11 @@ kotlin {
                 implementation(kotlin("test"))
                 implementation(libs.coroutines.test)
                 implementation(libs.ktor.client.mock)
+            }
+        }
+        val iosSimulatorArm64Test by getting {
+            dependencies {
+                implementation(libs.sqldelight.native)
             }
         }
         all {

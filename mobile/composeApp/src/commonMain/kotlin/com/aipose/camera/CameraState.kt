@@ -26,6 +26,9 @@ data class CameraUiState(
     val overlaySource: OverlaySourceState = OverlaySourceState.None,
 )
 
+/** Clears only the selected pose/overlay; all current camera settings remain unchanged. */
+fun CameraUiState.withoutPose(): CameraUiState = copy(overlaySource = OverlaySourceState.None)
+
 enum class PoseLineColor { White, Black }
 
 sealed interface OverlaySourceState {
