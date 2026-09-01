@@ -42,7 +42,6 @@
   font-size: var(--nb-font-size-sm);
   line-height: var(--nb-line-height-tight);
   letter-spacing: var(--nb-tracking-label);
-  text-transform: uppercase;
   padding: var(--nb-space-sm) var(--nb-space-xs) 12px;
   background-color: transparent;
   border: 0;

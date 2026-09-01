@@ -9,7 +9,6 @@
   font-size: var(--nb-font-size-base);
   line-height: var(--nb-line-height-tight);
   letter-spacing: var(--nb-tracking-label);
-  text-transform: uppercase;
   text-align: center;
   color: var(--nb-color-dark);
   background-color: var(--nb-color-white);

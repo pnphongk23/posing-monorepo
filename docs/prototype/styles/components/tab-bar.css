@@ -42,7 +42,6 @@
   font-weight: var(--nb-font-weight-bold);
   line-height: var(--nb-line-height-tight);
   letter-spacing: var(--nb-tracking-wide);
-  text-transform: uppercase;
   border-radius: 20px;
   transition: color var(--nb-transition-fast), background-color var(--nb-transition-fast), transform var(--nb-transition-fast);
 }

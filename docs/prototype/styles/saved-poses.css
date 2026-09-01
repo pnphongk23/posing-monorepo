@@ -9,6 +9,54 @@
   line-height: var(--nb-line-height-normal);
 }
 
+#saved-scroll-area {
+  position: relative;
+  overscroll-behavior-y: contain;
+}
+
+.nb-pull-to-refresh {
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: var(--nb-z-index-base);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--nb-space-xs);
+  height: 32px;
+  color: var(--nb-color-gray);
+  background: var(--nb-color-bg);
+  font-size: var(--nb-font-size-xs);
+  font-weight: var(--nb-font-weight-semibold);
+  letter-spacing: var(--nb-tracking-label);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(calc(-100% + var(--nb-pull-offset, 0px)));
+  transition: transform var(--nb-transition-fast), opacity var(--nb-transition-fast);
+}
+
+.nb-pull-to-refresh.is-pulling,
+.nb-pull-to-refresh.is-refreshing {
+  opacity: 1;
+}
+
+.nb-pull-to-refresh svg {
+  width: 16px;
+  height: 16px;
+}
+
+#saved-grid {
+  transform: translateY(var(--nb-pull-content-offset, 0px));
+  transition: transform var(--nb-transition-fast);
+}
+
+#saved-scroll-area.is-refreshing .nb-pull-to-refresh svg {
+  animation: nb-saved-pull-spin 0.8s linear infinite;
+}
+
+@keyframes nb-saved-pull-spin {
+  to { transform: rotate(360deg); }
+}
+
 .nb-saved-card {
   position: relative;
 }
@@ -36,7 +84,43 @@
 .nb-saved-bookmark svg { width: 18px; height: 18px; }
 .nb-saved-readonly { opacity: .62; cursor: not-allowed; }
 .nb-prompt-context { opacity: .72; }
-.nb-modal__close { margin-left: auto; display: block; }
+#sign-in-modal .nb-modal {
+  display: flex;
+  flex-direction: column;
+  gap: var(--nb-space-sm);
+}
+
+#sign-in-modal #sign-in-title {
+  line-height: var(--nb-line-height-tight);
+  text-wrap: balance;
+}
+
+#sign-in-modal #sign-in-copy {
+  max-width: 30ch;
+  font-size: var(--nb-font-size-base);
+  line-height: var(--nb-line-height-normal);
+  color: var(--nb-color-dark);
+}
+
+#sign-in-modal .nb-modal__actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--nb-space-sm);
+  margin-top: var(--nb-space-sm);
+  width: 100%;
+}
+
+#sign-in-modal .nb-btn {
+  font-weight: var(--nb-font-weight-semibold);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+#sign-in-modal .nb-modal__actions .nb-btn {
+  min-height: 48px;
+  padding: var(--nb-space-sm) var(--nb-space-md);
+  line-height: var(--nb-line-height-snug);
+}
 
 @media (prefers-reduced-motion: reduce) {
   .nb-saved-card, .nb-saved-bookmark { transition: none; }

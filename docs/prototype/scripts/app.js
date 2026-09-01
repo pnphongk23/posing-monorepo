@@ -32,7 +32,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const item = document.createElement('div');
     item.className = 'nb-grid-pose-item';
 
-    const aspectClasses = ['nb-card--aspect-tall', 'nb-card--aspect-short', 'nb-card--aspect-square'];
+    const aspectClasses = ['nb-card--aspect-tall', 'nb-card--aspect-square', 'nb-card--aspect-short'];
     const aspectClass = aspectClasses[index % aspectClasses.length];
     const route = posePrototype ? posePrototype.getPoseRoute(pose, origin) : `pose-detail.html?id=${encodeURIComponent(pose.id)}`;
 
