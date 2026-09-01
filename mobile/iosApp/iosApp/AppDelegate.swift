@@ -21,6 +21,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         // supplied out of band and git-ignored; a missing or placeholder-shaped
         // plist is skipped so the app boots without Firebase.
         tryConfigureFirebase()
+        RevenueCatAdapter.shared.configureFromEnvironment()
 
         // FEAT-010 / DEC-006: resolve the api_baseurl endpoint (cache/fetch/
         // default) and apply it to both Kotlin holders BEFORE the Compose root

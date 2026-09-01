@@ -11,6 +11,7 @@
 		56B0305B5D3847FC6B326502 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE8509E5A49E4A5CAAEB3ADB /* ContentView.swift */; };
 		7A8E9D4C1B2F3A4E5D6C7B8A /* CameraViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F0E1D2C3B4A596877665544 /* CameraViewController.swift */; };
 		8EAF3A1C7D5B4920B6C8D2F4 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 5D7E9A2C4B6F8193A5C7E1D2 /* LaunchScreen.storyboard */; };
+		C9D8E7F6A5B40312CDEF5678 /* RevenueCatAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1E2F3A4B5C60718D9E0F1A2 /* RevenueCatAdapter.swift */; };
 		D544844FF7D7B435767CC2F9 /* Pods_iosApp.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2B87F4CC2F7CE1D496B801E0 /* Pods_iosApp.framework */; };
 		FDE52B8D57A097A60A4CF366 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B6C1F485E0CF8BB70C9DDD2 /* AppDelegate.swift */; };
 /* End PBXBuildFile section */
@@ -25,6 +26,7 @@
 		9F0E1D2C3B4A596877665544 /* CameraViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraViewController.swift; sourceTree = "<group>"; };
 		C117AD187833E2513BD2F553 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		CE8509E5A49E4A5CAAEB3ADB /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		D1E2F3A4B5C60718D9E0F1A2 /* RevenueCatAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RevenueCatAdapter.swift; sourceTree = "<group>"; };
 		F3F837B24609C0643A73E693 /* Pods-iosApp.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-iosApp.debug.xcconfig"; path = "Target Support Files/Pods-iosApp/Pods-iosApp.debug.xcconfig"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -44,6 +46,7 @@
 			isa = PBXGroup;
 			children = (
 				8B6C1F485E0CF8BB70C9DDD2 /* AppDelegate.swift */,
+				D1E2F3A4B5C60718D9E0F1A2 /* RevenueCatAdapter.swift */,
 				4C4C2B9D5E6F708192A3B4C5 /* Assets.xcassets */,
 				CE8509E5A49E4A5CAAEB3ADB /* ContentView.swift */,
 				9F0E1D2C3B4A596877665544 /* CameraViewController.swift */,
@@ -216,6 +219,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				FDE52B8D57A097A60A4CF366 /* AppDelegate.swift in Sources */,
+				C9D8E7F6A5B40312CDEF5678 /* RevenueCatAdapter.swift in Sources */,
 				56B0305B5D3847FC6B326502 /* ContentView.swift in Sources */,
 				7A8E9D4C1B2F3A4E5D6C7B8A /* CameraViewController.swift in Sources */,
 			);

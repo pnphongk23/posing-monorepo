@@ -28,6 +28,12 @@
 	<string>Capture photos for pose comparison.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>AI Pose needs access to save your captured poses to Photos.</string>
+	<key>RevenueCatPublicSDKKey</key>
+	<string>$(REVENUECAT_PUBLIC_SDK_KEY)</string>
+	<key>LegalTermsURL</key>
+	<string>$(LEGAL_TERMS_URL)</string>
+	<key>LegalPrivacyURL</key>
+	<string>$(LEGAL_PRIVACY_URL)</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

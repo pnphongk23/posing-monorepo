@@ -45,13 +45,14 @@ Quy ước cột Status: ✅ READY (đã có) · ⏳ PO (PO phải cấp/duyệt
 | # | Hạng mục | Giá trị | Status |
 | --- | --- | --- | --- |
 | C1 | Price (app) | **Free** — v1.0 không có IAP | ⏳ PO xác nhận |
-| C2 | Auto-renewable subscriptions | **Chưa có** — FEAT-011 & DEC-008 `proposed` (annual $39.99 etc.), paywall chưa ship | 🚫 chờ PO quyết khi deploy FEAT-011 |
-| C3 | Non-consumable / lifetime | Chưa có | 🚫 |
+| C2 | Auto-renewable subscriptions | **Chưa có** — FEAT-011/DEC-008 define annual + monthly, but IAP/paywall chưa ship | 🚫 chờ FEAT-011 deployment |
+| C3 | Non-consumable / lifetime | **Không có trong launch contract** | 🚫 |
 | C4 | Paid-access gate | N/A ở v1.0 (app free, full tính năng hiện tại) | 🚫 |
 
-> Khi FEAT-011 ship: phải tạo product IDs trong ASC trước (`premium_weekly/monthly/
-> annual/lifetime` theo DEC-008), khai IAP mục C, cập nhật App Privacy (Purchase
-> History), và copy mới đúng paywall — là **bản 1.0.x sau**, không nằm ở release này.
+> Khi FEAT-011 ship: tạo đúng hai product IDs trong ASC trước (`premium_annual` và
+> `premium_monthly`), đặt chúng trong một subscription group, không cấu hình trial
+> hoặc lifetime product, khai IAP mục C, cập nhật App Privacy (Purchase History),
+> và dùng copy đúng paywall — là **bản 1.0.x sau**, không nằm ở release này.
 
 ## D. Cấu hình liên quan từ release-prep (liên hệ, KHÔNG phải việc lane này)
 

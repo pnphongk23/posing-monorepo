@@ -20,7 +20,7 @@ Authority confirmation, and a later implementation lane.
 
 ## Context and constraints
 
-- Follow FEAT-011 and DEC-008: one `premium` entitlement; annual `$39.99 / ₫999k` is the highlighted default, monthly `$5.99 / ₫149k` is the anchor, weekly `$1.99 / ₫49k` is secondary, and lifetime `$59.99 / ₫1,499k` is the one-time alternative.
+- Follow FEAT-011 and DEC-008: one `premium` entitlement; annual `$39.99 / ₫999k` is the highlighted default and monthly `$5.99 / ₫149k` is the anchor. This prototype plan is deferred and its package context is limited to those two plans.
 - Paywall entry points are after Splash, from Capture gate, and from a Premium affordance. Gated surfaces are Community pose library/detail/Try Pose and Gallery/detail/save/share.
 - Preserve the current flow while RevenueCat is unconfigured: the prototype must label simulated purchases clearly, never grant entitlement from the unconfigured path, and keep preview surfaces available.
 - Do not edit `PosesScreen.kt` or `Navigation.kt` unless unavoidable; if either is touched, record the reason and `srcwalk assess` evidence.

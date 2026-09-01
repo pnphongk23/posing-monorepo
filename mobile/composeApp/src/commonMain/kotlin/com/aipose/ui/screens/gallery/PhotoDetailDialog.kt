@@ -31,6 +31,7 @@ import com.aipose.data.resolveImagePath
 import com.aipose.navigation.MatchedImageDestination
 import com.aipose.navigation.destinationChromeVisible
 import com.aipose.platform.saveToPhotos
+import com.aipose.platform.shareImage
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -45,12 +46,20 @@ import com.aipose.ui.components.neoBorder
 import com.aipose.ui.components.neoShadow
 import com.aipose.ui.theme.AiPoseColors
 import com.aipose.ui.theme.Spacing
+import com.aipose.purchases.PaywallScreen
+import com.aipose.purchases.PurchaseGateway
+import com.aipose.purchases.UnconfiguredPurchaseGateway
+import com.aipose.purchases.PurchaseGatewayProvider
 import kotlinx.coroutines.launch
 
 @Composable
 fun GalleryPhotoDetailScreen(
     photo: Photo,
     onBack: () -> Unit,
+    // The host must inject its platform share sheet here. The default is a
+    // deliberate no-op, never a save alias, until that external capability is wired.
+    onShare: ((Photo) -> Unit)? = null,
+    purchaseGateway: PurchaseGateway = PurchaseGatewayProvider.current,
 ) {
     val viewModel = remember { GalleryViewModel() }
     val scope = rememberCoroutineScope()
@@ -65,6 +74,11 @@ fun GalleryPhotoDetailScreen(
             val path = resolveImagePath(selected.imagePath) ?: selected.imagePath
             saveToPhotos(path, null)
         },
+        onShare = onShare ?: { selected ->
+            val path = resolveImagePath(selected.imagePath) ?: selected.imagePath
+            shareImage(path, null)
+        },
+        purchaseGateway = purchaseGateway,
     )
 }
 
@@ -75,8 +89,11 @@ fun PhotoDetailDialog(
     onDelete: suspend (Long) -> Boolean,
     onToggleFavorite: (Long) -> Unit,
     onSave: (Photo) -> Unit,
+    onShare: (Photo) -> Unit = {},
+    purchaseGateway: PurchaseGateway = PurchaseGatewayProvider.current,
 ) {
     var showDeleteConfirm by remember { mutableStateOf(false) }
+    var showPaywall by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val resolvedPath = remember(photo.imagePath) {
         resolveImagePath(photo.imagePath) ?: photo.imagePath.takeIf { it.isNotBlank() }
@@ -127,7 +144,7 @@ fun PhotoDetailDialog(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Save Button (Mapped to Share icon to match Subframe)
+                    // Save Button
                     Box(
                         modifier = Modifier
                             .size(44.dp)
@@ -135,7 +152,9 @@ fun PhotoDetailDialog(
                             .background(AiPoseColors.Background, RoundedCornerShape(10.dp))
                             .neoBorder(width = 2.dp, cornerRadius = 10.dp)
                             .clip(RoundedCornerShape(10.dp))
-                            .clickable { onSave(photo) },
+                          .clickable {
+                              if (purchaseGateway.snapshot.value.hasConfirmedPremium) onSave(photo) else showPaywall = true
+                          },
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
@@ -144,6 +163,22 @@ fun PhotoDetailDialog(
                             tint = AiPoseColors.Foreground,
                             modifier = Modifier.size(16.dp)
                         )
+                    }
+
+                    // Share Button uses the same confirmed-entitlement gate.
+                    Box(
+                        modifier = Modifier
+                            .size(44.dp)
+                            .neoShadow(offsetX = 2.dp, offsetY = 2.dp, cornerRadius = 10.dp)
+                            .background(AiPoseColors.Background, RoundedCornerShape(10.dp))
+                            .neoBorder(width = 2.dp, cornerRadius = 10.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .clickable {
+                                if (purchaseGateway.snapshot.value.hasConfirmedPremium) onShare(photo) else showPaywall = true
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Default.Share, "Share", tint = AiPoseColors.Foreground, modifier = Modifier.size(16.dp))
                     }
 
                     // Trash Button
@@ -215,7 +250,7 @@ fun PhotoDetailDialog(
     }
 
     // Delete confirmation dialog
-    if (showDeleteConfirm) {
+      if (showDeleteConfirm) {
         AlertDialog(
             onDismissRequest = { showDeleteConfirm = false },
             title = { Text("Delete Photo") },
@@ -232,7 +267,8 @@ fun PhotoDetailDialog(
                                 onDismiss()
                             } else {
                                 showDeleteConfirm = false
-                            }
+      }
+
                         }
                     }
                 ) {
@@ -244,6 +280,13 @@ fun PhotoDetailDialog(
                     Text("Cancel")
                 }
             }
+        )
+    }
+    if (showPaywall) {
+        PaywallScreen(
+            gateway = purchaseGateway,
+            onDismiss = { showPaywall = false },
+            modifier = Modifier.fillMaxSize(),
         )
     }
 }

@@ -74,14 +74,29 @@ import com.aipose.navigation.PosesTab
 import com.aipose.ui.theme.AiPoseColors
 import com.aipose.ui.theme.AiPoseTypography
 import com.aipose.ui.theme.Spacing
+import com.aipose.purchases.PaywallScreen
+import com.aipose.purchases.PurchaseGateway
+import com.aipose.purchases.PurchaseGatewayProvider
 import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
 
 @Composable
 fun CameraScreen(
     modifier: Modifier = Modifier,
+    purchaseGateway: PurchaseGateway = PurchaseGatewayProvider.current,
+    onDismiss: () -> Unit = {},
 ) {
     val tabNavigator = LocalTabNavigator.current
+    val purchaseSnapshot by purchaseGateway.snapshot.collectAsState()
+
+    if (!purchaseSnapshot.hasConfirmedPremium) {
+        PaywallScreen(
+            gateway = purchaseGateway,
+            onDismiss = onDismiss,
+            modifier = modifier,
+        )
+        return
+    }
 
     // Native/DB dependencies are assembled here once; the coordinator owns all
     // capture/persistence behavior behind explicit ports (WI-02).
@@ -291,7 +306,7 @@ fun CameraScreen(
             // current-session prepared reference.
             CameraCloseButton(
                 modifier = Modifier.align(Alignment.TopStart).statusBarsPadding().padding(16.dp),
-                onClick = { tabNavigator.current = PosesTab },
+                onClick = onDismiss,
             )
 
             // Top Right — More/settings; behind the status bar/notch.
@@ -346,7 +361,7 @@ fun CameraScreen(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
                     .padding(end = 12.dp, bottom = 12.dp),
-                onClick = if (cameraControlsEnabled) { { tabNavigator.current = PosesTab } } else null
+                onClick = if (cameraControlsEnabled) onDismiss else null
             )
 
             // Bottom Center
