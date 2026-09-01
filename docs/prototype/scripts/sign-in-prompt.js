@@ -1,6 +1,10 @@
 (function () { document.addEventListener('DOMContentLoaded', function () {
   const params = new URLSearchParams(location.search), intent = params.get('intent') || 'saved';
-  const copy = { saved: 'Sign in to view your saved poses.', save: 'Sign in to save poses to your account.', try: 'Sign in to try this pose.' };
+  const copy = {
+    saved: 'View your saved poses.',
+    save: 'Save this pose.',
+    try: 'Try this pose.'
+  };
   document.getElementById('sign-in-copy').textContent = copy[intent] || copy.saved;
   const modal = document.getElementById('sign-in-modal'), live = document.getElementById('sign-in-live'), error = document.getElementById('sign-in-error');
   document.getElementById('google-sign-in').focus();

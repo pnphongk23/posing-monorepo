@@ -3,7 +3,7 @@ const POSES_FIXTURES = [
   {
     id: "standing",
     title: "Standing",
-    tag: "MINE",
+    tag: "Mine",
     tagColor: "green",
     hearts: null,
     category: "my-poses",
@@ -28,7 +28,7 @@ const POSES_FIXTURES = [
   {
     id: "dancing",
     title: "Dancing",
-    tag: "HOT",
+    tag: "Hot",
     tagColor: "pink",
     hearts: "2.1K",
     category: "community",
@@ -54,7 +54,7 @@ const POSES_FIXTURES = [
   {
     id: "jumping",
     title: "Jumping",
-    tag: "MINE",
+    tag: "Mine",
     tagColor: "green",
     hearts: null,
     category: "my-poses",
@@ -105,7 +105,7 @@ const POSES_FIXTURES = [
   {
     id: "arms-up",
     title: "Arms Up",
-    tag: "NEW",
+    tag: "New",
     tagColor: "yellow",
     hearts: null,
     category: "my-poses",
@@ -254,7 +254,7 @@ const GALLERY_FIXTURES = {
     {
       id: "gal-1",
       title: "Pose Match 1",
-      tag: "DANCING",
+      tag: "Dancing",
       tagColor: "pink",
       time: "2:34 PM",
       bgGradient: "linear-gradient(135deg, #FF9A9E 0%, #FECFEF 100%)",
@@ -263,7 +263,7 @@ const GALLERY_FIXTURES = {
     {
       id: "gal-2",
       title: "Pose Match 2",
-      tag: "STANDING",
+      tag: "Standing",
       tagColor: "yellow",
       time: "1:12 PM",
       bgGradient: "linear-gradient(135deg, #12C2E9 0%, #C471ED 50%, #F64F59 100%)",
@@ -272,7 +272,7 @@ const GALLERY_FIXTURES = {
     {
       id: "gal-3",
       title: "Pose Match 3",
-      tag: "ARMS UP",
+      tag: "Arms up",
       tagColor: "blue",
       time: "11:45 AM",
       bgGradient: "linear-gradient(135deg, #8A2387 0%, #E94057 50%, #F27121 100%)",
@@ -281,7 +281,7 @@ const GALLERY_FIXTURES = {
     {
       id: "gal-4",
       title: "Pose Match 4",
-      tag: "JUMPING",
+      tag: "Jumping",
       tagColor: "green",
       time: "10:20 AM",
       bgGradient: "linear-gradient(135deg, #3A1C71 0%, #D76D77 50%, #FFAF7B 100%)",
@@ -292,7 +292,7 @@ const GALLERY_FIXTURES = {
     {
       id: "gal-5",
       title: "Pose Match 5",
-      tag: "WALKING",
+      tag: "Walking",
       tagColor: "yellow",
       time: "6:15 PM",
       placeholder: true
@@ -300,7 +300,7 @@ const GALLERY_FIXTURES = {
     {
       id: "gal-6",
       title: "Pose Match 6",
-      tag: "SITTING",
+      tag: "Sitting",
       tagColor: "pink",
       time: "4:30 PM",
       bgGradient: "linear-gradient(135deg, #FAD961 0%, #F76B1C 100%)",

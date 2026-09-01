@@ -102,7 +102,6 @@
   font-size: var(--nb-font-size-xs);
   line-height: var(--nb-line-height-tight);
   letter-spacing: var(--nb-tracking-label);
-  text-transform: uppercase;
   color: var(--nb-color-dark);
   display: flex;
   justify-content: space-between;
@@ -191,7 +190,6 @@
   font-size: var(--nb-font-size-xs);
   font-weight: var(--nb-font-weight-bold);
   letter-spacing: var(--nb-tracking-label);
-  text-transform: uppercase;
 }
 
 /* Column masonry style for Poses */

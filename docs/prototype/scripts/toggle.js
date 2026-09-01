@@ -33,12 +33,12 @@ function initToggles() {
     });
   }
 
-  // Flash AUTO yellow text rotation if clicked
+  // Flash setting rotation if clicked
   const flashValue = document.getElementById('flash-value');
   const flashTrigger = document.getElementById('flash-row');
 
   if (flashTrigger && flashValue) {
-    const states = ['AUTO', 'ON', 'OFF'];
+    const states = ['Auto', 'On', 'Off'];
     let currentIndex = states.indexOf(flashValue.textContent.trim());
     if (currentIndex === -1) currentIndex = 0;
 
@@ -46,10 +46,10 @@ function initToggles() {
       currentIndex = (currentIndex + 1) % states.length;
       flashValue.textContent = states[currentIndex];
       
-      // Update yellow text color for AUTO, grey for OFF, white for ON
-      if (states[currentIndex] === 'AUTO') {
+      // Update yellow text color for Auto, grey for Off, white for On
+      if (states[currentIndex] === 'Auto') {
         flashValue.style.color = 'var(--nb-color-accent-yellow)';
-      } else if (states[currentIndex] === 'OFF') {
+      } else if (states[currentIndex] === 'Off') {
         flashValue.style.color = 'var(--nb-color-gray)';
       } else {
         flashValue.style.color = 'var(--nb-color-white)';

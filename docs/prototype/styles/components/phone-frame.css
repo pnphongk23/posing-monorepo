@@ -100,7 +100,6 @@
   font-size: var(--nb-font-size-md);
   font-weight: var(--nb-font-weight-bold);
   letter-spacing: var(--nb-tracking-label);
-  text-transform: uppercase;
   color: var(--nb-color-dark);
   background: transparent;
   border: none;

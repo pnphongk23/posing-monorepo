@@ -17,7 +17,6 @@
   font-size: var(--nb-font-size-xl);
   line-height: var(--nb-line-height-tight);
   letter-spacing: var(--nb-tracking-tight);
-  text-transform: uppercase;
   color: var(--nb-color-dark);
   text-align: center;
   flex-grow: 1;
@@ -26,6 +25,15 @@
 .nb-nav-bar__title--page {
   text-align: left;
   font-size: var(--nb-font-size-2xl);
+}
+
+.nb-nav-bar--saved {
+  padding-inline: var(--nb-space-sm);
+  gap: var(--nb-space-sm);
+}
+
+.nb-nav-bar--saved .nb-nav-bar__title {
+  text-transform: none;
 }
 
 .nb-nav-bar__left,
