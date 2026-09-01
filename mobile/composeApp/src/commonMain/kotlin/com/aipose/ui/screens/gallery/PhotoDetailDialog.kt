@@ -50,6 +50,7 @@ import com.aipose.purchases.PaywallScreen
 import com.aipose.purchases.PurchaseGateway
 import com.aipose.purchases.UnconfiguredPurchaseGateway
 import com.aipose.purchases.PurchaseGatewayProvider
+import com.aipose.purchases.premiumTestBypassEnabled
 import kotlinx.coroutines.launch
 
 @Composable
@@ -153,7 +154,7 @@ fun PhotoDetailDialog(
                             .neoBorder(width = 2.dp, cornerRadius = 10.dp)
                             .clip(RoundedCornerShape(10.dp))
                           .clickable {
-                              if (purchaseGateway.snapshot.value.hasConfirmedPremium) onSave(photo) else showPaywall = true
+                                if (purchaseGateway.snapshot.value.hasConfirmedPremium || premiumTestBypassEnabled) onSave(photo) else showPaywall = true
                           },
                         contentAlignment = Alignment.Center
                     ) {
@@ -174,7 +175,7 @@ fun PhotoDetailDialog(
                             .neoBorder(width = 2.dp, cornerRadius = 10.dp)
                             .clip(RoundedCornerShape(10.dp))
                             .clickable {
-                                if (purchaseGateway.snapshot.value.hasConfirmedPremium) onShare(photo) else showPaywall = true
+                                  if (purchaseGateway.snapshot.value.hasConfirmedPremium || premiumTestBypassEnabled) onShare(photo) else showPaywall = true
                             },
                         contentAlignment = Alignment.Center
                     ) {

@@ -53,6 +53,7 @@ import com.aipose.purchases.PurchaseGateway
 import com.aipose.purchases.UnconfiguredPurchaseGateway
 import com.aipose.purchases.PurchaseGatewayProvider
 import com.aipose.purchases.decidePaidAccess
+import com.aipose.purchases.premiumTestBypassEnabled
 import androidx.compose.ui.graphics.Color
 import com.aipose.ui.theme.CornerRadius
 import com.aipose.data.resolveImagePath
@@ -498,7 +499,7 @@ fun PoseDetailScreen(
                             PrimaryButton(
                                 text = "Try Pose",
                                   onClick = {
-                                      if (decidePaidAccess(purchaseGateway.snapshot.value).allowAction) {
+                                        if (premiumTestBypassEnabled || decidePaidAccess(purchaseGateway.snapshot.value).allowAction) {
                                           coroutineScope.launch { viewModel.tryPose(onSuccess = onUseWithCamera) }
                                       } else showPaywall = true
                                   },

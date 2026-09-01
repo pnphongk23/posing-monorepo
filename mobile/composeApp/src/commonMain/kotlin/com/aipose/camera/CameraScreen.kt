@@ -77,6 +77,7 @@ import com.aipose.ui.theme.Spacing
 import com.aipose.purchases.PaywallScreen
 import com.aipose.purchases.PurchaseGateway
 import com.aipose.purchases.PurchaseGatewayProvider
+import com.aipose.purchases.premiumTestBypassEnabled
 import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
 
@@ -89,7 +90,7 @@ fun CameraScreen(
     val tabNavigator = LocalTabNavigator.current
     val purchaseSnapshot by purchaseGateway.snapshot.collectAsState()
 
-    if (!purchaseSnapshot.hasConfirmedPremium) {
+    if (!(purchaseSnapshot.hasConfirmedPremium || premiumTestBypassEnabled)) {
         PaywallScreen(
             gateway = purchaseGateway,
             onDismiss = onDismiss,
