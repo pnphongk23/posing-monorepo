@@ -51,9 +51,12 @@ createdBy: Harness CLI
 
 ## Overview
 
-Plan P2 này chỉ triển khai Account-backed Saved Poses v1. Feature FEAT-013 đang
-proposed và approval pending; Plan pending, không tự approve. Google trên Supabase
-là product authority đã frozen. Runtime SDK/config/integration cần WI-02 xác minh.
+Plan P2 này chỉ triển khai Account-backed Saved Poses v1. Supabase Auth uses Google as the only enabled provider for v1.
+Các provider còn lại (email/password, magic link, anonymous, Apple, GitHub và mọi
+provider khác) đều OFF/out of scope. Feature FEAT-013 đang
+proposed và approval pending; Plan pending, không tự approve. Frozen provider
+clarification này không phải Product Authority approval cho Feature/Plan. Runtime
+SDK/config/integration cần WI-02 xác minh.
 
 Albums many-to-many là future/out-of-scope; không có Album work item, CRUD hoặc
 membership UI/API. Không mở rộng FEAT-012 hay thay đổi FEAT-008.
@@ -75,6 +78,7 @@ membership UI/API. Không mở rộng FEAT-012 hay thay đổi FEAT-008.
 | FR-006–FR-007: removal retention/message, 401 isolation | WI-02, WI-03, WI-04, WI-05; removal and 401 tests |
 | FR-008–FR-009: list states/pagination, stale read/no queue, detail/Try Pose | WI-04, WI-05; mobile/UI and offline evidence |
 | FR-010: Albums future boundary | WI-01, WI-05 |
+| Proposed auth constraints (identity, lifecycle, privacy, provider guard, deletion, callback, config/JWT) | WI-01 policy record; WI-02 evidence; Product Authority approval where marked |
 
 | Direct scenario/evidence owner | Owner |
 | --- | --- |
@@ -90,11 +94,11 @@ membership UI/API. Không mở rộng FEAT-012 hay thay đổi FEAT-008.
 
 | Claim | Status | Evidence |
 | --- | --- | --- |
-| Feature scope and frozen decisions | Verified | FEAT-013; ckh validate |
-| Account/SavedEntry/API contracts | Verified | docs/spec/data/entities; docs/spec/api |
-| Reusable mobile/backend flows | Verified | PoseApiService, PoseRepository, PoseDetailScreen, PosesScreen, app.ts, communityRoutes.ts, adminAuth.ts; srcwalk |
+| Feature scope and frozen decisions | Policy documented | FEAT-013; validation check only |
+| Account/SavedEntry/API contracts | Referenced | docs/spec/data/entities; docs/spec/api; no edits in this slice |
+| Reusable mobile/backend flows | Navigation evidence only | PoseApiService, PoseRepository, PoseDetailScreen, PosesScreen, app.ts, communityRoutes.ts, adminAuth.ts; srcwalk; not runtime verification |
 | Account/Saved runtime implementation | Failed | srcwalk discover found no implementation in mobile/web |
 | Google/Supabase runtime path | Unresolved | provider frozen, SDK/config path absent in baseline |
 | Graph artifact | Unresolved | ckh graph check reports stale artifact |
-| No code/test/config/CI changes | Verified | git diff --name-only fbbc284 is docs-only |
-| No Album WI/no FEAT-012 scope leakage | Verified | re-read all six files and targeted sweep |
+| No code/test/config/CI changes | Scope check | git diff --name-only; this slice is docs-only |
+| No Album WI/no FEAT-012 scope leakage | Policy documented | re-read owned policy files and targeted sweep |

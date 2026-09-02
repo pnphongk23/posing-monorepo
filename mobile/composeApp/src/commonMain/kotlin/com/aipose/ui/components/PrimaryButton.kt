@@ -10,6 +10,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
+import androidx.compose.ui.unit.em
 import com.aipose.ui.theme.AiPoseColors
 import com.aipose.ui.theme.AiPoseTypography
 import com.aipose.ui.theme.CornerRadius
@@ -38,8 +39,8 @@ fun PrimaryButton(
     ) {
         Text(
             text = text.uppercase(),
-            style = AiPoseTypography.BodyBold,
-            letterSpacing = 0.08.em
+            style = AiPoseTypography.Control,
+            letterSpacing = 0.04.em
         )
     }
 }

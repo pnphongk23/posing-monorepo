@@ -47,28 +47,93 @@
   --nb-space-xl: 32px;
   --nb-space-compact: 12px; /* between sm and md — control padding */
 
-  /* ── Typography ── */
-  --nb-font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  --nb-font-weight-normal: 500;
+  /* ── Typography: frozen SF Pro/system target ── */
+  --nb-font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --nb-font-weight-normal: 400;
+  --nb-font-weight-medium: 500;
   --nb-font-weight-semibold: 600;
   --nb-font-weight-bold: 700;
+  --nb-font-weight-extrabold: 800;
 
-  --nb-font-size-2xs: 10px;  /* tags, tab labels */
-  --nb-font-size-xs: 11px;   /* captions, meta, badges */
-  --nb-font-size-sm: 12px;   /* secondary labels */
-  --nb-font-size-md: 13px;   /* tabs, compact controls */
-  --nb-font-size-base: 14px; /* buttons, body */
-  --nb-font-size-lg: 16px;   /* emphasized body */
-  --nb-font-size-xl: 20px;   /* nav titles */
-  --nb-font-size-2xl: 24px;  /* page hero titles */
+  /* Primitive scale. 2xs/xs remain deprecated floor aliases. */
+  --nb-font-size-2xs: 12px;
+  --nb-font-size-xs: 12px;
+  --nb-font-size-sm: 13px;
+  --nb-font-size-md: 13px;
+  --nb-font-size-base: 14px;
+  --nb-font-size-lg: 16px;
+  --nb-font-size-xl: 20px;
+  --nb-font-size-2xl: 24px;
+  --nb-font-size-3xl: 32px;
 
   --nb-line-height-tight: 1.15;
   --nb-line-height-snug: 1.25;
-  --nb-line-height-normal: 1.4;
+  --nb-line-height-normal: 1.40;
+  --nb-line-height-body: 1.55;
 
   --nb-tracking-tight: 0.02em;
+  --nb-tracking-none: 0;
+  --nb-tracking-display: -0.02em;
+  --nb-tracking-heading: -0.01em;
   --nb-tracking-label: 0.04em;
   --nb-tracking-wide: 0.06em;
+  --nb-tracking-neo-display: var(--nb-tracking-display);
+  --nb-tracking-neo-heading: var(--nb-tracking-heading);
+  --nb-tracking-neo-none: var(--nb-tracking-none);
+  --nb-tracking-neo-label: var(--nb-tracking-label);
+
+  --nb-type-display-size: var(--nb-font-size-3xl);
+  --nb-type-display-weight: var(--nb-font-weight-extrabold);
+  --nb-type-display-leading: 1.10;
+  --nb-type-display-tracking: var(--nb-tracking-display);
+  --nb-type-screen-title-size: var(--nb-font-size-2xl);
+  --nb-type-screen-title-weight: var(--nb-font-weight-bold);
+  --nb-type-screen-title-leading: 1.10;
+  --nb-type-screen-title-tracking: var(--nb-tracking-heading);
+  --nb-type-navigation-title-size: var(--nb-font-size-xl);
+  --nb-type-navigation-title-weight: var(--nb-font-weight-bold);
+  --nb-type-navigation-title-leading: 1.10;
+  --nb-type-navigation-title-tracking: var(--nb-tracking-heading);
+  --nb-type-heading-3-size: 18px;
+  --nb-type-heading-3-weight: var(--nb-font-weight-bold);
+  --nb-type-heading-3-leading: 1.10;
+  --nb-type-heading-3-tracking: var(--nb-tracking-heading);
+  --nb-type-body-size: var(--nb-font-size-base);
+  --nb-type-body-weight: var(--nb-font-weight-normal);
+  --nb-type-body-leading: 1.55;
+  --nb-type-body-tracking: var(--nb-tracking-none);
+  --nb-type-caption-size: var(--nb-font-size-xs);
+  --nb-type-caption-weight: var(--nb-font-weight-medium);
+  --nb-type-caption-leading: 1.40;
+  --nb-type-caption-tracking: var(--nb-tracking-none);
+  --nb-type-meta-label-size: var(--nb-font-size-md);
+  --nb-type-meta-label-weight: var(--nb-font-weight-medium);
+  --nb-type-meta-label-leading: 1.40;
+  --nb-type-meta-label-tracking: var(--nb-tracking-none);
+  --nb-type-control-size: var(--nb-font-size-base);
+  --nb-type-control-weight: var(--nb-font-weight-bold);
+  --nb-type-control-leading: 1.25;
+  --nb-type-control-tracking: var(--nb-tracking-none);
+  --nb-type-input-size: var(--nb-font-size-lg);
+  --nb-type-input-weight: var(--nb-font-weight-normal);
+  --nb-type-input-leading: 1.40;
+  --nb-type-input-tracking: var(--nb-tracking-none);
+  --nb-type-tab-size: var(--nb-font-size-md);
+  --nb-type-tab-weight: var(--nb-font-weight-bold);
+  --nb-type-tab-leading: 1.25;
+  --nb-type-tab-tracking: var(--nb-tracking-none);
+  --nb-type-poses-toolbar-tab-size: 15px;
+  --nb-type-poses-toolbar-tab-weight: var(--nb-font-weight-bold);
+  --nb-type-poses-toolbar-tab-leading: 1.40;
+  --nb-type-poses-toolbar-tab-tracking: var(--nb-tracking-tight);
+
+  /* Role aliases for utility consumers. */
+  --nb-type-control-font-size: var(--nb-type-control-size);
+  --nb-type-control-line-height: var(--nb-type-control-leading);
+  --nb-type-input-font-size: var(--nb-type-input-size);
+  --nb-type-input-line-height: var(--nb-type-input-leading);
+  --nb-type-tab-font-size: var(--nb-type-tab-size);
+  --nb-type-tab-line-height: var(--nb-type-tab-leading);
 
   /* ── Icon / line stroke ── */
   --nb-icon-stroke: 2;

@@ -12,7 +12,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.unit.em
 import com.aipose.ui.components.neoBorder
 import com.aipose.ui.theme.AiPoseColors
 import com.aipose.ui.theme.AiPoseTypography
@@ -69,9 +68,8 @@ fun TabSwitcher(
                 ) {
                     Text(
                         text = title.uppercase(),
-                        style = AiPoseTypography.CaptionBold,
-                        color = textColor,
-                        letterSpacing = 0.08.em
+                        style = AiPoseTypography.Tab,
+                        color = textColor
                     )
                 }
             }

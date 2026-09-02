@@ -84,6 +84,12 @@ route/API access. The interrupted intent is single-use and
 must be cleared after success, cancellation, or terminal failure to avoid replay
 on a later screen.
 
+Provider boundary: Supabase Auth has Google as the only enabled provider for v1;
+email/password, magic link, anonymous, Apple, GitHub and all other providers are
+disabled/out of scope, so this prompt has no Apple CTA. Token lifecycle, sign-out,
+callback/deep-link mechanics and privacy details remain proposals in the Feature
+table and are not runtime-verified; WI-02 owns evidence.
+
 ## Unpublish/delete retention behavior
 
 When a pose is unpublished or terminally deleted:

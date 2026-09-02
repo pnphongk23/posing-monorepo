@@ -15,7 +15,7 @@ AI Pose is playful, tactile, and graphic rather than glossy. The interface uses 
 
 - **Mood:** energetic, friendly, hands-on, and slightly editorial.
 - **Surface treatment:** flat fills with strong outlines; do not introduce gradients, glassmorphism, blur, or soft diffuse shadows.
-- **Visual hierarchy:** importance is communicated through color, uppercase typography, border weight, and shadow offset rather than large visual effects.
+- **Visual hierarchy:** importance is communicated through color, typography hierarchy, border weight, and shadow offset rather than large visual effects. The prototype has no active uppercase presentation.
 - **Density:** compact mobile layout with deliberate whitespace. Content is dense enough for browsing, while 16px page gutters and 16–24px section spacing prevent the screens from feeling cramped.
 - **Frame:** on desktop, the 390 × 844 phone is centered on a slate desk background. At viewport widths of 480px or less, the phone frame becomes a full-bleed app surface with no outer border, radius, or shadow.
 
@@ -79,50 +79,69 @@ Use dark text on pastel fills. Yellow is primarily a filled accent; use its text
 | `--nb-z-index-sticky` / `--nb-z-index-dropdown` / `--nb-z-index-modal` | `20` / `100` / `200` | Dock, dropdown, and modal stacking levels. |
 | `--nb-transition-fast` | `0.1s cubic-bezier(0.16, 1, 0.3, 1)` | Presses, toggles, and small state changes. |
 | `--nb-transition-normal` | `0.25s cubic-bezier(0.16, 1, 0.3, 1)` | Overlay entrances and larger state changes. |
-| `--nb-font-family` | System sans-serif stack | The canonical typeface family for all UI. |
+| `--nb-font-family` | `-apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif` | The canonical web typeface family for all prototype UI. |
 
 ## 3. Typography Rules
 
 ### Typeface
 
-Use the system sans-serif stack for fast loading and native-feeling rendering:
+Use the exact SF Pro/system web target for fast loading and native-feeling rendering:
 
 ```text
-system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif
+-apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif
 ```
 
 ### Weight, size, and rhythm
 
 | Token | Value | Intended use |
 | --- | --- | --- |
-| `--nb-font-weight-normal` | `500` | Body copy and low-emphasis supporting text. |
+| `--nb-font-weight-normal` | `400` | Body copy and low-emphasis supporting text. |
+| `--nb-font-weight-medium` | `500` | Caption and metadata emphasis. |
 | `--nb-font-weight-semibold` | `600` | Reserved intermediate emphasis. |
 | `--nb-font-weight-bold` | `700` | Headings, buttons, tabs, tags, nav labels, and metadata. |
-| `--nb-font-size-2xs` | `10px` | Compact tags and tab-bar labels. |
-| `--nb-font-size-xs` | `11px` | Captions, metadata, badges, and pose banners. |
-| `--nb-font-size-sm` | `12px` | Secondary labels, progress labels, and pose names. |
-| `--nb-font-size-md` | `13px` | Compact controls and search input text. |
+| `--nb-font-size-2xs` | `12px` | Deprecated floor alias. |
+| `--nb-font-size-xs` | `12px` | Deprecated floor alias. |
+| `--nb-font-size-sm` | `13px` | Small UI text. |
+| `--nb-font-size-md` | `13px` | Compact tabs and metadata. |
 | `--nb-font-size-base` | `14px` | Body text, buttons, and status-bar text. |
 | `--nb-font-size-lg` | `16px` | Emphasized body copy. |
 | `--nb-font-size-xl` | `20px` | Centered navigation titles. |
 | `--nb-font-size-2xl` | `24px` | Page-level titles such as Search and Gallery. |
+| `--nb-font-size-3xl` | `32px` | Display text. |
 
-Line-height tokens are intentionally tight for the graphic UI: `--nb-line-height-tight: 1.15` for controls and labels, `--nb-line-height-snug: 1.25` for compact text, and `--nb-line-height-normal: 1.4` for readable body copy.
+`--nb-line-height-tight: 1.15` remains a compatibility alias. Frozen roles use role-aligned line heights: headings/display `1.10`, body `1.55`, caption/meta `1.40`, controls/tabs `1.25`, and input `1.40`.
 
 Use tracking deliberately:
 
-- `--nb-tracking-tight: 0.02em` for headings and compact UI text.
-- `--nb-tracking-label: 0.04em` for uppercase controls, tabs, tags, and metadata.
-- `--nb-tracking-wide: 0.06em` for the smallest all-caps bottom-navigation labels.
+- `--nb-tracking-tight: 0.02em` is preserved as a positive compatibility token.
+- Display uses `-0.02em`; ScreenTitle, NavigationTitle, and Heading3 use `-0.01em`.
+- Body, Caption, MetaLabel, Control, Input, and Tab use `0`. The positive `--nb-tracking-label: 0.04em` value remains only as a compatibility/future-role token; no prototype consumer uses it.
+- PosesToolbarTab uses `15px/700/1.40/+0.02em` with natural-case `text-transform: none`.
 
-Buttons, tags, nav titles, progress labels, and most navigation metadata are uppercase. The Poses toolbar tabs (`My Poses`, `Community`) intentionally use title case and a slightly larger `15px` label size.
+Control, NavigationTitle, and ScreenTitle copy remains natural-case. The prototype has no active uppercase presentation: the default `.nb-tag`, MetaLabel consumers, progress labels, dock labels, and the pose banner all retain natural case and role tracking `0`. PosesToolbarTab (`My poses`, `Community`) remains natural-case at `15px` with its existing `+0.02em` tracking and `text-transform: none`.
+
+### Active typography roles
+
+| Role | Size | Weight | Line-height | Tracking | Web alias |
+| --- | ---: | ---: | ---: | ---: | --- |
+| Display | 32px | 800 | 1.10 | -0.02em | `--nb-type-display-*` |
+| ScreenTitle | 24px | 700 | 1.10 | -0.01em | `--nb-type-screen-title-*` |
+| NavigationTitle | 20px | 700 | 1.10 | -0.01em | `--nb-type-navigation-title-*` |
+| Heading3 | 18px | 700 | 1.10 | -0.01em | `--nb-type-heading-3-*` |
+| Body | 14px | 400 | 1.55 | 0 | `--nb-type-body-*` |
+| Caption | 12px | 500 | 1.40 | 0 | `--nb-type-caption-*` |
+| MetaLabel | 13px | 500 | 1.40 | 0 | `--nb-type-meta-label-*` |
+| Control | 14px | 700 | 1.25 | 0 | `--nb-type-control-*` |
+| Input | 16px | 400 | 1.40 | 0 | `--nb-type-input-*` |
+| Tab | 13px | 700 | 1.25 | 0 | `--nb-type-tab-*` |
+| PosesToolbarTab | 15px | 700 | 1.40 | +0.02em | `--nb-type-poses-toolbar-tab-*` |
 
 ## 4. Component Stylings
 
 ### Buttons and controls
 
 - Default buttons are white with a `2px` solid black border, `10px` medium rounding, and a rigid `3px 3px 0 #000` shadow.
-- Button labels are bold, `14px`, tightly line-spaced, uppercase, and tracked at `0.04em`.
+- Controls use the frozen `Control` role: `14px/700/1.25/0`. Button copy remains natural-case with role tracking.
 - Every normal interactive control has a minimum `44px` touch target.
 - Pressed or active controls translate by the shadow offset (`3px`) and remove the shadow, making the control appear to land on the surface.
 - Square icon buttons are `44 × 44px`; circular icon buttons are `48 × 48px`.
@@ -141,7 +160,7 @@ Buttons, tags, nav titles, progress labels, and most navigation metadata are upp
 ### Inputs and forms
 
 - Search fields use a white surface, `2px` black border, `10px` rounding, and `8px 12px` internal padding.
-- Search text is bold, uppercase, `13px`, with placeholder text in muted gray.
+- Search text uses the frozen `Input` role: `16px/400/1.40/0`, with natural-case copy and no active presentation transform; placeholder text is muted gray.
 - Switches are `48 × 26px`, white with a `1.5px` black outline and large rounding. The checked track is blue; the `16px` white circular thumb moves `20px` to the right.
 - Form controls must preserve the `44px` minimum interactive area even when the visible control is smaller.
 
@@ -154,9 +173,9 @@ Buttons, tags, nav titles, progress labels, and most navigation metadata are upp
 
 ### Tags, pills, and status
 
-- Default tags are compact uppercase labels at `10px`, with a `1.5px` black border and `6px` rounding.
-- Badge tags increase to `11px` with `6px 10px` padding and an optional `14px` icon.
-- Metadata pills use `14px` rounding, `8px 12px` padding, `11px` text, and a small icon-to-label gap. Use pastel fills only when the state needs emphasis.
+- The default `.nb-tag` uses natural-case `MetaLabel` `13px/500/1.40/0`; `Caption` `12px` applies only to actual Caption consumers. The historical `+0.04em` label value remains compatibility-only. Preserve the `1.5px` black border and `6px` rounding.
+- Badge tags use the `MetaLabel` role at `13px` with `6px 12px` padding and an optional `14px` icon.
+- Metadata pills use `14px` rounding, `8px 12px` padding, the `MetaLabel` role, and a small icon-to-label gap. Use pastel fills only when the state needs emphasis.
 
 ### Progress
 
@@ -179,7 +198,7 @@ Buttons, tags, nav titles, progress labels, and most navigation metadata are upp
 - Camera controls remain high-contrast white square buttons over the image. The zoom chip is circular (`36px`); the profile/browse action is a blue `48px` circle.
 - The shutter tray is cream, `110px` high, and separated from the viewport by a `2px` black top border.
 - Pose overlays are visual-only and must not intercept camera gestures. Primary bones are near-black, the skeleton is blue, and the lower skeleton is yellow. Joints use black outlines with role-specific pastel fills.
-- The pose banner is a dark, compact, uppercase label with white text and a `1.5px` border.
+- The pose banner is a dark, compact, natural-case label with white text and a `1.5px` border.
 
 ### Bottom navigation dock
 
@@ -196,7 +215,7 @@ Buttons, tags, nav titles, progress labels, and most navigation metadata are upp
 - The phone frame uses a `2px` black border, `40px` radius, and an `8px 8px 0 #000` desktop shadow.
 - The status/header region is `44px` high. The bottom home-indicator region is `24px` high, with a `120 × 4px` black indicator.
 - Main content is a vertical flex region with horizontal `16px` padding and hidden scrollbars. Full-bleed camera content may opt out of that padding.
-- Standard navigation bars are `52px` high with a `16px` bottom margin. Page titles align left at `24px`; detail titles remain centered at `20px`.
+- Standard navigation bars are `52px` high with a `16px` bottom margin. Page titles are centered at `24px`; detail titles remain centered at `20px`.
 
 ### Spacing scale
 

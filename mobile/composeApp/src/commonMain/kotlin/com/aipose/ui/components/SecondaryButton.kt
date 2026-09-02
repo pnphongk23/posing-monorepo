@@ -9,7 +9,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.em
 import com.aipose.ui.theme.AiPoseColors
 import com.aipose.ui.theme.AiPoseTypography
 import com.aipose.ui.theme.CornerRadius
@@ -37,7 +36,7 @@ fun SecondaryButton(
     ) {
         Text(
             text = text,
-            style = AiPoseTypography.Body
+            style = AiPoseTypography.Control
         )
     }
 }

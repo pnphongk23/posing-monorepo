@@ -49,11 +49,39 @@ The production visual language is light neo-brutalism across Compose mobile and 
 | Warning yellow | `#F4C542` | `#F4C542` | Shared |
 | Success green | `#DFF5D0` | `#DFF5D0` | Shared |
 | Background | `#FAF8F3` | `#F6F1E8` | Known divergence; do not silently copy one value across platforms |
-| Typeface | platform Compose default via `TextStyle` | Inter | Known divergence |
+| Typeface | `FontFamily.Default` / system via `TextStyle` | SF Pro web target via the canonical stack | Role-aligned; platform rendering need not be pixel-identical |
 | Border | 2 dp | 2 px | Shared visual weight |
 | Hard shadow | 2–4 dp typical | 2–6 px utilities | No blur |
 
 Compose spacing uses 4, 8, 12, 16, 24, and 32 dp. Corner radii use 8, 12, 16, and pill. Components should consume `AiPoseColors`, `Spacing`, `CornerRadius`, and `AiPoseTypography`; web components should consume CSS/Tailwind theme variables instead of new literal colors.
+
+### Typeface contract
+
+Compose uses `FontFamily.Default` (the platform system family) through `TextStyle`. The web target uses `-apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif`. Roles align by intended size, weight, leading, and tracking; Compose and web rendering are platform-native and are not required to be pixel-identical.
+
+The current web-admin surface retains its separate Inter choice for Task-1B compatibility. This is a current web-admin note, not the prototype/web target contract.
+
+### Canonical typography roles
+
+| Role | Compose | Web prototype/admin target | Contract |
+| --- | --- | --- | --- |
+| Display | `32sp/800/1.10/-0.02em` | `--nb-type-display-*` | Role-aligned; native rendering |
+| ScreenTitle | `24sp/700/1.10/-0.01em` | `--nb-type-screen-title-*` | Role-aligned; native rendering |
+| NavigationTitle | `20sp/700/1.10/-0.01em` | `--nb-type-navigation-title-*` | Role-aligned; native rendering |
+| Heading3 | `18sp/700/1.10/-0.01em` | `--nb-type-heading-3-*` | Role-aligned; native rendering |
+| Body | `14sp/400/1.55/0` | `--nb-type-body-*` | Role-aligned; native rendering |
+| Caption | `12sp/500/1.40/0` | `--nb-type-caption-*` | Role-aligned; native rendering |
+| MetaLabel | `13sp/500/1.40/0` | `--nb-type-meta-label-*` | Prototype uses natural case; label tracking is compatibility-only |
+| Control | `14sp/700/1.25/0` | `--nb-type-control-*` | Role-aligned; native rendering |
+| Input | `16sp/400/1.40/0` | `--nb-type-input-*` | Preserves mobile input readability |
+| Tab | `13sp/700/1.25/0` | `--nb-type-tab-*` | Role-aligned; native rendering |
+| PosesToolbarTab | `15sp/700/1.40/+0.02em` | `--nb-type-poses-toolbar-tab-*` | Natural case; `text-transform: none` |
+
+The size/weight/leading/tracking values are role contracts, not a requirement for pixel equality between Compose, web admin, and the prototype.
+
+Tracking-neo values: `--tracking-neo-display: -0.02em`, `--tracking-neo-heading: -0.01em`, `--tracking-neo-none: 0`, and `--tracking-neo-label: 0.04em`. Crosswalk: Display → display; ScreenTitle, NavigationTitle, and Heading3 → heading; Body, Caption, MetaLabel, Control, Input, and Tab → none; the positive label value is compatibility/future-role only. PosesToolbarTab retains `+0.02em` with natural-case text. The prototype has no active uppercase presentation; its compatibility layer also preserves positive `--nb-tracking-tight: 0.02em` and `--nb-line-height-tight: 1.15`.
+
+The web-admin/shared body contract is `body { font-family: var(--font-sans); }`. The standalone prototype is separate: it uses `var(--nb-font-family)` and its own cream token, so `--font-sans` is not required there.
 
 ## Interaction patterns
 

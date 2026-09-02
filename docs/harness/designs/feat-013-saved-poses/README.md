@@ -35,7 +35,7 @@ fixture states, and direct camera redirect are not production behavior.
 
 | Area | V1 decision |
 | --- | --- |
-| Identity | Google sign-in through Supabase; valid session maps to one Account. |
+| Identity | Supabase Auth; Google is the only enabled provider; valid session maps to one Account. |
 | Saved API | `GET /api/me/saved`, `PUT /api/me/saved/:poseId`, `DELETE /api/me/saved/:poseId`. |
 | Save | Published pose only; idempotent upsert, confirmed only after HTTP 200. |
 | Unsave | Idempotent delete, confirmed only after HTTP 204; never deletes the pose. |
@@ -43,6 +43,12 @@ fixture states, and direct camera redirect are not production behavior.
 | Session failure | 401 must clear/refresh session and never expose another account’s collection. |
 | Offline | Cached Saved list is read-only stale content. Disable mutation; never queue it or show success. |
 | Albums | Future many-to-many boundary only; no Albums UI. |
+
+Auth clarification: Supabase Auth has Google as the only enabled provider for v1;
+email/password, magic link, anonymous, Apple, GitHub and every other Supabase
+provider are disabled/out of scope. See the Feature’s proposed missing constraints,
+marked `proposed — needs Product Authority approval`; they are not frozen decisions.
+Runtime Google/Supabase integration remains `Unresolved` until WI-02 evidence.
 
 ## Global shell and navigation
 

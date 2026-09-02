@@ -16,6 +16,11 @@ before route/API access. On success it pushes this screen; cancellation or faile
 auth remains on Poses. Community browse remains available to the guest, so
 “browse” and “Saved” are deliberately different gates.
 
+Provider boundary: Supabase Auth uses Google as the only enabled provider for v1;
+all other providers, including email/password, magic link, anonymous, Apple and
+GitHub, are disabled/out of scope. Runtime integration remains `Unresolved` until
+WI-02 evidence; the Feature proposal table is the policy source.
+
 ## Layout
 
 Reuse the existing Poses screen geometry from `PosesScreen` and the prototype

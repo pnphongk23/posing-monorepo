@@ -54,10 +54,9 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.em
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTag
@@ -531,7 +530,7 @@ private fun CameraGuideUnavailable(message: String) {
         Text(
             text = "Pose guide unavailable\\n$message",
             color = AiPoseColors.Surface,
-            fontWeight = FontWeight.Bold,
+            style = AiPoseTypography.Body,
             modifier = Modifier.semantics {
                 contentDescription = "Pose guide unavailable: $message"
             },
@@ -555,7 +554,7 @@ private fun CameraCloseButton(
         shadowOffset = 3.dp,
         onClick = onClick,
     ) {
-        Text("×", color = AiPoseColors.Foreground, fontSize = 26.sp, fontWeight = FontWeight.Bold)
+        Text("×", color = AiPoseColors.Foreground, style = AiPoseTypography.Control)
     }
 }
 
@@ -639,7 +638,7 @@ private fun CameraZoomIndicator(
             modifier = Modifier.fillMaxSize().alpha(if (enabled) 1f else 0.45f),
             contentAlignment = Alignment.Center,
         ) {
-            Text(cameraZoomLabel(value), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = AiPoseColors.Foreground)
+            Text(cameraZoomLabel(value), style = AiPoseTypography.MetaLabel, color = AiPoseColors.Foreground)
         }
     }
 }
@@ -665,7 +664,7 @@ private fun CameraZoomSlider(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        Text(cameraZoomLabel(value), fontSize = 10.sp, fontWeight = FontWeight.Bold, color = AiPoseColors.Surface)
+        Text(cameraZoomLabel(value), style = AiPoseTypography.MetaLabel, color = AiPoseColors.Surface)
         Slider(
             value = value,
             onValueChange = onValueChange,
@@ -711,7 +710,7 @@ private fun PermissionDeniedOverlay(
         contentAlignment = Alignment.Center,
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("Camera permission required", style = AiPoseTypography.Heading2, color = AiPoseColors.Surface)
+            Text("Camera permission required", style = AiPoseTypography.ScreenTitle, color = AiPoseColors.Surface)
             Spacer(modifier = Modifier.height(Spacing.md))
             Button(onClick = { controller.openAppSettings() }) {
                 Text("Open Settings")
@@ -782,7 +781,7 @@ private fun GalleryThumbnailButton(
                     )
                 } else {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text("!", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = AiPoseColors.Error)
+                        Text("!", style = AiPoseTypography.Heading3, color = AiPoseColors.Error)
                     }
                 }
             }
@@ -790,7 +789,7 @@ private fun GalleryThumbnailButton(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center,
             ) {
-                Text("G", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = AiPoseColors.Foreground)
+                Text("G", style = AiPoseTypography.Control, color = AiPoseColors.Foreground)
             }
         }
     }
@@ -861,9 +860,9 @@ private fun CameraMorePopup(
             ) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                     Icon(painter = painterResource(Res.drawable.ic_zap), contentDescription = null, tint = AiPoseColors.Foreground, modifier = Modifier.size(18.dp))
-                    Text("Flash", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = AiPoseColors.Foreground)
+                    Text("Flash", style = AiPoseTypography.Control, color = AiPoseColors.Foreground)
                 }
-                Text(uiState.flashMode.name, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = AiPoseColors.Primary900)
+                Text(uiState.flashMode.name, style = AiPoseTypography.MetaLabel, letterSpacing = 0.04.em, color = AiPoseColors.Primary900)
             }
         }
 
@@ -884,15 +883,15 @@ private fun CameraMorePopup(
             ) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                     Icon(painter = painterResource(Res.drawable.ic_grid), contentDescription = null, tint = AiPoseColors.Foreground, modifier = Modifier.size(18.dp))
-                    Text("Grid", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = AiPoseColors.Foreground)
+                    Text("Grid", style = AiPoseTypography.Control, color = AiPoseColors.Foreground)
                 }
-                Text(if (uiState.isGridVisible) "ON" else "OFF", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = AiPoseColors.Primary900)
+                Text(if (uiState.isGridVisible) "ON" else "OFF", style = AiPoseTypography.MetaLabel, letterSpacing = 0.04.em, color = AiPoseColors.Primary900)
             }
         }
 
         if (hasPoseGuide) {
             Box(modifier = Modifier.fillMaxWidth().height(2.dp).background(AiPoseColors.Surface.copy(alpha = 0.2f)))
-            Text("Pose guide", color = AiPoseColors.Surface, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            Text("Pose guide", color = AiPoseColors.Surface, style = AiPoseTypography.Heading3)
             NeoBrutalismContainer(
                 modifier = Modifier.fillMaxWidth().height(44.dp).semantics {
                     contentDescription = if (uiState.isOverlayVisible) "Hide pose guide" else "Show pose guide"
@@ -903,9 +902,9 @@ private fun CameraMorePopup(
                 shadowOffset = 2.dp,
                 onClick = onTogglePoseGuide,
             ) {
-                Text(if (uiState.isOverlayVisible) "Hide" else "Show", color = AiPoseColors.Foreground, fontSize = 13.sp)
+                Text(if (uiState.isOverlayVisible) "Hide" else "Show", color = AiPoseColors.Foreground, style = AiPoseTypography.MetaLabel)
             }
-            Text("Opacity ${(uiState.overlayOpacity * 100).roundToInt()}%", color = AiPoseColors.Surface, fontSize = 12.sp)
+            Text("Opacity ${(uiState.overlayOpacity * 100).roundToInt()}%", color = AiPoseColors.Surface, style = AiPoseTypography.Caption)
             Slider(
                 value = uiState.overlayOpacity,
                 onValueChange = onOpacityChanged,
@@ -924,7 +923,7 @@ private fun CameraMorePopup(
             ) {
                 Text("Clear pose", color = AiPoseColors.Foreground, fontSize = 13.sp)
             }
-            Text("Line color", color = AiPoseColors.Surface, fontSize = 12.sp)
+            Text("Line color", color = AiPoseColors.Surface, style = AiPoseTypography.Caption)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -951,8 +950,8 @@ private fun CameraMorePopup(
                             Text(
                                 text = colorOption.name,
                                 color = if (selected) AiPoseColors.Surface else AiPoseColors.Foreground,
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Bold,
+                                style = AiPoseTypography.Control,
+                                letterSpacing = 0.04.em,
                             )
                         }
                     }
