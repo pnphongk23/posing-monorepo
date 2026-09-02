@@ -14,8 +14,8 @@ Canonical token values live in `styles/tokens.css` and are summarized in repo-ro
   - Yellow (`#FED766`) — Notices, warnings, and badges.
   - Green (`#B5E2B9`) — Success tags and info pills.
 - **Backgrounds**: Curated cream base tone (`#FBF6EF`) contrasted against a slate desk backing (`#E2DDD5`).
-- **Typography**: Responsive system sans-serif stack for fast loading without external CDNs:
-  `system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif`
+- **Typography**: Exact SF Pro/system web target for fast loading without external CDNs:
+  `-apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif`
 
 ---
 
@@ -36,7 +36,8 @@ docs/prototype/
 │   ├── saved-list.html         # FEAT-013 Saved collection state prototype
 │   ├── pose-detail-saved.html  # FEAT-013 saved detail/save/try states
 │   ├── sign-in-prompt.html     # FEAT-013 shared auth gate simulation
-│   └── gallery.html            # Captured matches history with list/grid toggle and main navigation
+│   ├── gallery.html            # Captured matches history with list/grid toggle and main navigation
+│   └── gallery-detail.html     # Source-aware captured photo detail and delete confirmation
 ├── styles/                     # Design System & Component Outlines
 │   ├── tokens.css              # Custom properties layer (colors, spacing, radii)
 │   ├── reset.css               # Normalize standard browser styling overrides
@@ -88,7 +89,7 @@ The prototype features several interactive controls. However, due to its static,
 8. **Recoverable Library States**: Refresh briefly shows a retained-content loading state. For repeatable demonstrations, use `?state=loading`, `?state=error`, `?state=refresh-error`, or `?state=empty` on the list; search accepts the same loading/error/empty hooks. Empty and error states provide a next action or retry.
 9. **Source-aware Details**: Cards route with `source` and `id` query parameters. Detail only renders metadata present in the fixture, handles missing/unavailable records with a return path, and confirms personal deletion before removing it from the current `sessionStorage` prototype session.
 10. **Bounded Try Pose Handoff**: `Try Pose` records a mock handoff notice on the detail screen only. It does not navigate to or render `camera-pose-overlay.html`; Camera overlay persistence, rendering, controls, and extraction remain deferred to the pending handoff plan.
-11. **Existing Camera/Gallery Shortcuts**: The standalone `camera-pose-overlay.html` and the camera-facing shortcut remain historical prototype screens outside this Pose Library update. The gallery layout toggle remains **inert** because its buttons are missing from `gallery.html`; camera settings still use `camera-live.html?settings=open`.
+11. **Existing Camera/Gallery Shortcuts**: The standalone `camera-pose-overlay.html` and the camera-facing shortcut remain historical prototype screens outside this Pose Library update. Gallery includes `gallery-detail.html` for source-aware photo detail; the gallery layout toggle remains **inert** because its buttons are missing from `gallery.html`; camera settings still use `camera-live.html?settings=open`.
 
 ### FEAT-013 Saved Poses prototype
 

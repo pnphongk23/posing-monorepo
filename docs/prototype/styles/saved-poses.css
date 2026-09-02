@@ -5,8 +5,8 @@
   border-radius: var(--nb-radius-small);
   padding: var(--nb-space-sm) var(--nb-space-compact);
   margin-bottom: var(--nb-space-md);
-  font-size: var(--nb-font-size-sm);
-  line-height: var(--nb-line-height-normal);
+  font-size: var(--nb-type-body-size);
+  line-height: var(--nb-type-body-leading);
 }
 
 #saved-scroll-area {
@@ -25,9 +25,10 @@
   height: 32px;
   color: var(--nb-color-gray);
   background: var(--nb-color-bg);
-  font-size: var(--nb-font-size-xs);
-  font-weight: var(--nb-font-weight-semibold);
-  letter-spacing: var(--nb-tracking-label);
+  font-size: var(--nb-type-meta-label-size);
+  font-weight: var(--nb-type-meta-label-weight);
+  line-height: var(--nb-type-meta-label-leading);
+  letter-spacing: var(--nb-tracking-none);
   opacity: 0;
   pointer-events: none;
   transform: translateY(calc(-100% + var(--nb-pull-offset, 0px)));
@@ -91,14 +92,14 @@
 }
 
 #sign-in-modal #sign-in-title {
-  line-height: var(--nb-line-height-tight);
+  line-height: var(--nb-type-heading-3-leading);
   text-wrap: balance;
 }
 
 #sign-in-modal #sign-in-copy {
   max-width: 30ch;
-  font-size: var(--nb-font-size-base);
-  line-height: var(--nb-line-height-normal);
+  font-size: var(--nb-type-body-size);
+  line-height: var(--nb-type-body-leading);
   color: var(--nb-color-dark);
 }
 
@@ -111,15 +112,15 @@
 }
 
 #sign-in-modal .nb-btn {
-  font-weight: var(--nb-font-weight-semibold);
-  letter-spacing: 0;
+  font-weight: var(--nb-type-control-weight);
+  letter-spacing: var(--nb-tracking-none);
   text-transform: none;
 }
 
 #sign-in-modal .nb-modal__actions .nb-btn {
   min-height: 48px;
   padding: var(--nb-space-sm) var(--nb-space-md);
-  line-height: var(--nb-line-height-snug);
+  line-height: var(--nb-type-control-leading);
 }
 
 @media (prefers-reduced-motion: reduce) {

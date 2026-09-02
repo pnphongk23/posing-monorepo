@@ -194,7 +194,10 @@ Albums là future boundary, chưa có trong v1; một pose có thể thuộc nhi
 khi Albums được mở trong một Feature/Plan tương lai.
 
 - Thứ tự: Account infrastructure → Saved Poses → Albums (không local-first).
-- Auth: Google via Supabase cho auth và Account/session; quyết định này đã frozen.
+- Auth: Supabase Auth với Google là provider duy nhất được bật trong v1; email/password,
+  magic link, anonymous, Apple, GitHub và mọi provider khác đều tắt/out of scope.
+  Quyết định Google-only này đã frozen; runtime Google/Supabase integration vẫn
+  Unresolved cho tới khi WI-02 có evidence.
 - Current Feature: [[FEAT-013-saved-poses-albums-account-backed|FEAT-013]];
   [[FEAT-008-use-published-poses|FEAT-008]] là predecessor/boundary cho published
   pose và Try Pose flow hiện hữu.
@@ -225,7 +228,6 @@ Poses được chốt.
 | Android parity | out of scope — chưa mở quyết định |
 | Social feed / collaborative publishing | out of scope |
 | Color filters / presets v1 | chưa chốt |
-| Auth method | Google via Supabase — frozen cho Saved Poses v1 |
 | FEAT-011 IAP | chờ approve — không mở ngầm |
 
 ## Nguyên tắc

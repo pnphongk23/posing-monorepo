@@ -12,8 +12,23 @@ decision_dependencies: []
 
 ## Tasks
 
-- Implement or verify Supabase Google session verification and Account persistence.
-- Add mobile token/session store and refresh/clear lifecycle using existing conventions.
+- Implement or verify only the frozen Supabase Auth Google-only boundary: Google is the only enabled provider for v1;
+  all other providers are disabled/out of scope.
+- Implement or verify Account infrastructure/persistence and session verification
+  using repository evidence and the existing account/session boundary.
+- Implement or verify the existing mobile token/session boundary and FR-007 401
+  refresh/clear behavior using existing conventions; invalid sessions must not leak
+  another collection and signed-out Save/Saved/Try actions remain gated.
+- If Product Authority approves the related proposals, verify identity correlation
+  to one Account without duplicate Accounts.
+- If Product Authority approves the proposal details, verify secure OS token
+  storage, expiry/silent-refresh specifics, and sign-out affordance policy.
+- If approved, verify minimal OAuth scopes/privacy, provider-disable guard,
+  Supabase config/secrets boundary, and server-side JWT verification before
+  Account authorization.
+- Keep account/provider deletion, callback/deep-link handling, and App Store 4.8
+  as Unresolved/open proposals; do not invent SDK, env names, URL mechanics, or
+  silently change the Google-only contract.
 - Ensure protected requests return 401 without cross-account leakage and signed-out actions are gated.
 - Do not invent a concrete SDK/dependency without repository evidence.
 
@@ -23,13 +38,15 @@ Auth middleware/verifier, Account persistence, mobile session boundary and tests
 
 ## Success criteria
 
-Valid identity maps to one Account; invalid session cannot read another collection; refresh/clear returns user to sign-in.
+If the identity-mapping proposal is approved, evidence should show valid identity
+maps to one Account without duplicates. Independently, invalid session cannot read
+another collection; existing FR-007 refresh/clear returns user to sign-in.
 
 ## Risks
 
-Provider SDK/config runtime path is currently Unresolved and may require Maintainer evidence.
+Provider SDK/config runtime path is currently Unresolved and may require Maintainer
+evidence; no runtime integration is shipped or verified until this WI supplies it.
 
 ## Required evidence
 
 Exact paths/symbols, dependency/config paths, valid/expired-token tests, 401 test, backend/mobile commands and ckh validate.
-

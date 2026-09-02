@@ -1,4 +1,3 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
 @import "tailwindcss" source(none);
 @source "../**/*.{js,jsx,ts,tsx,mdx}";
 @source not "../../.next/**/*";
@@ -27,7 +26,7 @@
   --color-border: var(--border-color);
   --color-text-primary: var(--text-primary);
   --color-text-white: var(--text-white);
-  --font-sans: 'Inter', sans-serif;
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
 
 /* Global Reset */
@@ -41,7 +40,7 @@ html, body {
 }
 
 body {
-  font-family: 'Inter', sans-serif;
+  font-family: var(--font-sans);
   background: var(--bg-primary);
   color: var(--text-primary);
   -webkit-font-smoothing: antialiased;
@@ -77,16 +76,16 @@ body {
 
 /* Tracking utilities */
 .tracking-neo {
-  letter-spacing: 0.06em;
+  letter-spacing: -0.02em;
 }
 .tracking-neo-wide {
-  letter-spacing: 0.08em;
+  letter-spacing: -0.01em;
 }
 .tracking-neo-wider {
-  letter-spacing: 0.1em;
+  letter-spacing: 0;
 }
 .tracking-neo-widest {
-  letter-spacing: 0.12em;
+  letter-spacing: 0.04em;
 }
 
 /* Page transitions */

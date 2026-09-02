@@ -35,10 +35,7 @@ import androidx.compose.ui.semantics.testTag
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.em
-import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import com.aipose.Photo
 import com.aipose.ui.components.NeoBrutalismContainer
@@ -132,10 +129,7 @@ fun PhotoCard(
                 }
                 Text(
                     text = photo.poseName,
-                    style = AiPoseTypography.Caption,
-                    fontSize = 8.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 0.06.em,
+                    style = AiPoseTypography.MetaLabel,
                     color = AiPoseColors.Foreground,
                     modifier = Modifier
                         .align(Alignment.TopEnd)
@@ -158,9 +152,6 @@ fun PhotoCard(
                 text = timeStr,
                 style = AiPoseTypography.Caption,
                 color = AiPoseColors.Foreground.copy(alpha = 0.5f),
-                fontWeight = FontWeight.SemiBold,
-                letterSpacing = 0.08.em,
-                fontSize = 9.sp
             )
             Icon(
                 painter = painterResource(if (photo.isFavorite == 1L) Res.drawable.ic_heart_filled else Res.drawable.ic_heart),

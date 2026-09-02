@@ -227,7 +227,7 @@ fun PosesScreen(
             ) {
                 Text(
                     text = "Community",
-                    style = AiPoseTypography.Heading2,
+                    style = AiPoseTypography.NavigationTitle,
                     color = AiPoseColors.Foreground,
                 )
                 Row(
@@ -625,7 +625,7 @@ fun CommunityPoseCard(
 
         Text(
             text = pose.name,
-            style = AiPoseTypography.BodyBold,
+            style = AiPoseTypography.Control,
             color = AiPoseColors.Foreground,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -646,7 +646,7 @@ fun CountOnlyHeader(
     ) {
         Text(
             text = "$count poses",
-            style = AiPoseTypography.CaptionBold,
+            style = AiPoseTypography.MetaLabel,
             color = AiPoseColors.Subtext,
             modifier = Modifier.testTag("poses-count-label")
         )

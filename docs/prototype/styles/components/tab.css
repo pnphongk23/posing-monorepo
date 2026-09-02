@@ -19,8 +19,10 @@
   width: auto;
   min-height: var(--nb-touch-min);
   padding: 8px var(--nb-space-sm) 11px;
-  font-size: 15px;
-  letter-spacing: var(--nb-tracking-label);
+  font-size: var(--nb-type-poses-toolbar-tab-size);
+  line-height: var(--nb-type-poses-toolbar-tab-leading);
+  font-weight: var(--nb-type-poses-toolbar-tab-weight);
+  letter-spacing: var(--nb-type-poses-toolbar-tab-tracking);
   text-transform: none;
   white-space: nowrap;
 }
@@ -38,10 +40,10 @@
   flex: 1;
   text-align: center;
   font-family: var(--nb-font-family);
-  font-weight: var(--nb-font-weight-bold);
-  font-size: var(--nb-font-size-sm);
-  line-height: var(--nb-line-height-tight);
-  letter-spacing: var(--nb-tracking-label);
+  font-weight: var(--nb-type-tab-weight);
+  font-size: var(--nb-type-tab-size);
+  line-height: var(--nb-type-tab-leading);
+  letter-spacing: var(--nb-type-tab-tracking);
   padding: var(--nb-space-sm) var(--nb-space-xs) 12px;
   background-color: transparent;
   border: 0;
@@ -74,6 +76,6 @@
 @media (max-width: 360px) {
   .nb-tabs--toolbar .nb-tab-btn {
     padding-inline: 4px;
-    letter-spacing: var(--nb-tracking-tight);
+    letter-spacing: var(--nb-type-poses-toolbar-tab-tracking);
   }
 }

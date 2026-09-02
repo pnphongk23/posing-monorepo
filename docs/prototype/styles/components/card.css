@@ -114,10 +114,10 @@
   border: var(--nb-border-thin);
   border-radius: var(--nb-radius-small);
   padding: var(--nb-space-xs) 6px;
-  font-size: var(--nb-font-size-xs);
-  font-weight: var(--nb-font-weight-bold);
-  line-height: var(--nb-line-height-tight);
-  letter-spacing: var(--nb-tracking-label);
+  font-size: var(--nb-type-meta-label-size);
+  font-weight: var(--nb-type-meta-label-weight);
+  line-height: var(--nb-type-meta-label-leading);
+  letter-spacing: var(--nb-tracking-none);
   color: var(--nb-color-dark);
 }
 
@@ -131,9 +131,10 @@
   background: transparent;
   border: none;
   padding: 0;
-  font-size: var(--nb-font-size-xs);
-  font-weight: var(--nb-font-weight-bold);
-  letter-spacing: var(--nb-tracking-label);
+  font-size: var(--nb-type-meta-label-size);
+  font-weight: var(--nb-type-meta-label-weight);
+  line-height: var(--nb-type-meta-label-leading);
+  letter-spacing: var(--nb-tracking-none);
   color: var(--nb-color-gray);
 }
 

@@ -47,7 +47,8 @@ Try Pose. V1 chỉ triển khai Saved Poses; Albums là future/out-of-scope.
 Feature đang proposed; approval của Product Authority còn pending. Đây không phải
 claim rằng auth, Saved API hay Saved UI đã shipped.
 
-**Phạm vi:** Google trên nền tảng Supabase cho auth và Account/session; Saved
+**Phạm vi:** Supabase Auth với Google là provider duy nhất được bật trong v1;
+mọi provider khác đều tắt và out of scope. Google trên nền tảng Supabase cho auth và Account/session; Saved
 collection qua SavedEntry; mobile Save/Unsave, Saved list và mở detail/Try Pose.
 Guest chưa có signed-in Account thì bắt buộc sign-in và không được Try Pose.
 
@@ -141,6 +142,31 @@ saved item để xem detail/Try Pose.
   và reuse flow verify/handoff hiện có.
 - **FR-010:** Albums many-to-many (một pose có thể thuộc nhiều Album) là future
   boundary; Album CRUD/membership không thuộc acceptance hay implementation v1.
+
+### Proposed missing constraints — proposed — needs Product Authority approval
+
+Các mục dưới đây là proposal bổ sung sau FR-001..FR-010, không phải FR mới,
+không phải frozen decision, và không thay đổi spec/OpenAPI.
+
+Frozen provider contract: Authentication uses Supabase Auth with Google as the
+only enabled provider for v1; email/password, magic link, anonymous, Apple,
+GitHub và mọi provider khác đều tắt/out of scope; không có Apple CTA. Guest
+browse/capture, Guest không có valid session nên không được Save/Saved/Try Pose,
+và Albums future boundary là các invariant được giữ nguyên.
+
+| Constraint | Status | Recommended default |
+| --- | --- | --- |
+| Identity mapping: correlation nội bộ dùng `auth.users.id` của Supabase và stable Google subject `sub`; một Google account map tới đúng một Account, cùng Google login trên nhiều thiết bị hội tụ về Account đó, và phải ngăn duplicate Account. | proposed | Giữ mapping nội bộ này; không thêm Account field hay OpenAPI change. |
+| Session lifecycle và sign-out là open question: access/refresh token, expiry, silent refresh và sign-out. | proposed open question | Nếu được approve, lưu token trong secure OS storage; dùng auth boundary hiện hữu cho expiry/silent refresh; giữ FR-007 refresh/clear; recommended default là chưa thêm Account tab hoặc sign-out affordance mới cho tới khi Product Authority quyết định. |
+| OAuth/privacy: scope và dữ liệu Google. | proposed | Chỉ request `openid email profile`, không xin quyền thêm; có consent copy; chỉ map `displayName` vào `Account.displayName` khi cần, chỉ dùng email khi cần, không persist avatar hay dữ liệu Google không liên quan; giữ spec unchanged. |
+| Provider enforcement guard/configuration. | proposed | Nếu được approve, dashboard/config guard phải chỉ bật Google và reject provider khác; không provider mới nếu không có Product Authority decision. |
+| Account/provider deletion: cancellation và Google identity bị xoá/disable. | proposed open question | Khi user Account deletion được xác nhận, purge Account-scoped SavedEntry vì privacy; nếu Google identity bị xoá/disable nhưng app Account chưa bị xoá, giữ dữ liệu, block reauth và không silently tạo Account mới cho tới khi có relink policy. Không áp dụng nhầm với FR-006 pose-removal retention. |
+| Callback/deep link ownership. | proposed | iOS URL scheme/universal-link mechanics thuộc WI-02 và giữ `Unresolved` cho tới khi có repository/runtime evidence; không invent SDK, URL hay claim verification. |
+| App Store guideline 4.8. | proposed release risk/open question | Thêm release-lane review checkpoint; không freeze Sign in with Apple và không thêm Apple button. Nếu phát sinh requirement bắt buộc, escalate `SCOPE_CHANGE_PROPOSAL`/`CLARIFICATION_NEEDED`. |
+| Config/auth verification: Supabase config và backend JWT verification. | proposed | Project URL và anon key chỉ là config inputs; không đưa `service_role` hoặc JWT signing secret lên client; anon key không phải authorization; backend phải verify Supabase session JWT server-side (issuer/audience/expiry khi áp dụng) trước khi authorize Account data; không freeze env-var names. |
+
+Runtime Google/Supabase integration vẫn **Unresolved** cho tới khi WI-02 cung cấp
+evidence; các proposal trên không phải runtime, shipped hoặc verified claims.
 
 ### Non-goals
 

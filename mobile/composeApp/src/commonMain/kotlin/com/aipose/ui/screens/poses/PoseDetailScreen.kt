@@ -452,14 +452,14 @@ fun PoseDetailScreen(
                             ) {
                                 Text(
                                     text = s.name,
-                                    style = AiPoseTypography.Heading2,
+                                    style = AiPoseTypography.ScreenTitle,
                                     color = AiPoseColors.Foreground
                                 )
 
                                 if (s.difficulty != null) {
                                     Text(
                                         text = "Difficulty: ${s.difficulty}",
-                                        style = AiPoseTypography.BodyBold,
+                                        style = AiPoseTypography.MetaLabel,
                                         color = AiPoseColors.Primary
                                     )
                                 }
@@ -506,7 +506,7 @@ fun PoseDetailScreen(
                             ) {
                                 Text(
                                     text = preview.name,
-                                    style = AiPoseTypography.Heading2,
+                                      style = AiPoseTypography.ScreenTitle,
                                     color = AiPoseColors.Foreground
                                 )
                                 Text(

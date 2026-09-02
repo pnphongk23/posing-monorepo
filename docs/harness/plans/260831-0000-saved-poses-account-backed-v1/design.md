@@ -8,9 +8,19 @@ status: pending
 Reuse CommunityPose, PoseDetailScreen, PoseApiService, PoseRepository, existing
 pagination and error conventions. Add only Account/session and SavedEntry boundaries.
 
-Google on Supabase is the auth authority. Backend verifies session and maps identity
-to Account; mobile stores token/session through existing native boundary once WI-02
-confirms exact paths. Do not invent SDK, dependency, config key or service.
+Supabase Auth uses Google as the only enabled provider for v1; email/password,
+magic link, anonymous, Apple, GitHub and every other provider are disabled/out of
+scope. Google on Supabase is the auth authority. Backend shall verify session and
+map identity to Account once WI-02 confirms exact paths; mobile stores token/session
+through existing native boundary once WI-02 confirms exact paths.
+Do not invent SDK, dependency, config key or service.
+
+The Feature proposal table is the source for `proposed — needs Product Authority
+approval` constraints: stable identity mapping, secure token lifecycle/sign-out,
+minimal OAuth scopes/privacy, provider enforcement, deletion/relink handling,
+callback/deep-link ownership, App Store 4.8 review risk, and config/JWT checks.
+These are not frozen decisions; runtime Google/Supabase integration remains
+`Unresolved` until WI-02 evidence.
 
 Saved API: GET /api/me/saved, PUT /api/me/saved/:poseId, DELETE /api/me/saved/:poseId.
 Use unique(accountId, poseId), published filtering, 200 Save, 204 Unsave, and retain
