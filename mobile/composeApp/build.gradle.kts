@@ -1,4 +1,6 @@
 // composeApp/build.gradle.kts
+import org.jetbrains.kotlin.gradle.plugin.mpp.NativeBuildType
+
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
     kotlin("plugin.serialization") version "2.0.0"
@@ -18,6 +20,12 @@ kotlin {
         homepage = "https://github.com/pnphongk23/ai-pose"
         ios.deploymentTarget = "15.0"
         podfile = project.file("../iosApp/Podfile")
+        // XcodeGen uses environment-qualified configurations; keep the
+        // Kotlin/Native framework build type aligned with each one.
+        xcodeConfigurationToNativeBuildType["Debug-Dev"] = NativeBuildType.DEBUG
+        xcodeConfigurationToNativeBuildType["Debug-Prod"] = NativeBuildType.DEBUG
+        xcodeConfigurationToNativeBuildType["Release-Dev"] = NativeBuildType.RELEASE
+        xcodeConfigurationToNativeBuildType["Release-Prod"] = NativeBuildType.RELEASE
         // FEAT-010 / DEC-007: Firebase SDKs are resolved by the existing Podfile and
         // consumed from native Swift (AppDelegate.swift), which compiles with
         // Xcode/clang. The Kotlin side is a pure contract/test seam only

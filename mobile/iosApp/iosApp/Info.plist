@@ -30,6 +30,10 @@
 	<string>AI Pose needs access to save your captured poses to Photos.</string>
 	<key>RevenueCatPublicSDKKey</key>
 	<string>$(REVENUECAT_PUBLIC_SDK_KEY)</string>
+	<key>AIPoseEnvironment</key>
+	<string>$(AIPOSE_ENVIRONMENT)</string>
+	<key>AIPoseBuildConfiguration</key>
+	<string>$(AIPOSE_BUILD_CONFIGURATION)</string>
 	<key>LegalTermsURL</key>
 	<string>$(LEGAL_TERMS_URL)</string>
 	<key>LegalPrivacyURL</key>

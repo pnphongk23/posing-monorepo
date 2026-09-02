@@ -3,6 +3,11 @@ options:
   bundleIdPrefix: com.aipose
   deploymentTarget:
     iOS: "15.0"
+configs:
+  Debug-Dev: debug
+  Release-Dev: release
+  Debug-Prod: debug
+  Release-Prod: release
 targets:
   iosApp:
     type: application
@@ -16,3 +21,37 @@ targets:
     settings:
       PRODUCT_BUNDLE_IDENTIFIER: camerapose.app
       INFOPLIST_FILE: iosApp/Info.plist
+    configFiles:
+      Debug-Dev: Config/Dev-Debug.xcconfig
+      Release-Dev: Config/Dev-Release.xcconfig
+      Debug-Prod: Config/Prod-Debug.xcconfig
+      Release-Prod: Config/Prod-Release.xcconfig
+schemes:
+  Dev:
+    build:
+      targets:
+        iosApp: all
+    run:
+      config: Debug-Dev
+    test:
+      config: Debug-Dev
+    profile:
+      config: Release-Dev
+    analyze:
+      config: Debug-Dev
+    archive:
+      config: Release-Dev
+  Prod:
+    build:
+      targets:
+        iosApp: all
+    run:
+      config: Debug-Prod
+    test:
+      config: Debug-Prod
+    profile:
+      config: Release-Prod
+    analyze:
+      config: Debug-Prod
+    archive:
+      config: Release-Prod

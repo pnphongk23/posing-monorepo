@@ -5,6 +5,12 @@ owner. `RevenueCatAdapter` reads the public SDK key from the environment-specifi
 `REVENUECAT_PUBLIC_SDK_KEY` build setting through `Info.plist`; an unset,
 placeholder, or example value leaves RevenueCat unconfigured.
 
+The XcodeGen source of truth is `project.yml`. Use the `Dev` scheme for the
+`Debug-Dev`/`Release-Dev` configurations and the `Prod` scheme for
+`Debug-Prod`/`Release-Prod`. The four `.xcconfig` files under `Config/` carry
+environment-specific public-key placeholders and legal URL placeholders; do
+not commit real values.
+
 External dependencies, supplied outside this repository:
 
 - the real public SDK key for each environment;
@@ -30,6 +36,10 @@ RevenueCat owns purchase callbacks and transaction handling; no second StoreKit
 listener or finish path is allowed.
 
 ## Deterministic local matrix
+
+`AIPOSE_BYPASS_PREMIUM=1` is a local capability only when both conditions hold:
+the binary is Debug and `AIPoseEnvironment` is `DEV`. It is disabled for all
+PROD configurations, including `Debug-Prod`.
 
 `PurchaseCoreTest` covers ready/default offering with annual highlighted and
 monthly as anchor, confirmed entitlement, cancellation, failure, pending,

@@ -1,7 +1,7 @@
 ---
 work_item: 4
 title: Verify IAP states, Sandbox, and iOS build
-status: in_progress
+status: blocked
 priority: P2
 effort: TBD
 dependencies:
@@ -9,6 +9,7 @@ dependencies:
 decision_dependencies:
   - "[[DEC-007-ios-sdk-integration-architecture|DEC-007]]"
   - "[[DEC-008-revenuecat-pricing-and-offerings|DEC-008]]"
+status_reason: "chờ external config từ user: 2 IAP App Store Connect, RevenueCat offering/entitlement public key, sandbox tester, legal URLs; resume khi user cấp"
 ---
 
 # Work Item 4: Verify IAP states, Sandbox, and iOS build

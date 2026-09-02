@@ -16,10 +16,20 @@ Kotlin side (`mobile/composeApp`) is a **pure contract/test seam only**
 2. Copy it to `mobile/iosApp/iosApp/GoogleService-Info.plist`.
    - This exact path is git-ignored; the real file must never be committed.
    - `GoogleService-Info.plist.example` in this directory is a template with
-     fake values only.
-3. No Xcode project change is required for the resource if you regenerate the
-   project via xcodegen (`project.yml` includes the `iosApp` sources dir);
-   otherwise add the file to the `iosApp` target manually.
+      fake values only.
+3. The same Firebase plist is intentionally used for both `Dev` and `Prod`;
+   this lane does not split Firebase configuration files. No Xcode project
+   change is required after regenerating from `project.yml` because the
+   `iosApp` sources directory is included; otherwise add the file to the target
+   manually.
+
+## Xcode environment selection
+
+Run the `Dev` or `Prod` scheme generated from `project.yml`. The selected
+scheme resolves `AIPoseEnvironment` and `AIPoseBuildConfiguration` through the
+matching `Config/*-*.xcconfig` file and exposes them to Kotlin via
+`Info.plist`. Firebase remains best-effort and is not used as the environment
+descriptor.
 
 ## Startup behavior
 
@@ -44,7 +54,9 @@ Kotlin side (`mobile/composeApp`) is a **pure contract/test seam only**
 ./gradlew :composeApp:allTests --console=plain
 ./gradlew :composeApp:compileKotlinIosSimulatorArm64 --console=plain
 cd mobile/iosApp && pod install
-xcodebuild -workspace iosApp.xcworkspace -scheme iosApp -sdk iphonesimulator -configuration Debug CODE_SIGNING_ALLOWED=NO build
+xcodebuild -list -workspace iosApp.xcworkspace
+xcodebuild -workspace iosApp.xcworkspace -scheme Dev -sdk iphonesimulator -configuration Debug-Dev CODE_SIGNING_ALLOWED=NO build
+xcodebuild -workspace iosApp.xcworkspace -scheme Prod -sdk iphonesimulator -configuration Release-Prod CODE_SIGNING_ALLOWED=NO build
 ```
 
 Do not archive, upload to TestFlight, or repair keychains as part of this lane.
