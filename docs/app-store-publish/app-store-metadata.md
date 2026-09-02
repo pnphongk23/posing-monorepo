@@ -156,6 +156,6 @@ Chào mừng đến với Snap Pose! Phiên bản đầu tiên mang trọn quy t
 
 - README.md — mô tả sản phẩm & limitations (không claim overlay camera).
 - docs/harness/features/FEAT-003 (browse/search), FEAT-004 (extract), FEAT-001/002 (camera/gallery).
-- docs/harness/plans/260826-release-prep/CHECKLIST.md — V6 icon, V8 bundle, M1 endpoint prod (đã revert trong tree), M2 CFBundleVersion=4.
+- docs/evidence/260826-release-prep-checklist.md — V6 icon, V8 bundle, M1 endpoint prod (đã revert trong tree), M2 CFBundleVersion=4.
 - docs/privacy-ugc-compliance.md — Giai đoạn 1: admin-only publish (chưa UGC).
 - DEC-008 — pricing đề xuất (FEAT-011 pending — không claim trong copy).

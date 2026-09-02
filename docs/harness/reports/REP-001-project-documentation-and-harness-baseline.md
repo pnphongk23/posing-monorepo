@@ -18,7 +18,6 @@ relationships:
     - "[[FEAT-005-manage-a-pose-guide|FEAT-005]]"
   source_paths:
     - README.md
-    - docs/community-poses-api.md
     - docs/design-reference
     - docs/prototype
     - mobile

@@ -2,7 +2,7 @@
 
 > Research note for feat-011. Verified 2026-08-29 against Apple HIG IAP,
 > App Review 3.1.2, DEC-008, and FEAT-011. Pricing frozen per DEC-008.
-> Binding presentation spec: `docs/harness/plans/260826-0011-paywall-purchase-sandbox/design.md`.
+> Binding presentation spec: `docs/evidence/260826-paywall-purchase-sandbox/design.md`.
 
 ---
 
