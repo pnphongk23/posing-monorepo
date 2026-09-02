@@ -5,6 +5,7 @@ target 'iosApp' do
   use_frameworks!
   pod 'composeApp', :path => '../composeApp'
   pod 'MijickCamera', '~> 3.0.0'
+  pod 'RevenueCat', '~> 5.87'
 
   # FEAT-010 / DEC-007: native iOS Firebase SDKs via the existing CocoaPods lane.
   # Versions are resolved by CocoaPods against this toolchain (Xcode 26.1.1,

@@ -80,4 +80,4 @@ Ledger (script's own output): `docs/evidence/260826-local-to-prod-migrate-ledger
 
 ## 6) PO decision needed (summary)
 
-See `docs/harness/plans/260826-data-migrate/PLAN.md` § Decisions for the three options. In short: there is **no real local data to migrate** beyond history (key + 92 logs + 1 succeeded job) — the estate is effectively a "verify-only / nothing to migrate" state unless real source data is supplied from elsewhere.
+See `docs/evidence/260826-data-migrate-plan.md` § Decisions for the three options. In short: there is **no real local data to migrate** beyond history (key + 92 logs + 1 succeeded job) — the estate is effectively a "verify-only / nothing to migrate" state unless real source data is supplied from elsewhere.

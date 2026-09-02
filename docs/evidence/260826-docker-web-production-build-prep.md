@@ -8,8 +8,8 @@ Không thuộc scope: `sub2api/`. Không deploy, không push image/registry, kh�
 
 | Service | Kết quả | Thời gian/log |
 |---|---|---|
-| `pose-extract-server` | **PASS** — image `ai-pose-pose-extract-server:latest` | ~2 phút; [backend-build-1.log](backend-build-1.log) |
-| `admin-ui` | **PASS** — image `ai-pose-admin-ui:latest` | ~33 giây; [frontend-build-1.log](frontend-build-1.log) |
+| `pose-extract-server` | **PASS** — image `ai-pose-pose-extract-server:latest` | ~2 phút; [backend-build-1.log](../harness/plans/260826-0004-docker-web-production-build/backend-build-1.log) |
+| `admin-ui` | **PASS** — image `ai-pose-admin-ui:latest` | ~33 giây; [frontend-build-1.log](../harness/plans/260826-0004-docker-web-production-build/frontend-build-1.log) |
 
 Kết quả đạt được sau khi khôi phục Docker Desktop (quit + relaunch; Engine trước đó wedged không trả lời socket, đúng như ghi nhận lần thử đầu trong `backend-build.log`/`frontend-build.log` — các log đó giữ làm lịch sử). Build thật chạy lần lượt từng service với `Dockerfile` hiện tại (đã chỉnh thứ tự Playwright), kết quả đều PASS.
 

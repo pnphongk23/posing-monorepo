@@ -1,7 +1,7 @@
 ---
 work_item: 1
 title: Freeze restore contract and state matrix
-status: pending
+status: completed
 priority: P2
 effort: TBD
 dependencies: []

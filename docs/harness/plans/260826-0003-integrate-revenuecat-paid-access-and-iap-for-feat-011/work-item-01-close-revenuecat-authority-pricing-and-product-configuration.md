@@ -1,7 +1,7 @@
 ---
 work_item: 1
 title: Close RevenueCat authority, pricing, and product configuration
-status: pending
+status: completed
 priority: P2
 effort: TBD
 dependencies: []
@@ -15,12 +15,12 @@ decision_dependencies:
 ## Tasks
 
 - Confirm FEAT-011, DEC-007, DEC-008, and this Plan approvals before Cook.
-- Confirm paid-access scope: Community library/detail/Try Pose and
-  Gallery/detail/save/share.
-- Confirm product IDs/types, pricing, offering/entitlement names, trial/lifetime
-  policy, customer identity policy, legal URLs, and external App Store setup.
-- Resolve the prototype Premium header location, the pre-purchase preview, the
-  paywall dismissal policy, and the conflict-safe presentation seam.
+- Confirm paid-access scope: Capture/Camera, Try Pose, and Gallery save/share;
+  Home and browsing/detail remain free.
+- Confirm product IDs/types, pricing, offering/entitlement names, no-trial policy,
+  customer identity policy, legal URLs, and external App Store setup.
+- Record Premium header and post-Splash triggers as excluded; verify triggered
+  paywall dismissal returns to prior context and preserve the conflict-safe seam.
 - Re-run sourcewalk/direct impact checks for the selected app entry symbols;
   preserve the remove-my-poses-tab boundary.
 
@@ -32,9 +32,8 @@ source files.
 
 ## Success criteria
 
-- All commercial and observable behavior choices are recorded as PO direction
-  or approved authority; no plan assumes an unselected free tier, preview, or
-  route.
+- All commercial and observable behavior choices are recorded as approved PO
+  direction; no unselected trial, trigger, route, or capability is assumed.
 
 ## Risks
 

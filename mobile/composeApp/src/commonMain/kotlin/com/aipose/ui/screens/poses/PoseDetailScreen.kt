@@ -48,6 +48,12 @@ import com.aipose.ui.components.PrimaryButton
 import com.aipose.ui.theme.AiPoseColors
 import com.aipose.ui.theme.AiPoseTypography
 import com.aipose.ui.theme.Spacing
+import com.aipose.purchases.PaywallScreen
+import com.aipose.purchases.PurchaseGateway
+import com.aipose.purchases.UnconfiguredPurchaseGateway
+import com.aipose.purchases.PurchaseGatewayProvider
+import com.aipose.purchases.decidePaidAccess
+import com.aipose.purchases.premiumTestBypassEnabled
 import androidx.compose.ui.graphics.Color
 import com.aipose.ui.theme.CornerRadius
 import com.aipose.data.resolveImagePath
@@ -387,11 +393,13 @@ fun PoseDetailScreen(
     viewModel: PoseDetailViewModel,
     onUseWithCamera: (PreparedPoseReference) -> Unit,
     onBack: () -> Unit,
+    purchaseGateway: PurchaseGateway = PurchaseGatewayProvider.current,
     modifier: Modifier = Modifier
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val actionState by viewModel.actionState.collectAsState()
-    var showDeleteDialog by remember { mutableStateOf(false) }
+      var showDeleteDialog by remember { mutableStateOf(false) }
+      var showPaywall by remember { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
 
     LaunchedEffect(viewModel) {
@@ -490,11 +498,11 @@ fun PoseDetailScreen(
 
                             PrimaryButton(
                                 text = "Try Pose",
-                                onClick = {
-                                    coroutineScope.launch {
-                                        viewModel.tryPose(onSuccess = onUseWithCamera)
-                                    }
-                                },
+                                  onClick = {
+                                        if (premiumTestBypassEnabled || decidePaidAccess(purchaseGateway.snapshot.value).allowAction) {
+                                          coroutineScope.launch { viewModel.tryPose(onSuccess = onUseWithCamera) }
+                                      } else showPaywall = true
+                                  },
                                 modifier = Modifier.fillMaxWidth()
                             )
                         }
@@ -586,7 +594,7 @@ fun PoseDetailScreen(
             is PoseDetailUiState.Success -> Unit
         }
 
-        if (showDeleteDialog) {
+          if (showDeleteDialog) {
             AlertDialog(
                 onDismissRequest = { showDeleteDialog = false },
                 title = { Text("Delete pose?") },
@@ -599,7 +607,8 @@ fun PoseDetailScreen(
                                 val success = viewModel.delete()
                                 if (success) {
                                     onBack()
-                                }
+          }
+
                             }
                         }
                     ) {
@@ -632,6 +641,13 @@ fun PoseDetailScreen(
                     )
                 }
             }
+        }
+        if (showPaywall) {
+            PaywallScreen(
+                gateway = purchaseGateway,
+                onDismiss = { showPaywall = false },
+                modifier = Modifier.fillMaxSize(),
+            )
         }
     }
 }

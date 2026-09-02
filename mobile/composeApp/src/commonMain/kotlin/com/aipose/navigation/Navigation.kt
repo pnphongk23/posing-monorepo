@@ -65,8 +65,12 @@ import cafe.adriel.voyager.navigator.tab.TabOptions
 import com.aipose.Pose
 import com.aipose.Photo
 import com.aipose.camera.CameraScreen
+import com.aipose.camera.CameraSnapshotPersistence
+import com.aipose.camera.toPersistedPoseIdentity
+import com.aipose.data.resolveImagePath
 import com.aipose.data.PreparedPoseReference
 import com.aipose.data.PoseServiceLocator
+import com.aipose.platform.shareImage
 import com.aipose.ui.screens.gallery.GalleryScreen
 import com.aipose.ui.screens.gallery.GalleryViewModel
 import com.aipose.ui.screens.gallery.GalleryPhotoDetailScreen
@@ -85,6 +89,8 @@ import com.aipose.ui.screens.poses.SearchScreen
 val MainDockContentInset = 72.dp
 
 val LocalMainDockVisible = compositionLocalOf { true }
+/** Approved App-root seam for returning Camera to the tab active before entry. */
+val LocalCameraDismiss = compositionLocalOf<() -> Unit> { {} }
 
 /** E-DOCK: stable test tags for the floating dock (overlaid by App.kt on non-Camera tabs). */
 internal const val MAIN_DOCK_TEST_TAG = "main-dock"
@@ -160,7 +166,7 @@ object CameraTab : Tab {
 
     @Composable
     override fun Content() {
-        CameraScreen()
+        CameraScreen(onDismiss = LocalCameraDismiss.current)
     }
 }
 
@@ -232,9 +238,9 @@ class GalleryDetailVoyagerScreen(private val photo: Photo) : Screen {
     override fun Content() {
         val navigator = LocalNavigator.currentOrThrow
         var backOwned by remember { mutableStateOf(false) }
-        GalleryPhotoDetailScreen(
-            photo = photo,
-            onBack = {
+            GalleryPhotoDetailScreen(
+                photo = photo,
+                onBack = {
                 // Pop-first: request the reverse and perform the exactly-one pop
                 // immediately. The root overlay owns the reverse completion + cleanup;
                 // this detail scope never awaits it (pop disposes this screen). A rapid
@@ -246,9 +252,13 @@ class GalleryDetailVoyagerScreen(private val photo: Photo) : Screen {
                     BackDecision.REVERSE_POP -> navigator.pop()
                     BackDecision.POP -> navigator.pop()
                     BackDecision.NONE -> backOwned = owned
-                }
-            },
-        )
+                  }
+                },
+                onShare = { selected ->
+                    val path = resolveImagePath(selected.imagePath) ?: selected.imagePath
+                    shareImage(path, null)
+                },
+            )
     }
 }
 
@@ -322,7 +332,10 @@ class PoseDetailVoyagerScreen(
             preview = previewItem,
             viewModel = remember { PoseDetailViewModel(previewItem.poseId) },
             onUseWithCamera = createTryPoseCameraHandoffAction(
-                setPreparedReference = { PoseServiceLocator.preparedReference = it },
+                setPreparedReference = {
+                    PoseServiceLocator.preparedReference = it
+                      CameraSnapshotPersistence.replacePose(it.toPersistedPoseIdentity())
+                },
                 setCurrentTab = { tabNavigator.current = it },
             ),
             onBack = {

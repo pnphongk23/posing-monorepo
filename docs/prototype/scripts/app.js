@@ -28,6 +28,10 @@ document.addEventListener('DOMContentLoaded', function() {
   const escapeHtml = posePrototype ? posePrototype.escapeHtml : value => String(value);
   const poseSourceLabel = posePrototype ? posePrototype.getPoseSourceLabel : pose => pose.category;
 
+  function paywallUrl(returnPath) {
+    return `paywall.html?return=${encodeURIComponent(returnPath)}`;
+  }
+
   function createPoseCard(pose, index, origin) {
     const item = document.createElement('div');
     item.className = 'nb-grid-pose-item';
@@ -267,6 +271,12 @@ document.addEventListener('DOMContentLoaded', function() {
 
       if (detailTryPoseBtn) {
         detailTryPoseBtn.addEventListener('click', function() {
+          const isPremium = sessionStorage.getItem('ai-pose.premium') === 'true';
+          if (pose.category === 'community' && !isPremium) {
+            const returnPath = `${window.location.pathname.split('/').pop()}${window.location.search}`;
+            window.location.href = paywallUrl(returnPath);
+            return;
+          }
           const overlayUrl = new URL('camera-pose-overlay.html', window.location.href);
           overlayUrl.searchParams.set('id', pose.id);
           if (pose.source || pose.category) {
@@ -297,6 +307,10 @@ document.addEventListener('DOMContentLoaded', function() {
 
   if (shutterBtn && cameraViewport) {
     shutterBtn.addEventListener('click', function(e) {
+      if (sessionStorage.getItem('ai-pose.premium') !== 'true') {
+        window.location.href = paywallUrl('camera-live.html');
+        return;
+      }
       // Simulate physical flash card blink
       const flash = document.createElement('div');
       flash.style.position = 'absolute';
@@ -419,6 +433,12 @@ document.addEventListener('DOMContentLoaded', function() {
 
       if (saveBtn && detailNotice) {
         saveBtn.addEventListener('click', function() {
+          const isPremium = sessionStorage.getItem('ai-pose.premium') === 'true';
+          if (!isPremium) {
+            const returnPath = `${window.location.pathname.split('/').pop()}${window.location.search}`;
+            window.location.href = paywallUrl(returnPath);
+            return;
+          }
           detailNotice.textContent = 'Saved to Photos.';
           detailNotice.hidden = false;
         });

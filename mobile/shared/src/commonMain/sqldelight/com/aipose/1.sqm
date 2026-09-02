@@ -1,0 +1,6 @@
+CREATE TABLE CameraSnapshot (
+    id INTEGER NOT NULL PRIMARY KEY CHECK (id = 1),
+    schemaVersion INTEGER NOT NULL,
+    settings_json TEXT NOT NULL,
+    pose_json TEXT
+);
