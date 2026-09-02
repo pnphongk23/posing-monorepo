@@ -105,7 +105,7 @@ fun CameraScreen(
     val database = remember { DatabaseProvider.getOrCreate(DatabaseDriverFactory()) }
       val photoRepository = remember { PhotoRepository(database) }
       val imageStorage = remember { ImageStorage() }
-      val snapshotRepository = remember { CameraSnapshotRepository(database) }
+        val snapshotRepository = remember { CameraSnapshotRepository(database) }
 
     val coordinator = remember {
         CameraCoordinator(
@@ -177,12 +177,12 @@ fun CameraScreen(
         )
       }
 
-      fun clearPose() {
-            snapshotRepository.clearPose()
-            PoseServiceLocator.preparedReference = null
-            activeReference = null
-            uiState = uiState.withoutPose()
-        }
+        fun clearPose() {
+              CameraSnapshotPersistence.clearPose(uiState.toPersistedCameraSettings(zoomUiState.zoomValue))
+              PoseServiceLocator.preparedReference = null
+              activeReference = null
+              uiState = uiState.withoutPose()
+          }
 
       LaunchedEffect(Unit) {
           coordinator.onLaunch()
@@ -192,12 +192,13 @@ fun CameraScreen(
           cameraController.setZoomFactor(zoomUiState.zoomValue)
       }
 
-      LaunchedEffect(uiState, zoomUiState.zoomValue, activeReference) {
-          snapshotRepository.save(
-              settings = uiState.toPersistedCameraSettings(zoomUiState.zoomValue),
-              pose = activeReference?.toPersistedPoseIdentity(),
-          )
-      }
+        LaunchedEffect(uiState, zoomUiState.zoomValue, activeReference) {
+              CameraSnapshotPersistence.save(
+                settings = uiState.toPersistedCameraSettings(zoomUiState.zoomValue),
+                pose = activeReference?.toPersistedPoseIdentity(),
+            )
+        }
+
 
     // Start the native preview after permission is authorized, including the
     // initial authorized-entry and the completion of a permission request.

@@ -67,7 +67,7 @@ import cafe.adriel.voyager.navigator.tab.TabOptions
 import com.aipose.Pose
 import com.aipose.Photo
 import com.aipose.camera.CameraScreen
-import com.aipose.camera.CameraSnapshotRepository
+import com.aipose.camera.CameraSnapshotPersistence
 import com.aipose.camera.toPersistedPoseIdentity
 import com.aipose.data.resolveImagePath
 import com.aipose.data.PreparedPoseReference
@@ -336,7 +336,7 @@ class PoseDetailVoyagerScreen(
             onUseWithCamera = createTryPoseCameraHandoffAction(
                 setPreparedReference = {
                     PoseServiceLocator.preparedReference = it
-                    CameraSnapshotRepository(PoseServiceLocator.database).replacePose(it.toPersistedPoseIdentity())
+                      CameraSnapshotPersistence.replacePose(it.toPersistedPoseIdentity())
                 },
                 setCurrentTab = { tabNavigator.current = it },
             ),
