@@ -1167,10 +1167,10 @@ generated: true
 - docs/harness/reports/REP-010-phase2-live-community-forensic-baseline.md 0fb35712496bd3cb455e3aa273ad2bcc351f66b309c2c9a8c17568cf030c61cc
 - docs/harness/reports/REP-011-firebase-observability-remote-config-delivery.md 7d1f7cc182de073821ebb0c9a958874d88dbdd144f5311d081ae6d1bb5e35933
 - docs/harness/reports/REP-012-feat-012-relaunch-restore-delivery.md 288f70a36d2af4318fdb42fcbb5bcb39bc35d54337bb157679cf2fcb13fc2642
-- docs/harness/specs/api-catalogue.md bb3d6950ca2e5189f18f0158d91043facc6a26420c82e7f3ef69dbc852643e0a
+- docs/harness/specs/api-catalogue.md d4c4f54c788edb2fb2d764fd000f6513f7bbea22278758e828066fad52722e6b
 - docs/harness/specs/erd.md af7ee4d70b71423893a064d143e45ac0188517ede0bea7fe16974101e45506e4
-- docs/harness/specs/model-entity-catalogue.md a78a7be0321a1d8e89c53233e83300dfa0b7edfefa347560346059b53c3e8fe5
-- docs/harness/specs/pose-domain-glossary.md 6ebfe7c10dbb0bcfcfc34b5f575f476b47dcd6fbbb82409371f48fbe76696c47
+- docs/harness/specs/model-entity-catalogue.md 46bbe9c6ae9ee5304afb10643639527b2c4bf43e21586450dcc3e4475a4dfee5
+- docs/harness/specs/pose-domain-glossary.md 10f4f6d37bfe04b12b1d26744b4dcbe94dda07fe0dd1028fd1e6f1c128ba68c6
 - docs/harness/specs/product-delivery-roadmap.md e8bbeff865b886ae1931aaf96f3ddbe8ea39cb1fe40ba3661ae4a5e35fafa013
 - docs/harness/specs/product-feature-inventory.md 6c6234329b94ef62c7865897d124b2da5217e2ea9f786a7fec6bc4fc4f05b2a0
 - docs/harness/specs/technical-architecture.md bc7184b84f8425bc006565f221183258a161bdbfabec1ee8766a6ad63b25613a
