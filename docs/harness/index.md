@@ -1173,5 +1173,5 @@ generated: true
 - docs/harness/specs/pose-domain-glossary.md 6ebfe7c10dbb0bcfcfc34b5f575f476b47dcd6fbbb82409371f48fbe76696c47
 - docs/harness/specs/product-delivery-roadmap.md e8bbeff865b886ae1931aaf96f3ddbe8ea39cb1fe40ba3661ae4a5e35fafa013
 - docs/harness/specs/product-feature-inventory.md 6c6234329b94ef62c7865897d124b2da5217e2ea9f786a7fec6bc4fc4f05b2a0
-- docs/harness/specs/technical-architecture.md 04e628f58a2b05a67ff7cb290aa50bc6f55acbe76a7642bc8016495cec4f4c32
+- docs/harness/specs/technical-architecture.md bc7184b84f8425bc006565f221183258a161bdbfabec1ee8766a6ad63b25613a
 - docs/harness/specs/ui-ux-system.md 1daabd20f4ef68d5e4665b3d8eeca5c67c8f55778e2c27b2981b16db8f1257ec
