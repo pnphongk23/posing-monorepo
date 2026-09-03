@@ -25,11 +25,8 @@ relationships:
     - "[[FEAT-007-operate-pose-content-from-admin-web|FEAT-007]]"
     - "[[FEAT-008-use-published-poses|FEAT-008]]"
   source_paths:
-    - docs/spec/data/domain-model.md
-    - docs/spec/data/enums.md
-    - docs/spec/data/entities/pose.md
-    - docs/spec/data/entities/media-asset.md
-    - docs/spec/api/openapi.yaml
+    - docs/harness/specs/data-contract.md
+    - docs/harness/specs/api/openapi.yaml
 ---
 
 # Pose Domain Glossary
@@ -37,7 +34,7 @@ relationships:
 > **File này chỉ giữ phần *độc nhất* của canonical Pose domain model: naming
 > chuẩn (ID strategy + terminology migration map).** Semantics, fields,
 > business rules, lifecycle chi tiết — nguồn sự thật tại
-> [`docs/spec/data/`](../../spec/data/README.md) và [`docs/spec/api/`](../../spec/api/README.md);
+> [`docs/harness/specs/data-contract.md`](data-contract.md) và [`docs/api-contract.md`](api-contract.md);
 > không lặp lại ở đây.
 
 ## ID strategy
@@ -72,8 +69,8 @@ phải = canonical.
 
 ## Nguồn sự thật
 
-- Domain model & layer map: [`docs/spec/data/domain-model.md`](../../spec/data/domain-model.md)
-- Entity files: [`docs/spec/data/entities/`](../../spec/data/entities/) (`pose.md` canonical)
-- Enums: [`docs/spec/data/enums.md`](../../spec/data/enums.md)
-- ERD: [`docs/spec/data/erd/`](../../spec/data/erd/)
-- API contract: [`docs/spec/api/openapi.yaml`](../../spec/api/openapi.yaml) + [`docs/spec/api/modules/`](../../spec/api/modules/)
+- Domain model & layer map: [`data-contract.md#domain-model`](./data-contract.md#domain-model)
+- Entity files: [`docs/harness/specs/data-contract.md`](./data-contract.md) (`pose.md` canonical)
+- Enums: [`data-contract.md#enums`](./data-contract.md#enums)
+- ERD: [`docs/harness/specs/data-contract.md`](./data-contract.md)
+- API contract: [`api/openapi.yaml`](./api/openapi.yaml) + [`docs/api-contract.md`](./api-contract.md)

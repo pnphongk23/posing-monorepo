@@ -15,8 +15,7 @@ ai-pose/
 │   ├── admin-ui/
 │   └── services/pose-extract-server/
 ├── docs/
-│   ├── spec/
-│   ├── harness/
+│   ├── harness/       (single source of truth: specs/, features/, plans/, reports/)
 │   ├── prototype/
 │   ├── app-store-publish/
 │   ├── evidence/
@@ -29,8 +28,8 @@ ai-pose/
 ## How to read this project
 
 Start with the root `README.md` for repository lanes and common commands. Read
-`docs/spec/data/` for canonical entities, fields, business rules, and ERD;
-`docs/spec/api/` for OpenAPI, HTTP conventions, and API modules. Read
+`docs/harness/specs/data-contract.md` for canonical entities, fields, business rules, and ERD;
+`docs/harness/specs/api-contract.md` for OpenAPI, HTTP conventions, and API modules. Read
 `docs/harness/specs/` for cross-feature technical summaries and
 `docs/harness/features/` for observable product behavior and acceptance.
 
@@ -38,11 +37,12 @@ The root routers are intentionally thin: `AGENTS.md` gives the code-navigation
 rule and `CLAUDE.md` repeats that router instruction for Claude-oriented entry;
 `README.md` routes people to the project lanes and checks. Follow this order:
 root `README.md` → the relevant Harness feature/spec → canonical data/API
-specs → implementation evidence only when needed.
+contracts (`docs/harness/specs/data-contract.md`, `api-contract.md`) →
+implementation evidence only when needed.
 
 `docs/harness/workflows/` contains workflow contracts for authoring and
 validation. It is not the product source of truth; product behavior belongs in
-Harness Features and shared technical contracts belong in `docs/spec/`.
+Harness Features and shared technical contracts live in `docs/harness/specs/`.
 
 Frozen ignore list for bounded documentation work:
 `mobile/`, `web/`, `docs/prototype/`, `features/`, `decisions/`, `plans/`,

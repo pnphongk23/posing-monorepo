@@ -33,8 +33,8 @@ relationships:
 
 Tài liệu kỹ thuật của monorepo `ai-pose`: **công nghệ dùng, build, setup, và
 những lưu ý khi làm việc**. Hợp đồng dữ liệu/API và domain model nằm tại
-[`docs/spec/`](../../spec/README.md); hành vi product theo Feature tại
-[`docs/harness/features/`](../features/). File này chỉ mô tả cấu trúc kỹ thuật
+[`docs/spec/`](./data-contract.md); hành vi product theo Feature tại
+[`docs/harness/features/`](../features). File này chỉ mô tả cấu trúc kỹ thuật
 thực thi.
 
 ## Tech stack
@@ -169,7 +169,7 @@ pose-extract-server, mounts `/app/data` + `/app/higgsfield`).
 8. **Worker cần browser profile đã login** — không phải config-only; production
    activation chưa được chứng minh chỉ bằng repo config.
 9. **Skeleton từ khóa chuẩn hóa** — theo
-   [`pose-domain-glossary.md`](pose-domain-glossary.md), thuật ngữ extraction
+   [`pose-domain-glossary.md`](./pose-domain-glossary.md), thuật ngữ extraction
    result là `skeleton`, không dùng `render`/`result image`/`extract`.
 10. **Thủ tục khởi động (DB, R2, secret) không đổi** — bất kỳ thay đổi schema
     fetch/khởi tạo runtime phải coi là thay đổi hành vi (xem Feature workflow).

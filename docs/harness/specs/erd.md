@@ -30,17 +30,7 @@ relationships:
 
 # Global ERD — stub
 
-> **Nguồn sự thật đã chuyển sang [`docs/spec/data/erd/`](../../spec/data/erd/).**
+> **Single source of truth: [`data-contract.md`](./data-contract.md)** (mục ERD —
+> server, mobile local, conceptual overlay).
 
 Tài liệu này được giữ lại để duy trì harness wikilinks. ERD diagrams không còn ở đây.
-
-<a id="mobile-local-physical-graph"></a>
-<a id="server-physical-graph"></a>
-<a id="conceptual-feature-overlay"></a>
-<a id="unresolved-cross-feature-links"></a>
-
-| Tài nguyên | Đường dẫn |
-|---|---|
-| Server physical graph | [`docs/spec/data/erd/server.md`](../../spec/data/erd/server.md) |
-| Mobile local physical graph | [`docs/spec/data/erd/mobile.md`](../../spec/data/erd/mobile.md) |
-| Conceptual overlay | [`docs/spec/data/erd/conceptual.md`](../../spec/data/erd/conceptual.md) |

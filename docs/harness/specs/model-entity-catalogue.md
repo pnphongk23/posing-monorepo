@@ -38,11 +38,8 @@ relationships:
 
 # Model and Entity Catalogue — stub
 
-> **Nguồn sự thật mô hình dữ liệu nằm tại [`docs/spec/data/`](../../spec/data/README.md)** —
-> entity index + layer/ownership tại [`README.md`](../../spec/data/README.md),
-> domain model [`domain-model.md`](../../spec/data/domain-model.md), entity files
-> [`entities/`](../../spec/data/entities/), enums [`enums.md`](../../spec/data/enums.md),
-> ERD tại [`erd/`](../../spec/data/erd/).
+> **Single source of truth: [`data-contract.md`](./data-contract.md)** — domain
+> model, entities, enums, ERD.
 >
 > File này chỉ giữ lại để duy trì harness wikilinks và index anchors cũ; không
 > chứa nội dung catalogue.

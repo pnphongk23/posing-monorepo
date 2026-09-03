@@ -39,8 +39,8 @@ decision_dependencies: []
 - `web/services/pose-extract-server/src/db/communityStore.test.ts`
 - `web/services/pose-extract-server/src/db/schema.sql` only if a compatible
   title-search index is evidenced as necessary; no schema migration is assumed.
-- Read-only contract: `docs/spec/api/modules/community.md` and
-  `docs/spec/api/conventions.md`.
+- Read-only contract: `docs/harness/specs/api-contract.md#community-public` and
+  `docs/harness/specs/api-contract.md#conventions`.
 
 ## Predecessors and dependencies
 

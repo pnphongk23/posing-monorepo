@@ -35,7 +35,7 @@ decision_dependencies: []
 - `web/services/pose-extract-server/src/routes/jobStatusRoutes.test.ts` (new or extend)
 - `web/services/pose-extract-server/src/worker/job-processor.test.ts` (new)
 - `web/services/pose-extract-server/src/services/higgsfieldCliProvider.test.ts`
-- `docs/spec/api/modules/extract-pose.md`
+- `docs/harness/specs/api-contract.md#extract-pose`
 - `docs/harness/plans/260816-2240-higgsfield-cli-parallel-extract-provider/plan.md` (ledger update)
 
 ## Success criteria

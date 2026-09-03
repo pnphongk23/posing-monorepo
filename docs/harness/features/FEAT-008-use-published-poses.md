@@ -34,8 +34,8 @@ relationships:
 ## Introduction
 
 The signed-in user can save/unsave a published pose and prepare it for Try Pose
-in Camera. Browsing is [FEAT-003](FEAT-003-browse-and-search-published-poses.md);
-publication lifecycle is [FEAT-006](FEAT-006-publish-a-pose.md). Use never grants
+in Camera. Browsing is [FEAT-003](./FEAT-003-browse-and-search-published-poses.md);
+publication lifecycle is [FEAT-006](./FEAT-006-publish-a-pose.md). Use never grants
 ownership or management rights.
 
 ## Business Understanding
@@ -92,15 +92,15 @@ The user chooses Save, Unsave, Saved, or Try Pose.
 
 | Concern | Canonical reference | Evidence |
 | --- | --- | --- |
-| Entities/contracts | [`PreparedPoseReference`](../../spec/data/entities/prepared-pose-reference.md), [`Account`](../../spec/data/entities/account.md), [`SavedEntry`](../../spec/data/entities/saved-entry.md) | [`PreparedPoseReference.kt`](../../../mobile/shared/src/commonMain/kotlin/com/aipose/data/PreparedPoseReference.kt) |
-| ERD | [Conceptual overlay](../../spec/data/erd/conceptual.md) | No account/saved schema found |
-| APIs | [Community detail](../../spec/api/modules/community.md); [Saved](../../spec/api/modules/saved.md). Try Pose is local. | [`PoseApiService.kt`](../../../mobile/shared/src/commonMain/kotlin/com/aipose/data/remote/PoseApiService.kt#L140), [conventions](../../spec/api/conventions.md) |
+| Entities/contracts | [`PreparedPoseReference`](../specs/data-contract.md#preparedposereference), [`Account`](../specs/data-contract.md#account), [`SavedEntry`](../specs/data-contract.md#savedentry) | [`PreparedPoseReference.kt`](../../../mobile/shared/src/commonMain/kotlin/com/aipose/data/PreparedPoseReference.kt) |
+| ERD | [Conceptual overlay](../specs/data-contract.md#conceptual-overlay) | No account/saved schema found |
+| APIs | [Community detail](../specs/api-contract.md#community-public); [Saved](../specs/api-contract.md#saved). Try Pose is local. | [`PoseApiService.kt`](../../../mobile/shared/src/commonMain/kotlin/com/aipose/data/remote/PoseApiService.kt#L140), [conventions](../specs/api-contract.md#conventions) |
 | Supporting mobile flow | Detail, download/verify, navigation, camera state | [`PoseDetailScreen.kt`](../../../mobile/composeApp/src/commonMain/kotlin/com/aipose/ui/screens/poses/PoseDetailScreen.kt), [`Navigation.kt`](../../../mobile/composeApp/src/commonMain/kotlin/com/aipose/navigation/Navigation.kt), [`CameraState.kt`](../../../mobile/composeApp/src/commonMain/kotlin/com/aipose/camera/CameraState.kt) |
 
 ## Requirements
 
 - **FR-001:** Try Pose preparation verifies the selected skeleton before handoff.
-- **FR-002:** Save/Unsave uses [`SavedEntry`](../../spec/data/entities/saved-entry.md) and [`/api/me/saved`](../../spec/api/modules/saved.md). `PreparedPoseReference` does not persist across relaunch.
+- **FR-002:** Save/Unsave uses [`SavedEntry`](../specs/data-contract.md#savedentry) and [`/api/me/saved`](../specs/api-contract.md#saved). `PreparedPoseReference` does not persist across relaunch.
 - **BR-001:** Use never grants ownership or publication rights.
 
 ## Acceptance
@@ -111,8 +111,8 @@ The user chooses Save, Unsave, Saved, or Try Pose.
 
 ## Relationships
 
-- Shared references: [PoseReferenceKey](../../spec/data/entities/pose-reference-key.md) (deprecated), [ERD conceptual](../../spec/data/erd/conceptual.md), [Community API](../../spec/api/modules/community.md).
-- Related features: [FEAT-003](FEAT-003-browse-and-search-published-poses.md), [FEAT-006](FEAT-006-publish-a-pose.md).
+- Shared references: [PoseReferenceKey](../specs/data-contract.md#posereferencekey) (deprecated), [ERD conceptual](../specs/data-contract.md#conceptual-overlay), [Community API](../specs/api-contract.md#community-public).
+- Related features: [FEAT-003](./FEAT-003-browse-and-search-published-poses.md), [FEAT-006](./FEAT-006-publish-a-pose.md).
 ### Supporting evidence
 
 - [`PoseDetailScreen.kt`](../../../mobile/composeApp/src/commonMain/kotlin/com/aipose/ui/screens/poses/PoseDetailScreen.kt)

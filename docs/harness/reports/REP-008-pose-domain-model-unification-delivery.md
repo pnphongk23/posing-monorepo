@@ -25,8 +25,8 @@ relationships:
     - "[[FEAT-008-use-published-poses|FEAT-008]]"
   source_paths:
     - docs/harness/specs/pose-domain-glossary.md
-    - docs/spec/data/entities/pose.md
-    - docs/spec/api/openapi.yaml
+    - docs/harness/specs/data-contract.md
+    - docs/harness/specs/api/openapi.yaml
 type: report
 id: REP-008
 status: completed
@@ -79,21 +79,21 @@ broken prose Markdown links in `docs/harness/` and `docs/spec/` repaired
 
 - `docs/harness/specs/pose-domain-glossary.md` — **new** canonical glossary
   (rewritten, numbered hierarchy, §3.2 creation timing).
-- `docs/spec/data/entities/pose.md` — **new** canonical Pose entity spec
+- `docs/harness/specs/data-contract.md#pose` — **new** canonical Pose entity spec
   (post-extraction creation, mandatory `ownerAccountId`, three non-nullable
   media slots, BR-POSE-001/008/009).
-- `docs/spec/data/domain-model.md`, `enums.md`, `README.md`, `CHANGELOG.md`.
-- `docs/spec/data/entities/`: `media-asset.md` (three media materialized at
+- `docs/harness/specs/data-contract.md#domain-model`, `enums.md`, `README.md`, `CHANGELOG.md`.
+- `docs/harness/specs/data-contract.md`: `media-asset.md` (three media materialized at
   creation, BR-ASSET-005), `extraction-job.md` (`jobId` correlation key,
   `poseId` nullable until Pose created, BR-JOB-006), `account.md` (mandatory
   owner, admin actor vs owner, BR-ACCOUNT-005), `photo.md`, `community-pose.md`
   (`poseId` DTO field, published-only, BR-COMMUNITY-008), `saved-entry.md`,
   `prepared-pose-reference.md`, and deprecated transition files
   `pose-guide.md`, `personal-pose.md`, `pose-reference-key.md`.
-- `docs/spec/data/erd/`: `README.md`, `conceptual.md`, `mobile.md`,
+- `docs/harness/specs/data-contract.md`: `README.md`, `conceptual.md`, `mobile.md`,
   `server.md` — exact‑3 media relationship, mandatory `ownerAccountId`,
   post-extraction Pose entity, `jobId` on `ExtractionJob`.
-- `docs/spec/api/openapi.yaml` — version `0.5.0`; `Pose` response with
+- `docs/harness/specs/api/openapi.yaml` — version `0.5.0`; `Pose` response with
   `poseId` / `ownerAccountId` / `originalUrl` / `skeletonUrl` / `thumbnailUrl`
   (non-nullable); `PoseCreated` (`201`) replaces `PoseAccepted`;
   `ExtractionJobAccepted` (`202`, job start only); `CommunityPose`
@@ -101,7 +101,7 @@ broken prose Markdown links in `docs/harness/` and `docs/spec/` repaired
   `POST /api/guides` and admin intake = `201` JSON `{jobId, metadata}` (owner
   session / explicit `ownerAccountId` for admin); retry/re-extract = `202`;
   admin list returns `Pose[]`.
-- `docs/spec/api/`: `README.md`, `conventions.md` (status-code table `202`
+- `docs/harness/specs/api-contract.md`: `README.md`, `conventions.md` (status-code table `202`
   vs `201`; authenticated-actor vs owner), `CHANGELOG.md`, and modules
   `community.md`, `extract-pose.md`, `publish.md`, `saved.md`,
   `admin-community.md`, `admin-jobs.md`, `guides.md`.
@@ -125,7 +125,7 @@ A second audit (Khổng Minh) issued `CHANGES_REQUIRED` with 14 findings. All
 are resolved in this delivery round:
 
 1. **ERD mobile missing `ownerAccountId`** — added `text ownerAccountId FK` to the
-   mobile `POSE` block (`docs/spec/data/erd/mobile.md`).
+   mobile `POSE` block (`docs/harness/specs/data-contract.md#mobile-local`).
 2. **Tech-Arch pre-extraction/`202` phrasing** — replaced `creates a local pose
    record, enqueues task, returns 202` with `enqueues extraction job, returns
    202 Accepted; Pose entity created ONLY AFTER extraction succeeds (201)`

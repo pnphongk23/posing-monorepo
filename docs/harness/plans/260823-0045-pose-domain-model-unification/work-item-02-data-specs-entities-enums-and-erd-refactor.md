@@ -13,11 +13,11 @@ decision_dependencies: []
 
 ## Tasks
 
-1. Refactor `docs/spec/data/domain-model.md`: single `Pose` entity, three media
+1. Refactor `docs/harness/specs/data-contract.md#domain-model`: single `Pose` entity, three media
    roles, `local` → `published` lifecycle, public catalogue as view/DTO, and
    creation timing (Pose created only after extraction `succeeded`; `jobId`
    during extraction, `poseId` after).
-2. Refactor `docs/spec/data/enums.md`: `PoseStatus` (`local` | `published`;
+2. Refactor `docs/harness/specs/data-contract.md#enums`: `PoseStatus` (`local` | `published`;
    `draft` deprecated alias), `MediaAssetRole` (`original` | `skeleton` |
    `thumbnail`).
 3. Update entity files: `pose.md` (canonical, from WI-01; post-extraction
@@ -31,20 +31,20 @@ decision_dependencies: []
 4. Update `pose-guide.md`, `community-pose.md`, `personal-pose.md`,
    `pose-reference-key.md` to document the transition to the single canonical
    `Pose` entity / DTO / deprecation.
-5. Update `docs/spec/data/erd/` `conceptual.md`, `mobile.md`, `server.md`,
+5. Update `docs/harness/specs/data-contract.md` `conceptual.md`, `mobile.md`, `server.md`,
    `README.md` to align with single `Pose` entity and three media roles.
-6. Update `docs/spec/data/README.md` entity classification and `CHANGELOG.md`.
+6. Update `docs/harness/specs/data-contract.md` entity classification and `CHANGELOG.md`.
 
 ## Scope and affected files
 
-- `docs/spec/data/domain-model.md`
-- `docs/spec/data/enums.md`
-- `docs/spec/data/README.md`, `docs/spec/data/CHANGELOG.md`
-- `docs/spec/data/entities/pose.md`, `media-asset.md`, `photo.md`,
+- `docs/harness/specs/data-contract.md#domain-model`
+- `docs/harness/specs/data-contract.md#enums`
+- `docs/harness/specs/data-contract.md`, `docs/harness/specs/data-contract.md`
+- `docs/harness/specs/data-contract.md#pose`, `media-asset.md`, `photo.md`,
   `extraction-job.md`, `saved-entry.md`, `prepared-pose-reference.md`,
   `pose-guide.md`, `community-pose.md`, `personal-pose.md`,
   `pose-reference-key.md`, `account.md`
-- `docs/spec/data/erd/conceptual.md`, `mobile.md`, `server.md`, `README.md`
+- `docs/harness/specs/data-contract.md#conceptual-overlay`, `mobile.md`, `server.md`, `README.md`
 
 ## Success criteria
 
@@ -64,6 +64,6 @@ decision_dependencies: []
 
 ## Required evidence
 
-- `ckh validate docs/spec/data/README.md` passes.
-- `grep -rniE "renderAsset|sourceAsset|PoseReferenceKey.Personal" docs/spec/data/`
+- `ckh validate docs/harness/specs/data-contract.md` passes.
+- `grep -rniE "renderAsset|sourceAsset|PoseReferenceKey.Personal" docs/harness/specs/data-contract.md`
   returns no canonical (non-deprecation) occurrences.

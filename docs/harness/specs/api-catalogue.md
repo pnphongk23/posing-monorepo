@@ -34,10 +34,8 @@ relationships:
 
 # API Catalogue — stub
 
-> **Nguồn sự thật API contract nằm tại [`docs/spec/api/`](../../spec/api/README.md)** —
-> paths, schemas, status codes trong [`openapi.yaml`](../../spec/api/openapi.yaml),
-> conventions tại [`conventions.md`](../../spec/api/conventions.md), semantics
-> từng nhóm route tại [`modules/`](../../spec/api/modules/).
+> **Single source of truth: [`api-contract.md`](./api-contract.md)** — conventions
+> + module semantics; schemas chi tiết tại [`api/openapi.yaml`](./api/openapi.yaml).
 >
 > File này chỉ giữ lại để duy trì harness wikilinks và index anchors cũ; không
 > chứa nội dung API contract.

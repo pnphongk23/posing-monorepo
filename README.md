@@ -14,11 +14,11 @@ AI Pose is a monorepo for an iOS pose-reference camera, a local photo/pose libra
 | `docs/harness/` | Current product, technical, feature, and UI/UX source of truth |
 | `docs/prototype/` | Interactive UI reference; not production behavior |
 
-Start with the generated [Harness index](docs/harness/index.md), then read:
+Start with the generated [Harness index](./docs/harness/index.md), then read:
 
-- [Technical architecture](docs/harness/specs/technical-architecture.md)
-- [Product feature inventory](docs/harness/specs/product-feature-inventory.md)
-- [UI/UX system](docs/harness/specs/ui-ux-system.md)
+- [Technical architecture](./docs/harness/specs/technical-architecture.md)
+- [Product feature inventory](./docs/harness/specs/product-feature-inventory.md)
+- [UI/UX system](./docs/harness/specs/ui-ux-system.md)
 
 ## Common checks
 

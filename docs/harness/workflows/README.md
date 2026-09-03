@@ -16,10 +16,10 @@ by [[workflow-lifecycle]].
 | Feature, Spec, Decision, Report, Rule, or guidance only | Document workflow; complete the applicable document procedure without requiring coding |
 | Maintenance inside approved behavior | Coding workflow; reuse the governing Feature or Spec, then Plan |
 | Technical-only change with no Feature | Coding workflow; scout code, define objectives, optionally write Plan-local design, and Plan |
-| New or changed observable behavior | Document [Feature Workflow](feature.md); all governing Features must be approved before Coding Plan approval |
-| Durable product or technical trade-off | [Decision Workflow](decision.md) at the affected boundary |
-| Authorized repository implementation | Coding [Plan Workflow](plan.md), then [Cook Workflow](cook.md) |
-| Verified Harness improvement signal | [Self-Improve Workflow](self-improve.md) |
+| New or changed observable behavior | Document [Feature Workflow](./feature.md); all governing Features must be approved before Coding Plan approval |
+| Durable product or technical trade-off | [Decision Workflow](./decision.md) at the affected boundary |
+| Authorized repository implementation | Coding [Plan Workflow](./plan.md), then [Cook Workflow](./cook.md) |
+| Verified Harness improvement signal | [Self-Improve Workflow](./self-improve.md) |
 
 Every code change requires an approved Plan. Feature is an authority document,
 not a universal pipeline stage. Classification determines whether a new Feature
@@ -117,7 +117,7 @@ persist hidden state.
 
 ## Transition Contracts
 
-1. **Document workflows ([Feature Workflow](feature.md), [Decision Workflow](decision.md), and [Self-Improve Workflow](self-improve.md))**
+1. **Document workflows ([Feature Workflow](./feature.md), [Decision Workflow](./decision.md), and [Self-Improve Workflow](./self-improve.md))**
    - Trigger: new or changed observable behavior, or a request to formalize
      durable product or technical knowledge.
    - Gate: each document follows its own authority; document-only work can end
@@ -125,14 +125,14 @@ persist hidden state.
    - Boundary: documentation may overlap coding, but unapproved Feature behavior
      cannot enter an active Plan or Cook.
 
-2. **Decision Workflow ([Decision Workflow](decision.md)) [Interruptible]**
+2. **Decision Workflow ([Decision Workflow](./decision.md)) [Interruptible]**
    - Trigger: multiple viable paths have durable, cross-cutting, material, or
      expensive-to-reverse consequences.
    - Gate: Product Authority approves product choices; Repository Maintainer
      approves technical choices.
    - Return: resume Feature, Plan, Cook, or Self Improve at the affected boundary.
 
-3. **Planning ([Plan Workflow](plan.md))**
+3. **Planning ([Plan Workflow](./plan.md))**
    - Trigger: approved behavior or explicit technical-only objectives are ready
      for implementation.
    - Preconditions: all governing Features approved; no blocking Decision;
@@ -143,20 +143,20 @@ persist hidden state.
    - Output: an approved current-shape Plan whose `work-item-XX` children serialize
      Work Items with inline Tasks and executable success criteria.
 
-4. **Cooking ([Cook Workflow](cook.md))**
+4. **Cooking ([Cook Workflow](./cook.md))**
    - Trigger: Plan approval is approved and the next Work Item has completed
      predecessors and approved Decision dependencies.
    - Gate: no Work Item or required Task completes without concrete passing evidence.
    - Variance: local failures remain in the active Work Item; material authority,
      scope, or success-criteria changes return to Decision or Plan approval.
 
-5. **Reporting ([Cook Workflow](cook.md))**
+5. **Reporting ([Cook Workflow](./cook.md))**
    - Trigger: all required Work Items and success criteria pass.
    - Output: a completed Delivery Report and completed Plan.
    - Product or high-risk acceptance, when required, belongs in approved Plan
      success criteria; there is no second universal Report approval gate.
 
-6. **Self Improve ([Self-Improve Workflow](self-improve.md)) [Optional]**
+6. **Self Improve ([Self-Improve Workflow](./self-improve.md)) [Optional]**
    - Trigger: completed Report or approved Decision evidence exposes friction,
      stale guidance, missing validation, or a reusable lesson.
    - Gate: every canonical change requires evidence and human approval; Rule

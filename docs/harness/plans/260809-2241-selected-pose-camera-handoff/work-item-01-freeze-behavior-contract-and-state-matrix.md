@@ -23,7 +23,7 @@ decision_dependencies: []
   animation, popup visibility, `frameRatio` (BR-004).
 - Confirm **no** `ActivePoseReference`; `PreparedPoseReference` remains transport.
 - Document replace vs clear semantics (settings preserved; no ownership change).
-- Align `docs/spec/data/entities/prepared-pose-reference.md` BR-PREPREF-002
+- Align `docs/harness/specs/data-contract.md#preparedposereference` BR-PREPREF-002
   change proposal for Maintainer review (docs-only note in matrix; no spec edit
   in this WI unless Maintainer directs).
 
