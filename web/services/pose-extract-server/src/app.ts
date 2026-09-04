@@ -10,12 +10,18 @@ import { createExtractPoseRoutes } from "./routes/extractPoseRoutes";
 import { createCommunityRoutes } from "./routes/communityRoutes";
 import { createAdminCommunityRoutes } from "./routes/adminCommunityRoutes";
 import { createJobStatusRoutes } from "./routes/jobStatusRoutes";
+import { createAccountAuthMiddleware } from "./middleware/accountAuth";
+import { PendingAuthStore } from "./services/pendingAuthStore";
 import type { ExtractionJobStore } from "./db/extractionJobStore";
 import { createUploadUrl } from "./services/r2Storage";
 import { AppError } from "./services/errors";
 import type { KeyPoolManager } from "./services/keyPoolManager";
 import type { KeyStore } from "./services/keyStore";
 import type { PoseStore } from "./db/communityStore";
+import type { AccountStore } from "./db/accountStore";
+import type { SavedStore } from "./db/savedStore";
+import { createAccountAuthRoutes } from "./routes/accountAuthRoutes";
+import { createSavedRoutes } from "./routes/savedRoutes";
 import { logger } from "./utils/logger";
 import { sanitizeError } from "./utils/sanitizeError";
 
@@ -53,6 +59,13 @@ interface CreateAppOptions {
   communityUploadDir?: string;
   extractionJobStore?: ExtractionJobStore;
   providerSettingsStore?: ProviderSettingsStore;
+  accountStore?: AccountStore;
+  supabaseUrl?: string;
+  supabaseAnonKey?: string;
+  supabaseJwtKeyId?: string;
+  backendPublicUrl?: string;
+  pendingAuthStore?: PendingAuthStore;
+  savedStore?: SavedStore;
 }
 
 export function createCommunityExtractPoseImage(options: CreateAppOptions): ExtractPoseImage | null {
@@ -86,7 +99,7 @@ export function createCommunityExtractPoseImage(options: CreateAppOptions): Extr
   };
 }
 
-export function createApp(options: CreateAppOptions): express.Express {
+  export function createApp(options: CreateAppOptions): express.Express {
   const app = express();
   const startedAtMs = options.startedAtMs ?? Date.now();
   const communityExtractPoseImage = createCommunityExtractPoseImage(options);
@@ -107,14 +120,38 @@ export function createApp(options: CreateAppOptions): express.Express {
     next();
   });
 
-  app.get("/api/health", (_req, res) => {
+    app.get("/api/health", (_req, res) => {
     const uptime = Math.max((Date.now() - startedAtMs) / 1000, 0);
     res.json({
       status: "ok",
       uptime,
       version: options.version
     });
-  });
+
+    });
+
+    if (options.accountStore && options.supabaseUrl) {
+      app.use("/api/auth", createAccountAuthRoutes({
+        supabaseUrl: options.supabaseUrl,
+        anonKey: options.supabaseAnonKey,
+        backendPublicUrl: options.backendPublicUrl,
+        pendingAuthStore: options.pendingAuthStore,
+        accountStore: options.accountStore,
+        keyId: options.supabaseJwtKeyId
+      }));
+      app.get("/api/account/me", createAccountAuthMiddleware({
+        supabaseUrl: options.supabaseUrl,
+        keyId: options.supabaseJwtKeyId ?? "61218C19-FDB0-498D-B773-CEBE34CBF90A",
+        accountStore: options.accountStore
+      }), (req, res) => res.json({ data: req.account }));
+      if (options.savedStore) {
+        app.use("/api/me/saved", createAccountAuthMiddleware({
+          supabaseUrl: options.supabaseUrl,
+          keyId: options.supabaseJwtKeyId ?? "61218C19-FDB0-498D-B773-CEBE34CBF90A",
+          accountStore: options.accountStore
+        }), createSavedRoutes(options.savedStore));
+      }
+    }
 
   if (options.adminSecret && options.keyStore) {
     app.use(

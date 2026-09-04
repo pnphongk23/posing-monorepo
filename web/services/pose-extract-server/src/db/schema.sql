@@ -5,6 +5,13 @@ CREATE TABLE IF NOT EXISTS schema_bootstrap (
 
 INSERT INTO schema_bootstrap (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
 
+-- WI-02 Account identity projection. id is the Supabase auth.users.id/JWT sub.
+CREATE TABLE IF NOT EXISTS accounts (
+  id TEXT PRIMARY KEY,
+  display_name TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS api_keys (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
@@ -82,6 +89,19 @@ CREATE TABLE IF NOT EXISTS media_assets (
 );
 
 CREATE INDEX IF NOT EXISTS idx_media_assets_pose_id ON media_assets(pose_id);
+
+-- Saved entries intentionally have no foreign keys: they survive pose unpublish
+-- and terminal deletion, while reads filter unavailable poses from the result.
+CREATE TABLE IF NOT EXISTS saved_entries (
+  account_id TEXT NOT NULL,
+  pose_id TEXT NOT NULL,
+  saved_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (account_id, pose_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_saved_entries_account_saved_at
+  ON saved_entries(account_id, saved_at DESC, pose_id ASC);
+CREATE INDEX IF NOT EXISTS idx_saved_entries_pose_id ON saved_entries(pose_id);
 
 -- One-way, idempotent compatibility migration. Legacy rows did not carry an
 -- owner or distinct original/skeleton media, so the nil UUID denotes the
