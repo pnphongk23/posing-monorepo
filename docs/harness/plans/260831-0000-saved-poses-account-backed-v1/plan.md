@@ -27,6 +27,7 @@ relationships:
   rules: []
   features:
     - "[[FEAT-013-saved-poses-albums-account-backed|FEAT-013]]"
+    - "[[FEAT-014-manage-account-and-session|FEAT-014]]"
   source_paths:
     - docs/harness/features/FEAT-013-saved-poses-albums-account-backed.md
     - docs/spec/data/entities/account.md
@@ -51,7 +52,8 @@ createdBy: Harness CLI
 
 ## Overview
 
-Plan P2 này chỉ triển khai Account-backed Saved Poses v1. Supabase Auth uses Google as the only enabled provider for v1.
+Plan P2 này chỉ triển khai Account-backed Saved Poses v1; Account/session lifecycle
+và Account UI thuộc FEAT-014, là dependency boundary mà plan này tiêu thụ. Supabase Auth uses Google as the only enabled provider for v1.
 Các provider còn lại (email/password, magic link, anonymous, Apple, GitHub và mọi
 provider khác) đều OFF/out of scope. Feature FEAT-013 đang
 proposed và approval pending; Plan pending, không tự approve. Frozen provider
@@ -78,7 +80,7 @@ membership UI/API. Không mở rộng FEAT-012 hay thay đổi FEAT-008.
 | FR-006–FR-007: removal retention/message, 401 isolation | WI-02, WI-03, WI-04, WI-05; removal and 401 tests |
 | FR-008–FR-009: list states/pagination, stale read/no queue, detail/Try Pose | WI-04, WI-05; mobile/UI and offline evidence |
 | FR-010: Albums future boundary | WI-01, WI-05 |
-| Proposed auth constraints (identity, lifecycle, privacy, provider guard, deletion, callback, config/JWT) | WI-01 policy record; WI-02 evidence; Product Authority approval where marked |
+| Proposed auth constraints (identity, lifecycle, privacy, provider guard, deletion, callback, config/JWT) | FEAT-014 owns observable lifecycle/sign-out; WI-01 policy record; WI-02 evidence for the prerequisite session boundary; Product Authority approval where marked |
 
 | Direct scenario/evidence owner | Owner |
 | --- | --- |

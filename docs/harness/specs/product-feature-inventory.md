@@ -25,6 +25,9 @@ relationships:
     - "[[FEAT-007-operate-pose-content-from-admin-web|FEAT-007]]"
     - "[[FEAT-008-use-published-poses|FEAT-008]]"
     - "[[FEAT-009-configure-extraction-provider|FEAT-009]]"
+    - "[[FEAT-013-saved-poses-albums-account-backed|FEAT-013]]"
+    - "[[FEAT-014-manage-account-and-session|FEAT-014]]"
+    - "[[FEAT-015-manage-app-settings-and-preferences|FEAT-015]]"
   source_paths: []
 ---
 
@@ -55,6 +58,9 @@ Harness stubs remain at [model catalogue](model-entity-catalogue.md),
 | [[FEAT-007-operate-pose-content-from-admin-web\|FEAT-007]] | Operate pose content from Admin Web | Admin operator | Admin surface for intake, status, ownership, pose management in FEAT-005, and invoking FEAT-004 and FEAT-006; no alternate extraction or publication model. |
 | [[FEAT-008-use-published-poses\|FEAT-008]] | Use published poses | Signed-in user | Save, Unsave, Saved collection, Try Pose, camera guide lifecycle, and consequences of publication removal. |
 | [[FEAT-009-configure-extraction-provider\|FEAT-009]] | Configure extraction provider | Admin operator | Select and persist the global extraction engine (Gemini native or Higgsfield CLI) for extract jobs; timing, default, and credential policy in DEC-001. |
+ | [[FEAT-013-saved-poses-albums-account-backed\|FEAT-013]] | Manage Saved Poses and future Albums boundary | Signed-in Account | Own Saved/Unsave/Saved list/Try Pose and SavedEntry semantics; consume FEAT-014’s valid Account/session; Albums remain future/out of scope. |
+ | [[FEAT-014-manage-account-and-session\|FEAT-014]] | Manage Account and Session | Signed-in Account or Guest | Own Account entry/screen, identity/provider/session presentation, sign-out, expiry/invalid-session recovery, signed-out gating, and account isolation; no profile editing or new auth contract. |
+ | [[FEAT-015-manage-app-settings-and-preferences\|FEAT-015]] | Manage App Settings and Preferences | Guest or signed-in user | Own the grouped Settings surface, app-level non-camera preference boundary, privacy/permission/help/about entry points, and cross-feature routing; does not own Camera settings, Account/session, Saved, or Premium behavior. |
 
 ## Supporting surfaces
 
@@ -62,6 +68,9 @@ Harness stubs remain at [model catalogue](model-entity-catalogue.md),
 - FEAT-008 consumes the published poses discovered through FEAT-003 and does not change ownership.
 - FEAT-007 is an operating surface for Admin-owned pose content; Admin-created poses follow the same extraction, ownership, guide, and publication boundaries as other poses.
 - FEAT-009 owns global extraction engine configuration; FEAT-007 invokes FEAT-009 through Admin Web without redefining extract or provider policy.
+- FEAT-013 consumes FEAT-014’s valid Account/session and does not redefine Account UI or sign-out semantics.
+ - FEAT-014 owns observable Account/session lifecycle; shared Account fields and session/API mechanics remain in their canonical specs.
+ - FEAT-015 owns the Settings surface and only approved app-level non-camera preferences; it routes to FEAT-011, FEAT-013, and FEAT-014 and leaves all camera settings with FEAT-012.
 
 ## Documentation rules
 

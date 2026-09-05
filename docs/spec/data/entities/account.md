@@ -2,7 +2,7 @@
 
 ## Description
 
-Identity của người dùng đã đăng nhập. Dùng cho quyền sở hữu [`Pose`](pose.md) ([FEAT-005](../../../harness/features/FEAT-005-manage-a-pose-guide.md), [FEAT-006](../../../harness/features/FEAT-006-publish-a-pose.md)) và collection [`SavedEntry`](saved-entry.md) ([FEAT-008](../../../harness/features/FEAT-008-use-published-poses.md)).
+Identity của người dùng đã đăng nhập. Dùng cho quyền sở hữu [`Pose`](pose.md) ([FEAT-005](../../../harness/features/FEAT-005-manage-a-pose-guide.md), [FEAT-006](../../../harness/features/FEAT-006-publish-a-pose.md)) và collection [`SavedEntry`](saved-entry.md) ([FEAT-008](../../../harness/features/FEAT-008-use-published-poses.md)). Lifecycle Account/session observable thuộc [FEAT-014](../../../harness/features/FEAT-014-manage-account-and-session.md); entity này không định nghĩa credential/session fields.
 
 Admin operator ([FEAT-007](../../../harness/features/FEAT-007-operate-pose-content-from-admin-web.md)) không phải `Account`; Admin dùng Bearer admin secret.
 Tuy vậy, mọi [`Pose`](pose.md) — kể cả pose do Admin tạo — vẫn có

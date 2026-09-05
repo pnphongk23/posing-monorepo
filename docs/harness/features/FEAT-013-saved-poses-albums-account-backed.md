@@ -24,6 +24,7 @@ relationships:
     - "[[FEAT-003-browse-and-search-published-poses|FEAT-003]]"
     - "[[FEAT-006-publish-a-pose|FEAT-006]]"
     - "[[FEAT-008-use-published-poses|FEAT-008]]"
+    - "[[FEAT-014-manage-account-and-session|FEAT-014]]"
   source_paths:
     - web/services/pose-extract-server/src/app.ts
     - web/services/pose-extract-server/src/routes/communityRoutes.ts
@@ -157,7 +158,7 @@ và Albums future boundary là các invariant được giữ nguyên.
 | Constraint | Status | Recommended default |
 | --- | --- | --- |
 | Identity mapping: correlation nội bộ dùng `auth.users.id` của Supabase và stable Google subject `sub`; một Google account map tới đúng một Account, cùng Google login trên nhiều thiết bị hội tụ về Account đó, và phải ngăn duplicate Account. | proposed | Giữ mapping nội bộ này; không thêm Account field hay OpenAPI change. |
-| Session lifecycle và sign-out là open question: access/refresh token, expiry, silent refresh và sign-out. | proposed open question | Nếu được approve, lưu token trong secure OS storage; dùng auth boundary hiện hữu cho expiry/silent refresh; giữ FR-007 refresh/clear; recommended default là chưa thêm Account tab hoặc sign-out affordance mới cho tới khi Product Authority quyết định. |
+| Session lifecycle và sign-out thuộc FEAT-014; access/refresh token, expiry, silent refresh và remote revocation details vẫn là open questions. | proposed open question | FEAT-014 owns Account UI, signed-in/signed-out state, sign-out, expiry/invalid-session recovery and isolation. FEAT-013 chỉ tiêu thụ valid Account/session; giữ FR-007 refresh/clear và không invent token/revocation mechanics. |
 | OAuth/privacy: scope và dữ liệu Google. | proposed | Chỉ request `openid email profile`, không xin quyền thêm; có consent copy; chỉ map `displayName` vào `Account.displayName` khi cần, chỉ dùng email khi cần, không persist avatar hay dữ liệu Google không liên quan; giữ spec unchanged. |
 | Provider enforcement guard/configuration. | proposed | Nếu được approve, dashboard/config guard phải chỉ bật Google và reject provider khác; không provider mới nếu không có Product Authority decision. |
 | Account/provider deletion: cancellation và Google identity bị xoá/disable. | proposed open question | Khi user Account deletion được xác nhận, purge Account-scoped SavedEntry vì privacy; nếu Google identity bị xoá/disable nhưng app Account chưa bị xoá, giữ dữ liệu, block reauth và không silently tạo Account mới cho tới khi có relink policy. Không áp dụng nhầm với FR-006 pose-removal retention. |
@@ -215,6 +216,7 @@ Then không queue mutation và không hiển thị success giả.
 
 - Roadmap: [Product Delivery Roadmap](../specs/product-delivery-roadmap.md), P2 Saved Poses & Albums.
 - Existing feature boundaries: [FEAT-003](FEAT-003-browse-and-search-published-poses.md), [FEAT-006](FEAT-006-publish-a-pose.md), [FEAT-008](FEAT-008-use-published-poses.md).
+- Account/session boundary: [FEAT-014](FEAT-014-manage-account-and-session.md) owns Account entry/screen, identity/provider/session presentation, sign-out, expiry/invalid-session recovery, signed-out gating, and account isolation; FEAT-013 consumes a valid session.
 - FEAT-008 is the predecessor/boundary for published-pose use and existing Try Pose flow; this policy does not change its frozen Guest gate.
 - Contracts: [Account](../../spec/data/entities/account.md), [SavedEntry](../../spec/data/entities/saved-entry.md), [Saved API](../../spec/api/modules/saved.md), [API Conventions](../../spec/api/conventions.md).
 - Current flow reuse: CommunityPose, PoseDetailScreen, PoseApiService, PoseRepository, existing pagination and error conventions.

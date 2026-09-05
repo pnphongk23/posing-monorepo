@@ -8,7 +8,12 @@ dependencies: [1]
 decision_dependencies: []
 ---
 
-# Work Item 2: Add Account infrastructure and session boundary
+# Work Item 2: Add Account infrastructure and session boundary prerequisite
+
+FEAT-014 owns the observable Account screen and session lifecycle/sign-out policy.
+This Work Item only supplies or verifies the technical Account/session boundary
+that FEAT-013 consumes; it must not claim delivery of FEAT-014 UI or runtime auth
+until repository evidence exists.
 
 ## Tasks
 
@@ -34,7 +39,7 @@ decision_dependencies: []
 
 ## Scope and affected files
 
-Auth middleware/verifier, Account persistence, mobile session boundary and tests discovered during execution; excludes Albums, ownership/publish, FEAT-012 and camera changes.
+Auth middleware/verifier, Account persistence, mobile session boundary and tests discovered during execution; excludes FEAT-014 Account UI/sign-out product behavior, Albums, ownership/publish, FEAT-012 and camera changes.
 
 ## Success criteria
 

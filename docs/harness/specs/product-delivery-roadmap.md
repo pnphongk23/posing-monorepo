@@ -31,6 +31,8 @@ relationships:
     - "[[FEAT-008-use-published-poses|FEAT-008]]"
     - "[[FEAT-009-configure-extraction-provider|FEAT-009]]"
     - "[[FEAT-013-saved-poses-albums-account-backed|FEAT-013]]"
+    - "[[FEAT-014-manage-account-and-session|FEAT-014]]"
+    - "[[FEAT-015-manage-app-settings-and-preferences|FEAT-015]]"
   source_paths: []
 type: spec
 status: active
@@ -100,8 +102,14 @@ evidence trong v1.0.
 
 ### Chưa ship (post-v1.0)
 
-- Saved Poses, Accounts, Albums ([[FEAT-008-use-published-poses|FEAT-008]] scope
-  chưa deliver).
+ - Saved Poses, Account/session management, and Albums ([[FEAT-013-saved-poses-albums-account-backed|FEAT-013]];
+   [[FEAT-014-manage-account-and-session|FEAT-014]]; [[FEAT-008-use-published-poses|FEAT-008]]
+   scope chưa deliver). FEAT-013 depends on a valid Account/session from FEAT-014;
+   neither feature is claimed shipped or runtime-verified here.
+ - App Settings and Preferences ([[FEAT-015-manage-app-settings-and-preferences|FEAT-015]])
+   remain proposed; the Settings hub boundary is documented, but its production
+   entry point and first non-camera preference set are unresolved. Camera settings
+   remain owned by FEAT-012.
 - FEAT-011 monetization / IAP / paywall — **không** có RevenueCat/purchase code
   trong `mobile/`.
 - Android parity.
@@ -198,12 +206,26 @@ khi Albums được mở trong một Feature/Plan tương lai.
   magic link, anonymous, Apple, GitHub và mọi provider khác đều tắt/out of scope.
   Quyết định Google-only này đã frozen; runtime Google/Supabase integration vẫn
   Unresolved cho tới khi WI-02 có evidence.
-- Current Feature: [[FEAT-013-saved-poses-albums-account-backed|FEAT-013]];
-  [[FEAT-008-use-published-poses|FEAT-008]] là predecessor/boundary cho published
-  pose và Try Pose flow hiện hữu.
+ - Current Feature: [[FEAT-013-saved-poses-albums-account-backed|FEAT-013]];
+   [[FEAT-008-use-published-poses|FEAT-008]] là predecessor/boundary cho published
+   pose và Try Pose flow hiện hữu.
 - Trong Saved Poses flow, Guest chưa có signed-in Account bắt buộc sign-in và
   không được Try Pose.
-- V1 chỉ phục vụ Account/Saved; backend/web chỉ khi phục vụ Account hoặc Saved.
+ - V1 chỉ phục vụ Account/Saved; backend/web chỉ khi phục vụ Account hoặc Saved.
+
+### P2 — App Settings & Preferences
+
+**Mục tiêu:** Một Settings surface cho guest và signed-in user, gồm app-level
+non-camera controls, privacy/permission, help/about, và link tới Account/Saved/
+Premium theo đúng owner Feature.
+
+- Camera settings không thuộc Settings; facing, flash, grid, guide, overlay,
+  opacity, line color, và zoom tiếp tục nằm tại Camera theo FEAT-012.
+- Không mở ngầm notification, language, custom theme, analytics, deletion/export,
+  hay Android parity.
+- FEAT-015: [[FEAT-015-manage-app-settings-and-preferences|FEAT-015]] (Draft; chờ
+  chốt production entry point, first non-camera preference set, support destination,
+  và platform-parity commitment).
 
 ### P2 — Personal extraction UX
 

@@ -6,7 +6,9 @@ status: pending
 # Saved Poses account-backed v1 design
 
 Reuse CommunityPose, PoseDetailScreen, PoseApiService, PoseRepository, existing
-pagination and error conventions. Add only Account/session and SavedEntry boundaries.
+pagination and error conventions. Consume FEAT-014’s Account/session boundary;
+add only the SavedEntry integration needed by FEAT-013. Account screen and
+sign-out semantics are owned by FEAT-014, not this plan.
 
 Supabase Auth uses Google as the only enabled provider for v1; email/password,
 magic link, anonymous, Apple, GitHub and every other provider are disabled/out of
@@ -15,7 +17,9 @@ map identity to Account once WI-02 confirms exact paths; mobile stores token/ses
 through existing native boundary once WI-02 confirms exact paths.
 Do not invent SDK, dependency, config key or service.
 
-The Feature proposal table is the source for `proposed — needs Product Authority
+FEAT-014 is the owner of observable Account/session lifecycle, Account screen,
+sign-out, signed-out gating, expiry recovery, and account isolation. The Feature
+proposal table is the source for `proposed — needs Product Authority
 approval` constraints: stable identity mapping, secure token lifecycle/sign-out,
 minimal OAuth scopes/privacy, provider enforcement, deletion/relink handling,
 callback/deep-link ownership, App Store 4.8 review risk, and config/JWT checks.
