@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Settings Prototype - Snap Pose</title>
+  <link rel="stylesheet" href="../styles/reset.css">
+  <link rel="stylesheet" href="../styles/base.css">
+  <link rel="stylesheet" href="../styles/utilities.css">
+  <link rel="stylesheet" href="../styles/components.css">
+  <link rel="stylesheet" href="../styles/settings.css">
+</head>
+<body>
+  <div class="nb-phone">
+    <div class="nb-phone__header" aria-label="Prototype status bar">
+      <span class="nb-phone__time">9:41</span>
+      <div class="nb-phone__status-icons" aria-hidden="true">
+        <span>▰</span>
+        <span>▮</span>
+        <span>▰</span>
+      </div>
+    </div>
+
+    <main class="nb-phone__content" id="settings-screen">
+      <aside class="nb-settings-banner" aria-labelledby="settings-prototype-label">
+        <div class="nb-settings-banner__topline">
+          <span class="nb-settings-banner__label" id="settings-prototype-label">Prototype only</span>
+          <span class="nb-settings-banner__type">Non-production evidence</span>
+        </div>
+        <p>Production entry point: <strong>Pending-human</strong></p>
+      </aside>
+
+      <header class="nb-nav-bar nb-nav-bar--saved nb-settings-nav">
+        <div class="nb-nav-bar__left">
+          <a href="account.html" class="nb-btn nb-btn--square nb-btn--white" aria-label="Back to Account prototype (prototype convention)" title="Back to Account prototype">
+            <svg aria-hidden="true"><use href="#icon-back"></use></svg>
+          </a>
+        </div>
+        <h1 class="nb-nav-bar__title nb-nav-bar__title--page">Settings</h1>
+        <div class="nb-nav-bar__right" aria-hidden="true"></div>
+      </header>
+
+      <p class="nb-settings-intro">A static hub for reviewing app-level destinations. It makes no production claims.</p>
+
+      <section class="nb-settings-group" aria-labelledby="settings-account-heading">
+        <div class="nb-settings-group__header">
+          <h2 class="nb-settings-group__title" id="settings-account-heading">Account / access</h2>
+          <span class="nb-settings-group__hint">Owner handoffs</span>
+        </div>
+        <ul class="nb-settings-list">
+          <li>
+            <a class="nb-settings-row" href="account.html" aria-label="Open Account prototype handoff">
+              <span class="nb-settings-row__icon nb-settings-row__icon--blue" aria-hidden="true">
+                <svg><use href="#icon-profile"></use></svg>
+              </span>
+              <span class="nb-settings-row__body">
+                <span class="nb-settings-row__title">Account</span>
+                <span class="nb-settings-row__description">Mock handoff. Account and session behavior stay owner-owned.</span>
+              </span>
+              <span class="nb-settings-row__meta">
+                <span class="nb-settings-row__status nb-settings-row__status--mock">Mock handoff</span>
+                <span class="nb-settings-row__chevron" aria-hidden="true">›</span>
+              </span>
+            </a>
+          </li>
+          <li>
+            <a class="nb-settings-row" href="saved-list.html" aria-label="Open Saved poses prototype handoff">
+              <span class="nb-settings-row__icon nb-settings-row__icon--green" aria-hidden="true">
+                <svg><use href="#icon-bookmark"></use></svg>
+              </span>
+              <span class="nb-settings-row__body">
+                <span class="nb-settings-row__title">Saved poses</span>
+                <span class="nb-settings-row__description">Mock handoff. Saved behavior stays with its owning surface.</span>
+              </span>
+              <span class="nb-settings-row__meta">
+                <span class="nb-settings-row__status nb-settings-row__status--mock">Mock handoff</span>
+                <span class="nb-settings-row__chevron" aria-hidden="true">›</span>
+              </span>
+            </a>
+          </li>
+          <li>
+            <a class="nb-settings-row" href="paywall.html?return=settings.html" aria-label="Open Premium prototype handoff">
+              <span class="nb-settings-row__icon nb-settings-row__icon--yellow" aria-hidden="true">
+                <svg><use href="#icon-crown"></use></svg>
+              </span>
+              <span class="nb-settings-row__body">
+                <span class="nb-settings-row__title">Premium</span>
+                <span class="nb-settings-row__description">Mock handoff. Billing and entitlement behavior stay owner-owned.</span>
+              </span>
+              <span class="nb-settings-row__meta">
+                <span class="nb-settings-row__status nb-settings-row__status--mock">Mock handoff</span>
+                <span class="nb-settings-row__chevron" aria-hidden="true">›</span>
+              </span>
+            </a>
+          </li>
+        </ul>
+      </section>
+
+      <section class="nb-settings-group" aria-labelledby="settings-privacy-heading">
+        <div class="nb-settings-group__header">
+          <h2 class="nb-settings-group__title" id="settings-privacy-heading">Privacy / permissions</h2>
+          <span class="nb-settings-group__hint">Status only</span>
+        </div>
+        <ul class="nb-settings-list">
+          <li>
+            <div class="nb-settings-row nb-settings-row--static">
+              <span class="nb-settings-row__icon nb-settings-row__icon--blue" aria-hidden="true">
+                <svg><use href="#icon-info"></use></svg>
+              </span>
+              <span class="nb-settings-row__body">
+                <span class="nb-settings-row__title">Permission status</span>
+                <span class="nb-settings-row__description">Platform state is not read here; permission ownership and scope are Pending-human.</span>
+              </span>
+              <span class="nb-settings-row__meta">
+                <span class="nb-settings-row__status nb-settings-row__status--pending">Pending-human</span>
+              </span>
+            </div>
+          </li>
+          <li>
+            <div class="nb-settings-row nb-settings-row--static">
+              <span class="nb-settings-row__icon nb-settings-row__icon--pink" aria-hidden="true">
+                <svg><use href="#icon-info"></use></svg>
+              </span>
+              <span class="nb-settings-row__body">
+                <span class="nb-settings-row__title">Privacy &amp; legal</span>
+                <span class="nb-settings-row__description">Approved legal destinations are not configured for this prototype.</span>
+              </span>
+              <span class="nb-settings-row__meta">
+                <span class="nb-settings-row__status nb-settings-row__status--unavailable">Unavailable</span>
+              </span>
+            </div>
+          </li>
+        </ul>
+      </section>
+
+      <section class="nb-settings-group" aria-labelledby="settings-help-heading">
+        <div class="nb-settings-group__header">
+          <h2 class="nb-settings-group__title" id="settings-help-heading">Help / about</h2>
+          <span class="nb-settings-group__hint">Destinations TBD</span>
+        </div>
+        <ul class="nb-settings-list">
+          <li>
+            <div class="nb-settings-row nb-settings-row--static">
+              <span class="nb-settings-row__icon nb-settings-row__icon--yellow" aria-hidden="true">
+                <svg><use href="#icon-info"></use></svg>
+              </span>
+              <span class="nb-settings-row__body">
+                <span class="nb-settings-row__title">Support &amp; feedback</span>
+                <span class="nb-settings-row__description">No live support destination is configured; the approved handoff is Pending-human.</span>
+              </span>
+              <span class="nb-settings-row__meta">
+                <span class="nb-settings-row__status nb-settings-row__status--pending">Pending-human</span>
+              </span>
+            </div>
+          </li>
+          <li>
+            <div class="nb-settings-row nb-settings-row--static">
+              <span class="nb-settings-row__icon nb-settings-row__icon--green" aria-hidden="true">
+                <svg><use href="#icon-info"></use></svg>
+              </span>
+              <span class="nb-settings-row__body">
+                <span class="nb-settings-row__title">About this prototype</span>
+                <span class="nb-settings-row__description">Production About content and destination are not approved here.</span>
+              </span>
+              <span class="nb-settings-row__meta">
+                <span class="nb-settings-row__status nb-settings-row__status--pending">Pending-human</span>
+              </span>
+            </div>
+          </li>
+        </ul>
+      </section>
+
+      <aside class="nb-settings-boundary" aria-labelledby="settings-boundary-heading">
+        <h2 id="settings-boundary-heading">Prototype boundary</h2>
+        <p>Camera settings and all preference controls are intentionally absent. Auth/session, persistence, billing, legal, support, permission, and production-route behavior are not implemented here.</p>
+      </aside>
+    </main>
+
+    <div class="nb-phone__footer">
+      <div class="nb-phone__home-indicator"></div>
+    </div>
+  </div>
+
+  <script src="../scripts/icons.js"></script>
+  <script src="../scripts/settings.js"></script>
+</body>
+</html>
