@@ -130,11 +130,11 @@ usage evidence to identify which poses users want to keep.
 **Objective:** Let users keep favorite Community poses for later use.
 
 **Account:** Saved Poses v1 is account-backed. Sequencing: Account infrastructure →
-Saved Poses → Albums (not local-first). Auth: Supabase Auth with Google as the only
+Saved Poses → Albums (not local-first). Auth (FR-001): Supabase Auth with Google as the only
 provider enabled in v1; email/password, magic link, anonymous, Apple, GitHub and all
 other providers are off/out of scope. This Google-only decision is frozen; the
 runtime Google/Supabase integration remains Unresolved until WI-02 produces
-evidence. In the Saved flow, a Guest without a signed-in Account must sign in and
+evidence. In the Saved flow (FR-002), a Guest without a signed-in Account must sign in and
 cannot use Try Pose. Backend/web work happens only where it serves Account or Saved.
 Current Feature: [[FEAT-013-saved-poses-albums-account-backed|FEAT-013]];
 [[FEAT-008-use-published-poses|FEAT-008]] remains the predecessor/boundary for

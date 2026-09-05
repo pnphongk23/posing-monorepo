@@ -51,8 +51,9 @@ export function createAccountAuthRoutes(options: AccountAuthRoutesOptions): Rout
     const challenge = createHash("sha256").update(pending.codeVerifier).digest("base64url");
     const url = new URL(`${supabaseUrl}/auth/v1/authorize`);
     url.searchParams.set("provider", GOOGLE_PROVIDER);
-    url.searchParams.set("redirect_to", redirectUri);
-    url.searchParams.set("state", pending.state);
+    const redirectTo = new URL(redirectUri);
+    redirectTo.searchParams.set("oauth_tx", pending.transactionId);
+    url.searchParams.set("redirect_to", redirectTo.toString());
     url.searchParams.set("code_challenge", challenge);
     url.searchParams.set("code_challenge_method", "S256");
     void req;
@@ -61,18 +62,22 @@ export function createAccountAuthRoutes(options: AccountAuthRoutesOptions): Rout
 
   router.get("/google/callback", async (req, res) => {
     if (!authReady) return unavailable(res);
-    const state = typeof req.query.state === "string" ? req.query.state : "";
+    const transactionId = typeof req.query.oauth_tx === "string" ? req.query.oauth_tx : "";
     const code = typeof req.query.code === "string" ? req.query.code : "";
-    const pending = state ? options.pendingAuthStore!.consumeState(state) : null;
-    if (!pending || !code) {
+    if (!transactionId || !code) {
+      res.status(401).json({ error: { code: "UNAUTHORIZED", message: "Unauthorized" } });
+      return;
+    }
+    const pending = options.pendingAuthStore!.consumeTransaction(transactionId);
+    if (!pending) {
       res.status(401).json({ error: { code: "UNAUTHORIZED", message: "Unauthorized" } });
       return;
     }
     try {
-      const response = await fetchImpl(`${supabaseUrl}/auth/v1/token?grant_type=authorization_code`, {
+      const response = await fetchImpl(`${supabaseUrl}/auth/v1/token?grant_type=pkce`, {
         method: "POST",
-        headers: { apikey: options.anonKey!, "content-type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({ code, code_verifier: pending.codeVerifier, redirect_uri: pending.redirectUri }).toString()
+        headers: { apikey: options.anonKey!, "content-type": "application/json" },
+        body: JSON.stringify({ auth_code: code, code_verifier: pending.codeVerifier })
       });
       if (!response.ok) throw new Error("OAuth exchange failed");
       const tokens = await response.json() as { access_token?: string; refresh_token?: string };
@@ -112,8 +117,8 @@ export function createAccountAuthRoutes(options: AccountAuthRoutesOptions): Rout
     try {
       const response = await fetchImpl(`${supabaseUrl}/auth/v1/token?grant_type=refresh_token`, {
         method: "POST",
-        headers: { apikey: options.anonKey, "content-type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({ refresh_token: refreshToken }).toString()
+        headers: { apikey: options.anonKey, "content-type": "application/json" },
+        body: JSON.stringify({ refresh_token: refreshToken })
       });
       if (!response.ok) throw new Error("Refresh failed");
       const tokens = await response.json() as { access_token?: string; refresh_token?: string };

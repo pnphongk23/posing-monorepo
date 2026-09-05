@@ -16,6 +16,12 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     ) -> Bool {
         AIPoseCameraBridgeRuntime.install()
 
+        // WI-04: arm the Google sign-in bridge observer BEFORE any Kotlin
+        // com.aipose.google.signin.request can be posted, so the existing
+        // OAuthHandoff own-API flow can be started from the Compose layer.
+        // Minimal real access — no auth-semantics change, no second flow.
+        _ = OAuthSignInObserver.shared
+
         // FEAT-010 / DEC-007: configure Firebase best-effort only when a real
         // GoogleService-Info.plist is present in the bundle. The real plist is
         // supplied out of band and git-ignored; a missing or placeholder-shaped
@@ -45,8 +51,11 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         guard let apiKey = plist["API_KEY"] as? String, !apiKey.isEmpty, apiKey.hasPrefix("AIza") else {
             return
         }
+        // Firebase GOOGLE_APP_ID shape: 1:<project-number>:ios:<hex> (four colon
+        // segments). Prior regex required a 7+ digit first segment and skipped
+        // valid production plists such as 1:##########:ios:##########.
         guard let appId = plist["GOOGLE_APP_ID"] as? String,
-              appId.range(of: #"^\d{7,}:[a-z0-9]+:ios:[0-9a-f]+$"#, options: .regularExpression) != nil else {
+              appId.range(of: #"^1:\d{6,}:ios:[0-9a-f]+$"#, options: .regularExpression) != nil else {
             return
         }
         // Reject obviously placeholder values.

@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 
 export interface PendingGoogleAuth {
-  state: string;
+  transactionId: string;
   codeVerifier: string;
   redirectUri: string;
   expiresAt: number;
@@ -23,20 +23,20 @@ export class PendingAuthStore {
   create(redirectUri: string): PendingGoogleAuth {
     this.purge();
     const record = {
-      state: randomBytes(32).toString("base64url"),
+      transactionId: randomBytes(32).toString("base64url"),
       codeVerifier: randomBytes(32).toString("base64url"),
       redirectUri,
       expiresAt: this.now() + this.ttlMs
     };
-    this.pending.set(record.state, record);
+    this.pending.set(record.transactionId, record);
     return record;
   }
 
-  consumeState(state: string): PendingGoogleAuth | null {
+  consumeTransaction(transactionId: string): PendingGoogleAuth | null {
     this.purge();
-    const record = this.pending.get(state);
+    const record = this.pending.get(transactionId);
     if (!record) return null;
-    this.pending.delete(state);
+    this.pending.delete(transactionId);
     return record;
   }
 
