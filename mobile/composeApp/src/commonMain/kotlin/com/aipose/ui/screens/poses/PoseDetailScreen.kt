@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material3.AlertDialog
@@ -31,16 +32,24 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.shape.RoundedCornerShape
 import coil3.compose.AsyncImage
 import com.aipose.Pose
+import com.aipose.auth.SignInIntent
+import com.aipose.auth.hasValidStoredSession
 import com.aipose.data.PreparedPoseReference
 import com.aipose.data.PoseImageVerification
 import com.aipose.data.PoseRepository
 import com.aipose.data.PoseServiceLocator
+import com.aipose.data.SavedPosesRepository
 import com.aipose.data.remote.CommunityPose
 import com.aipose.data.remote.PoseApiException
 import com.aipose.data.remote.PoseApiService
+import com.aipose.data.remote.isUnauthorized
+import com.aipose.navigation.PoseDetailOrigin
 import com.aipose.ui.components.NeoBrutalismContainer
 import com.aipose.navigation.MatchedImageDestination
 import com.aipose.navigation.destinationChromeVisible
@@ -95,6 +104,22 @@ sealed interface DetailActionState {
     data class Error(val message: String) : DetailActionState
     data object Deleting : DetailActionState
 }
+
+/** Exact required copy for a removed/unpublished pose; never softened to "not found". */
+const val REMOVED_POSE_COPY = "Pose này đã xoá hoặc đã ẩn."
+
+/**
+ * WI-04 confirmed Saved status. [isSaved] only flips after HTTP 200 (save) / 204
+ * (unsave); [isPending] keeps the last confirmed visual during a mutation;
+ * [unavailable] means the pose was removed while open (exact [REMOVED_POSE_COPY],
+ * Try blocked, SavedEntry never deleted, mutation never reports success).
+ */
+data class SavedStatusState(
+    val isSaved: Boolean = false,
+    val isPending: Boolean = false,
+    val error: String? = null,
+    val unavailable: Boolean = false,
+)
 
 internal fun posePreviewModel(state: PoseDetailUiState.Success): String? {
     val preview = state.thumbnailPath
@@ -212,6 +237,40 @@ private fun PoseDetailHeroRegion(
  * Only the header-trailing actions and the body below the hero are state-specific.
  */
 @Composable
+private fun UnavailableRemovedPanel(
+    origin: PoseDetailOrigin,
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .background(AiPoseColors.SurfaceVariant, RoundedCornerShape(CornerRadius.md))
+            .padding(Spacing.lg)
+            .testTag("detail-unavailable-removed")
+            .semantics { contentDescription = REMOVED_POSE_COPY },
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(Spacing.sm),
+    ) {
+        Text(
+            text = REMOVED_POSE_COPY,
+            style = AiPoseTypography.Heading3,
+            color = AiPoseColors.Foreground,
+        )
+        Text(
+            text = "Pose này không còn khả dụng. Bạn không thể lưu hoặc thử pose này nữa.",
+            style = AiPoseTypography.Body,
+            color = AiPoseColors.Subtext,
+        )
+        PrimaryButton(
+            text = if (origin == PoseDetailOrigin.SAVED) "Back to Saved" else "Back to Community",
+            onClick = onBack,
+            modifier = Modifier.fillMaxWidth().padding(top = Spacing.sm),
+        )
+    }
+}
+
+@Composable
 private fun PoseDetailScaffold(
     poseId: String,
     heroName: String,
@@ -265,18 +324,57 @@ private fun PoseDetailScaffold(
 class PoseDetailViewModel(
     private val poseId: String,
     private val repository: PoseRepository = PoseServiceLocator.repository,
-    private val apiService: PoseApiService = PoseServiceLocator.apiService
+    private val apiService: PoseApiService = PoseServiceLocator.apiService,
+    private val savedRepository: SavedPosesRepository = PoseServiceLocator.savedPosesRepository,
+    private val initialSaved: Boolean = false,
+    private val origin: PoseDetailOrigin = PoseDetailOrigin.COMMUNITY,
+    private val initialCommunityPose: CommunityPose? = null,
+    viewModelScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main),
 ) {
-    private val _uiState = MutableStateFlow<PoseDetailUiState>(PoseDetailUiState.Loading)
+    private val _uiState = MutableStateFlow<PoseDetailUiState>(
+        initialCommunityPose?.let { communityPose ->
+            PoseDetailUiState.Success(
+                name = communityPose.name,
+                skeletonPath = communityPose.skeletonUrl,
+                thumbnailPath = communityPose.thumbnailUrl,
+                difficulty = communityPose.difficulty,
+                author = null,
+                isMine = false,
+                communityPose = communityPose,
+            )
+        } ?: PoseDetailUiState.Loading
+    )
     val uiState: StateFlow<PoseDetailUiState> = _uiState.asStateFlow()
 
     private val _actionState = MutableStateFlow<DetailActionState>(DetailActionState.Idle)
     val actionState: StateFlow<DetailActionState> = _actionState.asStateFlow()
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    /** WI-04: confirmed Saved status + mutation state. `isSaved` only changes after HTTP 200/204. */
+    private val _savedStatus = MutableStateFlow(SavedStatusState(isSaved = initialSaved))
+    val savedStatus: StateFlow<SavedStatusState> = _savedStatus.asStateFlow()
+
+    /** Single-use interrupted sign-in intent (Save/Try) awaiting a successful auth. */
+    private val _signInIntent = MutableStateFlow<SignInIntent?>(null)
+    val signInIntent: StateFlow<SignInIntent?> = _signInIntent.asStateFlow()
+
+    /**
+     * Session-expired signal (any backend 401 variant). Clears account-scoped state,
+     * exposes the shared sign-in requirement, and is never degraded to a generic
+     * inline error as the only response.
+     */
+    private val _signInRequired = MutableStateFlow(false)
+    val signInRequired: StateFlow<Boolean> = _signInRequired.asStateFlow()
+
+    private var pendingTrySuccess: ((PreparedPoseReference) -> Unit)? = null
+
+    private val scope = viewModelScope
+
+    fun isSignedIn(): Boolean = hasValidStoredSession()
 
 
-    suspend fun load() {
+    suspend fun load(forceRefresh: Boolean = false) {
+        // ponytail: no deep-link/freshness consumer exists in this lane; reintroduce an explicit fetch only when that contract exists.
+        if (initialCommunityPose != null && !forceRefresh) return
         repository.getPoseById(poseId).collectLatest { pose ->
             if (pose != null) {
                 _uiState.value = PoseDetailUiState.Success(
@@ -290,26 +388,6 @@ class PoseDetailViewModel(
                 )
                 return@collectLatest
             }
-            try {
-                val communityPose = apiService.getCommunityPoseDetail(poseId)
-                _uiState.value = PoseDetailUiState.Success(
-                    name = communityPose.name,
-                    skeletonPath = communityPose.skeletonUrl,
-                    thumbnailPath = communityPose.thumbnailUrl,
-                    difficulty = communityPose.difficulty,
-                    author = null,
-                    isMine = false,
-                    communityPose = communityPose
-                )
-            } catch (e: PoseApiException) {
-                _uiState.value = if (e.code == "NOT_FOUND" || e.code == "404") {
-                    PoseDetailUiState.NotFound
-                } else {
-                    PoseDetailUiState.Error(e.message ?: "Failed to load pose")
-                }
-            } catch (e: Exception) {
-                _uiState.value = PoseDetailUiState.Error(e.message ?: "Failed to load pose")
-            }
         }
     }
 
@@ -318,11 +396,18 @@ class PoseDetailViewModel(
      * via [onSuccess] only when preparation succeeds (E4). On any unreadable
      * local asset or failed published download/decode, the view model stays
      * on detail and exposes a recoverable [DetailActionState.Error] so the user
-     * can retry; it never navigates with a missing skeleton.
+     * can retry; it never navigates with a missing skeleton. A guest is gated:
+     * the interrupted Try intent is retained single-use and resumed only after
+     * a real sign-in success via [resumeSignInIntent].
      */
     suspend fun tryPose(onSuccess: (PreparedPoseReference) -> Unit) {
         val state = _uiState.value
         if (state !is PoseDetailUiState.Success) return
+        if (!isSignedIn() && state.communityPose != null) {
+            pendingTrySuccess = onSuccess
+            _signInIntent.value = SignInIntent.TRY_POSE
+            return
+        }
         _actionState.value = DetailActionState.Preparing
         try {
             val prepared = prepareReference(state)
@@ -355,6 +440,104 @@ class PoseDetailViewModel(
             PoseImageVerification.toDataUri(bytes, mimeType)
         }
         return PreparedPoseReference(poseId = poseId, poseName = state.name, skeletonPath = verifiedSkeletonPath)
+    }
+
+    // ── WI-04: confirmed-only Save/Unsave ────────────────────────────────────────
+
+    /**
+     * Guest gate + confirmed mutation. A guest only opens the shared sign-in prompt
+     * (no request); a signed-in user PUT/DELETEs and the confirmed state flips only
+     * after HTTP 200 / 204. Pending keeps the last confirmed visual; failures keep
+     * the confirmed state with an inline retryable error; 404 while open resolves to
+     * the unavailable/removed panel and never reports success.
+     */
+    fun toggleSave() {
+        val state = _uiState.value
+        if (state !is PoseDetailUiState.Success || state.communityPose == null) return
+        if (_savedStatus.value.isPending) return
+        if (!isSignedIn()) {
+            _signInIntent.value = SignInIntent.SAVE_POSE
+            return
+        }
+        val targetSaved = !_savedStatus.value.isSaved
+        _savedStatus.value = _savedStatus.value.copy(isPending = true, error = null)
+        scope.launch {
+            try {
+                if (targetSaved) {
+                    savedRepository.savePose(poseId)
+                    // 200 confirmed
+                    _savedStatus.value = SavedStatusState(isSaved = true, isPending = false)
+                } else {
+                    savedRepository.unsavePose(poseId)
+                    // 204 confirmed
+                    _savedStatus.value = SavedStatusState(isSaved = false, isPending = false)
+                }
+            } catch (e: PoseApiException) {
+                if (e.code == "NOT_FOUND" || e.code == "404") {
+                    // Removal while open: never success; stop mutation; show unavailable.
+                    _savedStatus.value = SavedStatusState(isSaved = _savedStatus.value.isSaved, isPending = false, unavailable = true, error = REMOVED_POSE_COPY)
+                } else if (e.isUnauthorized()) {
+                    // One 401 policy: any variant surfaces the existing sign-in flow with
+                    // the interrupted action retained (single-use), never a generic inline
+                    // error as the only response; confirmed state is preserved.
+                    _savedStatus.value = _savedStatus.value.copy(isPending = false, error = null)
+                    _signInIntent.value = SignInIntent.SAVE_POSE
+                } else {
+                    _savedStatus.value = _savedStatus.value.copy(isPending = false, error = e.message ?: "Could not update Saved pose.")
+                }
+            } catch (e: Exception) {
+                _savedStatus.value = _savedStatus.value.copy(isPending = false, error = e.message ?: "Could not update Saved pose.")
+            }
+        }
+    }
+
+    /** Clears the single-use intent on cancellation/terminal failure (never replays). */
+    fun clearSignInIntent() {
+        _signInIntent.value = null
+        pendingTrySuccess = null
+    }
+
+    /**
+     * Resumes the interrupted intent only after real auth success (single-use).
+     * Save: re-run the confirmed mutation. Try: prepare the already-projected
+     * published detail through the existing image verification flow.
+     */
+    fun resumeSignInIntent(onTrySuccess: (PreparedPoseReference) -> Unit) {
+        val intent = _signInIntent.value ?: return
+        when (intent) {
+            SignInIntent.SAVE_POSE -> {
+                _signInIntent.value = null
+                toggleSave()
+            }
+            SignInIntent.TRY_POSE -> {
+                val pending = pendingTrySuccess ?: onTrySuccess
+                _signInIntent.value = null
+                pendingTrySuccess = null
+                scope.launch {
+                    tryPose(onSuccess = pending)
+                }
+            }
+            SignInIntent.OPEN_SAVED -> _signInIntent.value = null // handled by navigation, not detail
+        }
+    }
+
+    fun clearSavedError() {
+        _savedStatus.value = _savedStatus.value.copy(error = null)
+    }
+
+    /**
+     * Clears the session-expired signal after a real sign-in success. Used when a
+     * 401 fired during load/toggle (no pending interrupted Save intent) so the UI
+     * does not auto-mutate; the detail then reloads with the fresh session.
+     */
+    fun clearSignInRequired() {
+        _signInRequired.value = false
+    }
+
+    /** Reloads the detail with the now-valid session after a 401 recovery. */
+    fun reloadAfterSignIn() {
+        clearSignInRequired()
+        scope.launch { load(forceRefresh = true) }
     }
 
     private val deleteMutex = Mutex()
@@ -393,14 +576,40 @@ fun PoseDetailScreen(
     viewModel: PoseDetailViewModel,
     onUseWithCamera: (PreparedPoseReference) -> Unit,
     onBack: () -> Unit,
+    origin: PoseDetailOrigin = PoseDetailOrigin.COMMUNITY,
+    onSignInRequired: (SignInIntent) -> Unit = {},
+    onConfirmedUnsave: (() -> Unit)? = null,
     purchaseGateway: PurchaseGateway = PurchaseGatewayProvider.current,
     modifier: Modifier = Modifier
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val actionState by viewModel.actionState.collectAsState()
+    val savedStatus by viewModel.savedStatus.collectAsState()
+    val signInIntent by viewModel.signInIntent.collectAsState()
+    val signInRequired by viewModel.signInRequired.collectAsState()
       var showDeleteDialog by remember { mutableStateOf(false) }
       var showPaywall by remember { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
+
+    // Surface a single-use sign-in requirement (Save/Try) to the navigator layer.
+    LaunchedEffect(signInIntent) {
+        signInIntent?.let { onSignInRequired(it) }
+    }
+
+    // One 401 policy: any expired-session signal on load/toggle opens the shared
+    // sign-in requirement (never an inline generic error as the only response).
+    LaunchedEffect(signInRequired) {
+        if (signInRequired) onSignInRequired(SignInIntent.SAVE_POSE)
+    }
+
+    // After a confirmed 204 unsave, let the origin SAVED list drop the entry —
+    // only after the server response, never optimistically.
+    var wasPending by remember { mutableStateOf(false) }
+    LaunchedEffect(savedStatus) {
+        val completedUnsave = wasPending && !savedStatus.isPending && !savedStatus.isSaved && !savedStatus.unavailable
+        if (completedUnsave) onConfirmedUnsave?.invoke()
+        wasPending = savedStatus.isPending
+    }
 
     LaunchedEffect(viewModel) {
         viewModel.load()
@@ -460,14 +669,14 @@ fun PoseDetailScreen(
                             ) {
                                 Text(
                                     text = s.name,
-                                    style = AiPoseTypography.Heading2,
+                                    style = AiPoseTypography.ScreenTitle,
                                     color = AiPoseColors.Foreground
                                 )
 
                                 if (s.difficulty != null) {
                                     Text(
                                         text = "Difficulty: ${s.difficulty}",
-                                        style = AiPoseTypography.BodyBold,
+                                        style = AiPoseTypography.MetaLabel,
                                         color = AiPoseColors.Primary
                                     )
                                 }
@@ -496,15 +705,113 @@ fun PoseDetailScreen(
                                 )
                             }
 
+                            // WI-04 confirmed Saved status + inline retryable mutation error.
+                            if (savedStatus.error != null && !savedStatus.unavailable) {
+                                Text(
+                                    text = savedStatus.error!!,
+                                    style = AiPoseTypography.Caption,
+                                    color = AiPoseColors.Error,
+                                    modifier = Modifier.padding(vertical = Spacing.xs)
+                                )
+                            }
+
+                            val isCommunity = s.communityPose != null
+                            val savedControlEnabled = isCommunity &&
+                                !savedStatus.isPending &&
+                                !savedStatus.unavailable &&
+                                actionState !is DetailActionState.Preparing
+                            if (savedStatus.unavailable) {
+                                // Removal/unavailable: visibly render the exact frozen copy,
+                                // block Try and mutation, never report success.
+                                UnavailableRemovedPanel(
+                                    origin = origin,
+                                    onBack = onBack,
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                            } else {
+                                if (isCommunity) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    // 44-48dp bookmark: filled pink = confirmed saved; outlined = confirmed not saved.
+                                    NeoBrutalismContainer(
+                                        modifier = Modifier
+                                            .size(48.dp)
+                                            .testTag("detail-save-toggle")
+                                            .semantics {
+                                                contentDescription = if (savedStatus.isSaved) "Remove pose from Saved" else "Save pose"
+                                            },
+                                        shape = RoundedCornerShape(12.dp),
+                                        backgroundColor = if (savedStatus.isSaved) AiPoseColors.Primary else AiPoseColors.Surface,
+                                        shadowOffset = 2.dp,
+                                        borderWidth = 2.dp,
+                                        onClick = {
+                                            if (savedControlEnabled) {
+                                                viewModel.toggleSave()
+                                            }
+                                        },
+                                    ) {
+                                        if (savedStatus.isPending) {
+                                            CircularProgressIndicator(
+                                                color = if (savedStatus.isSaved) AiPoseColors.Surface else AiPoseColors.Primary,
+                                                modifier = Modifier.size(20.dp),
+                                                strokeWidth = 2.dp,
+                                            )
+                                        } else {
+                                            Icon(
+                                                imageVector = Icons.Default.Bookmark,
+                                                contentDescription = null,
+                                                tint = if (savedStatus.isSaved) AiPoseColors.Surface else AiPoseColors.Foreground,
+                                                modifier = Modifier.size(20.dp),
+                                            )
+                                        }
+                                    }
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = if (savedStatus.isSaved) "Saved" else "Save pose",
+                                            style = AiPoseTypography.Control,
+                                            color = AiPoseColors.Foreground,
+                                        )
+                                        Text(
+                                            text = if (savedStatus.isSaved)
+                                                "Tap to remove from Saved."
+                                            else
+                                                "Save this pose to your account.",
+                                            style = AiPoseTypography.Caption,
+                                            color = AiPoseColors.Subtext,
+                                        )
+                                    }
+                                }
+                            }
+
+                            // Offline/stale: Save/Unsave/Try gated with a clear reconnect action.
+                            if (savedStatus.error != null && !savedStatus.unavailable) {
+                                PrimaryButton(
+                                    text = "Reconnect & Retry",
+                                    onClick = {
+                                        viewModel.clearSavedError()
+                                        viewModel.toggleSave()
+                                    },
+                                    modifier = Modifier.fillMaxWidth().padding(top = Spacing.sm),
+                                )
+                            }
+
                             PrimaryButton(
                                 text = "Try Pose",
-                                  onClick = {
-                                        if (premiumTestBypassEnabled || decidePaidAccess(purchaseGateway.snapshot.value).allowAction) {
-                                          coroutineScope.launch { viewModel.tryPose(onSuccess = onUseWithCamera) }
-                                      } else showPaywall = true
-                                  },
+                                enabled = !savedStatus.unavailable,
+                                onClick = {
+                                    if (premiumTestBypassEnabled || decidePaidAccess(purchaseGateway.snapshot.value).allowAction) {
+                                        coroutineScope.launch {
+                                            if (savedStatus.unavailable) return@launch // Try blocked on removed pose
+                                            viewModel.tryPose(onSuccess = onUseWithCamera)
+                                        }
+                                    } else showPaywall = true
+                                },
                                 modifier = Modifier.fillMaxWidth()
                             )
+                            }
                         }
                         else -> {
                             // Preview-first Loading body below the persistent hero.
@@ -514,7 +821,7 @@ fun PoseDetailScreen(
                             ) {
                                 Text(
                                     text = preview.name,
-                                    style = AiPoseTypography.Heading2,
+                                      style = AiPoseTypography.ScreenTitle,
                                     color = AiPoseColors.Foreground
                                 )
                                 Text(
@@ -547,17 +854,20 @@ fun PoseDetailScreen(
                     verticalArrangement = Arrangement.Center
                 ) {
                     Text(
-                        text = "Pose not found",
+                        text = REMOVED_POSE_COPY,
                         style = AiPoseTypography.Heading3,
                         color = AiPoseColors.Foreground
                     )
                     Text(
-                        text = "The requested pose record does not exist or has been deleted.",
+                        text = "Pose này không còn khả dụng trong danh sách Saved.",
                         style = AiPoseTypography.Body,
                         color = AiPoseColors.Subtext,
                         modifier = Modifier.padding(top = Spacing.sm, bottom = Spacing.lg)
                     )
-                    PrimaryButton(onClick = onBack, text = "Go back")
+                    PrimaryButton(
+                        onClick = onBack,
+                        text = if (origin == PoseDetailOrigin.SAVED) "Back to Saved" else "Back to Community"
+                    )
                 }
             }
 
@@ -580,7 +890,7 @@ fun PoseDetailScreen(
                     )
                     PrimaryButton(
                         text = "Retry",
-                        onClick = { coroutineScope.launch { viewModel.load() } },
+                        onClick = { coroutineScope.launch { viewModel.load(forceRefresh = true) } },
                         modifier = Modifier.fillMaxWidth()
                     )
                     PrimaryButton(

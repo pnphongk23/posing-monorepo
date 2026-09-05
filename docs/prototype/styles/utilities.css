@@ -9,17 +9,31 @@
 
 .u-text-center { text-align: center !important; }
 .u-text-right { text-align: right !important; }
-.u-text-uppercase { text-transform: uppercase !important; }
 .u-w-full { width: 100% !important; }
 .u-h-full { height: 100% !important; }
 .u-font-bold { font-weight: var(--nb-font-weight-bold) !important; }
 
-.u-text-2xs { font-size: var(--nb-font-size-2xs) !important; }
-.u-text-xs { font-size: var(--nb-font-size-xs) !important; }
+.u-text-2xs { font-size: var(--nb-font-size-2xs) !important; } /* deprecated floor alias */
+.u-text-xs { font-size: var(--nb-font-size-xs) !important; } /* deprecated floor alias */
 .u-text-sm { font-size: var(--nb-font-size-sm) !important; }
-.u-text-md { font-size: var(--nb-font-size-base) !important; }
-.u-text-lg { font-size: var(--nb-font-size-xl) !important; }
-.u-text-xl { font-size: var(--nb-font-size-2xl) !important; }
+.u-text-md { font-size: var(--nb-font-size-md) !important; }
+.u-text-base { font-size: var(--nb-font-size-base) !important; }
+.u-text-lg { font-size: var(--nb-font-size-lg) !important; }
+.u-text-xl { font-size: var(--nb-font-size-xl) !important; }
+.u-text-2xl { font-size: var(--nb-font-size-2xl) !important; }
+.u-text-3xl { font-size: var(--nb-font-size-3xl) !important; }
+
+.u-type-display { font-size: var(--nb-type-display-size) !important; font-weight: var(--nb-type-display-weight) !important; line-height: var(--nb-type-display-leading) !important; letter-spacing: var(--nb-type-display-tracking) !important; }
+.u-type-screen-title { font-size: var(--nb-type-screen-title-size) !important; font-weight: var(--nb-type-screen-title-weight) !important; line-height: var(--nb-type-screen-title-leading) !important; letter-spacing: var(--nb-type-screen-title-tracking) !important; }
+.u-type-navigation-title { font-size: var(--nb-type-navigation-title-size) !important; font-weight: var(--nb-type-navigation-title-weight) !important; line-height: var(--nb-type-navigation-title-leading) !important; letter-spacing: var(--nb-type-navigation-title-tracking) !important; }
+.u-type-heading-3 { font-size: var(--nb-type-heading-3-size) !important; font-weight: var(--nb-type-heading-3-weight) !important; line-height: var(--nb-type-heading-3-leading) !important; letter-spacing: var(--nb-type-heading-3-tracking) !important; }
+.u-type-body { font-size: var(--nb-type-body-size) !important; font-weight: var(--nb-type-body-weight) !important; line-height: var(--nb-type-body-leading) !important; letter-spacing: var(--nb-type-body-tracking) !important; }
+.u-type-meta-label { font-size: var(--nb-type-meta-label-size) !important; font-weight: var(--nb-type-meta-label-weight) !important; line-height: var(--nb-type-meta-label-leading) !important; letter-spacing: var(--nb-type-meta-label-tracking) !important; }
+.u-type-caption { font-size: var(--nb-type-caption-size) !important; font-weight: var(--nb-type-caption-weight) !important; line-height: var(--nb-type-caption-leading) !important; letter-spacing: var(--nb-type-caption-tracking) !important; }
+.u-type-control { font-size: var(--nb-type-control-size) !important; font-weight: var(--nb-type-control-weight) !important; line-height: var(--nb-type-control-leading) !important; letter-spacing: var(--nb-type-control-tracking) !important; }
+.u-type-input { font-size: var(--nb-type-input-size) !important; font-weight: var(--nb-type-input-weight) !important; line-height: var(--nb-type-input-leading) !important; letter-spacing: var(--nb-type-input-tracking) !important; }
+.u-type-tab { font-size: var(--nb-type-tab-size) !important; font-weight: var(--nb-type-tab-weight) !important; line-height: var(--nb-type-tab-leading) !important; letter-spacing: var(--nb-type-tab-tracking) !important; }
+.u-type-poses-toolbar-tab { font-size: var(--nb-type-poses-toolbar-tab-size) !important; font-weight: var(--nb-type-poses-toolbar-tab-weight) !important; line-height: var(--nb-type-poses-toolbar-tab-leading) !important; letter-spacing: var(--nb-type-poses-toolbar-tab-tracking) !important; text-transform: none !important; }
 
 .u-gap-xs { gap: var(--nb-space-xs) !important; }
 .u-gap-sm { gap: var(--nb-space-sm) !important; }

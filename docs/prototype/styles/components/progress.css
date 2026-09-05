@@ -11,11 +11,11 @@
   display: flex;
   justify-content: space-between;
   font-family: var(--nb-font-family);
-  font-weight: var(--nb-font-weight-bold);
-  font-size: var(--nb-font-size-sm);
-  line-height: var(--nb-line-height-tight);
-  letter-spacing: var(--nb-tracking-label);
-  text-transform: uppercase;
+  font-weight: var(--nb-type-meta-label-weight);
+  font-size: var(--nb-type-meta-label-size);
+  line-height: var(--nb-type-meta-label-leading);
+  letter-spacing: var(--nb-tracking-none);
+  font-variant-numeric: tabular-nums;
 }
 
 .nb-progress__track {

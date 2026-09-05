@@ -13,19 +13,32 @@
 
 .nb-nav-bar__title {
   font-family: var(--nb-font-family);
-  font-weight: var(--nb-font-weight-bold);
-  font-size: var(--nb-font-size-xl);
-  line-height: var(--nb-line-height-tight);
-  letter-spacing: var(--nb-tracking-tight);
-  text-transform: uppercase;
+  font-weight: var(--nb-type-navigation-title-weight);
+  font-size: var(--nb-type-navigation-title-size);
+  line-height: var(--nb-type-navigation-title-leading);
+  letter-spacing: var(--nb-type-navigation-title-tracking);
   color: var(--nb-color-dark);
   text-align: center;
   flex-grow: 1;
 }
 
 .nb-nav-bar__title--page {
-  text-align: left;
-  font-size: var(--nb-font-size-2xl);
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  text-align: center;
+  font-size: var(--nb-type-screen-title-size);
+  line-height: var(--nb-type-screen-title-leading);
+  letter-spacing: var(--nb-type-screen-title-tracking);
+}
+
+.nb-nav-bar--saved {
+  padding-inline: var(--nb-space-sm);
+  gap: var(--nb-space-sm);
+}
+
+.nb-nav-bar--saved .nb-nav-bar__title {
+  text-transform: none;
 }
 
 .nb-nav-bar__left,

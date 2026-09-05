@@ -26,7 +26,7 @@ relationships:
     - mobile/composeApp/src/commonMain/kotlin/com/aipose/camera/CameraScreen.kt
     - mobile/composeApp/src/commonMain/kotlin/com/aipose/camera/CameraContract.kt
     - mobile/composeApp/src/commonMain/kotlin/com/aipose/camera/CameraLayoutModel.kt
-    - docs/spec/data/entities/prepared-pose-reference.md
+    - docs/harness/specs/data-contract.md
 type: feature
 id: FEAT-012
 status: approved
@@ -227,7 +227,7 @@ Then không còn overlay; flash vẫn ON; pose nguồn không bị save/publish.
   [[FEAT-001-capture-a-photo-on-mobile|FEAT-001]] (capture semantics),
   [[FEAT-003-browse-and-search-published-poses|FEAT-003]] (community Try Pose entry)
 - Specs: [[technical-architecture]], [[ui-ux-system]], [[product-feature-inventory]]
-- Data contract: `docs/spec/data/entities/prepared-pose-reference.md` (transport;
+- Data contract: `docs/harness/specs/data-contract.md#preparedposereference` (transport;
   BR-PREPREF-002 sẽ cần align khi durable restore ship)
 - Survey evidence: REP-012 BL-GAP-01
 - Source paths: listed in frontmatter `source_paths`

@@ -25,6 +25,7 @@ relationships:
     - "[[FEAT-007-operate-pose-content-from-admin-web|FEAT-007]]"
     - "[[FEAT-008-use-published-poses|FEAT-008]]"
     - "[[FEAT-009-configure-extraction-provider|FEAT-009]]"
+    - "[[FEAT-013-saved-poses-albums-account-backed|FEAT-013]]"
   source_paths: []
 type: spec
 status: active
@@ -127,6 +128,17 @@ usage evidence to identify which poses users want to keep.
 ### Phase 3 — Saved Poses
 
 **Objective:** Let users keep favorite Community poses for later use.
+
+**Account:** Saved Poses v1 is account-backed. Sequencing: Account infrastructure →
+Saved Poses → Albums (not local-first). Auth (FR-001): Supabase Auth with Google as the only
+provider enabled in v1; email/password, magic link, anonymous, Apple, GitHub and all
+other providers are off/out of scope. This Google-only decision is frozen; the
+runtime Google/Supabase integration remains Unresolved until WI-02 produces
+evidence. In the Saved flow (FR-002), a Guest without a signed-in Account must sign in and
+cannot use Try Pose. Backend/web work happens only where it serves Account or Saved.
+Current Feature: [[FEAT-013-saved-poses-albums-account-backed|FEAT-013]];
+[[FEAT-008-use-published-poses|FEAT-008]] remains the predecessor/boundary for
+published poses and the Try Pose flow.
 
 **In scope:**
 
@@ -231,8 +243,8 @@ feed behavior.
 | --- | --- |
 | Phase 1 | [[FEAT-001-capture-a-photo-on-mobile\|FEAT-001]], [[FEAT-002-manage-a-local-photo-gallery\|FEAT-002]], first-use part of [[FEAT-008-use-published-poses\|FEAT-008]] |
 | Phase 2 | [[FEAT-003-browse-and-search-published-poses\|FEAT-003]], Camera handoff part of [[FEAT-008-use-published-poses\|FEAT-008]] |
-| Phase 3 | Saved Poses part of [[FEAT-008-use-published-poses\|FEAT-008]] |
-| Phase 4 | Album extension of [[FEAT-008-use-published-poses\|FEAT-008]] |
+| Phase 3 | [[FEAT-013-saved-poses-albums-account-backed\|FEAT-013]] (account-backed Saved Poses v1), Saved Poses part of [[FEAT-008-use-published-poses\|FEAT-008]] |
+| Phase 4 | Albums (future boundary — not built in v1) |
 | Phase 5 | [[FEAT-004-extract-reusable-pose-images\|FEAT-004]], [[FEAT-005-manage-a-pose-guide\|FEAT-005]], part of [[FEAT-009-configure-extraction-provider\|FEAT-009]] |
 | Phase 6 | [[FEAT-006-publish-a-pose\|FEAT-006]], [[FEAT-007-operate-pose-content-from-admin-web\|FEAT-007]], remaining [[FEAT-009-configure-extraction-provider\|FEAT-009]] |
 

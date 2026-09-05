@@ -20,7 +20,7 @@ decision_dependencies: []
    three media roles (non-nullable, materialized at creation), the lifecycle
    states (`local` → `published`), the ID strategy, and the terminology
    migration map.
-2. Create the canonical single-entity spec `docs/spec/data/entities/pose.md`
+2. Create the canonical single-entity spec `docs/harness/specs/data-contract.md#pose`
    with stable `poseId`, mandatory `ownerAccountId`, three non-nullable
    media-role references (`originalMediaId`, `skeletonMediaId`,
    `thumbnailMediaId`), `PoseStatus` (`local` | `published`), post-extraction
@@ -32,7 +32,7 @@ decision_dependencies: []
 ## Scope and affected files
 
 - `docs/harness/specs/pose-domain-glossary.md` (new)
-- `docs/spec/data/entities/pose.md` (new)
+- `docs/harness/specs/data-contract.md#pose` (new)
 - `docs/harness/README.md` (link addition only)
 
 ## Success criteria
@@ -51,4 +51,4 @@ decision_dependencies: []
 ## Required evidence
 
 - `docs/harness/specs/pose-domain-glossary.md` exists and is internally
-  consistent; `docs/spec/data/entities/pose.md` exists.
+  consistent; `docs/harness/specs/data-contract.md#pose` exists.

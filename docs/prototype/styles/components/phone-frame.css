@@ -21,9 +21,10 @@
   justify-content: space-between;
   align-items: center;
   padding: 0 var(--nb-space-lg);
-  font-size: var(--nb-font-size-base);
-  font-weight: var(--nb-font-weight-bold);
-  letter-spacing: var(--nb-tracking-tight);
+  font-size: var(--nb-type-control-size);
+  font-weight: var(--nb-type-control-weight);
+  line-height: var(--nb-type-control-leading);
+  letter-spacing: var(--nb-type-control-tracking);
   z-index: var(--nb-z-index-overlay);
   background-color: transparent;
 }
@@ -97,10 +98,10 @@
 .nb-search-bar__input {
   width: 100%;
   font-family: var(--nb-font-family);
-  font-size: var(--nb-font-size-md);
-  font-weight: var(--nb-font-weight-bold);
-  letter-spacing: var(--nb-tracking-label);
-  text-transform: uppercase;
+  font-size: var(--nb-type-input-size);
+  line-height: var(--nb-type-input-leading);
+  font-weight: var(--nb-type-input-weight);
+  letter-spacing: var(--nb-type-input-tracking);
   color: var(--nb-color-dark);
   background: transparent;
   border: none;

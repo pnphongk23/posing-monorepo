@@ -87,8 +87,26 @@ target 'iosApp' do
       STRIP
     end
 
+    # FEAT-013: strip CFBundleExecutable from every resource bundle too
+    # (RevenueCat.bundle included) — same INFOPLIST_FILE-override root cause as
+    # the *_Privacy bundles; App Store Connect otherwise rejects with -19241.
+    installer.pods_project.targets.each do |target|
+      next unless target.respond_to?(:product_type) && target.product_type == 'com.apple.product-type.bundle'
+      next if target.build_phases.any? { |p| p.respond_to?(:display_name) && p.display_name&.start_with?('Strip CFBundleExecutable') }
+      phase = target.new_shell_script_build_phase('Strip CFBundleExecutable from All Bundles')
+      phase.always_out_of_date = '1'
+      phase.shell_script = <<~STRIP
+        for info in "${BUILT_PRODUCTS_DIR}"/*.bundle/Info.plist; do
+          [ -f "$info" ] || continue
+          /usr/libexec/PlistBuddy -c "Delete :CFBundleExecutable" "$info" 2>/dev/null || true
+        done
+      STRIP
+    end
     # Belt & braces: strip the key from the generated resource-bundle plists.
-    Dir[File.join(installer.sandbox.root, 'Target Support Files', '**', 'ResourceBundle-*_Privacy-*-Info.plist')].each do |plist|
+    # FEAT-013 follow-up: the same INFOPLIST_FILE override also reaches the
+    # RevenueCat resource bundle, so App Store Connect rejects the IPA with
+    # -19241 ("Unexpected CFBundleExecutable Key" on RevenueCat.bundle).
+    Dir[File.join(installer.sandbox.root, 'Target Support Files', '**', 'ResourceBundle-*-*-Info.plist')].each do |plist|
       system('/usr/libexec/PlistBuddy', '-c', 'Delete :CFBundleExecutable', plist)
     end
   end

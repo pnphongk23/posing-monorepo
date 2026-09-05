@@ -21,6 +21,8 @@ targets:
     settings:
       PRODUCT_BUNDLE_IDENTIFIER: camerapose.app
       INFOPLIST_FILE: iosApp/Info.plist
+      CODE_SIGN_STYLE: Automatic
+      DEVELOPMENT_TEAM: 878758XF68
     configFiles:
       Debug-Dev: Config/Dev-Debug.xcconfig
       Release-Dev: Config/Dev-Release.xcconfig

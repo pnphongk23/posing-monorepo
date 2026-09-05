@@ -36,9 +36,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTag
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import com.aipose.ui.components.PrimaryButton
 import com.aipose.ui.components.SectionHeader
@@ -120,10 +118,8 @@ fun GalleryScreen(
 
                     Text(
                         text = "Gallery",
-                        fontSize = 22.sp,
-                        fontWeight = FontWeight.ExtraBold,
+                        style = AiPoseTypography.NavigationTitle,
                         color = AiPoseColors.Foreground,
-                        letterSpacing = 0.06.em
                     )
                 }
             }
@@ -146,7 +142,8 @@ fun GalleryScreen(
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.spacedBy(Spacing.md)
                         ) {
-                            Text("📸", fontSize = 48.sp)
+                            // Decorative glyph exception: frozen typography roles do not cover the empty-state camera emoji.
+                            Text("📸", fontSize = 48.sp) // GalleryScreen.kt:146
                             Text("No photos yet", style = AiPoseTypography.Heading3)
                             PrimaryButton(text = "Open camera", onClick = { onOpenCamera() })
                         }

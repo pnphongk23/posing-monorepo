@@ -34,8 +34,8 @@ relationships:
 ## Introduction
 
 The Pose Owner controls whether a complete, usable pose is publicly discoverable.
-Public browsing consumes this decision through [FEAT-003](FEAT-003-browse-and-search-published-poses.md);
-guide completeness comes from [FEAT-005](FEAT-005-manage-a-pose-guide.md).
+Public browsing consumes this decision through [FEAT-003](./FEAT-003-browse-and-search-published-poses.md);
+guide completeness comes from [FEAT-005](./FEAT-005-manage-a-pose-guide.md).
 
 ## Business Understanding
 
@@ -75,7 +75,7 @@ The owner requests publication or removal from public discovery.
 
 ### Current evidence
 
-- **Observed:** `status: local → published` là thuộc tính của canonical [`Pose`](../../spec/data/entities/pose.md)
+- **Observed:** `status: local → published` là thuộc tính của canonical [`Pose`](../specs/data-contract.md#pose)
   (`local` nhận legacy `draft` alias; `published` là trạng thái catalogue). Public
   list/detail (`CommunityPose` DTO) chỉ lọc `published`; **admin đọc canonical
   `Pose`**, không đọc DTO.
@@ -88,15 +88,15 @@ The owner requests publication or removal from public discovery.
 
 | Concern | Canonical reference | Evidence |
 | --- | --- | --- |
-| Entities | [`CommunityPose`](../../spec/data/entities/community-pose.md) (published view/DTO), [`MediaAsset`](../../spec/data/entities/media-asset.md), [`Pose`](../../spec/data/entities/pose.md), [`Account`](../../spec/data/entities/account.md) | [`schema.sql`](../../../web/services/pose-extract-server/src/db/schema.sql), [`communityStore.ts`](../../../web/services/pose-extract-server/src/db/communityStore.ts) |
-| ERD | [Server graph](../../spec/data/erd/server.md), [unresolved asset/readiness links](../../spec/data/erd/conceptual.md) | [`adminCommunityRoutes.ts`](../../../web/services/pose-extract-server/src/routes/adminCommunityRoutes.ts) |
-| APIs | [Public community](../../spec/api/modules/community.md), [publish](../../spec/api/modules/publish.md), [admin intake](../../spec/api/modules/admin-community.md) | [`communityRoutes.ts`](../../../web/services/pose-extract-server/src/routes/communityRoutes.ts), [`adminCommunityRoutes.ts`](../../../web/services/pose-extract-server/src/routes/adminCommunityRoutes.ts) |
+| Entities | [`CommunityPose`](../specs/data-contract.md#communitypose) (published view/DTO), [`MediaAsset`](../specs/data-contract.md#mediaasset), [`Pose`](../specs/data-contract.md#pose), [`Account`](../specs/data-contract.md#account) | [`schema.sql`](../../../web/services/pose-extract-server/src/db/schema.sql), [`communityStore.ts`](../../../web/services/pose-extract-server/src/db/communityStore.ts) |
+| ERD | [Server graph](../specs/data-contract.md#server), [unresolved asset/readiness links](../specs/data-contract.md#conceptual-overlay) | [`adminCommunityRoutes.ts`](../../../web/services/pose-extract-server/src/routes/adminCommunityRoutes.ts) |
+| APIs | [Public community](../specs/api-contract.md#community-public), [publish](../specs/api-contract.md#publish), [admin intake](../specs/api-contract.md#admin-community) | [`communityRoutes.ts`](../../../web/services/pose-extract-server/src/routes/communityRoutes.ts), [`adminCommunityRoutes.ts`](../../../web/services/pose-extract-server/src/routes/adminCommunityRoutes.ts) |
 | Supporting evidence | Backend reports and feature inventory | [`REP-002`](../reports/REP-002-feature-gap-and-release-readiness-audit.md), [`REP-004`](../reports/REP-004-backend-feature-and-model-entity-scout.md) |
 
 ## Requirements
 
 - **FR-001:** Public reads use the shared `CommunityPose` (published-`Pose` view) status contract.
-- **FR-002:** Owner or Admin publishes/unpublishes through [`publish.md`](../../spec/api/modules/publish.md); readiness requires a `ready` skeleton [`MediaAsset`](../../spec/data/entities/media-asset.md).
+- **FR-002:** Owner or Admin publishes/unpublishes through [`publish.md`](../specs/api-contract.md#publish); readiness requires a `ready` skeleton [`MediaAsset`](../specs/data-contract.md#mediaasset).
 - **BR-001:** `published` requires a readable ready skeleton; queued `202` is not publication.
 
 ## Acceptance
@@ -107,8 +107,8 @@ The owner requests publication or removal from public discovery.
 
 ## Relationships
 
-- Shared references: [CommunityPose](../../spec/data/entities/community-pose.md) (published view/DTO), [ERD conceptual](../../spec/data/erd/conceptual.md), [Community API](../../spec/api/modules/community.md).
-- Related features: [FEAT-003](FEAT-003-browse-and-search-published-poses.md), [FEAT-005](FEAT-005-manage-a-pose-guide.md), [FEAT-008](FEAT-008-use-published-poses.md).
+- Shared references: [CommunityPose](../specs/data-contract.md#communitypose) (published view/DTO), [ERD conceptual](../specs/data-contract.md#conceptual-overlay), [Community API](../specs/api-contract.md#community-public).
+- Related features: [FEAT-003](./FEAT-003-browse-and-search-published-poses.md), [FEAT-005](./FEAT-005-manage-a-pose-guide.md), [FEAT-008](./FEAT-008-use-published-poses.md).
 ### Supporting evidence
 
 - [`schema.sql`](../../../web/services/pose-extract-server/src/db/schema.sql)

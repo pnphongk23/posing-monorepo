@@ -16,9 +16,9 @@ fun Badge(
     Text(
         text = text.uppercase(),
         modifier = modifier.badgeChrome(type.backgroundColor),
-        style = AiPoseTypography.CaptionBold,
+        style = AiPoseTypography.MetaLabel,
         color = type.contentColor,
-        letterSpacing = 0.08.em
+        letterSpacing = 0.04.em
     )
 }
 

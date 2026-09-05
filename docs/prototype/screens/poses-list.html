@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" dir="ltr">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -36,7 +36,7 @@
         <div class="nb-nav-bar__center">
           <!-- Category tabs live in the toolbar to keep the browsing context visible. -->
           <div class="nb-tabs nb-tabs--toolbar" role="tablist" aria-label="Pose category">
-            <button class="nb-tab-btn is-active" role="tab" aria-selected="true" data-category="my-poses">My Poses</button>
+            <button class="nb-tab-btn is-active" role="tab" aria-selected="true" data-category="my-poses">My poses</button>
             <button class="nb-tab-btn" role="tab" aria-selected="false" data-category="community">Community</button>
           </div>
         </div>
@@ -49,6 +49,11 @@
           <a href="search.html" class="nb-btn nb-btn--compact-action nb-btn--toolbar-search" aria-label="Search poses">
             <span class="nb-btn__compact-surface nb-btn__compact-surface--white">
               <svg><use href="#icon-search"></use></svg>
+            </span>
+          </a>
+          <a href="sign-in-prompt.html?intent=saved&return=poses-list.html" class="nb-btn nb-btn--compact-action" aria-label="Open Saved poses">
+            <span class="nb-btn__compact-surface nb-btn__compact-surface--white">
+              <svg><use href="#icon-bookmark"></use></svg>
             </span>
           </a>
           <a href="camera-live.html" class="nb-btn nb-btn--compact-action" aria-label="Create Pose">

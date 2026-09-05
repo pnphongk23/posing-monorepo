@@ -69,11 +69,11 @@
   align-items: center;
   padding: var(--nb-space-sm) 0;
   font-family: var(--nb-font-family);
-  font-weight: var(--nb-font-weight-bold);
-  font-size: var(--nb-font-size-md);
-  line-height: var(--nb-line-height-tight);
-  letter-spacing: var(--nb-tracking-label);
-  text-transform: uppercase;
+  font-weight: var(--nb-type-control-weight);
+  font-size: var(--nb-type-control-size);
+  line-height: var(--nb-type-control-leading);
+  letter-spacing: var(--nb-type-control-tracking);
+  text-transform: none;
 }
 
 .nb-dropdown__row:not(:last-child) {

@@ -200,32 +200,6 @@ class PoseApiServiceTest {
     }
 
     @Test
-    fun `getCommunityPoseDetail sends GET with ID and returns CommunityPose`() = runBlocking<Unit> {
-        var capturedRequest: io.ktor.client.request.HttpRequestData? = null
-        val client = buildMockClient { request ->
-            capturedRequest = request
-            respond(
-                content = ByteReadChannel("""{"data":{"id":"p123","name":"Test Pose","imagePath":"http://img","difficulty":"intermediate","tags":["test"]}}"""),
-                status = HttpStatusCode.OK,
-                headers = headersOf(HttpHeaders.ContentType, "application/json")
-            )
-        }
-        try {
-            val service = PoseApiService(client, "https://test.server")
-            val result = service.getCommunityPoseDetail("p123")
-
-            assertNotNull(capturedRequest)
-            assertEquals(HttpMethod.Get, capturedRequest!!.method)
-            assertEquals("/api/community/poses/p123", capturedRequest!!.url.encodedPath)
-            assertEquals("p123", result.poseId)
-            assertEquals("Test Pose", result.name)
-            assertEquals("intermediate", result.difficulty)
-        } finally {
-            client.close()
-        }
-    }
-
-    @Test
     fun `getCommunityPoses throws PoseApiException with nested error info on non-2xx response`() = runBlocking<Unit> {
         val client = buildMockClient { _ ->
             respond(
@@ -241,6 +215,106 @@ class PoseApiServiceTest {
             }
             assertEquals("AUTH_FAILED", exception.code)
             assertEquals("Invalid token", exception.message)
+        } finally {
+            client.close()
+        }
+    }
+
+    // ── WI-04: Saved collection ──────────────────────────────────────────────
+
+    @Test
+    fun `getSavedPoses sends GET with page and limit and parses pagination`() = runBlocking<Unit> {
+        var capturedRequest: io.ktor.client.request.HttpRequestData? = null
+        val client = buildMockClient { request ->
+            capturedRequest = request
+            respond(
+                content = ByteReadChannel("""{"data":[{"poseId":"s-1","name":"Saved Pose","status":"published"}],"pagination":{"page":2,"limit":10,"total":11}}"""),
+                status = HttpStatusCode.OK,
+                headers = headersOf(HttpHeaders.ContentType, "application/json")
+            )
+        }
+        try {
+            val result = PoseApiService(client, "https://test.server").getSavedPoses(page = 2, limit = 10)
+            assertNotNull(capturedRequest)
+            assertEquals(HttpMethod.Get, capturedRequest!!.method)
+            assertEquals("/api/me/saved", capturedRequest!!.url.encodedPath)
+            assertEquals("2", capturedRequest!!.url.parameters["page"])
+            assertEquals("10", capturedRequest!!.url.parameters["limit"])
+            assertEquals("s-1", result.data.single().poseId)
+            assertEquals(11, result.pagination.total)
+        } finally {
+            client.close()
+        }
+    }
+
+    @Test
+    fun `savePose sends PUT and returns data on 200`() = runBlocking<Unit> {
+        var capturedRequest: io.ktor.client.request.HttpRequestData? = null
+        val client = buildMockClient { request ->
+            capturedRequest = request
+            respond(
+                content = ByteReadChannel("""{"data":{"poseId":"p-1","name":"Pose","status":"published"}}"""),
+                status = HttpStatusCode.OK,
+                headers = headersOf(HttpHeaders.ContentType, "application/json")
+            )
+        }
+        try {
+            val pose = PoseApiService(client, "https://test.server").savePose("p-1")
+            assertNotNull(capturedRequest)
+            assertEquals(HttpMethod.Put, capturedRequest!!.method)
+            assertEquals("/api/me/saved/p-1", capturedRequest!!.url.encodedPath)
+            assertEquals("p-1", pose.poseId)
+        } finally {
+            client.close()
+        }
+    }
+
+    @Test
+    fun `unsavePose sends DELETE and accepts 204 empty body`() = runBlocking<Unit> {
+        var capturedRequest: io.ktor.client.request.HttpRequestData? = null
+        val client = buildMockClient { request ->
+            capturedRequest = request
+            respond(content = ByteReadChannel(""), status = HttpStatusCode.NoContent)
+        }
+        try {
+            PoseApiService(client, "https://test.server").unsavePose("p-1")
+            assertNotNull(capturedRequest)
+            assertEquals(HttpMethod.Delete, capturedRequest!!.method)
+            assertEquals("/api/me/saved/p-1", capturedRequest!!.url.encodedPath)
+        } finally {
+            client.close()
+        }
+    }
+
+    @Test
+    fun `savePose maps 404 NOT_FOUND envelope`() = runBlocking<Unit> {
+        val client = buildMockClient {
+            respond(
+                content = ByteReadChannel("""{"error":{"code":"NOT_FOUND","message":"Pose not found"}}"""),
+                status = HttpStatusCode.NotFound,
+                headers = headersOf(HttpHeaders.ContentType, "application/json")
+            )
+        }
+        try {
+            val exception = assertFailsWith<PoseApiException> {
+                PoseApiService(client, "https://test.server").savePose("missing")
+            }
+            assertEquals("NOT_FOUND", exception.code)
+        } finally {
+            client.close()
+        }
+    }
+
+    @Test
+    fun `saved endpoints require valid page and limit`() = runBlocking<Unit> {
+        val client = buildMockClient {
+            respond(content = ByteReadChannel(""), status = HttpStatusCode.OK)
+        }
+        try {
+            val service = PoseApiService(client, "https://test.server")
+            assertFailsWith<IllegalArgumentException> { service.getSavedPoses(page = 0, limit = 20) }
+            assertFailsWith<IllegalArgumentException> { service.getSavedPoses(page = 1, limit = 0) }
+            assertFailsWith<IllegalArgumentException> { service.getSavedPoses(page = 1, limit = 101) }
         } finally {
             client.close()
         }

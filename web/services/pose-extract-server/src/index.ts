@@ -5,6 +5,9 @@ import { applySchema, closeDatabase, createDatabase, type Sql } from "./db/conne
 import { PoseStore } from "./db/communityStore";
 import { ExtractionJobStore } from "./db/extractionJobStore";
 import { ProviderSettingsStore } from "./db/providerSettingsStore";
+import { AccountStore } from "./db/accountStore";
+import { SavedStore } from "./db/savedStore";
+import { PendingAuthStore } from "./services/pendingAuthStore";
 import { GeminiService } from "./services/geminiService";
 import { KeyPoolManager } from "./services/keyPoolManager";
 import { KeyStore } from "./services/keyStore";
@@ -22,6 +25,8 @@ async function main(): Promise<void> {
   const communityStore = new PoseStore(sql);
   const extractionJobStore = new ExtractionJobStore(sql);
   const providerSettingsStore = new ProviderSettingsStore(sql);
+  const accountStore = new AccountStore(sql);
+  const savedStore = new SavedStore(sql);
   const keyPoolManager = new KeyPoolManager(keyStore);
   const geminiService = new GeminiService();
   const appVersion = process.env.APP_VERSION ?? process.env.npm_package_version ?? "1.0.0";
@@ -36,7 +41,14 @@ async function main(): Promise<void> {
     communityStore,
     communityUploadDir: env.NODE_ENV === "production" ? undefined : env.COMMUNITY_UPLOAD_DIR,
     extractionJobStore,
-    providerSettingsStore
+    providerSettingsStore,
+    accountStore,
+    supabaseUrl: env.SUPABASE_URL,
+    supabaseAnonKey: env.SUPABASE_ANON_KEY,
+    supabaseJwtKeyId: env.SUPABASE_JWT_KEY_ID,
+    backendPublicUrl: env.BACKEND_PUBLIC_URL,
+    pendingAuthStore: new PendingAuthStore(),
+    savedStore
   });
 
   let shuttingDown = false;

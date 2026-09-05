@@ -40,10 +40,8 @@ relationships:
     - docs/harness/workflows/plan.md
     - docs/harness/features/FEAT-003-browse-and-search-published-poses.md
     - docs/harness/decisions/DEC-003-feat-003-scoped-parity-matrix.md
-    - docs/spec/api/modules/community.md
-    - docs/spec/api/conventions.md
-    - docs/spec/data/entities/community-pose.md
-    - docs/spec/data/erd/server.md
+    - docs/harness/specs/api-contract.md
+    - docs/harness/specs/data-contract.md
     - .rule/convention/neo-brutalism.md
     - docs/prototype/screens/search.html
     - docs/prototype/scripts/app.js
@@ -138,7 +136,7 @@ search, and mobile live API provider wiring.
 | Claim | Status | Evidence or fallback |
 | --- | --- | --- |
 | FEAT-003 is approved (2026-08-18, Repository Maintainer) and governs title search via FR-002 | **Verified** | `docs/harness/features/FEAT-003-browse-and-search-published-poses.md:26-31,100-110` |
-| The canonical API contract defines `q` as case-insensitive title search on `name`, published-only, with `page`/`limit`/`total` envelope (public default limit 20) | **Verified** | `docs/spec/api/modules/community.md:7-32`; `docs/spec/api/conventions.md:50-61`; `docs/spec/api/openapi.yaml:453-486` |
+| The canonical API contract defines `q` as case-insensitive title search on `name`, published-only, with `page`/`limit`/`total` envelope (public default limit 20) | **Verified** | `docs/harness/specs/api-contract.md#community-public:7-32`; `docs/harness/specs/api-contract.md#conventions:50-61`; `docs/harness/specs/api/openapi.yaml:453-486` |
 | The prototype fixes the exact search copy, count format, empty states, and published-only filtering | **Verified** | `docs/prototype/screens/search.html:44-65`; `docs/prototype/scripts/app.js:447-552` |
 | Backend tests cover published filtering, `q`, wildcard escaping, and page two | **Verified** | `communityRoutes.test.ts` and `communityStore.test.ts` `describe("title search (q)")`; WI-05 run 43/43 passed |
 | Mobile community search uses paginated `CommunitySearchRepository` mock (replaced list-only provider) | **Verified** | `CommunitySearchRepository.kt`; `CommunitySearchRepositoryTest` 12/12; `CommunitySearchProvider.kt` removed |

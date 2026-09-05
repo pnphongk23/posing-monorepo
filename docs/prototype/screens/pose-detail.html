@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" dir="ltr">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -59,8 +59,8 @@
         <!-- Pose Details Label -->
         <div class="u-mb-lg">
           <span class="nb-detail-source nb-tag nb-tag--blue" id="detail-pose-source">Community</span>
-          <h2 class="u-font-bold u-text-uppercase u-text-lg" id="detail-pose-name" style="margin: var(--nb-space-sm) 0 var(--nb-space-2xs);">Dancing</h2>
-          <span class="u-text-sm u-text-muted" id="detail-pose-context">Published</span>
+          <h2 class="u-type-heading-3" id="detail-pose-name" style="margin: var(--nb-space-sm) 0 var(--nb-space-2xs);">Dancing</h2>
+          <span class="u-type-caption u-text-muted" id="detail-pose-context">Published</span>
         </div>
 
         <!-- Only available source metadata is rendered. -->
@@ -71,7 +71,7 @@
         <div class="nb-detail-actions u-d-flex u-gap-sm">
           <button type="button" class="nb-btn nb-btn--pink nb-btn--block u-flex-grow u-justify-between" id="detail-try-pose-btn">
             <svg aria-hidden="true"><use href="#icon-camera"></use></svg>
-            <span>Try Pose</span>
+            <span>Try pose</span>
             <span style="opacity: 0;" aria-hidden="true"></span>
           </button>
           <button type="button" id="detail-delete-btn" class="nb-btn nb-btn--cream" data-open-modal="delete-pose-modal" hidden>
@@ -84,8 +84,8 @@
     <!-- Personal-only destructive confirmation -->
     <div id="delete-pose-modal" class="nb-modal-overlay" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="delete-modal-title">
       <div class="nb-modal">
-        <h2 id="delete-modal-title" class="u-font-bold u-text-lg">Delete this pose?</h2>
-        <p id="delete-modal-copy" class="u-text-sm u-text-muted u-mb-md">This removes the pose from My Poses.</p>
+        <h2 id="delete-modal-title" class="u-type-heading-3">Delete this pose?</h2>
+        <p id="delete-modal-copy" class="u-type-body u-text-muted u-mb-md">This removes the pose from My Poses.</p>
         <div class="u-d-flex u-gap-sm u-justify-end">
           <button type="button" class="nb-btn nb-btn--white" data-close-modal>Cancel</button>
           <button type="button" id="confirm-delete-btn" class="nb-btn nb-btn--pink">Delete pose</button>

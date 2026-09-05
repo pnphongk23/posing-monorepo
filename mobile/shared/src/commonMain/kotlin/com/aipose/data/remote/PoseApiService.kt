@@ -1,5 +1,7 @@
 package com.aipose.data.remote
 
+import com.aipose.data.auth.SessionBoundary
+import com.aipose.data.auth.SessionCredentials
 import io.ktor.client.*
 import io.ktor.client.call.*
 import io.ktor.client.request.*
@@ -99,6 +101,22 @@ data class ApiErrorResponse(
 )
 
 @Serializable
+data class RefreshRequest(
+    val refreshToken: String,
+)
+
+@Serializable
+data class RefreshResponse(
+    val accessToken: String,
+    val refreshToken: String,
+)
+
+private fun RefreshResponse.toCredentials() = SessionCredentials(
+    accessToken = accessToken,
+    refreshToken = refreshToken,
+)
+
+@Serializable
 data class CommunityPoseDetailResponse(
     val data: CommunityPose
 )
@@ -112,8 +130,35 @@ private fun mimeTypeFromFileName(fileName: String): String = when {
 
 class PoseApiService(
     private val httpClient: HttpClient,
-    private val baseUrl: String
+    private val baseUrl: String,
+    private val sessionBoundary: SessionBoundary? = null,
 ) {
+    private suspend fun requestWithSession(request: suspend () -> HttpResponse): HttpResponse {
+        val response = request()
+        if (response.status.value != HttpStatusCode.Unauthorized.value || sessionBoundary == null) {
+            return response
+        }
+        val refreshed = sessionBoundary.refresh(::refreshSession)
+        if (!refreshed) return response
+        val retry = request()
+        if (retry.status.value == HttpStatusCode.Unauthorized.value) {
+            sessionBoundary.clearForUnauthorized()
+        }
+        return retry
+    }
+
+    private suspend fun refreshSession(refreshToken: String): SessionCredentials? {
+        return try {
+            val response = httpClient.post("$baseUrl/api/auth/refresh") {
+                contentType(ContentType.Application.Json)
+                setBody(RefreshRequest(refreshToken))
+            }
+            if (response.status != HttpStatusCode.OK) return null
+            response.body<RefreshResponse>().toCredentials()
+        } catch (_: Exception) {
+            null
+        }
+    }
     /**
      * Enqueues canonical async extraction. HTTP 202 means only that the job
      * started; no Pose exists until the caller polls the job to `succeeded`
@@ -121,7 +166,7 @@ class PoseApiService(
      */
     suspend fun startPoseExtraction(imageBytes: ByteArray, fileName: String): PoseExtractionStartResponse {
         val mimeType = mimeTypeFromFileName(fileName)
-        val httpResponse: HttpResponse = httpClient.submitFormWithBinaryData(
+        val httpResponse: HttpResponse = requestWithSession { httpClient.submitFormWithBinaryData(
             url = "$baseUrl/api/extract-pose",
             formData = formData {
                 append("image", imageBytes, Headers.build {
@@ -129,8 +174,8 @@ class PoseApiService(
                     append(HttpHeaders.ContentDisposition, "filename=$fileName")
                 })
             }
-        )
-        if (httpResponse.status != HttpStatusCode.Accepted) {
+        ) }
+          if (httpResponse.status != HttpStatusCode.Accepted) {
             val errorEnvelope = try {
                 httpResponse.body<ApiErrorEnvelope>()
             } catch (_: Exception) {
@@ -145,8 +190,8 @@ class PoseApiService(
     }
 
     suspend fun getPoseExtractionJob(jobId: String): PoseExtractionJobStatus {
-        val httpResponse: HttpResponse = httpClient.get("$baseUrl/api/extract-jobs/$jobId")
-        if (!httpResponse.status.isSuccess()) {
+          val httpResponse: HttpResponse = requestWithSession { httpClient.get("$baseUrl/api/extract-jobs/$jobId") }
+          if (!httpResponse.status.isSuccess()) {
             val errorEnvelope = try { httpResponse.body<ApiErrorEnvelope>() } catch (_: Exception) { null }
             throw PoseApiException(
                 code = errorEnvelope?.error?.code ?: httpResponse.status.value.toString(),
@@ -163,13 +208,43 @@ class PoseApiService(
         tag: String? = null,
         q: String? = null,
     ): PaginatedResult<CommunityPose> {
-        val httpResponse: HttpResponse = httpClient.get("$baseUrl/api/community/poses") {
+          val httpResponse: HttpResponse = requestWithSession { httpClient.get("$baseUrl/api/community/poses") {
             parameter("page", page)
             parameter("limit", limit)
             difficulty?.let { parameter("difficulty", it) }
             tag?.let { parameter("tag", it) }
             q?.let { parameter("q", it) }
+          } }
+          if (!httpResponse.status.isSuccess()) {
+            val errorEnvelope = try {
+                httpResponse.body<ApiErrorEnvelope>()
+            } catch (_: Exception) {
+                null
+            }
+            throw PoseApiException(
+                code = errorEnvelope?.error?.code ?: httpResponse.status.value.toString(),
+                message = errorEnvelope?.error?.message ?: "Server error: ${httpResponse.status}"
+            )
         }
+        return httpResponse.body()
+    }
+
+    /**
+     * Lists the signed-in Account's saved published poses (WI-03/WI-04).
+     * Auth: bearer session with one refresh attempt through [requestWithSession];
+     * 401 that survives refresh throws [PoseApiException] with code UNAUTHORIZED.
+     * Contract: page >= 1, 1 <= limit <= 100, newest saved first.
+     */
+    suspend fun getSavedPoses(
+        page: Int = 1,
+        limit: Int = 20,
+    ): PaginatedResult<CommunityPose> {
+        require(page >= 1) { "page must be >= 1" }
+        require(limit in 1..100) { "limit must be in 1..100" }
+        val httpResponse: HttpResponse = requestWithSession { httpClient.get("$baseUrl/api/me/saved") {
+            parameter("page", page)
+            parameter("limit", limit)
+        } }
         if (!httpResponse.status.isSuccess()) {
             val errorEnvelope = try {
                 httpResponse.body<ApiErrorEnvelope>()
@@ -184,9 +259,14 @@ class PoseApiService(
         return httpResponse.body()
     }
 
-    suspend fun getCommunityPoseDetail(id: String): CommunityPose {
-        val httpResponse: HttpResponse = httpClient.get("$baseUrl/api/community/poses/$id")
-        if (!httpResponse.status.isSuccess()) {
+    /**
+     * Saves a published pose to the signed-in Account's collection. Idempotent;
+     * returns 200 {data: CommunityPose} on success, 404 for invalid/unpublished/
+     * unusable targets, 401 for missing/invalid/expired/cross-account auth.
+     */
+    suspend fun savePose(poseId: String): CommunityPose {
+        val httpResponse: HttpResponse = requestWithSession { httpClient.put("$baseUrl/api/me/saved/$poseId") }
+        if (httpResponse.status != HttpStatusCode.OK) {
             val errorEnvelope = try {
                 httpResponse.body<ApiErrorEnvelope>()
             } catch (_: Exception) {
@@ -197,8 +277,26 @@ class PoseApiService(
                 message = errorEnvelope?.error?.message ?: "Server error: ${httpResponse.status}"
             )
         }
-        val response: CommunityPoseDetailResponse = httpResponse.body()
-        return response.data
+        return httpResponse.body<CommunityPoseDetailResponse>().data
+    }
+
+    /**
+     * Removes a pose from the signed-in Account's saved collection. Idempotent;
+     * returns 204 with an empty body on success. Never deletes the pose itself.
+     */
+    suspend fun unsavePose(poseId: String) {
+        val httpResponse: HttpResponse = requestWithSession { httpClient.delete("$baseUrl/api/me/saved/$poseId") }
+        if (httpResponse.status != HttpStatusCode.NoContent) {
+            val errorEnvelope = try {
+                httpResponse.body<ApiErrorEnvelope>()
+            } catch (_: Exception) {
+                null
+            }
+            throw PoseApiException(
+                code = errorEnvelope?.error?.code ?: httpResponse.status.value.toString(),
+                message = errorEnvelope?.error?.message ?: "Server error: ${httpResponse.status}"
+            )
+        }
     }
 
     /**
@@ -213,8 +311,8 @@ class PoseApiService(
         } else {
             "${baseUrl.trimEnd('/')}/${url.removePrefix("/")}"
         }
-        val httpResponse: HttpResponse = httpClient.get(resolvedUrl)
-        if (!httpResponse.status.isSuccess()) {
+          val httpResponse: HttpResponse = requestWithSession { httpClient.get(resolvedUrl) }
+          if (!httpResponse.status.isSuccess()) {
             val errorEnvelope = try {
                 httpResponse.body<ApiErrorEnvelope>()
             } catch (_: Exception) {

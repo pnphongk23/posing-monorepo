@@ -7,6 +7,8 @@ const originalEnv = {
   PORT: process.env.PORT,
   DATABASE_URL: process.env.DATABASE_URL,
   ADMIN_SECRET: process.env.ADMIN_SECRET,
+  SUPABASE_URL: process.env.SUPABASE_URL,
+  SUPABASE_JWT_KEY_ID: process.env.SUPABASE_JWT_KEY_ID,
   RATE_LIMIT_WINDOW_MS: process.env.RATE_LIMIT_WINDOW_MS,
   RATE_LIMIT_MAX: process.env.RATE_LIMIT_MAX,
   R2_ACCOUNT_ID: process.env.R2_ACCOUNT_ID,
@@ -45,6 +47,14 @@ afterEach(() => {
     process.env.ADMIN_SECRET = originalEnv.ADMIN_SECRET;
   }
 
+  for (const key of ["SUPABASE_URL", "SUPABASE_JWT_KEY_ID"] as const) {
+    if (originalEnv[key] === undefined) {
+      delete process.env[key];
+    } else {
+      process.env[key] = originalEnv[key];
+    }
+  }
+
   if (originalEnv.RATE_LIMIT_WINDOW_MS === undefined) {
     delete process.env.RATE_LIMIT_WINDOW_MS;
   } else {
@@ -74,6 +84,8 @@ afterEach(() => {
 });
 
 const DATABASE_URL = "postgres://user:pass@localhost:5432/pose";
+const SUPABASE_URL = "https://project-ref.supabase.co";
+const SUPABASE_JWT_KEY_ID = "test-key-id";
 
 describe("getEnv", () => {
   it("uses schema defaults when NODE_ENV and PORT are missing", () => {
@@ -81,6 +93,8 @@ describe("getEnv", () => {
     delete process.env.PORT;
     process.env.DATABASE_URL = DATABASE_URL;
     process.env.ADMIN_SECRET = "secret-value";
+    process.env.SUPABASE_URL = SUPABASE_URL;
+    process.env.SUPABASE_JWT_KEY_ID = SUPABASE_JWT_KEY_ID;
     process.env.R2_ACCOUNT_ID = "account-id";
     process.env.R2_ACCESS_KEY_ID = "access-key-id";
     process.env.R2_SECRET_ACCESS_KEY = "secret-access-key";
@@ -107,6 +121,8 @@ describe("getEnv", () => {
     process.env.PORT = "4567";
     process.env.DATABASE_URL = "postgres://prod:secret@db.prod:5432/pose";
     process.env.ADMIN_SECRET = "prod-secret";
+    process.env.SUPABASE_URL = SUPABASE_URL;
+    process.env.SUPABASE_JWT_KEY_ID = SUPABASE_JWT_KEY_ID;
     process.env.RATE_LIMIT_WINDOW_MS = "120000";
     process.env.RATE_LIMIT_MAX = "25";
     process.env.R2_ACCOUNT_ID = "prod-account-id";
@@ -134,6 +150,8 @@ describe("getEnv", () => {
     expect(() =>
       getEnv({
         ADMIN_SECRET: "",
+        SUPABASE_URL,
+        SUPABASE_JWT_KEY_ID,
         DATABASE_URL: "",
         R2_ACCOUNT_ID: "",
         R2_ACCESS_KEY_ID: "",
@@ -149,6 +167,8 @@ describe("getEnv", () => {
       getEnv({
         DATABASE_URL: undefined,
         ADMIN_SECRET: "secret",
+        SUPABASE_URL,
+        SUPABASE_JWT_KEY_ID,
         R2_ACCOUNT_ID: "account-id",
         R2_ACCESS_KEY_ID: "access-key-id",
         R2_SECRET_ACCESS_KEY: "secret-access-key",
@@ -163,6 +183,8 @@ describe("getEnv", () => {
     const env = getEnv({
       DATABASE_URL,
       ADMIN_SECRET: "secret",
+      SUPABASE_URL,
+      SUPABASE_JWT_KEY_ID,
       COMMUNITY_UPLOAD_DIR: "/tmp/community",
       R2_ACCOUNT_ID: "account-id",
       R2_ACCESS_KEY_ID: "access-key-id",
@@ -180,6 +202,8 @@ describe("getEnv", () => {
     const env = getEnv({
       DATABASE_URL,
       ADMIN_SECRET: "secret",
+      SUPABASE_URL,
+      SUPABASE_JWT_KEY_ID,
       R2_ACCOUNT_ID: "account-id",
       R2_ACCESS_KEY_ID: "access-key-id",
       R2_SECRET_ACCESS_KEY: "secret-access-key",
@@ -194,6 +218,8 @@ describe("getEnv", () => {
   const r2BaseOverrides = {
     DATABASE_URL,
     ADMIN_SECRET: "secret",
+    SUPABASE_URL,
+    SUPABASE_JWT_KEY_ID,
     R2_ACCOUNT_ID: "account-id",
     R2_ACCESS_KEY_ID: "access-key-id",
     R2_SECRET_ACCESS_KEY: "secret-access-key",

@@ -3,7 +3,10 @@
 
 body {
   font-family: var(--nb-font-family);
-  font-weight: var(--nb-font-weight-normal);
+  font-size: var(--nb-type-body-size);
+  font-weight: var(--nb-type-body-weight);
+  line-height: var(--nb-type-body-leading);
+  letter-spacing: var(--nb-type-body-tracking);
   background-color: #E2DDD5;
   color: var(--nb-color-dark);
   display: flex;
@@ -13,6 +16,26 @@ body {
   min-height: 100dvh;
   padding: var(--nb-space-md);
   box-sizing: border-box;
+}
+
+body,
+button,
+input,
+textarea,
+select {
+  font-family: var(--nb-font-family);
+}
+
+h1,
+h2,
+h3 {
+  text-wrap: balance;
+}
+
+p,
+.nb-description {
+  text-wrap: pretty;
+  overflow-wrap: break-word;
 }
 
 /* Full-screen app on mobile */

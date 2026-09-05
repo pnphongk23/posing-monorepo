@@ -46,11 +46,8 @@ relationships:
     - "[[FEAT-007-operate-pose-content-from-admin-web|FEAT-007]]"
     - "[[FEAT-008-use-published-poses|FEAT-008]]"
   source_paths:
-    - docs/spec/data/domain-model.md
-    - docs/spec/data/enums.md
-    - docs/spec/data/entities/pose.md
-    - docs/spec/data/entities/media-asset.md
-    - docs/spec/api/openapi.yaml
+    - docs/harness/specs/data-contract.md
+    - docs/harness/specs/api/openapi.yaml
     - docs/harness/specs/pose-domain-glossary.md
 created: 2026-08-23T00:45:00+07:00
 createdBy: Harness CLI
@@ -92,7 +89,7 @@ worktree changes outside these trees are preserved.
 
 Canonical definitions live in
 [`docs/harness/specs/pose-domain-glossary.md`](../../specs/pose-domain-glossary.md)
-and [`docs/spec/data/entities/pose.md`](../../../spec/data/entities/pose.md).
+and [`docs/harness/specs/data-contract.md#pose`](../../specs/data-contract.md#pose).
 
 ## Work Items
 

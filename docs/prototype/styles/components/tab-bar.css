@@ -38,11 +38,10 @@
   height: 100%;
   color: var(--nb-color-gray);
   text-decoration: none;
-  font-size: var(--nb-font-size-2xs);
-  font-weight: var(--nb-font-weight-bold);
-  line-height: var(--nb-line-height-tight);
-  letter-spacing: var(--nb-tracking-wide);
-  text-transform: uppercase;
+  font-size: var(--nb-type-meta-label-size);
+  font-weight: var(--nb-type-meta-label-weight);
+  line-height: var(--nb-type-meta-label-leading);
+  letter-spacing: var(--nb-tracking-none);
   border-radius: 20px;
   transition: color var(--nb-transition-fast), background-color var(--nb-transition-fast), transform var(--nb-transition-fast);
 }
@@ -58,7 +57,9 @@
 }
 
 .nb-dock__item span {
-  font-size: 8px;
+  font-size: var(--nb-type-meta-label-size);
+  line-height: var(--nb-type-meta-label-leading);
+  font-weight: var(--nb-type-meta-label-weight);
   margin-top: var(--nb-space-2xs);
 }
 

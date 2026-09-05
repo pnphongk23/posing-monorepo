@@ -43,7 +43,7 @@ approved_by: Product Authority
 An authorized Admin operator uses one web surface for provider-key operations
 and community pose intake/listing. This is an operating context, not a second
 extraction, pose-guide, or publication model; it invokes FEAT-004, FEAT-005,
-FEAT-006, and [FEAT-009](FEAT-009-configure-extraction-provider.md) for
+FEAT-006, and [FEAT-009](./FEAT-009-configure-extraction-provider.md) for
 extraction-engine configuration (FEAT-007 does not own provider configuration).
 
 ## Business Understanding
@@ -93,16 +93,16 @@ The operator manages keys, lists community poses, or submits a pose.
   update/unpublish actions, or a confirmed truthful UI state for the async job.
 - **Planned (draft):** [Plan 260816-2240](../plans/260816-2240-higgsfield-cli-parallel-extract-provider/plan.md)
   adds Admin Web proxy routes and UI host for the
-  [FEAT-009](FEAT-009-configure-extraction-provider.md) extraction-engine
+  [FEAT-009](./FEAT-009-configure-extraction-provider.md) extraction-engine
   toggle; FEAT-007 invokes FEAT-009 and does not own provider configuration.
 
 ### Traceability
 
 | Concern | Canonical reference | Evidence |
 | --- | --- | --- |
-| Entities | canonical [`Pose`](../../spec/data/entities/pose.md) (the public catalogue reads `Pose.status = 'published'` through the `CommunityPose` read-only DTO), [`ExtractionJob`](../../spec/data/entities/extraction-job.md), [`ApiKeyCredential`](../../spec/data/entities/api-key-credential.md) | [`schema.sql`](../../../web/services/pose-extract-server/src/db/schema.sql), [`KeyStore`](../../../web/services/pose-extract-server/src/services/keyStore.ts) |
-| ERD | [Server physical graph](../../spec/data/erd/server.md) and [unresolved job/asset links](../../spec/data/erd/conceptual.md) | [`app.ts`](../../../web/services/pose-extract-server/src/app.ts) |
-| APIs | [Next.js proxies](../../spec/api/conventions.md), upstream [admin keys](../../spec/api/modules/admin-keys.md) / [community](../../spec/api/modules/admin-community.md) / [jobs](../../spec/api/modules/admin-jobs.md) | [`web/admin-ui/src/app/api/admin`](../../../web/admin-ui/src/app/api/admin), [`poseExtractAdminServer.js`](../../../web/admin-ui/src/lib/poseExtractAdminServer.js) |
+| Entities | canonical [`Pose`](../specs/data-contract.md#pose) (the public catalogue reads `Pose.status = 'published'` through the `CommunityPose` read-only DTO), [`ExtractionJob`](../specs/data-contract.md#extractionjob), [`ApiKeyCredential`](../specs/data-contract.md#apikeycredential) | [`schema.sql`](../../../web/services/pose-extract-server/src/db/schema.sql), [`KeyStore`](../../../web/services/pose-extract-server/src/services/keyStore.ts) |
+| ERD | [Server physical graph](../specs/data-contract.md#server) and [unresolved job/asset links](../specs/data-contract.md#conceptual-overlay) | [`app.ts`](../../../web/services/pose-extract-server/src/app.ts) |
+| APIs | [Next.js proxies](../specs/api-contract.md#conventions), upstream [admin keys](../specs/api-contract.md#admin-keys) / [community](../specs/api-contract.md#admin-community) / [jobs](../specs/api-contract.md#admin-jobs) | [`web/admin-ui/src/app/api/admin`](../../../web/admin-ui/src/app/api/admin), [`poseExtractAdminServer.js`](../../../web/admin-ui/src/lib/poseExtractAdminServer.js) |
 | Supporting UI | Key and community admin pages | [`keys/page.js`](../../../web/admin-ui/src/app/admin/keys/page.js), [`community/page.js`](../../../web/admin-ui/src/app/admin/community/page.js) |
 
 ## Requirements
@@ -119,8 +119,8 @@ The operator manages keys, lists community poses, or submits a pose.
 
 ## Relationships
 
-- Shared references: [CommunityPose](../../spec/data/entities/community-pose.md) (published view/DTO), [ERD server](../../spec/data/erd/server.md), [proxies](../../spec/api/conventions.md).
-- Related features: [FEAT-004](FEAT-004-extract-reusable-pose-images.md), [FEAT-005](FEAT-005-manage-a-pose-guide.md), [FEAT-006](FEAT-006-publish-a-pose.md), [FEAT-009](FEAT-009-configure-extraction-provider.md) (Admin Web invokes FEAT-009 for global extraction-engine configuration).
+- Shared references: [CommunityPose](../specs/data-contract.md#communitypose) (published view/DTO), [ERD server](../specs/data-contract.md#server), [proxies](../specs/api-contract.md#conventions).
+- Related features: [FEAT-004](./FEAT-004-extract-reusable-pose-images.md), [FEAT-005](./FEAT-005-manage-a-pose-guide.md), [FEAT-006](./FEAT-006-publish-a-pose.md), [FEAT-009](./FEAT-009-configure-extraction-provider.md) (Admin Web invokes FEAT-009 for global extraction-engine configuration).
 ### Supporting evidence
 
 - [`poseExtractAdminServer.js`](../../../web/admin-ui/src/lib/poseExtractAdminServer.js)

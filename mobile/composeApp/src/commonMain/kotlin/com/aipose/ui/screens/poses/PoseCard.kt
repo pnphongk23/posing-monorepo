@@ -27,7 +27,6 @@ import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.em
 import coil3.compose.AsyncImage
 import com.aipose.Pose
 import com.aipose.ui.components.Badge
@@ -122,7 +121,7 @@ fun PoseCard(
 
         Text(
             text = pose.name,
-            style = AiPoseTypography.BodyBold,
+            style = AiPoseTypography.Control,
             color = AiPoseColors.Foreground,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,

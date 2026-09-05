@@ -36,11 +36,11 @@ This inventory is a business-feature map. It records each Feature's observable b
 
 The landing-level traceability map is in the [Harness README](../README.md).
 Shared model/entity, ERD, and API definitions are maintained once in
-[docs/spec](../../spec/README.md)
-([data](../../spec/data/README.md), [api](../../spec/api/README.md));
+[docs/spec](./data-contract.md)
+([data](data-contract.md), [api](api-contract.md));
 Feature pages link to those entries instead of duplicating them.
-Harness stubs remain at [model catalogue](model-entity-catalogue.md),
-[global ERD](erd.md), and [API catalogue](api-catalogue.md) for wikilink compatibility.
+Harness stubs remain at [model catalogue](./model-entity-catalogue.md),
+[global ERD](./erd.md), and [API catalogue](./api-catalogue.md) for wikilink compatibility.
 
 ## Current feature inventory
 

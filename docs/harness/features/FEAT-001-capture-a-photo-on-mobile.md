@@ -36,12 +36,12 @@ relationships:
 ## Introduction
 
 The Photographer captures a still image through the mobile Camera surface and
-stores one local [`Photo`](../../spec/data/entities/photo.md)
+stores one local [`Photo`](../specs/data-contract.md#photo)
 record. Camera controls, permission outcomes, capture feedback, and the handoff
-to Gallery belong here. Pose extraction is [FEAT-004](FEAT-004-extract-reusable-pose-images.md);
-gallery management is [FEAT-002](FEAT-002-manage-a-local-photo-gallery.md).
+to Gallery belong here. Pose extraction is [FEAT-004](./FEAT-004-extract-reusable-pose-images.md);
+gallery management is [FEAT-002](./FEAT-002-manage-a-local-photo-gallery.md).
 CameraScreen does not own extraction intake; mobile extraction reuses the
-camera/library image source entry points via [FEAT-004](FEAT-004-extract-reusable-pose-images.md)/[FEAT-005](FEAT-005-manage-a-pose-guide.md).
+camera/library image source entry points via [FEAT-004](./FEAT-004-extract-reusable-pose-images.md)/[FEAT-005](./FEAT-005-manage-a-pose-guide.md).
 
 ## Business Understanding
 
@@ -94,8 +94,8 @@ The Photographer presses the shutter.
 
 | Concern | Canonical reference | Evidence |
 | --- | --- | --- |
-| Entity | [`Photo`](../../spec/data/entities/photo.md) | [`Photo.sq`](../../../mobile/shared/src/commonMain/sqldelight/com/aipose/Photo.sq), [`PhotoRepository.kt`](../../../mobile/shared/src/commonMain/kotlin/com/aipose/data/PhotoRepository.kt) |
-| ERD | [Mobile local physical graph](../../spec/data/erd/mobile.md) | [`Photo.sq`](../../../mobile/shared/src/commonMain/sqldelight/com/aipose/Photo.sq) optional `poseId` FK |
+| Entity | [`Photo`](../specs/data-contract.md#photo) | [`Photo.sq`](../../../mobile/shared/src/commonMain/sqldelight/com/aipose/Photo.sq), [`PhotoRepository.kt`](../../../mobile/shared/src/commonMain/kotlin/com/aipose/data/PhotoRepository.kt) |
+| ERD | [Mobile local physical graph](../specs/data-contract.md#mobile-local) | [`Photo.sq`](../../../mobile/shared/src/commonMain/sqldelight/com/aipose/Photo.sq) optional `poseId` FK |
 | API | None; capture is local/offline | No mobile capture HTTP route found |
 | Supporting UI | Camera contract and prototype | [`CameraScreen.kt`](../../../mobile/composeApp/src/commonMain/kotlin/com/aipose/camera/CameraScreen.kt), [`camera-live.html`](../../prototype/screens/camera-live.html), [`technical-architecture`](../specs/technical-architecture.md#mobile-capture-and-local-gallery) |
 
@@ -113,8 +113,8 @@ The Photographer presses the shutter.
 
 ## Relationships
 
-- Shared references: [Photo](../../spec/data/entities/photo.md), [ERD mobile](../../spec/data/erd/mobile.md), [API](../../spec/api/README.md).
-- Related features: [FEAT-002](FEAT-002-manage-a-local-photo-gallery.md), [FEAT-004](FEAT-004-extract-reusable-pose-images.md).
+- Shared references: [Photo](../specs/data-contract.md#photo), [ERD mobile](../specs/data-contract.md#mobile-local), [API](../specs/api-contract.md).
+- Related features: [FEAT-002](./FEAT-002-manage-a-local-photo-gallery.md), [FEAT-004](./FEAT-004-extract-reusable-pose-images.md).
 ### Supporting evidence
 
 - [`CameraContract.kt`](../../../mobile/composeApp/src/commonMain/kotlin/com/aipose/camera/CameraContract.kt)

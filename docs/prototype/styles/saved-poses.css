@@ -1,0 +1,128 @@
+/* Feature prototype additions. All values stay on the canonical token layer. */
+.nb-saved-banner {
+  background: var(--nb-color-accent-yellow);
+  border: var(--nb-border-thin);
+  border-radius: var(--nb-radius-small);
+  padding: var(--nb-space-sm) var(--nb-space-compact);
+  margin-bottom: var(--nb-space-md);
+  font-size: var(--nb-type-body-size);
+  line-height: var(--nb-type-body-leading);
+}
+
+#saved-scroll-area {
+  position: relative;
+  overscroll-behavior-y: contain;
+}
+
+.nb-pull-to-refresh {
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: var(--nb-z-index-base);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--nb-space-xs);
+  height: 32px;
+  color: var(--nb-color-gray);
+  background: var(--nb-color-bg);
+  font-size: var(--nb-type-meta-label-size);
+  font-weight: var(--nb-type-meta-label-weight);
+  line-height: var(--nb-type-meta-label-leading);
+  letter-spacing: var(--nb-tracking-none);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(calc(-100% + var(--nb-pull-offset, 0px)));
+  transition: transform var(--nb-transition-fast), opacity var(--nb-transition-fast);
+}
+
+.nb-pull-to-refresh.is-pulling,
+.nb-pull-to-refresh.is-refreshing {
+  opacity: 1;
+}
+
+.nb-pull-to-refresh svg {
+  width: 16px;
+  height: 16px;
+}
+
+#saved-grid {
+  transform: translateY(var(--nb-pull-content-offset, 0px));
+  transition: transform var(--nb-transition-fast);
+}
+
+#saved-scroll-area.is-refreshing .nb-pull-to-refresh svg {
+  animation: nb-saved-pull-spin 0.8s linear infinite;
+}
+
+@keyframes nb-saved-pull-spin {
+  to { transform: rotate(360deg); }
+}
+
+.nb-saved-card {
+  position: relative;
+}
+
+.nb-saved-card__badge {
+  position: absolute;
+  top: var(--nb-space-sm);
+  right: var(--nb-space-sm);
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--nb-color-dark);
+  background: var(--nb-color-accent-pink);
+  border: var(--nb-border-thin);
+  border-radius: var(--nb-radius-small);
+}
+
+.nb-saved-card__badge svg { width: 18px; height: 18px; fill: currentColor; }
+.nb-saved-end { margin: 0 0 var(--nb-space-md); }
+.nb-saved-end .nb-btn { margin-top: var(--nb-space-xs); }
+.nb-saved-actions { align-items: stretch; }
+.nb-saved-bookmark.is-confirmed { background: var(--nb-color-accent-pink); }
+.nb-saved-bookmark svg { width: 18px; height: 18px; }
+.nb-saved-readonly { opacity: .62; cursor: not-allowed; }
+.nb-prompt-context { opacity: .72; }
+#sign-in-modal .nb-modal {
+  display: flex;
+  flex-direction: column;
+  gap: var(--nb-space-sm);
+}
+
+#sign-in-modal #sign-in-title {
+  line-height: var(--nb-type-heading-3-leading);
+  text-wrap: balance;
+}
+
+#sign-in-modal #sign-in-copy {
+  max-width: 30ch;
+  font-size: var(--nb-type-body-size);
+  line-height: var(--nb-type-body-leading);
+  color: var(--nb-color-dark);
+}
+
+#sign-in-modal .nb-modal__actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--nb-space-sm);
+  margin-top: var(--nb-space-sm);
+  width: 100%;
+}
+
+#sign-in-modal .nb-btn {
+  font-weight: var(--nb-type-control-weight);
+  letter-spacing: var(--nb-tracking-none);
+  text-transform: none;
+}
+
+#sign-in-modal .nb-modal__actions .nb-btn {
+  min-height: 48px;
+  padding: var(--nb-space-sm) var(--nb-space-md);
+  line-height: var(--nb-type-control-leading);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nb-saved-card, .nb-saved-bookmark { transition: none; }
+}

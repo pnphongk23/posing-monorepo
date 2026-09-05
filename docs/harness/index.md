@@ -1,6 +1,6 @@
 ---
 schema_version: 1
-next_feature_sequence: 13
+next_feature_sequence: 14
 next_decision_sequence: 9
 next_report_sequence: 13
 next_rule_sequence: 1
@@ -33,6 +33,7 @@ generated: true
 - [docs/harness/features/FEAT-010-integrate-firebase-revenuecat.md](features/FEAT-010-integrate-firebase-revenuecat.md)
 - [docs/harness/features/FEAT-011-integrate-revenuecat-paid-access-and-in-app-purchases.md](features/FEAT-011-integrate-revenuecat-paid-access-and-in-app-purchases.md)
 - [docs/harness/features/FEAT-012-restore-pose-and-camera-settings-across-relaunch.md](features/FEAT-012-restore-pose-and-camera-settings-across-relaunch.md)
+- [docs/harness/features/FEAT-013-saved-poses-albums-account-backed.md](features/FEAT-013-saved-poses-albums-account-backed.md)
 - [docs/harness/plans/260809-1805-iphone-mobile-mcp-test-harness/plan.md](plans/260809-1805-iphone-mobile-mcp-test-harness/plan.md)
 - [docs/harness/plans/260809-1805-iphone-mobile-mcp-test-harness/work-item-01-establish-real-iphone-and-mobile-mcp-preflight.md](plans/260809-1805-iphone-mobile-mcp-test-harness/work-item-01-establish-real-iphone-and-mobile-mcp-preflight.md)
 - [docs/harness/plans/260809-1805-iphone-mobile-mcp-test-harness/work-item-02-add-reproducible-build-install-and-launch-workflow.md](plans/260809-1805-iphone-mobile-mcp-test-harness/work-item-02-add-reproducible-build-install-and-launch-workflow.md)
@@ -117,6 +118,12 @@ generated: true
 - [docs/harness/plans/260831-0000-feat-012-relaunch-restore/work-item-02-persist-and-restore-existing-pose-plus-eight-camera-settings.md](plans/260831-0000-feat-012-relaunch-restore/work-item-02-persist-and-restore-existing-pose-plus-eight-camera-settings.md)
 - [docs/harness/plans/260831-0000-feat-012-relaunch-restore/work-item-03-integrate-select-replace-clear-and-relaunch-behavior.md](plans/260831-0000-feat-012-relaunch-restore/work-item-03-integrate-select-replace-clear-and-relaunch-behavior.md)
 - [docs/harness/plans/260831-0000-feat-012-relaunch-restore/work-item-04-verify-cold-relaunch-on-real-iphone-and-regression.md](plans/260831-0000-feat-012-relaunch-restore/work-item-04-verify-cold-relaunch-on-real-iphone-and-regression.md)
+- [docs/harness/plans/260831-0000-saved-poses-account-backed-v1/plan.md](plans/260831-0000-saved-poses-account-backed-v1/plan.md)
+- [docs/harness/plans/260831-0000-saved-poses-account-backed-v1/work-item-01-freeze-google-supabase-account-session-authority.md](plans/260831-0000-saved-poses-account-backed-v1/work-item-01-freeze-google-supabase-account-session-authority.md)
+- [docs/harness/plans/260831-0000-saved-poses-account-backed-v1/work-item-02-add-account-infrastructure-and-session-boundary.md](plans/260831-0000-saved-poses-account-backed-v1/work-item-02-add-account-infrastructure-and-session-boundary.md)
+- [docs/harness/plans/260831-0000-saved-poses-account-backed-v1/work-item-03-add-savedentry-data-and-saved-api.md](plans/260831-0000-saved-poses-account-backed-v1/work-item-03-add-savedentry-data-and-saved-api.md)
+- [docs/harness/plans/260831-0000-saved-poses-account-backed-v1/work-item-04-build-mobile-saved-ux-and-sign-in-gating.md](plans/260831-0000-saved-poses-account-backed-v1/work-item-04-build-mobile-saved-ux-and-sign-in-gating.md)
+- [docs/harness/plans/260831-0000-saved-poses-account-backed-v1/work-item-05-verify-saved-integration-and-regression-evidence.md](plans/260831-0000-saved-poses-account-backed-v1/work-item-05-verify-saved-integration-and-regression-evidence.md)
 - [docs/harness/reports/REP-001-project-documentation-and-harness-baseline.md](reports/REP-001-project-documentation-and-harness-baseline.md)
 - [docs/harness/reports/REP-002-feature-gap-and-release-readiness-audit.md](reports/REP-002-feature-gap-and-release-readiness-audit.md)
 - [docs/harness/reports/REP-003-pose-reference-library-convergence-delivery.md](reports/REP-003-pose-reference-library-convergence-delivery.md)
@@ -130,6 +137,8 @@ generated: true
 - [docs/harness/reports/REP-011-firebase-observability-remote-config-delivery.md](reports/REP-011-firebase-observability-remote-config-delivery.md)
 - [docs/harness/reports/REP-012-feat-012-relaunch-restore-delivery.md](reports/REP-012-feat-012-relaunch-restore-delivery.md)
 - [docs/harness/specs/api-catalogue.md](specs/api-catalogue.md)
+- [docs/harness/specs/api-contract.md](specs/api-contract.md)
+- [docs/harness/specs/data-contract.md](specs/data-contract.md)
 - [docs/harness/specs/erd.md](specs/erd.md)
 - [docs/harness/specs/model-entity-catalogue.md](specs/model-entity-catalogue.md)
 - [docs/harness/specs/pose-domain-glossary.md](specs/pose-domain-glossary.md)
@@ -285,6 +294,18 @@ generated: true
 - [docs/harness/features/FEAT-012-restore-pose-and-camera-settings-across-relaunch.md](features/FEAT-012-restore-pose-and-camera-settings-across-relaunch.md) → [docs/harness/specs/product-feature-inventory.md](specs/product-feature-inventory.md)
 - [docs/harness/features/FEAT-012-restore-pose-and-camera-settings-across-relaunch.md](features/FEAT-012-restore-pose-and-camera-settings-across-relaunch.md) → [docs/harness/specs/technical-architecture.md](specs/technical-architecture.md)
 - [docs/harness/features/FEAT-012-restore-pose-and-camera-settings-across-relaunch.md](features/FEAT-012-restore-pose-and-camera-settings-across-relaunch.md) → [docs/harness/specs/ui-ux-system.md](specs/ui-ux-system.md)
+- [docs/harness/features/FEAT-013-saved-poses-albums-account-backed.md](features/FEAT-013-saved-poses-albums-account-backed.md) → [docs/harness/features/FEAT-003-browse-and-search-published-poses.md](features/FEAT-003-browse-and-search-published-poses.md)
+- [docs/harness/features/FEAT-013-saved-poses-albums-account-backed.md](features/FEAT-013-saved-poses-albums-account-backed.md) → [docs/harness/features/FEAT-006-publish-a-pose.md](features/FEAT-006-publish-a-pose.md)
+- [docs/harness/features/FEAT-013-saved-poses-albums-account-backed.md](features/FEAT-013-saved-poses-albums-account-backed.md) → [docs/harness/features/FEAT-008-use-published-poses.md](features/FEAT-008-use-published-poses.md)
+- [docs/harness/features/FEAT-013-saved-poses-albums-account-backed.md](features/FEAT-013-saved-poses-albums-account-backed.md) → [docs/harness/plans/260831-0000-saved-poses-account-backed-v1/plan.md](plans/260831-0000-saved-poses-account-backed-v1/plan.md)
+- [docs/harness/features/FEAT-013-saved-poses-albums-account-backed.md](features/FEAT-013-saved-poses-albums-account-backed.md) → [docs/harness/reports/REP-012-feat-012-relaunch-restore-delivery.md](reports/REP-012-feat-012-relaunch-restore-delivery.md)
+- [docs/harness/features/FEAT-013-saved-poses-albums-account-backed.md](features/FEAT-013-saved-poses-albums-account-backed.md) → [docs/harness/specs/api-catalogue.md](specs/api-catalogue.md)
+- [docs/harness/features/FEAT-013-saved-poses-albums-account-backed.md](features/FEAT-013-saved-poses-albums-account-backed.md) → [docs/harness/specs/erd.md](specs/erd.md)
+- [docs/harness/features/FEAT-013-saved-poses-albums-account-backed.md](features/FEAT-013-saved-poses-albums-account-backed.md) → [docs/harness/specs/model-entity-catalogue.md](specs/model-entity-catalogue.md)
+- [docs/harness/features/FEAT-013-saved-poses-albums-account-backed.md](features/FEAT-013-saved-poses-albums-account-backed.md) → [docs/harness/specs/product-delivery-roadmap.md](specs/product-delivery-roadmap.md)
+- [docs/harness/features/FEAT-013-saved-poses-albums-account-backed.md](features/FEAT-013-saved-poses-albums-account-backed.md) → [docs/harness/specs/product-feature-inventory.md](specs/product-feature-inventory.md)
+- [docs/harness/features/FEAT-013-saved-poses-albums-account-backed.md](features/FEAT-013-saved-poses-albums-account-backed.md) → [docs/harness/specs/technical-architecture.md](specs/technical-architecture.md)
+- [docs/harness/features/FEAT-013-saved-poses-albums-account-backed.md](features/FEAT-013-saved-poses-albums-account-backed.md) → [docs/harness/specs/ui-ux-system.md](specs/ui-ux-system.md)
 - [docs/harness/plans/260809-1805-iphone-mobile-mcp-test-harness/plan.md](plans/260809-1805-iphone-mobile-mcp-test-harness/plan.md) → [docs/harness/features/FEAT-001-capture-a-photo-on-mobile.md](features/FEAT-001-capture-a-photo-on-mobile.md)
 - [docs/harness/plans/260809-1805-iphone-mobile-mcp-test-harness/plan.md](plans/260809-1805-iphone-mobile-mcp-test-harness/plan.md) → [docs/harness/specs/technical-architecture.md](specs/technical-architecture.md)
 - [docs/harness/plans/260809-1805-iphone-mobile-mcp-test-harness/plan.md](plans/260809-1805-iphone-mobile-mcp-test-harness/plan.md) → [docs/harness/specs/ui-ux-system.md](specs/ui-ux-system.md)
@@ -389,6 +410,15 @@ generated: true
 - [docs/harness/plans/260831-0000-feat-012-relaunch-restore/plan.md](plans/260831-0000-feat-012-relaunch-restore/plan.md) → [docs/harness/specs/product-feature-inventory.md](specs/product-feature-inventory.md)
 - [docs/harness/plans/260831-0000-feat-012-relaunch-restore/plan.md](plans/260831-0000-feat-012-relaunch-restore/plan.md) → [docs/harness/specs/technical-architecture.md](specs/technical-architecture.md)
 - [docs/harness/plans/260831-0000-feat-012-relaunch-restore/plan.md](plans/260831-0000-feat-012-relaunch-restore/plan.md) → [docs/harness/specs/ui-ux-system.md](specs/ui-ux-system.md)
+- [docs/harness/plans/260831-0000-saved-poses-account-backed-v1/plan.md](plans/260831-0000-saved-poses-account-backed-v1/plan.md) → [docs/harness/features/FEAT-013-saved-poses-albums-account-backed.md](features/FEAT-013-saved-poses-albums-account-backed.md)
+- [docs/harness/plans/260831-0000-saved-poses-account-backed-v1/plan.md](plans/260831-0000-saved-poses-account-backed-v1/plan.md) → [docs/harness/plans/260831-0000-saved-poses-account-backed-v1/plan.md](plans/260831-0000-saved-poses-account-backed-v1/plan.md)
+- [docs/harness/plans/260831-0000-saved-poses-account-backed-v1/plan.md](plans/260831-0000-saved-poses-account-backed-v1/plan.md) → [docs/harness/reports/REP-012-feat-012-relaunch-restore-delivery.md](reports/REP-012-feat-012-relaunch-restore-delivery.md)
+- [docs/harness/plans/260831-0000-saved-poses-account-backed-v1/plan.md](plans/260831-0000-saved-poses-account-backed-v1/plan.md) → [docs/harness/specs/api-catalogue.md](specs/api-catalogue.md)
+- [docs/harness/plans/260831-0000-saved-poses-account-backed-v1/plan.md](plans/260831-0000-saved-poses-account-backed-v1/plan.md) → [docs/harness/specs/model-entity-catalogue.md](specs/model-entity-catalogue.md)
+- [docs/harness/plans/260831-0000-saved-poses-account-backed-v1/plan.md](plans/260831-0000-saved-poses-account-backed-v1/plan.md) → [docs/harness/specs/product-delivery-roadmap.md](specs/product-delivery-roadmap.md)
+- [docs/harness/plans/260831-0000-saved-poses-account-backed-v1/plan.md](plans/260831-0000-saved-poses-account-backed-v1/plan.md) → [docs/harness/specs/product-feature-inventory.md](specs/product-feature-inventory.md)
+- [docs/harness/plans/260831-0000-saved-poses-account-backed-v1/plan.md](plans/260831-0000-saved-poses-account-backed-v1/plan.md) → [docs/harness/specs/technical-architecture.md](specs/technical-architecture.md)
+- [docs/harness/plans/260831-0000-saved-poses-account-backed-v1/plan.md](plans/260831-0000-saved-poses-account-backed-v1/plan.md) → [docs/harness/specs/ui-ux-system.md](specs/ui-ux-system.md)
 - [docs/harness/reports/REP-001-project-documentation-and-harness-baseline.md](reports/REP-001-project-documentation-and-harness-baseline.md) → [docs/harness/features/FEAT-001-capture-a-photo-on-mobile.md](features/FEAT-001-capture-a-photo-on-mobile.md)
 - [docs/harness/reports/REP-001-project-documentation-and-harness-baseline.md](reports/REP-001-project-documentation-and-harness-baseline.md) → [docs/harness/features/FEAT-002-manage-a-local-photo-gallery.md](features/FEAT-002-manage-a-local-photo-gallery.md)
 - [docs/harness/reports/REP-001-project-documentation-and-harness-baseline.md](reports/REP-001-project-documentation-and-harness-baseline.md) → [docs/harness/features/FEAT-003-browse-and-search-published-poses.md](features/FEAT-003-browse-and-search-published-poses.md)
@@ -475,6 +505,31 @@ generated: true
 - [docs/harness/specs/api-catalogue.md](specs/api-catalogue.md) → [docs/harness/specs/erd.md](specs/erd.md)
 - [docs/harness/specs/api-catalogue.md](specs/api-catalogue.md) → [docs/harness/specs/model-entity-catalogue.md](specs/model-entity-catalogue.md)
 - [docs/harness/specs/api-catalogue.md](specs/api-catalogue.md) → [docs/harness/specs/technical-architecture.md](specs/technical-architecture.md)
+- [docs/harness/specs/api-contract.md](specs/api-contract.md) → [docs/harness/decisions/DEC-001-extraction-provider-selection-policy.md](decisions/DEC-001-extraction-provider-selection-policy.md)
+- [docs/harness/specs/api-contract.md](specs/api-contract.md) → [docs/harness/features/FEAT-003-browse-and-search-published-poses.md](features/FEAT-003-browse-and-search-published-poses.md)
+- [docs/harness/specs/api-contract.md](specs/api-contract.md) → [docs/harness/features/FEAT-004-extract-reusable-pose-images.md](features/FEAT-004-extract-reusable-pose-images.md)
+- [docs/harness/specs/api-contract.md](specs/api-contract.md) → [docs/harness/features/FEAT-005-manage-a-pose-guide.md](features/FEAT-005-manage-a-pose-guide.md)
+- [docs/harness/specs/api-contract.md](specs/api-contract.md) → [docs/harness/features/FEAT-006-publish-a-pose.md](features/FEAT-006-publish-a-pose.md)
+- [docs/harness/specs/api-contract.md](specs/api-contract.md) → [docs/harness/features/FEAT-007-operate-pose-content-from-admin-web.md](features/FEAT-007-operate-pose-content-from-admin-web.md)
+- [docs/harness/specs/api-contract.md](specs/api-contract.md) → [docs/harness/features/FEAT-008-use-published-poses.md](features/FEAT-008-use-published-poses.md)
+- [docs/harness/specs/api-contract.md](specs/api-contract.md) → [docs/harness/specs/data-contract.md](specs/data-contract.md)
+- [docs/harness/specs/api-contract.md](specs/api-contract.md) → [docs/harness/specs/pose-domain-glossary.md](specs/pose-domain-glossary.md)
+- [docs/harness/specs/api-contract.md](specs/api-contract.md) → [docs/harness/specs/product-feature-inventory.md](specs/product-feature-inventory.md)
+- [docs/harness/specs/api-contract.md](specs/api-contract.md) → [docs/harness/specs/technical-architecture.md](specs/technical-architecture.md)
+- [docs/harness/specs/data-contract.md](specs/data-contract.md) → [docs/harness/features/FEAT-001-capture-a-photo-on-mobile.md](features/FEAT-001-capture-a-photo-on-mobile.md)
+- [docs/harness/specs/data-contract.md](specs/data-contract.md) → [docs/harness/features/FEAT-002-manage-a-local-photo-gallery.md](features/FEAT-002-manage-a-local-photo-gallery.md)
+- [docs/harness/specs/data-contract.md](specs/data-contract.md) → [docs/harness/features/FEAT-003-browse-and-search-published-poses.md](features/FEAT-003-browse-and-search-published-poses.md)
+- [docs/harness/specs/data-contract.md](specs/data-contract.md) → [docs/harness/features/FEAT-004-extract-reusable-pose-images.md](features/FEAT-004-extract-reusable-pose-images.md)
+- [docs/harness/specs/data-contract.md](specs/data-contract.md) → [docs/harness/features/FEAT-005-manage-a-pose-guide.md](features/FEAT-005-manage-a-pose-guide.md)
+- [docs/harness/specs/data-contract.md](specs/data-contract.md) → [docs/harness/features/FEAT-006-publish-a-pose.md](features/FEAT-006-publish-a-pose.md)
+- [docs/harness/specs/data-contract.md](specs/data-contract.md) → [docs/harness/features/FEAT-007-operate-pose-content-from-admin-web.md](features/FEAT-007-operate-pose-content-from-admin-web.md)
+- [docs/harness/specs/data-contract.md](specs/data-contract.md) → [docs/harness/features/FEAT-008-use-published-poses.md](features/FEAT-008-use-published-poses.md)
+- [docs/harness/specs/data-contract.md](specs/data-contract.md) → [docs/harness/plans/260823-0045-pose-domain-model-unification/plan.md](plans/260823-0045-pose-domain-model-unification/plan.md)
+- [docs/harness/specs/data-contract.md](specs/data-contract.md) → [docs/harness/reports/REP-008-pose-domain-model-unification-delivery.md](reports/REP-008-pose-domain-model-unification-delivery.md)
+- [docs/harness/specs/data-contract.md](specs/data-contract.md) → [docs/harness/specs/api-contract.md](specs/api-contract.md)
+- [docs/harness/specs/data-contract.md](specs/data-contract.md) → [docs/harness/specs/pose-domain-glossary.md](specs/pose-domain-glossary.md)
+- [docs/harness/specs/data-contract.md](specs/data-contract.md) → [docs/harness/specs/product-feature-inventory.md](specs/product-feature-inventory.md)
+- [docs/harness/specs/data-contract.md](specs/data-contract.md) → [docs/harness/specs/technical-architecture.md](specs/technical-architecture.md)
 - [docs/harness/specs/erd.md](specs/erd.md) → [docs/harness/features/FEAT-001-capture-a-photo-on-mobile.md](features/FEAT-001-capture-a-photo-on-mobile.md)
 - [docs/harness/specs/erd.md](specs/erd.md) → [docs/harness/features/FEAT-002-manage-a-local-photo-gallery.md](features/FEAT-002-manage-a-local-photo-gallery.md)
 - [docs/harness/specs/erd.md](specs/erd.md) → [docs/harness/features/FEAT-003-browse-and-search-published-poses.md](features/FEAT-003-browse-and-search-published-poses.md)
@@ -524,6 +579,7 @@ generated: true
 - [docs/harness/specs/product-delivery-roadmap.md](specs/product-delivery-roadmap.md) → [docs/harness/features/FEAT-007-operate-pose-content-from-admin-web.md](features/FEAT-007-operate-pose-content-from-admin-web.md)
 - [docs/harness/specs/product-delivery-roadmap.md](specs/product-delivery-roadmap.md) → [docs/harness/features/FEAT-008-use-published-poses.md](features/FEAT-008-use-published-poses.md)
 - [docs/harness/specs/product-delivery-roadmap.md](specs/product-delivery-roadmap.md) → [docs/harness/features/FEAT-009-configure-extraction-provider.md](features/FEAT-009-configure-extraction-provider.md)
+- [docs/harness/specs/product-delivery-roadmap.md](specs/product-delivery-roadmap.md) → [docs/harness/features/FEAT-013-saved-poses-albums-account-backed.md](features/FEAT-013-saved-poses-albums-account-backed.md)
 - [docs/harness/specs/product-delivery-roadmap.md](specs/product-delivery-roadmap.md) → [docs/harness/plans/260809-1806-camera-source-of-truth-convergence/plan.md](plans/260809-1806-camera-source-of-truth-convergence/plan.md)
 - [docs/harness/specs/product-delivery-roadmap.md](specs/product-delivery-roadmap.md) → [docs/harness/plans/260809-2240-pose-reference-library-convergence/plan.md](plans/260809-2240-pose-reference-library-convergence/plan.md)
 - [docs/harness/specs/product-delivery-roadmap.md](specs/product-delivery-roadmap.md) → [docs/harness/plans/260809-2241-selected-pose-camera-handoff/plan.md](plans/260809-2241-selected-pose-camera-handoff/plan.md)
@@ -568,6 +624,7 @@ generated: true
 - [docs/harness/decisions/DEC-001-extraction-provider-selection-policy.md](decisions/DEC-001-extraction-provider-selection-policy.md) ← [docs/harness/features/FEAT-004-extract-reusable-pose-images.md](features/FEAT-004-extract-reusable-pose-images.md)
 - [docs/harness/decisions/DEC-001-extraction-provider-selection-policy.md](decisions/DEC-001-extraction-provider-selection-policy.md) ← [docs/harness/features/FEAT-009-configure-extraction-provider.md](features/FEAT-009-configure-extraction-provider.md)
 - [docs/harness/decisions/DEC-001-extraction-provider-selection-policy.md](decisions/DEC-001-extraction-provider-selection-policy.md) ← [docs/harness/plans/260816-2240-higgsfield-cli-parallel-extract-provider/plan.md](plans/260816-2240-higgsfield-cli-parallel-extract-provider/plan.md)
+- [docs/harness/decisions/DEC-001-extraction-provider-selection-policy.md](decisions/DEC-001-extraction-provider-selection-policy.md) ← [docs/harness/specs/api-contract.md](specs/api-contract.md)
 - [docs/harness/decisions/DEC-001-extraction-provider-selection-policy.md](decisions/DEC-001-extraction-provider-selection-policy.md) ← [docs/harness/specs/product-delivery-roadmap.md](specs/product-delivery-roadmap.md)
 - [docs/harness/decisions/DEC-003-feat-003-scoped-parity-matrix.md](decisions/DEC-003-feat-003-scoped-parity-matrix.md) ← [docs/harness/decisions/DEC-004-feat-002-gallery-parity-matrix.md](decisions/DEC-004-feat-002-gallery-parity-matrix.md)
 - [docs/harness/decisions/DEC-003-feat-003-scoped-parity-matrix.md](decisions/DEC-003-feat-003-scoped-parity-matrix.md) ← [docs/harness/plans/260818-2105-feat-003-pose-library-slice/plan.md](plans/260818-2105-feat-003-pose-library-slice/plan.md)
@@ -595,6 +652,7 @@ generated: true
 - [docs/harness/features/FEAT-001-capture-a-photo-on-mobile.md](features/FEAT-001-capture-a-photo-on-mobile.md) ← [docs/harness/reports/REP-001-project-documentation-and-harness-baseline.md](reports/REP-001-project-documentation-and-harness-baseline.md)
 - [docs/harness/features/FEAT-001-capture-a-photo-on-mobile.md](features/FEAT-001-capture-a-photo-on-mobile.md) ← [docs/harness/reports/REP-002-feature-gap-and-release-readiness-audit.md](reports/REP-002-feature-gap-and-release-readiness-audit.md)
 - [docs/harness/features/FEAT-001-capture-a-photo-on-mobile.md](features/FEAT-001-capture-a-photo-on-mobile.md) ← [docs/harness/reports/REP-008-pose-domain-model-unification-delivery.md](reports/REP-008-pose-domain-model-unification-delivery.md)
+- [docs/harness/features/FEAT-001-capture-a-photo-on-mobile.md](features/FEAT-001-capture-a-photo-on-mobile.md) ← [docs/harness/specs/data-contract.md](specs/data-contract.md)
 - [docs/harness/features/FEAT-001-capture-a-photo-on-mobile.md](features/FEAT-001-capture-a-photo-on-mobile.md) ← [docs/harness/specs/erd.md](specs/erd.md)
 - [docs/harness/features/FEAT-001-capture-a-photo-on-mobile.md](features/FEAT-001-capture-a-photo-on-mobile.md) ← [docs/harness/specs/model-entity-catalogue.md](specs/model-entity-catalogue.md)
 - [docs/harness/features/FEAT-001-capture-a-photo-on-mobile.md](features/FEAT-001-capture-a-photo-on-mobile.md) ← [docs/harness/specs/pose-domain-glossary.md](specs/pose-domain-glossary.md)
@@ -611,6 +669,7 @@ generated: true
 - [docs/harness/features/FEAT-002-manage-a-local-photo-gallery.md](features/FEAT-002-manage-a-local-photo-gallery.md) ← [docs/harness/reports/REP-002-feature-gap-and-release-readiness-audit.md](reports/REP-002-feature-gap-and-release-readiness-audit.md)
 - [docs/harness/features/FEAT-002-manage-a-local-photo-gallery.md](features/FEAT-002-manage-a-local-photo-gallery.md) ← [docs/harness/reports/REP-007-feat-002-local-photo-gallery-delivery.md](reports/REP-007-feat-002-local-photo-gallery-delivery.md)
 - [docs/harness/features/FEAT-002-manage-a-local-photo-gallery.md](features/FEAT-002-manage-a-local-photo-gallery.md) ← [docs/harness/reports/REP-008-pose-domain-model-unification-delivery.md](reports/REP-008-pose-domain-model-unification-delivery.md)
+- [docs/harness/features/FEAT-002-manage-a-local-photo-gallery.md](features/FEAT-002-manage-a-local-photo-gallery.md) ← [docs/harness/specs/data-contract.md](specs/data-contract.md)
 - [docs/harness/features/FEAT-002-manage-a-local-photo-gallery.md](features/FEAT-002-manage-a-local-photo-gallery.md) ← [docs/harness/specs/erd.md](specs/erd.md)
 - [docs/harness/features/FEAT-002-manage-a-local-photo-gallery.md](features/FEAT-002-manage-a-local-photo-gallery.md) ← [docs/harness/specs/model-entity-catalogue.md](specs/model-entity-catalogue.md)
 - [docs/harness/features/FEAT-002-manage-a-local-photo-gallery.md](features/FEAT-002-manage-a-local-photo-gallery.md) ← [docs/harness/specs/pose-domain-glossary.md](specs/pose-domain-glossary.md)
@@ -622,6 +681,7 @@ generated: true
 - [docs/harness/features/FEAT-003-browse-and-search-published-poses.md](features/FEAT-003-browse-and-search-published-poses.md) ← [docs/harness/features/FEAT-006-publish-a-pose.md](features/FEAT-006-publish-a-pose.md)
 - [docs/harness/features/FEAT-003-browse-and-search-published-poses.md](features/FEAT-003-browse-and-search-published-poses.md) ← [docs/harness/features/FEAT-008-use-published-poses.md](features/FEAT-008-use-published-poses.md)
 - [docs/harness/features/FEAT-003-browse-and-search-published-poses.md](features/FEAT-003-browse-and-search-published-poses.md) ← [docs/harness/features/FEAT-012-restore-pose-and-camera-settings-across-relaunch.md](features/FEAT-012-restore-pose-and-camera-settings-across-relaunch.md)
+- [docs/harness/features/FEAT-003-browse-and-search-published-poses.md](features/FEAT-003-browse-and-search-published-poses.md) ← [docs/harness/features/FEAT-013-saved-poses-albums-account-backed.md](features/FEAT-013-saved-poses-albums-account-backed.md)
 - [docs/harness/features/FEAT-003-browse-and-search-published-poses.md](features/FEAT-003-browse-and-search-published-poses.md) ← [docs/harness/plans/260809-2240-pose-reference-library-convergence/DEC-002-pose-reference-library-parity-matrix.md](plans/260809-2240-pose-reference-library-convergence/DEC-002-pose-reference-library-parity-matrix.md)
 - [docs/harness/features/FEAT-003-browse-and-search-published-poses.md](features/FEAT-003-browse-and-search-published-poses.md) ← [docs/harness/plans/260809-2240-pose-reference-library-convergence/plan.md](plans/260809-2240-pose-reference-library-convergence/plan.md)
 - [docs/harness/features/FEAT-003-browse-and-search-published-poses.md](features/FEAT-003-browse-and-search-published-poses.md) ← [docs/harness/plans/260809-2241-selected-pose-camera-handoff/plan.md](plans/260809-2241-selected-pose-camera-handoff/plan.md)
@@ -636,6 +696,8 @@ generated: true
 - [docs/harness/features/FEAT-003-browse-and-search-published-poses.md](features/FEAT-003-browse-and-search-published-poses.md) ← [docs/harness/reports/REP-006-feat-003-pose-library-slice-delivery.md](reports/REP-006-feat-003-pose-library-slice-delivery.md)
 - [docs/harness/features/FEAT-003-browse-and-search-published-poses.md](features/FEAT-003-browse-and-search-published-poses.md) ← [docs/harness/reports/REP-008-pose-domain-model-unification-delivery.md](reports/REP-008-pose-domain-model-unification-delivery.md)
 - [docs/harness/features/FEAT-003-browse-and-search-published-poses.md](features/FEAT-003-browse-and-search-published-poses.md) ← [docs/harness/specs/api-catalogue.md](specs/api-catalogue.md)
+- [docs/harness/features/FEAT-003-browse-and-search-published-poses.md](features/FEAT-003-browse-and-search-published-poses.md) ← [docs/harness/specs/api-contract.md](specs/api-contract.md)
+- [docs/harness/features/FEAT-003-browse-and-search-published-poses.md](features/FEAT-003-browse-and-search-published-poses.md) ← [docs/harness/specs/data-contract.md](specs/data-contract.md)
 - [docs/harness/features/FEAT-003-browse-and-search-published-poses.md](features/FEAT-003-browse-and-search-published-poses.md) ← [docs/harness/specs/erd.md](specs/erd.md)
 - [docs/harness/features/FEAT-003-browse-and-search-published-poses.md](features/FEAT-003-browse-and-search-published-poses.md) ← [docs/harness/specs/model-entity-catalogue.md](specs/model-entity-catalogue.md)
 - [docs/harness/features/FEAT-003-browse-and-search-published-poses.md](features/FEAT-003-browse-and-search-published-poses.md) ← [docs/harness/specs/pose-domain-glossary.md](specs/pose-domain-glossary.md)
@@ -655,6 +717,8 @@ generated: true
 - [docs/harness/features/FEAT-004-extract-reusable-pose-images.md](features/FEAT-004-extract-reusable-pose-images.md) ← [docs/harness/reports/REP-004-backend-feature-and-model-entity-scout.md](reports/REP-004-backend-feature-and-model-entity-scout.md)
 - [docs/harness/features/FEAT-004-extract-reusable-pose-images.md](features/FEAT-004-extract-reusable-pose-images.md) ← [docs/harness/reports/REP-008-pose-domain-model-unification-delivery.md](reports/REP-008-pose-domain-model-unification-delivery.md)
 - [docs/harness/features/FEAT-004-extract-reusable-pose-images.md](features/FEAT-004-extract-reusable-pose-images.md) ← [docs/harness/specs/api-catalogue.md](specs/api-catalogue.md)
+- [docs/harness/features/FEAT-004-extract-reusable-pose-images.md](features/FEAT-004-extract-reusable-pose-images.md) ← [docs/harness/specs/api-contract.md](specs/api-contract.md)
+- [docs/harness/features/FEAT-004-extract-reusable-pose-images.md](features/FEAT-004-extract-reusable-pose-images.md) ← [docs/harness/specs/data-contract.md](specs/data-contract.md)
 - [docs/harness/features/FEAT-004-extract-reusable-pose-images.md](features/FEAT-004-extract-reusable-pose-images.md) ← [docs/harness/specs/erd.md](specs/erd.md)
 - [docs/harness/features/FEAT-004-extract-reusable-pose-images.md](features/FEAT-004-extract-reusable-pose-images.md) ← [docs/harness/specs/model-entity-catalogue.md](specs/model-entity-catalogue.md)
 - [docs/harness/features/FEAT-004-extract-reusable-pose-images.md](features/FEAT-004-extract-reusable-pose-images.md) ← [docs/harness/specs/pose-domain-glossary.md](specs/pose-domain-glossary.md)
@@ -672,6 +736,8 @@ generated: true
 - [docs/harness/features/FEAT-005-manage-a-pose-guide.md](features/FEAT-005-manage-a-pose-guide.md) ← [docs/harness/reports/REP-004-backend-feature-and-model-entity-scout.md](reports/REP-004-backend-feature-and-model-entity-scout.md)
 - [docs/harness/features/FEAT-005-manage-a-pose-guide.md](features/FEAT-005-manage-a-pose-guide.md) ← [docs/harness/reports/REP-008-pose-domain-model-unification-delivery.md](reports/REP-008-pose-domain-model-unification-delivery.md)
 - [docs/harness/features/FEAT-005-manage-a-pose-guide.md](features/FEAT-005-manage-a-pose-guide.md) ← [docs/harness/specs/api-catalogue.md](specs/api-catalogue.md)
+- [docs/harness/features/FEAT-005-manage-a-pose-guide.md](features/FEAT-005-manage-a-pose-guide.md) ← [docs/harness/specs/api-contract.md](specs/api-contract.md)
+- [docs/harness/features/FEAT-005-manage-a-pose-guide.md](features/FEAT-005-manage-a-pose-guide.md) ← [docs/harness/specs/data-contract.md](specs/data-contract.md)
 - [docs/harness/features/FEAT-005-manage-a-pose-guide.md](features/FEAT-005-manage-a-pose-guide.md) ← [docs/harness/specs/erd.md](specs/erd.md)
 - [docs/harness/features/FEAT-005-manage-a-pose-guide.md](features/FEAT-005-manage-a-pose-guide.md) ← [docs/harness/specs/model-entity-catalogue.md](specs/model-entity-catalogue.md)
 - [docs/harness/features/FEAT-005-manage-a-pose-guide.md](features/FEAT-005-manage-a-pose-guide.md) ← [docs/harness/specs/pose-domain-glossary.md](specs/pose-domain-glossary.md)
@@ -683,9 +749,12 @@ generated: true
 - [docs/harness/features/FEAT-006-publish-a-pose.md](features/FEAT-006-publish-a-pose.md) ← [docs/harness/features/FEAT-005-manage-a-pose-guide.md](features/FEAT-005-manage-a-pose-guide.md)
 - [docs/harness/features/FEAT-006-publish-a-pose.md](features/FEAT-006-publish-a-pose.md) ← [docs/harness/features/FEAT-007-operate-pose-content-from-admin-web.md](features/FEAT-007-operate-pose-content-from-admin-web.md)
 - [docs/harness/features/FEAT-006-publish-a-pose.md](features/FEAT-006-publish-a-pose.md) ← [docs/harness/features/FEAT-008-use-published-poses.md](features/FEAT-008-use-published-poses.md)
+- [docs/harness/features/FEAT-006-publish-a-pose.md](features/FEAT-006-publish-a-pose.md) ← [docs/harness/features/FEAT-013-saved-poses-albums-account-backed.md](features/FEAT-013-saved-poses-albums-account-backed.md)
 - [docs/harness/features/FEAT-006-publish-a-pose.md](features/FEAT-006-publish-a-pose.md) ← [docs/harness/plans/260823-0045-pose-domain-model-unification/plan.md](plans/260823-0045-pose-domain-model-unification/plan.md)
 - [docs/harness/features/FEAT-006-publish-a-pose.md](features/FEAT-006-publish-a-pose.md) ← [docs/harness/reports/REP-008-pose-domain-model-unification-delivery.md](reports/REP-008-pose-domain-model-unification-delivery.md)
 - [docs/harness/features/FEAT-006-publish-a-pose.md](features/FEAT-006-publish-a-pose.md) ← [docs/harness/specs/api-catalogue.md](specs/api-catalogue.md)
+- [docs/harness/features/FEAT-006-publish-a-pose.md](features/FEAT-006-publish-a-pose.md) ← [docs/harness/specs/api-contract.md](specs/api-contract.md)
+- [docs/harness/features/FEAT-006-publish-a-pose.md](features/FEAT-006-publish-a-pose.md) ← [docs/harness/specs/data-contract.md](specs/data-contract.md)
 - [docs/harness/features/FEAT-006-publish-a-pose.md](features/FEAT-006-publish-a-pose.md) ← [docs/harness/specs/erd.md](specs/erd.md)
 - [docs/harness/features/FEAT-006-publish-a-pose.md](features/FEAT-006-publish-a-pose.md) ← [docs/harness/specs/model-entity-catalogue.md](specs/model-entity-catalogue.md)
 - [docs/harness/features/FEAT-006-publish-a-pose.md](features/FEAT-006-publish-a-pose.md) ← [docs/harness/specs/pose-domain-glossary.md](specs/pose-domain-glossary.md)
@@ -698,6 +767,8 @@ generated: true
 - [docs/harness/features/FEAT-007-operate-pose-content-from-admin-web.md](features/FEAT-007-operate-pose-content-from-admin-web.md) ← [docs/harness/plans/260823-0045-pose-domain-model-unification/plan.md](plans/260823-0045-pose-domain-model-unification/plan.md)
 - [docs/harness/features/FEAT-007-operate-pose-content-from-admin-web.md](features/FEAT-007-operate-pose-content-from-admin-web.md) ← [docs/harness/reports/REP-008-pose-domain-model-unification-delivery.md](reports/REP-008-pose-domain-model-unification-delivery.md)
 - [docs/harness/features/FEAT-007-operate-pose-content-from-admin-web.md](features/FEAT-007-operate-pose-content-from-admin-web.md) ← [docs/harness/specs/api-catalogue.md](specs/api-catalogue.md)
+- [docs/harness/features/FEAT-007-operate-pose-content-from-admin-web.md](features/FEAT-007-operate-pose-content-from-admin-web.md) ← [docs/harness/specs/api-contract.md](specs/api-contract.md)
+- [docs/harness/features/FEAT-007-operate-pose-content-from-admin-web.md](features/FEAT-007-operate-pose-content-from-admin-web.md) ← [docs/harness/specs/data-contract.md](specs/data-contract.md)
 - [docs/harness/features/FEAT-007-operate-pose-content-from-admin-web.md](features/FEAT-007-operate-pose-content-from-admin-web.md) ← [docs/harness/specs/erd.md](specs/erd.md)
 - [docs/harness/features/FEAT-007-operate-pose-content-from-admin-web.md](features/FEAT-007-operate-pose-content-from-admin-web.md) ← [docs/harness/specs/model-entity-catalogue.md](specs/model-entity-catalogue.md)
 - [docs/harness/features/FEAT-007-operate-pose-content-from-admin-web.md](features/FEAT-007-operate-pose-content-from-admin-web.md) ← [docs/harness/specs/pose-domain-glossary.md](specs/pose-domain-glossary.md)
@@ -706,10 +777,13 @@ generated: true
 - [docs/harness/features/FEAT-008-use-published-poses.md](features/FEAT-008-use-published-poses.md) ← [docs/harness/features/FEAT-003-browse-and-search-published-poses.md](features/FEAT-003-browse-and-search-published-poses.md)
 - [docs/harness/features/FEAT-008-use-published-poses.md](features/FEAT-008-use-published-poses.md) ← [docs/harness/features/FEAT-006-publish-a-pose.md](features/FEAT-006-publish-a-pose.md)
 - [docs/harness/features/FEAT-008-use-published-poses.md](features/FEAT-008-use-published-poses.md) ← [docs/harness/features/FEAT-012-restore-pose-and-camera-settings-across-relaunch.md](features/FEAT-012-restore-pose-and-camera-settings-across-relaunch.md)
+- [docs/harness/features/FEAT-008-use-published-poses.md](features/FEAT-008-use-published-poses.md) ← [docs/harness/features/FEAT-013-saved-poses-albums-account-backed.md](features/FEAT-013-saved-poses-albums-account-backed.md)
 - [docs/harness/features/FEAT-008-use-published-poses.md](features/FEAT-008-use-published-poses.md) ← [docs/harness/plans/260809-2241-selected-pose-camera-handoff/plan.md](plans/260809-2241-selected-pose-camera-handoff/plan.md)
 - [docs/harness/features/FEAT-008-use-published-poses.md](features/FEAT-008-use-published-poses.md) ← [docs/harness/plans/260823-0045-pose-domain-model-unification/plan.md](plans/260823-0045-pose-domain-model-unification/plan.md)
 - [docs/harness/features/FEAT-008-use-published-poses.md](features/FEAT-008-use-published-poses.md) ← [docs/harness/reports/REP-008-pose-domain-model-unification-delivery.md](reports/REP-008-pose-domain-model-unification-delivery.md)
 - [docs/harness/features/FEAT-008-use-published-poses.md](features/FEAT-008-use-published-poses.md) ← [docs/harness/specs/api-catalogue.md](specs/api-catalogue.md)
+- [docs/harness/features/FEAT-008-use-published-poses.md](features/FEAT-008-use-published-poses.md) ← [docs/harness/specs/api-contract.md](specs/api-contract.md)
+- [docs/harness/features/FEAT-008-use-published-poses.md](features/FEAT-008-use-published-poses.md) ← [docs/harness/specs/data-contract.md](specs/data-contract.md)
 - [docs/harness/features/FEAT-008-use-published-poses.md](features/FEAT-008-use-published-poses.md) ← [docs/harness/specs/erd.md](specs/erd.md)
 - [docs/harness/features/FEAT-008-use-published-poses.md](features/FEAT-008-use-published-poses.md) ← [docs/harness/specs/model-entity-catalogue.md](specs/model-entity-catalogue.md)
 - [docs/harness/features/FEAT-008-use-published-poses.md](features/FEAT-008-use-published-poses.md) ← [docs/harness/specs/pose-domain-glossary.md](specs/pose-domain-glossary.md)
@@ -731,6 +805,8 @@ generated: true
 - [docs/harness/features/FEAT-012-restore-pose-and-camera-settings-across-relaunch.md](features/FEAT-012-restore-pose-and-camera-settings-across-relaunch.md) ← [docs/harness/plans/260809-2241-selected-pose-camera-handoff/plan.md](plans/260809-2241-selected-pose-camera-handoff/plan.md)
 - [docs/harness/features/FEAT-012-restore-pose-and-camera-settings-across-relaunch.md](features/FEAT-012-restore-pose-and-camera-settings-across-relaunch.md) ← [docs/harness/plans/260831-0000-feat-012-relaunch-restore/plan.md](plans/260831-0000-feat-012-relaunch-restore/plan.md)
 - [docs/harness/features/FEAT-012-restore-pose-and-camera-settings-across-relaunch.md](features/FEAT-012-restore-pose-and-camera-settings-across-relaunch.md) ← [docs/harness/reports/REP-012-feat-012-relaunch-restore-delivery.md](reports/REP-012-feat-012-relaunch-restore-delivery.md)
+- [docs/harness/features/FEAT-013-saved-poses-albums-account-backed.md](features/FEAT-013-saved-poses-albums-account-backed.md) ← [docs/harness/plans/260831-0000-saved-poses-account-backed-v1/plan.md](plans/260831-0000-saved-poses-account-backed-v1/plan.md)
+- [docs/harness/features/FEAT-013-saved-poses-albums-account-backed.md](features/FEAT-013-saved-poses-albums-account-backed.md) ← [docs/harness/specs/product-delivery-roadmap.md](specs/product-delivery-roadmap.md)
 - [docs/harness/plans/260809-1806-camera-source-of-truth-convergence/plan.md](plans/260809-1806-camera-source-of-truth-convergence/plan.md) ← [docs/harness/decisions/DEC-004-feat-002-gallery-parity-matrix.md](decisions/DEC-004-feat-002-gallery-parity-matrix.md)
 - [docs/harness/plans/260809-1806-camera-source-of-truth-convergence/plan.md](plans/260809-1806-camera-source-of-truth-convergence/plan.md) ← [docs/harness/plans/260819-0735-feat-002-local-photo-gallery/plan.md](plans/260819-0735-feat-002-local-photo-gallery/plan.md)
 - [docs/harness/plans/260809-1806-camera-source-of-truth-convergence/plan.md](plans/260809-1806-camera-source-of-truth-convergence/plan.md) ← [docs/harness/plans/260819-2355-camera-only-convergence/plan.md](plans/260819-2355-camera-only-convergence/plan.md)
@@ -766,6 +842,7 @@ generated: true
 - [docs/harness/plans/260819-0735-feat-002-local-photo-gallery/plan.md](plans/260819-0735-feat-002-local-photo-gallery/plan.md) ← [docs/harness/plans/260819-2355-camera-only-convergence/plan.md](plans/260819-2355-camera-only-convergence/plan.md)
 - [docs/harness/plans/260819-0735-feat-002-local-photo-gallery/plan.md](plans/260819-0735-feat-002-local-photo-gallery/plan.md) ← [docs/harness/reports/REP-007-feat-002-local-photo-gallery-delivery.md](reports/REP-007-feat-002-local-photo-gallery-delivery.md)
 - [docs/harness/plans/260823-0045-pose-domain-model-unification/plan.md](plans/260823-0045-pose-domain-model-unification/plan.md) ← [docs/harness/reports/REP-008-pose-domain-model-unification-delivery.md](reports/REP-008-pose-domain-model-unification-delivery.md)
+- [docs/harness/plans/260823-0045-pose-domain-model-unification/plan.md](plans/260823-0045-pose-domain-model-unification/plan.md) ← [docs/harness/specs/data-contract.md](specs/data-contract.md)
 - [docs/harness/plans/260823-0045-pose-domain-model-unification/plan.md](plans/260823-0045-pose-domain-model-unification/plan.md) ← [docs/harness/specs/pose-domain-glossary.md](specs/pose-domain-glossary.md)
 - [docs/harness/plans/260826-0003-integrate-firebase-observability-and-remote-config-for-feat-010/plan.md](plans/260826-0003-integrate-firebase-observability-and-remote-config-for-feat-010/plan.md) ← [docs/harness/decisions/DEC-006-remote-config-api-baseurl-policy.md](decisions/DEC-006-remote-config-api-baseurl-policy.md)
 - [docs/harness/plans/260826-0003-integrate-firebase-observability-and-remote-config-for-feat-010/plan.md](plans/260826-0003-integrate-firebase-observability-and-remote-config-for-feat-010/plan.md) ← [docs/harness/decisions/DEC-007-ios-sdk-integration-architecture.md](decisions/DEC-007-ios-sdk-integration-architecture.md)
@@ -776,6 +853,8 @@ generated: true
 - [docs/harness/plans/260826-0003-integrate-revenuecat-paid-access-and-iap-for-feat-011/plan.md](plans/260826-0003-integrate-revenuecat-paid-access-and-iap-for-feat-011/plan.md) ← [docs/harness/features/FEAT-011-integrate-revenuecat-paid-access-and-in-app-purchases.md](features/FEAT-011-integrate-revenuecat-paid-access-and-in-app-purchases.md)
 - [docs/harness/plans/260831-0000-feat-012-relaunch-restore/plan.md](plans/260831-0000-feat-012-relaunch-restore/plan.md) ← [docs/harness/features/FEAT-012-restore-pose-and-camera-settings-across-relaunch.md](features/FEAT-012-restore-pose-and-camera-settings-across-relaunch.md)
 - [docs/harness/plans/260831-0000-feat-012-relaunch-restore/plan.md](plans/260831-0000-feat-012-relaunch-restore/plan.md) ← [docs/harness/reports/REP-012-feat-012-relaunch-restore-delivery.md](reports/REP-012-feat-012-relaunch-restore-delivery.md)
+- [docs/harness/plans/260831-0000-saved-poses-account-backed-v1/plan.md](plans/260831-0000-saved-poses-account-backed-v1/plan.md) ← [docs/harness/features/FEAT-013-saved-poses-albums-account-backed.md](features/FEAT-013-saved-poses-albums-account-backed.md)
+- [docs/harness/plans/260831-0000-saved-poses-account-backed-v1/plan.md](plans/260831-0000-saved-poses-account-backed-v1/plan.md) ← [docs/harness/plans/260831-0000-saved-poses-account-backed-v1/plan.md](plans/260831-0000-saved-poses-account-backed-v1/plan.md)
 - [docs/harness/reports/REP-001-project-documentation-and-harness-baseline.md](reports/REP-001-project-documentation-and-harness-baseline.md) ← [docs/harness/reports/REP-002-feature-gap-and-release-readiness-audit.md](reports/REP-002-feature-gap-and-release-readiness-audit.md)
 - [docs/harness/reports/REP-002-feature-gap-and-release-readiness-audit.md](reports/REP-002-feature-gap-and-release-readiness-audit.md) ← [docs/harness/decisions/DEC-004-feat-002-gallery-parity-matrix.md](decisions/DEC-004-feat-002-gallery-parity-matrix.md)
 - [docs/harness/reports/REP-002-feature-gap-and-release-readiness-audit.md](reports/REP-002-feature-gap-and-release-readiness-audit.md) ← [docs/harness/features/FEAT-001-capture-a-photo-on-mobile.md](features/FEAT-001-capture-a-photo-on-mobile.md)
@@ -813,9 +892,12 @@ generated: true
 - [docs/harness/reports/REP-005-community-title-search-production-delivery.md](reports/REP-005-community-title-search-production-delivery.md) ← [docs/harness/reports/REP-006-feat-003-pose-library-slice-delivery.md](reports/REP-006-feat-003-pose-library-slice-delivery.md)
 - [docs/harness/reports/REP-007-feat-002-local-photo-gallery-delivery.md](reports/REP-007-feat-002-local-photo-gallery-delivery.md) ← [docs/harness/plans/260819-0735-feat-002-local-photo-gallery/plan.md](plans/260819-0735-feat-002-local-photo-gallery/plan.md)
 - [docs/harness/reports/REP-008-pose-domain-model-unification-delivery.md](reports/REP-008-pose-domain-model-unification-delivery.md) ← [docs/harness/plans/260823-0045-pose-domain-model-unification/plan.md](plans/260823-0045-pose-domain-model-unification/plan.md)
+- [docs/harness/reports/REP-008-pose-domain-model-unification-delivery.md](reports/REP-008-pose-domain-model-unification-delivery.md) ← [docs/harness/specs/data-contract.md](specs/data-contract.md)
 - [docs/harness/reports/REP-009-runtime-pose-domain-migration.md](reports/REP-009-runtime-pose-domain-migration.md) ← [docs/harness/plans/260823-0215-runtime-pose-domain-migration/plan.md](plans/260823-0215-runtime-pose-domain-migration/plan.md)
 - [docs/harness/reports/REP-011-firebase-observability-remote-config-delivery.md](reports/REP-011-firebase-observability-remote-config-delivery.md) ← [docs/harness/plans/260826-0003-integrate-firebase-observability-and-remote-config-for-feat-010/plan.md](plans/260826-0003-integrate-firebase-observability-and-remote-config-for-feat-010/plan.md)
+- [docs/harness/reports/REP-012-feat-012-relaunch-restore-delivery.md](reports/REP-012-feat-012-relaunch-restore-delivery.md) ← [docs/harness/features/FEAT-013-saved-poses-albums-account-backed.md](features/FEAT-013-saved-poses-albums-account-backed.md)
 - [docs/harness/reports/REP-012-feat-012-relaunch-restore-delivery.md](reports/REP-012-feat-012-relaunch-restore-delivery.md) ← [docs/harness/plans/260831-0000-feat-012-relaunch-restore/plan.md](plans/260831-0000-feat-012-relaunch-restore/plan.md)
+- [docs/harness/reports/REP-012-feat-012-relaunch-restore-delivery.md](reports/REP-012-feat-012-relaunch-restore-delivery.md) ← [docs/harness/plans/260831-0000-saved-poses-account-backed-v1/plan.md](plans/260831-0000-saved-poses-account-backed-v1/plan.md)
 - [docs/harness/specs/api-catalogue.md](specs/api-catalogue.md) ← [docs/harness/features/FEAT-001-capture-a-photo-on-mobile.md](features/FEAT-001-capture-a-photo-on-mobile.md)
 - [docs/harness/specs/api-catalogue.md](specs/api-catalogue.md) ← [docs/harness/features/FEAT-002-manage-a-local-photo-gallery.md](features/FEAT-002-manage-a-local-photo-gallery.md)
 - [docs/harness/specs/api-catalogue.md](specs/api-catalogue.md) ← [docs/harness/features/FEAT-003-browse-and-search-published-poses.md](features/FEAT-003-browse-and-search-published-poses.md)
@@ -825,9 +907,11 @@ generated: true
 - [docs/harness/specs/api-catalogue.md](specs/api-catalogue.md) ← [docs/harness/features/FEAT-007-operate-pose-content-from-admin-web.md](features/FEAT-007-operate-pose-content-from-admin-web.md)
 - [docs/harness/specs/api-catalogue.md](specs/api-catalogue.md) ← [docs/harness/features/FEAT-008-use-published-poses.md](features/FEAT-008-use-published-poses.md)
 - [docs/harness/specs/api-catalogue.md](specs/api-catalogue.md) ← [docs/harness/features/FEAT-009-configure-extraction-provider.md](features/FEAT-009-configure-extraction-provider.md)
+- [docs/harness/specs/api-catalogue.md](specs/api-catalogue.md) ← [docs/harness/features/FEAT-013-saved-poses-albums-account-backed.md](features/FEAT-013-saved-poses-albums-account-backed.md)
 - [docs/harness/specs/api-catalogue.md](specs/api-catalogue.md) ← [docs/harness/plans/260816-2240-higgsfield-cli-parallel-extract-provider/plan.md](plans/260816-2240-higgsfield-cli-parallel-extract-provider/plan.md)
 - [docs/harness/specs/api-catalogue.md](specs/api-catalogue.md) ← [docs/harness/plans/260818-2112-community-title-search-production/plan.md](plans/260818-2112-community-title-search-production/plan.md)
 - [docs/harness/specs/api-catalogue.md](specs/api-catalogue.md) ← [docs/harness/plans/260823-0045-pose-domain-model-unification/plan.md](plans/260823-0045-pose-domain-model-unification/plan.md)
+- [docs/harness/specs/api-catalogue.md](specs/api-catalogue.md) ← [docs/harness/plans/260831-0000-saved-poses-account-backed-v1/plan.md](plans/260831-0000-saved-poses-account-backed-v1/plan.md)
 - [docs/harness/specs/api-catalogue.md](specs/api-catalogue.md) ← [docs/harness/reports/REP-005-community-title-search-production-delivery.md](reports/REP-005-community-title-search-production-delivery.md)
 - [docs/harness/specs/api-catalogue.md](specs/api-catalogue.md) ← [docs/harness/reports/REP-008-pose-domain-model-unification-delivery.md](reports/REP-008-pose-domain-model-unification-delivery.md)
 - [docs/harness/specs/api-catalogue.md](specs/api-catalogue.md) ← [docs/harness/specs/erd.md](specs/erd.md)
@@ -835,6 +919,8 @@ generated: true
 - [docs/harness/specs/api-catalogue.md](specs/api-catalogue.md) ← [docs/harness/specs/pose-domain-glossary.md](specs/pose-domain-glossary.md)
 - [docs/harness/specs/api-catalogue.md](specs/api-catalogue.md) ← [docs/harness/specs/product-feature-inventory.md](specs/product-feature-inventory.md)
 - [docs/harness/specs/api-catalogue.md](specs/api-catalogue.md) ← [docs/harness/specs/technical-architecture.md](specs/technical-architecture.md)
+- [docs/harness/specs/api-contract.md](specs/api-contract.md) ← [docs/harness/specs/data-contract.md](specs/data-contract.md)
+- [docs/harness/specs/data-contract.md](specs/data-contract.md) ← [docs/harness/specs/api-contract.md](specs/api-contract.md)
 - [docs/harness/specs/erd.md](specs/erd.md) ← [docs/harness/decisions/DEC-004-feat-002-gallery-parity-matrix.md](decisions/DEC-004-feat-002-gallery-parity-matrix.md)
 - [docs/harness/specs/erd.md](specs/erd.md) ← [docs/harness/features/FEAT-001-capture-a-photo-on-mobile.md](features/FEAT-001-capture-a-photo-on-mobile.md)
 - [docs/harness/specs/erd.md](specs/erd.md) ← [docs/harness/features/FEAT-002-manage-a-local-photo-gallery.md](features/FEAT-002-manage-a-local-photo-gallery.md)
@@ -844,6 +930,7 @@ generated: true
 - [docs/harness/specs/erd.md](specs/erd.md) ← [docs/harness/features/FEAT-006-publish-a-pose.md](features/FEAT-006-publish-a-pose.md)
 - [docs/harness/specs/erd.md](specs/erd.md) ← [docs/harness/features/FEAT-007-operate-pose-content-from-admin-web.md](features/FEAT-007-operate-pose-content-from-admin-web.md)
 - [docs/harness/specs/erd.md](specs/erd.md) ← [docs/harness/features/FEAT-008-use-published-poses.md](features/FEAT-008-use-published-poses.md)
+- [docs/harness/specs/erd.md](specs/erd.md) ← [docs/harness/features/FEAT-013-saved-poses-albums-account-backed.md](features/FEAT-013-saved-poses-albums-account-backed.md)
 - [docs/harness/specs/erd.md](specs/erd.md) ← [docs/harness/plans/260819-0735-feat-002-local-photo-gallery/plan.md](plans/260819-0735-feat-002-local-photo-gallery/plan.md)
 - [docs/harness/specs/erd.md](specs/erd.md) ← [docs/harness/plans/260819-2355-camera-only-convergence/plan.md](plans/260819-2355-camera-only-convergence/plan.md)
 - [docs/harness/specs/erd.md](specs/erd.md) ← [docs/harness/plans/260823-0045-pose-domain-model-unification/plan.md](plans/260823-0045-pose-domain-model-unification/plan.md)
@@ -863,10 +950,12 @@ generated: true
 - [docs/harness/specs/model-entity-catalogue.md](specs/model-entity-catalogue.md) ← [docs/harness/features/FEAT-006-publish-a-pose.md](features/FEAT-006-publish-a-pose.md)
 - [docs/harness/specs/model-entity-catalogue.md](specs/model-entity-catalogue.md) ← [docs/harness/features/FEAT-007-operate-pose-content-from-admin-web.md](features/FEAT-007-operate-pose-content-from-admin-web.md)
 - [docs/harness/specs/model-entity-catalogue.md](specs/model-entity-catalogue.md) ← [docs/harness/features/FEAT-008-use-published-poses.md](features/FEAT-008-use-published-poses.md)
+- [docs/harness/specs/model-entity-catalogue.md](specs/model-entity-catalogue.md) ← [docs/harness/features/FEAT-013-saved-poses-albums-account-backed.md](features/FEAT-013-saved-poses-albums-account-backed.md)
 - [docs/harness/specs/model-entity-catalogue.md](specs/model-entity-catalogue.md) ← [docs/harness/plans/260818-2112-community-title-search-production/plan.md](plans/260818-2112-community-title-search-production/plan.md)
 - [docs/harness/specs/model-entity-catalogue.md](specs/model-entity-catalogue.md) ← [docs/harness/plans/260819-0735-feat-002-local-photo-gallery/plan.md](plans/260819-0735-feat-002-local-photo-gallery/plan.md)
 - [docs/harness/specs/model-entity-catalogue.md](specs/model-entity-catalogue.md) ← [docs/harness/plans/260819-2355-camera-only-convergence/plan.md](plans/260819-2355-camera-only-convergence/plan.md)
 - [docs/harness/specs/model-entity-catalogue.md](specs/model-entity-catalogue.md) ← [docs/harness/plans/260823-0045-pose-domain-model-unification/plan.md](plans/260823-0045-pose-domain-model-unification/plan.md)
+- [docs/harness/specs/model-entity-catalogue.md](specs/model-entity-catalogue.md) ← [docs/harness/plans/260831-0000-saved-poses-account-backed-v1/plan.md](plans/260831-0000-saved-poses-account-backed-v1/plan.md)
 - [docs/harness/specs/model-entity-catalogue.md](specs/model-entity-catalogue.md) ← [docs/harness/reports/REP-005-community-title-search-production-delivery.md](reports/REP-005-community-title-search-production-delivery.md)
 - [docs/harness/specs/model-entity-catalogue.md](specs/model-entity-catalogue.md) ← [docs/harness/reports/REP-007-feat-002-local-photo-gallery-delivery.md](reports/REP-007-feat-002-local-photo-gallery-delivery.md)
 - [docs/harness/specs/model-entity-catalogue.md](specs/model-entity-catalogue.md) ← [docs/harness/reports/REP-008-pose-domain-model-unification-delivery.md](reports/REP-008-pose-domain-model-unification-delivery.md)
@@ -877,6 +966,10 @@ generated: true
 - [docs/harness/specs/model-entity-catalogue.md](specs/model-entity-catalogue.md) ← [docs/harness/specs/technical-architecture.md](specs/technical-architecture.md)
 - [docs/harness/specs/pose-domain-glossary.md](specs/pose-domain-glossary.md) ← [docs/harness/plans/260823-0045-pose-domain-model-unification/plan.md](plans/260823-0045-pose-domain-model-unification/plan.md)
 - [docs/harness/specs/pose-domain-glossary.md](specs/pose-domain-glossary.md) ← [docs/harness/reports/REP-008-pose-domain-model-unification-delivery.md](reports/REP-008-pose-domain-model-unification-delivery.md)
+- [docs/harness/specs/pose-domain-glossary.md](specs/pose-domain-glossary.md) ← [docs/harness/specs/api-contract.md](specs/api-contract.md)
+- [docs/harness/specs/pose-domain-glossary.md](specs/pose-domain-glossary.md) ← [docs/harness/specs/data-contract.md](specs/data-contract.md)
+- [docs/harness/specs/product-delivery-roadmap.md](specs/product-delivery-roadmap.md) ← [docs/harness/features/FEAT-013-saved-poses-albums-account-backed.md](features/FEAT-013-saved-poses-albums-account-backed.md)
+- [docs/harness/specs/product-delivery-roadmap.md](specs/product-delivery-roadmap.md) ← [docs/harness/plans/260831-0000-saved-poses-account-backed-v1/plan.md](plans/260831-0000-saved-poses-account-backed-v1/plan.md)
 - [docs/harness/specs/product-delivery-roadmap.md](specs/product-delivery-roadmap.md) ← [docs/harness/specs/product-feature-inventory.md](specs/product-feature-inventory.md)
 - [docs/harness/specs/product-feature-inventory.md](specs/product-feature-inventory.md) ← [docs/harness/decisions/DEC-001-extraction-provider-selection-policy.md](decisions/DEC-001-extraction-provider-selection-policy.md)
 - [docs/harness/specs/product-feature-inventory.md](specs/product-feature-inventory.md) ← [docs/harness/decisions/DEC-003-feat-003-scoped-parity-matrix.md](decisions/DEC-003-feat-003-scoped-parity-matrix.md)
@@ -894,6 +987,7 @@ generated: true
 - [docs/harness/specs/product-feature-inventory.md](specs/product-feature-inventory.md) ← [docs/harness/features/FEAT-010-integrate-firebase-revenuecat.md](features/FEAT-010-integrate-firebase-revenuecat.md)
 - [docs/harness/specs/product-feature-inventory.md](specs/product-feature-inventory.md) ← [docs/harness/features/FEAT-011-integrate-revenuecat-paid-access-and-in-app-purchases.md](features/FEAT-011-integrate-revenuecat-paid-access-and-in-app-purchases.md)
 - [docs/harness/specs/product-feature-inventory.md](specs/product-feature-inventory.md) ← [docs/harness/features/FEAT-012-restore-pose-and-camera-settings-across-relaunch.md](features/FEAT-012-restore-pose-and-camera-settings-across-relaunch.md)
+- [docs/harness/specs/product-feature-inventory.md](specs/product-feature-inventory.md) ← [docs/harness/features/FEAT-013-saved-poses-albums-account-backed.md](features/FEAT-013-saved-poses-albums-account-backed.md)
 - [docs/harness/specs/product-feature-inventory.md](specs/product-feature-inventory.md) ← [docs/harness/plans/260809-1806-camera-source-of-truth-convergence/plan.md](plans/260809-1806-camera-source-of-truth-convergence/plan.md)
 - [docs/harness/specs/product-feature-inventory.md](specs/product-feature-inventory.md) ← [docs/harness/plans/260809-2240-pose-reference-library-convergence/DEC-002-pose-reference-library-parity-matrix.md](plans/260809-2240-pose-reference-library-convergence/DEC-002-pose-reference-library-parity-matrix.md)
 - [docs/harness/specs/product-feature-inventory.md](specs/product-feature-inventory.md) ← [docs/harness/plans/260809-2240-pose-reference-library-convergence/plan.md](plans/260809-2240-pose-reference-library-convergence/plan.md)
@@ -906,6 +1000,7 @@ generated: true
 - [docs/harness/specs/product-feature-inventory.md](specs/product-feature-inventory.md) ← [docs/harness/plans/260826-0003-integrate-firebase-observability-and-remote-config-for-feat-010/plan.md](plans/260826-0003-integrate-firebase-observability-and-remote-config-for-feat-010/plan.md)
 - [docs/harness/specs/product-feature-inventory.md](specs/product-feature-inventory.md) ← [docs/harness/plans/260826-0003-integrate-revenuecat-paid-access-and-iap-for-feat-011/plan.md](plans/260826-0003-integrate-revenuecat-paid-access-and-iap-for-feat-011/plan.md)
 - [docs/harness/specs/product-feature-inventory.md](specs/product-feature-inventory.md) ← [docs/harness/plans/260831-0000-feat-012-relaunch-restore/plan.md](plans/260831-0000-feat-012-relaunch-restore/plan.md)
+- [docs/harness/specs/product-feature-inventory.md](specs/product-feature-inventory.md) ← [docs/harness/plans/260831-0000-saved-poses-account-backed-v1/plan.md](plans/260831-0000-saved-poses-account-backed-v1/plan.md)
 - [docs/harness/specs/product-feature-inventory.md](specs/product-feature-inventory.md) ← [docs/harness/reports/REP-001-project-documentation-and-harness-baseline.md](reports/REP-001-project-documentation-and-harness-baseline.md)
 - [docs/harness/specs/product-feature-inventory.md](specs/product-feature-inventory.md) ← [docs/harness/reports/REP-002-feature-gap-and-release-readiness-audit.md](reports/REP-002-feature-gap-and-release-readiness-audit.md)
 - [docs/harness/specs/product-feature-inventory.md](specs/product-feature-inventory.md) ← [docs/harness/reports/REP-003-pose-reference-library-convergence-delivery.md](reports/REP-003-pose-reference-library-convergence-delivery.md)
@@ -914,6 +1009,8 @@ generated: true
 - [docs/harness/specs/product-feature-inventory.md](specs/product-feature-inventory.md) ← [docs/harness/reports/REP-006-feat-003-pose-library-slice-delivery.md](reports/REP-006-feat-003-pose-library-slice-delivery.md)
 - [docs/harness/specs/product-feature-inventory.md](specs/product-feature-inventory.md) ← [docs/harness/reports/REP-007-feat-002-local-photo-gallery-delivery.md](reports/REP-007-feat-002-local-photo-gallery-delivery.md)
 - [docs/harness/specs/product-feature-inventory.md](specs/product-feature-inventory.md) ← [docs/harness/reports/REP-008-pose-domain-model-unification-delivery.md](reports/REP-008-pose-domain-model-unification-delivery.md)
+- [docs/harness/specs/product-feature-inventory.md](specs/product-feature-inventory.md) ← [docs/harness/specs/api-contract.md](specs/api-contract.md)
+- [docs/harness/specs/product-feature-inventory.md](specs/product-feature-inventory.md) ← [docs/harness/specs/data-contract.md](specs/data-contract.md)
 - [docs/harness/specs/product-feature-inventory.md](specs/product-feature-inventory.md) ← [docs/harness/specs/model-entity-catalogue.md](specs/model-entity-catalogue.md)
 - [docs/harness/specs/product-feature-inventory.md](specs/product-feature-inventory.md) ← [docs/harness/specs/pose-domain-glossary.md](specs/pose-domain-glossary.md)
 - [docs/harness/specs/product-feature-inventory.md](specs/product-feature-inventory.md) ← [docs/harness/specs/product-delivery-roadmap.md](specs/product-delivery-roadmap.md)
@@ -933,6 +1030,7 @@ generated: true
 - [docs/harness/specs/technical-architecture.md](specs/technical-architecture.md) ← [docs/harness/features/FEAT-009-configure-extraction-provider.md](features/FEAT-009-configure-extraction-provider.md)
 - [docs/harness/specs/technical-architecture.md](specs/technical-architecture.md) ← [docs/harness/features/FEAT-010-integrate-firebase-revenuecat.md](features/FEAT-010-integrate-firebase-revenuecat.md)
 - [docs/harness/specs/technical-architecture.md](specs/technical-architecture.md) ← [docs/harness/features/FEAT-012-restore-pose-and-camera-settings-across-relaunch.md](features/FEAT-012-restore-pose-and-camera-settings-across-relaunch.md)
+- [docs/harness/specs/technical-architecture.md](specs/technical-architecture.md) ← [docs/harness/features/FEAT-013-saved-poses-albums-account-backed.md](features/FEAT-013-saved-poses-albums-account-backed.md)
 - [docs/harness/specs/technical-architecture.md](specs/technical-architecture.md) ← [docs/harness/plans/260809-1805-iphone-mobile-mcp-test-harness/plan.md](plans/260809-1805-iphone-mobile-mcp-test-harness/plan.md)
 - [docs/harness/specs/technical-architecture.md](specs/technical-architecture.md) ← [docs/harness/plans/260809-1806-camera-source-of-truth-convergence/plan.md](plans/260809-1806-camera-source-of-truth-convergence/plan.md)
 - [docs/harness/specs/technical-architecture.md](specs/technical-architecture.md) ← [docs/harness/plans/260809-2240-pose-reference-library-convergence/DEC-002-pose-reference-library-parity-matrix.md](plans/260809-2240-pose-reference-library-convergence/DEC-002-pose-reference-library-parity-matrix.md)
@@ -946,6 +1044,7 @@ generated: true
 - [docs/harness/specs/technical-architecture.md](specs/technical-architecture.md) ← [docs/harness/plans/260823-0045-pose-domain-model-unification/plan.md](plans/260823-0045-pose-domain-model-unification/plan.md)
 - [docs/harness/specs/technical-architecture.md](specs/technical-architecture.md) ← [docs/harness/plans/260826-0003-integrate-firebase-observability-and-remote-config-for-feat-010/plan.md](plans/260826-0003-integrate-firebase-observability-and-remote-config-for-feat-010/plan.md)
 - [docs/harness/specs/technical-architecture.md](specs/technical-architecture.md) ← [docs/harness/plans/260831-0000-feat-012-relaunch-restore/plan.md](plans/260831-0000-feat-012-relaunch-restore/plan.md)
+- [docs/harness/specs/technical-architecture.md](specs/technical-architecture.md) ← [docs/harness/plans/260831-0000-saved-poses-account-backed-v1/plan.md](plans/260831-0000-saved-poses-account-backed-v1/plan.md)
 - [docs/harness/specs/technical-architecture.md](specs/technical-architecture.md) ← [docs/harness/reports/REP-001-project-documentation-and-harness-baseline.md](reports/REP-001-project-documentation-and-harness-baseline.md)
 - [docs/harness/specs/technical-architecture.md](specs/technical-architecture.md) ← [docs/harness/reports/REP-002-feature-gap-and-release-readiness-audit.md](reports/REP-002-feature-gap-and-release-readiness-audit.md)
 - [docs/harness/specs/technical-architecture.md](specs/technical-architecture.md) ← [docs/harness/reports/REP-003-pose-reference-library-convergence-delivery.md](reports/REP-003-pose-reference-library-convergence-delivery.md)
@@ -953,6 +1052,8 @@ generated: true
 - [docs/harness/specs/technical-architecture.md](specs/technical-architecture.md) ← [docs/harness/reports/REP-007-feat-002-local-photo-gallery-delivery.md](reports/REP-007-feat-002-local-photo-gallery-delivery.md)
 - [docs/harness/specs/technical-architecture.md](specs/technical-architecture.md) ← [docs/harness/reports/REP-008-pose-domain-model-unification-delivery.md](reports/REP-008-pose-domain-model-unification-delivery.md)
 - [docs/harness/specs/technical-architecture.md](specs/technical-architecture.md) ← [docs/harness/specs/api-catalogue.md](specs/api-catalogue.md)
+- [docs/harness/specs/technical-architecture.md](specs/technical-architecture.md) ← [docs/harness/specs/api-contract.md](specs/api-contract.md)
+- [docs/harness/specs/technical-architecture.md](specs/technical-architecture.md) ← [docs/harness/specs/data-contract.md](specs/data-contract.md)
 - [docs/harness/specs/technical-architecture.md](specs/technical-architecture.md) ← [docs/harness/specs/erd.md](specs/erd.md)
 - [docs/harness/specs/technical-architecture.md](specs/technical-architecture.md) ← [docs/harness/specs/model-entity-catalogue.md](specs/model-entity-catalogue.md)
 - [docs/harness/specs/technical-architecture.md](specs/technical-architecture.md) ← [docs/harness/specs/pose-domain-glossary.md](specs/pose-domain-glossary.md)
@@ -970,6 +1071,7 @@ generated: true
 - [docs/harness/specs/ui-ux-system.md](specs/ui-ux-system.md) ← [docs/harness/features/FEAT-008-use-published-poses.md](features/FEAT-008-use-published-poses.md)
 - [docs/harness/specs/ui-ux-system.md](specs/ui-ux-system.md) ← [docs/harness/features/FEAT-011-integrate-revenuecat-paid-access-and-in-app-purchases.md](features/FEAT-011-integrate-revenuecat-paid-access-and-in-app-purchases.md)
 - [docs/harness/specs/ui-ux-system.md](specs/ui-ux-system.md) ← [docs/harness/features/FEAT-012-restore-pose-and-camera-settings-across-relaunch.md](features/FEAT-012-restore-pose-and-camera-settings-across-relaunch.md)
+- [docs/harness/specs/ui-ux-system.md](specs/ui-ux-system.md) ← [docs/harness/features/FEAT-013-saved-poses-albums-account-backed.md](features/FEAT-013-saved-poses-albums-account-backed.md)
 - [docs/harness/specs/ui-ux-system.md](specs/ui-ux-system.md) ← [docs/harness/plans/260809-1805-iphone-mobile-mcp-test-harness/plan.md](plans/260809-1805-iphone-mobile-mcp-test-harness/plan.md)
 - [docs/harness/specs/ui-ux-system.md](specs/ui-ux-system.md) ← [docs/harness/plans/260809-1806-camera-source-of-truth-convergence/plan.md](plans/260809-1806-camera-source-of-truth-convergence/plan.md)
 - [docs/harness/specs/ui-ux-system.md](specs/ui-ux-system.md) ← [docs/harness/plans/260809-2240-pose-reference-library-convergence/DEC-002-pose-reference-library-parity-matrix.md](plans/260809-2240-pose-reference-library-convergence/DEC-002-pose-reference-library-parity-matrix.md)
@@ -981,6 +1083,7 @@ generated: true
 - [docs/harness/specs/ui-ux-system.md](specs/ui-ux-system.md) ← [docs/harness/plans/260819-2355-camera-only-convergence/plan.md](plans/260819-2355-camera-only-convergence/plan.md)
 - [docs/harness/specs/ui-ux-system.md](specs/ui-ux-system.md) ← [docs/harness/plans/260826-0003-integrate-revenuecat-paid-access-and-iap-for-feat-011/plan.md](plans/260826-0003-integrate-revenuecat-paid-access-and-iap-for-feat-011/plan.md)
 - [docs/harness/specs/ui-ux-system.md](specs/ui-ux-system.md) ← [docs/harness/plans/260831-0000-feat-012-relaunch-restore/plan.md](plans/260831-0000-feat-012-relaunch-restore/plan.md)
+- [docs/harness/specs/ui-ux-system.md](specs/ui-ux-system.md) ← [docs/harness/plans/260831-0000-saved-poses-account-backed-v1/plan.md](plans/260831-0000-saved-poses-account-backed-v1/plan.md)
 - [docs/harness/specs/ui-ux-system.md](specs/ui-ux-system.md) ← [docs/harness/reports/REP-001-project-documentation-and-harness-baseline.md](reports/REP-001-project-documentation-and-harness-baseline.md)
 - [docs/harness/specs/ui-ux-system.md](specs/ui-ux-system.md) ← [docs/harness/reports/REP-002-feature-gap-and-release-readiness-audit.md](reports/REP-002-feature-gap-and-release-readiness-audit.md)
 - [docs/harness/specs/ui-ux-system.md](specs/ui-ux-system.md) ← [docs/harness/reports/REP-003-pose-reference-library-convergence-delivery.md](reports/REP-003-pose-reference-library-convergence-delivery.md)
@@ -1001,18 +1104,19 @@ generated: true
 - docs/harness/decisions/DEC-006-remote-config-api-baseurl-policy.md 894cb8a84b41bd6b581312c0cfb78f53d9ffb85be7af8d2d504c77df7ea2fdd0
 - docs/harness/decisions/DEC-007-ios-sdk-integration-architecture.md 4676e8565b1af21675626a560cffbd275c0e0bea4d886366eb710d20ce2a50e3
 - docs/harness/decisions/DEC-008-revenuecat-pricing-and-offerings.md 79caf971f52a1934ca27cea1e3a0b7bba5e8eb12249f800af28c9ce88ea3ef2a
-- docs/harness/features/FEAT-001-capture-a-photo-on-mobile.md bee3776f0e2798e1c256ccd36a7c8faf9e146aa72e9b94c87436385b1d87ed87
-- docs/harness/features/FEAT-002-manage-a-local-photo-gallery.md d6d68b249564c57717809756caf324d436da076f023d45edfba2d6b29a80152a
-- docs/harness/features/FEAT-003-browse-and-search-published-poses.md 662286161472579db3bb41205f8da99d69b20c10d48ea02064fcd6bb1beb7d0c
-- docs/harness/features/FEAT-004-extract-reusable-pose-images.md 24e42183120ae975a4f14a78d34229168a39a2390298edffb0dd46b6cbcb4357
-- docs/harness/features/FEAT-005-manage-a-pose-guide.md e002b65b9c9d550ba94ae4e7cd8272fa0a27c67462a3bed086387b54b67d071c
-- docs/harness/features/FEAT-006-publish-a-pose.md dc4c0d238a3ae96b5d31c5557fb874e92d387682a0e037da31e6ce294d74b67a
-- docs/harness/features/FEAT-007-operate-pose-content-from-admin-web.md 59768ee0775d78bb73d24a5b409272142d6355cfde2c6ccde98ea031a2e27984
-- docs/harness/features/FEAT-008-use-published-poses.md 573f4902c15c5dab6181da44c72f8f4229313e195906df50b956777a9351fe0d
-- docs/harness/features/FEAT-009-configure-extraction-provider.md b3dd2441d5bab684da98e8f2965d722a6dcb17fb73cbd993f46d4c9b643ba19d
+- docs/harness/features/FEAT-001-capture-a-photo-on-mobile.md 17ea218902eddf92c7137c0a4f137a8f3fa70571e5294f65457460ad5ddf5da7
+- docs/harness/features/FEAT-002-manage-a-local-photo-gallery.md 70df2b9bd6dcc9a316aa2dce5088e73f36ecc3bb8cd1f5d28353a5d58cbd169a
+- docs/harness/features/FEAT-003-browse-and-search-published-poses.md 86a7edc4a3e25149320af46a6f78c03e1928ba94699d1e2d1952e89603de713e
+- docs/harness/features/FEAT-004-extract-reusable-pose-images.md 4c47b287b4dfe7f579804ed1e66866cfeab6f2052856573e7c5f9f3437b36af9
+- docs/harness/features/FEAT-005-manage-a-pose-guide.md 95a9e4cf3b9ad40402bdb58aee9942eba9bcbd95bce010eb42d9714237f2ec8f
+- docs/harness/features/FEAT-006-publish-a-pose.md 675fda4976001094f68886308a42af09306e65226b6d2aacc81f428a3fb981eb
+- docs/harness/features/FEAT-007-operate-pose-content-from-admin-web.md 6d4b84e8d01974b4a0b45a2bead9a80d9336b6ad3ebac200250edbb6ad97636e
+- docs/harness/features/FEAT-008-use-published-poses.md 92ffa6c7fff0a548fdbad07c0826f8156400902bb4fcd555472507717c8052e9
+- docs/harness/features/FEAT-009-configure-extraction-provider.md 8d037fdaa1279728d166222e3516e6519225bc7851d21dc3cda0c3443e40ea60
 - docs/harness/features/FEAT-010-integrate-firebase-revenuecat.md 693d278a0010056cc8095bfe6f71be30bc767ec1d260d4a76fc2061ea0bccf3b
 - docs/harness/features/FEAT-011-integrate-revenuecat-paid-access-and-in-app-purchases.md 12390d69c33699fd4eeb806e8935ff2c625f6f9033da687de2cb88bf4aa7d276
-- docs/harness/features/FEAT-012-restore-pose-and-camera-settings-across-relaunch.md 65c36c379eff112616c311f33d73de5e6d392025f8a6b043068b9dbd168a48c2
+- docs/harness/features/FEAT-012-restore-pose-and-camera-settings-across-relaunch.md b58553ffd91d1d1b7af3ea12d3b6a32d2623ef203988e7c0957ad78bc132645f
+- docs/harness/features/FEAT-013-saved-poses-albums-account-backed.md a0390a63138fb97f9a82ff7cc001f9431d80ec45b85390f4955732c89b9f81f7
 - docs/harness/plans/260809-1805-iphone-mobile-mcp-test-harness/plan.md cf1f1fa688445a6ed1cf4b5969b0997d7173309b55373e83601f1b0f7c2825e9
 - docs/harness/plans/260809-1805-iphone-mobile-mcp-test-harness/work-item-01-establish-real-iphone-and-mobile-mcp-preflight.md bcdbeafd41c8f9498376285d49c64354a1477ab4f70cdfe9c858cf564f0f2136
 - docs/harness/plans/260809-1805-iphone-mobile-mcp-test-harness/work-item-02-add-reproducible-build-install-and-launch-workflow.md 5db3668d1d82aef00c76716c4d8c4e104e7f0ba9b912c26f24978213b4d4f8c3
@@ -1034,27 +1138,27 @@ generated: true
 - docs/harness/plans/260809-2240-pose-reference-library-convergence/work-item-05-make-personal-pose-deletion-atomic-and-recoverable.md 9e524e219166225d4c1bef896628082db49d14bb35fa9a4405b0045fe19bfa2b
 - docs/harness/plans/260809-2240-pose-reference-library-convergence/work-item-06-verify-library-behavior-and-platform-parity.md 922e8b0a9c9d70a9fe39e08a4a78c818b4c601cdf5f3a55209b9a1a39e297763
 - docs/harness/plans/260809-2241-selected-pose-camera-handoff/plan.md 4217287beec3194485f1f7422ec5a083e983e0d31131ef8f95c7f01bd56b0f7b
-- docs/harness/plans/260809-2241-selected-pose-camera-handoff/work-item-01-freeze-behavior-contract-and-state-matrix.md c761d28ed97bec15ef0a8c847eb4f8a2f63d632d3748b0052ccb05b61b6b2991
+- docs/harness/plans/260809-2241-selected-pose-camera-handoff/work-item-01-freeze-behavior-contract-and-state-matrix.md 032b6fdfe4e17c85c02afaa4dd7c1b31eb18d55a13f014266875e417d8b529d1
 - docs/harness/plans/260809-2241-selected-pose-camera-handoff/work-item-02-persist-and-restore-pose-and-camera-settings-snapshot.md fd5604c7aba415f7a4c80b1758cb95a79dc29955d30a07947e55bbb2c3f6c77b
 - docs/harness/plans/260809-2241-selected-pose-camera-handoff/work-item-03-integrate-select-replace-clear-relaunch-and-capture.md 30cce51a610063daa7207163d9b22d7b5f1b8a98da8599df3617b1548932a193
 - docs/harness/plans/260809-2241-selected-pose-camera-handoff/work-item-04-verify-cold-relaunch-and-settings-on-device.md f4dfb00bcd6e81b6c16b766b96faf00f09f9b828d7f2d42cd613386e746e057e
-- docs/harness/plans/260816-2240-higgsfield-cli-parallel-extract-provider/plan.md bf3a64a5df10b99808b57749b5a42369197e15d9ac65246978fa2fb31ad4c4e4
-- docs/harness/plans/260816-2240-higgsfield-cli-parallel-extract-provider/work-item-01-close-feat-004-and-feat-007-authority-for-parallel-provider-and-async-extract-jobs.md 96c5d5abfd34f850e4048d80ce3194a10e3c5e223976b0e51ff7321dafa6d328
+- docs/harness/plans/260816-2240-higgsfield-cli-parallel-extract-provider/plan.md b40cddfa32d25654c8445f952731dd3c888c873a6d6989b92a3c74920f11de6e
+- docs/harness/plans/260816-2240-higgsfield-cli-parallel-extract-provider/work-item-01-close-feat-004-and-feat-007-authority-for-parallel-provider-and-async-extract-jobs.md 086e60b96eb6b0ec251603d663c8200fa430a2eca0e9af712367c28850ed1315
 - docs/harness/plans/260816-2240-higgsfield-cli-parallel-extract-provider/work-item-02-land-poseextractorprovider-factory-for-gemini-and-higgsfield-cli.md 05d89f653ca7eaf83c44a38d7ab1b2be9878b4d652c7b7750945c9f5419b0f3e
 - docs/harness/plans/260816-2240-higgsfield-cli-parallel-extract-provider/work-item-03-route-extract-through-extractionjob-worker-with-gpt-image-2-cli-spawn.md a7bddd231fc284f008c81e4cb6e307a06a29b113b8c362d5daa4f988d3cd592f
 - docs/harness/plans/260816-2240-higgsfield-cli-parallel-extract-provider/work-item-04-add-admin-provider-toggle-only.md 17cff841925fb837c004e4a84c3ca7a96ac4bdbc84a85f1d3900f1da6a36afe6
 - docs/harness/plans/260816-2240-higgsfield-cli-parallel-extract-provider/work-item-05-docker-railway-cli-install-credentials-volume-and-s1-auth-probe-runbook.md 773c3bb3a8b1734e61acd2d6f8b3b5ee35843704083ea7a8878106d30c62a38b
 - docs/harness/plans/260816-2240-higgsfield-cli-parallel-extract-provider/work-item-06-spike-s3-cli-keep-alive-refresh-on-writable-volume-48h-evidence.md b3a9582fd6e36a978b5b5c685f7cbdff39a2323d67f9e34647ed811c9cb056a3
-- docs/harness/plans/260816-2240-higgsfield-cli-parallel-extract-provider/work-item-07-verify-job-extract-provider-switch-error-mapping-and-s1-probe.md 5b75cb4cddd7050e18deb0c76427946a32bca774fe70a598c79fab168937e77c
+- docs/harness/plans/260816-2240-higgsfield-cli-parallel-extract-provider/work-item-07-verify-job-extract-provider-switch-error-mapping-and-s1-probe.md 32bccbe2a8631e2a5489556d8b0878055596812ae4199dae073909963bb361ec
 - docs/harness/plans/260818-2105-feat-003-pose-library-slice/plan.md b2476d85e5433027952ebe9191856ae893c8ac242725572bcb285f32da4d5c2a
 - docs/harness/plans/260818-2105-feat-003-pose-library-slice/work-item-01-close-feat-003-scoped-authority-and-parity-matrix.md a5a0d676700e5fd94eadee8a40ccbd6d6e54a3aa7b8f3182141c5c4b086f1c71
 - docs/harness/plans/260818-2105-feat-003-pose-library-slice/work-item-02-wire-create-pose-plus-button-to-camera-capture-entry.md b2e92bf748f461994da9b4388deea01dfc96990855cb8bdf647620c7dc9cd60d
 - docs/harness/plans/260818-2105-feat-003-pose-library-slice/work-item-03-regression-verify-poses-list-browse-and-retain-search-affordance.md a4e8158ccb2af731b8cc5caec2cf0e839f6fa057f3ffe83f8cec5a7dc7927eee
 - docs/harness/plans/260818-2105-feat-003-pose-library-slice/work-item-04-regression-verify-pose-detail-and-try-pose-prepare-emit.md 90323930f333f8b6a0093f7142a4df4b0be7cb8c40886cc1d4096e81290cbfe4
 - docs/harness/plans/260818-2105-feat-003-pose-library-slice/work-item-05-verify-scoped-feat-003-evidence-and-camera-handoff-boundary.md 4237f365330dae16c7df0dd46aec73af6d9ee521ee542ea3e4c2403917b300ac
-- docs/harness/plans/260818-2112-community-title-search-production/plan.md ff67aded7b8ec4d2a0d2171ef025ec93806bc59858b493b10526f8fe687593d5
+- docs/harness/plans/260818-2112-community-title-search-production/plan.md 91f93f7788806eea1ac28922e9435109cb9d85607404f7b4f4842db0daf0ba73
 - docs/harness/plans/260818-2112-community-title-search-production/work-item-01-close-feat-003-search-authority-and-record-maintainer-decisions.md 6a1c9743f92967c9e9c6d08c2bd56334682ba78ca4a4fbca9164d83e6feeb6ca
-- docs/harness/plans/260818-2112-community-title-search-production/work-item-02-backend-title-search-q-with-pagination-limit-20.md 2f4169d1de21770096d3b70dcec125df95da099b5fda92bf2c51c67fdac1fc4b
+- docs/harness/plans/260818-2112-community-title-search-production/work-item-02-backend-title-search-q-with-pagination-limit-20.md 3ed54e66b00342113808d1706f2e19f074358b7a498e190fbe00d60a355f369a
 - docs/harness/plans/260818-2112-community-title-search-production/work-item-03-mobile-community-search-repository-mock-first-with-paging.md 5bf9e6d910df4f2d4bc202dd30b4ffb75a35df024ed1a1f22d46c0dcf6406ef4
 - docs/harness/plans/260818-2112-community-title-search-production/work-item-04-search-screen-prototype-parity-and-paging-ux.md e4028ed9fadd3d0e79252c4cf9a9d41ec21c4290ae7ed0dbdcd6ebfca84f2cb4
 - docs/harness/plans/260818-2112-community-title-search-production/work-item-05-end-to-end-search-verification.md 8c4cde5c611abb1ea42650dc5e0056ac713d724957a61868a2fde4685a2a73f1
@@ -1072,13 +1176,13 @@ generated: true
 - docs/harness/plans/260819-2355-camera-only-convergence/work-item-04-complete-native-ios-controls-and-lifecycle-behavior.md 2ead8f80513b18f321b17d731c8b8e2d596e4c13da3a036f72f4801c9fff91b7
 - docs/harness/plans/260819-2355-camera-only-convergence/work-item-05-make-capture-persistence-atomic-and-recoverable.md 76235e50f4fd17b0e3b47bb9a3b071d3a1882ba1c674afffc76e3a2f78ae2384
 - docs/harness/plans/260819-2355-camera-only-convergence/work-item-06-verify-camera-behavior-from-unit-tests-through-real-iphone.md bd5415f997a8c32e8db20ea06ea64da94c1e2e900a4f156e748eff7c2b7386ea
-- docs/harness/plans/260823-0045-pose-domain-model-unification/plan.md 8b100cca92bc5fa40f54be3460ea0613c0bc58d4f05a6b857d75db98da971771
-- docs/harness/plans/260823-0045-pose-domain-model-unification/work-item-01-glossary-and-canonical-pose-domain-model.md 0bdef5c230a8d64cb3bedbc2fba30dad10cb34de4cd94f3faeaf684c49d14d6f
-- docs/harness/plans/260823-0045-pose-domain-model-unification/work-item-02-data-specs-entities-enums-and-erd-refactor.md b06fbd2e336a3227fdbefae5dbbc7182b9d2530a3dbec3e81bc22140b4fc1d9c
-- docs/harness/plans/260823-0045-pose-domain-model-unification/work-item-03-api-specs-openapi-and-module-contracts-refactor.md 946b5fe6107e786cefc50104a241800b7a4bebda447eff684d1fc3c5f7977d98
+- docs/harness/plans/260823-0045-pose-domain-model-unification/plan.md b256712f4bec69d0cbb9c3473bd494cd9b5f9551dce2a9bfaeed68aa2a25c5d0
+- docs/harness/plans/260823-0045-pose-domain-model-unification/work-item-01-glossary-and-canonical-pose-domain-model.md 49de9bb7c314dbb93095d0d8065a9eecf4a516bc3b0c7d41c8391476590ea684
+- docs/harness/plans/260823-0045-pose-domain-model-unification/work-item-02-data-specs-entities-enums-and-erd-refactor.md cdff700b95da393abf65609c0eb575dbd7b1e5754cbe081fd76b43fbf512e493
+- docs/harness/plans/260823-0045-pose-domain-model-unification/work-item-03-api-specs-openapi-and-module-contracts-refactor.md 3e4c7585e0dd9496b63d600c1a25da3c78bc05c3acc7d0e042fc42898cc6d5de
 - docs/harness/plans/260823-0045-pose-domain-model-unification/work-item-04-harness-specs-and-features-alignment.md fbdd9370ac1a2c876703cec3e20c2bd0db872920567a96fcecc978fd2973ee1b
 - docs/harness/plans/260823-0045-pose-domain-model-unification/work-item-05-harness-validation-and-index-graph-build.md 915d7bf82b322a91701478a44c65e8949f3e972dcfb8c2e3da7fbe28aed116c4
-- docs/harness/plans/260823-0215-runtime-pose-domain-migration/plan.md 88693d3cbe610053897f9fa3e32dac7c509f7f0155f0b59747e30fd09d8f499a
+- docs/harness/plans/260823-0215-runtime-pose-domain-migration/plan.md 32295e9454ed6e89bf93743e192f6ea055b30d0bfab3eca96a7e58f06e3b97fd
 - docs/harness/plans/260823-0215-runtime-pose-domain-migration/work-item-01-forensic-and-db-shared-core.md 8392278e1a2dca17e7429c091b027c858031e529b9d3cf874b235b568ae6cb55
 - docs/harness/plans/260823-0215-runtime-pose-domain-migration/work-item-02-backend-pose-extract.md 582123e9f49a442b538d4b30540e181352df35cc6a681213deea9a40286446d0
 - docs/harness/plans/260823-0215-runtime-pose-domain-migration/work-item-03-mobile-compose.md aa31fa391b7a37ed5636b9fe8b99285d0358d07f122a73c5d8d30e95b12e8003
@@ -1092,11 +1196,17 @@ generated: true
 - docs/harness/plans/260826-0003-integrate-revenuecat-paid-access-and-iap-for-feat-011/work-item-02-add-native-revenuecat-purchase-core-and-entitlement.md dc4ee9edd7d6f01c650f44eb8d0972b6285e027c47fd3e0e54b83ccde0618232
 - docs/harness/plans/260826-0003-integrate-revenuecat-paid-access-and-iap-for-feat-011/work-item-03-build-paid-access-paywall-and-triggers.md 982c0f565a794a1c88c8a7279478e588d6b643f4ab55e3e441c5de1812ed3bd8
 - docs/harness/plans/260826-0003-integrate-revenuecat-paid-access-and-iap-for-feat-011/work-item-04-verify-iap-states-sandbox-and-ios-build.md d6f89d2852f2a5d6e0b8e76dcf2e56ec06952dd148c70c7fa7124105bdbc785a
-- docs/harness/plans/260831-0000-feat-012-relaunch-restore/plan.md ead77c8b045d867b5cf89b29a3d48fb8ef1420d76228b831dabd0023d69af196
+- docs/harness/plans/260831-0000-feat-012-relaunch-restore/plan.md c8768b958d5dfdb929856c2dc1451730536f1436a5d374cc30cf80969416959e
 - docs/harness/plans/260831-0000-feat-012-relaunch-restore/work-item-01-freeze-restore-contract-and-state-matrix.md 9e1d8c912c6f0e642b3d3d554639a72f950e97ee4cd98ed8fcebaf1dfa0d8d82
 - docs/harness/plans/260831-0000-feat-012-relaunch-restore/work-item-02-persist-and-restore-existing-pose-plus-eight-camera-settings.md 4a270b47db836f95825297e7f79d48ccde3198f6109b6d4d587edaea0757099e
 - docs/harness/plans/260831-0000-feat-012-relaunch-restore/work-item-03-integrate-select-replace-clear-and-relaunch-behavior.md b1091d3d2d790f21e19d007f3ee09e5f945aefccd3798c86f6ed696ab036e118
 - docs/harness/plans/260831-0000-feat-012-relaunch-restore/work-item-04-verify-cold-relaunch-on-real-iphone-and-regression.md 895416455dc849645fd16901449e30404d1f0c3bda9d82995e0a86aacd30730a
+- docs/harness/plans/260831-0000-saved-poses-account-backed-v1/plan.md ca5cf3270d20f3d2144c2f7034223356e09742566e244c0d5a66c9996c09d923
+- docs/harness/plans/260831-0000-saved-poses-account-backed-v1/work-item-01-freeze-google-supabase-account-session-authority.md 7ef91448c40440262f1206e0e75e4ec36ef2f01c19949d8a1240a2bca1cc2c0d
+- docs/harness/plans/260831-0000-saved-poses-account-backed-v1/work-item-02-add-account-infrastructure-and-session-boundary.md 5f3433b27b0608c050263eb04b2f84299338b41b62315892da2e9c08819f7d95
+- docs/harness/plans/260831-0000-saved-poses-account-backed-v1/work-item-03-add-savedentry-data-and-saved-api.md 444e310ab1a92a939c74b6a26f0e5ce7c6cba31fca68919beef1828d4e84ffd5
+- docs/harness/plans/260831-0000-saved-poses-account-backed-v1/work-item-04-build-mobile-saved-ux-and-sign-in-gating.md 8f1d866e945f4d0c6ccb941d92222a5b2aaaa5508896b595eaaf858baea52326
+- docs/harness/plans/260831-0000-saved-poses-account-backed-v1/work-item-05-verify-saved-integration-and-regression-evidence.md af6b4095734b45e5c0ea889498a2ccb404714a4332fc2bc9560fd9c256f80917
 - docs/harness/reports/REP-001-project-documentation-and-harness-baseline.md 27da804b5815c0b874d18402b3548967f18b606339b0052dc28d074377e01176
 - docs/harness/reports/REP-002-feature-gap-and-release-readiness-audit.md 2ff3398b96f6f3d6e65fa31b301c1713255fba5df04b51600d14314e0ac8f7c0
 - docs/harness/reports/REP-003-pose-reference-library-convergence-delivery.md 23e38f73ed06511fdc0f21713efe7fb1b6cd8a287fa2edbc5daa30522af2810c
@@ -1104,16 +1214,18 @@ generated: true
 - docs/harness/reports/REP-005-community-title-search-production-delivery.md 2661904ef05a852991e853df33f417f907a4fa7952bf4d5887c8c391e2858006
 - docs/harness/reports/REP-006-feat-003-pose-library-slice-delivery.md 1099ad903e86ee5426ac9606dd33fdb7f84a0135bba9943aae17a2e371f6d846
 - docs/harness/reports/REP-007-feat-002-local-photo-gallery-delivery.md 3f1bb0b2fca115f3273fd135ba457223862a5d9375b00776ec591b06c15067aa
-- docs/harness/reports/REP-008-pose-domain-model-unification-delivery.md 577daddd08ec72d5126a31285053b3b564d07504dfea442ef7a91a8ee3dcea33
+- docs/harness/reports/REP-008-pose-domain-model-unification-delivery.md 8e1a7e96f93af15e928be8c087ed309256fc0b279943e2ce850f7385e5026f7c
 - docs/harness/reports/REP-009-runtime-pose-domain-migration.md b702653b24390a63134b84144faab91d3222118b992ae99b9fa68c6a8db73a3f
 - docs/harness/reports/REP-010-phase2-live-community-forensic-baseline.md 0fb35712496bd3cb455e3aa273ad2bcc351f66b309c2c9a8c17568cf030c61cc
 - docs/harness/reports/REP-011-firebase-observability-remote-config-delivery.md 7d1f7cc182de073821ebb0c9a958874d88dbdd144f5311d081ae6d1bb5e35933
 - docs/harness/reports/REP-012-feat-012-relaunch-restore-delivery.md 288f70a36d2af4318fdb42fcbb5bcb39bc35d54337bb157679cf2fcb13fc2642
-- docs/harness/specs/api-catalogue.md bb3d6950ca2e5189f18f0158d91043facc6a26420c82e7f3ef69dbc852643e0a
-- docs/harness/specs/erd.md af7ee4d70b71423893a064d143e45ac0188517ede0bea7fe16974101e45506e4
-- docs/harness/specs/model-entity-catalogue.md a78a7be0321a1d8e89c53233e83300dfa0b7edfefa347560346059b53c3e8fe5
-- docs/harness/specs/pose-domain-glossary.md ea1a4a967c911b3eea0e9aeb759e4e5ee53109b497bb848ca121fa8d0cfae155
-- docs/harness/specs/product-delivery-roadmap.md c95bfc9d7064cd0e32e9508b46222418c844fbc83636dd73254f57fb4cffe055
-- docs/harness/specs/product-feature-inventory.md 6c6234329b94ef62c7865897d124b2da5217e2ea9f786a7fec6bc4fc4f05b2a0
-- docs/harness/specs/technical-architecture.md 4312b254071a02ba72e070cc818bd3fe638d6a115c080c6fc7e8fd6a70275bf8
-- docs/harness/specs/ui-ux-system.md f4d53d8ccc203f9feaf182291ad0cdf69b5fca7d202dda8b10bab6e44d4a031a
+- docs/harness/specs/api-catalogue.md 8aab3fe300056cd563a351b27f20aa237fcae7389f3fe934a4ad5f7583ada352
+- docs/harness/specs/api-contract.md efe8ab1081e778fd45c5f6cd3f0d3440659047b36ea796fb84745f772e97c5fa
+- docs/harness/specs/data-contract.md 88fb767e0090795527df001a33151a43c1b5886ff4b8afb2fbb38efc137a94c1
+- docs/harness/specs/erd.md 427c14f10eede19476cb6cc8897721bb369c32d60aca355d299feb6f1e98380a
+- docs/harness/specs/model-entity-catalogue.md 84a7a5fe5a494002c07524e8b3725505754bf3725729a03fb6728cb0fddc5ffc
+- docs/harness/specs/pose-domain-glossary.md b87dd5675b21d57dff6395b3bb6cead0fc17f729aebc74a873ef9f68ace91145
+- docs/harness/specs/product-delivery-roadmap.md e8bbeff865b886ae1931aaf96f3ddbe8ea39cb1fe40ba3661ae4a5e35fafa013
+- docs/harness/specs/product-feature-inventory.md dd4fafe20ad6d08194aae38176cefc8c21b12dee9b5ac17ac5df77bec754b4b5
+- docs/harness/specs/technical-architecture.md 3f49d3edee882f08001d9b2748a4c2b7ae06e2ed4153f61089f7e26a6a14a879
+- docs/harness/specs/ui-ux-system.md 1daabd20f4ef68d5e4665b3d8eeca5c67c8f55778e2c27b2981b16db8f1257ec

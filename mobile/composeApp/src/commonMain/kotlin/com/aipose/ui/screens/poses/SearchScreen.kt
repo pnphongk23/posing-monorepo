@@ -226,7 +226,7 @@ class SearchScreen(
                     }
                     Text(
                         text = "Search",
-                        style = AiPoseTypography.Heading2,
+                        style = AiPoseTypography.NavigationTitle,
                         color = AiPoseColors.Foreground,
                     )
                 }
@@ -247,11 +247,11 @@ class SearchScreen(
                         placeholder = {
                             Text(
                                 "Type a title",
-                                style = AiPoseTypography.Body,
+                                style = AiPoseTypography.Input,
                                 color = AiPoseColors.Subtext,
                             )
                         },
-                        textStyle = AiPoseTypography.Body,
+                          textStyle = AiPoseTypography.Input,
                         singleLine = true,
                         colors = TextFieldDefaults.outlinedTextFieldColors(
                             focusedBorderColor = AiPoseColors.Foreground,
@@ -333,7 +333,7 @@ class SearchScreen(
                     ) {
                         Text(
                             text = emptySearchTitle(),
-                            style = AiPoseTypography.BodyBold,
+                            style = AiPoseTypography.Control,
                             color = AiPoseColors.Foreground,
                             modifier = Modifier.testTag("empty-search-title"),
                         )

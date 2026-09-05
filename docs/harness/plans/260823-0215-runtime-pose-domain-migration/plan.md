@@ -33,7 +33,7 @@ createdBy: Team A
 
 - **Plan ID:** 260823-0215
 - **Status:** in progress
-- **Authority:** Canonical Pose Domain Model in `docs/spec/data/domain-model.md`
+- **Authority:** Canonical Pose Domain Model in `docs/harness/specs/data-contract.md#domain-model`
 
 ## Goal
 

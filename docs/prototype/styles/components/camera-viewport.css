@@ -150,7 +150,10 @@
   width: 36px;
   height: 36px;
   padding: 0;
-  font-size: var(--nb-font-size-xs);
+  font-size: var(--nb-type-caption-size);
+  line-height: var(--nb-type-caption-leading);
+  font-weight: var(--nb-type-caption-weight);
+  letter-spacing: var(--nb-type-caption-tracking);
   min-height: 36px;
   cursor: pointer;
 }

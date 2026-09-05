@@ -1,5 +1,8 @@
 package com.aipose.data
 
+import com.aipose.data.auth.SessionBoundary
+import com.aipose.data.auth.installSessionBoundary
+import com.aipose.data.auth.platformSecureTokenStorage
 import com.aipose.data.remote.PoseApiService
 import com.aipose.data.remote.sharedJson
 import io.ktor.client.HttpClient
@@ -20,16 +23,20 @@ object PoseServiceLocator {
      */
     var preparedReference: PreparedPoseReference? = null
 
+    val sessionBoundary: SessionBoundary by lazy {
+        SessionBoundary(platformSecureTokenStorage())
+    }
+
     val httpClient: HttpClient by lazy {
         HttpClient {
             install(ContentNegotiation) {
                 json(sharedJson)
             }
-        }
+        }.also { it.installSessionBoundary(sessionBoundary) }
     }
 
     val apiService: PoseApiService by lazy {
-        PoseApiService(httpClient, baseUrl)
+        PoseApiService(httpClient, baseUrl, sessionBoundary)
     }
 
     // FEAT-010 / DEC-006: lazy so that merely touching this locator does not
@@ -38,6 +45,11 @@ object PoseServiceLocator {
     // so the API service always captures the resolved endpoint.
     val communitySearchRepository: CommunitySearchRepository by lazy {
         LiveCommunitySearchRepository(apiService)
+    }
+
+    // WI-03/WI-04: account-scoped Saved collection over the same bearer seam.
+    val savedPosesRepository: SavedPosesRepository by lazy {
+        LiveSavedPosesRepository(apiService)
     }
 
     val database: AiPoseDatabase by lazy {

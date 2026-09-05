@@ -4,11 +4,10 @@
   align-items: center;
   justify-content: center;
   font-family: var(--nb-font-family);
-  font-weight: var(--nb-font-weight-bold);
-  font-size: var(--nb-font-size-2xs);
-  line-height: var(--nb-line-height-tight);
-  letter-spacing: var(--nb-tracking-label);
-  text-transform: uppercase;
+  font-weight: var(--nb-type-meta-label-weight);
+  font-size: var(--nb-type-meta-label-size);
+  line-height: var(--nb-type-meta-label-leading);
+  letter-spacing: var(--nb-tracking-none);
   padding: 5px var(--nb-space-sm);
   border: var(--nb-border-thin);
   border-radius: var(--nb-radius-small);
@@ -23,7 +22,7 @@
 .nb-tag--green { background-color: var(--nb-color-accent-green); }
 
 .nb-tag--badge {
-  font-size: var(--nb-font-size-xs);
+  font-size: var(--nb-type-meta-label-size);
   padding: 6px 10px;
   gap: var(--nb-space-xs);
   border-radius: var(--nb-radius-small);
@@ -40,6 +39,6 @@
 .nb-tag--pill {
   border-radius: var(--nb-radius-large);
   padding: var(--nb-space-sm) var(--nb-space-compact);
-  font-size: var(--nb-font-size-xs);
+  font-size: var(--nb-type-meta-label-size);
   gap: 6px;
 }

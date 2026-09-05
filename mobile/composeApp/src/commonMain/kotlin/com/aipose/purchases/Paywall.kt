@@ -33,6 +33,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.aipose.ui.components.NeoBrutalismContainer
 import com.aipose.ui.components.PrimaryButton
@@ -85,7 +86,7 @@ fun PaywallScreen(
             verticalArrangement = Arrangement.spacedBy(Spacing.md),
         ) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text("Premium access", style = AiPoseTypography.Heading2, color = AiPoseColors.Foreground)
+                Text("Premium access", style = AiPoseTypography.ScreenTitle, color = AiPoseColors.Foreground)
                 NeoBrutalismContainer(
                     modifier = Modifier.size(44.dp),
                     shape = RoundedCornerShape(10.dp),
@@ -121,7 +122,7 @@ fun PaywallScreen(
                         onClick = { selectedProduct = product.identifier },
                     ) {
                         Column(Modifier.fillMaxWidth().padding(Spacing.md)) {
-                            Text(if (product.isAnnualHighlight) "$label • Recommended" else label, style = AiPoseTypography.BodyBold, color = AiPoseColors.Foreground)
+                            Text(if (product.isAnnualHighlight) "$label • Recommended" else label, style = AiPoseTypography.Body.copy(fontWeight = FontWeight.Medium), color = AiPoseColors.Foreground)
                             Text(listOfNotNull(product.localizedPrice, product.period?.let { "/ $it" }).joinToString(" "), style = AiPoseTypography.Body, color = AiPoseColors.Foreground)
                         }
                     }

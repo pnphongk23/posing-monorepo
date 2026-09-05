@@ -6,12 +6,12 @@ import com.aipose.data.remote.CommunityPose
 
 /**
  * Lightweight, immutable preview carried on pose navigation so the destination
- * detail hero composes immediately and deterministically from the tapped card —
- * before, and independent of, the detail HTTP round-trip.
+ * detail hero composes immediately and deterministically from the tapped card,
+ * with the carried [CommunityPose] projection initializing the detail directly.
  *
  * The screen keeps the exact same [PosePreview.imageModel] the card rendered and
- * that the enriched detail reveals (see [posePreviewModel]), so the hero is
- * never replaced or flashed when the fetch completes — HTTP only enriches below it.
+ * that the initialized detail reveals (see [posePreviewModel]), so the hero is
+ * never replaced or flashed; image preparation remains a separate later action.
  *
  * Deliberately holds stable identifiers + crop metadata only (a remote URL /
  * resolved model, aspect ratio, corner radius) and NEVER a decoded bitmap.
@@ -28,6 +28,8 @@ data class PosePreview(
     val imageModel: String?,
     val aspectRatio: Float,
     val cornerRadius: Dp,
+    /** Full published projection carried from the owning list into detail. */
+    val communityPose: CommunityPose? = null,
 ) {
     /** Stable shared-transition key, kept aligned with `pose:<poseId>`. */
     val transitionKey: String get() = "pose:$poseId"
@@ -54,8 +56,8 @@ fun localPosePreview(
 /**
  * Deterministic preview for a published [CommunityPose]. Uses the stable remote
  * thumbnail URL (falling back to the skeleton URL), never a local cache path or
- * a decoded bitmap — so it is stable across the detail fetch and matches the
- * enrich-time [posePreviewModel] projection (hero is never replaced/flashed).
+ * a decoded bitmap — so it remains stable while detail initializes from the
+ * carried projection and matches the [posePreviewModel] projection.
  */
 fun communityPosePreview(
     pose: CommunityPose,
@@ -68,4 +70,5 @@ fun communityPosePreview(
         ?: pose.skeletonUrl.takeIf { it.isNotBlank() },
     aspectRatio = aspectRatio,
     cornerRadius = cornerRadius,
+    communityPose = pose,
 )

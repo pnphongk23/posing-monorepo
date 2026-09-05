@@ -39,7 +39,7 @@ relationships:
     - mobile/composeApp/src/commonMain/kotlin/com/aipose/camera/CameraScreen.kt
     - mobile/composeApp/src/commonMain/kotlin/com/aipose/camera/CameraContract.kt
     - mobile/composeApp/src/commonMain/kotlin/com/aipose/camera/CameraLayoutModel.kt
-    - docs/spec/data/entities/prepared-pose-reference.md
+    - docs/harness/specs/data-contract.md
 created: 2026-08-31T00:00:00+07:00
 createdBy: Harness CLI
 ---
