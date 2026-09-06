@@ -14,18 +14,17 @@ not commit real values.
 External dependencies, supplied outside this repository:
 
 - the real public SDK key for each environment;
-- App Store Connect products and localized prices for `premium_annual` and
+- App Store Connect products and localized prices for `premium_yearly` and
   `premium_monthly`;
-- the `premium` entitlement and `default` offering in RevenueCat;
+- the `snap pose premium` entitlement and `default` offering in RevenueCat;
 - RevenueCat Sandbox users and real Terms/Privacy URLs.
 
-## Legal URL placeholders
+## Legal URLs
 
-The following values are documentation/build-configuration placeholders only;
-they are never production values and must be replaced before App Review:
+The app's current legal pages are:
 
-- `LEGAL_TERMS_URL=https://aipose.example.com/terms` — **PLACEHOLDER — replace-before-App-Review**
-- `LEGAL_PRIVACY_URL=https://aipose.example.com/privacy` — **PLACEHOLDER — replace-before-App-Review**
+- `LEGAL_TERMS_URL=https://sites.google.com/view/snappose/terms-of-service`
+- `LEGAL_PRIVACY_URL=https://sites.google.com/view/snappose/privacy-policy`
 
 When either value is unset or still marked as a placeholder, the runtime does
 not open a legal URL.
