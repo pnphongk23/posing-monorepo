@@ -50,7 +50,7 @@ object IosRevenueCatGateway : PurchaseGateway {
             val value = array.objectAtIndex(index.toULong()) as? NSDictionary ?: return@mapNotNull null
             val id = value.objectForKey("identifier") as? String ?: return@mapNotNull null
             if (id !in PurchaseConfiguration.PRODUCT_IDS) return@mapNotNull null
-            LocalizedProduct(id, value.objectForKey("localizedPrice") as? String ?: return@mapNotNull null, value.objectForKey("period") as? String, id == "premium_annual")
+            LocalizedProduct(id, value.objectForKey("localizedPrice") as? String ?: return@mapNotNull null, value.objectForKey("period") as? String, id == "premium_yearly")
         } }?.takeIf { it.isNotEmpty() } ?: return null
         return PurchaseOffering(PurchaseConfiguration.DEFAULT_OFFERING, products)
     }

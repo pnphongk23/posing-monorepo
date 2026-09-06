@@ -3,6 +3,6 @@
 #include "../Pods/Target Support Files/Pods-iosApp/Pods-iosApp.debug-prod.xcconfig"
 AIPOSE_ENVIRONMENT = PROD
 AIPOSE_BUILD_CONFIGURATION = Debug
-REVENUECAT_PUBLIC_SDK_KEY = REPLACE_WITH_PROD_PUBLIC_SDK_KEY
+REVENUECAT_PUBLIC_SDK_KEY = appl_vpBiChlUAXmdZjklTDZQtSeYVIx
 LEGAL_TERMS_URL = https:/$()/sites.google.com/view/snappose/terms-of-service
 LEGAL_PRIVACY_URL = https:/$()/sites.google.com/view/snappose/privacy-policy

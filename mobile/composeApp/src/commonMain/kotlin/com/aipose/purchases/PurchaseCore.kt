@@ -5,11 +5,11 @@ import kotlinx.coroutines.flow.StateFlow
 
 /** The only entitlement used by FEAT-011. */
 object PurchaseConfiguration {
-    const val PREMIUM_ENTITLEMENT = "premium"
+    const val PREMIUM_ENTITLEMENT = "snap pose premium"
     const val DEFAULT_OFFERING = "default"
     val PRODUCT_IDS = listOf(
         "premium_monthly",
-        "premium_annual",
+        "premium_yearly",
     )
 }
 
@@ -138,7 +138,7 @@ object PurchaseFixtures {
         identifier = PurchaseConfiguration.DEFAULT_OFFERING,
         products = listOf(
             LocalizedProduct("premium_monthly", "localized", "month"),
-            LocalizedProduct("premium_annual", "localized", "year", isAnnualHighlight = true),
+            LocalizedProduct("premium_yearly", "localized", "year", isAnnualHighlight = true),
         ),
     )
 }
