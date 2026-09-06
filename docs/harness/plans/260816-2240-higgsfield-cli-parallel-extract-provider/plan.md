@@ -37,7 +37,7 @@ relationships:
     - "[[FEAT-009-configure-extraction-provider|FEAT-009]]"
   source_paths:
     - docs/harness/plans/260816-2240-higgsfield-cli-parallel-extract-provider/design.md
-    - docs/spec/api/modules/extract-pose.md
+    - docs/harness/specs/api-contract.md
     - web/services/pose-extract-server/src/worker/job-processor.ts
     - web/services/pose-extract-server/src/worker/worker-main.ts
     - web/services/pose-extract-server/src/worker/gemini-browser-client.ts
@@ -123,7 +123,7 @@ reopened during Cook without a new Decision.
 | Admin Keys page includes extraction provider toggle | **Verified** | `web/admin-ui/src/app/admin/keys/page.js` |
 | Next.js admin proxy injects Bearer secret server-side | **Verified** | `poseExtractAdminServer.js` L39–60 |
 | Dockerfile installs Higgsfield CLI globally + probe script | **Verified** | `Dockerfile`; `scripts/higgsfield-auth-probe.sh` |
-| API spec documents async `202` + `PROVIDER_*` job errors | **Verified** | `docs/spec/api/modules/extract-pose.md`; `docs/spec/api/openapi.yaml` v0.3.0 |
+| API spec documents async `202` + `PROVIDER_*` job errors | **Verified** | `docs/harness/specs/api-contract.md#extract-pose`; `docs/harness/specs/api/openapi.yaml` v0.3.0 |
 | Higgsfield CLI provider + factory in application source | **Verified** | `higgsfieldCliProvider.ts`, `poseExtractorProvider.ts` |
 | `PoseExtractorProvider` interface pattern documented | **Verified** | sub2api phase-01 research doc |
 | FEAT-004, FEAT-005, FEAT-007 status is `approved` | **Verified** | feature frontmatter |

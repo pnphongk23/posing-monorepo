@@ -1,7 +1,6 @@
 package com.aipose.camera
 
 import com.aipose.data.PoseServiceLocator
-import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -14,10 +13,10 @@ import kotlinx.coroutines.launch
 /** Serializes camera snapshot mutations and coalesces pending settings writes. */
 internal class CameraSnapshotWriter(
     scope: CoroutineScope,
-    private val save: (PersistedCameraSettings, PersistedPoseIdentity?) -> Unit,
+    private val persist: (PersistedCameraSettings, PersistedPoseIdentity?) -> Unit,
     private val replacePose: (PersistedPoseIdentity) -> Unit = {},
     private val debounceMillis: Long = 250L,
-    workerDispatcher: CoroutineDispatcher = Dispatchers.Default,
+    startWorker: Boolean = true,
 ) {
     private enum class Operation { SAVE, CLEAR, REPLACE }
 
@@ -30,11 +29,15 @@ internal class CameraSnapshotWriter(
 
     private val pending = MutableStateFlow<Pending?>(null)
     private val wakeups = Channel<Unit>(Channel.CONFLATED)
-    private val worker: Job = scope.launch(workerDispatcher) {
-        for (ignored in wakeups) {
-            delay(debounceMillis)
-            process(takePending())
+    private val worker: Job? = if (startWorker) {
+        scope.launch {
+            for (ignored in wakeups) {
+                delay(debounceMillis)
+                process(takePending())
+            }
         }
+    } else {
+        null
     }
 
     fun save(settings: PersistedCameraSettings, pose: PersistedPoseIdentity?) {
@@ -61,7 +64,12 @@ internal class CameraSnapshotWriter(
 
     fun close() {
         wakeups.close()
-        worker.cancel()
+        worker?.cancel()
+    }
+
+    /** Drains the latest coalesced pending command; used by unit tests on hosts without a reliable debounce worker. */
+    internal fun flushNow() {
+        process(takePending())
     }
 
     private fun takePending(): Pending? {
@@ -74,10 +82,10 @@ internal class CameraSnapshotWriter(
     private fun process(command: Pending?) {
         when (command?.operation) {
             null -> Unit
-            Operation.SAVE -> save(command.settings, command.pose)
-            Operation.CLEAR -> save(command.settings, null)
+            Operation.SAVE -> persist(command.settings, command.pose)
+            Operation.CLEAR -> persist(command.settings, null)
             Operation.REPLACE -> {
-                if (command.replaceMustPreserveSettings) save(command.settings, null)
+                if (command.replaceMustPreserveSettings) persist(command.settings, null)
                 command.pose?.let(replacePose)
             }
         }
@@ -90,7 +98,7 @@ internal object CameraSnapshotPersistence {
     private val writer by lazy {
         CameraSnapshotWriter(
             scope = scope,
-            save = { settings, pose -> repository().save(settings, pose) },
+            persist = { settings, pose -> repository().save(settings, pose) },
             replacePose = { pose -> repository().replacePose(pose) },
         )
     }

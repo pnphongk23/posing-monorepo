@@ -1,7 +1,7 @@
 ---
 work_item: 1
 title: Freeze Google Supabase Account session authority
-status: pending
+status: completed
 priority: P2
 effort: S
 dependencies: []
@@ -25,8 +25,8 @@ decision_dependencies: []
 ## Scope and affected files
 
 Authority and policy documentation only. This slice does not edit
-`docs/spec/data/entities/account.md`, `docs/spec/api/conventions.md`,
-`docs/spec/api/modules/saved.md`, `openapi.yaml`, or
+`docs/harness/specs/data-contract.md#account`, `docs/harness/specs/api-contract.md#conventions`,
+`docs/harness/specs/api-contract.md#saved`, `openapi.yaml`, or
 `docs/harness/specs/technical-architecture.md`.
 
 ## Success criteria

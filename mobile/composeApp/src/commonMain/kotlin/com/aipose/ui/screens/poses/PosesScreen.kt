@@ -23,6 +23,7 @@ import androidx.compose.foundation.lazy.staggeredgrid.itemsIndexed
 import androidx.compose.foundation.lazy.staggeredgrid.rememberLazyStaggeredGridState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.CircularProgressIndicator
@@ -82,6 +83,9 @@ import kotlinx.coroutines.launch
 
 /** E-SEARCH-WIRED: stable test tag for the poses-list search affordance. */
 internal const val POSES_SEARCH_BUTTON_TEST_TAG = "poses-search-button"
+
+/** E-SAVED: stable test tag for the Poses-header Saved bookmark. */
+internal const val POSES_SAVED_BUTTON_TEST_TAG = "opens-saved-poses-button"
 
 /**
  * Thumbnail fill policy. Crop fills the rounded card viewport while preserving
@@ -196,6 +200,7 @@ fun PosesScreen(
     onPublishedPoseClick: (PosePreview) -> Unit = {},
     onBack: (() -> Unit)? = null,
     onSearchClick: (() -> Unit)? = null,
+    onSavedClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -234,6 +239,38 @@ fun PosesScreen(
                     horizontalArrangement = Arrangement.spacedBy(2.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    // WI-04: Poses-header Saved bookmark — 44dp touch target, accessible
+                    // label "Open Saved poses". Guest tap opens the shared sign-in prompt
+                    // (no Saved route/API before auth); signed-in tap pushes the Saved list.
+                    val savedInteractionSource = remember { MutableInteractionSource() }
+                    Box(
+                        modifier = Modifier
+                            .size(44.dp)
+                            .clickable(
+                                interactionSource = savedInteractionSource,
+                                indication = null,
+                                role = Role.Button,
+                                onClick = { onSavedClick?.invoke() }
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        NeoBrutalismContainer(
+                            modifier = Modifier.size(32.dp).testTag(POSES_SAVED_BUTTON_TEST_TAG),
+                            shape = RoundedCornerShape(10.dp),
+                            backgroundColor = AiPoseColors.Surface,
+                            shadowOffset = 1.5.dp,
+                            borderWidth = 2.dp,
+                            interactionSource = savedInteractionSource
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Bookmark,
+                                contentDescription = "Open Saved poses",
+                                tint = AiPoseColors.Foreground,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+
                     // Prototype `.nb-btn--compact-action`: 44dp touch target
                     // wrapping a 32dp `.nb-btn__compact-surface` chip.
                     val searchInteractionSource = remember { MutableInteractionSource() }

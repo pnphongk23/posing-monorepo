@@ -1,17 +1,11 @@
 ---
 work_item: 1
 title: Freeze FEAT-015 behavior contracts and owner seams
-status: completed
+status: pending
 priority: P2
 effort: M
 dependencies: []
-decision_dependencies:
-  - PA-015-01
-  - PA-015-02
-  - PA-015-03
-  - PA-015-04
-  - PA-015-05
-  - PA-015-06
+decision_dependencies: []
 ---
 
 # Work Item 1: Freeze FEAT-015 behavior contracts and owner seams

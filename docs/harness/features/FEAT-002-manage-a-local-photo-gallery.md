@@ -38,9 +38,9 @@ approved_by: phongpn
 
 The Photographer reviews and manages locally captured photos: reactive list,
 grid/list presentation, detail, favorite, deletion, and native Photos export.
-The canonical local records are [`Photo`](../../spec/data/entities/photo.md)
-and, for pose references, the canonical [`Pose`](../../spec/data/entities/pose.md) in `local` state (formerly `PersonalPose`).
-Capture is [FEAT-001](FEAT-001-capture-a-photo-on-mobile.md); no server API is
+The canonical local records are [`Photo`](../specs/data-contract.md#photo)
+and, for pose references, the canonical [`Pose`](../specs/data-contract.md#pose) in `local` state (formerly `PersonalPose`).
+Capture is [FEAT-001](./FEAT-001-capture-a-photo-on-mobile.md); no server API is
 owned by this feature.
 
 ## Business Understanding
@@ -94,8 +94,8 @@ The Photographer opens Gallery or selects a photo action.
 
 | Concern | Canonical reference | Evidence |
 | --- | --- | --- |
-| Entities | [`Photo`](../../spec/data/entities/photo.md), [`Pose`](../../spec/data/entities/pose.md) (local; formerly `PersonalPose`) | [`Photo.sq`](../../../mobile/shared/src/commonMain/sqldelight/com/aipose/Photo.sq), [`Pose.sq`](../../../mobile/shared/src/commonMain/sqldelight/com/aipose/Pose.sq) |
-| ERD | [Mobile local physical graph](../../spec/data/erd/mobile.md) | `Photo.poseId` is an optional FK to `Pose.poseId` |
+| Entities | [`Photo`](../specs/data-contract.md#photo), [`Pose`](../specs/data-contract.md#pose) (local; formerly `PersonalPose`) | [`Photo.sq`](../../../mobile/shared/src/commonMain/sqldelight/com/aipose/Photo.sq), [`Pose.sq`](../../../mobile/shared/src/commonMain/sqldelight/com/aipose/Pose.sq) |
+| ERD | [Mobile local physical graph](../specs/data-contract.md#mobile-local) | `Photo.poseId` is an optional FK to `Pose.poseId` |
 | API | None; local database/storage only | No gallery HTTP endpoint found |
 | Supporting UI | Gallery ViewModel/detail and platform export | [`GalleryViewModel.kt`](../../../mobile/composeApp/src/commonMain/kotlin/com/aipose/ui/screens/gallery/GalleryViewModel.kt), [`PhotoDetailDialog.kt`](../../../mobile/composeApp/src/commonMain/kotlin/com/aipose/ui/screens/gallery/PhotoDetailDialog.kt), [`SaveToPhotos.ios.kt`](../../../mobile/composeApp/src/iosMain/kotlin/com/aipose/platform/SaveToPhotos.ios.kt) |
 
@@ -124,8 +124,8 @@ The Photographer opens Gallery or selects a photo action.
 
 ## Relationships
 
-- Shared references: [Photo](../../spec/data/entities/photo.md), [Pose](../../spec/data/entities/pose.md) (local; formerly `PersonalPose`), [ERD mobile](../../spec/data/erd/mobile.md), [API](../../spec/api/README.md).
-- Related feature: [FEAT-001](FEAT-001-capture-a-photo-on-mobile.md).
+- Shared references: [Photo](../specs/data-contract.md#photo), [Pose](../specs/data-contract.md#pose) (local; formerly `PersonalPose`), [ERD mobile](../specs/data-contract.md#mobile-local), [API](../specs/api-contract.md).
+- Related feature: [FEAT-001](./FEAT-001-capture-a-photo-on-mobile.md).
 ### Supporting evidence
 
 - [`GalleryScreen.kt`](../../../mobile/composeApp/src/commonMain/kotlin/com/aipose/ui/screens/gallery/GalleryScreen.kt)

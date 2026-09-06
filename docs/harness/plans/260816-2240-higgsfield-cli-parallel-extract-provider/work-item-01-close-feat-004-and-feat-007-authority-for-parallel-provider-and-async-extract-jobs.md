@@ -44,7 +44,7 @@ Implementation intent: [Plan 260816-2240](./plan.md).
   acceptance criteria to FEAT-007.
 - Cross-check **FEAT-005** job-queue flow remains accurate; add Plan link only
   if intake/worker coupling is not already traceable.
-- Revise `docs/spec/api/modules/extract-pose.md` draft section for async `202`
+- Revise `docs/harness/specs/api-contract.md#extract-pose` draft section for async `202`
   response shape and provider-neutral error codes (`PROVIDER_*`); keep
   `GEMINI_*` documented as deprecated aliases until clients migrate.
 - Build requirement-to-implementation parity matrix: FEAT-004 FR/BR, FEAT-009
@@ -62,7 +62,7 @@ Implementation intent: [Plan 260816-2240](./plan.md).
 - `docs/harness/features/FEAT-007-operate-pose-content-from-admin-web.md`
 - `docs/harness/features/FEAT-005-manage-a-pose-guide.md` (linkage only)
 - `docs/harness/decisions/DEC-001-extraction-provider-selection-policy.md` (approved; Peer may edit for approval workflow)
-- `docs/spec/api/modules/extract-pose.md`
+- `docs/harness/specs/api-contract.md#extract-pose`
 - `docs/harness/plans/260816-2240-higgsfield-cli-parallel-extract-provider/plan.md`
 - `docs/harness/plans/260816-2240-higgsfield-cli-parallel-extract-provider/design.md`
 

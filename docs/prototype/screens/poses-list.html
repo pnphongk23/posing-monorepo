@@ -51,17 +51,32 @@
               <svg><use href="#icon-search"></use></svg>
             </span>
           </a>
-            <a href="settings.html" class="nb-btn nb-btn--compact-action" aria-label="Open Settings" title="Settings">
-              <span class="nb-btn__compact-surface nb-btn__compact-surface--white">
-                <svg><use href="#icon-gear"></use></svg>
-              </span>
-            </a>
-          </div>
-        </header>
+          <a href="sign-in-prompt.html?intent=saved&return=poses-list.html" class="nb-btn nb-btn--compact-action" aria-label="Open Saved poses">
+            <span class="nb-btn__compact-surface nb-btn__compact-surface--white">
+              <svg><use href="#icon-bookmark"></use></svg>
+            </span>
+          </a>
+          <a href="camera-live.html" class="nb-btn nb-btn--compact-action" aria-label="Create Pose">
+            <span class="nb-btn__compact-surface">
+              <svg><use href="#icon-plus"></use></svg>
+            </span>
+          </a>
+          <a href="settings.html" class="nb-btn nb-btn--compact-action" aria-label="Open Settings" title="Settings">
+            <span class="nb-btn__compact-surface nb-btn__compact-surface--white">
+              <svg><use href="#icon-gear"></use></svg>
+            </span>
+          </a>
+        </div>
+      </header>
 
-        <div id="poses-state-message" class="nb-state-message" role="status" aria-live="polite" hidden></div>
+      <div id="poses-state-message" class="nb-state-message" role="status" aria-live="polite" hidden></div>
 
-        <!-- Poses Dynamic Grid -->
+      <!-- Category Label Header -->
+      <div class="nb-grid-group-title nb-grid-group-title--count-only" style="margin-top: 0;">
+        <span id="poses-count-label" class="nb-grid-group-count">3 poses</span>
+      </div>
+
+      <!-- Poses Dynamic Grid -->
       <div class="nb-grid-scroll-area">
         <div class="nb-grid--masonry" id="poses-dynamic-grid">
           <!-- Populated by scripts/app.js -->

@@ -1,10 +1,11 @@
 ---
 work_item: 4
 title: Build mobile Saved UX and sign-in gating
-status: pending
+status: completed
 priority: P2
 effort: M
-dependencies: [3]
+dependencies:
+  - 3
 decision_dependencies: []
 ---
 
@@ -34,4 +35,3 @@ Community-only navigation may need a minimal Saved entry point; avoid a second a
 ## Required evidence
 
 Exact mobile symbols, API/ViewModel/UI tests, iOS evidence for gating, Save/Unsave, list, pagination, detail, removal, 401 and offline.
-

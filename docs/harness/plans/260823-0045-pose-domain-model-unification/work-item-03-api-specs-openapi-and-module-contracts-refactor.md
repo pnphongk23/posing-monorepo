@@ -13,7 +13,7 @@ decision_dependencies: []
 
 ## Tasks
 
-1. Refactor `docs/spec/api/openapi.yaml`:
+1. Refactor `docs/harness/specs/api/openapi.yaml`:
    - Rename schema `PoseGuide` → `Pose`; `poseId` primary key; `status`
      enum `[local, published]`.
    - `MediaAsset`: `mediaId`, `poseId`, `role` enum `[original, skeleton,
@@ -32,7 +32,7 @@ decision_dependencies: []
      `skeletonUrl`, `thumbnailUrl` (three media roles materialized at creation,
      non-nullable). `CommunityPose` published-only (`status` enum `[published]`,
      field `poseId`); admin list returns canonical `Pose`.
-2. Refactor `docs/spec/api/` `conventions.md`, `README.md`, and
+2. Refactor `docs/harness/specs/api-contract.md` `conventions.md`, `README.md`, and
    `modules/` `community.md`, `extract-pose.md`, `publish.md`, `saved.md`,
    `admin-community.md`, `guides.md` to canonical terminology.
 3. Preserve real route paths (e.g. `/api/guides`) and OpenAPI `operationId`
@@ -40,10 +40,10 @@ decision_dependencies: []
 
 ## Scope and affected files
 
-- `docs/spec/api/openapi.yaml`
-- `docs/spec/api/conventions.md`, `docs/spec/api/README.md`,
-  `docs/spec/api/CHANGELOG.md`
-- `docs/spec/api/modules/community.md`, `extract-pose.md`, `publish.md`,
+- `docs/harness/specs/api/openapi.yaml`
+- `docs/harness/specs/api-contract.md#conventions`, `docs/harness/specs/api-contract.md`,
+  `docs/harness/specs/api-contract.md`
+- `docs/harness/specs/api-contract.md#community-public`, `extract-pose.md`, `publish.md`,
   `saved.md`, `admin-community.md`, `guides.md`
 
 ## Success criteria
@@ -63,7 +63,7 @@ decision_dependencies: []
 
 ## Required evidence
 
-- `ckh validate docs/spec/api/README.md` and `ckh validate
-  docs/spec/api/openapi.yaml` pass.
+- `ckh validate docs/harness/specs/api-contract.md` and `ckh validate
+  docs/harness/specs/api/openapi.yaml` pass.
 - `grep -niE "renderAsset|sourceAssetId|thumbnaileAssetId|enum: \\[draft" 
-  docs/spec/api/` returns no canonical occurrences.
+  docs/harness/specs/api-contract.md` returns no canonical occurrences.

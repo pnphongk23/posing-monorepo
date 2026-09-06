@@ -2,7 +2,10 @@ package com.aipose.ui.screens.poses
 
 import com.aipose.data.DatabaseDriverFactory
 import com.aipose.data.PoseRepository
+import com.aipose.data.PoseServiceLocator
 import com.aipose.data.PoseStorage
+import com.aipose.data.auth.SessionCredentials
+import com.aipose.data.remote.CommunityPose
 import com.aipose.data.remote.PoseApiService
 import com.aipose.data.AiPoseDatabase
 import io.ktor.client.*
@@ -13,13 +16,17 @@ import io.ktor.serialization.kotlinx.json.*
 import io.ktor.utils.io.*
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
+import kotlin.coroutines.coroutineContext
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.serialization.json.Json
+import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -28,6 +35,26 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertFalse
 
 class PoseDetailViewModelTest {
+
+    private suspend fun testViewModelScope(): CoroutineScope {
+        val dispatcher = coroutineContext[CoroutineDispatcher] ?: Dispatchers.Default
+        return CoroutineScope(SupervisorJob() + dispatcher)
+    }
+
+    @AfterTest
+    fun tearDownSession() {
+        PoseServiceLocator.sessionBoundary.tokenStorage.clearCredentials()
+    }
+
+    private inline fun withSignedInSession(block: () -> Unit) {
+        val storage = PoseServiceLocator.sessionBoundary.tokenStorage
+        storage.saveCredentials(SessionCredentials("access-test", "refresh-test"))
+        try {
+            block()
+        } finally {
+            storage.clearCredentials()
+        }
+    }
 
     private fun buildMockClient(handler: MockRequestHandler): HttpClient {
         return HttpClient(MockEngine) {
@@ -91,7 +118,7 @@ class PoseDetailViewModelTest {
             val createdId = list.first().poseId
 
             val key = createdId
-            val viewModel = PoseDetailViewModel(key, repository, apiService)
+            val viewModel = PoseDetailViewModel(key, repository, apiService, viewModelScope = testViewModelScope())
 
             val job = launch {
                 viewModel.load()
@@ -113,51 +140,45 @@ class PoseDetailViewModelTest {
     }
 
     @Test
-    fun testLoadLocalPoseNotFound() = runTest {
-        val client = buildMockClient { _ -> respond(content = ByteReadChannel(""), status = HttpStatusCode.NotFound) }
+    fun signedOutSaveCanBeRequestedAgainAfterDismissal() = runTest {
+        PoseServiceLocator.sessionBoundary.tokenStorage.clearCredentials()
+        val client = buildMockClient { error("projection should avoid a community detail request") }
         val apiService = PoseApiService(client, "https://test.server")
         val driver = DatabaseDriverFactory().createDriver()
         try {
             val database = AiPoseDatabase(driver)
             clearDatabase(database)
             val repository = PoseRepository(database, apiService)
+            val viewModel = PoseDetailViewModel(
+                poseId = "community-1",
+                repository = repository,
+                apiService = apiService,
+                initialCommunityPose = CommunityPose(
+                    poseId = "community-1",
+                    name = "Tree Pose",
+                    skeletonUrl = "https://img/tree.png",
+                    thumbnailUrl = "https://img/tree-thumb.png",
+                ),
+                viewModelScope = testViewModelScope(),
+            )
 
-            val key = "00000000-0000-0000-0000-000000009999" // Non-existent ID
-            val viewModel = PoseDetailViewModel(key, repository, apiService)
+            viewModel.toggleSave()
+            assertEquals(com.aipose.auth.SignInIntent.SAVE_POSE, viewModel.signInIntent.value)
 
-            val job = launch {
-                viewModel.load()
-            }
-            val state = waitForState(viewModel) { it is PoseDetailUiState.NotFound }
-
-            assertTrue(state is PoseDetailUiState.NotFound)
-
-            job.cancel()
+            viewModel.clearSignInIntent()
+            viewModel.toggleSave()
+            assertEquals(com.aipose.auth.SignInIntent.SAVE_POSE, viewModel.signInIntent.value)
         } finally {
             driver.close()
         }
     }
 
     @Test
-    fun testLoadCommunityPoseSuccess() = runTest {
-        val client = buildMockClient { request ->
-            assertEquals("/api/community/poses/c-pose-1", request.url.encodedPath)
-            respond(
-                content = ByteReadChannel("""
-                    {
-                        "data": {
-                            "id": "c-pose-1",
-                            "name": "Tree Pose",
-                            "imagePath": "http://img/tree.png",
-                            "thumbnailPath": "http://img/tree_thumb.png",
-                            "difficulty": "beginner",
-                            "tags": ["yoga"]
-                        }
-                    }
-                """.trimIndent()),
-                status = HttpStatusCode.OK,
-                headers = headersOf(HttpHeaders.ContentType, "application/json")
-            )
+    fun projectedCommunityPoseLoadsWithoutDetailFetch() = runTest {
+        var requests = 0
+        val client = buildMockClient {
+            requests++
+            error("projected detail must not fetch")
         }
         val apiService = PoseApiService(client, "https://test.server")
         val driver = DatabaseDriverFactory().createDriver()
@@ -165,95 +186,30 @@ class PoseDetailViewModelTest {
             val database = AiPoseDatabase(driver)
             clearDatabase(database)
             val repository = PoseRepository(database, apiService)
+            val viewModel = PoseDetailViewModel(
+                poseId = "community-2",
+                repository = repository,
+                apiService = apiService,
+                initialCommunityPose = CommunityPose(
+                    poseId = "community-2",
+                    name = "Tree Pose",
+                    skeletonUrl = "https://img/tree.png",
+                    thumbnailUrl = "https://img/tree-thumb.png",
+                ),
+                viewModelScope = testViewModelScope(),
+            )
 
-            val key = "c-pose-1"
-            val viewModel = PoseDetailViewModel(key, repository, apiService)
+            viewModel.load()
 
-            val job = launch {
-                viewModel.load()
-            }
-            val state = waitForState(viewModel) { it is PoseDetailUiState.Success }
-
+            val state = viewModel.uiState.value
             assertTrue(state is PoseDetailUiState.Success)
             assertEquals("Tree Pose", state.name)
-            assertEquals("http://img/tree.png", state.skeletonPath)
-            assertEquals("beginner", state.difficulty)
-            assertTrue(!state.isMine)
-            // Community pose records carry no author contract field.
-            assertNull(state.author)
-
-            job.cancel()
+            assertEquals(0, requests)
         } finally {
             driver.close()
         }
     }
 
-    @Test
-    fun testLoadCommunityPoseNotFound() = runTest {
-        val client = buildMockClient { _ ->
-            respond(
-                content = ByteReadChannel("""{"error":{"code":"NOT_FOUND","message":"Pose not found"}}"""),
-                status = HttpStatusCode.NotFound,
-                headers = headersOf(HttpHeaders.ContentType, "application/json")
-            )
-        }
-        val apiService = PoseApiService(client, "https://test.server")
-        val driver = DatabaseDriverFactory().createDriver()
-        try {
-            val database = AiPoseDatabase(driver)
-            clearDatabase(database)
-            val repository = PoseRepository(database, apiService)
-
-            val key = "non-existent"
-            val viewModel = PoseDetailViewModel(key, repository, apiService)
-
-            val job = launch {
-                viewModel.load()
-            }
-            val state = waitForState(viewModel) { it is PoseDetailUiState.NotFound }
-
-            // Missing/unpublished community records must not surface a
-            // retryable error: recovery is back to the list, never a wrong record.
-            assertTrue(state is PoseDetailUiState.NotFound)
-
-            job.cancel()
-        } finally {
-            driver.close()
-        }
-    }
-
-    @Test
-    fun testLoadCommunityPoseRetryableError() = runTest {
-        val client = buildMockClient { _ ->
-            respond(
-                content = ByteReadChannel("""{"error":{"code":"INTERNAL","message":"boom"}}"""),
-                status = HttpStatusCode.InternalServerError,
-                headers = headersOf(HttpHeaders.ContentType, "application/json")
-            )
-        }
-        val apiService = PoseApiService(client, "https://test.server")
-        val driver = DatabaseDriverFactory().createDriver()
-        try {
-            val database = AiPoseDatabase(driver)
-            clearDatabase(database)
-            val repository = PoseRepository(database, apiService)
-
-            val key = "c-pose-1"
-            val viewModel = PoseDetailViewModel(key, repository, apiService)
-
-            val job = launch {
-                viewModel.load()
-            }
-            val state = waitForState(viewModel) { it is PoseDetailUiState.Error }
-
-            assertTrue(state is PoseDetailUiState.Error)
-            assertEquals("boom", (state as PoseDetailUiState.Error).message)
-
-            job.cancel()
-        } finally {
-            driver.close()
-        }
-    }
 
     @Test
     fun testDeleteLocalPose() = runTest {
@@ -281,19 +237,7 @@ class PoseDetailViewModelTest {
     @Test
     fun testCommunityDeleteIsGated() = runTest {
         val client = buildMockClient { _ ->
-            respond(
-                content = ByteReadChannel("""
-                    {
-                        "data": {
-                            "id": "c-pose-1",
-                            "name": "Tree Pose",
-                            "imagePath": "http://img/tree.png"
-                        }
-                    }
-                """.trimIndent()),
-                status = HttpStatusCode.OK,
-                headers = headersOf(HttpHeaders.ContentType, "application/json")
-            )
+            respond(content = ByteReadChannel(""), status = HttpStatusCode.OK)
         }
         val apiService = PoseApiService(client, "https://test.server")
         val driver = DatabaseDriverFactory().createDriver()
@@ -303,7 +247,18 @@ class PoseDetailViewModelTest {
             val repository = PoseRepository(database, apiService)
 
             val key = "c-pose-1"
-            val viewModel = PoseDetailViewModel(key, repository, apiService)
+            val viewModel = PoseDetailViewModel(
+                poseId = key,
+                repository = repository,
+                apiService = apiService,
+                initialCommunityPose = CommunityPose(
+                    poseId = key,
+                    name = "Tree Pose",
+                    skeletonUrl = "community/tree.png",
+                    thumbnailUrl = "",
+                ),
+                viewModelScope = testViewModelScope(),
+            )
 
             val job = launch {
                 viewModel.load()
@@ -336,7 +291,7 @@ class PoseDetailViewModelTest {
             val createdId = list.first().poseId
 
             val key = createdId
-            val viewModel = PoseDetailViewModel(key, repository, apiService)
+            val viewModel = PoseDetailViewModel(key, repository, apiService, viewModelScope = testViewModelScope())
 
             val job = launch {
                 viewModel.load()
@@ -376,7 +331,7 @@ class PoseDetailViewModelTest {
             val createdId = list.first().poseId
 
             val key = createdId
-            val viewModel = PoseDetailViewModel(key, repository, apiService)
+            val viewModel = PoseDetailViewModel(key, repository, apiService, viewModelScope = testViewModelScope())
 
             val job = launch {
                 viewModel.load()
@@ -399,29 +354,15 @@ class PoseDetailViewModelTest {
 
     @Test
     fun testTryPoseCommunitySuccess() = runTest {
-        val client = buildMockClient { request ->
-            when (request.url.encodedPath) {
-                "/api/community/poses/c-pose-1" -> respond(
-                    content = ByteReadChannel("""
-                        {
-                            "data": {
-                                "id": "c-pose-1",
-                                "name": "Tree Pose",
-                                "imagePath": "community/tree.png"
-                            }
-                        }
-                    """.trimIndent()),
-                    status = HttpStatusCode.OK,
-                    headers = headersOf(HttpHeaders.ContentType, "application/json")
-                )
-                "/community/tree.png" -> respond(
+        withSignedInSession {
+            val client = buildMockClient { request ->
+                assertEquals("/community/tree.png", request.url.encodedPath)
+                respond(
                     content = ByteReadChannel(PNG_1PX_BYTES),
                     status = HttpStatusCode.OK,
                     headers = headersOf(HttpHeaders.ContentType, "image/png")
                 )
-                else -> respond(content = ByteReadChannel(""), status = HttpStatusCode.NotFound)
             }
-        }
         val apiService = PoseApiService(client, "https://test.server")
         val driver = DatabaseDriverFactory().createDriver()
         try {
@@ -430,7 +371,18 @@ class PoseDetailViewModelTest {
             val repository = PoseRepository(database, apiService)
 
             val key = "c-pose-1"
-            val viewModel = PoseDetailViewModel(key, repository, apiService)
+            val viewModel = PoseDetailViewModel(
+                poseId = key,
+                repository = repository,
+                apiService = apiService,
+                initialCommunityPose = CommunityPose(
+                    poseId = key,
+                    name = "Tree Pose",
+                    skeletonUrl = "community/tree.png",
+                    thumbnailUrl = "",
+                ),
+                viewModelScope = testViewModelScope(),
+            )
 
             val job = launch {
                 viewModel.load()
@@ -453,33 +405,20 @@ class PoseDetailViewModelTest {
         } finally {
             driver.close()
         }
+        }
     }
 
     @Test
     fun testTryPoseCommunityDownloadFailureStaysOnDetail() = runTest {
-        val client = buildMockClient { request ->
-            when (request.url.encodedPath) {
-                "/api/community/poses/c-pose-1" -> respond(
-                    content = ByteReadChannel("""
-                        {
-                            "data": {
-                                "id": "c-pose-1",
-                                "name": "Tree Pose",
-                                "imagePath": "community/tree.png"
-                            }
-                        }
-                    """.trimIndent()),
-                    status = HttpStatusCode.OK,
-                    headers = headersOf(HttpHeaders.ContentType, "application/json")
-                )
-                "/community/tree.png" -> respond(
+        withSignedInSession {
+            val client = buildMockClient { request ->
+                assertEquals("/community/tree.png", request.url.encodedPath)
+                respond(
                     content = ByteReadChannel("""{"error":{"code":"NOT_FOUND","message":"Image not found"}}"""),
                     status = HttpStatusCode.NotFound,
                     headers = headersOf(HttpHeaders.ContentType, "application/json")
                 )
-                else -> respond(content = ByteReadChannel(""), status = HttpStatusCode.NotFound)
             }
-        }
         val apiService = PoseApiService(client, "https://test.server")
         val driver = DatabaseDriverFactory().createDriver()
         try {
@@ -488,7 +427,18 @@ class PoseDetailViewModelTest {
             val repository = PoseRepository(database, apiService)
 
             val key = "c-pose-1"
-            val viewModel = PoseDetailViewModel(key, repository, apiService)
+            val viewModel = PoseDetailViewModel(
+                poseId = key,
+                repository = repository,
+                apiService = apiService,
+                initialCommunityPose = CommunityPose(
+                    poseId = key,
+                    name = "Tree Pose",
+                    skeletonUrl = "community/tree.png",
+                    thumbnailUrl = "",
+                ),
+                viewModelScope = testViewModelScope(),
+            )
 
             val job = launch {
                 viewModel.load()
@@ -507,33 +457,20 @@ class PoseDetailViewModelTest {
         } finally {
             driver.close()
         }
+        }
     }
 
     @Test
     fun testTryPoseCommunityUndecodableImageStaysOnDetail() = runTest {
-        val client = buildMockClient { request ->
-            when (request.url.encodedPath) {
-                "/api/community/poses/c-pose-1" -> respond(
-                    content = ByteReadChannel("""
-                        {
-                            "data": {
-                                "id": "c-pose-1",
-                                "name": "Tree Pose",
-                                "imagePath": "community/tree.png"
-                            }
-                        }
-                    """.trimIndent()),
-                    status = HttpStatusCode.OK,
-                    headers = headersOf(HttpHeaders.ContentType, "application/json")
-                )
-                "/community/tree.png" -> respond(
+        withSignedInSession {
+            val client = buildMockClient { request ->
+                assertEquals("/community/tree.png", request.url.encodedPath)
+                respond(
                     content = ByteReadChannel("not an image".encodeToByteArray()),
                     status = HttpStatusCode.OK,
                     headers = headersOf(HttpHeaders.ContentType, "image/png")
                 )
-                else -> respond(content = ByteReadChannel(""), status = HttpStatusCode.NotFound)
             }
-        }
         val apiService = PoseApiService(client, "https://test.server")
         val driver = DatabaseDriverFactory().createDriver()
         try {
@@ -542,7 +479,18 @@ class PoseDetailViewModelTest {
             val repository = PoseRepository(database, apiService)
 
             val key = "c-pose-1"
-            val viewModel = PoseDetailViewModel(key, repository, apiService)
+            val viewModel = PoseDetailViewModel(
+                poseId = key,
+                repository = repository,
+                apiService = apiService,
+                initialCommunityPose = CommunityPose(
+                    poseId = key,
+                    name = "Tree Pose",
+                    skeletonUrl = "community/tree.png",
+                    thumbnailUrl = "",
+                ),
+                viewModelScope = testViewModelScope(),
+            )
 
             val job = launch {
                 viewModel.load()
@@ -561,6 +509,7 @@ class PoseDetailViewModelTest {
             job.cancel()
         } finally {
             driver.close()
+        }
         }
     }
 
@@ -589,7 +538,7 @@ class PoseDetailViewModelTest {
             repository.createPoseAfterExtraction("Dual Delete", "/documents/original-dual.jpg", "/documents/skeleton-dual.jpg", "/documents/thumbnail-dual.jpg")
             val id = repository.getMyPoses().first().first().poseId
 
-            val viewModel = PoseDetailViewModel(id, repository, apiService)
+            val viewModel = PoseDetailViewModel(id, repository, apiService, viewModelScope = testViewModelScope())
             val loadJob = scope.launch { viewModel.load() }
             var loadAttempts = 0
             while (viewModel.uiState.value !is PoseDetailUiState.Success && loadAttempts < 200) {

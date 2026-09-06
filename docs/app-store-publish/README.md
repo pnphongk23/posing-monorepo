@@ -12,11 +12,11 @@ PO-Đại Vương duyệt trước khi bất kỳ lane nào điền vào App Sto
 
 | File | Nội dung | Trạng thái |
 | --- | --- | --- |
-| [app-store-metadata.md](app-store-metadata.md) | Name / subtitle / description EN / keywords / what's-new / category + bản VI kèm theo | DRAFT — PO duyệt |
-| [privacy-support.md](privacy-support.md) | Nháp Privacy Policy (camera, Firebase, extract server; subscription PENDING) + App Privacy questionnaire + Support URL | DRAFT — PO cấp URL/email |
-| [screenshots-runbook.md](screenshots-runbook.md) | Kích thước/res, nguồn chụp, danh sách màn hình, điều kiện đẹp, checklist (KHÔNG tự chụp) | Runbook — executor/UCP thực hiện |
-| [app-icon-check.md](app-icon-check.md) | Verify icon 1024 (kích thước, no-alpha) — đã chạy, PASS kỹ thuật; QA thị giác chờ visual review | VERIFIED (kỹ thuật) |
-| [app-store-checklist.md](app-store-checklist.md) | Checklist toàn bộ hạng mục ASC cho submission + runbook thứ tự + mục PO phải cấp | DRAFT — PO điền phần còn thiếu |
+| [app-store-metadata.md](./app-store-metadata.md) | Name / subtitle / description EN / keywords / what's-new / category + bản VI kèm theo | DRAFT — PO duyệt |
+| [privacy-support.md](./privacy-support.md) | Nháp Privacy Policy (camera, Firebase, extract server; subscription PENDING) + App Privacy questionnaire + Support URL | DRAFT — PO cấp URL/email |
+| [screenshots-runbook.md](./screenshots-runbook.md) | Kích thước/res, nguồn chụp, danh sách màn hình, điều kiện đẹp, checklist (KHÔNG tự chụp) | Runbook — executor/UCP thực hiện |
+| [app-icon-check.md](./app-icon-check.md) | Verify icon 1024 (kích thước, no-alpha) — đã chạy, PASS kỹ thuật; QA thị giác chờ visual review | VERIFIED (kỹ thuật) |
+| [app-store-checklist.md](./app-store-checklist.md) | Checklist toàn bộ hạng mục ASC cho submission + runbook thứ tự + mục PO phải cấp | DRAFT — PO điền phần còn thiếu |
 
 ## Nguyên tắc phạm vi (bắt buộc)
 

@@ -6,13 +6,7 @@ priority: P2
 effort: M
 dependencies:
   - 2
-decision_dependencies:
-  - PA-015-01
-  - PA-015-02
-  - PA-015-03
-  - PA-015-04
-  - PA-015-05
-  - PA-015-06
+decision_dependencies: []
 ---
 
 # Work Item 3: Integrate platform contracts and quality-test matrix

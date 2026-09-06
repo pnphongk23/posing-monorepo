@@ -6,8 +6,7 @@ priority: P2
 effort: M
 dependencies:
   - 1
-decision_dependencies:
-  - PA-015-01
+decision_dependencies: []
 ---
 
 # Work Item 2: Implement Settings common state, UI, and navigation seam

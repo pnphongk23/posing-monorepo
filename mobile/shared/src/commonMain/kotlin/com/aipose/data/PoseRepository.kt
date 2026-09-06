@@ -120,7 +120,4 @@ class PoseRepository(
         requireNotNull(apiService) { "PoseApiService must be provided to use getCommunityPoses" }
             .getCommunityPoses(page = page, limit = pageSize)
 
-    suspend fun getCommunityPoseDetail(poseId: String) =
-        requireNotNull(apiService) { "PoseApiService must be provided to use getCommunityPoseDetail" }
-            .getCommunityPoseDetail(poseId)
 }

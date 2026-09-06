@@ -18,7 +18,7 @@ relationships:
     - "[[REP-007-feat-002-local-photo-gallery-delivery|REP-007]]"
     - "[[REP-010-phase2-live-community-forensic-baseline|REP-010]]"
     - "[[REP-011-firebase-observability-remote-config-delivery|REP-011]]"
-    - "[[REP-012-backlog-lane-documentation-survey|REP-012]]"
+    - "[[REP-013-backlog-lane-documentation-survey|REP-013]]"
   rules: []
   features:
     - "[[FEAT-001-capture-a-photo-on-mobile|FEAT-001]]"
@@ -47,7 +47,7 @@ status: active
 **Published scope:** Snap Pose iOS 1.0 — phản ánh trạng thái code trên `main` tại
 baseline. Không claim hành vi App Store Connect / production runtime nếu không có
 evidence ASC hoặc báo cáo delivery tương ứng (xem
-[REP-012](../reports/REP-012-backlog-lane-documentation-survey.md)).
+[REP-013](../reports/REP-013-backlog-lane-documentation-survey.md)).
 
 ## Scope
 
@@ -71,7 +71,7 @@ Roadmap này chỉ mô tả **v1.0 đã ship** và **backlog post-v1.0** còn c�
 
 ## v1.0 baseline
 
-Evidence: `main` @ `ca33cc2`, scout độc lập + [REP-012](../reports/REP-012-backlog-lane-documentation-survey.md).
+Evidence: `main` @ `ca33cc2`, scout độc lập + [REP-013](../reports/REP-013-backlog-lane-documentation-survey.md).
 Shipped được ghi nhận **iOS-scoped**; physical-device và Android không claim đủ
 evidence trong v1.0.
 
@@ -92,7 +92,7 @@ evidence trong v1.0.
 
 - **Durable camera handoff:** overlay session-scoped hoạt động; relaunch restore,
   clear lifecycle, managed cache chưa đủ theo plan `260809-2241`
-  ([REP-012](../reports/REP-012-backlog-lane-documentation-survey.md) BL-GAP-01).
+  ([REP-013](../reports/REP-013-backlog-lane-documentation-survey.md) BL-GAP-01).
 - **Community catalogue:** operator loop có; taxonomy depth / volume targets chưa
   đạt; dual-layer source image (plan `260510-1726`) chưa land.
 - **Personal extraction UX:** server/job path có evidence; tab My Poses đã gỡ
@@ -276,7 +276,7 @@ Poses được chốt.
 
 - Business boundaries: linked Feature documents.
 - Delivery sequencing: Harness Plans (ví dụ `260809-2241`, `260826-0003`).
-- v1.0 evidence: [REP-012](../reports/REP-012-backlog-lane-documentation-survey.md);
+- v1.0 evidence: [REP-013](../reports/REP-013-backlog-lane-documentation-survey.md);
   REP-003, REP-006, REP-007, REP-011 trên `main` @ `ca33cc2`.
 - Residual gaps: [REP-002](../reports/REP-002-feature-gap-and-release-readiness-audit.md).
 - Review lại roadmap khi Feature boundary, publication policy, Saved/Album rule,

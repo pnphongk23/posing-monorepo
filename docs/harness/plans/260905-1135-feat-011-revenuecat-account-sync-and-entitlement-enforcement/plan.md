@@ -39,9 +39,9 @@ relationships:
     - docs/harness/features/FEAT-011-integrate-revenuecat-paid-access-and-in-app-purchases.md
     - docs/harness/features/FEAT-013-saved-poses-albums-account-backed.md
     - docs/harness/features/FEAT-014-manage-account-and-session.md
-    - docs/spec/data/entities/account.md
-    - docs/spec/api/conventions.md
-    - docs/spec/api/openapi.yaml
+    - docs/harness/specs/data-contract.md
+    - docs/harness/specs/api-contract.md
+    - docs/harness/specs/api/openapi.yaml
     - mobile/composeApp/src/commonMain/kotlin/com/aipose/purchases/PurchaseCore.kt
     - mobile/composeApp/src/iosMain/kotlin/com/aipose/purchases/IosRevenueCatGateway.kt
     - mobile/iosApp/iosApp/AppDelegate.swift

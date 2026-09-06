@@ -3,8 +3,10 @@ schema_version: 1
 type: feature
 id: FEAT-013
 title: Saved Poses & Albums (Account-backed)
-status: proposed
+status: approved
 created: 2026-08-31
+approved: 2026-09-03
+approved_by: Repository Maintainer
 relationships:
   specs:
     - "[[product-delivery-roadmap|Product Delivery Roadmap]]"
@@ -18,7 +20,7 @@ relationships:
   plans:
     - "[[260831-0000-saved-poses-account-backed-v1/plan|Saved Poses account-backed v1]]"
   reports:
-    - "[[REP-012-backlog-lane-documentation-survey|REP-012]]"
+    - "[[REP-012-feat-012-relaunch-restore-delivery|REP-012]]"
   rules: []
   features:
     - "[[FEAT-003-browse-and-search-published-poses|FEAT-003]]"
@@ -144,6 +146,17 @@ saved item để xem detail/Try Pose.
 - **FR-010:** Albums many-to-many (một pose có thể thuộc nhiều Album) là future
   boundary; Album CRUD/membership không thuộc acceptance hay implementation v1.
 
+### WI-01 frozen policy rows
+
+| Requirement | Frozen policy |
+| --- | --- |
+| FR-001 | Google trên Supabase là provider duy nhất cho auth và signed-in Account/session; Runtime/Auth integration vẫn `Unresolved` cho tới khi WI-02 có evidence. Supabase chỉ ở server-side boundary; mobile chỉ gọi API của hệ thống. |
+| FR-002 | Signed-out Save/Saved/Try Pose phải yêu cầu sign-in; Guest không được Try Pose; không invent SDK, dependency, env, callback hoặc runtime path. |
+| FR-006 | Khi pose unpublish/terminal-delete, SavedEntry vẫn được giữ persistence-side; list/API chỉ trả published usable pose; stale detail/deep-link/use báo “đã xoá hoặc đã ẩn” và chặn Try Pose; 401 phải isolate account collection. |
+| FR-010 | Albums many-to-many là future boundary; không có Albums/WI-06 CRUD, membership UI/API/model/migration trong v1. |
+
+Thiếu WI-02 Runtime/Auth evidence phải escalates `BLOCKED_NEEDS_LEAD` hoặc
+`CLARIFICATION_NEEDED`; không được claim runtime shipped/verified.
 ### Proposed missing constraints — proposed — needs Product Authority approval
 
 Các mục dưới đây là proposal bổ sung sau FR-001..FR-010, không phải FR mới,
@@ -158,7 +171,7 @@ và Albums future boundary là các invariant được giữ nguyên.
 | Constraint | Status | Recommended default |
 | --- | --- | --- |
 | Identity mapping: correlation nội bộ dùng `auth.users.id` của Supabase và stable Google subject `sub`; một Google account map tới đúng một Account, cùng Google login trên nhiều thiết bị hội tụ về Account đó, và phải ngăn duplicate Account. | proposed | Giữ mapping nội bộ này; không thêm Account field hay OpenAPI change. |
-| Session lifecycle và sign-out thuộc FEAT-014; access/refresh token, expiry, silent refresh và remote revocation details vẫn là open questions. | proposed open question | FEAT-014 owns Account UI, signed-in/signed-out state, sign-out, expiry/invalid-session recovery and isolation. FEAT-013 chỉ tiêu thụ valid Account/session; giữ FR-007 refresh/clear và không invent token/revocation mechanics. |
+| Session lifecycle và sign-out là open question: access/refresh token, expiry, silent refresh và sign-out. | proposed open question | Nếu được approve, lưu token trong secure OS storage; dùng auth boundary hiện hữu cho expiry/silent refresh; giữ FR-007 refresh/clear; recommended default là chưa thêm Account tab hoặc sign-out affordance mới cho tới khi Product Authority quyết định. |
 | OAuth/privacy: scope và dữ liệu Google. | proposed | Chỉ request `openid email profile`, không xin quyền thêm; có consent copy; chỉ map `displayName` vào `Account.displayName` khi cần, chỉ dùng email khi cần, không persist avatar hay dữ liệu Google không liên quan; giữ spec unchanged. |
 | Provider enforcement guard/configuration. | proposed | Nếu được approve, dashboard/config guard phải chỉ bật Google và reject provider khác; không provider mới nếu không có Product Authority decision. |
 | Account/provider deletion: cancellation và Google identity bị xoá/disable. | proposed open question | Khi user Account deletion được xác nhận, purge Account-scoped SavedEntry vì privacy; nếu Google identity bị xoá/disable nhưng app Account chưa bị xoá, giữ dữ liệu, block reauth và không silently tạo Account mới cho tới khi có relink policy. Không áp dụng nhầm với FR-006 pose-removal retention. |
@@ -215,9 +228,9 @@ Then không queue mutation và không hiển thị success giả.
 ## Relationships
 
 - Roadmap: [Product Delivery Roadmap](../specs/product-delivery-roadmap.md), P2 Saved Poses & Albums.
-- Existing feature boundaries: [FEAT-003](FEAT-003-browse-and-search-published-poses.md), [FEAT-006](FEAT-006-publish-a-pose.md), [FEAT-008](FEAT-008-use-published-poses.md).
-- Account/session boundary: [FEAT-014](FEAT-014-manage-account-and-session.md) owns Account entry/screen, identity/provider/session presentation, sign-out, expiry/invalid-session recovery, signed-out gating, and account isolation; FEAT-013 consumes a valid session.
+- Existing feature boundaries: [FEAT-003](./FEAT-003-browse-and-search-published-poses.md), [FEAT-006](./FEAT-006-publish-a-pose.md), [FEAT-008](./FEAT-008-use-published-poses.md).
+- Account/session boundary: [FEAT-014](./FEAT-014-manage-account-and-session.md) owns Account entry/screen, identity/provider/session presentation, sign-out, expiry/invalid-session recovery, signed-out gating, and account isolation; FEAT-013 consumes a valid session.
 - FEAT-008 is the predecessor/boundary for published-pose use and existing Try Pose flow; this policy does not change its frozen Guest gate.
-- Contracts: [Account](../../spec/data/entities/account.md), [SavedEntry](../../spec/data/entities/saved-entry.md), [Saved API](../../spec/api/modules/saved.md), [API Conventions](../../spec/api/conventions.md).
+- Contracts: [Account](../specs/data-contract.md#account), [SavedEntry](../specs/data-contract.md#savedentry), [Saved API](../specs/api-contract.md#saved), [API Conventions](../specs/api-contract.md#conventions).
 - Current flow reuse: CommunityPose, PoseDetailScreen, PoseApiService, PoseRepository, existing pagination and error conventions.
 - Albums boundary: many-to-many is reserved for a future Feature/Plan; this Feature v1 has no Album implementation work.

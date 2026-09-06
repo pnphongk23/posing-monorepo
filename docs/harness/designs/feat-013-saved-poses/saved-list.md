@@ -56,8 +56,8 @@ Reuse the existing Poses screen geometry from `PosesScreen` and the prototype
 
 ## Pagination
 
-Use the authority contract from [Saved API](../../../spec/api/modules/saved.md)
-and [API conventions](../../../spec/api/conventions.md):
+Use the authority contract from [Saved API](../../specs/api-contract.md#saved)
+and [API conventions](../../specs/api-contract.md#conventions):
 `GET /api/me/saved?page=<n>&limit=<n>`, returning
 `pagination.page`, `pagination.limit`, and `pagination.total`. Use page 1 and
 the API convention default `limit=20` unless the implementation has an approved

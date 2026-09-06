@@ -16,13 +16,13 @@ relationships:
   decisions: []
   plans: []
   reports:
-    - "[[REP-012-backlog-lane-documentation-survey|REP-012]]"
+    - "[[REP-013-backlog-lane-documentation-survey|REP-013]]"
   rules: []
   features:
     - "[[FEAT-013-saved-poses-albums-account-backed|FEAT-013]]"
   source_paths:
-    - docs/spec/data/entities/account.md
-    - docs/spec/api/conventions.md
+    - docs/harness/specs/data-contract.md
+    - docs/harness/specs/api-contract.md
     - docs/harness/features/FEAT-013-saved-poses-albums-account-backed.md
 ---
 

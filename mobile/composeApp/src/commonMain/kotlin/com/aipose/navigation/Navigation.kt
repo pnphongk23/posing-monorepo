@@ -64,6 +64,11 @@ import cafe.adriel.voyager.navigator.tab.Tab
 import cafe.adriel.voyager.navigator.tab.TabOptions
 import com.aipose.Pose
 import com.aipose.Photo
+import com.aipose.auth.SignInIntent
+import com.aipose.auth.SignInPrompt
+import com.aipose.auth.SignInPromptController
+import com.aipose.auth.hasValidStoredSession
+import com.aipose.auth.platformGoogleSignInLauncher
 import com.aipose.camera.CameraScreen
 import com.aipose.camera.CameraSnapshotPersistence
 import com.aipose.camera.toPersistedPoseIdentity
@@ -79,6 +84,8 @@ import com.aipose.ui.screens.poses.PoseDetailViewModel
 import com.aipose.ui.screens.poses.PosePreview
 import com.aipose.ui.screens.poses.PosesScreen
 import com.aipose.ui.screens.poses.PosesViewModel
+import com.aipose.ui.screens.poses.SavedScreen
+import com.aipose.ui.screens.poses.SavedViewModel
 import com.aipose.ui.theme.AiPoseColors
 import com.aipose.ui.theme.AiPoseTypography
 import com.aipose.ui.theme.Spacing
@@ -137,6 +144,20 @@ class PosesListStateHolder(
     }
 }
 
+/** Hoisted Saved-list state (survives detail push/pop without reloading). */
+class SavedListStateHolder(
+    val viewModel: SavedViewModel,
+    val gridState: LazyStaggeredGridState,
+) {
+    companion object {
+        fun create(
+            viewModel: SavedViewModel = SavedViewModel(),
+            gridState: LazyStaggeredGridState = LazyStaggeredGridState(),
+        ): SavedListStateHolder =
+            SavedListStateHolder(viewModel, gridState)
+    }
+}
+
 /** Hoisted Gallery-tab list state (survives detail push/pop). */
 class GalleryListStateHolder(
     val viewModel: GalleryViewModel,
@@ -187,9 +208,12 @@ object PosesTab : Tab {
     @Composable
     override fun Content() {
         // State hoisted here (above the Navigator): detail push/pop never recreates
-        // the list ViewModel, its DB collectors, or the grid viewport.
+        // the list ViewModel, its DB collectors, or the grid viewport. The Saved
+        // holder is hoisted the same way so the Signed-in Saved grid also survives
+        // detail push/pop without reloading.
         val state = remember { PosesListStateHolder.create() }
-        Navigator(PosesListScreen(state))
+        val savedState = remember { SavedListStateHolder.create() }
+        Navigator(PosesListScreen(state, savedState))
     }
 }
 
@@ -298,39 +322,96 @@ internal fun createTryPoseCameraHandoffAction(
     setCurrentTab(CameraTab)
 }
 
-class PosesListScreen(private val state: PosesListStateHolder) : Screen {
+class PosesListScreen(
+    private val state: PosesListStateHolder,
+    private val savedState: SavedListStateHolder,
+) : Screen {
     @Composable
     override fun Content() {
         val navigator = LocalNavigator.currentOrThrow
         val tabNavigator = LocalTabNavigator.current
+        val signInController = remember { SignInPromptController(platformGoogleSignInLauncher()) { intent ->
+            // Resume the single-use interrupted intent: push the Signed-in Saved list.
+            if (intent == SignInIntent.OPEN_SAVED) navigator.push(SavedListVoyagerScreen(savedState))
+        } }
+        var showSignIn by remember { mutableStateOf(false) }
         Box(Modifier.fillMaxSize()) {
         PosesScreen(
             viewModel = state.viewModel,
             communityGridState = state.communityGridState,
-            onPublishedPoseClick = { preview -> navigator.push(PoseDetailVoyagerScreen(preview)) },
+            onPublishedPoseClick = { preview -> navigator.push(PoseDetailVoyagerScreen(preview, origin = PoseDetailOrigin.COMMUNITY)) },
             onExtractPoseClick = createPoseCameraEntryAction { tabNavigator.current = it },
             onSearchClick = createSearchNavigationAction(
                 pushScreen = { navigator.push(it) },
                 popBack = { navigator.pop() },
             ),
+            onSavedClick = {
+                if (hasValidStoredSession()) {
+                    navigator.push(SavedListVoyagerScreen(savedState))
+                } else {
+                    signInController.show(SignInIntent.OPEN_SAVED)
+                    showSignIn = true
+                }
+            },
         )
         MainDock(modifier = Modifier.align(Alignment.BottomCenter))
         }
+        SignInPrompt(
+            controller = signInController,
+            visible = showSignIn && signInController.state.value.intent == SignInIntent.OPEN_SAVED,
+            onDismiss = { showSignIn = false },
+        )
     }
 }
 
+/** WI-04: where the detail was opened from, driving unavailable-state back copy. */
+enum class PoseDetailOrigin { COMMUNITY, SAVED }
+
 class PoseDetailVoyagerScreen(
-    private val previewItem: PosePreview
+    private val previewItem: PosePreview,
+    private val origin: PoseDetailOrigin = PoseDetailOrigin.COMMUNITY,
+    private val initialSaved: Boolean = false,
+    private val savedState: SavedListStateHolder? = null,
 ) : Screen {
     @Composable
     override fun Content() {
         val navigator = LocalNavigator.currentOrThrow
         val tabNavigator = LocalTabNavigator.current
         var backOwned by remember { mutableStateOf(false) }
+        val detailViewModel = remember {
+            PoseDetailViewModel(
+                poseId = previewItem.poseId,
+                initialSaved = initialSaved,
+                origin = origin,
+                initialCommunityPose = previewItem.communityPose,
+            )
+        }
+        val signInController = remember {
+            SignInPromptController(platformGoogleSignInLauncher()) { intent ->
+                when (intent) {
+                    SignInIntent.SAVE_POSE -> {
+                        if (detailViewModel.signInRequired.value) {
+                            // 401 recovery (no interrupted Save): clear + reload, no auto-mutate.
+                            detailViewModel.reloadAfterSignIn()
+                        } else {
+                            detailViewModel.resumeSignInIntent(onTrySuccess = {})
+                        }
+                    }
+                    SignInIntent.TRY_POSE -> detailViewModel.resumeSignInIntent { prepared ->
+                        PoseServiceLocator.preparedReference = prepared
+                        CameraSnapshotPersistence.replacePose(prepared.toPersistedPoseIdentity())
+                        tabNavigator.current = CameraTab
+                    }
+                    SignInIntent.OPEN_SAVED -> if (savedState != null) navigator.push(SavedListVoyagerScreen(savedState))
+                }
+            }
+        }
+        var showSignIn by remember { mutableStateOf(false) }
         PoseDetailScreen(
             poseId = previewItem.poseId,
             preview = previewItem,
-            viewModel = remember { PoseDetailViewModel(previewItem.poseId) },
+            viewModel = detailViewModel,
+            origin = origin,
             onUseWithCamera = createTryPoseCameraHandoffAction(
                 setPreparedReference = {
                     PoseServiceLocator.preparedReference = it
@@ -338,6 +419,14 @@ class PoseDetailVoyagerScreen(
                 },
                 setCurrentTab = { tabNavigator.current = it },
             ),
+            onSignInRequired = { intent ->
+                signInController.show(intent)
+                showSignIn = true
+            },
+            onConfirmedUnsave = {
+                // 204 landed: remove from the hoisted Saved list without reloading the grid.
+                if (origin == PoseDetailOrigin.SAVED) savedState?.viewModel?.removeConfirmed(previewItem.poseId)
+            },
             onBack = {
                 // Pop-first: request the reverse and perform the exactly-one pop
                 // immediately. The root overlay owns the reverse completion + cleanup;
@@ -351,6 +440,52 @@ class PoseDetailVoyagerScreen(
                     BackDecision.NONE -> backOwned = owned
                 }
             }
+        )
+        SignInPrompt(
+            controller = signInController,
+            visible = showSignIn,
+            onDismiss = {
+                detailViewModel.clearSignInIntent()
+                showSignIn = false
+            },
+        )
+    }
+}
+
+/** WI-04: pushed Signed-in Saved list. No MainDock is composed here (stack screen). */
+class SavedListVoyagerScreen(private val savedState: SavedListStateHolder) : Screen {
+    @Composable
+    override fun Content() {
+        val navigator = LocalNavigator.currentOrThrow
+        val tabNavigator = LocalTabNavigator.current
+        val signInController = remember {
+            SignInPromptController(platformGoogleSignInLauncher()) { intent ->
+                if (intent == SignInIntent.OPEN_SAVED) {
+                    // Session restored: re-enter the Signed-in Saved list load.
+                    savedState.viewModel.loadInitial()
+                }
+            }
+        }
+        var showSignIn by remember { mutableStateOf(false) }
+        Box(Modifier.fillMaxSize()) {
+            SavedScreen(
+                viewModel = savedState.viewModel,
+                gridState = savedState.gridState,
+                onBack = { navigator.pop() },
+                onPoseClick = { preview ->
+                    navigator.push(PoseDetailVoyagerScreen(preview, origin = PoseDetailOrigin.SAVED, initialSaved = true, savedState = savedState))
+                },
+                onBrowseCommunity = { navigator.pop() },
+                onSignInRequired = {
+                    signInController.show(SignInIntent.OPEN_SAVED)
+                    showSignIn = true
+                },
+            )
+        }
+        SignInPrompt(
+            controller = signInController,
+            visible = showSignIn,
+            onDismiss = { showSignIn = false },
         )
     }
 }

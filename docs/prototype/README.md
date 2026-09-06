@@ -37,7 +37,7 @@ docs/prototype/
 │   ├── saved-list.html         # FEAT-013 Saved collection state prototype
 │   ├── pose-detail-saved.html  # FEAT-013 saved detail/save/try states
 │   ├── sign-in-prompt.html     # FEAT-013 shared auth gate simulation
-│   ├── gallery.html            # Gallery with staggered photo list and main navigation
+│   ├── gallery.html            # Captured matches history with list/grid toggle and main navigation
 │   └── gallery-detail.html     # Source-aware captured photo detail and delete confirmation
 ├── styles/                     # Design System & Component Outlines
 │   ├── tokens.css              # Custom properties layer (colors, spacing, radii)
@@ -105,7 +105,7 @@ real auth session.
 These screens are prototype-only visual/navigation simulations; they do not call
 the Saved API, persist account data, or implement production authentication.
 
-- [Saved list](screens/saved-list.html): `?state=loading`, `ready`, `empty`, `error`, `refresh-error`, `load-more-loading`, `load-more-error`, `offline-stale`, or `offline-no-cache`; inspect pagination with `?page=1&limit=20`. Removed/unavailable is demonstrated on [Saved pose detail](screens/pose-detail-saved.html?id=dancing&state=unavailable), not as a list tombstone.
+- [Saved list](./screens/saved-list.html): `?state=loading`, `ready`, `empty`, `error`, `refresh-error`, `load-more-loading`, `load-more-error`, `offline-stale`, or `offline-no-cache`; inspect pagination with `?page=1&limit=20`. Removed/unavailable is demonstrated on [Saved pose detail](screens/pose-detail-saved.html?id=dancing&state=unavailable), not as a list tombstone.
 - [Saved pose detail](screens/pose-detail-saved.html?id=dancing): `?state=unsaved`, `pending-save`, `pending-unsave`, `error`, `offline`, `unavailable`, or the default confirmed saved state. Add `auth=guest` to gate Save/Try.
 - [Sign-in prompt](screens/sign-in-prompt.html?intent=saved): use `intent=saved`, `save`, or `try`; `state=fail` simulates a retryable auth failure. Continue resumes Saved or the encoded `return` detail URL; Not now keeps the gated context.
 
