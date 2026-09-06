@@ -108,11 +108,12 @@ class SessionBoundaryTest {
                 listOf("/api/community/poses", "/api/auth/refresh", "/api/community/poses"),
                 paths,
             )
-            assertEquals(listOf<String?>("Bearer expired", "Bearer access-456"), authorizations)
-            assertEquals(3, requestCount)
-        } finally {
-            httpClient.close()
-        }
+              assertEquals(listOf<String?>("Bearer expired", "Bearer access-456"), authorizations)
+              assertEquals(3, requestCount)
+              assertEquals(0L, boundary.generation, "same-session refresh must not invalidate projections")
+          } finally {
+              httpClient.close()
+          }
     }
 
     @Test
@@ -139,5 +140,20 @@ class SessionBoundaryTest {
         } finally {
             httpClient.close()
         }
+    }
+
+    @Test
+    fun `sign out is local and idempotent`() = runBlocking<Unit> {
+        val storage = FakeTokenStorage().also {
+            it.credentials = SessionCredentials("access-123", "refresh-123")
+        }
+        val boundary = SessionBoundary(storage)
+
+        boundary.signOut()
+        boundary.signOut()
+
+        assertNull(storage.loadCredentials())
+        assertEquals(SessionEvent.SignedOut, boundary.events.first())
+        assertEquals(1L, boundary.generation)
     }
 }

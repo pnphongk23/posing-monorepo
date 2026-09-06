@@ -220,6 +220,32 @@ class PoseApiServiceTest {
         }
     }
 
+    @Test
+    fun `getCurrentAccount adapts existing account me envelope`() = runBlocking<Unit> {
+        var capturedRequest: io.ktor.client.request.HttpRequestData? = null
+        val client = buildMockClient { request ->
+            capturedRequest = request
+            respond(
+                content = ByteReadChannel(
+                    """{"data":{"id":"account-1","displayName":"Yoga User","createdAt":"2026-01-01T00:00:00.000Z"}}"""
+                ),
+                status = HttpStatusCode.OK,
+                headers = headersOf(HttpHeaders.ContentType, "application/json"),
+            )
+        }
+        try {
+            val account = PoseApiService(client, "https://test.server").getCurrentAccount()
+            assertNotNull(capturedRequest)
+            assertEquals(HttpMethod.Get, capturedRequest!!.method)
+            assertEquals("/api/account/me", capturedRequest!!.url.encodedPath)
+            assertEquals("account-1", account.id)
+            assertEquals("Yoga User", account.displayName)
+            assertEquals("2026-01-01T00:00:00.000Z", account.createdAt)
+        } finally {
+            client.close()
+        }
+    }
+
     // ── WI-04: Saved collection ──────────────────────────────────────────────
 
     @Test

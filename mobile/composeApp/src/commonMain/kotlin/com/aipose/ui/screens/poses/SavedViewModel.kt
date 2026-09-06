@@ -6,10 +6,12 @@ import com.aipose.data.SAVED_PAGE_LIMIT
 import com.aipose.data.SavedPagingController
 import com.aipose.data.SavedPagingState
 import com.aipose.data.SavedPosesRepository
+import com.aipose.data.auth.SessionEvent
 import com.aipose.data.remote.CommunityPose
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -25,8 +27,10 @@ import kotlinx.coroutines.launch
 class SavedViewModel(
     private val savedRepository: SavedPosesRepository = PoseServiceLocator.savedPosesRepository,
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main),
+    private val sessionEvents: Flow<SessionEvent> = PoseServiceLocator.sessionBoundary.events,
+    private val sessionGeneration: () -> Long = { PoseServiceLocator.sessionBoundary.generation },
 ) {
-    private val paging = SavedPagingController(savedRepository, scope)
+    private val paging = SavedPagingController(savedRepository, scope, sessionEvents, sessionGeneration)
 
     private val _uiState = MutableStateFlow(SavedPagingState())
     val uiState: StateFlow<SavedPagingState> = _uiState.asStateFlow()

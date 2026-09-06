@@ -76,6 +76,7 @@ import com.aipose.data.resolveImagePath
 import com.aipose.data.PreparedPoseReference
 import com.aipose.data.PoseServiceLocator
 import com.aipose.platform.shareImage
+import com.aipose.settings.SettingsDestinationResult
 import com.aipose.ui.screens.gallery.GalleryScreen
 import com.aipose.ui.screens.gallery.GalleryViewModel
 import com.aipose.ui.screens.gallery.GalleryPhotoDetailScreen
@@ -335,6 +336,12 @@ class PosesListScreen(
             if (intent == SignInIntent.OPEN_SAVED) navigator.push(SavedListVoyagerScreen(savedState))
         } }
         var showSignIn by remember { mutableStateOf(false) }
+        val settingsHostActions = SettingsHostActions(
+            onSavedClick = {
+                navigator.push(SavedListVoyagerScreen(savedState))
+                SettingsDestinationResult.Opened
+            },
+        )
         Box(Modifier.fillMaxSize()) {
         PosesScreen(
             viewModel = state.viewModel,
@@ -353,6 +360,7 @@ class PosesListScreen(
                     showSignIn = true
                 }
             },
+            onSettingsClick = { navigator.push(SettingsVoyagerScreen(settingsHostActions)) },
         )
         MainDock(modifier = Modifier.align(Alignment.BottomCenter))
         }
@@ -402,6 +410,7 @@ class PoseDetailVoyagerScreen(
                         CameraSnapshotPersistence.replacePose(prepared.toPersistedPoseIdentity())
                         tabNavigator.current = CameraTab
                     }
+                    SignInIntent.OPEN_ACCOUNT -> Unit
                     SignInIntent.OPEN_SAVED -> if (savedState != null) navigator.push(SavedListVoyagerScreen(savedState))
                 }
             }

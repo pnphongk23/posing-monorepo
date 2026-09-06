@@ -4,11 +4,28 @@ import com.aipose.data.remote.CommunityPose
 import com.aipose.data.remote.PaginatedResult
 import com.aipose.data.remote.PaginationInfo
 import com.aipose.data.remote.PoseApiException
+import com.aipose.data.auth.SessionEvent
+import com.aipose.data.auth.SecureTokenStorage
+import com.aipose.data.auth.SessionBoundary
+import com.aipose.data.auth.SessionCredentials
+import com.aipose.data.auth.installSessionBoundary
+import com.aipose.data.remote.PoseApiService
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.mock.MockEngine
+import io.ktor.client.engine.mock.respond
+import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.http.HttpStatusCode
+import io.ktor.http.headersOf
+import io.ktor.serialization.kotlinx.json.json
+import io.ktor.utils.io.ByteReadChannel
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.runBlocking
 import kotlin.test.AfterTest
 import kotlin.test.Test
@@ -26,6 +43,13 @@ import kotlin.test.assertTrue
 /** WI-04 test fixture builder. */
 private fun savedPoseFixture(id: String, name: String = "Pose $id") =
     CommunityPose(poseId = id, name = name)
+
+private class RefreshTokenStorage : SecureTokenStorage {
+    var credentials: SessionCredentials? = null
+    override fun saveCredentials(credentials: SessionCredentials) { this.credentials = credentials }
+    override fun loadCredentials(): SessionCredentials? = credentials
+    override fun clearCredentials() { credentials = null }
+}
 
 class SavedPagingControllerTest {
 
@@ -77,9 +101,13 @@ class SavedPagingControllerTest {
         }
     }
 
-    private fun newController(repo: SavedPosesRepository): SavedPagingController {
+    private fun newController(
+        repo: SavedPosesRepository,
+        sessionEvents: Flow<SessionEvent>? = null,
+        sessionGeneration: (() -> Long)? = null,
+    ): SavedPagingController {
         scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-        controller = SavedPagingController(repo, scope)
+        controller = SavedPagingController(repo, scope, sessionEvents, sessionGeneration)
         return controller
     }
 
@@ -197,6 +225,109 @@ class SavedPagingControllerTest {
         waitUntil { controller.state.value.signInRequired }
         assertTrue(controller.state.value.signInRequired)
         assertTrue(controller.state.value.items.isEmpty(), "prior account data must not render as current")
+    }
+
+    @Test
+    fun `session invalidation clears confirmed account data`() = runBlocking {
+        val page1 = (1..SAVED_PAGE_LIMIT).map { savedPoseFixture("s-$it") }
+        val sessionEvents = MutableSharedFlow<SessionEvent>(extraBufferCapacity = 1)
+        newController(
+            FakeSavedRepository(pages = mapOf(1 to page1), total = 45),
+            sessionEvents,
+        )
+        controller.loadInitial()
+        waitUntil { !controller.state.value.isInitialLoading }
+        assertEquals(SAVED_PAGE_LIMIT, controller.state.value.items.size)
+
+        sessionEvents.emit(SessionEvent.SignedOut)
+        val invalidated = waitUntil { controller.state.value.signInRequired }
+        assertTrue(invalidated)
+        assertTrue(controller.state.value.items.isEmpty(), "Saved must not render the prior account")
+    }
+
+    @Test
+    fun `signed-in generation change rejects stale saved response`() = runBlocking {
+        val sessionEvents = MutableSharedFlow<SessionEvent>(extraBufferCapacity = 1)
+        var sessionGeneration = 0L
+        val staleResponse = CompletableDeferred<PaginatedResult<CommunityPose>>()
+        val repo = object : SavedPosesRepository {
+            override suspend fun getSavedPoses(page: Int, limit: Int): PaginatedResult<CommunityPose> =
+                staleResponse.await()
+
+            override suspend fun savePose(poseId: String): CommunityPose = savedPoseFixture(poseId)
+            override suspend fun unsavePose(poseId: String) {}
+        }
+        newController(repo, sessionEvents) { sessionGeneration }
+        controller.loadInitial()
+        assertTrue(waitUntil { controller.state.value.isInitialLoading })
+
+        sessionGeneration = 1L
+        sessionEvents.tryEmit(SessionEvent.SignedIn)
+        staleResponse.complete(
+            PaginatedResult(
+                data = listOf(savedPoseFixture("account-a")),
+                pagination = PaginationInfo(1, SAVED_PAGE_LIMIT, 1),
+            ),
+        )
+
+        assertTrue(waitUntil { !controller.state.value.isInitialLoading })
+        assertTrue(controller.state.value.items.isEmpty(), "account A data must not publish after account B sign-in")
+        assertFalse(controller.state.value.signInRequired, "signed-in transition must not require sign-in")
+    }
+
+    @Test
+    fun `publishes saved page after 401 refresh and retry 200 without invalidating session`() = runBlocking {
+        val storage = RefreshTokenStorage().also {
+            it.credentials = SessionCredentials("expired", "refresh-a")
+        }
+        val boundary = SessionBoundary(storage)
+        var savedReads = 0
+        val client = HttpClient(MockEngine) {
+            engine {
+                addHandler { request ->
+                    when (request.url.encodedPath) {
+                        "/api/me/saved" -> {
+                            if (savedReads++ == 0) {
+                                respond(ByteReadChannel(""), HttpStatusCode.Unauthorized)
+                            } else {
+                                respond(
+                                    ByteReadChannel(
+                                        """{"data":[{"poseId":"saved-after-refresh","name":"Fresh Saved","status":"published"}],"pagination":{"page":1,"limit":20,"total":1}}""",
+                                    ),
+                                    HttpStatusCode.OK,
+                                    headersOf("Content-Type", "application/json"),
+                                )
+                            }
+                        }
+                        "/api/auth/refresh" -> respond(
+                            ByteReadChannel("""{"accessToken":"access-b","refreshToken":"refresh-b"}"""),
+                            HttpStatusCode.OK,
+                            headersOf("Content-Type", "application/json"),
+                        )
+                        else -> error("Unexpected request path: ${request.url.encodedPath}")
+                    }
+                }
+            }
+            install(ContentNegotiation) { json(com.aipose.data.remote.sharedJson) }
+        }
+        try {
+            client.installSessionBoundary(boundary)
+            val service = PoseApiService(client, "https://test.server", boundary)
+            newController(
+                repo = LiveSavedPosesRepository(service),
+                sessionEvents = boundary.events,
+                sessionGeneration = { boundary.generation },
+            )
+
+            controller.loadInitial()
+
+            assertTrue(waitUntil { !controller.state.value.isInitialLoading })
+            assertEquals(listOf("saved-after-refresh"), controller.state.value.items.map { it.poseId })
+            assertEquals(SessionCredentials("access-b", "refresh-b"), storage.credentials)
+            assertEquals(0L, boundary.generation, "same-session refresh must preserve the projection generation")
+        } finally {
+            client.close()
+        }
     }
 
     @Test

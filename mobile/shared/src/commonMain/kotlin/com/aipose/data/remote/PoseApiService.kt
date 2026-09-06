@@ -111,6 +111,19 @@ data class RefreshResponse(
     val refreshToken: String,
 )
 
+/** Read-only account projection returned by GET /api/account/me. */
+@Serializable
+data class AccountSummary(
+    val id: String,
+    val displayName: String,
+    val createdAt: String? = null,
+)
+
+@Serializable
+data class AccountSummaryResponse(
+    val data: AccountSummary,
+)
+
 private fun RefreshResponse.toCredentials() = SessionCredentials(
     accessToken = accessToken,
     refreshToken = refreshToken,
@@ -227,6 +240,28 @@ class PoseApiService(
             )
         }
         return httpResponse.body()
+    }
+
+    /**
+     * Loads the authenticated account projection. The mobile client only adapts the
+     * existing backend route; it does not own identity, provider, or profile writes.
+     */
+    suspend fun getCurrentAccount(): AccountSummary {
+        val httpResponse: HttpResponse = requestWithSession {
+            httpClient.get("$baseUrl/api/account/me")
+        }
+        if (!httpResponse.status.isSuccess()) {
+            val errorEnvelope = try {
+                httpResponse.body<ApiErrorEnvelope>()
+            } catch (_: Exception) {
+                null
+            }
+            throw PoseApiException(
+                code = errorEnvelope?.error?.code ?: httpResponse.status.value.toString(),
+                message = errorEnvelope?.error?.message ?: "Server error: ${httpResponse.status}",
+            )
+        }
+        return httpResponse.body<AccountSummaryResponse>().data
     }
 
     /**

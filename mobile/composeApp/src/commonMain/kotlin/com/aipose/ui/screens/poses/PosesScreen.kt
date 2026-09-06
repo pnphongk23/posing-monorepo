@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -86,6 +87,9 @@ internal const val POSES_SEARCH_BUTTON_TEST_TAG = "poses-search-button"
 
 /** E-SAVED: stable test tag for the Poses-header Saved bookmark. */
 internal const val POSES_SAVED_BUTTON_TEST_TAG = "opens-saved-poses-button"
+
+/** E-SETTINGS: Home/Poses exposes Settings without a direct Account affordance. */
+internal const val POSES_SETTINGS_BUTTON_TEST_TAG = "poses-settings-button"
 
 /**
  * Thumbnail fill policy. Crop fills the rounded card viewport while preserving
@@ -201,6 +205,7 @@ fun PosesScreen(
     onBack: (() -> Unit)? = null,
     onSearchClick: (() -> Unit)? = null,
     onSavedClick: (() -> Unit)? = null,
+    onSettingsClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -265,6 +270,35 @@ fun PosesScreen(
                             Icon(
                                 imageVector = Icons.Default.Bookmark,
                                 contentDescription = "Open Saved poses",
+                                tint = AiPoseColors.Foreground,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+
+                    val settingsInteractionSource = remember { MutableInteractionSource() }
+                    Box(
+                        modifier = Modifier
+                            .size(44.dp)
+                            .clickable(
+                                interactionSource = settingsInteractionSource,
+                                indication = null,
+                                role = Role.Button,
+                                onClick = { onSettingsClick?.invoke() }
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        NeoBrutalismContainer(
+                            modifier = Modifier.size(32.dp).testTag(POSES_SETTINGS_BUTTON_TEST_TAG),
+                            shape = RoundedCornerShape(10.dp),
+                            backgroundColor = AiPoseColors.Surface,
+                            shadowOffset = 1.5.dp,
+                            borderWidth = 2.dp,
+                            interactionSource = settingsInteractionSource
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Settings,
+                                contentDescription = "Open Settings",
                                 tint = AiPoseColors.Foreground,
                                 modifier = Modifier.size(16.dp)
                             )

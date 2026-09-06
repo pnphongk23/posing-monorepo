@@ -544,6 +544,7 @@ class PoseDetailViewModel(
                     tryPose(onSuccess = pending)
                 }
             }
+            SignInIntent.OPEN_ACCOUNT -> _signInIntent.value = null // handled by Account navigation
             SignInIntent.OPEN_SAVED -> _signInIntent.value = null // handled by navigation, not detail
         }
     }

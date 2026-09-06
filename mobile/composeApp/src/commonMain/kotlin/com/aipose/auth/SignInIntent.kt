@@ -5,20 +5,22 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 /**
- * The three entry points that may interrupt a user with the shared [SignInPrompt]:
+ * The entry points that may interrupt a user with the shared [SignInPrompt]:
  * saving a pose from detail, opening the Saved collection from the Poses header,
- * and trying a pose from detail. Each intent owns its sign-in prompt copy and its
- * post-sign-in resume action.
+ * opening the read-only Account screen, and trying a pose from detail. Each intent
+ * owns its sign-in prompt copy and its post-sign-in resume action.
  */
 enum class SignInIntent {
     SAVE_POSE,
     OPEN_SAVED,
+    OPEN_ACCOUNT,
     TRY_POSE,
 }
 
 fun SignInIntent.promptTitle(): String = when (this) {
     SignInIntent.SAVE_POSE -> "Sign in to save poses to your account."
     SignInIntent.OPEN_SAVED -> "Sign in to view your saved poses."
+    SignInIntent.OPEN_ACCOUNT -> "Sign in to view your account."
     SignInIntent.TRY_POSE -> "Sign in to try this pose."
 }
 

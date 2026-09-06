@@ -6,10 +6,13 @@ import com.aipose.data.remote.PaginationInfo
 import com.aipose.data.remote.PoseApiException
 import com.aipose.data.remote.PoseApiService
 import com.aipose.data.remote.isUnauthorized
+import com.aipose.data.auth.SessionEvent
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 
 /** WI-03 contract default page size for GET /api/me/saved. */
@@ -66,15 +69,33 @@ data class SavedPagingState(
 class SavedPagingController(
     private val repository: SavedPosesRepository,
     private val scope: CoroutineScope,
+    private val sessionEvents: Flow<SessionEvent>? = null,
+    private val sessionGenerationProvider: (() -> Long)? = null,
 ) {
     private val _state = MutableStateFlow(SavedPagingState())
     val state: StateFlow<SavedPagingState> = _state.asStateFlow()
     private var generationId = 0
 
+    init {
+        sessionEvents?.let { events ->
+            scope.launch {
+                events.collect { event ->
+                    when (event) {
+                        SessionEvent.SignInRequired,
+                        SessionEvent.SignedOut,
+                        -> clearForSessionChange(signInRequired = true)
+                        SessionEvent.SignedIn -> clearForSessionChange(signInRequired = false)
+                    }
+                }
+            }
+        }
+    }
+
     /** Loads page 1 (initial or refresh). Nothing is queued, only confirmed data lands. */
     fun loadInitial() {
         val current = _state.value
         if (current.isInitialLoading) return
+        val currentSessionGeneration = sessionGenerationProvider?.invoke()
         val currentGen = ++generationId
         _state.value = current.copy(
             isInitialLoading = true,
@@ -88,13 +109,22 @@ class SavedPagingController(
         scope.launch {
             try {
                 val result = repository.getSavedPoses(page = 1)
-                if (generationId != currentGen) return@launch
+                if (!isCurrent(currentGen, currentSessionGeneration)) {
+                    _state.value = _state.value.copy(isInitialLoading = false)
+                    return@launch
+                }
                 applyInitialSuccess(result)
             } catch (e: PoseApiException) {
-                if (generationId != currentGen) return@launch
+                if (!isCurrent(currentGen, currentSessionGeneration)) {
+                    _state.value = _state.value.copy(isInitialLoading = false)
+                    return@launch
+                }
                 applyFailure(e, refreshing = false)
             } catch (e: Exception) {
-                if (generationId != currentGen) return@launch
+                if (!isCurrent(currentGen, currentSessionGeneration)) {
+                    _state.value = _state.value.copy(isInitialLoading = false)
+                    return@launch
+                }
                 applyFailure(e, refreshing = false)
             }
         }
@@ -104,6 +134,7 @@ class SavedPagingController(
     fun refresh() {
         val current = _state.value
         if (current.isInitialLoading) return
+        val currentSessionGeneration = sessionGenerationProvider?.invoke()
         val currentGen = ++generationId
         _state.value = current.copy(
             isLoadingMore = false, // a refresh supersedes any in-flight load-more
@@ -114,13 +145,13 @@ class SavedPagingController(
         scope.launch {
             try {
                 val result = repository.getSavedPoses(page = 1)
-                if (generationId != currentGen) return@launch
+                if (!isCurrent(currentGen, currentSessionGeneration)) return@launch
                 applyInitialSuccess(result)
             } catch (e: PoseApiException) {
-                if (generationId != currentGen) return@launch
+                if (!isCurrent(currentGen, currentSessionGeneration)) return@launch
                 applyFailure(e, refreshing = true)
             } catch (e: Exception) {
-                if (generationId != currentGen) return@launch
+                if (!isCurrent(currentGen, currentSessionGeneration)) return@launch
                 applyFailure(e, refreshing = true)
             }
         }
@@ -129,13 +160,17 @@ class SavedPagingController(
     fun loadMore() {
         val current = _state.value
         if (current.isLoadingMore || !current.hasMore || current.isInitialLoading) return
+        val currentSessionGeneration = sessionGenerationProvider?.invoke()
         val currentGen = generationId
         val nextPage = current.page + 1
         _state.value = current.copy(isLoadingMore = true, loadMoreError = null)
         scope.launch {
             try {
                 val result = repository.getSavedPoses(page = nextPage)
-                if (generationId != currentGen) return@launch
+                if (!isCurrent(currentGen, currentSessionGeneration)) {
+                    _state.value = _state.value.copy(isLoadingMore = false)
+                    return@launch
+                }
                 val existingIds = _state.value.items.map { it.poseId }.toSet()
                 val uniqueNew = result.data.filter { it.poseId !in existingIds }
                 val merged = _state.value.items + uniqueNew
@@ -148,7 +183,7 @@ class SavedPagingController(
                     loadMoreError = null,
                 )
             } catch (e: PoseApiException) {
-                if (generationId != currentGen) {
+                if (!isCurrent(currentGen, currentSessionGeneration)) {
                     // Superseded by a newer generation: never leave the spinner stuck.
                     _state.value = _state.value.copy(isLoadingMore = false)
                     return@launch
@@ -161,7 +196,7 @@ class SavedPagingController(
                 }
                 _state.value = _state.value.copy(isLoadingMore = false, loadMoreError = e.message ?: "Load more failed")
             } catch (e: Exception) {
-                if (generationId != currentGen) {
+                if (!isCurrent(currentGen, currentSessionGeneration)) {
                     _state.value = _state.value.copy(isLoadingMore = false)
                     return@launch
                 }
@@ -185,6 +220,20 @@ class SavedPagingController(
             hasMore = current.page * SAVED_PAGE_LIMIT < newTotal,
         )
     }
+
+    /** Clears account-owned Saved data when the shared session boundary invalidates. */
+    fun clearForSessionInvalidation() {
+        clearForSessionChange(signInRequired = true)
+    }
+
+    private fun clearForSessionChange(signInRequired: Boolean) {
+        generationId += 1
+        _state.value = SavedPagingState(signInRequired = signInRequired)
+    }
+
+    private fun isCurrent(requestGeneration: Int, sessionGeneration: Long?): Boolean =
+        generationId == requestGeneration &&
+            (sessionGeneration == null || sessionGenerationProvider?.invoke() == sessionGeneration)
 
     private fun applyInitialSuccess(result: PaginatedResult<CommunityPose>) {
         _state.value = SavedPagingState(

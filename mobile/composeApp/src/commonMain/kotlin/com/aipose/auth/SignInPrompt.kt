@@ -38,7 +38,8 @@ internal const val SIGNIN_CONTINUE_TEST_TAG = "signin-continue-google"
 internal const val SIGNIN_NOT_NOW_TEST_TAG = "signin-not-now"
 
 /**
- * Shared modal sign-in prompt for all three entry points (Save / Saved / Try Pose).
+ * Shared modal sign-in prompt for account-scoped entry points (Save / Saved /
+ * Account / Try Pose).
  * One primary CTA — always `Continue with Google` — and the secondary `Not now`.
  * The interrupted intent is single-use: on real success it resumes once; on
  * cancellation or terminal failure it is cleared so it never replays on a later
