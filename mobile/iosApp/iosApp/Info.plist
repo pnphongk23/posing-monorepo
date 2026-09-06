@@ -47,10 +47,6 @@
 	<string>$(AIPOSE_ENVIRONMENT)</string>
 	<key>AIPoseBuildConfiguration</key>
 	<string>$(AIPOSE_BUILD_CONFIGURATION)</string>
-	<key>LegalTermsURL</key>
-	<string>$(LEGAL_TERMS_URL)</string>
-	<key>LegalPrivacyURL</key>
-	<string>$(LEGAL_PRIVACY_URL)</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

@@ -23,9 +23,11 @@ import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -48,6 +50,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
+import com.aipose.platform.ExternalActionResult
 import com.aipose.platform.LegalDocument
 import com.aipose.platform.openLegalDocument
 import com.aipose.ui.components.NeoBrutalismContainer
@@ -68,19 +71,36 @@ fun decidePaidAccess(snapshot: PurchaseSnapshot): GateDecision =
 fun decidePaidAccess(trigger: PaidAccessTrigger, snapshot: PurchaseSnapshot): GateDecision =
     decidePaidAccess(snapshot)
 
+internal fun paywallLegalActionMessage(result: ExternalActionResult): String? = when (result) {
+    ExternalActionResult.Opened -> null
+    ExternalActionResult.NotConfigured -> "Terms and privacy links are not available on this device."
+    is ExternalActionResult.Failed -> if (result.retryable) {
+        "Could not open the link. Please try again."
+    } else {
+        "The legal link is invalid."
+    }
+}
+
 /** One Compose surface for every approved paid-access trigger. */
 @Composable
 fun PaywallScreen(
     gateway: PurchaseGateway,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
-    onTerms: () -> Unit = { openLegalDocument(LegalDocument.TERMS) },
-    onPrivacy: () -> Unit = { openLegalDocument(LegalDocument.PRIVACY) },
+    onTerms: suspend () -> ExternalActionResult = { openLegalDocument(LegalDocument.TERMS) },
+    onPrivacy: suspend () -> ExternalActionResult = { openLegalDocument(LegalDocument.PRIVACY) },
 ) {
     val snapshot by gateway.snapshot.collectAsState()
     var hasLoaded by remember { mutableStateOf(false) }
     var selectedProduct by remember { mutableStateOf("premium_yearly") }
+    var legalDialogMessage by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
+
+    fun launchLegalAction(action: suspend () -> ExternalActionResult) {
+        scope.launch {
+            paywallLegalActionMessage(action())?.let { legalDialogMessage = it }
+        }
+    }
     val offering = snapshot.offering
     val selected = offering?.products?.firstOrNull { it.identifier == selectedProduct }
         ?: offering?.products?.firstOrNull { it.isAnnualHighlight }
@@ -433,7 +453,7 @@ fun PaywallScreen(
                         textDecoration = TextDecoration.Underline,
                         modifier = Modifier
                             .padding(horizontal = 6.dp, vertical = 4.dp)
-                            .clickable(onClick = onTerms)
+                            .clickable { launchLegalAction(onTerms) }
                             .semantics { role = Role.Button }
                             .testTag("paywall-terms"),
                     )
@@ -448,7 +468,7 @@ fun PaywallScreen(
                         textDecoration = TextDecoration.Underline,
                         modifier = Modifier
                             .padding(horizontal = 6.dp, vertical = 4.dp)
-                            .clickable(onClick = onPrivacy)
+                            .clickable { launchLegalAction(onPrivacy) }
                             .semantics { role = Role.Button }
                             .testTag("paywall-privacy"),
                     )
@@ -463,6 +483,32 @@ fun PaywallScreen(
                 )
             }
         }
+    }
+
+    legalDialogMessage?.let { message ->
+        AlertDialog(
+            onDismissRequest = { legalDialogMessage = null },
+            title = {
+                Text(
+                    text = "Unable to open link",
+                    style = AiPoseTypography.Heading3,
+                    color = AiPoseColors.Foreground,
+                )
+            },
+            text = {
+                Text(
+                    text = message,
+                    style = AiPoseTypography.Body,
+                    color = AiPoseColors.Subtext,
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { legalDialogMessage = null }) {
+                    Text("OK", color = AiPoseColors.Foreground)
+                }
+            },
+            modifier = Modifier.testTag("paywall-legal-error-dialog"),
+        )
     }
 }
 

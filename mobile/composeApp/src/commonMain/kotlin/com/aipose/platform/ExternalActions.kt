@@ -2,8 +2,33 @@ package com.aipose.platform
 
 enum class LegalDocument { TERMS, PRIVACY }
 
-/** Host/platform actions; destinations are injected by the native host. */
-expect fun openLegalDocument(document: LegalDocument)
+sealed interface ExternalActionResult {
+    data object Opened : ExternalActionResult
+    data object NotConfigured : ExternalActionResult
+    data class Failed(val retryable: Boolean) : ExternalActionResult
+}
+
+/** Canonical legal destinations per FEAT-015 PA-015-04. */
+object LegalAuthority {
+    const val TERMS_URL = "https://aipose.app/terms"
+    const val PRIVACY_URL = "https://aipose.app/privacy"
+
+    fun canonicalUrl(document: LegalDocument): String = when (document) {
+        LegalDocument.TERMS -> TERMS_URL
+        LegalDocument.PRIVACY -> PRIVACY_URL
+    }
+}
+
+/** Maps a native open-URL success flag into the platform action result. */
+fun externalActionResult(didOpen: Boolean): ExternalActionResult =
+    if (didOpen) {
+        ExternalActionResult.Opened
+    } else {
+        ExternalActionResult.Failed(retryable = true)
+    }
+
+/** Host/platform actions using code-owned canonical legal destinations. */
+expect suspend fun openLegalDocument(document: LegalDocument): ExternalActionResult
 
 /** Presents the platform share UI for an already-authorized image action. */
 expect fun shareImage(imagePath: String, context: Any?)

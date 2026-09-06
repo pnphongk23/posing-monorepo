@@ -76,6 +76,8 @@ import com.aipose.data.resolveImagePath
 import com.aipose.data.PreparedPoseReference
 import com.aipose.data.PoseServiceLocator
 import com.aipose.platform.shareImage
+import com.aipose.purchases.PaywallScreen
+import com.aipose.purchases.PurchaseGatewayProvider
 import com.aipose.settings.SettingsDestinationResult
 import com.aipose.ui.screens.gallery.GalleryScreen
 import com.aipose.ui.screens.gallery.GalleryViewModel
@@ -323,6 +325,26 @@ internal fun createTryPoseCameraHandoffAction(
     setCurrentTab(CameraTab)
 }
 
+internal fun createPremiumPaywallNavigationAction(
+    pushPaywall: () -> Unit,
+): () -> SettingsDestinationResult = {
+    pushPaywall()
+    SettingsDestinationResult.Opened
+}
+
+/** Full-screen paid-access owner pushed above Settings on the existing Voyager stack. */
+internal class PremiumPaywallVoyagerScreen : Screen {
+    @Composable
+    override fun Content() {
+        val navigator = LocalNavigator.currentOrThrow
+        PaywallScreen(
+            gateway = PurchaseGatewayProvider.current,
+            onDismiss = { navigator.pop() },
+            modifier = Modifier.fillMaxSize(),
+        )
+    }
+}
+
 class PosesListScreen(
     private val state: PosesListStateHolder,
     private val savedState: SavedListStateHolder,
@@ -340,6 +362,9 @@ class PosesListScreen(
             onSavedClick = {
                 navigator.push(SavedListVoyagerScreen(savedState))
                 SettingsDestinationResult.Opened
+            },
+            onPremiumClick = createPremiumPaywallNavigationAction {
+                navigator.push(PremiumPaywallVoyagerScreen())
             },
         )
         Box(Modifier.fillMaxSize()) {

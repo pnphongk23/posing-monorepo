@@ -1,5 +1,8 @@
 package com.aipose.settings
 
+import com.aipose.platform.ExternalActionResult
+import com.aipose.platform.LegalDocument
+import com.aipose.platform.externalActionResult
 import kotlinx.cinterop.ExperimentalForeignApi
 import platform.AVFoundation.AVCaptureDevice
 import platform.AVFoundation.AVAuthorizationStatusAuthorized
@@ -8,22 +11,37 @@ import platform.AVFoundation.AVAuthorizationStatusNotDetermined
 import platform.AVFoundation.AVAuthorizationStatusRestricted
 import platform.AVFoundation.AVMediaTypeVideo
 import platform.AVFoundation.authorizationStatusForMediaType
-import platform.Foundation.NSBundle
 import platform.Foundation.NSURL
 import platform.UIKit.UIApplication
 import platform.UIKit.UIApplicationOpenSettingsURLString
-import com.aipose.platform.LegalDocument
 
 private const val SUPPORT_URL = "https://forms.gle/sample-aipose-feedback"
 
 private fun openResult(didOpen: Boolean): SettingsDestinationResult =
-    if (didOpen) {
-        SettingsDestinationResult.Opened
-    } else {
-        SettingsDestinationResult.Failed(
+    when (externalActionResult(didOpen)) {
+        ExternalActionResult.Opened -> SettingsDestinationResult.Opened
+        ExternalActionResult.NotConfigured -> SettingsDestinationResult.NotConfigured
+        is ExternalActionResult.Failed -> SettingsDestinationResult.Failed(
             message = "The destination could not be opened.",
             retryable = true,
         )
+    }
+
+private fun toSettingsDestinationResult(result: ExternalActionResult): SettingsDestinationResult =
+    when (result) {
+        ExternalActionResult.Opened -> SettingsDestinationResult.Opened
+        ExternalActionResult.NotConfigured -> SettingsDestinationResult.NotConfigured
+        is ExternalActionResult.Failed -> if (result.retryable) {
+            SettingsDestinationResult.Failed(
+                message = "The destination could not be opened.",
+                retryable = true,
+            )
+        } else {
+            SettingsDestinationResult.Failed(
+                message = "The legal document URL is invalid.",
+                retryable = false,
+            )
+        }
     }
 
 @OptIn(ExperimentalForeignApi::class)
@@ -52,26 +70,8 @@ actual fun platformSettingsActions(): SettingsPlatformActions =
             return openResult(UIApplication.sharedApplication.openURL(url))
         }
 
-        override suspend fun openLegalDocument(document: LegalDocument): SettingsDestinationResult {
-            val key = when (document) {
-                LegalDocument.TERMS -> "LegalTermsURL"
-                LegalDocument.PRIVACY -> "LegalPrivacyURL"
-            }
-            val rawUrl = NSBundle.mainBundle.objectForInfoDictionaryKey(key) as? String
-            if (
-                rawUrl.isNullOrBlank() ||
-                rawUrl.startsWith("$(") ||
-                rawUrl.contains("PLACEHOLDER", ignoreCase = true) ||
-                rawUrl.contains("aipose.example.com", ignoreCase = true)
-            ) {
-                return SettingsDestinationResult.NotConfigured
-            }
-            val url = NSURL.URLWithString(rawUrl) ?: return SettingsDestinationResult.Failed(
-                message = "The legal document URL is invalid.",
-                retryable = false,
-            )
-            return openResult(UIApplication.sharedApplication.openURL(url))
-        }
+        override suspend fun openLegalDocument(document: LegalDocument): SettingsDestinationResult =
+            toSettingsDestinationResult(com.aipose.platform.openLegalDocument(document))
 
         override suspend fun openSupport(): SettingsDestinationResult {
             val url = NSURL.URLWithString(SUPPORT_URL) ?: return SettingsDestinationResult.NotConfigured

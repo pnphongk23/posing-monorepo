@@ -1,6 +1,7 @@
 package com.aipose.navigation
 
 import com.aipose.auth.SignInIntent
+import com.aipose.settings.SettingsDestinationResult
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -50,5 +51,14 @@ class SettingsNavigationWiringTest {
         gate.reset()
         assertTrue(gate.tryOpen { pushes++ })
         assertEquals(2, pushes)
+    }
+
+    @Test
+    fun `premium settings action pushes paywall and returns opened`() {
+        var pushes = 0
+        val action = createPremiumPaywallNavigationAction { pushes++ }
+
+        assertEquals(SettingsDestinationResult.Opened, action())
+        assertEquals(1, pushes)
     }
 }
