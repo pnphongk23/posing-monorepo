@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -98,7 +99,7 @@ fun PaywallScreen(
             .testTag("paywall")
             .testTag("paywall-screen"),
     ) {
-        Column(modifier = Modifier.fillMaxSize()) {
+        Column(modifier = Modifier.fillMaxSize().statusBarsPadding()) {
             // Header
             Row(
                 modifier = Modifier
@@ -431,10 +432,10 @@ fun PaywallScreen(
                         color = AiPoseColors.Foreground,
                         textDecoration = TextDecoration.Underline,
                         modifier = Modifier
+                            .padding(horizontal = 6.dp, vertical = 4.dp)
                             .clickable(onClick = onTerms)
                             .semantics { role = Role.Button }
-                            .testTag("paywall-terms")
-                            .padding(horizontal = 6.dp, vertical = 4.dp),
+                            .testTag("paywall-terms"),
                     )
                     Text("•", color = AiPoseColors.Subtext, modifier = Modifier.padding(horizontal = 2.dp))
                     Text(
@@ -446,10 +447,10 @@ fun PaywallScreen(
                         color = AiPoseColors.Foreground,
                         textDecoration = TextDecoration.Underline,
                         modifier = Modifier
+                            .padding(horizontal = 6.dp, vertical = 4.dp)
                             .clickable(onClick = onPrivacy)
                             .semantics { role = Role.Button }
-                            .testTag("paywall-privacy")
-                            .padding(horizontal = 6.dp, vertical = 4.dp),
+                            .testTag("paywall-privacy"),
                     )
                 }
 
