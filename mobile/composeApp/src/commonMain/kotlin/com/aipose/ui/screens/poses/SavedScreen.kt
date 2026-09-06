@@ -42,10 +42,11 @@ import com.aipose.ui.theme.AiPoseColors
 import com.aipose.ui.theme.AiPoseTypography
 import com.aipose.ui.theme.CornerRadius
 import com.aipose.ui.theme.Spacing
+import androidx.compose.foundation.border
+import androidx.compose.ui.text.style.TextAlign
 import org.jetbrains.compose.resources.painterResource
 import ai_pose.composeapp.generated.resources.Res
 import ai_pose.composeapp.generated.resources.ic_chevron_left
-import ai_pose.composeapp.generated.resources.ic_refresh_cw
 
 /** E-SAVED: stable test tag contract for the Saved list. */
 internal const val SAVED_HEADER_TEST_TAG = "saved-header"
@@ -95,7 +96,6 @@ fun SavedScreen(
         ) {
             SavedHeader(
                 onBack = onBack,
-                onRefresh = viewModel::refresh,
             )
 
             SavedContent(
@@ -116,7 +116,6 @@ fun SavedScreen(
 @Composable
 private fun SavedHeader(
     onBack: () -> Unit,
-    onRefresh: () -> Unit,
 ) {
     Row(
         modifier = Modifier
@@ -126,7 +125,10 @@ private fun SavedHeader(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm), verticalAlignment = Alignment.CenterVertically) {
+        Box(
+            modifier = Modifier.size(44.dp),
+            contentAlignment = Alignment.CenterStart,
+        ) {
             NeoBrutalismContainer(
                 modifier = Modifier
                     .size(44.dp)
@@ -144,32 +146,19 @@ private fun SavedHeader(
                     modifier = Modifier.size(16.dp),
                 )
             }
-            Text(
-                text = "Saved",
-                style = AiPoseTypography.NavigationTitle,
-                color = AiPoseColors.Foreground,
-            )
         }
 
-        // Icon-only refresh with an explicit content description (44dp target).
-        NeoBrutalismContainer(
-            modifier = Modifier
-                .size(44.dp)
-                .testTag(SAVED_REFRESH_TEST_TAG)
-                .semantics { contentDescription = "Refresh saved poses" },
-            shape = RoundedCornerShape(10.dp),
-            backgroundColor = AiPoseColors.Background,
-            shadowOffset = 2.dp,
-            borderWidth = 2.dp,
-            onClick = onRefresh,
-        ) {
-            Icon(
-                painter = painterResource(Res.drawable.ic_refresh_cw),
-                contentDescription = null,
-                tint = AiPoseColors.Foreground,
-                modifier = Modifier.size(18.dp),
-            )
-        }
+        Text(
+            text = "Saved",
+            style = AiPoseTypography.NavigationTitle,
+            color = AiPoseColors.Foreground,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.weight(1f),
+        )
+
+        Box(
+            modifier = Modifier.size(44.dp),
+        )
     }
 }
 
@@ -342,16 +331,17 @@ internal fun SavedPoseCard(
         Box(
             modifier = Modifier
                 .align(Alignment.TopEnd)
-                .padding(Spacing.xs)
-                .size(20.dp)
-                .background(AiPoseColors.Primary, RoundedCornerShape(CornerRadius.sm)),
+                .padding(Spacing.sm)
+                .size(24.dp)
+                .background(AiPoseColors.Primary, RoundedCornerShape(CornerRadius.sm))
+                .border(1.dp, AiPoseColors.Foreground, RoundedCornerShape(CornerRadius.sm)),
             contentAlignment = Alignment.Center,
         ) {
             Icon(
                 imageVector = Icons.Default.Bookmark,
                 contentDescription = null,
-                tint = AiPoseColors.Surface,
-                modifier = Modifier.size(12.dp),
+                tint = AiPoseColors.Foreground,
+                modifier = Modifier.size(18.dp),
             )
         }
     }

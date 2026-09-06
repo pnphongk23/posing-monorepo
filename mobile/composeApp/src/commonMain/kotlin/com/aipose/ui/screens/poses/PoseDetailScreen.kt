@@ -1,16 +1,20 @@
 package com.aipose.ui.screens.poses
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bookmark
@@ -288,26 +292,49 @@ private fun PoseDetailScaffold(
         verticalArrangement = Arrangement.spacedBy(Spacing.lg)
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(44.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            NeoBrutalismContainer(
+            Box(
                 modifier = Modifier.size(44.dp),
-                shape = RoundedCornerShape(10.dp),
-                backgroundColor = AiPoseColors.Background,
-                shadowOffset = 2.dp,
-                borderWidth = 2.dp,
-                onClick = onBack
+                contentAlignment = Alignment.CenterStart
             ) {
-                Icon(
-                    painter = painterResource(Res.drawable.ic_chevron_left),
-                    contentDescription = "Back",
-                    tint = AiPoseColors.Foreground,
-                    modifier = Modifier.size(16.dp)
-                )
+                NeoBrutalismContainer(
+                    modifier = Modifier.size(44.dp),
+                    shape = RoundedCornerShape(10.dp),
+                    backgroundColor = AiPoseColors.Background,
+                    shadowOffset = 2.dp,
+                    borderWidth = 2.dp,
+                    onClick = onBack
+                ) {
+                    Icon(
+                        painter = painterResource(Res.drawable.ic_chevron_left),
+                        contentDescription = "Back",
+                        tint = AiPoseColors.Foreground,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
             }
-            headerTrailing()
+            Text(
+                text = heroName,
+                style = AiPoseTypography.NavigationTitle,
+                color = AiPoseColors.Foreground,
+                textAlign = TextAlign.Center,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = Spacing.sm),
+            )
+            Box(
+                modifier = Modifier.size(44.dp),
+                contentAlignment = Alignment.CenterEnd
+            ) {
+                headerTrailing()
+            }
         }
 
         PoseDetailHeroRegion(
@@ -665,152 +692,197 @@ fun PoseDetailScreen(
                         is PoseDetailUiState.Success -> {
                             Column(
                                 modifier = Modifier.fillMaxWidth(),
-                                verticalArrangement = Arrangement.spacedBy(Spacing.xs)
+                                verticalArrangement = Arrangement.spacedBy(Spacing.md)
                             ) {
-                                Text(
-                                    text = s.name,
-                                    style = AiPoseTypography.ScreenTitle,
-                                    color = AiPoseColors.Foreground
-                                )
+                                Column(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalArrangement = Arrangement.spacedBy(Spacing.xs)
+                                ) {
+                                    val sourceText = when {
+                                        s.pose != null -> "My Poses"
+                                        origin == PoseDetailOrigin.SAVED -> "Saved"
+                                        else -> "Community"
+                                    }
+                                    val sourceBg = when {
+                                        s.pose != null -> AiPoseColors.Success
+                                        else -> AiPoseColors.AccentBlue
+                                    }
+                                    Box(
+                                        modifier = Modifier
+                                            .background(sourceBg, RoundedCornerShape(CornerRadius.sm))
+                                            .border(1.dp, AiPoseColors.Foreground, RoundedCornerShape(CornerRadius.sm))
+                                            .padding(horizontal = Spacing.sm, vertical = 4.dp),
+                                    ) {
+                                        Text(
+                                            text = sourceText,
+                                            style = AiPoseTypography.MetaLabel,
+                                            color = AiPoseColors.Foreground,
+                                        )
+                                    }
 
-                                if (s.difficulty != null) {
                                     Text(
-                                        text = "Difficulty: ${s.difficulty}",
-                                        style = AiPoseTypography.MetaLabel,
-                                        color = AiPoseColors.Primary
+                                        text = s.name,
+                                        style = AiPoseTypography.Heading3,
+                                        color = AiPoseColors.Foreground
                                     )
-                                }
-                                if (s.author != null) {
+
+                                    val contextText = when {
+                                        s.pose != null -> "Personal"
+                                        origin == PoseDetailOrigin.SAVED -> "Saved · Community"
+                                        else -> "Published · Community"
+                                    }
                                     Text(
-                                        text = "Author: ${s.author}",
-                                        style = AiPoseTypography.Body,
-                                        color = AiPoseColors.Subtext
-                                    )
-                                }
-                                if (s.pose != null) {
-                                    Text(
-                                        text = "Created: ${s.pose.createdAt}",
+                                        text = contextText,
                                         style = AiPoseTypography.Caption,
                                         color = AiPoseColors.Subtext
                                     )
                                 }
-                            }
 
-                            if (actionState is DetailActionState.Error) {
-                                Text(
-                                    text = (actionState as DetailActionState.Error).message,
-                                    style = AiPoseTypography.Caption,
-                                    color = AiPoseColors.Error,
-                                    modifier = Modifier.padding(vertical = Spacing.xs)
-                                )
-                            }
-
-                            // WI-04 confirmed Saved status + inline retryable mutation error.
-                            if (savedStatus.error != null && !savedStatus.unavailable) {
-                                Text(
-                                    text = savedStatus.error!!,
-                                    style = AiPoseTypography.Caption,
-                                    color = AiPoseColors.Error,
-                                    modifier = Modifier.padding(vertical = Spacing.xs)
-                                )
-                            }
-
-                            val isCommunity = s.communityPose != null
-                            val savedControlEnabled = isCommunity &&
-                                !savedStatus.isPending &&
-                                !savedStatus.unavailable &&
-                                actionState !is DetailActionState.Preparing
-                            if (savedStatus.unavailable) {
-                                // Removal/unavailable: visibly render the exact frozen copy,
-                                // block Try and mutation, never report success.
-                                UnavailableRemovedPanel(
-                                    origin = origin,
-                                    onBack = onBack,
-                                    modifier = Modifier.fillMaxWidth(),
-                                )
-                            } else {
-                                if (isCommunity) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    // 44-48dp bookmark: filled pink = confirmed saved; outlined = confirmed not saved.
-                                    NeoBrutalismContainer(
-                                        modifier = Modifier
-                                            .size(48.dp)
-                                            .testTag("detail-save-toggle")
-                                            .semantics {
-                                                contentDescription = if (savedStatus.isSaved) "Remove pose from Saved" else "Save pose"
-                                            },
-                                        shape = RoundedCornerShape(12.dp),
-                                        backgroundColor = if (savedStatus.isSaved) AiPoseColors.Primary else AiPoseColors.Surface,
-                                        shadowOffset = 2.dp,
-                                        borderWidth = 2.dp,
-                                        onClick = {
-                                            if (savedControlEnabled) {
-                                                viewModel.toggleSave()
-                                            }
-                                        },
-                                    ) {
-                                        if (savedStatus.isPending) {
-                                            CircularProgressIndicator(
-                                                color = if (savedStatus.isSaved) AiPoseColors.Surface else AiPoseColors.Primary,
-                                                modifier = Modifier.size(20.dp),
-                                                strokeWidth = 2.dp,
-                                            )
-                                        } else {
-                                            Icon(
-                                                imageVector = Icons.Default.Bookmark,
-                                                contentDescription = null,
-                                                tint = if (savedStatus.isSaved) AiPoseColors.Surface else AiPoseColors.Foreground,
-                                                modifier = Modifier.size(20.dp),
-                                            )
-                                        }
-                                    }
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            text = if (savedStatus.isSaved) "Saved" else "Save pose",
-                                            style = AiPoseTypography.Control,
-                                            color = AiPoseColors.Foreground,
-                                        )
-                                        Text(
-                                            text = if (savedStatus.isSaved)
-                                                "Tap to remove from Saved."
-                                            else
-                                                "Save this pose to your account.",
-                                            style = AiPoseTypography.Caption,
-                                            color = AiPoseColors.Subtext,
-                                        )
+                                val metadataItems = buildList {
+                                    s.author?.takeIf { it.isNotBlank() }?.let { add("Author: $it") }
+                                    s.difficulty?.takeIf { it.isNotBlank() }?.let { add("Difficulty: $it") }
+                                    if (s.pose != null && !s.pose.createdAt.isNullOrBlank()) {
+                                        add("Created: ${s.pose.createdAt}")
                                     }
                                 }
-                            }
-
-                            // Offline/stale: Save/Unsave/Try gated with a clear reconnect action.
-                            if (savedStatus.error != null && !savedStatus.unavailable) {
-                                PrimaryButton(
-                                    text = "Reconnect & Retry",
-                                    onClick = {
-                                        viewModel.clearSavedError()
-                                        viewModel.toggleSave()
-                                    },
-                                    modifier = Modifier.fillMaxWidth().padding(top = Spacing.sm),
-                                )
-                            }
-
-                            PrimaryButton(
-                                text = "Try Pose",
-                                enabled = !savedStatus.unavailable,
-                                onClick = {
-                                    if (premiumTestBypassEnabled || decidePaidAccess(purchaseGateway.snapshot.value).allowAction) {
-                                        coroutineScope.launch {
-                                            if (savedStatus.unavailable) return@launch // Try blocked on removed pose
-                                            viewModel.tryPose(onSuccess = onUseWithCamera)
+                                if (metadataItems.isNotEmpty()) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .semantics { contentDescription = "Pose metadata" },
+                                        horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        for (item in metadataItems) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .background(AiPoseColors.Surface, RoundedCornerShape(CornerRadius.full))
+                                                    .border(1.dp, AiPoseColors.Foreground, RoundedCornerShape(CornerRadius.full))
+                                                    .padding(horizontal = Spacing.sm, vertical = 4.dp),
+                                            ) {
+                                                Text(
+                                                    text = item,
+                                                    style = AiPoseTypography.MetaLabel,
+                                                    color = AiPoseColors.Foreground,
+                                                )
+                                            }
                                         }
-                                    } else showPaywall = true
-                                },
-                                modifier = Modifier.fillMaxWidth()
-                            )
+                                    }
+                                }
+
+                                if (actionState is DetailActionState.Error) {
+                                    Text(
+                                        text = (actionState as DetailActionState.Error).message,
+                                        style = AiPoseTypography.Caption,
+                                        color = AiPoseColors.Error,
+                                        modifier = Modifier.padding(vertical = Spacing.xs)
+                                    )
+                                }
+
+                                // WI-04 confirmed Saved status + inline retryable mutation error.
+                                if (savedStatus.error != null && !savedStatus.unavailable) {
+                                    Text(
+                                        text = savedStatus.error!!,
+                                        style = AiPoseTypography.Caption,
+                                        color = AiPoseColors.Error,
+                                        modifier = Modifier.padding(vertical = Spacing.xs)
+                                    )
+                                }
+
+                                val isCommunity = s.communityPose != null
+                                val savedControlEnabled = isCommunity &&
+                                    !savedStatus.isPending &&
+                                    !savedStatus.unavailable &&
+                                    actionState !is DetailActionState.Preparing
+                                if (savedStatus.unavailable) {
+                                    // Removal/unavailable: visibly render the exact frozen copy,
+                                    // block Try and mutation, never report success.
+                                    UnavailableRemovedPanel(
+                                        origin = origin,
+                                        onBack = onBack,
+                                        modifier = Modifier.fillMaxWidth(),
+                                    )
+                                } else {
+                                    // Offline/stale: Save/Unsave/Try gated with a clear reconnect action.
+                                    if (savedStatus.error != null && !savedStatus.unavailable) {
+                                        PrimaryButton(
+                                            text = "Reconnect & Retry",
+                                            onClick = {
+                                                viewModel.clearSavedError()
+                                                viewModel.toggleSave()
+                                            },
+                                            modifier = Modifier.fillMaxWidth().padding(bottom = Spacing.sm),
+                                        )
+                                    }
+
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        PrimaryButton(
+                                            text = "Try Pose",
+                                            enabled = !savedStatus.unavailable,
+                                            onClick = {
+                                                if (premiumTestBypassEnabled || decidePaidAccess(purchaseGateway.snapshot.value).allowAction) {
+                                                    coroutineScope.launch {
+                                                        if (savedStatus.unavailable) return@launch // Try blocked on removed pose
+                                                        viewModel.tryPose(onSuccess = onUseWithCamera)
+                                                    }
+                                                } else showPaywall = true
+                                            },
+                                            modifier = if (isCommunity) Modifier.weight(1f) else Modifier.fillMaxWidth()
+                                        )
+
+                                        if (isCommunity) {
+                                            NeoBrutalismContainer(
+                                                modifier = Modifier
+                                                    .height(48.dp)
+                                                    .testTag("detail-save-toggle")
+                                                    .semantics {
+                                                        contentDescription = if (savedStatus.isSaved) "Remove pose from Saved" else "Save pose"
+                                                    },
+                                                shape = RoundedCornerShape(CornerRadius.sm),
+                                                backgroundColor = if (savedStatus.isSaved) AiPoseColors.Primary else AiPoseColors.Surface,
+                                                shadowOffset = 2.dp,
+                                                borderWidth = 2.dp,
+                                                onClick = {
+                                                    if (savedControlEnabled) {
+                                                        viewModel.toggleSave()
+                                                    }
+                                                },
+                                            ) {
+                                                Row(
+                                                    modifier = Modifier
+                                                        .height(48.dp)
+                                                        .padding(horizontal = Spacing.md),
+                                                    horizontalArrangement = Arrangement.spacedBy(Spacing.xs),
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                ) {
+                                                    if (savedStatus.isPending) {
+                                                        CircularProgressIndicator(
+                                                            color = if (savedStatus.isSaved) AiPoseColors.Foreground else AiPoseColors.Primary,
+                                                            modifier = Modifier.size(18.dp),
+                                                            strokeWidth = 2.dp,
+                                                        )
+                                                    } else {
+                                                        Icon(
+                                                            imageVector = Icons.Default.Bookmark,
+                                                            contentDescription = null,
+                                                            tint = AiPoseColors.Foreground,
+                                                            modifier = Modifier.size(18.dp),
+                                                        )
+                                                    }
+                                                    Text(
+                                                        text = if (savedStatus.isSaved) "Saved" else "Save",
+                                                        style = AiPoseTypography.Control,
+                                                        color = AiPoseColors.Foreground,
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                         else -> {
@@ -821,7 +893,7 @@ fun PoseDetailScreen(
                             ) {
                                 Text(
                                     text = preview.name,
-                                      style = AiPoseTypography.ScreenTitle,
+                                    style = AiPoseTypography.Heading3,
                                     color = AiPoseColors.Foreground
                                 )
                                 Text(
