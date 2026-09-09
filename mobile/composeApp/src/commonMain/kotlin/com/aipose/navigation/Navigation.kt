@@ -82,6 +82,7 @@ import com.aipose.settings.SettingsDestinationResult
 import com.aipose.ui.screens.gallery.GalleryScreen
 import com.aipose.ui.screens.gallery.GalleryViewModel
 import com.aipose.ui.screens.gallery.GalleryPhotoDetailScreen
+import com.aipose.ui.screens.gallery.mapGalleryDeletePhotoResult
 import com.aipose.ui.screens.poses.PoseDetailScreen
 import com.aipose.ui.screens.poses.PoseDetailViewModel
 import com.aipose.ui.screens.poses.PosePreview
@@ -253,21 +254,31 @@ class GalleryListScreen(private val state: GalleryListStateHolder) : Screen {
                 viewModel = state.viewModel,
                 gridState = state.gridState,
                 onOpenCamera = { tabNavigator.current = CameraTab },
-                onPhotoClick = { photo -> navigator.push(GalleryDetailVoyagerScreen(photo)) },
+                onPhotoClick = { photo ->
+                    navigator.push(
+                        GalleryDetailVoyagerScreen(
+                            photo = photo,
+                            onDeletePhoto = { id -> state.viewModel.deletePhoto(id) },
+                        ),
+                    )
+                },
             )
             MainDock(modifier = Modifier.align(Alignment.BottomCenter))
         }
     }
 }
 
-class GalleryDetailVoyagerScreen(private val photo: Photo) : Screen {
+class GalleryDetailVoyagerScreen(
+    private val photo: Photo,
+    private val onDeletePhoto: suspend (Long) -> Unit,
+) : Screen {
     @Composable
     override fun Content() {
         val navigator = LocalNavigator.currentOrThrow
         var backOwned by remember { mutableStateOf(false) }
-            GalleryPhotoDetailScreen(
-                photo = photo,
-                onBack = {
+        GalleryPhotoDetailScreen(
+            photo = photo,
+            onBack = {
                 // Pop-first: request the reverse and perform the exactly-one pop
                 // immediately. The root overlay owns the reverse completion + cleanup;
                 // this detail scope never awaits it (pop disposes this screen). A rapid
@@ -279,13 +290,18 @@ class GalleryDetailVoyagerScreen(private val photo: Photo) : Screen {
                     BackDecision.REVERSE_POP -> navigator.pop()
                     BackDecision.POP -> navigator.pop()
                     BackDecision.NONE -> backOwned = owned
-                  }
-                },
-                onShare = { selected ->
-                    val path = resolveImagePath(selected.imagePath) ?: selected.imagePath
-                    shareImage(path, null)
-                },
-            )
+                }
+            },
+            onDelete = { id -> mapGalleryDeletePhotoResult(onDeletePhoto, id) },
+            onSave = { selected ->
+                val path = resolveImagePath(selected.imagePath) ?: selected.imagePath
+                com.aipose.platform.saveToPhotos(path, null)
+            },
+            onShare = { selected ->
+                val path = resolveImagePath(selected.imagePath) ?: selected.imagePath
+                shareImage(path, null)
+            },
+        )
     }
 }
 

@@ -31,7 +31,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.semantics
@@ -45,13 +44,11 @@ import com.aipose.ui.components.cardChrome
 import com.aipose.ui.theme.AiPoseColors
 import com.aipose.ui.theme.AiPoseTypography
 import com.aipose.ui.theme.Spacing
-import com.aipose.platform.deletePhotoConfirmation
 import com.aipose.platform.saveToPhotos
-import com.aipose.platform.saveToPhotosConfirmation
+import com.aipose.platform.shareImage
 import com.aipose.data.resolveImagePath
 import com.aipose.navigation.MainDockContentInset
 import com.aipose.navigation.listShouldAutoLoad
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -69,7 +66,6 @@ fun GalleryScreen(
     // explicit.
     LaunchedEffect(Unit) { if (listShouldAutoLoad(uiState.isLoading)) viewModel.load() }
 
-    val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -198,29 +194,15 @@ fun GalleryScreen(
         PhotoDetailDialog(
             photo = photo,
             onDismiss = { viewModel.selectPhoto(null) },
-            onDelete = { id ->
-                // DEL-UI-01: repository restores metadata and rethrows on
-                // failure; surface it as a snackbar and report `false` so the
-                // detail dialog stays open for a retry. Cancellation must
-                // propagate (never be reported as a delete failure).
-                try {
-                    viewModel.deletePhoto(id)
-                    true
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (_: Exception) {
-                    snackbarHostState.showSnackbar(deletePhotoConfirmation(false))
-                    false
-                }
+            onDelete = { id -> mapGalleryDeletePhotoResult(viewModel::deletePhoto, id) },
+            onSave = { selected ->
+                val path = resolveImagePath(selected.imagePath) ?: selected.imagePath
+                saveToPhotos(path, null)
             },
-            onToggleFavorite = { id -> scope.launch { viewModel.toggleFavorite(id) } },
-            onSave = { p ->
-                    val resolvedPath = resolveImagePath(p.imagePath) ?: p.imagePath
-                    val saved = saveToPhotos(resolvedPath, null)
-                    scope.launch {
-                        snackbarHostState.showSnackbar(saveToPhotosConfirmation(saved))
-                    }
-                }
+            onShare = { selected ->
+                val path = resolveImagePath(selected.imagePath) ?: selected.imagePath
+                shareImage(path, null)
+            },
         )
     }
     } // end Box overlay
