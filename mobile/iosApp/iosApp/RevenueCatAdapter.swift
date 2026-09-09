@@ -6,9 +6,9 @@ import FirebaseAnalytics
 /// Compose receives sanitized snapshots through the common purchase contract seam.
 final class RevenueCatAdapter: NSObject {
     static let shared = RevenueCatAdapter()
-    static let entitlementID = "premium"
+    static let entitlementID = "snap pose premium"
     static let offeringID = "default"
-    static let productIDs = ["premium_annual", "premium_monthly"]
+    static let productIDs = ["premium_yearly", "premium_monthly"]
 
     private(set) var isConfigured = false
     private var requestObserver: NSObjectProtocol?

@@ -4,7 +4,7 @@
 **Source of truth:** `docs/prototype/`
 **Primary token file:** `docs/prototype/styles/tokens.css`
 **Sibling docs:** [`docs/prototype/README.md`](docs/prototype/README.md) (screen inventory and prototype-only flow caveats). Production UI behavior and Compose/web tokens: [`docs/harness/specs/ui-ux-system.md`](docs/harness/specs/ui-ux-system.md).
-**Survey linkage:** design drift findings and alignment scope are recorded in [`docs/harness/reports/REP-012-backlog-lane-documentation-survey.md`](docs/harness/reports/REP-012-backlog-lane-documentation-survey.md).
+**Survey linkage:** design drift findings and alignment scope are recorded in [`docs/harness/reports/REP-013-backlog-lane-documentation-survey.md`](docs/harness/reports/REP-013-backlog-lane-documentation-survey.md).
 **Visual language:** Neo-brutalist mobile interface
 
 This document translates the current prototype tokens and component CSS into semantic design guidance. Preserve the visual tension between soft pastel fills and rigid black geometry when extending the product.

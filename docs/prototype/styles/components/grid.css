@@ -209,25 +209,37 @@
   width: 100%;
 }
 
-.nb-grid--masonry .nb-grid-pose-item {
-  display: inline-flex;
-  flex-direction: column;
-  width: 100%;
-  break-inside: avoid;
-  margin-bottom: var(--nb-space-md); /* Relaxed spacing before the next card */
-}
+  .nb-grid--masonry .nb-grid-pose-item {
+    display: inline-flex;
+    flex-direction: column;
+    width: 100%;
+    break-inside: avoid;
+    margin-bottom: calc(var(--nb-space-md) * 0.8); /* 20% tighter vertical rhythm */
+  }
 
-/* Three column dense grid for Gallery */
-.nb-gallery-grid-dense {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
-  gap: 3px !important; /* 2-4px gaps */
-}
+  /* Two-column CSS masonry for the full, uncapped Gallery collection. */
+  .nb-gallery-grid--masonry,
+  .nb-gallery-grid-dense {
+    display: block;
+    column-count: 2;
+    column-gap: var(--nb-space-sm);
+    width: 100%;
+  }
 
-.nb-gallery-grid-dense .nb-grid-photo-item {
-  min-width: 0;
-  break-inside: avoid;
-}
+  .nb-gallery-grid--masonry .nb-grid-photo-item,
+  .nb-gallery-grid-dense .nb-grid-photo-item {
+    display: inline-block;
+    width: 100%;
+    min-width: 0;
+    break-inside: avoid;
+    margin-bottom: calc(var(--nb-space-md) * 0.8);
+  }
+
+  .nb-gallery-empty {
+    width: 100%;
+    padding: var(--nb-space-xl) 0;
+    break-inside: avoid;
+  }
 
 /* Padding to prevent overlay elements from obscuring scrollable list contents */
 .nb-grid-scroll-area {

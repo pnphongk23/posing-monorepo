@@ -12,11 +12,11 @@ class PurchaseCoreTest {
         gateway.nextPurchaseState = PurchaseState.PURCHASE_PENDING
         gateway.loadOffering()
         assertFalse(gateway.snapshot.value.canUse(PurchaseCapability.TRY_POSE))
-        gateway.purchase("premium_annual")
+        gateway.purchase("premium_yearly")
         assertFalse(gateway.snapshot.value.hasConfirmedPremium)
 
         gateway.nextPurchaseState = PurchaseState.ENTITLED
-        gateway.purchase("premium_annual")
+        gateway.purchase("premium_yearly")
         assertTrue(gateway.snapshot.value.canUse(PurchaseCapability.TRY_POSE))
         assertTrue(gateway.snapshot.value.canUse(PurchaseCapability.CAMERA_CAPTURE))
         assertTrue(gateway.snapshot.value.canUse(PurchaseCapability.GALLERY_SAVE_SHARE))
@@ -28,10 +28,11 @@ class PurchaseCoreTest {
         val loaded = gateway.loadOffering()
         assertTrue(gateway.loadCount == 1)
         assertTrue(loaded.state == PurchaseState.READY)
+        assertTrue(PurchaseConfiguration.PREMIUM_ENTITLEMENT == "snap pose premium")
         assertTrue(loaded.offering?.identifier == PurchaseConfiguration.DEFAULT_OFFERING)
-        assertTrue(loaded.offering?.products?.map { it.identifier } == listOf("premium_monthly", "premium_annual"))
-        assertTrue(PurchaseConfiguration.PRODUCT_IDS.toSet() == setOf("premium_annual", "premium_monthly"))
-        assertTrue(loaded.offering?.products?.single { it.identifier == "premium_annual" }?.isAnnualHighlight == true)
+        assertTrue(loaded.offering?.products?.map { it.identifier } == listOf("premium_monthly", "premium_yearly"))
+        assertTrue(PurchaseConfiguration.PRODUCT_IDS.toSet() == setOf("premium_yearly", "premium_monthly"))
+        assertTrue(loaded.offering?.products?.single { it.identifier == "premium_yearly" }?.isAnnualHighlight == true)
         gateway.restore()
         assertTrue(gateway.restoreCount == 1)
         gateway.purchase("not_a_store_product")

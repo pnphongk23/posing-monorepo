@@ -144,4 +144,32 @@ class GalleryViewModelTest {
             driver.close()
         }
     }
+
+    @Test
+    fun successfulDeleteRemovesPhotoFromStateBeforeDetailReturns() = runBlocking<Unit> {
+        val driver = DatabaseDriverFactory().createDriver()
+        val job = SupervisorJob()
+        val scope = CoroutineScope(job + Dispatchers.Default)
+        try {
+            val database = AiPoseDatabase(driver)
+            clearDatabase(database)
+            insertPhoto(database, poseName = "Warrior Pose", imageTag = "a")
+            insertPhoto(database, poseName = "Tree Pose", imageTag = "b")
+
+            val viewModel = GalleryViewModel(database)
+            scope.launch { viewModel.load() }
+            waitForLoaded(viewModel)
+
+            val deletedId = viewModel.uiState.value.photos.first().id
+            viewModel.deletePhoto(deletedId)
+
+            val state = viewModel.uiState.value
+            assertEquals(1, state.photos.size)
+            assertEquals(1, state.groupedPhotos().size)
+            assertTrue(state.photos.none { it.id == deletedId })
+        } finally {
+            job.cancel()
+            driver.close()
+        }
+    }
 }

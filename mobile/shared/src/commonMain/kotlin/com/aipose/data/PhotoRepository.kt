@@ -6,6 +6,7 @@ import com.aipose.Photo
 import com.aipose.Pose
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.datetime.Clock
 
 class PhotoRepository(
     private val database: AiPoseDatabase,
@@ -98,5 +99,5 @@ class PhotoRepository(
         }
     }
 
-    private fun currentTimestampString(): String = kotlin.system.getTimeMillis().toString()
+    private fun currentTimestampString(): String = Clock.System.now().toEpochMilliseconds().toString()
 }

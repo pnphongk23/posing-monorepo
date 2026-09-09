@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Settings - Snap Pose</title>
+  <link rel="stylesheet" href="../styles/reset.css">
+  <link rel="stylesheet" href="../styles/base.css">
+  <link rel="stylesheet" href="../styles/utilities.css">
+  <link rel="stylesheet" href="../styles/components.css">
+  <link rel="stylesheet" href="../styles/settings.css">
+</head>
+<body>
+  <div class="nb-phone">
+    <div class="nb-phone__header" aria-label="Status bar">
+      <span class="nb-phone__time">9:41</span>
+      <div class="nb-phone__status-icons" aria-hidden="true">
+        <span>▰</span>
+        <span>▮</span>
+        <span>▰</span>
+      </div>
+    </div>
+
+    <main class="nb-phone__content" id="settings-screen">
+      <header class="nb-nav-bar nb-nav-bar--saved nb-settings-nav">
+        <div class="nb-nav-bar__left">
+          <a href="poses-list.html" class="nb-btn nb-btn--square nb-btn--white" aria-label="Back to poses" title="Back to poses">
+            <svg aria-hidden="true"><use href="#icon-back"></use></svg>
+          </a>
+        </div>
+        <h1 class="nb-nav-bar__title nb-nav-bar__title--page">Settings</h1>
+        <div class="nb-nav-bar__right" aria-hidden="true"></div>
+      </header>
+
+      <section class="nb-settings-group" aria-labelledby="settings-account-heading">
+        <div class="nb-settings-group__header">
+          <h2 class="nb-settings-group__title" id="settings-account-heading">Account</h2>
+        </div>
+        <ul class="nb-settings-list">
+          <li>
+            <a class="nb-settings-row" href="account.html" aria-label="Open Account" aria-describedby="settings-account-description">
+              <span class="nb-settings-row__icon nb-settings-row__icon--blue" aria-hidden="true">
+                <svg><use href="#icon-profile"></use></svg>
+              </span>
+              <span class="nb-settings-row__body">
+                <span class="nb-settings-row__title">Account</span>
+                <span class="nb-settings-row__description" id="settings-account-description">Manage your account and sign-in options.</span>
+              </span>
+              <span class="nb-settings-row__meta">
+                <span class="nb-settings-row__chevron" aria-hidden="true">›</span>
+              </span>
+            </a>
+          </li>
+          <li>
+            <a class="nb-settings-row" href="saved-list.html" aria-label="Open Saved poses" aria-describedby="settings-saved-description">
+              <span class="nb-settings-row__icon nb-settings-row__icon--green" aria-hidden="true">
+                <svg><use href="#icon-bookmark"></use></svg>
+              </span>
+              <span class="nb-settings-row__body">
+                <span class="nb-settings-row__title">Saved poses</span>
+                <span class="nb-settings-row__description" id="settings-saved-description">Review the poses you’ve saved.</span>
+              </span>
+              <span class="nb-settings-row__meta">
+                <span class="nb-settings-row__chevron" aria-hidden="true">›</span>
+              </span>
+            </a>
+          </li>
+          <li>
+            <a class="nb-settings-row" href="paywall.html?return=settings.html" aria-label="Open Premium" aria-describedby="settings-premium-description">
+              <span class="nb-settings-row__icon nb-settings-row__icon--yellow" aria-hidden="true">
+                <svg><use href="#icon-crown"></use></svg>
+              </span>
+              <span class="nb-settings-row__body">
+                <span class="nb-settings-row__title">Premium</span>
+                <span class="nb-settings-row__description" id="settings-premium-description">Explore more ways to pose with Premium.</span>
+              </span>
+              <span class="nb-settings-row__meta">
+                <span class="nb-settings-row__chevron" aria-hidden="true">›</span>
+              </span>
+            </a>
+          </li>
+        </ul>
+      </section>
+
+      <section class="nb-settings-group" aria-labelledby="settings-privacy-heading">
+        <div class="nb-settings-group__header">
+          <h2 class="nb-settings-group__title" id="settings-privacy-heading">Privacy</h2>
+        </div>
+        <ul class="nb-settings-list">
+          <li>
+            <button type="button" class="nb-settings-row" id="settings-camera-access" aria-label="Camera access, Allowed. Open iOS Settings" aria-describedby="settings-camera-description">
+              <span class="nb-settings-row__icon nb-settings-row__icon--blue" aria-hidden="true">
+                <svg><use href="#icon-info"></use></svg>
+              </span>
+              <span class="nb-settings-row__body">
+                <span class="nb-settings-row__title">Camera access</span>
+                <span class="nb-settings-row__description" id="settings-camera-description">Check permission status or open iOS Settings.</span>
+              </span>
+              <span class="nb-settings-row__meta">
+                <span class="nb-settings-row__status nb-settings-row__status--allowed">Allowed</span>
+              </span>
+            </button>
+          </li>
+          <li>
+            <a class="nb-settings-row nb-settings-row--external" href="https://aipose.app/terms" target="_blank" rel="noopener noreferrer" aria-label="Terms of Service, opens in browser">
+              <span class="nb-settings-row__icon nb-settings-row__icon--pink" aria-hidden="true">
+                <svg><use href="#icon-info"></use></svg>
+              </span>
+              <span class="nb-settings-row__body">
+                <span class="nb-settings-row__title">Terms of Service</span>
+                <span class="nb-settings-row__description">Read the Terms of Service in your browser.</span>
+              </span>
+              <span class="nb-settings-row__meta">
+                <span class="nb-settings-row__external" aria-hidden="true">↗</span>
+              </span>
+            </a>
+          </li>
+          <li>
+            <a class="nb-settings-row nb-settings-row--external" href="https://aipose.app/privacy" target="_blank" rel="noopener noreferrer" aria-label="Privacy Policy, opens in browser">
+              <span class="nb-settings-row__icon nb-settings-row__icon--pink" aria-hidden="true">
+                <svg><use href="#icon-info"></use></svg>
+              </span>
+              <span class="nb-settings-row__body">
+                <span class="nb-settings-row__title">Privacy Policy</span>
+                <span class="nb-settings-row__description">Read the Privacy Policy in your browser.</span>
+              </span>
+              <span class="nb-settings-row__meta">
+                <span class="nb-settings-row__external" aria-hidden="true">↗</span>
+              </span>
+            </a>
+          </li>
+        </ul>
+      </section>
+
+      <section class="nb-settings-group" aria-labelledby="settings-help-heading">
+        <div class="nb-settings-group__header">
+          <h2 class="nb-settings-group__title" id="settings-help-heading">Help &amp; support</h2>
+        </div>
+        <ul class="nb-settings-list">
+          <li>
+            <a class="nb-settings-row nb-settings-row--external" href="https://forms.gle/sample-aipose-feedback" target="_blank" rel="noopener noreferrer" aria-label="Support and feedback, opens in browser">
+              <span class="nb-settings-row__icon nb-settings-row__icon--yellow" aria-hidden="true">
+                <svg><use href="#icon-info"></use></svg>
+              </span>
+              <span class="nb-settings-row__body">
+                <span class="nb-settings-row__title">Support &amp; feedback</span>
+                <span class="nb-settings-row__description">Send feedback or request help in your browser.</span>
+              </span>
+              <span class="nb-settings-row__meta">
+                <span class="nb-settings-row__external" aria-hidden="true">↗</span>
+              </span>
+            </a>
+          </li>
+          <li>
+            <button type="button" class="nb-settings-row" id="settings-about-trigger" aria-label="About Snap Pose, version 1.0.0 Build 42" aria-describedby="settings-about-description">
+              <span class="nb-settings-row__icon nb-settings-row__icon--green" aria-hidden="true">
+                <svg><use href="#icon-info"></use></svg>
+              </span>
+              <span class="nb-settings-row__body">
+                <span class="nb-settings-row__title">About</span>
+                <span class="nb-settings-row__description" id="settings-about-description">Snap Pose app information and credits.</span>
+              </span>
+              <span class="nb-settings-row__meta">
+                <span class="nb-settings-row__value">v1.0.0 (Build 42)</span>
+                <span class="nb-settings-row__chevron" aria-hidden="true">›</span>
+              </span>
+            </button>
+          </li>
+        </ul>
+      </section>
+    </main>
+
+    <div class="nb-phone__footer">
+      <div class="nb-phone__home-indicator"></div>
+    </div>
+
+    <div id="settings-about-sheet" class="nb-settings-sheet" role="dialog" aria-modal="true" aria-labelledby="settings-about-title" aria-describedby="settings-about-copy" aria-hidden="true" inert>
+      <button type="button" class="nb-settings-sheet__backdrop" data-settings-close aria-label="Close About Snap Pose"></button>
+      <div class="nb-settings-sheet__panel">
+        <div class="nb-settings-sheet__handle" aria-hidden="true"></div>
+        <div class="nb-settings-about__logo" aria-hidden="true">
+          <span class="nb-settings-about__mark">Snap Pose</span>
+        </div>
+        <h2 id="settings-about-title" class="nb-settings-about__title">About Snap Pose</h2>
+        <p class="nb-settings-about__slogan">Strike the pose. Snap the moment.</p>
+        <p id="settings-about-copy" class="nb-settings-about__version">Snap Pose v1.0.0 (Build 42)</p>
+        <p class="nb-settings-about__copyright">© 2026 Snap Pose. All rights reserved.</p>
+        <p class="nb-settings-about__credits">Credits and open-source licenses are available in the production app bundle.</p>
+        <button type="button" class="nb-btn nb-btn--block nb-btn--white" data-settings-close>Close</button>
+      </div>
+    </div>
+
+    <div id="settings-ios-dialog" class="nb-modal-overlay nb-settings-ios-dialog" role="alertdialog" aria-modal="true" aria-labelledby="settings-ios-title" aria-describedby="settings-ios-copy" aria-hidden="true" inert>
+      <div class="nb-modal nb-settings-ios-dialog__panel">
+        <p class="nb-settings-ios-dialog__eyebrow">Simulated iOS Settings</p>
+        <h2 id="settings-ios-title">Open Settings?</h2>
+        <p id="settings-ios-copy">Snap Pose needs camera access. You can change this permission in iOS Settings.</p>
+        <div class="nb-settings-ios-dialog__actions">
+          <button type="button" class="nb-btn nb-btn--block nb-btn--green" id="settings-ios-open">Open iOS Settings</button>
+          <button type="button" class="nb-btn nb-btn--block nb-btn--white" data-settings-close>Cancel</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="../scripts/icons.js"></script>
+  <script src="../scripts/settings.js"></script>
+</body>
+</html>

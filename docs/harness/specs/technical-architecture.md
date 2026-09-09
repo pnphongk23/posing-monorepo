@@ -31,73 +31,161 @@ relationships:
 
 # Technical Architecture
 
-## Scope
+Tài liệu kỹ thuật của monorepo `ai-pose`: **công nghệ dùng, build, setup, và
+những lưu ý khi làm việc**. Hợp đồng dữ liệu/API và domain model nằm tại
+[`docs/spec/`](./data-contract.md); hành vi product theo Feature tại
+[`docs/harness/features/`](../features). File này chỉ mô tả cấu trúc kỹ thuật
+thực thi.
 
-This document describes the code-backed architecture of the `ai-pose` monorepo. It covers the mobile application targeting both iOS and Android (where Android support is currently an unresolved parity gap), the shared data module, the web/admin application, the extraction service, persistence, and external integrations. The untracked `sub2api/` checkout is excluded because no active build or runtime path imports it.
+## Tech stack
 
-## System map
-
-| Lane | Runtime | Responsibility | Primary entry points |
+| Lane | Công nghệ | Version | Ghi chú |
 | --- | --- | --- | --- |
-| Mobile UI | Kotlin 2.0, Compose Multiplatform 1.6, iOS 15+ & Android (unresolved parity gap) | Camera, pose library, gallery, local interactions | `mobile/App.kt`, `mobile/iosApp/iosApp/ContentView.swift` |
-| Shared mobile data | Kotlin Multiplatform, SQLDelight 2.0, Ktor 2.3 | Local photos/poses and remote API client | `mobile/shared/src/commonMain/kotlin/com/aipose/data/` |
-| Web/admin | Next.js 16.2, React 19.2, Tailwind CSS 4 | Admin UI and server-side proxy routes | `web/admin-ui/src/app/` |
-| API service | Node 20+, Express 5, TypeScript 6 | Extraction, community catalog, API-key administration, job status | `web/services/pose-extract-server/src/index.ts`, `src/app.ts` |
-| Worker | Node 20+, Playwright | Processes queued extraction jobs through a browser session | `web/services/pose-extract-server/src/worker/worker-main.ts` |
+| Mobile UI | Kotlin Multiplatform + Compose Multiplatform | Kotlin 2.0.0, Compose 1.6.11, compose-compiler 1.5.10 | target `iosX64` / `iosArm64` / `iosSimulatorArm64`; **không có Android target** |
+| Mobile UI | Voyager (navigation), Koin 4.0.0 (DI), Coil 3 (image), coroutines 1.8.0 | — | Koin **giữ 4.0.0** vì 4.1.x yêu cầu Kotlin 2.1+ (ABI klib) |
+| Mobile data | SQLDelight 2.0.2, Ktor client 2.3.12, kotlinx-serialization, kotlinx-datetime | — | DB local: `mobile/shared/src/commonMain/sqldelight/` |
+| iOS host | SwiftUI host + CocoaPods | Xcode 26.1, CocoaPods 1.16.2, iOS 15.0+ | Pods: `MijickCamera ~> 3.0.0`, `RevenueCat ~> 5.87`, Firebase (Core/Analytics/Crashlytics/RemoteConfig) |
+| iOS env config | XcodeGen (`project.yml`) | — | 2 schemes (`Dev`/`Prod`) × 4 configs (`Debug/Release` × `Dev/Prod`) |
+| Web/admin | Next.js + React + Tailwind | Next 16.2.3, React 19.2.4, Tailwind 4, TypeScript 6 | `web/admin-ui`; server-side API proxies tới Express |
+| API service | Node + Express + TypeScript | Node ≥ 20, Express 5.2.1, TS 6 | `web/services/pose-extract-server`; validation bằng zod 4, log pino |
+| DB server | Postgres (production) | `postgres` 3.4.9 driver | `DATABASE_URL`; dev stack dùng Postgres 16 container |
+| Object storage | Cloudflare R2 (AWS SDK v3) | — | Cộng đồng poses/community objects |
+| Extraction worker | Playwright 1.59 | — | Worker xử lý job qua browser session (Gemini app) |
+| Deploy | Railway + Docker | — | `railway.toml`, Dockerfile per service |
 
-## Runtime flows
+Nguồn version: `gradle/libs.versions.toml`, `package.json` từng web workspace,
+`mobile/iosApp/Podfile.lock`.
 
-### Mobile capture and local gallery
+## Build từng lane
 
-1. Compose requests camera permission through the platform-specific `CameraController` actual implementation (iOS implemented; Android is an unresolved parity gap).
-2. A capture returns bytes to `CameraScreen`.
-3. `ImageStorage` writes the image to app-private storage, and `PhotoRepository` stores its path in SQLDelight.
-4. `GalleryViewModel` observes the database reactively and groups photos chronologically by local timezone day for grid/list presentation.
+### Backend (pose-extract-server)
 
-### Pose extraction API & Key-Pooling Mechanics
+```sh
+# từ repo root — npm scripts route tới đúng workspace
+npm run backend:test      # vitest run
+npm run backend:build     # tsc + copy schema
+npm run backend:start     # node dist/index.js
+npm run backend:dev       # tsx watch (host)
 
-1. **Client Request:** A client sends multipart image data via `POST /api/extract-pose`.
-2. **Validation and Rate Limiting:** The Express server validates the upload payload (file size, MIME type) and enforces IP-based rate limiting before invoking downstream AI services.
-3. **Key Allocation:** The `KeyPoolManager` retrieves an active Gemini API key from the rotating credentials database. If all keys are exhausted or unavailable, it throws a credentials exhausted error.
-4. **Provider Invocation:** `GeminiService` forwards the image to the external AI provider, records the key usage, tracks transaction duration, and returns the response.
-5. **Async Job Contract (canonical target):** The server **enqueues an `ExtractionJob`** and returns `202` + `jobId`; the client polls `GET /api/extract-jobs/:jobId` until `succeeded`/`failed`. **No `Pose` exists at this stage** — `jobId` is the correlation key. On `succeeded`, the caller finalizes creation via `POST /api/guides` (owner) or admin intake (`201`), which creates the `Pose` (`poseId` stable, **`ownerAccountId` mandatory on every Pose**, `status: local`) and materializes the three `MediaAsset`s (`original`, `skeleton`, `thumbnail`).
-6. **Synchronous Transaction Contract (observed legacy):** The current implementation operates as a single request/response flow returning base64-encoded skeleton image data, MIME type, and processing elapsed time. The server has no progressive status endpoint or cancellation hook; client cancellation aborts the local request but does not physically terminate remote server execution.
+# worker (Playwright) — riêng
+npm --prefix web/services/pose-extract-server run worker        # dev
+npm --prefix web/services/pose-extract-server run start:worker  # prod
+npm --prefix web/services/pose-extract-server run worker:preflight  # kiểm tra auth profile
+```
 
-### Community content administration & Workers
+### Admin UI (web/admin-ui)
 
-1. **Server Proxying:** Browser requests from the Admin UI pass through server-side Next.js route proxies (`web/admin-ui/src/app/api/admin/`), which inject the `POSE_EXTRACT_ADMIN_SECRET` before forwarding calls to Express.
-2. **Metadata and Queueing:** Operators submit community pose metadata and source images via `POST /api/admin/community/poses` or through the two-phase contract: image via `POST /api/extract-pose` (enqueues job, `202` + `jobId`), then pose creation referencing the succeeded `jobId` (`201`). In the current implementation the Express server **enqueues the extraction job and returns `202 Accepted`**; the **`Pose` entity is created ONLY AFTER extraction succeeds (`201 Created`)** — no Pose row exists before that.
-3. **Worker Processing:** The background Playwright worker process (`startWorker`) polls the job table, claims pending tasks, executes extraction in a browser session, and writes the generated base64 result back to the `extraction_jobs` row. **`Pose` is the single canonical entity** — `community_poses` (runtime table name, if present) is legacy/operational naming, not a separate canonical entity. **Observed source evidence does not show a durable link from a job to the canonical `Pose`'s `MediaAsset`s; see [ExtractionJob](../../spec/data/entities/extraction-job.md) and [ERD unresolved links](../../spec/data/erd/conceptual.md).**
-4. **Pose creation (post-extraction):** Per the canonical domain model, a `Pose` is created **only after the extraction job is `succeeded`** (stable `poseId`, mandatory `ownerAccountId`, `status: local`, three media roles `original`/`skeleton`/`thumbnail` materialized). Public endpoints (`GET /api/community/poses`) filter by **`Pose.status = 'published'`** (exposed through the read-only `CommunityPose` DTO; no separate storage). **The source does not independently prove linked-asset readiness, so the stronger “valid linked R2 URL” claim is unresolved.**
+```sh
+npm run lint      # eslint
+npm run build     # next build
+npm run dev       # next dev
+```
 
-## Data and trust boundaries
+### Mobile (KMP + iOS)
 
-- Mobile photos and poses are local SQLDelight records whose image payloads live in app storage.
-- Server key, community, and extraction-job state is SQLite-backed through `better-sqlite3`.
-- R2 stores community objects; its credentials and the admin secret are server-only configuration.
-- Next.js admin API routes proxy to Express using `POSE_EXTRACT_SERVER_URL` and `POSE_EXTRACT_ADMIN_SECRET`; secrets are not placed in client components.
-- The Playwright worker requires a separately managed authenticated browser profile. It is operationally distinct from the direct API extraction path.
+```sh
+./gradlew :composeApp:compileKotlinIosSimulatorArm64
+./gradlew :shared:iosSimulatorArm64Test
+```
 
-## Repository authority
+> ⚠️ `:shared:iosSimulatorArm64Test` hiện **không compile**: `PoseApiServiceTest.kt`
+> import `kotlinx.coroutines.test.runTest` mà chưa có dependency tương ứng trong
+> `commonTest` của `:shared` (chỉ có ở `iosSimulatorArm64Test`). Biết trước để
+> không nhầm là lỗi do thay đổi của mình.
 
-- `docs/harness/` is the current-state product and engineering source of truth.
-- Historical design records and root `plans/` preserve design and implementation history; their completion claims require confirmation against current code.
-- `docs/prototype/` is an interactive UI reference, not production behavior.
-- `docs/privacy-ugc-compliance.md` is a pre-release checklist, not evidence that public UGC controls are implemented.
+iOS app là host SwiftUI chạy scheme `Dev`/`Prod` sinh từ `project.yml` bằng
+XcodeGen. Thay đổi native (Info.plist, pods, configs) phải sửa `project.yml`
+rồi regenerate, không sửa tay `.xcodeproj`.
 
-## Known gaps
+## Setup
 
-- Root `README.md` is now a monorepo router; detailed runtime contracts remain in the Harness rather than being duplicated there.
-- The mobile navigation passes an empty callback for the "Extract Pose" CTA button on the empty-state screen; however, the header Plus button opens a gallery image picker and successfully triggers pose extraction and local database persistence.
-- Camera overlay rendering is guarded by `if (false)` in `CameraScreen`, so overlay controls are not current behavior.
-- Community API documentation conflicts with the multipart/job implementation described above.
-- Production activation and authentication lifecycle of the Playwright worker is not proven by repository configuration alone.
-- The Compose iOS simulator production target compiles, but `:shared:iosSimulatorArm64Test` does not: `PoseApiServiceTest.kt` imports `kotlinx.coroutines.test.runTest` without a matching test dependency.
-- Android camera capture, local gallery, and SQLDelight driver actual implementations are unresolved parity gaps.
+### Backend env — `web/services/pose-extract-server/.env`
+
+Bắt buộc (zod validate lúc boot, thiếu là crash):
+`DATABASE_URL`, `ADMIN_SECRET`, `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`,
+`R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, `R2_PUBLIC_URL`.
+
+Có default/safe: `PORT` (3000), `SUPABASE_URL`/`SUPABASE_JWT_KEY_ID`,
+`RATE_LIMIT_WINDOW_MS`/`RATE_LIMIT_MAX` (60s/10 req), `BROWSER_HEADLESS` (true).
+
+Worker: `BROWSER_PROFILE_DIR` (browser profile đã login Gemini),
+`HIGGSFIELD_CREDENTIALS_PATH` + `HIGGSFIELD_CLI_TIMEOUT_MS` (nếu dùng Higgsfield).
+
+> Nguồn sự thật cho config: `web/services/pose-extract-server/src/config/env.ts`.
+> Không commit secret thật; `.env.example` chỉ chứa giá trị mẫu.
+
+### Admin UI env — `web/admin-ui/.env.local`
+
+```env
+POSE_EXTRACT_SERVER_URL=http://localhost:3001
+POSE_EXTRACT_ADMIN_SECRET=change-me
+```
+
+Proxies ở `web/admin-ui/src/app/api/admin/` inject secret này trước khi forward
+tới Express; client components không bao giờ nhận secret.
+
+### Docker
+
+```sh
+npm run docker:dev        # dev stack: Postgres 16 + backend + admin-ui, hot reload
+npm run docker:dev:logs
+npm run docker:dev:down
+docker compose up --build # production-like
+
+# Ports: admin-ui http://localhost:3001/admin · backend http://localhost:3000/api/health · postgres :5433
+```
+
+Dev stack mount bind source + dùng volume riêng cho `node_modules` (tránh ghi đè
+container). Admin secret đọc từ `web/services/pose-extract-server/.env` qua
+`scripts/docker-dev.sh`. Deploy Railway: `railway.toml` (Dockerfile
+pose-extract-server, mounts `/app/data` + `/app/higgsfield`).
+
+### iOS Firebase + RevenueCat
+
+- Firebase: plist thật đặt tại `mobile/iosApp/iosApp/GoogleService-Info.plist`
+  (git-ignored; chỉ có `.example` trong repo). Cùng plist dùng cho cả `Dev`/`Prod`.
+- RevenueCat: key public SDK theo từng scheme từ `Config/*-*.xcconfig`
+  (`REVENUECAT_PUBLIC_SDK_KEY`); giá trị thật không commit.
+- Chi tiết: [`mobile/iosApp/FIREBASE_SETUP.md`](../../../mobile/iosApp/FIREBASE_SETUP.md),
+  [`mobile/iosApp/REVENUECAT_SETUP.md`](../../../mobile/iosApp/REVENUECAT_SETUP.md).
+
+## Những lưu ý khi làm việc
+
+1. **Koin phải là 4.0.0** — 4.1.x cần Kotlin 2.1+ (ABI klib); đang dùng Kotlin 2.0.0.
+2. **Không `pod()` cinterop cho Firebase từ Kotlin** — Kotlin 2.0.0 không parse
+   được Xcode 26.1 SDK modulemap; Firebase chỉ bridge qua Swift
+   (`AppDelegate.swift`). Kotlin chỉ giữ contract/test seam
+   (`EndpointPolicy`, `AppStartupConfig`).
+3. **XcodeGen là nguồn sự thật cho iOS project** — tạo file mới (Assets, plist,
+   source) phải vào `project.yml`, regenerate, kiểm tra `Podfile.lock` không đổi
+   vô cớ. Có 4 config `Debug/Release` × `Dev/Prod` ánh xạ native build type.
+4. **Gradle build config luôn chỉ `ios*` targets** — không có Android; mọi
+   claim "Android parity" là gap chưa giải quyết.
+5. **Bắt buộc linker flag `-lsqlite3`** — thêm qua Kotlin/Native (`linkerOpts`)
+   và Podfile `post_install` (`OTHER_LDFLAGS`); không bỏ.
+6. **Swift 6 strict concurrency bị tắt** (`SWIFT_STRICT_CONCURRENCY = minimal`)
+   trong Podfile `post_install` — đừng "sửa" ngược lại.
+7. **Framework ComposeApp là static (`isStatic = true`)** cho cả 3 targets.
+8. **Worker cần browser profile đã login** — không phải config-only; production
+   activation chưa được chứng minh chỉ bằng repo config.
+9. **Skeleton từ khóa chuẩn hóa** — theo
+   [`pose-domain-glossary.md`](./pose-domain-glossary.md), thuật ngữ extraction
+   result là `skeleton`, không dùng `render`/`result image`/`extract`.
+10. **Thủ tục khởi động (DB, R2, secret) không đổi** — bất kỳ thay đổi schema
+    fetch/khởi tạo runtime phải coi là thay đổi hành vi (xem Feature workflow).
+
+## Boundary & storage
+
+- Mobile: photo bytes trong app-private storage; metadata SQLDelight
+  (`mobile/shared/src/commonMain/sqldelight/`).
+- Server: Postgres qua `DATABASE_URL` (production/Supabase); key, community, job
+  state không còn SQLite.
+- R2: community objects; credential + admin secret chỉ ở server.
+- Playwright worker: profile browser riêng, tách biệt khỏi API path trực tiếp.
 
 ## Verification
 
-Run bounded checks from the repository root:
+Từ repo root:
 
 ```sh
 npm run backend:test
@@ -108,4 +196,5 @@ ckh validate --all --workspace .
 ckh index check --workspace .
 ```
 
-Build failures are evidence of current health and must be recorded; historical `error.log` is not a substitute for a fresh run.
+Build fail là bằng chứng health hiện tại — ghi lại, không lấy `error.log` cũ
+thay cho lần chạy mới.

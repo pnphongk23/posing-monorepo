@@ -2,6 +2,7 @@
   const params = new URLSearchParams(location.search), intent = params.get('intent') || 'saved';
   const copy = {
     saved: 'View your saved poses.',
+    account: 'Manage your account.',
     save: 'Save this pose.',
     try: 'Try this pose.'
   };

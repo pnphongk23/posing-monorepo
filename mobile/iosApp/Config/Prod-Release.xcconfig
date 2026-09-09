@@ -2,6 +2,4 @@
 #include "../Pods/Target Support Files/Pods-iosApp/Pods-iosApp.release-prod.xcconfig"
 AIPOSE_ENVIRONMENT = PROD
 AIPOSE_BUILD_CONFIGURATION = Release
-REVENUECAT_PUBLIC_SDK_KEY = REPLACE_WITH_PROD_PUBLIC_SDK_KEY
-LEGAL_TERMS_URL = https:/$()/aipose.example.com/terms
-LEGAL_PRIVACY_URL = https:/$()/aipose.example.com/privacy
+REVENUECAT_PUBLIC_SDK_KEY = appl_vpBiChlUAXmdZjklTDZQtSeYVIx

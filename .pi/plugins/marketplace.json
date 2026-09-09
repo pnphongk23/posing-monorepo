@@ -1,0 +1,45 @@
+{
+  "name": "ai-pose-local",
+  "interface": {
+    "displayName": "AI Pose Local"
+  },
+  "plugins": [
+    {
+      "name": "ai-pose-local",
+      "source": {
+        "source": "local",
+        "path": "./plugins/ai-pose-local"
+      },
+      "policy": {
+        "installation": "INSTALLED_BY_DEFAULT",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Development"
+    },
+    {
+      "name": "axiom",
+      "source": {
+        "source": "local",
+        "path": "./plugins/axiom"
+      },
+      "policy": {
+        "installation": "INSTALLED_BY_DEFAULT",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Development"
+    },
+    {
+      "name": "swiftui-expert",
+      "source": {
+        "source": "local",
+        "path": "./plugins/swiftui-expert"
+      },
+      "policy": {
+        "installation": "INSTALLED_BY_DEFAULT",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Development"
+    }
+  ]
+}
+

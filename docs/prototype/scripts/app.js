@@ -368,27 +368,29 @@ document.addEventListener('DOMContentLoaded', function() {
 
       if (filtered.length === 0) {
         galleryGrid.innerHTML = `
-          <div class="u-text-center u-text-muted" style="grid-column: span 3; padding: var(--nb-space-xl) 0; width: 100%;">
+          <div class="nb-gallery-empty u-text-center u-text-muted">
             No photos found.
           </div>
         `;
         return;
       }
 
+      const aspectClasses = ['nb-card--aspect-tall', 'nb-card--aspect-square', 'nb-card--aspect-short'];
       filtered.forEach(photo => {
         const item = document.createElement('div');
         item.className = 'nb-grid-photo-item';
-        const detailHref = `gallery-detail.html?id=${encodeURIComponent(photo.id)}`;
+        const detailHref = `gallery-detail-v2.html?id=${encodeURIComponent(photo.id)}`;
+        const aspectClass = aspectClasses[galleryGrid.children.length % aspectClasses.length];
 
         if (photo.placeholder) {
           item.innerHTML = `
-            <a href="${detailHref}" class="nb-card nb-card--gallery-dense nb-card--placeholder" aria-label="${escapeHtml(photo.title)}">
+            <a href="${detailHref}" class="nb-card nb-card--gallery-dense nb-card--placeholder ${aspectClass}" aria-label="${escapeHtml(photo.title)}">
               <svg class="nb-card__placeholder-icon"><use href="#icon-image"></use></svg>
             </a>
           `;
         } else {
           item.innerHTML = `
-            <a href="${detailHref}" class="nb-card nb-card--gallery-dense" style="background-image: url('${photo.photoUrl}');" aria-label="${escapeHtml(photo.title)}"></a>
+            <a href="${detailHref}" class="nb-card nb-card--gallery-dense ${aspectClass}" style="background-image: url('${photo.photoUrl}');" aria-label="${escapeHtml(photo.title)}"></a>
           `;
         }
         galleryGrid.appendChild(item);

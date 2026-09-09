@@ -1,125 +1,414 @@
 package com.aipose.ui.screens.gallery
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.SaveAlt
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import com.aipose.data.resolveImagePath
-import com.aipose.navigation.MatchedImageDestination
-import com.aipose.navigation.destinationChromeVisible
-import com.aipose.platform.saveToPhotos
-import com.aipose.platform.shareImage
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
-import org.jetbrains.compose.resources.painterResource
-import ai_pose.composeapp.generated.resources.Res
-import ai_pose.composeapp.generated.resources.ic_chevron_left
 import com.aipose.Photo
+import com.aipose.data.resolveImagePath
+import com.aipose.navigation.MatchedImageDestination
+import com.aipose.navigation.destinationChromeVisible
+import com.aipose.platform.deletePhotoConfirmation
+import com.aipose.purchases.PaywallScreen
+import com.aipose.purchases.PurchaseGateway
+import com.aipose.purchases.PurchaseGatewayProvider
+import com.aipose.purchases.premiumTestBypassEnabled
 import com.aipose.ui.components.neoBorder
 import com.aipose.ui.components.neoShadow
 import com.aipose.ui.theme.AiPoseColors
+import com.aipose.ui.theme.AiPoseTypography
 import com.aipose.ui.theme.Spacing
-import com.aipose.purchases.PaywallScreen
-import com.aipose.purchases.PurchaseGateway
-import com.aipose.purchases.UnconfiguredPurchaseGateway
-import com.aipose.purchases.PurchaseGatewayProvider
-import com.aipose.purchases.premiumTestBypassEnabled
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import org.jetbrains.compose.resources.painterResource
+import ai_pose.composeapp.generated.resources.Res
+import ai_pose.composeapp.generated.resources.ic_chevron_left
+
+@Composable
+fun GalleryPhotoImageContent(
+    model: String?,
+    attempt: Int,
+    contentDescription: String?,
+    modifier: Modifier,
+    onLoading: () -> Unit,
+    onSuccess: () -> Unit,
+    onError: () -> Unit,
+) {
+    key(attempt) {
+        AsyncImage(
+            model = model,
+            contentDescription = contentDescription,
+            modifier = modifier,
+            contentScale = ContentScale.Crop,
+            onLoading = { onLoading() },
+            onSuccess = { onSuccess() },
+            onError = { onError() },
+        )
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+fun GalleryPhotoDetailScreen(
+    photos: List<Photo>,
+    initialPhotoId: Long,
+    onBack: () -> Unit,
+    onDelete: suspend (Long) -> Boolean,
+    onSave: suspend (Photo) -> Boolean,
+    onShare: ((Photo) -> Unit)? = null,
+    purchaseGateway: PurchaseGateway = PurchaseGatewayProvider.current,
+    imageContent: @Composable (
+        model: String?,
+        attempt: Int,
+        contentDescription: String?,
+        modifier: Modifier,
+        onLoading: () -> Unit,
+        onSuccess: () -> Unit,
+        onError: () -> Unit,
+    ) -> Unit = { model, attempt, contentDescription, modifier, onLoading, onSuccess, onError ->
+        GalleryPhotoImageContent(
+            model, attempt, contentDescription, modifier, onLoading, onSuccess, onError,
+        )
+    },
+) {
+    if (photos.isEmpty()) return
+
+    val pagerState = rememberPagerState(
+        initialPage = initialGalleryPhotoIndex(photos, initialPhotoId),
+    ) { photos.size }
+    val currentPage = pagerState.currentPage.coerceIn(0, photos.lastIndex)
+    val currentPhoto = photos[currentPage]
+
+    PhotoDetailDialog(
+        photo = currentPhoto,
+        onDismiss = onBack,
+        onDelete = onDelete,
+        onSave = onSave,
+        onShare = onShare ?: {},
+        purchaseGateway = purchaseGateway,
+        imageContent = { model, attempt, _, modifier, onLoading, onSuccess, onError ->
+            HorizontalPager(
+                state = pagerState,
+                modifier = modifier,
+                userScrollEnabled = photos.size > 1,
+                key = { page -> photos[page].id },
+            ) { page ->
+                val pagePhoto = photos[page]
+                val isCurrentPage = page == currentPage
+                val pageModel = if (isCurrentPage) {
+                    model
+                } else {
+                    remember(pagePhoto.imagePath) {
+                        resolveImagePath(pagePhoto.imagePath)
+                            ?: pagePhoto.imagePath.takeIf { it.isNotBlank() }
+                    }
+                }
+                imageContent(
+                    pageModel,
+                    if (isCurrentPage) attempt else 0,
+                    pagePhoto.poseName,
+                    Modifier.fillMaxSize(),
+                    if (isCurrentPage) onLoading else ({}),
+                    if (isCurrentPage) onSuccess else ({}),
+                    if (isCurrentPage) onError else ({}),
+                )
+            }
+        },
+    )
+}
 
 @Composable
 fun GalleryPhotoDetailScreen(
     photo: Photo,
     onBack: () -> Unit,
-    // The host must inject its platform share sheet here. The default is a
-    // deliberate no-op, never a save alias, until that external capability is wired.
+    onDelete: suspend (Long) -> Boolean,
+    onSave: suspend (Photo) -> Boolean,
     onShare: ((Photo) -> Unit)? = null,
     purchaseGateway: PurchaseGateway = PurchaseGatewayProvider.current,
+    imageContent: @Composable (
+        model: String?,
+        attempt: Int,
+        contentDescription: String?,
+        modifier: Modifier,
+        onLoading: () -> Unit,
+        onSuccess: () -> Unit,
+        onError: () -> Unit,
+    ) -> Unit = { model, attempt, contentDescription, modifier, onLoading, onSuccess, onError ->
+        GalleryPhotoImageContent(
+            model, attempt, contentDescription, modifier, onLoading, onSuccess, onError,
+        )
+    },
 ) {
-    val viewModel = remember { GalleryViewModel() }
-    val scope = rememberCoroutineScope()
-    PhotoDetailDialog(
-        photo = photo,
-        onDismiss = onBack,
-        onDelete = { id -> viewModel.deletePhoto(id); true },
-        onToggleFavorite = { id ->
-            scope.launch { viewModel.toggleFavorite(id) }
-        },
-        onSave = { selected ->
-            val path = resolveImagePath(selected.imagePath) ?: selected.imagePath
-            saveToPhotos(path, null)
-        },
-        onShare = onShare ?: { selected ->
-            val path = resolveImagePath(selected.imagePath) ?: selected.imagePath
-            shareImage(path, null)
-        },
+    GalleryPhotoDetailScreen(
+        photos = listOf(photo),
+        initialPhotoId = photo.id,
+        onBack = onBack,
+        onDelete = onDelete,
+        onSave = onSave,
+        onShare = onShare,
         purchaseGateway = purchaseGateway,
+        imageContent = imageContent,
     )
 }
+
+internal fun initialGalleryPhotoIndex(photos: List<Photo>, initialPhotoId: Long): Int =
+    photos.indexOfFirst { it.id == initialPhotoId }.coerceAtLeast(0)
 
 @Composable
 fun PhotoDetailDialog(
     photo: Photo,
     onDismiss: () -> Unit,
     onDelete: suspend (Long) -> Boolean,
-    onToggleFavorite: (Long) -> Unit,
-    onSave: (Photo) -> Unit,
-    onShare: (Photo) -> Unit = {},
+    onSave: suspend (Photo) -> Boolean,
+    onShare: (Photo) -> Unit,
     purchaseGateway: PurchaseGateway = PurchaseGatewayProvider.current,
+    imageContent: @Composable (
+        model: String?,
+        attempt: Int,
+        contentDescription: String?,
+        modifier: Modifier,
+        onLoading: () -> Unit,
+        onSuccess: () -> Unit,
+        onError: () -> Unit,
+    ) -> Unit = { model, attempt, contentDescription, modifier, onLoading, onSuccess, onError ->
+        GalleryPhotoImageContent(
+            model, attempt, contentDescription, modifier, onLoading, onSuccess, onError,
+        )
+    },
 ) {
+    var state by remember(photo.id) { mutableStateOf(initialGalleryPhotoViewerState(photo)) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
     var showPaywall by remember { mutableStateOf(false) }
+    var deleteInFlight by remember { mutableStateOf(false) }
+    var deleteFlowActive by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-    val resolvedPath = remember(photo.imagePath) {
-        resolveImagePath(photo.imagePath) ?: photo.imagePath.takeIf { it.isNotBlank() }
+      val snackbarHostState = remember { SnackbarHostState() }
+      val dateTime = remember(photo.createdAt) { formatGalleryPhotoCreatedAt(photo.createdAt) }
+      val actionsEnabled = viewerActionsEnabled(state.media, deleteInFlight, state.save)
+      val trashEnabled = viewerTrashEnabled(state.media, deleteFlowActive, deleteInFlight, state.save)
+      val backEnabled = viewerBackEnabled(deleteInFlight, state.save)
+      var dismissOffset by remember { mutableFloatStateOf(0f) }
+      var detailHeightPx by remember { mutableFloatStateOf(0f) }
+      var settleJob by remember { mutableStateOf<Job?>(null) }
+
+      val dismissDragState = rememberDraggableState { delta ->
+          val maxOffset = if (detailHeightPx > 0f) detailHeightPx else Float.MAX_VALUE
+          dismissOffset = (dismissOffset + delta).coerceIn(0f, maxOffset)
+      }
+
+      fun settleDismissal(velocityPxPerSecond: Float) {
+          settleJob?.cancel()
+          val shouldDismiss = backEnabled && shouldDismissGalleryDetail(
+              offsetPx = dismissOffset,
+              velocityPxPerSecond = velocityPxPerSecond,
+              viewportHeightPx = detailHeightPx,
+          )
+          val targetOffset = if (shouldDismiss) detailHeightPx else 0f
+          settleJob = scope.launch {
+              Animatable(dismissOffset).animateTo(
+                  targetValue = targetOffset,
+                  animationSpec = if (shouldDismiss) tween(220) else spring(),
+              ) { dismissOffset = value }
+              settleJob = null
+              if (shouldDismiss) onDismiss()
+          }
+      }
+
+    fun dispatch(event: GalleryPhotoViewerEvent) {
+        state = reduce(state, event)
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(AiPoseColors.Background)
-            .windowInsetsPadding(WindowInsets.systemBars)
-            .padding(horizontal = Spacing.md, vertical = Spacing.md)
-    ) {
+    suspend fun performSave() {
+        val saved = try {
+            onSave(state.photo)
+        } catch (ce: CancellationException) {
+            throw ce
+        } catch (_: Exception) {
+            false
+        }
+        dispatch(GalleryPhotoViewerEvent.SaveResult(saved))
+    }
+
+    fun launchSaveRetry() {
+        dispatch(GalleryPhotoViewerEvent.RetrySave)
+        scope.launch { performSave() }
+    }
+
+    suspend fun executeDelete(): Boolean = try {
+        onDelete(state.photo.id)
+    } catch (ce: CancellationException) {
+        throw ce
+    } catch (_: Exception) {
+        false
+    }
+
+    suspend fun executeDeleteWithGuard(): Boolean {
+        if (deleteInFlight) return false
+        deleteInFlight = true
+        try {
+            return executeDelete()
+        } finally {
+            deleteInFlight = false
+        }
+    }
+
+    suspend fun runDeleteCoordination() {
+        coordinateGalleryDeleteWithRetry(
+            executeDelete = { executeDeleteWithGuard() },
+            onDismiss = onDismiss,
+            presentFailureSnackbar = {
+                snackbarHostState.showSnackbar(
+                    message = deletePhotoConfirmation(false),
+                    actionLabel = "Retry",
+                ) == SnackbarResult.ActionPerformed
+            },
+        )
+    }
+
+    fun launchDeleteFlow() {
+        if (!canLaunchGalleryDeleteFlow(deleteFlowActive)) return
+        showDeleteConfirm = false
+        deleteFlowActive = true
+        scope.launch {
+            try {
+                runDeleteCoordination()
+            } finally {
+                deleteFlowActive = false
+            }
+        }
+    }
+
+    LaunchedEffect(state.feedback) {
+        val feedback = state.feedback ?: return@LaunchedEffect
+        when (feedback) {
+            is FeedbackMessage.Info -> {
+                snackbarHostState.showSnackbar(feedback.text)
+                dispatch(GalleryPhotoViewerEvent.FeedbackAcknowledged)
+            }
+            is FeedbackMessage.Error -> {
+                val result = if (feedback.canRetry) {
+                    snackbarHostState.showSnackbar(
+                        message = feedback.text,
+                        actionLabel = "Retry",
+                    )
+                } else {
+                    snackbarHostState.showSnackbar(feedback.text)
+                    SnackbarResult.Dismissed
+                }
+                dispatch(GalleryPhotoViewerEvent.FeedbackAcknowledged)
+                if (feedback.canRetry && result == SnackbarResult.ActionPerformed) {
+                    launchSaveRetry()
+                }
+            }
+        }
+    }
+
+      Box(
+          modifier = Modifier
+              .fillMaxSize()
+              .background(AiPoseColors.Background),
+      ) {
+          Scaffold(
+              snackbarHost = { SnackbarHost(snackbarHostState) },
+              containerColor = AiPoseColors.Background,
+              modifier = Modifier
+                  .fillMaxSize()
+                  .onSizeChanged { detailHeightPx = it.height.toFloat() }
+                  .graphicsLayer {
+                      val progress = if (detailHeightPx > 0f) {
+                          (dismissOffset / detailHeightPx).coerceIn(0f, 1f)
+                      } else {
+                          0f
+                      }
+                      translationY = dismissOffset
+                      scaleX = 1f - (progress * 0.04f)
+                      scaleY = 1f - (progress * 0.04f)
+                      alpha = 1f - (progress * 0.18f)
+                  }
+                  .draggable(
+                      state = dismissDragState,
+                      orientation = Orientation.Vertical,
+                      enabled = backEnabled &&
+                          !showDeleteConfirm &&
+                          !showPaywall &&
+                          !deleteFlowActive,
+                      onDragStarted = { settleJob?.cancel() },
+                      onDragStopped = { velocity -> settleDismissal(velocity) },
+                  )
+                  .background(AiPoseColors.Background)
+                  .windowInsetsPadding(WindowInsets.systemBars),
+          ) { innerPadding ->
         Column(
-            modifier = Modifier.fillMaxSize(),
-            horizontalAlignment = Alignment.CenterHorizontally
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .padding(horizontal = Spacing.md, vertical = Spacing.md),
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            // Top Bar
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(bottom = Spacing.lg),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                // Back button
                 Box(
                     modifier = Modifier
                         .size(44.dp)
@@ -127,98 +416,44 @@ fun PhotoDetailDialog(
                         .background(AiPoseColors.Background, RoundedCornerShape(10.dp))
                         .neoBorder(width = 2.dp, cornerRadius = 10.dp)
                         .clip(RoundedCornerShape(10.dp))
-                        .clickable { onDismiss() },
-                    contentAlignment = Alignment.Center
+                        .clickable(enabled = backEnabled) { onDismiss() }
+                        .semantics { contentDescription = "Back" },
+                    contentAlignment = Alignment.Center,
                 ) {
                     Icon(
                         painter = painterResource(Res.drawable.ic_chevron_left),
-                        contentDescription = "Back",
+                        contentDescription = null,
                         tint = AiPoseColors.Foreground,
-                        modifier = Modifier.size(16.dp)
+                        modifier = Modifier.size(16.dp),
                     )
                 }
 
-                // Title removed as requested
-
-                // Right actions
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    // Save Button
-                    Box(
-                        modifier = Modifier
-                            .size(44.dp)
-                            .neoShadow(offsetX = 2.dp, offsetY = 2.dp, cornerRadius = 10.dp)
-                            .background(AiPoseColors.Background, RoundedCornerShape(10.dp))
-                            .neoBorder(width = 2.dp, cornerRadius = 10.dp)
-                            .clip(RoundedCornerShape(10.dp))
-                          .clickable {
-                                if (purchaseGateway.snapshot.value.hasConfirmedPremium || premiumTestBypassEnabled) onSave(photo) else showPaywall = true
-                          },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Share,
-                            contentDescription = "Save",
-                            tint = AiPoseColors.Foreground,
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
-
-                    // Share Button uses the same confirmed-entitlement gate.
-                    Box(
-                        modifier = Modifier
-                            .size(44.dp)
-                            .neoShadow(offsetX = 2.dp, offsetY = 2.dp, cornerRadius = 10.dp)
-                            .background(AiPoseColors.Background, RoundedCornerShape(10.dp))
-                            .neoBorder(width = 2.dp, cornerRadius = 10.dp)
-                            .clip(RoundedCornerShape(10.dp))
-                            .clickable {
-                                  if (purchaseGateway.snapshot.value.hasConfirmedPremium || premiumTestBypassEnabled) onShare(photo) else showPaywall = true
-                            },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(Icons.Default.Share, "Share", tint = AiPoseColors.Foreground, modifier = Modifier.size(16.dp))
-                    }
-
-                    // Trash Button
-                    Box(
-                        modifier = Modifier
-                            .size(44.dp)
-                            .neoShadow(offsetX = 2.dp, offsetY = 2.dp, cornerRadius = 10.dp)
-                            .background(AiPoseColors.Background, RoundedCornerShape(10.dp))
-                            .neoBorder(width = 2.dp, cornerRadius = 10.dp)
-                            .clip(RoundedCornerShape(10.dp))
-                            .clickable { showDeleteConfirm = true },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Delete,
-                            contentDescription = "Delete",
-                            tint = AiPoseColors.Foreground,
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        text = dateTime?.dateLine ?: "—",
+                        style = AiPoseTypography.Heading3,
+                        color = AiPoseColors.Foreground,
+                    )
+                    Text(
+                        text = dateTime?.timeLine ?: "",
+                        style = AiPoseTypography.Caption,
+                        color = AiPoseColors.Subtext,
+                    )
                 }
+
+                Spacer(modifier = Modifier.size(44.dp))
             }
 
-            // Image Container
-            val detailKey = "photo:${photo.id}"
-            var imageReady by remember(detailKey) { mutableStateOf(false) }
-            // Gate the whole border/background/stroke/clip on the readiness
-            // boundary: it is revealed only once the flyer has covered the
-            // destination or the Coil painter has loaded the media — never as an
-            // empty frame. Stable key + same resolved model == same cache identity.
-            val chromeVisible = destinationChromeVisible(detailKey, imageReady)
+            val imageReady = state.media == MediaStatus.Ready
+            val chromeVisible = destinationChromeVisible(state.transitionKey, imageReady)
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .weight(1f) // Takes remaining vertical space
+                    .weight(1f)
                     .padding(horizontal = 4.dp)
-                    .padding(bottom = Spacing.lg)
+                    .padding(bottom = Spacing.md)
                     .then(
-                        if (chromeVisible) {
+                        if (chromeVisible && state.media != MediaStatus.Missing) {
                             Modifier
                                 .neoShadow(offsetX = 4.dp, offsetY = 4.dp, cornerRadius = 16.dp)
                                 .background(AiPoseColors.Surface, RoundedCornerShape(16.dp))
@@ -226,68 +461,178 @@ fun PhotoDetailDialog(
                                 .clip(RoundedCornerShape(16.dp))
                         } else {
                             Modifier
-                        }
+                        },
                     ),
-                contentAlignment = Alignment.Center
+                contentAlignment = Alignment.Center,
             ) {
-                MatchedImageDestination(
-                    key = detailKey,
-                    imageModel = resolvedPath,
-                    cornerRadius = 16.dp,
-                    modifier = Modifier.fillMaxSize(),
-                ) {
-                    AsyncImage(
-                        model = resolvedPath,
-                        contentDescription = photo.poseName,
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop,
-                        onLoading = { imageReady = false },
-                        onSuccess = { imageReady = true },
-                        onError = { imageReady = false },
-                    )
-                }
-            }
-        }
-    }
-
-    // Delete confirmation dialog
-      if (showDeleteConfirm) {
-        AlertDialog(
-            onDismissRequest = { showDeleteConfirm = false },
-            title = { Text("Delete Photo") },
-            text = { Text("This photo will be permanently deleted.") },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        scope.launch {
-                            val deleted = onDelete(photo.id)
-                            // Dismiss the detail dialog only on success; on
-                            // failure the caller shows a snackbar and this
-                            // dialog stays open so the user can retry.
-                            if (deleted) {
-                                onDismiss()
-                            } else {
-                                showDeleteConfirm = false
-      }
-
+                when (state.media) {
+                    MediaStatus.Missing -> {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(Spacing.sm),
+                            modifier = Modifier.padding(Spacing.lg),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Image,
+                                contentDescription = null,
+                                tint = AiPoseColors.Subtext,
+                                modifier = Modifier.size(48.dp),
+                            )
+                            Text("Photo unavailable", style = AiPoseTypography.Heading3)
+                            Text(
+                                "This local file is missing, but the gallery record is still safe to recover.",
+                                style = AiPoseTypography.Caption,
+                                color = AiPoseColors.Subtext,
+                            )
+                            TextButton(
+                                onClick = { dispatch(GalleryPhotoViewerEvent.RetryImage) },
+                                enabled = backEnabled && !deleteInFlight,
+                            ) {
+                                Text("Try again")
+                            }
                         }
                     }
+                    else -> {
+                        MatchedImageDestination(
+                            key = state.transitionKey,
+                            imageModel = state.resolvedPath,
+                            cornerRadius = 16.dp,
+                            modifier = Modifier.fillMaxSize(),
+                        ) {
+                            imageContent(
+                                state.resolvedPath,
+                                state.loadAttempt,
+                                state.photo.poseName,
+                                Modifier.fillMaxSize(),
+                                { dispatch(GalleryPhotoViewerEvent.ImageLoading) },
+                                { dispatch(GalleryPhotoViewerEvent.ImageReady) },
+                                { dispatch(GalleryPhotoViewerEvent.ImageFailed) },
+                            )
+                        }
+                    }
+                }
+            }
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = Spacing.sm),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                  ViewerActionButton(
+                      label = "Share",
+                      icon = Icons.Default.Share,
+                      enabled = actionsEnabled,
+                      modifier = Modifier.weight(1f),
+                      onClick = {
+                        if (!actionsEnabled) return@ViewerActionButton
+                        if (purchaseGateway.snapshot.value.hasConfirmedPremium || premiumTestBypassEnabled) {
+                            onShare(state.photo)
+                            scope.launch { snackbarHostState.showSnackbar("Share sheet ready") }
+                        } else {
+                            showPaywall = true
+                        }
+                    },
+                )
+                  ViewerActionButton(
+                      label = "Save",
+                      icon = Icons.Default.SaveAlt,
+                      enabled = actionsEnabled,
+                      modifier = Modifier.weight(1f),
+                      onClick = {
+                        if (!actionsEnabled) return@ViewerActionButton
+                        if (purchaseGateway.snapshot.value.hasConfirmedPremium || premiumTestBypassEnabled) {
+                            dispatch(GalleryPhotoViewerEvent.SaveRequested)
+                            scope.launch { performSave() }
+                        } else {
+                            showPaywall = true
+                        }
+                    },
+                )
+                  ViewerActionButton(
+                      label = "Trash",
+                      icon = Icons.Default.Delete,
+                      enabled = trashEnabled,
+                      tint = AiPoseColors.ErrorForeground,
+                      modifier = Modifier.weight(1f),
+                      onClick = {
+                        if (!trashEnabled) return@ViewerActionButton
+                        if (!canLaunchGalleryDeleteFlow(deleteFlowActive)) return@ViewerActionButton
+                        showDeleteConfirm = true
+                    },
+                )
+            }
+        }
+          }
+      }
+
+      if (showDeleteConfirm) {
+        AlertDialog(
+            onDismissRequest = {
+                if (!deleteInFlight && canLaunchGalleryDeleteFlow(deleteFlowActive)) {
+                    showDeleteConfirm = false
+                }
+            },
+            title = { Text("Delete this photo?") },
+            text = { Text("The photo will be removed from this device. This cannot be undone.") },
+            confirmButton = {
+                TextButton(
+                    enabled = !deleteInFlight && canLaunchGalleryDeleteFlow(deleteFlowActive),
+                    onClick = { launchDeleteFlow() },
                 ) {
                     Text("Delete", color = AiPoseColors.Error)
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showDeleteConfirm = false }) {
-                    Text("Cancel")
+                TextButton(
+                    onClick = { showDeleteConfirm = false },
+                    enabled = !deleteInFlight && canLaunchGalleryDeleteFlow(deleteFlowActive),
+                ) {
+                    Text("Keep photo")
                 }
-            }
+            },
         )
     }
+
     if (showPaywall) {
         PaywallScreen(
             gateway = purchaseGateway,
             onDismiss = { showPaywall = false },
             modifier = Modifier.fillMaxSize(),
+        )
+    }
+}
+
+@Composable
+private fun ViewerActionButton(
+    label: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    enabled: Boolean,
+    tint: Color = AiPoseColors.Foreground,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    val contentColor = tint.copy(alpha = if (enabled) 1f else 0.38f)
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(7.dp),
+        modifier = modifier
+            .heightIn(min = 70.dp)
+            .clickable(enabled = enabled, onClick = onClick)
+            .semantics { contentDescription = label }
+            .padding(horizontal = Spacing.sm, vertical = Spacing.xs),
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = contentColor,
+            modifier = Modifier.size(24.dp),
+        )
+        Text(
+            text = label,
+            style = AiPoseTypography.Caption.copy(fontSize = 11.sp, fontWeight = FontWeight.Bold),
+            color = contentColor,
         )
     }
 }

@@ -3,5 +3,3 @@
 AIPOSE_ENVIRONMENT = DEV
 AIPOSE_BUILD_CONFIGURATION = Release
 REVENUECAT_PUBLIC_SDK_KEY = REPLACE_WITH_DEV_PUBLIC_SDK_KEY
-LEGAL_TERMS_URL = https:/$()/aipose.example.com/terms
-LEGAL_PRIVACY_URL = https:/$()/aipose.example.com/privacy

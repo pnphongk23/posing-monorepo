@@ -30,10 +30,10 @@ import kotlin.test.assertTrue
  * Contracts proving that each list's data owner (ViewModel) + exact grid viewport
  * (first-visible index + pixel offset) are held by a state holder that the tab
  * owner composes ABOVE the nested detail [Navigator]. Because the holder is never
- * recreated by a detail push/pop, the same ViewModel (and its DB collectors) and
- * the exact scroll offset all survive Back; and the Community initial load is not
- * re-triggered just because the list re-enters composition while already loaded.
- * The Poses holder is Community-only (the My Poses tab was removed).
+ * recreated by a detail push/pop, the same ViewModel and exact scroll offset
+ * survive Back. List screens start a fresh data collection when they re-enter so
+ * mutations made in detail are visible; the Community initial-load guard remains
+ * independent. The Poses holder is Community-only (the My Poses tab was removed).
  */
 class ListStateOwnershipContractTest {
 
@@ -112,15 +112,6 @@ class ListStateOwnershipContractTest {
         assertTrue(shouldAutoLoadCommunity(hasItems = false))
         // After an ordinary Back the hoisted state keeps items -> NO duplicate load.
         assertFalse(shouldAutoLoadCommunity(hasItems = true))
-    }
-
-    @Test
-    fun listAutoLoadGuardSkipsReentryWhenAlreadyLoaded() {
-        // Gallery (and any list whose data owner survives detail push/pop): query
-        // only when never loaded; re-entry after Back is already-loaded so the DB
-        // is not re-queried (no recreated collector).
-        assertTrue(listShouldAutoLoad(isLoading = true))
-        assertFalse(listShouldAutoLoad(isLoading = false))
     }
 
     // runBlocking-like scope helper with deferred cleanup.

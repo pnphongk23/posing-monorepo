@@ -43,8 +43,8 @@ approved_by: Product Authority
 
 The Pose Owner manages pose metadata and the lifecycle around an extracted
 pose. This is the business owner for pose state, but it must reuse
-[FEAT-004](FEAT-004-extract-reusable-pose-images.md)'s extraction contract and
-[FEAT-006](FEAT-006-publish-a-pose.md)'s publication boundary. The current
+[FEAT-004](./FEAT-004-extract-reusable-pose-images.md)'s extraction contract and
+[FEAT-006](./FEAT-006-publish-a-pose.md)'s publication boundary. The current
 implementation only partially realizes this aggregate.
 
 ## Business Understanding
@@ -117,7 +117,7 @@ A mobile user submits, inspects, or manually retries a personal extraction; an o
   - Pose link when `succeeded` — **Inferred**
 - **Unresolved (TBD):** The storage shape for the device-local job record is not yet
   implemented; the canonical Pose field set is fixed by
-  [`pose.md`](../../spec/data/entities/pose.md).
+  [`pose.md`](../specs/data-contract.md#pose).
 - **Planned:** [Plan 260816-2240](../plans/260816-2240-higgsfield-cli-parallel-extract-provider/plan.md)
   routes the same `ExtractionJob` worker through `PoseExtractorProvider`; community
   intake enqueue shape (`202` + `jobId`) is unchanged; engine follows global FEAT-009
@@ -125,7 +125,7 @@ A mobile user submits, inspects, or manually retries a personal extraction; an o
 - **Not observed:** A dedicated pose-guide owner/version/notes model, guide CRUD,
   re-extraction/revert routes, durable job-to-pose link, or asset readiness state.
 - **Primary blocker:** Worker stores generated base64 on `ExtractionJob` only;
-  no repository evidence proves the `Pose` → skeleton [`MediaAsset`](../../spec/data/entities/media-asset.md) publication.
+  no repository evidence proves the `Pose` → skeleton [`MediaAsset`](../specs/data-contract.md#mediaasset) publication.
 - **Historical evidence:** [REP-004](../reports/REP-004-backend-feature-and-model-entity-scout.md)
   and [REP-002 GAP-001/GAP-006/GAP-007](../reports/REP-002-feature-gap-and-release-readiness-audit.md#prioritized-backlog)
   preserve the detailed findings.
@@ -134,9 +134,9 @@ A mobile user submits, inspects, or manually retries a personal extraction; an o
 
 | Concern | Canonical reference | Evidence |
 | --- | --- | --- |
-| Entities | [`Pose`](../../spec/data/entities/pose.md), [`CommunityPose`](../../spec/data/entities/community-pose.md) (published view/DTO), [`ExtractionJob`](../../spec/data/entities/extraction-job.md), [`MediaAsset`](../../spec/data/entities/media-asset.md), [`Account`](../../spec/data/entities/account.md), [`ApiKeyCredential`](../../spec/data/entities/api-key-credential.md) | [`communityStore.ts`](../../../web/services/pose-extract-server/src/db/communityStore.ts), [`schema.sql`](../../../web/services/pose-extract-server/src/db/schema.sql) |
-| ERD | [Server physical graph](../../spec/data/erd/server.md), [unresolved cross-feature links](../../spec/data/erd/conceptual.md) | [`job-processor.ts`](../../../web/services/pose-extract-server/src/worker/job-processor.ts) |
-| APIs | [Guides](../../spec/api/modules/guides.md), [admin keys](../../spec/api/modules/admin-keys.md), [admin community](../../spec/api/modules/admin-community.md), [admin jobs](../../spec/api/modules/admin-jobs.md) | [`adminCommunityRoutes.ts`](../../../web/services/pose-extract-server/src/routes/adminCommunityRoutes.ts), [`jobStatusRoutes.ts`](../../../web/services/pose-extract-server/src/routes/jobStatusRoutes.ts) |
+| Entities | [`Pose`](../specs/data-contract.md#pose), [`CommunityPose`](../specs/data-contract.md#communitypose) (published view/DTO), [`ExtractionJob`](../specs/data-contract.md#extractionjob), [`MediaAsset`](../specs/data-contract.md#mediaasset), [`Account`](../specs/data-contract.md#account), [`ApiKeyCredential`](../specs/data-contract.md#apikeycredential) | [`communityStore.ts`](../../../web/services/pose-extract-server/src/db/communityStore.ts), [`schema.sql`](../../../web/services/pose-extract-server/src/db/schema.sql) |
+| ERD | [Server physical graph](../specs/data-contract.md#server), [unresolved cross-feature links](../specs/data-contract.md#conceptual-overlay) | [`job-processor.ts`](../../../web/services/pose-extract-server/src/worker/job-processor.ts) |
+| APIs | [Guides](../specs/api-contract.md#pose-guides), [admin keys](../specs/api-contract.md#admin-keys), [admin community](../specs/api-contract.md#admin-community), [admin jobs](../specs/api-contract.md#admin-jobs) | [`adminCommunityRoutes.ts`](../../../web/services/pose-extract-server/src/routes/adminCommunityRoutes.ts), [`jobStatusRoutes.ts`](../../../web/services/pose-extract-server/src/routes/jobStatusRoutes.ts) |
 | Supporting evidence | Backend scout and readiness audit | [`REP-004`](../reports/REP-004-backend-feature-and-model-entity-scout.md), [`REP-002`](../reports/REP-002-feature-gap-and-release-readiness-audit.md) |
 | Mobile personal path | Dedicated Extract screen, local Jobs screen, device-local job record | [`PoseApiService.kt`](../../../mobile/shared/src/commonMain/kotlin/com/aipose/data/remote/PoseApiService.kt), [`Pose.sq`](../../../mobile/shared/src/commonMain/sqldelight/com/aipose/Pose.sq), [`PosesScreen.kt`](../../../mobile/composeApp/src/commonMain/kotlin/com/aipose/ui/screens/poses/PosesScreen.kt), [extraction screen UX line](../specs/ui-ux-system.md) |
 
@@ -144,7 +144,7 @@ A mobile user submits, inspects, or manually retries a personal extraction; an o
 
 - **FR-001:** A `202` submission is documented as queued acceptance, not readiness.
 - **FR-002:** Job state uses the shared observed values and API-013 shape.
-- **FR-003:** A Mobile user creates a personal Pose through a dedicated Extract screen that collects the canonical fields — name, tags, and at least one bodyPart (required); description and difficulty (optional); **`ownerAccountId` (taken from the signed-in session — mandatory on every `Pose`)** — and reads the source image from the existing camera ([FEAT-001](FEAT-001-capture-a-photo-on-mobile.md)) or local-library ([FEAT-002](FEAT-002-manage-a-local-photo-gallery.md)) entry points.
+- **FR-003:** A Mobile user creates a personal Pose through a dedicated Extract screen that collects the canonical fields — name, tags, and at least one bodyPart (required); description and difficulty (optional); **`ownerAccountId` (taken from the signed-in session — mandatory on every `Pose`)** — and reads the source image from the existing camera ([FEAT-001](./FEAT-001-capture-a-photo-on-mobile.md)) or local-library ([FEAT-002](./FEAT-002-manage-a-local-photo-gallery.md)) entry points.
 - **FR-004:** Submission persists a device-only local job record (local id, server `jobId`, status, timestamps, error when failed, Pose link when succeeded) and polls `GET /api/extract-jobs/:jobId`; there is no job-list API.
 - **FR-005:** A dedicated local Jobs screen shows current-device jobs with status, outcome, and failure details, and offers an explicit manual Retry on failure with no automatic retry.
 - **BR-001:** No guide is public until a durable asset/readiness relationship is proven; no `Pose` is persisted before the extraction job is `succeeded`.
@@ -154,16 +154,16 @@ A mobile user submits, inspects, or manually retries a personal extraction; an o
 
 - [ ] Submission returns **`202 Accepted` queued job (`jobId`)**; the Pose is created only after the job is `succeeded` (`201`).
 - [ ] Job status distinguishes queued, processing, succeeded, and failed.
-- [ ] Owner, media assets, and job-to-pose links follow [`Pose`](../../spec/data/entities/pose.md).
+- [ ] Owner, media assets, and job-to-pose links follow [`Pose`](../specs/data-contract.md#pose).
 - [ ] Mobile Extract screen creates a local `Pose` with name, tags, bodyParts, and source image on success.
 - [ ] Mobile Jobs screen lists device-local jobs with status and failure details and offers manual retry only (no automatic retry).
 - [ ] Mobile polls the per-job endpoint and requires no job-list API.
 
 ## Relationships
 
-- Shared references: [CommunityPose](../../spec/data/entities/community-pose.md) (published view/DTO), [ERD conceptual](../../spec/data/erd/conceptual.md), [Admin API](../../spec/api/README.md).
-- Related features: [FEAT-004](FEAT-004-extract-reusable-pose-images.md), [FEAT-006](FEAT-006-publish-a-pose.md).
-- Mobile extraction reuses image source entry points from [FEAT-001](FEAT-001-capture-a-photo-on-mobile.md) and [FEAT-002](FEAT-002-manage-a-local-photo-gallery.md) without owning camera behavior.
+- Shared references: [CommunityPose](../specs/data-contract.md#communitypose) (published view/DTO), [ERD conceptual](../specs/data-contract.md#conceptual-overlay), [Admin API](../specs/api-contract.md).
+- Related features: [FEAT-004](./FEAT-004-extract-reusable-pose-images.md), [FEAT-006](./FEAT-006-publish-a-pose.md).
+- Mobile extraction reuses image source entry points from [FEAT-001](./FEAT-001-capture-a-photo-on-mobile.md) and [FEAT-002](./FEAT-002-manage-a-local-photo-gallery.md) without owning camera behavior.
 ### Supporting evidence
 
 - [`communityStore.ts`](../../../web/services/pose-extract-server/src/db/communityStore.ts)

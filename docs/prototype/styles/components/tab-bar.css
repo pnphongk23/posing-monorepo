@@ -31,7 +31,7 @@
 
 .nb-dock__item {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
   justify-content: center;
   flex: 1;
@@ -48,8 +48,8 @@
 
 .nb-dock__item svg,
 .nb-dock__item use {
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
   stroke: currentColor;
   fill: none;
   stroke-width: var(--nb-icon-stroke);
@@ -62,7 +62,6 @@
   font-weight: var(--nb-type-meta-label-weight);
   margin-top: var(--nb-space-2xs);
 }
-
 .nb-dock__item.is-active {
   color: var(--nb-color-dark);
   background-color: var(--nb-color-accent-blue);

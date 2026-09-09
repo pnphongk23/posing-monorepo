@@ -247,7 +247,7 @@ Generalize Gemini-specific codes where the contract is provider-agnostic.
 | Browser auth (legacy worker) | `BROWSER_AUTH_REQUIRED` | Deprecate with browser path | — | — |
 
 Keep `GEMINI_*` as aliases in responses for one release if needed; document
-deprecation in `docs/spec/api/modules/extract-pose.md` during WI-1/WI-7.
+deprecation in `docs/harness/specs/api-contract.md#extract-pose` during WI-1/WI-7.
 
 ## Sequence flows
 

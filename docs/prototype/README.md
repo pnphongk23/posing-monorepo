@@ -30,14 +30,16 @@ docs/prototype/
 │   ├── camera-settings.html    # Redirects to camera live feed with settings open
 │   ├── camera-extracting.html  # Joint detection progress card (0 to 78%)
 │   ├── camera-pose-overlay.html# Semi-transparent pose matching skeleton aligner
-│   ├── poses-list.html         # Tabbed poses inventory list with category filters, a link to search, and main navigation
+│   ├── poses-list.html         # Tabbed poses inventory list with category filters, a link to search, Account shortcut, and main navigation
+│   ├── account.html            # Account overview, Premium CTA, Saved shortcut, and sign-out prototype
 │   ├── search.html             # Dedicated search screen dynamically filtering mock poses by title
 │   ├── pose-detail.html        # Source-aware pose detail, personal delete, and bounded handoff
 │   ├── saved-list.html         # FEAT-013 Saved collection state prototype
 │   ├── pose-detail-saved.html  # FEAT-013 saved detail/save/try states
 │   ├── sign-in-prompt.html     # FEAT-013 shared auth gate simulation
 │   ├── gallery.html            # Captured matches history with list/grid toggle and main navigation
-│   └── gallery-detail.html     # Source-aware captured photo detail and delete confirmation
+│   ├── gallery-detail.html     # Legacy source-aware captured photo detail
+│   └── gallery-detail-v2.html  # Current gallery photo detail redesign
 ├── styles/                     # Design System & Component Outlines
 │   ├── tokens.css              # Custom properties layer (colors, spacing, radii)
 │   ├── reset.css               # Normalize standard browser styling overrides
@@ -53,14 +55,16 @@ docs/prototype/
 │       ├── progress.css        # Extraction meter with terminal handle
 │       ├── modal.css           # Options popovers and dialog templates
 │       ├── nav-bar.css         # Title headers and action touch targets
-│       ├── grid.css            # Multicolumn scrolling lists & list items
+│       ├── grid.css            # Multicolumn scrolling lists and masonry items
 │       ├── camera-viewport.css # Grids, alignment guides, & shutter panels
 │       ├── pose-overlay.css    # SVG bone line links & joint node decorators
 │       └── view-toggle.css     # Gallery grid/list layout controllers
-│   └── saved-poses.css         # Token-based FEAT-013 prototype additions
+│   ├── saved-poses.css         # Token-based FEAT-013 prototype additions
+│   └── account.css             # Account screen layout and action styles
 └── scripts/                    # Modular Interaction Code
     ├── icons.js                # DOM injector for reusable SVG symbol definitions
     ├── fixtures.js             # Local mock pose/photo catalog and session-only pose state
+    ├── account.js              # Account sign-out and re-authentication simulation
     ├── button-press.js         # Accessible keyboard active button triggers
     ├── toggle.js               # Settings flash rotation & grid outline toggles
     ├── tabs.js                 # Categories filter listener bindings
@@ -89,14 +93,20 @@ The prototype features several interactive controls. However, due to its static,
 8. **Recoverable Library States**: Refresh briefly shows a retained-content loading state. For repeatable demonstrations, use `?state=loading`, `?state=error`, `?state=refresh-error`, or `?state=empty` on the list; search accepts the same loading/error/empty hooks. Empty and error states provide a next action or retry.
 9. **Source-aware Details**: Cards route with `source` and `id` query parameters. Detail only renders metadata present in the fixture, handles missing/unavailable records with a return path, and confirms personal deletion before removing it from the current `sessionStorage` prototype session.
 10. **Bounded Try Pose Handoff**: `Try Pose` records a mock handoff notice on the detail screen only. It does not navigate to or render `camera-pose-overlay.html`; Camera overlay persistence, rendering, controls, and extraction remain deferred to the pending handoff plan.
-11. **Existing Camera/Gallery Shortcuts**: The standalone `camera-pose-overlay.html` and the camera-facing shortcut remain historical prototype screens outside this Pose Library update. Gallery includes `gallery-detail.html` for source-aware photo detail; the gallery layout toggle remains **inert** because its buttons are missing from `gallery.html`; camera settings still use `camera-live.html?settings=open`.
+11. **Existing Camera/Gallery Shortcuts**: The standalone `camera-pose-overlay.html` and the camera-facing shortcut remain historical prototype screens outside this Pose Library update. Gallery opens the current `gallery-detail-v2.html` photo detail redesign and keeps a full uncapped staggered photo collection; `gallery-detail.html` remains available as the legacy detail reference. The gallery layout toggle remains **inert** because its buttons are missing from `gallery.html`; camera settings still use `camera-live.html?settings=open`.
+
+### Account screen prototype
+
+The Account screen provides the Gmail profile entry, Premium CTA, Saved poses
+shortcut, and a sign-out/re-authentication simulation. It does not persist a
+real auth session.
 
 ### FEAT-013 Saved Poses prototype
 
 These screens are prototype-only visual/navigation simulations; they do not call
 the Saved API, persist account data, or implement production authentication.
 
-- [Saved list](screens/saved-list.html): `?state=loading`, `ready`, `empty`, `error`, `refresh-error`, `load-more-loading`, `load-more-error`, `offline-stale`, or `offline-no-cache`; inspect pagination with `?page=1&limit=20`. Removed/unavailable is demonstrated on [Saved pose detail](screens/pose-detail-saved.html?id=dancing&state=unavailable), not as a list tombstone.
+- [Saved list](./screens/saved-list.html): `?state=loading`, `ready`, `empty`, `error`, `refresh-error`, `load-more-loading`, `load-more-error`, `offline-stale`, or `offline-no-cache`; inspect pagination with `?page=1&limit=20`. Removed/unavailable is demonstrated on [Saved pose detail](screens/pose-detail-saved.html?id=dancing&state=unavailable), not as a list tombstone.
 - [Saved pose detail](screens/pose-detail-saved.html?id=dancing): `?state=unsaved`, `pending-save`, `pending-unsave`, `error`, `offline`, `unavailable`, or the default confirmed saved state. Add `auth=guest` to gate Save/Try.
 - [Sign-in prompt](screens/sign-in-prompt.html?intent=saved): use `intent=saved`, `save`, or `try`; `state=fail` simulates a retryable auth failure. Continue resumes Saved or the encoded `return` detail URL; Not now keeps the gated context.
 

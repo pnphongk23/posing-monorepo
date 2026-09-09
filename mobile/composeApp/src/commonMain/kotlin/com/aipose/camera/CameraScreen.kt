@@ -921,7 +921,7 @@ private fun CameraMorePopup(
                 shadowOffset = 2.dp,
                 onClick = onClearPose,
             ) {
-                Text("Clear pose", color = AiPoseColors.Foreground, fontSize = 13.sp)
+                Text("Clear pose", color = AiPoseColors.Foreground, style = AiPoseTypography.Control)
             }
             Text("Line color", color = AiPoseColors.Surface, style = AiPoseTypography.Caption)
             Row(

@@ -18,7 +18,7 @@ relationships:
     - "[[REP-007-feat-002-local-photo-gallery-delivery|REP-007]]"
     - "[[REP-010-phase2-live-community-forensic-baseline|REP-010]]"
     - "[[REP-011-firebase-observability-remote-config-delivery|REP-011]]"
-    - "[[REP-012-backlog-lane-documentation-survey|REP-012]]"
+    - "[[REP-013-backlog-lane-documentation-survey|REP-013]]"
   rules: []
   features:
     - "[[FEAT-001-capture-a-photo-on-mobile|FEAT-001]]"
@@ -31,6 +31,8 @@ relationships:
     - "[[FEAT-008-use-published-poses|FEAT-008]]"
     - "[[FEAT-009-configure-extraction-provider|FEAT-009]]"
     - "[[FEAT-013-saved-poses-albums-account-backed|FEAT-013]]"
+    - "[[FEAT-014-manage-account-and-session|FEAT-014]]"
+    - "[[FEAT-015-manage-app-settings-and-preferences|FEAT-015]]"
   source_paths: []
 type: spec
 status: active
@@ -45,7 +47,7 @@ status: active
 **Published scope:** Snap Pose iOS 1.0 — phản ánh trạng thái code trên `main` tại
 baseline. Không claim hành vi App Store Connect / production runtime nếu không có
 evidence ASC hoặc báo cáo delivery tương ứng (xem
-[REP-012](../reports/REP-012-backlog-lane-documentation-survey.md)).
+[REP-013](../reports/REP-013-backlog-lane-documentation-survey.md)).
 
 ## Scope
 
@@ -69,7 +71,7 @@ Roadmap này chỉ mô tả **v1.0 đã ship** và **backlog post-v1.0** còn c�
 
 ## v1.0 baseline
 
-Evidence: `main` @ `ca33cc2`, scout độc lập + [REP-012](../reports/REP-012-backlog-lane-documentation-survey.md).
+Evidence: `main` @ `ca33cc2`, scout độc lập + [REP-013](../reports/REP-013-backlog-lane-documentation-survey.md).
 Shipped được ghi nhận **iOS-scoped**; physical-device và Android không claim đủ
 evidence trong v1.0.
 
@@ -90,7 +92,7 @@ evidence trong v1.0.
 
 - **Durable camera handoff:** overlay session-scoped hoạt động; relaunch restore,
   clear lifecycle, managed cache chưa đủ theo plan `260809-2241`
-  ([REP-012](../reports/REP-012-backlog-lane-documentation-survey.md) BL-GAP-01).
+  ([REP-013](../reports/REP-013-backlog-lane-documentation-survey.md) BL-GAP-01).
 - **Community catalogue:** operator loop có; taxonomy depth / volume targets chưa
   đạt; dual-layer source image (plan `260510-1726`) chưa land.
 - **Personal extraction UX:** server/job path có evidence; tab My Poses đã gỡ
@@ -100,8 +102,14 @@ evidence trong v1.0.
 
 ### Chưa ship (post-v1.0)
 
-- Saved Poses, Accounts, Albums ([[FEAT-008-use-published-poses|FEAT-008]] scope
-  chưa deliver).
+ - Saved Poses, Account/session management, and Albums ([[FEAT-013-saved-poses-albums-account-backed|FEAT-013]];
+   [[FEAT-014-manage-account-and-session|FEAT-014]]; [[FEAT-008-use-published-poses|FEAT-008]]
+   scope chưa deliver). FEAT-013 depends on a valid Account/session from FEAT-014;
+   neither feature is claimed shipped or runtime-verified here.
+ - App Settings and Preferences ([[FEAT-015-manage-app-settings-and-preferences|FEAT-015]])
+   remain proposed; the Settings hub boundary is documented, but its production
+   entry point and first non-camera preference set are unresolved. Camera settings
+   remain owned by FEAT-012.
 - FEAT-011 monetization / IAP / paywall — **không** có RevenueCat/purchase code
   trong `mobile/`.
 - Android parity.
@@ -198,12 +206,26 @@ khi Albums được mở trong một Feature/Plan tương lai.
   magic link, anonymous, Apple, GitHub và mọi provider khác đều tắt/out of scope.
   Quyết định Google-only này đã frozen; runtime Google/Supabase integration vẫn
   Unresolved cho tới khi WI-02 có evidence.
-- Current Feature: [[FEAT-013-saved-poses-albums-account-backed|FEAT-013]];
-  [[FEAT-008-use-published-poses|FEAT-008]] là predecessor/boundary cho published
-  pose và Try Pose flow hiện hữu.
+ - Current Feature: [[FEAT-013-saved-poses-albums-account-backed|FEAT-013]];
+   [[FEAT-008-use-published-poses|FEAT-008]] là predecessor/boundary cho published
+   pose và Try Pose flow hiện hữu.
 - Trong Saved Poses flow, Guest chưa có signed-in Account bắt buộc sign-in và
   không được Try Pose.
-- V1 chỉ phục vụ Account/Saved; backend/web chỉ khi phục vụ Account hoặc Saved.
+ - V1 chỉ phục vụ Account/Saved; backend/web chỉ khi phục vụ Account hoặc Saved.
+
+### P2 — App Settings & Preferences
+
+**Mục tiêu:** Một Settings surface cho guest và signed-in user, gồm app-level
+non-camera controls, privacy/permission, help/about, và link tới Account/Saved/
+Premium theo đúng owner Feature.
+
+- Camera settings không thuộc Settings; facing, flash, grid, guide, overlay,
+  opacity, line color, và zoom tiếp tục nằm tại Camera theo FEAT-012.
+- Không mở ngầm notification, language, custom theme, analytics, deletion/export,
+  hay Android parity.
+- FEAT-015: [[FEAT-015-manage-app-settings-and-preferences|FEAT-015]] (Draft; chờ
+  chốt production entry point, first non-camera preference set, support destination,
+  và platform-parity commitment).
 
 ### P2 — Personal extraction UX
 
@@ -254,7 +276,7 @@ Poses được chốt.
 
 - Business boundaries: linked Feature documents.
 - Delivery sequencing: Harness Plans (ví dụ `260809-2241`, `260826-0003`).
-- v1.0 evidence: [REP-012](../reports/REP-012-backlog-lane-documentation-survey.md);
+- v1.0 evidence: [REP-013](../reports/REP-013-backlog-lane-documentation-survey.md);
   REP-003, REP-006, REP-007, REP-011 trên `main` @ `ca33cc2`.
 - Residual gaps: [REP-002](../reports/REP-002-feature-gap-and-release-readiness-audit.md).
 - Review lại roadmap khi Feature boundary, publication policy, Saved/Album rule,

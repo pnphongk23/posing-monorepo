@@ -19,6 +19,7 @@ class PhotoRepositoryTest {
             assertEquals("/tmp/second.jpg", repository.getLatestPhotoPath())
             assertEquals("/tmp/first.jpg", database.photoQueries.getPhotoById(firstId).executeAsOne().imagePath)
             assertEquals("/tmp/second.jpg", database.photoQueries.getPhotoById(secondId).executeAsOne().imagePath)
+            assertTrue(database.photoQueries.getPhotoById(secondId).executeAsOne().createdAt.toLong() > 1_600_000_000_000L)
         } finally {
             driver.close()
         }

@@ -40,10 +40,10 @@ approved_by: Product Authority
 
 One source image is validated and sent through an extraction provider to produce
 one reusable skeleton (the extraction output). The common request/result contract is owned here;
-guide metadata/ownership is [FEAT-005](FEAT-005-manage-a-pose-guide.md), the
-Admin operating surface is [FEAT-007](FEAT-007-operate-pose-content-from-admin-web.md),
+guide metadata/ownership is [FEAT-005](./FEAT-005-manage-a-pose-guide.md), the
+Admin operating surface is [FEAT-007](./FEAT-007-operate-pose-content-from-admin-web.md),
 and global extraction-engine selection is owned by
-[FEAT-009](FEAT-009-configure-extraction-provider.md) per
+[FEAT-009](./FEAT-009-configure-extraction-provider.md) per
 [DEC-001](../decisions/DEC-001-extraction-provider-selection-policy.md).
 This Feature documents dual-engine **processing** and async job flow; it does
 not own which engine is selected.
@@ -69,11 +69,11 @@ The actor submits a source image for extraction.
 
 1. **Actor:** The actor submits an image. **System:** The service validates the multipart payload and applies the direct-extraction limiter.
 2. **System:** The service enqueues an `ExtractionJob` and returns `202 Accepted` with `jobId` and poll URL (phase 1 target per [Plan 260816-2240](../plans/260816-2240-higgsfield-cli-parallel-extract-provider/plan.md)).
-3. **System:** The worker claims the job and invokes the globally configured engine (`gemini_native` or `higgsfield_cli`) via `PoseExtractorProvider` per [FEAT-009](FEAT-009-configure-extraction-provider.md) / [DEC-001](../decisions/DEC-001-extraction-provider-selection-policy.md).
+3. **System:** The worker claims the job and invokes the globally configured engine (`gemini_native` or `higgsfield_cli`) via `PoseExtractorProvider` per [FEAT-009](./FEAT-009-configure-extraction-provider.md) / [DEC-001](../decisions/DEC-001-extraction-provider-selection-policy.md).
 4. **Actor:** The actor polls job status until `succeeded` or `failed`. For a mobile client this is the per-job endpoint `GET /api/extract-jobs/:jobId`; there is **no job-list API**. **System:** On success, returns the skeleton in job result; on failure, returns provider-neutral `error_code`.
 5. **Postcondition (creation timing):** The job start does **not** create a `Pose` — no Pose is persisted before extraction success. On `succeeded`, the caller finalizes creation through `POST /api/guides` (owner) or admin intake, which returns `201 Created` with the `Pose` (`poseId` stable, `status: local`) and the three media roles (`original`, `skeleton`, `thumbnail`) materialized.
 
-**Observed (pre-Plan):** Steps 2–4 are synchronous `200` inline base64 today; the mobile client expects a sync response. The server async contract is in scope; mobile async client migration is out of **Plan 260816-2240** work-item scope, but the Feature-level mobile async behavior (per-job polling, no list API) is documented here and in [FEAT-005](FEAT-005-manage-a-pose-guide.md), not deferred by that Plan's scope note.
+**Observed (pre-Plan):** Steps 2–4 are synchronous `200` inline base64 today; the mobile client expects a sync response. The server async contract is in scope; mobile async client migration is out of **Plan 260816-2240** work-item scope, but the Feature-level mobile async behavior (per-job polling, no list API) is documented here and in [FEAT-005](./FEAT-005-manage-a-pose-guide.md), not deferred by that Plan's scope note.
 
 ### Alternative flows
 
@@ -99,7 +99,7 @@ The actor submits a source image for extraction.
   `gpt_image_2`) behind `PoseExtractorProvider`, unifies canonical extract with
   async `ExtractionJob` enqueue + poll (phase 1), and generalizes provider error
   codes. Processing uses the globally configured engine per
-  [FEAT-009](FEAT-009-configure-extraction-provider.md) and
+  [FEAT-009](./FEAT-009-configure-extraction-provider.md) and
   [DEC-001](../decisions/DEC-001-extraction-provider-selection-policy.md);
   engine selection is not owned here. Mobile async client migration is out of
   that Plan's work-item scope, not out of Feature scope: the intended mobile
@@ -108,10 +108,10 @@ The actor submits a source image for extraction.
   call the service via the synchronous client, and persist the result through
   local pose storage. This picker path is legacy and does not follow the
   canonical async job contract; the canonical mobile extraction entry point is
-  the dedicated Extract screen owned by [FEAT-005](FEAT-005-manage-a-pose-guide.md).
+  the dedicated Extract screen owned by [FEAT-005](./FEAT-005-manage-a-pose-guide.md).
 - **Boundary:** Mobile extraction does not own the CameraScreen/FEAT-001 business
   flow; it reuses image source entry points (camera or local library) owned by
-  [FEAT-001](FEAT-001-capture-a-photo-on-mobile.md)/[FEAT-002](FEAT-002-manage-a-local-photo-gallery.md).
+  [FEAT-001](./FEAT-001-capture-a-photo-on-mobile.md)/[FEAT-002](./FEAT-002-manage-a-local-photo-gallery.md).
 - **Alternate path:** Admin Web also contains a legacy Replicate route. It is
   catalogued separately and is not silently treated as the canonical API-003 contract.
 - **Gaps:** Content validation, cancellation/idempotency, retention, and error
@@ -121,9 +121,9 @@ The actor submits a source image for extraction.
 
 | Concern | Canonical reference | Evidence |
 | --- | --- | --- |
-| Entities | [`ExtractionJob`](../../spec/data/entities/extraction-job.md), [`ApiKeyCredential`](../../spec/data/entities/api-key-credential.md), [`ProviderRequestLog`](../../spec/data/entities/provider-request-log.md) | [`schema.sql`](../../../web/services/pose-extract-server/src/db/schema.sql), [`KeyStore`](../../../web/services/pose-extract-server/src/services/keyStore.ts) |
-| ERD | [Server physical graph](../../spec/data/erd/server.md) | [`ExtractionJobStore`](../../../web/services/pose-extract-server/src/db/extractionJobStore.ts) |
-| APIs | [Direct extraction](../../spec/api/modules/extract-pose.md), [legacy route in conventions](../../spec/api/conventions.md) | [`extractPoseRoutes.ts`](../../../web/services/pose-extract-server/src/routes/extractPoseRoutes.ts), [`route.js`](../../../web/admin-ui/src/app/api/extract/route.js) |
+| Entities | [`ExtractionJob`](../specs/data-contract.md#extractionjob), [`ApiKeyCredential`](../specs/data-contract.md#apikeycredential), [`ProviderRequestLog`](../specs/data-contract.md#providerrequestlog) | [`schema.sql`](../../../web/services/pose-extract-server/src/db/schema.sql), [`KeyStore`](../../../web/services/pose-extract-server/src/services/keyStore.ts) |
+| ERD | [Server physical graph](../specs/data-contract.md#server) | [`ExtractionJobStore`](../../../web/services/pose-extract-server/src/db/extractionJobStore.ts) |
+| APIs | [Direct extraction](../specs/api-contract.md#extract-pose), [legacy route in conventions](../specs/api-contract.md#conventions) | [`extractPoseRoutes.ts`](../../../web/services/pose-extract-server/src/routes/extractPoseRoutes.ts), [`route.js`](../../../web/admin-ui/src/app/api/extract/route.js) |
 | Supporting client | Mobile picker/service and proxy | [`PosesScreen.kt`](../../../mobile/composeApp/src/commonMain/kotlin/com/aipose/ui/screens/poses/PosesScreen.kt), [`poseExtractExtractPoseProxy.js`](../../../web/admin-ui/src/lib/poseExtractExtractPoseProxy.js) |
 
 ## Requirements
@@ -135,7 +135,7 @@ The actor submits a source image for extraction.
 - **BR-001:** A failed or unverified provider result must not be reported as usable.
 - **FR-005:** A mobile client polls the per-job endpoint `GET /api/extract-jobs/:jobId` until `succeeded` or `failed`; there is no job-list API.
 - **BR-002:** Engine selection is not owned here; processing consumes the global setting from FEAT-009.
-- **BR-003:** Mobile extraction does not own the CameraScreen business flow ([FEAT-001](FEAT-001-capture-a-photo-on-mobile.md)); it reuses image source entry points only.
+- **BR-003:** Mobile extraction does not own the CameraScreen business flow ([FEAT-001](./FEAT-001-capture-a-photo-on-mobile.md)); it reuses image source entry points only.
 
 ## Acceptance
 
@@ -146,8 +146,8 @@ The actor submits a source image for extraction.
 
 ## Relationships
 
-- Shared references: [ExtractionJob](../../spec/data/entities/extraction-job.md), [ERD server](../../spec/data/erd/server.md), [Extract API](../../spec/api/modules/extract-pose.md).
-- Related features: [FEAT-005](FEAT-005-manage-a-pose-guide.md), [FEAT-007](FEAT-007-operate-pose-content-from-admin-web.md), [FEAT-009](FEAT-009-configure-extraction-provider.md) (global engine selection; this Feature consumes configured engine for processing).
+- Shared references: [ExtractionJob](../specs/data-contract.md#extractionjob), [ERD server](../specs/data-contract.md#server), [Extract API](../specs/api-contract.md#extract-pose).
+- Related features: [FEAT-005](./FEAT-005-manage-a-pose-guide.md), [FEAT-007](./FEAT-007-operate-pose-content-from-admin-web.md), [FEAT-009](./FEAT-009-configure-extraction-provider.md) (global engine selection; this Feature consumes configured engine for processing).
 - Policy: [DEC-001 Extraction provider selection policy](../decisions/DEC-001-extraction-provider-selection-policy.md)
 ### Supporting evidence
 

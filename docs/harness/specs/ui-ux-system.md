@@ -18,7 +18,7 @@ relationships:
     - "[[FEAT-004-extract-reusable-pose-images|FEAT-004]]"
     - "[[FEAT-005-manage-a-pose-guide|FEAT-005]]"
   source_paths:
-    - .rule/convention/neo-brutalism.md
+    - docs/design-reference/neo-brutalism.md
     - mobile/composeApp/src/commonMain/kotlin/com/aipose/ui/theme
     - mobile/composeApp/src/commonMain/kotlin/com/aipose/ui/components
     - web/admin-ui/src/app/globals.css

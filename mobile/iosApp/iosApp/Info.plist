@@ -21,7 +21,20 @@
 	<key>CFBundleShortVersionString</key>
 	<string>1.0</string>
 	<key>CFBundleVersion</key>
-	<string>4</string>
+	<string>7</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>com.aipose.auth</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>aipose</string>
+			</array>
+		</dict>
+	</array>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
@@ -34,10 +47,6 @@
 	<string>$(AIPOSE_ENVIRONMENT)</string>
 	<key>AIPoseBuildConfiguration</key>
 	<string>$(AIPOSE_BUILD_CONFIGURATION)</string>
-	<key>LegalTermsURL</key>
-	<string>$(LEGAL_TERMS_URL)</string>
-	<key>LegalPrivacyURL</key>
-	<string>$(LEGAL_PRIVACY_URL)</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

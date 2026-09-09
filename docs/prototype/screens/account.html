@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Account - Snap Pose</title>
+  <link rel="stylesheet" href="../styles/reset.css">
+  <link rel="stylesheet" href="../styles/base.css">
+  <link rel="stylesheet" href="../styles/utilities.css">
+  <link rel="stylesheet" href="../styles/components.css">
+  <link rel="stylesheet" href="../styles/account.css">
+</head>
+<body>
+  <div class="nb-phone">
+    <div class="nb-phone__header">
+      <span class="nb-phone__time">9:41</span>
+      <div class="nb-phone__status-icons">
+        <span aria-hidden="true">▰</span>
+        <span aria-hidden="true">▮</span>
+        <span aria-hidden="true">▰</span>
+      </div>
+    </div>
+
+    <main class="nb-phone__content" id="account-screen">
+      <header class="nb-nav-bar nb-nav-bar--saved">
+        <div class="nb-nav-bar__left">
+          <a href="settings.html" class="nb-btn nb-btn--square nb-btn--white" aria-label="Back to Settings" title="Back to Settings">
+            <svg aria-hidden="true"><use href="#icon-back"></use></svg>
+          </a>
+        </div>
+          <h1 class="nb-nav-bar__title nb-nav-bar__title--page">Account</h1>
+          <div class="nb-nav-bar__right">
+            <button id="account-sign-out" type="button" class="nb-btn nb-btn--compact-action" aria-label="Sign out" title="Sign out">
+              <span class="nb-btn__compact-surface nb-btn__compact-surface--white">
+                <svg aria-hidden="true"><use href="#icon-sign-out"></use></svg>
+              </span>
+            </button>
+          </div>
+        </header>
+
+        <section class="nb-card nb-account-profile" aria-labelledby="account-name">
+          <span class="nb-account-profile__avatar" aria-hidden="true">
+            <svg><use href="#icon-profile"></use></svg>
+          </span>
+          <div>
+            <h2 id="account-name" class="nb-account-profile__name">Gmail</h2>
+            <p class="nb-account-profile__provider">Signed in with Google</p>
+          </div>
+        </section>
+
+        <nav class="nb-account-menu" aria-label="Account shortcuts">
+          <a class="nb-account-menu__item" href="saved-list.html">
+            <svg aria-hidden="true"><use href="#icon-bookmark"></use></svg>
+            <span class="nb-account-menu__copy">
+              <span class="nb-account-menu__title">Saved poses</span>
+            </span>
+            <span class="nb-account-menu__chevron" aria-hidden="true">›</span>
+          </a>
+        </nav>
+
+        <div id="account-status" class="nb-state-message nb-account-status" role="status" aria-live="polite" hidden></div>
+
+        <div class="nb-account-actions">
+          <a id="account-premium-cta" href="paywall.html?return=account.html" class="nb-btn nb-account-premium" aria-label="Upgrade to Premium">
+            <span class="nb-account-premium__icon" aria-hidden="true">
+              <svg><use href="#icon-crown"></use></svg>
+            </span>
+            <span class="nb-account-premium__copy">
+              <strong>Unlock Premium</strong>
+              <span>Explore more ways to pose</span>
+            </span>
+            <span class="nb-account-premium__chevron" aria-hidden="true">›</span>
+          </a>
+          <a id="account-sign-in" href="sign-in-prompt.html?intent=account&return=account.html" class="nb-btn nb-btn--pink nb-btn--block" hidden>
+            Sign in with Google
+          </a>
+        </div>
+      </main>
+
+    <div class="nb-phone__footer">
+      <div class="nb-phone__home-indicator"></div>
+    </div>
+  </div>
+
+  <script src="../scripts/icons.js"></script>
+  <script src="../scripts/account.js"></script>
+</body>
+</html>

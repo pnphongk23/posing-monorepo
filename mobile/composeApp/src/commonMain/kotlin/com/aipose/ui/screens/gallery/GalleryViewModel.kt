@@ -9,6 +9,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.update
+import kotlinx.datetime.Clock
 
 data class GalleryUiState(
     val photos: List<Photo> = emptyList(),
@@ -26,16 +28,31 @@ class GalleryViewModel(
 
     suspend fun load() {
         repository.getAllPhotos().collectLatest { photos ->
-            _uiState.value = _uiState.value.copy(
-                photos = photos,
-                groupedByDate = groupPhotosByDate(photos),
-                isLoading = false
-            )
+            _uiState.update {
+                it.copy(
+                    photos = photos,
+                    groupedByDate = groupPhotosByDate(photos),
+                    isLoading = false,
+                )
+            }
         }
     }
 
     suspend fun deletePhoto(id: Long) {
         repository.deletePhoto(id)
+
+        // The list's flow collector is cancelled while Voyager shows detail.
+        // Apply the successful deletion locally before returning so the list is
+        // already consistent when detail is popped; a later DB emission keeps
+        // this state authoritative if the list is still visible.
+        _uiState.update { currentState ->
+            val remainingPhotos = currentState.photos.filterNot { it.id == id }
+            currentState.copy(
+                photos = remainingPhotos,
+                groupedByDate = groupPhotosByDate(remainingPhotos),
+                selectedPhoto = currentState.selectedPhoto?.takeUnless { it.id == id },
+            )
+        }
     }
 
     suspend fun toggleFavorite(id: Long) {
@@ -47,15 +64,15 @@ class GalleryViewModel(
     }
 
     private fun groupPhotosByDate(photos: List<Photo>): Map<String, List<Photo>> {
-        val nowMillis = kotlin.system.getTimeMillis()
+        val nowMillis = Clock.System.now().toEpochMilliseconds()
         val todayStart = floorToUtcDay(nowMillis)
         val yesterdayStart = todayStart - MILLIS_PER_DAY
 
-        val sortedPhotos = photos.sortedByDescending { it.createdAt.toLongOrNull() ?: 0L }
+        val sortedPhotos = photos.sortedByDescending { galleryPhotoEpochMillis(it.createdAt) ?: Long.MIN_VALUE }
         val intermediate = LinkedHashMap<String, MutableList<Photo>>()
 
         for (photo in sortedPhotos) {
-            val millis = photo.createdAt.toLongOrNull() ?: 0L
+            val millis = galleryPhotoEpochMillis(photo.createdAt) ?: 0L
             val dayStart = floorToUtcDay(millis)
             val key = when {
                 dayStart >= todayStart -> "TODAY"

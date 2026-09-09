@@ -21,10 +21,9 @@
         ${TABS.map(function (tab) {
           const isActive = tab.id === activeId;
           return `
-            <a href="${tab.href}" class="nb-dock__item${isActive ? ' is-active' : ''}"${isActive ? ' aria-current="page"' : ''}>
-              <svg viewBox="0 0 24 24"><use href="#${tab.icon}"></use></svg>
-              <span>${tab.label}</span>
-            </a>
+              <a href="${tab.href}" class="nb-dock__item${isActive ? ' is-active' : ''}"${isActive ? ' aria-current="page"' : ''} aria-label="${tab.label}" title="${tab.label}">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#${tab.icon}"></use></svg>
+              </a>
           `;
         }).join('')}
       </div>

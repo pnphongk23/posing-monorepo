@@ -37,8 +37,8 @@ approved_by: Repository Maintainer
 
 Visitors and signed-in users browse a published community catalogue, filter the
 server list, search by title in the mobile library, refresh, and inspect detail.
-Save/Try Pose is [FEAT-008](FEAT-008-use-published-poses.md); publication is
-[FEAT-006](FEAT-006-publish-a-pose.md).
+Save/Try Pose is [FEAT-008](./FEAT-008-use-published-poses.md); publication is
+[FEAT-006](./FEAT-006-publish-a-pose.md).
 
 ## Business Understanding
 
@@ -92,9 +92,9 @@ The user opens the catalogue, refreshes, searches, or opens a pose card.
 
 | Concern | Canonical reference | Evidence |
 | --- | --- | --- |
-| Entity/DTO | [`CommunityPose`](../../spec/data/entities/community-pose.md), pagination envelope in [openapi.yaml](../../spec/api/openapi.yaml) | [`PoseApiService.kt`](../../../mobile/shared/src/commonMain/kotlin/com/aipose/data/remote/PoseApiService.kt) |
-| ERD | [Server graph](../../spec/data/erd/server.md) plus [unresolved asset links](../../spec/data/erd/conceptual.md) | [`schema.sql`](../../../web/services/pose-extract-server/src/db/schema.sql) |
-| APIs | [Community list/detail](../../spec/api/modules/community.md) | [`communityRoutes.ts`](../../../web/services/pose-extract-server/src/routes/communityRoutes.ts), [`PoseApiService.kt`](../../../mobile/shared/src/commonMain/kotlin/com/aipose/data/remote/PoseApiService.kt#L114) |
+| Entity/DTO | [`CommunityPose`](../specs/data-contract.md#communitypose), pagination envelope in [openapi.yaml](../specs/api/openapi.yaml) | [`PoseApiService.kt`](../../../mobile/shared/src/commonMain/kotlin/com/aipose/data/remote/PoseApiService.kt) |
+| ERD | [Server graph](../specs/data-contract.md#server) plus [unresolved asset links](../specs/data-contract.md#conceptual-overlay) | [`schema.sql`](../../../web/services/pose-extract-server/src/db/schema.sql) |
+| APIs | [Community list/detail](../specs/api-contract.md#community-public) | [`communityRoutes.ts`](../../../web/services/pose-extract-server/src/routes/communityRoutes.ts), [`PoseApiService.kt`](../../../mobile/shared/src/commonMain/kotlin/com/aipose/data/remote/PoseApiService.kt#L114) |
 | Supporting UI/tests | Library, search, detail, coordinator | [`PosesScreen.kt`](../../../mobile/composeApp/src/commonMain/kotlin/com/aipose/ui/screens/poses/PosesScreen.kt), [`SearchScreen.kt`](../../../mobile/composeApp/src/commonMain/kotlin/com/aipose/ui/screens/poses/SearchScreen.kt), [`REP-003`](../reports/REP-003-pose-reference-library-convergence-delivery.md) |
 
 ## Requirements
@@ -111,8 +111,8 @@ The user opens the catalogue, refreshes, searches, or opens a pose card.
 
 ## Relationships
 
-- Shared references: [CommunityPose](../../spec/data/entities/community-pose.md) (published-`Pose` view/DTO), [ERD server](../../spec/data/erd/server.md), [Community API](../../spec/api/modules/community.md).
-- Related features: [FEAT-006](FEAT-006-publish-a-pose.md), [FEAT-008](FEAT-008-use-published-poses.md).
+- Shared references: [CommunityPose](../specs/data-contract.md#communitypose) (published-`Pose` view/DTO), [ERD server](../specs/data-contract.md#server), [Community API](../specs/api-contract.md#community-public).
+- Related features: [FEAT-006](./FEAT-006-publish-a-pose.md), [FEAT-008](./FEAT-008-use-published-poses.md).
 ### Supporting evidence
 
 - [`communityRoutes.ts`](../../../web/services/pose-extract-server/src/routes/communityRoutes.ts)

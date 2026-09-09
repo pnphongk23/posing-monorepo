@@ -155,6 +155,64 @@ const POSES_FIXTURES = [
   }
 ];
 
+function createMockPoseSvg(arms, legs) {
+  function renderLine(coordinates) {
+    return '<line x1="' + coordinates[0] + '" y1="' + coordinates[1] +
+      '" x2="' + coordinates[2] + '" y2="' + coordinates[3] + '"/>';
+  }
+
+  return '<svg viewBox="0 0 24 24" class="nb-stick-figure">' +
+    '<circle cx="12" cy="6" r="3"/>' +
+    '<line x1="12" y1="9" x2="12" y2="16"/>' +
+    arms.map(renderLine).join('') +
+    legs.map(renderLine).join('') +
+    '</svg>';
+}
+
+const MOCK_POSE_DEMOS = [
+  { id: "stretching", title: "Stretching", arms: [[12, 11, 7, 3], [12, 11, 17, 3]], legs: [[12, 16, 7, 22], [12, 16, 17, 22]] },
+  { id: "warrior", title: "Warrior", arms: [[12, 11, 4, 11], [12, 11, 20, 11]], legs: [[12, 16, 7, 22], [12, 16, 18, 22]] },
+  { id: "side-bend", title: "Side Bend", arms: [[12, 11, 7, 7], [12, 11, 17, 4]], legs: [[12, 16, 7, 22], [12, 16, 17, 21]] },
+  { id: "squat", title: "Squat", arms: [[12, 11, 5, 10], [12, 11, 19, 10]], legs: [[12, 16, 7, 19], [7, 19, 9, 23], [12, 16, 17, 19], [17, 19, 15, 23]] },
+  { id: "tree-pose", title: "Tree Pose", arms: [[12, 11, 8, 5], [12, 11, 16, 5]], legs: [[12, 16, 8, 22], [12, 16, 16, 19], [16, 19, 18, 16]] },
+  { id: "lunge", title: "Lunge", arms: [[12, 11, 5, 10], [12, 11, 19, 8]], legs: [[12, 16, 7, 21], [7, 21, 5, 23], [12, 16, 17, 18], [17, 18, 20, 22]] },
+  { id: "t-pose", title: "T-Pose", arms: [[12, 11, 4, 11], [12, 11, 20, 11]], legs: [[12, 16, 8, 22], [12, 16, 16, 22]] },
+  { id: "star-jump", title: "Star Jump", arms: [[12, 11, 5, 5], [12, 11, 19, 5]], legs: [[12, 16, 6, 22], [12, 16, 18, 22]] },
+  { id: "sitting-twist", title: "Sitting Twist", arms: [[12, 11, 6, 12], [12, 11, 18, 9]], legs: [[12, 16, 17, 17], [17, 17, 20, 22], [12, 16, 8, 20]] },
+  { id: "crouch", title: "Crouch", arms: [[12, 11, 7, 12], [12, 11, 17, 12]], legs: [[12, 16, 7, 19], [7, 19, 9, 23], [12, 16, 17, 19], [17, 19, 15, 23]] },
+  { id: "kneeling", title: "Kneeling", arms: [[12, 11, 7, 9], [12, 11, 17, 9]], legs: [[12, 16, 8, 19], [8, 19, 5, 19], [12, 16, 16, 19], [16, 19, 19, 19]] },
+  { id: "reach-forward", title: "Reach Forward", arms: [[12, 11, 4, 12], [12, 11, 20, 12]], legs: [[12, 16, 7, 22], [12, 16, 16, 21]] },
+  { id: "balance", title: "Balance", arms: [[12, 11, 6, 8], [12, 11, 18, 8]], legs: [[12, 16, 9, 22], [12, 16, 17, 16], [17, 16, 20, 20]] },
+  { id: "high-kick", title: "High Kick", arms: [[12, 11, 6, 11], [12, 11, 18, 11]], legs: [[12, 16, 9, 22], [12, 16, 16, 13], [16, 13, 20, 8]] },
+  { id: "prayer", title: "Prayer", arms: [[12, 11, 10, 9], [12, 11, 14, 9]], legs: [[12, 16, 8, 22], [12, 16, 16, 22]] },
+  { id: "victory", title: "Victory", arms: [[12, 11, 7, 5], [12, 11, 17, 5]], legs: [[12, 16, 7, 22], [12, 16, 17, 22]] },
+  { id: "runner", title: "Runner", arms: [[12, 11, 6, 8], [12, 11, 18, 13]], legs: [[12, 16, 7, 19], [7, 19, 4, 22], [12, 16, 17, 20], [17, 20, 20, 18]] },
+  { id: "crossed-arms", title: "Crossed Arms", arms: [[12, 11, 7, 14], [12, 11, 17, 14]], legs: [[12, 16, 8, 22], [12, 16, 16, 22]] },
+  { id: "side-lunge", title: "Side Lunge", arms: [[12, 11, 5, 8], [12, 11, 19, 8]], legs: [[12, 16, 7, 18], [7, 18, 4, 22], [12, 16, 18, 18], [18, 18, 20, 22]] },
+  { id: "toe-touch", title: "Toe Touch", arms: [[12, 11, 7, 17], [12, 11, 17, 17]], legs: [[12, 16, 8, 21], [8, 21, 5, 23], [12, 16, 16, 21], [16, 21, 19, 23]] }
+];
+
+MOCK_POSE_DEMOS.forEach(function (demo) {
+  POSES_FIXTURES.push({
+    id: "demo-" + demo.id,
+    title: demo.title,
+    tag: "Demo",
+    tagColor: "blue",
+    hearts: null,
+    category: "my-poses",
+    source: "personal",
+    visibility: "personal",
+    metadata: {
+      author: "You",
+      context: "Demo fixture",
+      difficulty: "Beginner",
+      tries: null,
+      saves: null
+    },
+    svg: createMockPoseSvg(demo.arms, demo.legs)
+  });
+});
+
 const POSE_DELETED_STORAGE_KEY = "ai-pose.prototype.deleted-poses";
 let inMemoryDeletedPoseIds = new Set();
 

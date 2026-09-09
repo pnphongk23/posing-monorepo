@@ -201,8 +201,8 @@ B1; in-flight jobs already claimed are not re-routed to a newly saved engine.
 ## Relationships
 
 - Policy: [DEC-001 Extraction provider selection policy](../decisions/DEC-001-extraction-provider-selection-policy.md)
-- Invokes / consumed by: [FEAT-004 Extract Reusable Pose Images](FEAT-004-extract-reusable-pose-images.md) (extract jobs use configured engine; contract unchanged)
-- Operating surface: [FEAT-007 Operate Pose Content from Admin Web](FEAT-007-operate-pose-content-from-admin-web.md) (Admin Web invokes this Feature; FEAT-007 does not own provider configuration)
+- Invokes / consumed by: [FEAT-004 Extract Reusable Pose Images](./FEAT-004-extract-reusable-pose-images.md) (extract jobs use configured engine; contract unchanged)
+- Operating surface: [FEAT-007 Operate Pose Content from Admin Web](./FEAT-007-operate-pose-content-from-admin-web.md) (Admin Web invokes this Feature; FEAT-007 does not own provider configuration)
 - Plan: [260816-2240 Higgsfield CLI parallel extract provider](../plans/260816-2240-higgsfield-cli-parallel-extract-provider/plan.md)
 - Inventory: [[product-feature-inventory]]
 - Specs: [[technical-architecture]], [[api-catalogue]]
