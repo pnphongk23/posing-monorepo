@@ -6,15 +6,15 @@ import kotlin.test.assertTrue
 
 class LegalAuthorityTest {
     @Test
-    fun `canonical terms url matches FEAT-015 authority`() {
-        assertEquals("https://aipose.app/terms", LegalAuthority.canonicalUrl(LegalDocument.TERMS))
-        assertEquals("https://aipose.app/terms", LegalAuthority.TERMS_URL)
+    fun `canonical terms url matches Google Sites authority`() {
+        assertEquals("https://sites.google.com/view/snappose/terms-of-service", LegalAuthority.canonicalUrl(LegalDocument.TERMS))
+        assertEquals("https://sites.google.com/view/snappose/terms-of-service", LegalAuthority.TERMS_URL)
     }
 
     @Test
-    fun `canonical privacy url matches FEAT-015 authority`() {
-        assertEquals("https://aipose.app/privacy", LegalAuthority.canonicalUrl(LegalDocument.PRIVACY))
-        assertEquals("https://aipose.app/privacy", LegalAuthority.PRIVACY_URL)
+    fun `canonical privacy url matches Google Sites authority`() {
+        assertEquals("https://sites.google.com/view/snappose/privacy-policy", LegalAuthority.canonicalUrl(LegalDocument.PRIVACY))
+        assertEquals("https://sites.google.com/view/snappose/privacy-policy", LegalAuthority.PRIVACY_URL)
     }
 
     @Test

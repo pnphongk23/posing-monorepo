@@ -16,7 +16,7 @@ if [[ ! -f "$CONFIG_FILE" ]]; then
   exit 1
 fi
 
-TOKEN=$(jq -r '.user.token // .user.accessToken' "$CONFIG_FILE")
+TOKEN=$(jq -r '.user.token' "$CONFIG_FILE")
 
 if [[ -z "$TOKEN" || "$TOKEN" == "null" ]]; then
   echo '{"error": "No Railway token found. Run: railway login"}'

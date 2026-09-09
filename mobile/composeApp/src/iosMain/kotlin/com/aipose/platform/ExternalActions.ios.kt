@@ -4,12 +4,22 @@ import kotlinx.cinterop.ExperimentalForeignApi
 import platform.Foundation.NSURL
 import platform.UIKit.UIActivityViewController
 import platform.UIKit.UIApplication
+import kotlin.coroutines.resume
+import kotlin.coroutines.suspendCoroutine
 
 @OptIn(ExperimentalForeignApi::class)
 actual suspend fun openLegalDocument(document: LegalDocument): ExternalActionResult {
     val url = NSURL.URLWithString(LegalAuthority.canonicalUrl(document))
         ?: return ExternalActionResult.Failed(retryable = false)
-    return externalActionResult(UIApplication.sharedApplication.openURL(url))
+    return suspendCoroutine { continuation ->
+        UIApplication.sharedApplication.openURL(
+            url = url,
+            options = emptyMap<Any?, Any?>(),
+            completionHandler = { didOpen ->
+                continuation.resume(externalActionResult(didOpen))
+            },
+        )
+    }
 }
 
 @OptIn(ExperimentalForeignApi::class)

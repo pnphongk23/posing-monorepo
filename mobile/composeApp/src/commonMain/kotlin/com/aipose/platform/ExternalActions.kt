@@ -8,10 +8,10 @@ sealed interface ExternalActionResult {
     data class Failed(val retryable: Boolean) : ExternalActionResult
 }
 
-/** Canonical legal destinations per FEAT-015 PA-015-04. */
+/** Canonical legal destinations for the current Google Sites legal pages. */
 object LegalAuthority {
-    const val TERMS_URL = "https://aipose.app/terms"
-    const val PRIVACY_URL = "https://aipose.app/privacy"
+    const val TERMS_URL = "https://sites.google.com/view/snappose/terms-of-service"
+    const val PRIVACY_URL = "https://sites.google.com/view/snappose/privacy-policy"
 
     fun canonicalUrl(document: LegalDocument): String = when (document) {
         LegalDocument.TERMS -> TERMS_URL
