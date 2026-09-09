@@ -114,17 +114,10 @@ internal const val MAIN_DOCK_CAMERA_TEST_TAG = "main-dock-camera"
 // Each list's data owner (ViewModel) + scroll/viewport state are hoisted ABOVE the
 // nested per-tab [Navigator]. The tab owner composes the holder with `remember` once;
 // when a detail screen is pushed and then popped, the list [Screen] re-enters
-// composition with the SAME holder — so the ViewModel (and its DB collectors) and the
-// exact first-visible index + pixel offset all survive. One mechanism for Pose and
-// Gallery. The Poses holder is Community-only (the My Poses tab was removed).
-
-/**
- * Auto-load guard for a list whose data owner outlives detail push/pop. Returns
- * true only while the list has never loaded, so re-entering composition after Back
- * does not re-query the DB / re-trigger Community initial load (refreshes stay
- * explicit via pull-to-refresh / action buttons). Pure + unit-tested.
- */
-internal fun listShouldAutoLoad(isLoading: Boolean): Boolean = isLoading
+// composition with the SAME holder — so the ViewModel and exact first-visible index
+// + pixel offset survive. List screens re-collect their data when they re-enter.
+// One mechanism for Pose and Gallery. The Poses holder is Community-only (the My
+// Poses tab was removed).
 
 /**
  * Community initial-load guard: auto-load only when the feed has never loaded
@@ -255,9 +248,13 @@ class GalleryListScreen(private val state: GalleryListStateHolder) : Screen {
                 gridState = state.gridState,
                 onOpenCamera = { tabNavigator.current = CameraTab },
                 onPhotoClick = { photo ->
+                    val detailPhotos = state.viewModel.uiState.value.photos
+                        .takeIf { candidates -> candidates.any { it.id == photo.id } }
+                        ?: listOf(photo)
                     navigator.push(
                         GalleryDetailVoyagerScreen(
-                            photo = photo,
+                            photos = detailPhotos,
+                            initialPhotoId = photo.id,
                             onDeletePhoto = { id -> state.viewModel.deletePhoto(id) },
                         ),
                     )
@@ -269,7 +266,8 @@ class GalleryListScreen(private val state: GalleryListStateHolder) : Screen {
 }
 
 class GalleryDetailVoyagerScreen(
-    private val photo: Photo,
+    private val photos: List<Photo>,
+    private val initialPhotoId: Long,
     private val onDeletePhoto: suspend (Long) -> Unit,
 ) : Screen {
     @Composable
@@ -277,7 +275,8 @@ class GalleryDetailVoyagerScreen(
         val navigator = LocalNavigator.currentOrThrow
         var backOwned by remember { mutableStateOf(false) }
         GalleryPhotoDetailScreen(
-            photo = photo,
+            photos = photos,
+            initialPhotoId = initialPhotoId,
             onBack = {
                 // Pop-first: request the reverse and perform the exactly-one pop
                 // immediately. The root overlay owns the reverse completion + cleanup;

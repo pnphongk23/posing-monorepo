@@ -113,4 +113,54 @@ class GalleryPhotoViewerStateTest {
         assertEquals("Jan 01, 2024", formatted?.dateLine)
         assertEquals("12:00 AM", formatted?.timeLine)
     }
+
+    @Test
+    fun formatGalleryPhotoCreatedAtNormalizesLegacyEpochSeconds() {
+        val formatted = formatGalleryPhotoCreatedAt("1704067200")
+
+        assertEquals(1_704_067_200_000L, galleryPhotoEpochMillis("1704067200"))
+        assertEquals("Jan 01, 2024", formatted?.dateLine)
+        assertEquals("12:00 AM", formatted?.timeLine)
+    }
+
+    @Test
+    fun initialGalleryPhotoIndexStartsOnSelectedPhoto() {
+        val nextPhoto = photo.copy(id = 43L)
+        val photos = listOf(photo, nextPhoto)
+
+        assertEquals(1, initialGalleryPhotoIndex(photos, nextPhoto.id))
+        assertEquals(0, initialGalleryPhotoIndex(photos, 999L))
+    }
+
+    @Test
+    fun galleryDetailDismissRequiresDownwardProgressOrVelocity() {
+        assertFalse(
+            shouldDismissGalleryDetail(
+                offsetPx = 180f,
+                velocityPxPerSecond = 0f,
+                viewportHeightPx = 800f,
+            ),
+        )
+        assertTrue(
+            shouldDismissGalleryDetail(
+                offsetPx = 200f,
+                velocityPxPerSecond = 0f,
+                viewportHeightPx = 800f,
+            ),
+        )
+        assertTrue(
+            shouldDismissGalleryDetail(
+                offsetPx = 40f,
+                velocityPxPerSecond = 1_300f,
+                viewportHeightPx = 800f,
+            ),
+        )
+        assertFalse(
+            shouldDismissGalleryDetail(
+                offsetPx = 40f,
+                velocityPxPerSecond = -1_300f,
+                viewportHeightPx = 800f,
+            ),
+        )
+    }
 }

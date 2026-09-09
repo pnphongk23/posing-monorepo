@@ -222,7 +222,7 @@ private fun GalleryDensePhotoCard(
 
 private fun formatEpochToTime(createdAt: String): String {
     return try {
-        val millis = createdAt.toLong()
+        val millis = galleryPhotoEpochMillis(createdAt) ?: return createdAt
         val totalSeconds = millis / 1000
         val totalMinutes = totalSeconds / 60
         val totalHours = totalMinutes / 60

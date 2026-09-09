@@ -48,7 +48,6 @@ import com.aipose.platform.saveToPhotos
 import com.aipose.platform.shareImage
 import com.aipose.data.resolveImagePath
 import com.aipose.navigation.MainDockContentInset
-import com.aipose.navigation.listShouldAutoLoad
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -61,10 +60,10 @@ fun GalleryScreen(
     onPhotoClick: ((com.aipose.Photo) -> Unit)? = null,
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    // Guard on the hoisted ViewModel's load state: ordinary Back re-enters this
-    // list with state already loaded, so the DB is not re-queried. Refreshes stay
-    // explicit.
-    LaunchedEffect(Unit) { if (listShouldAutoLoad(uiState.isLoading)) viewModel.load() }
+    // Voyager disposes the list composition while detail is on top, so its
+    // collector is cancelled too. Re-collect whenever the list re-enters to
+    // pick up deletions and other changes made from detail.
+    LaunchedEffect(viewModel) { viewModel.load() }
 
     val snackbarHostState = remember { SnackbarHostState() }
 

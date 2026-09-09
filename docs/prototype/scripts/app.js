@@ -379,7 +379,7 @@ document.addEventListener('DOMContentLoaded', function() {
       filtered.forEach(photo => {
         const item = document.createElement('div');
         item.className = 'nb-grid-photo-item';
-        const detailHref = `gallery-detail.html?id=${encodeURIComponent(photo.id)}`;
+        const detailHref = `gallery-detail-v2.html?id=${encodeURIComponent(photo.id)}`;
         const aspectClass = aspectClasses[galleryGrid.children.length % aspectClasses.length];
 
         if (photo.placeholder) {

@@ -1,7 +1,14 @@
 package com.aipose.ui.screens.gallery
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -10,10 +17,13 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
@@ -32,6 +42,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -39,12 +50,18 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import com.aipose.Photo
+import com.aipose.data.resolveImagePath
 import com.aipose.navigation.MatchedImageDestination
 import com.aipose.navigation.destinationChromeVisible
 import com.aipose.platform.deletePhotoConfirmation
@@ -58,6 +75,7 @@ import com.aipose.ui.theme.AiPoseColors
 import com.aipose.ui.theme.AiPoseTypography
 import com.aipose.ui.theme.Spacing
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.painterResource
 import ai_pose.composeapp.generated.resources.Res
@@ -86,6 +104,76 @@ fun GalleryPhotoImageContent(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+fun GalleryPhotoDetailScreen(
+    photos: List<Photo>,
+    initialPhotoId: Long,
+    onBack: () -> Unit,
+    onDelete: suspend (Long) -> Boolean,
+    onSave: suspend (Photo) -> Boolean,
+    onShare: ((Photo) -> Unit)? = null,
+    purchaseGateway: PurchaseGateway = PurchaseGatewayProvider.current,
+    imageContent: @Composable (
+        model: String?,
+        attempt: Int,
+        contentDescription: String?,
+        modifier: Modifier,
+        onLoading: () -> Unit,
+        onSuccess: () -> Unit,
+        onError: () -> Unit,
+    ) -> Unit = { model, attempt, contentDescription, modifier, onLoading, onSuccess, onError ->
+        GalleryPhotoImageContent(
+            model, attempt, contentDescription, modifier, onLoading, onSuccess, onError,
+        )
+    },
+) {
+    if (photos.isEmpty()) return
+
+    val pagerState = rememberPagerState(
+        initialPage = initialGalleryPhotoIndex(photos, initialPhotoId),
+    ) { photos.size }
+    val currentPage = pagerState.currentPage.coerceIn(0, photos.lastIndex)
+    val currentPhoto = photos[currentPage]
+
+    PhotoDetailDialog(
+        photo = currentPhoto,
+        onDismiss = onBack,
+        onDelete = onDelete,
+        onSave = onSave,
+        onShare = onShare ?: {},
+        purchaseGateway = purchaseGateway,
+        imageContent = { model, attempt, _, modifier, onLoading, onSuccess, onError ->
+            HorizontalPager(
+                state = pagerState,
+                modifier = modifier,
+                userScrollEnabled = photos.size > 1,
+                key = { page -> photos[page].id },
+            ) { page ->
+                val pagePhoto = photos[page]
+                val isCurrentPage = page == currentPage
+                val pageModel = if (isCurrentPage) {
+                    model
+                } else {
+                    remember(pagePhoto.imagePath) {
+                        resolveImagePath(pagePhoto.imagePath)
+                            ?: pagePhoto.imagePath.takeIf { it.isNotBlank() }
+                    }
+                }
+                imageContent(
+                    pageModel,
+                    if (isCurrentPage) attempt else 0,
+                    pagePhoto.poseName,
+                    Modifier.fillMaxSize(),
+                    if (isCurrentPage) onLoading else ({}),
+                    if (isCurrentPage) onSuccess else ({}),
+                    if (isCurrentPage) onError else ({}),
+                )
+            }
+        },
+    )
+}
+
 @Composable
 fun GalleryPhotoDetailScreen(
     photo: Photo,
@@ -108,16 +196,20 @@ fun GalleryPhotoDetailScreen(
         )
     },
 ) {
-    PhotoDetailDialog(
-        photo = photo,
-        onDismiss = onBack,
+    GalleryPhotoDetailScreen(
+        photos = listOf(photo),
+        initialPhotoId = photo.id,
+        onBack = onBack,
         onDelete = onDelete,
         onSave = onSave,
-        onShare = onShare ?: {},
+        onShare = onShare,
         purchaseGateway = purchaseGateway,
         imageContent = imageContent,
     )
 }
+
+internal fun initialGalleryPhotoIndex(photos: List<Photo>, initialPhotoId: Long): Int =
+    photos.indexOfFirst { it.id == initialPhotoId }.coerceAtLeast(0)
 
 @Composable
 fun PhotoDetailDialog(
@@ -147,11 +239,37 @@ fun PhotoDetailDialog(
     var deleteInFlight by remember { mutableStateOf(false) }
     var deleteFlowActive by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-    val snackbarHostState = remember { SnackbarHostState() }
-    val dateTime = remember(photo.createdAt) { formatGalleryPhotoCreatedAt(photo.createdAt) }
-    val actionsEnabled = viewerActionsEnabled(state.media, deleteInFlight, state.save)
-    val trashEnabled = viewerTrashEnabled(state.media, deleteFlowActive, deleteInFlight, state.save)
-    val backEnabled = viewerBackEnabled(deleteInFlight, state.save)
+      val snackbarHostState = remember { SnackbarHostState() }
+      val dateTime = remember(photo.createdAt) { formatGalleryPhotoCreatedAt(photo.createdAt) }
+      val actionsEnabled = viewerActionsEnabled(state.media, deleteInFlight, state.save)
+      val trashEnabled = viewerTrashEnabled(state.media, deleteFlowActive, deleteInFlight, state.save)
+      val backEnabled = viewerBackEnabled(deleteInFlight, state.save)
+      var dismissOffset by remember { mutableFloatStateOf(0f) }
+      var detailHeightPx by remember { mutableFloatStateOf(0f) }
+      var settleJob by remember { mutableStateOf<Job?>(null) }
+
+      val dismissDragState = rememberDraggableState { delta ->
+          val maxOffset = if (detailHeightPx > 0f) detailHeightPx else Float.MAX_VALUE
+          dismissOffset = (dismissOffset + delta).coerceIn(0f, maxOffset)
+      }
+
+      fun settleDismissal(velocityPxPerSecond: Float) {
+          settleJob?.cancel()
+          val shouldDismiss = backEnabled && shouldDismissGalleryDetail(
+              offsetPx = dismissOffset,
+              velocityPxPerSecond = velocityPxPerSecond,
+              viewportHeightPx = detailHeightPx,
+          )
+          val targetOffset = if (shouldDismiss) detailHeightPx else 0f
+          settleJob = scope.launch {
+              Animatable(dismissOffset).animateTo(
+                  targetValue = targetOffset,
+                  animationSpec = if (shouldDismiss) tween(220) else spring(),
+              ) { dismissOffset = value }
+              settleJob = null
+              if (shouldDismiss) onDismiss()
+          }
+      }
 
     fun dispatch(event: GalleryPhotoViewerEvent) {
         state = reduce(state, event)
@@ -242,13 +360,41 @@ fun PhotoDetailDialog(
         }
     }
 
-    Scaffold(
-        snackbarHost = { SnackbarHost(snackbarHostState) },
-        containerColor = AiPoseColors.Background,
-        modifier = Modifier
-            .fillMaxSize()
-            .windowInsetsPadding(WindowInsets.systemBars),
-    ) { innerPadding ->
+      Box(
+          modifier = Modifier
+              .fillMaxSize()
+              .background(AiPoseColors.Background),
+      ) {
+          Scaffold(
+              snackbarHost = { SnackbarHost(snackbarHostState) },
+              containerColor = AiPoseColors.Background,
+              modifier = Modifier
+                  .fillMaxSize()
+                  .onSizeChanged { detailHeightPx = it.height.toFloat() }
+                  .graphicsLayer {
+                      val progress = if (detailHeightPx > 0f) {
+                          (dismissOffset / detailHeightPx).coerceIn(0f, 1f)
+                      } else {
+                          0f
+                      }
+                      translationY = dismissOffset
+                      scaleX = 1f - (progress * 0.04f)
+                      scaleY = 1f - (progress * 0.04f)
+                      alpha = 1f - (progress * 0.18f)
+                  }
+                  .draggable(
+                      state = dismissDragState,
+                      orientation = Orientation.Vertical,
+                      enabled = backEnabled &&
+                          !showDeleteConfirm &&
+                          !showPaywall &&
+                          !deleteFlowActive,
+                      onDragStarted = { settleJob?.cancel() },
+                      onDragStopped = { velocity -> settleDismissal(velocity) },
+                  )
+                  .background(AiPoseColors.Background)
+                  .windowInsetsPadding(WindowInsets.systemBars),
+          ) { innerPadding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -374,11 +520,12 @@ fun PhotoDetailDialog(
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                ViewerActionButton(
-                    label = "Share",
-                    icon = Icons.Default.Share,
-                    enabled = actionsEnabled,
-                    onClick = {
+                  ViewerActionButton(
+                      label = "Share",
+                      icon = Icons.Default.Share,
+                      enabled = actionsEnabled,
+                      modifier = Modifier.weight(1f),
+                      onClick = {
                         if (!actionsEnabled) return@ViewerActionButton
                         if (purchaseGateway.snapshot.value.hasConfirmedPremium || premiumTestBypassEnabled) {
                             onShare(state.photo)
@@ -388,11 +535,12 @@ fun PhotoDetailDialog(
                         }
                     },
                 )
-                ViewerActionButton(
-                    label = "Save",
-                    icon = Icons.Default.SaveAlt,
-                    enabled = actionsEnabled,
-                    onClick = {
+                  ViewerActionButton(
+                      label = "Save",
+                      icon = Icons.Default.SaveAlt,
+                      enabled = actionsEnabled,
+                      modifier = Modifier.weight(1f),
+                      onClick = {
                         if (!actionsEnabled) return@ViewerActionButton
                         if (purchaseGateway.snapshot.value.hasConfirmedPremium || premiumTestBypassEnabled) {
                             dispatch(GalleryPhotoViewerEvent.SaveRequested)
@@ -402,11 +550,13 @@ fun PhotoDetailDialog(
                         }
                     },
                 )
-                ViewerActionButton(
-                    label = "Trash",
-                    icon = Icons.Default.Delete,
-                    enabled = trashEnabled,
-                    onClick = {
+                  ViewerActionButton(
+                      label = "Trash",
+                      icon = Icons.Default.Delete,
+                      enabled = trashEnabled,
+                      tint = AiPoseColors.ErrorForeground,
+                      modifier = Modifier.weight(1f),
+                      onClick = {
                         if (!trashEnabled) return@ViewerActionButton
                         if (!canLaunchGalleryDeleteFlow(deleteFlowActive)) return@ViewerActionButton
                         showDeleteConfirm = true
@@ -414,9 +564,10 @@ fun PhotoDetailDialog(
                 )
             }
         }
-    }
+          }
+      }
 
-    if (showDeleteConfirm) {
+      if (showDeleteConfirm) {
         AlertDialog(
             onDismissRequest = {
                 if (!deleteInFlight && canLaunchGalleryDeleteFlow(deleteFlowActive)) {
@@ -458,39 +609,30 @@ private fun ViewerActionButton(
     label: String,
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     enabled: Boolean,
+    tint: Color = AiPoseColors.Foreground,
+    modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
+    val contentColor = tint.copy(alpha = if (enabled) 1f else 0.38f)
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(4.dp),
-        modifier = Modifier
+        verticalArrangement = Arrangement.spacedBy(7.dp),
+        modifier = modifier
+            .heightIn(min = 70.dp)
             .clickable(enabled = enabled, onClick = onClick)
             .semantics { contentDescription = label }
             .padding(horizontal = Spacing.sm, vertical = Spacing.xs),
     ) {
-        Box(
-            modifier = Modifier
-                .size(44.dp)
-                .neoShadow(offsetX = 2.dp, offsetY = 2.dp, cornerRadius = 10.dp)
-                .background(
-                    if (enabled) AiPoseColors.Background else AiPoseColors.Surface,
-                    RoundedCornerShape(10.dp),
-                )
-                .neoBorder(width = 2.dp, cornerRadius = 10.dp)
-                .clip(RoundedCornerShape(10.dp)),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = if (enabled) AiPoseColors.Foreground else AiPoseColors.Subtext,
-                modifier = Modifier.size(18.dp),
-            )
-        }
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = contentColor,
+            modifier = Modifier.size(24.dp),
+        )
         Text(
             text = label,
-            style = AiPoseTypography.Caption,
-            color = if (enabled) AiPoseColors.Foreground else AiPoseColors.Subtext,
+            style = AiPoseTypography.Caption.copy(fontSize = 11.sp, fontWeight = FontWeight.Bold),
+            color = contentColor,
         )
     }
 }

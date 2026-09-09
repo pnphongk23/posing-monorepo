@@ -61,27 +61,106 @@ final class OAuthSignInObserver: NSObject {
     }
 }
 
-enum OAuthCallbackError: Error {
+enum OAuthCallbackError: LocalizedError {
     case invalidCallback
     case missingCode
+    case providerDenied(String)
     case exchangeFailed
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidCallback:
+            return "Unable to start Google sign-in."
+        case .missingCode:
+            return "Google sign-in returned an invalid callback."
+        case .providerDenied(let message):
+            let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? "Google sign-in was not completed." : "Google sign-in failed: \(trimmed)"
+        case .exchangeFailed:
+            return "Unable to finish Google sign-in. Please try again."
+        }
+    }
 }
 
 struct OAuthCallbackParser {
-    static func code(from url: URL) -> String? {
+    private static func components(from url: URL) -> URLComponents? {
         guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
-              components.scheme == "aipose",
-              components.host == "auth",
-              components.path == "/callback",
-              components.fragment == nil,
-              let items = components.queryItems,
-              items.count == 1,
-              items[0].name == "code",
-              let code = items[0].value,
+              components.scheme?.caseInsensitiveCompare("aipose") == .orderedSame else {
+            return nil
+        }
+        return components
+    }
+
+    private static func fragmentItems(from components: URLComponents) -> [URLQueryItem] {
+        guard let fragment = components.fragment, !fragment.isEmpty else {
+            return []
+        }
+        // URLComponents parses the fragment as an opaque string, so parse it as
+        // a query only after the callback scheme has been validated.
+        let fragmentQuery = fragment.hasPrefix("?") ? String(fragment.dropFirst()) : fragment
+        return URLComponents(string: "?\(fragmentQuery)")?.queryItems ?? []
+    }
+
+    private static func items(named name: String, in items: [URLQueryItem]) -> [URLQueryItem] {
+        items.filter { $0.name.caseInsensitiveCompare(name) == .orderedSame }
+    }
+
+    private static func queryItems(from url: URL) -> (query: [URLQueryItem], fragment: [URLQueryItem])? {
+        guard let components = components(from: url) else {
+            return nil
+        }
+        return (components.queryItems ?? [], fragmentItems(from: components))
+    }
+
+    static func code(from url: URL) -> String? {
+        guard let parts = queryItems(from: url) else {
+            return nil
+        }
+
+        // The own backend intentionally sends code in the query. Prefer it and
+        // do not merge it with a second provider fragment response.
+        let queryCodeItems = items(named: "code", in: parts.query)
+        if queryCodeItems.count == 1,
+           let code = queryCodeItems[0].value,
+           !code.isEmpty {
+            return code
+        }
+
+        let fragmentCodeItems = items(named: "code", in: parts.fragment)
+        guard fragmentCodeItems.count == 1,
+              let code = fragmentCodeItems[0].value,
               !code.isEmpty else {
             return nil
         }
         return code
+    }
+
+    static func providerError(from url: URL) -> String? {
+        guard let parts = queryItems(from: url) else {
+            return nil
+        }
+
+        for items in [parts.query, parts.fragment] {
+            guard let error = self.items(named: "error", in: items).first?.value,
+                  !error.isEmpty else {
+                continue
+            }
+            return self.items(named: "error_description", in: items).first?.value ?? error
+        }
+        return nil
+    }
+
+    static func summary(from url: URL) -> String {
+        let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        let queryKeys = (components?.queryItems ?? []).map(\.name)
+        let fragmentKeys: [String]
+        if let fragment = components?.fragment,
+           let fragmentComponents = URLComponents(string: "?\(fragment)") {
+            fragmentKeys = (fragmentComponents.queryItems ?? []).map(\.name)
+        } else {
+            fragmentKeys = []
+        }
+        return "scheme=\(components?.scheme ?? "nil") host=\(components?.host ?? "nil") path=\(components?.path ?? "nil") queryKeys=\(queryKeys.joined(separator: ",")) fragmentKeys=\(fragmentKeys.joined(separator: ",")) hasFragment=\(components?.fragment != nil)"
     }
 }
 
@@ -116,7 +195,18 @@ final class OAuthHandoff: NSObject, ASWebAuthenticationPresentationContextProvid
                 completion(.failure(error))
                 return
             }
-            guard let callbackURL, let code = OAuthCallbackParser.code(from: callbackURL) else {
+            guard let callbackURL else {
+                completion(.failure(OAuthCallbackError.invalidCallback))
+                return
+            }
+            // Keep callback diagnostics safe: structure and parameter names only,
+            // never the one-time code or exchanged tokens.
+            print("[OAuth] callback \(OAuthCallbackParser.summary(from: callbackURL))")
+            if let providerError = OAuthCallbackParser.providerError(from: callbackURL) {
+                completion(.failure(OAuthCallbackError.providerDenied(providerError)))
+                return
+            }
+            guard let code = OAuthCallbackParser.code(from: callbackURL) else {
                 completion(.failure(OAuthCallbackError.missingCode))
                 return
             }

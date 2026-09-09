@@ -57,6 +57,36 @@ fun initialGalleryPhotoViewerState(photo: Photo): GalleryPhotoViewerState {
     )
 }
 
+/**
+ * Parses both timestamp formats that have existed in local gallery rows.
+ * Captures are stored as epoch milliseconds, while early builds could persist
+ * epoch seconds; treating the latter as milliseconds renders every image in
+ * January 1970.
+ */
+internal fun galleryPhotoEpochMillis(createdAt: String): Long? {
+    val value = createdAt.trim().takeIf { it.isNotEmpty() }?.toLongOrNull() ?: return null
+    return if (value in -EPOCH_SECONDS_THRESHOLD..EPOCH_SECONDS_THRESHOLD) {
+        value * MILLIS_PER_SECOND
+    } else {
+        value
+    }
+}
+
+internal fun shouldDismissGalleryDetail(
+    offsetPx: Float,
+    velocityPxPerSecond: Float,
+    viewportHeightPx: Float,
+): Boolean {
+    if (viewportHeightPx <= 0f) return false
+    return offsetPx >= viewportHeightPx * GALLERY_DETAIL_DISMISS_OFFSET_FRACTION ||
+        velocityPxPerSecond >= viewportHeightPx * GALLERY_DETAIL_DISMISS_VELOCITY_FACTOR
+}
+
+private const val MILLIS_PER_SECOND = 1_000L
+private const val EPOCH_SECONDS_THRESHOLD = 10_000_000_000L
+private const val GALLERY_DETAIL_DISMISS_OFFSET_FRACTION = 0.25f
+private const val GALLERY_DETAIL_DISMISS_VELOCITY_FACTOR = 1.5f
+
 fun reduce(
     state: GalleryPhotoViewerState,
     event: GalleryPhotoViewerEvent,
@@ -192,7 +222,7 @@ fun viewerTrashEnabled(
 ): Boolean = viewerActionsEnabled(media, deleteInFlight, save) && !deleteFlowActive
 
 fun formatGalleryPhotoCreatedAt(createdAt: String): GalleryPhotoDateTime? {
-    val millis = createdAt.trim().takeIf { it.isNotEmpty() }?.toLongOrNull() ?: return null
+    val millis = galleryPhotoEpochMillis(createdAt) ?: return null
     val totalSeconds = millis / 1000
     val secondsOfDay = ((totalSeconds % SECONDS_PER_DAY) + SECONDS_PER_DAY) % SECONDS_PER_DAY
     val totalDays = (totalSeconds / SECONDS_PER_DAY).toInt()
