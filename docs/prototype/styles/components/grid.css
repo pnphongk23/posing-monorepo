@@ -28,55 +28,177 @@
   display: none;
 }
 
-/* ── Gallery: browse capture history by day ── */
-.nb-gallery-scroll {
-  padding-bottom: var(--nb-space-md);
-}
+  /* ── Gallery: browse capture history by day ── */
+  .nb-nav-bar--gallery {
+    align-items: flex-start;
+  }
 
-.nb-gallery-grid {
-  gap: var(--nb-space-compact);
-}
+  .nb-gallery-heading {
+    min-width: 0;
+  }
 
-.nb-gallery-grid .nb-grid-group-title {
-  margin-top: 0;
-  margin-bottom: var(--nb-space-sm);
-  padding-top: var(--nb-space-2xs);
-}
+  .nb-gallery-heading__title {
+    margin: 0;
+    font-size: var(--nb-type-screen-title-size);
+    font-weight: var(--nb-type-screen-title-weight);
+    line-height: var(--nb-type-screen-title-leading);
+    letter-spacing: var(--nb-type-screen-title-tracking);
+  }
 
-.nb-gallery-grid .nb-grid-group-title.nb-gallery-section--spaced {
-  margin-top: var(--nb-space-xl);
-  padding-top: var(--nb-space-xs);
-}
+  .nb-gallery-toolbar {
+    display: flex;
+    align-items: center;
+    gap: var(--nb-space-sm);
+    width: 100%;
+    margin-bottom: var(--nb-space-md);
+  }
 
-.nb-gallery-grid .nb-grid-group-count {
-  font-size: var(--nb-type-caption-size);
-  font-weight: var(--nb-type-caption-weight);
-  line-height: var(--nb-type-caption-leading);
-  letter-spacing: var(--nb-type-caption-tracking);
-  font-variant-numeric: tabular-nums;
-  text-transform: none;
-}
+  .nb-gallery-filters {
+    display: flex;
+    gap: var(--nb-space-xs);
+    min-width: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
 
-#gallery-grid.nb-grid--2col .nb-card--gallery,
-#gallery-grid.nb-grid--2col .nb-card--placeholder {
-  width: 100%;
-  aspect-ratio: 1 / 1;
-}
+    .nb-gallery-filters::-webkit-scrollbar {
+      display: none;
+    }
 
-.nb-gallery-grid .nb-grid-photo-item {
-  min-width: 0;
-}
+    .nb-gallery-date-input {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      border: 0;
+      opacity: 0;
+      pointer-events: none;
+    }
 
-/* List = single column, larger scan-friendly rows */
-.nb-gallery-grid.nb-grid--list {
-  gap: var(--nb-space-md);
-}
+  .nb-gallery-filter {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    gap: 5px;
+    min-height: 36px;
+    padding: 0 var(--nb-space-sm);
+    border: var(--nb-border-thin);
+    border-radius: var(--nb-radius-small);
+    background: var(--nb-color-white);
+    color: var(--nb-color-dark);
+    font-size: var(--nb-type-caption-size);
+    font-weight: var(--nb-type-caption-weight);
+    cursor: pointer;
+  }
 
-.nb-gallery-grid.nb-grid--list .nb-card--gallery,
-.nb-gallery-grid.nb-grid--list .nb-card--placeholder {
-  width: 100%;
-  aspect-ratio: 16 / 10;
-}
+  .nb-gallery-filter.is-active {
+    background: var(--nb-color-accent-pink);
+    border: var(--nb-border-thick);
+    box-shadow: var(--nb-shadow-small);
+  }
+
+  .nb-gallery-scroll {
+    padding-bottom: var(--nb-space-md);
+  }
+
+  .nb-gallery-grid {
+    display: block;
+    column-count: 2;
+    column-gap: var(--nb-space-sm);
+  }
+
+      .nb-gallery-item {
+        display: inline-block;
+        width: 100%;
+      min-width: 0;
+      margin-bottom: var(--nb-space-sm);
+      vertical-align: top;
+      break-inside: avoid;
+    }
+
+  .nb-gallery-item__link {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    color: var(--nb-color-dark);
+    text-decoration: none;
+  }
+
+    .nb-gallery-item__media {
+    display: flex;
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    border: var(--nb-border-thin);
+    border-radius: var(--nb-radius-small);
+    background-color: var(--nb-color-white);
+    background-position: center;
+    background-size: cover;
+      background-repeat: no-repeat;
+    }
+
+    .nb-gallery-item__media--tall {
+      aspect-ratio: 4 / 5;
+    }
+
+    .nb-gallery-item__media--square {
+      aspect-ratio: 1 / 1;
+    }
+
+    .nb-gallery-item__media--wide {
+      aspect-ratio: 5 / 4;
+    }
+
+  .nb-gallery-item__media--placeholder {
+    background-color: var(--nb-color-light-gray);
+  }
+
+  .nb-gallery-item__placeholder {
+    width: 28px;
+    height: 28px;
+    color: var(--nb-color-gray);
+    opacity: 0.65;
+  }
+
+  .nb-gallery-item__meta {
+    display: none;
+    min-width: 0;
+    padding: var(--nb-space-xs) 2px 0;
+  }
+
+  .nb-gallery-item__title {
+    overflow: hidden;
+    font-size: var(--nb-type-body-size);
+    font-weight: var(--nb-type-body-weight);
+    line-height: var(--nb-type-body-leading);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .nb-gallery-item__details {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--nb-space-sm);
+    color: var(--nb-color-gray);
+    font-size: var(--nb-type-caption-size);
+    line-height: var(--nb-type-caption-leading);
+  }
+
+  .nb-gallery-item__tag {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+    .nb-gallery-empty {
+      width: 100%;
+      padding: var(--nb-space-xl) 0;
+      column-span: all;
+    }
 
 /* ── Poses grid (separate from gallery) ── */
 .nb-grid-pose-item {
@@ -217,29 +339,10 @@
     margin-bottom: calc(var(--nb-space-md) * 0.8); /* 20% tighter vertical rhythm */
   }
 
-  /* Two-column CSS masonry for the full, uncapped Gallery collection. */
-  .nb-gallery-grid--masonry,
-  .nb-gallery-grid-dense {
-    display: block;
-    column-count: 2;
-    column-gap: var(--nb-space-sm);
-    width: 100%;
-  }
-
-  .nb-gallery-grid--masonry .nb-grid-photo-item,
-  .nb-gallery-grid-dense .nb-grid-photo-item {
-    display: inline-block;
-    width: 100%;
-    min-width: 0;
-    break-inside: avoid;
-    margin-bottom: calc(var(--nb-space-md) * 0.8);
-  }
-
-  .nb-gallery-empty {
-    width: 100%;
-    padding: var(--nb-space-xl) 0;
-    break-inside: avoid;
-  }
+    .nb-gallery-empty {
+      width: 100%;
+      padding: var(--nb-space-xl) 0;
+    }
 
 /* Padding to prevent overlay elements from obscuring scrollable list contents */
 .nb-grid-scroll-area {

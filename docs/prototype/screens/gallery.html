@@ -30,20 +30,44 @@
     
     <!-- Phone Content Area -->
     <div class="nb-phone__content">
-      <nav class="nb-nav-bar u-mb-md">
-        <h1 class="nb-nav-bar__title nb-nav-bar__title--page">Gallery</h1>
-        <div class="nb-nav-bar__right nb-nav-bar__right--actions">
-          <a href="paywall.html?return=gallery.html" class="nb-btn nb-btn--compact-action" aria-label="Upgrade to Premium" id="premium-upgrade-btn">
-            <span class="nb-btn__compact-surface" style="background-color: var(--nb-color-accent-yellow);">
+        <nav class="nb-nav-bar nb-nav-bar--gallery u-mb-sm">
+          <div class="nb-gallery-heading">
+            <h1 class="nb-gallery-heading__title">Gallery</h1>
+          </div>
+          <div class="nb-nav-bar__right nb-nav-bar__right--actions">
+            <a href="paywall.html?return=gallery.html" class="nb-btn nb-btn--compact-action" aria-label="Upgrade to Premium" id="premium-upgrade-btn">
+              <span class="nb-btn__compact-surface" style="background-color: var(--nb-color-accent-yellow);">
               <svg><use href="#icon-crown"></use></svg>
             </span>
           </a>
+          </div>
+        </nav>
+
+        <div class="nb-gallery-toolbar" aria-label="Gallery controls">
+            <div class="nb-gallery-filters" role="group" aria-label="Filter gallery">
+              <button class="nb-gallery-filter is-active" type="button" data-gallery-filter="all" aria-pressed="true">
+                <span>All</span>
+              </button>
+              <button class="nb-gallery-filter" type="button" data-gallery-filter="today" aria-pressed="false">
+                <span>Today</span>
+              </button>
+              <button class="nb-gallery-filter" type="button" data-gallery-filter="week" aria-pressed="false">
+                <span>7 days</span>
+              </button>
+              <button class="nb-gallery-filter" type="button" data-gallery-filter="month" aria-pressed="false">
+                <span>30 days</span>
+              </button>
+            <button class="nb-gallery-filter" type="button" data-gallery-filter="custom" aria-pressed="false" id="gallery-date-filter">
+              <span data-gallery-filter-label="custom">Date</span>
+            </button>
+          </div>
+          <input class="nb-gallery-date-input" id="gallery-date-input" type="date" tabindex="-1" aria-hidden="true">
+
         </div>
-      </nav>
 
         <div class="nb-grid-scroll-area nb-gallery-scroll">
           <section class="nb-gallery-section nb-gallery-section--photos" id="gallery-section" aria-label="Gallery">
-            <div class="nb-gallery-grid nb-gallery-grid--masonry" id="gallery-grid">
+            <div class="nb-gallery-grid" id="gallery-grid">
               <!-- Populated dynamically by scripts/app.js -->
             </div>
           </section>
@@ -62,10 +86,9 @@
   <script src="../scripts/tabs.js"></script>
   <script src="../scripts/progress.js"></script>
   <script src="../scripts/modal.js"></script>
-  <script src="../scripts/view-toggle.js"></script>
   <script src="../scripts/button-press.js"></script>
   <script src="../scripts/tab-bar.js"></script>
-  <script src="../scripts/app.js"></script>
+    <script src="../scripts/app.js?gallery-grid-6"></script>
   <script>initTabBar('gallery');</script>
 </body>
 </html>

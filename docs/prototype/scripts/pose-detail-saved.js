@@ -7,11 +7,14 @@
     const toggle = document.getElementById('saved-toggle'), tryBtn = document.getElementById('saved-try'), live = document.getElementById('saved-detail-live');
     const esc = proto ? proto.escapeHtml : String;
     const back = document.getElementById('detail-back'), sourceBadge = document.getElementById('saved-detail-source'), context = document.getElementById('saved-detail-context');
-    const backDestination = origin === 'saved' || source === 'saved'
-        ? { href: 'saved-list.html', label: 'Back to Saved' }
-        : origin === 'search'
-          ? { href: 'search.html' + (params.get('q') ? '?q=' + encodeURIComponent(params.get('q')) : ''), label: 'Back to Search' }
-          : { href: 'poses-list.html?tab=community', label: 'Back to Community' };
+      const searchOrigin = new URLSearchParams();
+      if (params.get('q')) searchOrigin.set('q', params.get('q'));
+      if (params.get('source') && source !== 'saved') searchOrigin.set('source', params.get('source'));
+      const backDestination = origin === 'saved' || source === 'saved'
+          ? { href: 'saved-list.html', label: 'Back to Saved' }
+          : origin === 'search'
+            ? { href: 'search.html' + (searchOrigin.toString() ? '?' + searchOrigin.toString() : ''), label: 'Back to Search' }
+            : { href: 'poses-list.html?tab=community', label: 'Back to Community' };
     if (back) { back.href = backDestination.href; back.setAttribute('aria-label', backDestination.label); }
     function unavailableState() { content.hidden = true; unavailable.innerHTML = '<strong>Pose unavailable</strong><p>Pose này đã xoá hoặc đã ẩn.</p><button class="nb-btn nb-btn--pink nb-saved-readonly" type="button" disabled>Try pose</button><button class="nb-btn nb-btn--white" type="button" id="detail-unavailable-back">' + backDestination.label + '</button>'; unavailable.hidden = false; document.getElementById('saved-detail-title').textContent = 'Unavailable'; document.getElementById('detail-unavailable-back').onclick = () => location.href = backDestination.href; }
     if (state === 'unavailable' || !pose) { unavailableState(); return; }

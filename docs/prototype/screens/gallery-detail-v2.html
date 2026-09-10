@@ -348,7 +348,17 @@
         }
       }
 
-      document.querySelector('#back-button').addEventListener('click', () => { location.href = 'gallery.html'; });
+        const galleryContext = new URLSearchParams(location.search);
+        function galleryReturnUrl(deleted = false) {
+          const returnParams = new URLSearchParams();
+          if (galleryContext.get('filter')) returnParams.set('filter', galleryContext.get('filter'));
+          if (galleryContext.get('date')) returnParams.set('date', galleryContext.get('date'));
+          if (deleted) returnParams.set('deleted', '1');
+          const query = returnParams.toString();
+          return `gallery.html${query ? `?${query}` : ''}`;
+        }
+
+        document.querySelector('#back-button').addEventListener('click', () => { location.href = galleryReturnUrl(); });
       document.querySelector('#more-button').addEventListener('click', () => showToast('Photo options are available below'));
       saveButton.addEventListener('click', () => {
         if (state === 'save-error' && !saveAttempted) {
@@ -391,7 +401,7 @@
       document.querySelector('#confirm-delete').addEventListener('click', () => {
         scrim.classList.remove('is-visible');
         scrim.setAttribute('aria-hidden', 'true');
-        location.href = 'gallery.html?deleted=1';
+          location.href = galleryReturnUrl(true);
       });
       document.addEventListener('keydown', (event) => {
         if (event.key === 'Escape' && scrim.classList.contains('is-visible')) document.querySelector('#cancel-delete').click();
