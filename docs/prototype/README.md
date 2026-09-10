@@ -37,9 +37,11 @@ docs/prototype/
 │   ├── saved-list.html         # FEAT-013 Saved collection state prototype
 │   ├── pose-detail-saved.html  # FEAT-013 saved detail/save/try states
 │   ├── sign-in-prompt.html     # FEAT-013 shared auth gate simulation
+│   ├── onboarding.html         # FEAT-016 Interactive 5-stage onboarding flow (values, vibe picker, demo, primer, launch)
+│   ├── onboarding-v2.html      # Separate onboarding redesign with live-photo outline guide and camera-first flow
 │   ├── gallery.html            # Captured matches history with list/grid toggle and main navigation
-│   ├── gallery-detail.html     # Legacy source-aware captured photo detail
-│   └── gallery-detail-v2.html  # Current gallery photo detail redesign
+│   ├── gallery-detail.html     # Source-aware captured photo detail and delete confirmation
+│   └── gallery-detail-v2.html  # Viewer-first gallery detail redesign with recoverable action states
 ├── styles/                     # Design System & Component Outlines
 │   ├── tokens.css              # Custom properties layer (colors, spacing, radii)
 │   ├── reset.css               # Normalize standard browser styling overrides
@@ -60,7 +62,8 @@ docs/prototype/
 │       ├── pose-overlay.css    # SVG bone line links & joint node decorators
 │       └── view-toggle.css     # Gallery grid/list layout controllers
 │   ├── saved-poses.css         # Token-based FEAT-013 prototype additions
-│   └── account.css             # Account screen layout and action styles
+│   ├── account.css             # Account screen layout and action styles
+│   └── onboarding.css          # FEAT-016 Onboarding stage layout and interactive controls
 └── scripts/                    # Modular Interaction Code
     ├── icons.js                # DOM injector for reusable SVG symbol definitions
     ├── fixtures.js             # Local mock pose/photo catalog and session-only pose state
@@ -74,7 +77,8 @@ docs/prototype/
     ├── app.js                  # Main orchestrator initializing components
     ├── saved-list.js            # Saved pagination and list state simulation
     ├── pose-detail-saved.js     # Saved detail mutation/auth state simulation
-    └── sign-in-prompt.js        # Auth prompt intent and outcome simulation
+    ├── sign-in-prompt.js        # Auth prompt intent and outcome simulation
+    └── onboarding.js           # FEAT-016 Multi-stage state machine, alignment simulator, & preferences
 ```
 
 ---
@@ -94,6 +98,23 @@ The prototype features several interactive controls. However, due to its static,
 9. **Source-aware Details**: Cards route with `source` and `id` query parameters. Detail only renders metadata present in the fixture, handles missing/unavailable records with a return path, and confirms personal deletion before removing it from the current `sessionStorage` prototype session.
 10. **Bounded Try Pose Handoff**: `Try Pose` records a mock handoff notice on the detail screen only. It does not navigate to or render `camera-pose-overlay.html`; Camera overlay persistence, rendering, controls, and extraction remain deferred to the pending handoff plan.
 11. **Existing Camera/Gallery Shortcuts**: The standalone `camera-pose-overlay.html` and the camera-facing shortcut remain historical prototype screens outside this Pose Library update. Gallery opens the current `gallery-detail-v2.html` photo detail redesign and keeps a full uncapped staggered photo collection; `gallery-detail.html` remains available as the legacy detail reference. The gallery layout toggle remains **inert** because its buttons are missing from `gallery.html`; camera settings still use `camera-live.html?settings=open`.
+
+### FEAT-016 Onboarding prototype
+
+- **Onboarding redesign v2** ([`screens/onboarding-v2.html`](screens/onboarding-v2.html)): a separate, standalone 5-stage flow. Its camera demo uses the production extraction style — a thin minimalist outline asset generated from the server's `DEFAULT_EXTRACT_PROMPT` — over a real portrait preview, with pink → green alignment states. The original onboarding screen remains unchanged.
+
+- [Onboarding Flow](screens/onboarding.html): Interactive 5-stage first-run experience:
+  1. `?step=1` — Welcome & Value Hook: core value proposition with ghost silhouette animation.
+  2. `?step=2` — Goal & Vibe Personalization (X / Reddit pattern): interactive neo-brutalist chips (Portrait, Cafe, Travel, Street, Fitness, Couples, Professional) with dynamic counter (`X of 7 selected`).
+  3. `?step=3` — Interactive Pose Match Playground (Duolingo TTV pattern): simulated live camera viewfinder with real-time alignment slider and green "PERFECT MATCH" state when within ±8 units.
+  4. `?step=4` — Privacy & Permissions Primer: Apple HIG-compliant preflight for Camera Access (with on-device AI privacy pledge and dual action paths: "Enable Camera Access" or "Maybe Later"). Photo Library permission is requested contextually upon first save/import.
+  5. `?step=5` — Personalized Launchpad: displays curated vibe summary and dual CTA ("Open Camera with Guide" or "Browse Recommended Poses").
+  - Test query parameters: `?step=1..5`, `?replay=true`. State is saved to `localStorage` (`has_completed_onboarding`, `user_selected_interests`).
+  - Access anytime from **Settings → Replay Onboarding** (`settings.html`).
+
+### Gallery detail redesign v2
+
+- **Gallery detail v2** ([`screens/gallery-detail-v2.html`](screens/gallery-detail-v2.html)): a standalone photo-viewer detail screen. It keeps the captured image dominant, shows only the capture date/time (no photo title, tags, or favorite control), and uses three native-feeling actions: Share, Save, and Trash. Query states `?state=loading`, `?state=missing`, `?state=save-error`, and `?state=deleted` exercise loading, recoverable missing-file, export failure, and post-delete states. The existing gallery detail screen remains unchanged.
 
 ### Account screen prototype
 

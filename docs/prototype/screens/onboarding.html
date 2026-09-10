@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Welcome to AI Pose — Onboarding</title>
+  <!-- Prototype Design System Stylesheets -->
+  <link rel="stylesheet" href="../styles/reset.css">
+  <link rel="stylesheet" href="../styles/base.css">
+  <link rel="stylesheet" href="../styles/utilities.css">
+  <link rel="stylesheet" href="../styles/components.css">
+  <link rel="stylesheet" href="../styles/onboarding.css">
+</head>
+<body>
+  <div class="nb-phone" id="phone-container">
+    <!-- Status Bar -->
+    <div class="nb-phone__header" aria-label="Status bar">
+      <span class="nb-phone__time">9:41</span>
+      <div class="nb-phone__status-icons" aria-hidden="true">
+        <span>▰</span>
+        <span>▮</span>
+        <span>▰</span>
+      </div>
+    </div>
+
+    <!-- Main Onboarding Flow Container -->
+    <main class="nb-onboarding" id="onboarding-flow" aria-live="polite">
+      <!-- Top Navigation & Progress Bar -->
+      <nav class="nb-onboarding__top-bar" aria-label="Onboarding Progress">
+        <button type="button" class="nb-onboarding__back-btn" id="onboarding-back-btn" aria-label="Previous step" title="Previous step" disabled>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <path d="M15 19l-7-7 7-7"/>
+          </svg>
+        </button>
+        <div class="nb-onboarding__progress-track" role="progressbar" aria-valuenow="20" aria-valuemin="0" aria-valuemax="100">
+          <div class="nb-onboarding__progress-fill" id="onboarding-progress-fill" style="width: 20%;"></div>
+        </div>
+        <button type="button" class="nb-onboarding__skip-btn" id="onboarding-skip-btn" aria-label="Skip onboarding">Skip</button>
+      </nav>
+
+      <!-- Multi-Stage Content Area -->
+      <div class="nb-onboarding__stages">
+        
+        <!-- STAGE 1: Welcome & Value Hook (Appllama Hero Canvas) -->
+        <section class="nb-onboarding__stage is-active" data-stage="1" aria-labelledby="stage-1-title">
+          <header class="nb-onboarding__header">
+            <div class="nb-onboarding__badge">✨ AI Pose Assistant • Top-Rated</div>
+            <h1 class="nb-onboarding__title" id="stage-1-title">Never look awkward in photos again.</h1>
+            <p class="nb-onboarding__subtitle">Ghost silhouettes guide your posture, hands, and angles on-screen. 100% on-device AI.</p>
+          </header>
+
+          <!-- Interactive / Animated Hero Canvas Deck -->
+          <div class="nb-onboarding__hero-card">
+            <div class="nb-hero-viewfinder" aria-hidden="true">
+              <!-- Viewfinder HUD Elements -->
+              <div class="nb-hud-corner nb-hud-corner--tl"></div>
+              <div class="nb-hud-corner nb-hud-corner--tr"></div>
+              <div class="nb-hud-corner nb-hud-corner--bl"></div>
+              <div class="nb-hud-corner nb-hud-corner--br"></div>
+
+              <!-- Top Telemetry Strip -->
+              <div class="nb-hud-telemetry">
+                <span class="nb-hud-live-pill"><span class="nb-hud-live-dot"></span> LIVE AI</span>
+                <span class="nb-hud-lens-tag">85mm f/1.8</span>
+                <span class="nb-hud-fps-tag">60 FPS</span>
+              </div>
+
+              <!-- Floating Sticker Pills (Yazio / Speak Pattern) -->
+              <div class="nb-floating-badge nb-floating-badge--cafe">
+                <span>☕ Cafe Vibe</span>
+              </div>
+              <div class="nb-floating-badge nb-floating-badge--portrait">
+                <span>📸 Golden Ratio</span>
+              </div>
+              <div class="nb-floating-badge nb-floating-badge--match">
+                <span>✨ 99% Flattering</span>
+              </div>
+
+              <!-- Aesthetic Subject & Live Skeleton Graphic -->
+              <div class="nb-hero-subject-wrap">
+                <!-- Illustrated Silhouette Subject -->
+                <svg class="nb-hero-subject" viewBox="0 0 120 180" fill="none">
+                  <!-- Silhouette Body -->
+                  <circle cx="60" cy="32" r="16" fill="#2D3142" />
+                  <path d="M42 54 C42 48, 78 48, 78 54 L84 100 C84 104, 76 106, 74 115 L78 170 C78 174, 72 176, 70 176 L65 176 L62 125 L58 125 L55 176 L50 176 C48 176, 42 174, 42 170 L46 115 C44 106, 36 104, 36 100 Z" fill="#2D3142" />
+                  <!-- Arms relaxed stylish pose -->
+                  <path d="M42 56 L24 88 C22 92, 26 96, 30 94 L44 76" stroke="#2D3142" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" />
+                  <path d="M78 56 L94 82 C98 88, 92 98, 86 94 L76 80" stroke="#2D3142" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+
+                <!-- Glowing Ghost Pose Overlay -->
+                <svg class="nb-hero-ghost-anim" viewBox="0 0 120 180" fill="none">
+                  <!-- Head -->
+                  <circle cx="60" cy="32" r="15" stroke="var(--nb-color-accent-pink)" stroke-width="2.5" stroke-dasharray="4 2" />
+                  <!-- Spine -->
+                  <line x1="60" y1="48" x2="60" y2="105" stroke="var(--nb-color-accent-pink)" stroke-width="2.5" stroke-dasharray="4 2" />
+                  <!-- Shoulders -->
+                  <line x1="38" y1="56" x2="82" y2="56" stroke="var(--nb-color-accent-pink)" stroke-width="2.5" stroke-dasharray="4 2" />
+                  <!-- Left Arm (Hand on waist) -->
+                  <line x1="38" y1="56" x2="22" y2="88" stroke="var(--nb-color-accent-pink)" stroke-width="2.5" stroke-dasharray="4 2" />
+                  <line x1="22" y1="88" x2="42" y2="92" stroke="var(--nb-color-accent-pink)" stroke-width="2.5" stroke-dasharray="4 2" />
+                  <!-- Right Arm -->
+                  <line x1="82" y1="56" x2="98" y2="84" stroke="var(--nb-color-accent-pink)" stroke-width="2.5" stroke-dasharray="4 2" />
+                  <line x1="98" y1="84" x2="86" y2="95" stroke="var(--nb-color-accent-pink)" stroke-width="2.5" stroke-dasharray="4 2" />
+                  <!-- Hips & Legs -->
+                  <line x1="48" y1="105" x2="72" y2="105" stroke="var(--nb-color-accent-pink)" stroke-width="2.5" stroke-dasharray="4 2" />
+                  <line x1="52" y1="105" x2="54" y2="168" stroke="var(--nb-color-accent-pink)" stroke-width="2.5" stroke-dasharray="4 2" />
+                  <line x1="68" y1="105" x2="72" y2="168" stroke="var(--nb-color-accent-pink)" stroke-width="2.5" stroke-dasharray="4 2" />
+                  <!-- Joint Nodes -->
+                  <circle cx="60" cy="32" r="3" fill="var(--nb-color-accent-pink)" />
+                  <circle cx="38" cy="56" r="3" fill="var(--nb-color-accent-pink)" />
+                  <circle cx="82" cy="56" r="3" fill="var(--nb-color-accent-pink)" />
+                  <circle cx="22" cy="88" r="3" fill="var(--nb-color-accent-pink)" />
+                  <circle cx="98" cy="84" r="3" fill="var(--nb-color-accent-pink)" />
+                  <circle cx="54" cy="168" r="3" fill="var(--nb-color-accent-pink)" />
+                  <circle cx="72" cy="168" r="3" fill="var(--nb-color-accent-pink)" />
+                </svg>
+              </div>
+
+              <!-- Reticle Center Mark -->
+              <div class="nb-hud-reticle"></div>
+            </div>
+
+            <!-- Value Props List (Duolingo / Yazio Pattern) -->
+            <ul class="nb-onboarding__feature-list">
+              <li class="nb-onboarding__feature-item">
+                <div class="nb-onboarding__feature-icon" style="background-color: var(--nb-color-accent-pink);">🎯</div>
+                <div class="nb-onboarding__feature-text">
+                  <strong>Live Joint Alignment</strong>
+                  Ghost silhouettes lock on screen so you pose naturally with zero awkwardness.
+                </div>
+              </li>
+              <li class="nb-onboarding__feature-item">
+                <div class="nb-onboarding__feature-icon" style="background-color: var(--nb-color-accent-blue);">⚡</div>
+                <div class="nb-onboarding__feature-text">
+                  <strong>Instant Creator Catalog</strong>
+                  Browse 200+ aesthetic poses curated for cafe, street, travel, and duo shoots.
+                </div>
+              </li>
+            </ul>
+
+            <!-- Social Proof Bar -->
+            <div class="nb-social-proof">
+              <div class="nb-stars" aria-hidden="true">★★★★★</div>
+              <span>Trusted by 50,000+ creators • 100% on-device</span>
+            </div>
+          </div>
+
+          <div class="nb-onboarding__bottom-dock">
+            <button type="button" class="nb-onboarding__cta-btn" id="stage-1-cta">
+              <span>Get Started</span>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <path d="M9 5l7 7-7 7"/>
+              </svg>
+            </button>
+            <div class="nb-dock-hint">Takes 30 seconds • No account required</div>
+          </div>
+        </section>
+
+        <!-- STAGE 2: Goal & Interest Personalization (X / Reddit Style) -->
+        <section class="nb-onboarding__stage" data-stage="2" aria-labelledby="stage-2-title">
+          <header class="nb-onboarding__header">
+            <div class="nb-onboarding__badge">🎯 Tailor Your Feed</div>
+            <h2 class="nb-onboarding__title" id="stage-2-title">What do you love shooting most?</h2>
+            <p class="nb-onboarding__subtitle">We’ll personalize your starting pose library and recommendations.</p>
+          </header>
+
+          <div class="nb-onboarding__selection-counter">
+            <span id="selected-counter">2 of 7 selected</span>
+            <span style="font-size: 11px; text-transform: uppercase;">Pick at least 1</span>
+          </div>
+
+          <!-- Dynamic Interest Selection Grid -->
+          <div class="nb-onboarding__interests-grid" id="interests-grid" role="group" aria-label="Pose interests">
+            <!-- Populated dynamically by onboarding.js -->
+          </div>
+
+          <div class="nb-onboarding__bottom-dock">
+            <button type="button" class="nb-onboarding__cta-btn" id="stage-2-cta">Continue (2)</button>
+          </div>
+        </section>
+
+        <!-- STAGE 3: Interactive Pose Match Playground (Duolingo TTV Style + Appllama Motion) -->
+        <section class="nb-onboarding__stage" data-stage="3" aria-labelledby="stage-3-title">
+          <header class="nb-onboarding__header">
+            <div class="nb-onboarding__badge">⚡ 5-Second Trial • Interactive</div>
+            <h2 class="nb-onboarding__title" id="stage-3-title">Try it: align with the guide.</h2>
+            <p class="nb-onboarding__subtitle">Drag the slider below until the ghost skeleton locks green with the subject.</p>
+          </header>
+
+          <div class="nb-onboarding__demo-card">
+            <!-- Simulated Camera Viewfinder -->
+            <div class="nb-onboarding__viewfinder" id="demo-viewfinder">
+              <!-- Corner Framing Reticles -->
+              <div class="nb-hud-corner nb-hud-corner--tl"></div>
+              <div class="nb-hud-corner nb-hud-corner--tr"></div>
+              <div class="nb-hud-corner nb-hud-corner--bl"></div>
+              <div class="nb-hud-corner nb-hud-corner--br"></div>
+
+              <!-- Top Viewfinder Telemetry & Live Alignment Meter -->
+              <div class="nb-viewfinder-top-bar">
+                <span class="nb-hud-badge"><span class="nb-hud-live-dot"></span> SKELETON TRACKER</span>
+                <span class="nb-match-gauge" id="match-percent-badge"><strong id="match-percent-val">45%</strong> MATCH</span>
+              </div>
+
+              <!-- Rule-of-Thirds Grid -->
+              <div class="nb-onboarding__grid-lines">
+                <div></div><div></div><div></div>
+                <div></div><div></div><div></div>
+                <div></div><div></div><div></div>
+              </div>
+
+              <!-- Static Model Silhouette (Simulated Subject) -->
+              <svg class="nb-onboarding__live-body" viewBox="0 0 24 24" aria-hidden="true">
+                <circle cx="12" cy="5" r="3"/>
+                <line x1="12" y1="8" x2="12" y2="15"/>
+                <line x1="12" y1="10" x2="7" y2="13"/>
+                <line x1="12" y1="10" x2="17" y2="13"/>
+                <line x1="12" y1="15" x2="8" y2="21"/>
+                <line x1="12" y1="15" x2="16" y2="21"/>
+                <!-- Joint nodes for native realism -->
+                <circle cx="12" cy="8" r="0.8" fill="#FFF"/>
+                <circle cx="7" cy="13" r="0.8" fill="#FFF"/>
+                <circle cx="17" cy="13" r="0.8" fill="#FFF"/>
+                <circle cx="8" cy="21" r="0.8" fill="#FFF"/>
+                <circle cx="16" cy="21" r="0.8" fill="#FFF"/>
+              </svg>
+
+              <!-- Moveable Ghost Silhouette -->
+              <svg class="nb-onboarding__ghost-overlay" id="ghost-overlay" viewBox="0 0 24 24" aria-hidden="true" style="transform: translateX(45px);">
+                <circle cx="12" cy="5" r="3"/>
+                <line x1="12" y1="8" x2="12" y2="15"/>
+                <line x1="12" y1="10" x2="7" y2="13"/>
+                <line x1="12" y1="10" x2="17" y2="13"/>
+                <line x1="12" y1="15" x2="8" y2="21"/>
+                <line x1="12" y1="15" x2="16" y2="21"/>
+                <!-- Ghost joint nodes -->
+                <circle cx="12" cy="8" r="0.9" fill="currentColor"/>
+                <circle cx="7" cy="13" r="0.9" fill="currentColor"/>
+                <circle cx="17" cy="13" r="0.9" fill="currentColor"/>
+                <circle cx="8" cy="21" r="0.9" fill="currentColor"/>
+                <circle cx="16" cy="21" r="0.9" fill="currentColor"/>
+              </svg>
+
+              <!-- Match Banner Indicator -->
+              <div class="nb-onboarding__match-banner" id="match-banner">
+                PERFECT MATCH! 📸
+              </div>
+            </div>
+
+            <!-- Alignment Interactive Slider -->
+            <div class="nb-onboarding__slider-container">
+              <div class="nb-onboarding__slider-label">
+                <span>Alignment Guide</span>
+                <span id="slider-status">Drag to align joints</span>
+              </div>
+              <input type="range" id="alignment-slider" class="nb-onboarding__range-slider" min="-35" max="35" value="30" aria-label="Pose alignment slider">
+              <div class="nb-slider-ticks" aria-hidden="true">
+                <span>◂ Lean Left</span>
+                <span class="nb-center-sweet-spot">● Center Sweet Spot ●</span>
+                <span>Lean Right ▸</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="nb-onboarding__bottom-dock">
+            <button type="button" class="nb-onboarding__cta-btn" id="stage-3-cta">Next: Quick Privacy Check</button>
+          </div>
+        </section>
+
+        <!-- STAGE 4: Privacy & Permissions Primer (Apple HIG 5.1.1 Compliant) -->
+        <section class="nb-onboarding__stage" data-stage="4" aria-labelledby="stage-4-title">
+          <header class="nb-onboarding__header">
+            <div class="nb-onboarding__badge">🔒 Transparent Privacy • Apple HIG</div>
+            <h2 class="nb-onboarding__title" id="stage-4-title">How AI Pose uses your camera.</h2>
+            <p class="nb-onboarding__subtitle">We respect your privacy. Here is why we need device access:</p>
+          </header>
+
+          <div class="nb-onboarding__perm-box">
+            <div class="nb-perm-row">
+              <div class="nb-perm-icon" style="background-color: var(--nb-color-accent-pink);">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+                  <circle cx="12" cy="13" r="4"/>
+                </svg>
+              </div>
+              <div class="nb-perm-body">
+                <div class="nb-perm-title">Camera Feed (Essential)</div>
+                <div class="nb-perm-desc">Displays live ghost overlays directly on your viewfinder for effortless framing.</div>
+              </div>
+            </div>
+
+            <div class="nb-perm-row">
+              <div class="nb-perm-icon" style="background-color: var(--nb-color-accent-blue);">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                  <circle cx="8.5" cy="8.5" r="1.5"/>
+                  <polyline points="21 15 16 10 5 21"/>
+                </svg>
+              </div>
+              <div class="nb-perm-body">
+                <div class="nb-perm-title">Photo Library (Contextual)</div>
+                <div class="nb-perm-desc">Requested only when you choose to save your first captured pose or import pictures.</div>
+              </div>
+            </div>
+
+            <div class="nb-privacy-pledge">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+              </svg>
+              <span>100% on-device AI. Your personal photos are never uploaded or stored on external servers.</span>
+            </div>
+          </div>
+
+          <div class="nb-onboarding__bottom-dock">
+            <button type="button" class="nb-onboarding__cta-btn" id="enable-permissions-btn">Enable Camera Access</button>
+            <button type="button" class="nb-onboarding__secondary-btn" id="defer-permissions-btn">Maybe Later</button>
+          </div>
+        </section>
+
+        <!-- STAGE 5: Ready & Curated Launchpad (Appllama / Yazio Pattern) -->
+        <section class="nb-onboarding__stage" data-stage="5" aria-labelledby="stage-5-title">
+          <header class="nb-onboarding__header" style="text-align: center;">
+            <div class="nb-onboarding__ready-icon">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                <polyline points="20 6 9 17 4 12"></polyline>
+              </svg>
+            </div>
+            <h2 class="nb-onboarding__title" id="stage-5-title">You're all set!</h2>
+            <p class="nb-onboarding__subtitle">We curated your personal studio with top poses matching your aesthetics:</p>
+          </header>
+
+          <div class="nb-onboarding__ready-card">
+            <!-- Selected Aesthetics Chips -->
+            <div class="nb-onboarding__curated-pill-list" id="curated-pill-list">
+              <!-- Rendered dynamically -->
+            </div>
+
+            <!-- Mini Preview Cards Deck (Appllama Scrl/Yazio Style) -->
+            <div class="nb-curated-showcase-deck" aria-hidden="true">
+              <div class="nb-showcase-card nb-showcase-card--1">
+                <span class="nb-showcase-tag">HOT</span>
+                <div class="nb-showcase-icon">📸</div>
+                <div class="nb-showcase-title">Golden Angle</div>
+                <div class="nb-showcase-metric">98% Match</div>
+              </div>
+              <div class="nb-showcase-card nb-showcase-card--2">
+                <span class="nb-showcase-tag" style="background-color: var(--nb-color-accent-blue);">NEW</span>
+                <div class="nb-showcase-icon">☕</div>
+                <div class="nb-showcase-title">Cafe Casual</div>
+                <div class="nb-showcase-metric">99% Match</div>
+              </div>
+              <div class="nb-showcase-card nb-showcase-card--3">
+                <span class="nb-showcase-tag" style="background-color: var(--nb-color-accent-yellow);">PRO</span>
+                <div class="nb-showcase-icon">👟</div>
+                <div class="nb-showcase-title">Street Walk</div>
+                <div class="nb-showcase-metric">96% Match</div>
+              </div>
+            </div>
+
+            <p class="nb-ready-hint">
+              Tap below to start your first shoot with instant AI alignment guides.
+            </p>
+          </div>
+
+          <div class="nb-onboarding__bottom-dock">
+            <button type="button" class="nb-onboarding__cta-btn" id="launch-camera-btn">
+              <span>Open Camera with Guide</span>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+                <circle cx="12" cy="13" r="4"/>
+              </svg>
+            </button>
+            <button type="button" class="nb-onboarding__secondary-btn" id="browse-poses-btn">
+              Browse Recommended Poses
+            </button>
+          </div>
+        </section>
+
+      </div>
+    </main>
+  </div>
+
+  <!-- Reusable SVG Sprites & Onboarding Script -->
+  <script src="../scripts/icons.js"></script>
+  <script src="../scripts/onboarding.js"></script>
+</body>
+</html>

@@ -28,6 +28,7 @@ relationships:
     - "[[FEAT-013-saved-poses-albums-account-backed|FEAT-013]]"
     - "[[FEAT-014-manage-account-and-session|FEAT-014]]"
     - "[[FEAT-015-manage-app-settings-and-preferences|FEAT-015]]"
+    - "[[FEAT-016-user-onboarding-and-interest-personalization|FEAT-016]]"
   source_paths: []
 ---
 
@@ -61,6 +62,7 @@ Harness stubs remain at [model catalogue](./model-entity-catalogue.md),
  | [[FEAT-013-saved-poses-albums-account-backed\|FEAT-013]] | Manage Saved Poses and future Albums boundary | Signed-in Account | Own Saved/Unsave/Saved list/Try Pose and SavedEntry semantics; consume FEAT-014’s valid Account/session; Albums remain future/out of scope. |
  | [[FEAT-014-manage-account-and-session\|FEAT-014]] | Manage Account and Session | Signed-in Account or Guest | Own Account entry/screen, identity/provider/session presentation, sign-out, expiry/invalid-session recovery, signed-out gating, and account isolation; no profile editing or new auth contract. |
  | [[FEAT-015-manage-app-settings-and-preferences\|FEAT-015]] | Manage App Settings and Preferences | Guest or signed-in user | Own the grouped Settings surface, app-level non-camera preference boundary, privacy/permission/help/about entry points, and cross-feature routing; does not own Camera settings, Account/session, Saved, or Premium behavior. |
+| [[FEAT-016-user-onboarding-and-interest-personalization\|FEAT-016]] | User Onboarding and Interest Personalization | First-time Photographer or returning user | First-run experience, interest vibe selection, interactive pose alignment trial, and permission priming; hands off to FEAT-001/FEAT-003 and replayable from FEAT-015. |
 
 ## Supporting surfaces
 
@@ -71,6 +73,7 @@ Harness stubs remain at [model catalogue](./model-entity-catalogue.md),
 - FEAT-013 consumes FEAT-014’s valid Account/session and does not redefine Account UI or sign-out semantics.
  - FEAT-014 owns observable Account/session lifecycle; shared Account fields and session/API mechanics remain in their canonical specs.
  - FEAT-015 owns the Settings surface and only approved app-level non-camera preferences; it routes to FEAT-011, FEAT-013, and FEAT-014 and leaves all camera settings with FEAT-012.
+- FEAT-016 owns the First-Time User Experience (FTUE) and interest vibe selection; it hands off to FEAT-001 Camera or FEAT-003 Pose Library, and is replayable via FEAT-015 Settings.
 
 ## Documentation rules
 

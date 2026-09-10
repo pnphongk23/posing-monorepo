@@ -1,0 +1,793 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#fbf6ef" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#181614" media="(prefers-color-scheme: dark)">
+  <title>AI Pose — Onboarding v2</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --surface: #fbf6ef;
+      --surface-raised: #fffdf9;
+      --surface-muted: #f1ebe3;
+      --ink: #171717;
+      --ink-muted: #67615b;
+      --line: #171717;
+      --accent: #e7a1b0;
+      --accent-strong: #cf6f85;
+      --success: #dff5d0;
+      --success-strong: #317743;
+      --shadow: #171717;
+      --radius-sm: 12px;
+      --radius-md: 18px;
+      --radius-lg: 28px;
+      --ease-out: cubic-bezier(.23, 1, .32, 1);
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", system-ui, sans-serif;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --surface: #181614;
+        --surface-raised: #24211e;
+        --surface-muted: #302c28;
+        --ink: #f7f1e9;
+        --ink-muted: #bdb5ac;
+        --line: #f7f1e9;
+        --accent: #e7a1b0;
+        --accent-strong: #f0b4c1;
+        --success: #263f29;
+        --success-strong: #a9e5a4;
+        --shadow: #000;
+      }
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body { min-height: 100%; }
+
+    body {
+      margin: 0;
+      background: var(--surface);
+      color: var(--ink);
+      -webkit-font-smoothing: antialiased;
+      overscroll-behavior: none;
+    }
+
+    button, input { font: inherit; }
+
+    button { color: inherit; }
+
+    button:focus-visible,
+    input:focus-visible {
+      outline: 3px solid var(--accent-strong);
+      outline-offset: 3px;
+    }
+
+    .app {
+      width: min(100%, 430px);
+      height: 100svh;
+      min-height: 100svh;
+      margin: 0 auto;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      background: var(--surface);
+      overflow: hidden;
+    }
+
+    .topbar {
+      display: grid;
+      grid-template-columns: 48px 1fr 48px;
+      align-items: center;
+      gap: 12px;
+      padding: max(12px, env(safe-area-inset-top)) 20px 8px;
+      z-index: 10;
+    }
+
+    .icon-button,
+    .skip-button {
+      min-width: 48px;
+      min-height: 48px;
+      border: 0;
+      background: transparent;
+      display: grid;
+      place-items: center;
+      cursor: pointer;
+      border-radius: var(--radius-sm);
+      font-weight: 750;
+    }
+
+    .icon-button[hidden], .skip-button[hidden] { display: block; visibility: hidden; }
+
+    .icon-button svg { width: 22px; height: 22px; }
+
+    .progress {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 6px;
+      align-items: center;
+    }
+
+    .progress__segment {
+      height: 5px;
+      background: var(--surface-muted);
+      border-radius: 999px;
+      overflow: hidden;
+    }
+
+    .progress__segment::after {
+      content: "";
+      display: block;
+      width: 0;
+      height: 100%;
+      background: var(--accent-strong);
+      border-radius: inherit;
+      transition: width 240ms var(--ease-out);
+    }
+
+    .progress__segment.is-complete::after { width: 100%; }
+
+    .main {
+      position: relative;
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    .stage {
+      position: absolute;
+      inset: 0;
+      overflow-y: auto;
+      padding: 12px 24px 28px;
+      opacity: 0;
+      visibility: hidden;
+      transform: translateX(18px);
+      transition: none;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    .stage.is-active {
+      position: absolute;
+      opacity: 1;
+      visibility: visible;
+      transform: translateX(0);
+      transition: opacity 220ms var(--ease-out), transform 260ms var(--ease-out);
+    }
+
+    .stage.is-backward { transform: translateX(-18px); }
+
+    .eyebrow {
+      margin: 0 0 8px;
+      color: var(--accent-strong);
+      font-size: 13px;
+      line-height: 1.4;
+      font-weight: 800;
+    }
+
+    h1 {
+      margin: 0;
+      max-width: 360px;
+      font-size: clamp(32px, 9vw, 42px);
+      line-height: 1.02;
+      letter-spacing: -.035em;
+      font-weight: 850;
+    }
+
+    h2 {
+      margin: 0;
+      font-size: 28px;
+      line-height: 1.08;
+      letter-spacing: -.025em;
+      font-weight: 820;
+    }
+
+    .lede {
+      margin: 12px 0 0;
+      color: var(--ink-muted);
+      font-size: 16px;
+      line-height: 1.5;
+    }
+
+    .hero {
+      position: relative;
+      height: min(43svh, 380px);
+      min-height: 300px;
+      margin-top: 20px;
+      overflow: hidden;
+      border: 2px solid var(--line);
+      border-radius: var(--radius-lg);
+      background: #d8c9bb;
+      box-shadow: 5px 5px 0 var(--shadow);
+    }
+
+    .hero::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(180deg, rgba(23, 23, 23, .05), transparent 48%, rgba(23, 23, 23, .22));
+      pointer-events: none;
+    }
+
+    .hero__label {
+      position: absolute;
+      top: 16px;
+      left: 16px;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      padding: 7px 10px;
+      border: 1.5px solid var(--line);
+      border-radius: 999px;
+      background: var(--surface-raised);
+      font-size: 12px;
+      font-weight: 750;
+      z-index: 2;
+    }
+
+    .hero__label::before {
+      content: "";
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--success-strong);
+    }
+
+    .pose-photo,
+    .pose-outline {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+    }
+
+    .pose-photo {
+      display: block;
+      object-fit: cover;
+      object-position: center top;
+    }
+
+    .pose-outline {
+      z-index: 1;
+      object-fit: cover;
+      object-position: center top;
+      opacity: .78;
+      transform: translateX(18px);
+    }
+
+    .hero .pose-outline {
+      animation: guide-lock 2400ms var(--ease-out) infinite;
+    }
+
+    @keyframes guide-lock {
+      0%, 18% { transform: translateX(18px); opacity: .42; }
+      48%, 82% { transform: translateX(0); opacity: .78; }
+      100% { transform: translateX(18px); opacity: .5; }
+    }
+
+    .interest-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-top: 24px;
+      padding-bottom: 8px;
+    }
+
+    .interest {
+      min-height: 92px;
+      padding: 16px;
+      border: 2px solid var(--line);
+      border-radius: var(--radius-md);
+      background: var(--surface-raised);
+      box-shadow: 3px 3px 0 var(--shadow);
+      text-align: left;
+      cursor: pointer;
+      transition: transform 120ms ease-out, box-shadow 120ms ease-out, background 160ms ease-out;
+    }
+
+    .interest:active,
+    .button:active:not(:disabled) {
+      transform: translate(3px, 3px) scale(.99);
+      box-shadow: 0 0 0 var(--shadow);
+    }
+
+    .interest[aria-pressed="true"] { background: var(--accent); }
+
+    .interest__title { display: block; font-size: 16px; font-weight: 800; }
+    .interest__hint { display: block; margin-top: 6px; color: var(--ink-muted); font-size: 12px; line-height: 1.35; }
+
+    .selection-status {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      margin-top: 14px;
+      color: var(--ink-muted);
+      font-size: 13px;
+      font-weight: 650;
+    }
+
+    .demo {
+      position: relative;
+      height: min(46svh, 390px);
+      min-height: 330px;
+      margin-top: 20px;
+      overflow: hidden;
+      border-radius: var(--radius-lg);
+      background: #211e1c;
+      color: #fff;
+    }
+
+    .demo__photo {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      object-position: center;
+    }
+
+    .demo__outline {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      object-position: center;
+      opacity: .9;
+      transform: translateX(var(--guide-offset, 38px));
+      transition: opacity 160ms ease-out;
+    }
+
+    .demo__grid {
+      position: absolute;
+      inset: 0;
+      z-index: 1;
+      background:
+        linear-gradient(rgba(255, 255, 255, .15) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, .15) 1px, transparent 1px);
+      background-size: 33.333% 33.333%;
+      pointer-events: none;
+    }
+
+    .demo__outline { z-index: 2; }
+    .demo__outline--green { opacity: 0; }
+    .demo.is-matched .demo__outline--pink { opacity: 0; }
+    .demo.is-matched .demo__outline--green { opacity: 1; }
+
+    .match-pill {
+      position: absolute;
+      top: 16px;
+      left: 50%;
+      z-index: 3;
+      transform: translateX(-50%) scale(.96);
+      padding: 9px 13px;
+      border-radius: 999px;
+      background: var(--accent);
+      color: #171717;
+      font-size: 12px;
+      font-weight: 850;
+      opacity: .92;
+      transition: transform 180ms var(--ease-out), background 180ms ease-out;
+    }
+
+    .demo.is-matched .match-pill {
+      transform: translateX(-50%) scale(1);
+      background: #9ee493;
+    }
+
+    .slider-wrap {
+      margin-top: 20px;
+      padding: 16px 18px;
+      border: 2px solid var(--line);
+      border-radius: var(--radius-md);
+      background: var(--surface-raised);
+    }
+
+    .slider-labels {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 12px;
+      color: var(--ink-muted);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    input[type="range"] {
+      width: 100%;
+      min-height: 44px;
+      margin: 0;
+      accent-color: var(--accent-strong);
+      cursor: grab;
+    }
+
+    .permission-card,
+    .launch-card {
+      margin-top: 24px;
+      padding: 24px;
+      border: 2px solid var(--line);
+      border-radius: var(--radius-lg);
+      background: var(--surface-raised);
+      box-shadow: 5px 5px 0 var(--shadow);
+    }
+
+    .camera-mark {
+      width: 64px;
+      height: 64px;
+      display: grid;
+      place-items: center;
+      margin-bottom: 24px;
+      border: 2px solid var(--line);
+      border-radius: var(--radius-md);
+      background: var(--accent);
+    }
+
+    .camera-mark svg { width: 30px; height: 30px; }
+
+    .permission-list {
+      display: grid;
+      gap: 16px;
+      margin: 24px 0 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .permission-list li {
+      display: grid;
+      grid-template-columns: 24px 1fr;
+      gap: 12px;
+      align-items: start;
+      line-height: 1.42;
+    }
+
+    .permission-list svg { width: 22px; height: 22px; color: var(--accent-strong); }
+
+    .privacy-note {
+      margin-top: 20px;
+      padding: 14px 16px;
+      border-radius: var(--radius-sm);
+      background: var(--success);
+      color: var(--success-strong);
+      font-size: 13px;
+      line-height: 1.45;
+      font-weight: 720;
+    }
+
+    .launch-card {
+      background: var(--accent);
+      color: #171717;
+    }
+
+    .launch-card__count {
+      font-size: clamp(56px, 18vw, 82px);
+      line-height: .9;
+      letter-spacing: -.06em;
+      font-weight: 900;
+    }
+
+    .launch-card__copy {
+      max-width: 260px;
+      margin: 14px 0 0;
+      font-size: 18px;
+      line-height: 1.25;
+      font-weight: 780;
+    }
+
+    .curated-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 22px;
+    }
+
+    .curated-pill {
+      padding: 8px 11px;
+      border: 1.5px solid #171717;
+      border-radius: 999px;
+      background: rgba(255,255,255,.56);
+      font-size: 12px;
+      font-weight: 760;
+    }
+
+    .footer {
+      position: relative;
+      z-index: 8;
+      display: grid;
+      gap: 10px;
+      padding: 14px 24px max(16px, env(safe-area-inset-bottom));
+      background: color-mix(in srgb, var(--surface) 94%, transparent);
+      border-top: 1px solid color-mix(in srgb, var(--line) 13%, transparent);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+    }
+
+    .button {
+      min-height: 54px;
+      padding: 14px 18px;
+      border: 2px solid var(--line);
+      border-radius: var(--radius-md);
+      background: var(--ink);
+      color: var(--surface);
+      box-shadow: 3px 3px 0 var(--accent-strong);
+      cursor: pointer;
+      font-size: 16px;
+      font-weight: 800;
+      transition: transform 120ms ease-out, box-shadow 120ms ease-out, opacity 120ms ease-out;
+    }
+
+    .button--secondary {
+      background: var(--surface-raised);
+      color: var(--ink);
+      box-shadow: 3px 3px 0 var(--shadow);
+    }
+
+    .button:disabled { opacity: .38; cursor: not-allowed; box-shadow: none; }
+
+    .footer__hint {
+      margin: 0;
+      color: var(--ink-muted);
+      text-align: center;
+      font-size: 12px;
+      line-height: 1.35;
+    }
+
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+
+    @media (max-height: 710px) {
+      .hero { min-height: 255px; height: 37svh; }
+      .demo { min-height: 280px; height: 39svh; }
+      .stage { padding-top: 4px; }
+      .lede { margin-top: 8px; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        scroll-behavior: auto !important;
+        animation-duration: .01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: .01ms !important;
+      }
+      .stage, .stage.is-backward { transform: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app" id="app">
+    <header class="topbar" aria-label="Onboarding progress">
+      <button class="icon-button" id="back-button" type="button" aria-label="Go to previous step" hidden>
+        <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+      </button>
+      <div class="progress" id="progress" role="progressbar" aria-valuemin="1" aria-valuemax="5" aria-valuenow="1" aria-label="Step 1 of 5">
+        <span class="progress__segment is-complete"></span><span class="progress__segment"></span><span class="progress__segment"></span><span class="progress__segment"></span><span class="progress__segment"></span>
+      </div>
+      <button class="skip-button" id="skip-button" type="button">Skip</button>
+    </header>
+
+    <main class="main" id="main">
+      <section class="stage is-active" data-stage="1" aria-labelledby="stage-1-title">
+        <p class="eyebrow">MEET YOUR POSING COACH</p>
+        <h1 id="stage-1-title">A great pose,<br>right on camera.</h1>
+        <p class="lede">Pick a pose, line up the guide, and capture a photo that already feels composed.</p>
+          <div class="hero" aria-label="A pose guide moving into alignment with a person">
+            <div class="hero__label">Live guide</div>
+            <img class="pose-photo" src="../assets/onboarding-v2-pose.webp" alt="" width="800" height="1423">
+            <img class="pose-outline" src="../assets/onboarding-v2-outline-white.webp" alt="" width="800" height="1421">
+          </div>
+      </section>
+
+      <section class="stage" data-stage="2" aria-labelledby="stage-2-title" aria-hidden="true">
+        <p class="eyebrow">MAKE IT YOURS</p>
+        <h2 id="stage-2-title">What do you like to shoot?</h2>
+        <p class="lede">Choose at least one. We’ll put the most useful poses first.</p>
+        <div class="interest-grid" id="interest-grid">
+          <button class="interest" type="button" aria-pressed="false" data-interest="Portrait"><span class="interest__title">Portrait</span><span class="interest__hint">Faces, close-ups, solo</span></button>
+          <button class="interest" type="button" aria-pressed="false" data-interest="Cafe"><span class="interest__title">Cafe</span><span class="interest__hint">Tables, windows, details</span></button>
+          <button class="interest" type="button" aria-pressed="false" data-interest="Travel"><span class="interest__title">Travel</span><span class="interest__hint">Landmarks, wide scenes</span></button>
+          <button class="interest" type="button" aria-pressed="false" data-interest="Street"><span class="interest__title">Street</span><span class="interest__hint">Movement, city light</span></button>
+          <button class="interest" type="button" aria-pressed="false" data-interest="Fitness"><span class="interest__title">Fitness</span><span class="interest__hint">Form, motion, strength</span></button>
+          <button class="interest" type="button" aria-pressed="false" data-interest="Couples"><span class="interest__title">Couples</span><span class="interest__hint">Natural connection</span></button>
+          <button class="interest" type="button" aria-pressed="false" data-interest="Professional"><span class="interest__title">Professional</span><span class="interest__hint">Profiles, teams, events</span></button>
+        </div>
+        <div class="selection-status" aria-live="polite"><span id="selection-count">0 selected</span><span>Editable later</span></div>
+      </section>
+
+      <section class="stage" data-stage="3" aria-labelledby="stage-3-title" aria-hidden="true">
+        <p class="eyebrow">TRY IT NOW</p>
+        <h2 id="stage-3-title">Slide the guide into place.</h2>
+        <p class="lede">Move it until the outline locks onto the subject.</p>
+        <div class="demo" id="demo" aria-live="polite">
+          <div class="match-pill" id="match-pill">Keep aligning</div>
+          <img class="demo__photo" src="../assets/onboarding-v2-pose.webp" alt="A person demonstrating a full-body portrait pose" width="800" height="1423">
+          <div class="demo__grid" aria-hidden="true"></div>
+          <img class="demo__outline demo__outline--pink" id="demo-outline-pink" src="../assets/onboarding-v2-outline-pink.webp" alt="" width="800" height="1421">
+          <img class="demo__outline demo__outline--green" id="demo-outline-green" src="../assets/onboarding-v2-outline-green.webp" alt="" width="800" height="1421">
+        </div>
+        <div class="slider-wrap">
+          <div class="slider-labels"><span>Move left</span><span>Move right</span></div>
+          <label class="sr-only" for="alignment-slider">Pose guide horizontal alignment</label>
+          <input id="alignment-slider" type="range" min="-60" max="60" value="38" step="1">
+        </div>
+      </section>
+
+      <section class="stage" data-stage="4" aria-labelledby="stage-4-title" aria-hidden="true">
+        <p class="eyebrow">BEFORE THE CAMERA OPENS</p>
+        <h2 id="stage-4-title">Your camera stays yours.</h2>
+        <p class="lede">AI Pose needs camera access only to place the guide over your live view.</p>
+        <div class="permission-card">
+          <div class="camera-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 6 16 8h3a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h3l1.5-2h5Z"/><circle cx="12" cy="14" r="3"/></svg></div>
+          <h2>Camera access</h2>
+          <ul class="permission-list">
+            <li><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 12h16M12 4v16"/></svg><span>Places the selected pose directly over the live viewfinder.</span></li>
+            <li><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 4 4L19 6"/></svg><span>Photo Library access is requested later, only when you import or save.</span></li>
+          </ul>
+          <div class="privacy-note">Joint detection runs 100% on device. Camera frames are not uploaded.</div>
+        </div>
+      </section>
+
+      <section class="stage" data-stage="5" aria-labelledby="stage-5-title" aria-hidden="true">
+        <p class="eyebrow">YOU’RE READY</p>
+        <h2 id="stage-5-title">Your first poses are waiting.</h2>
+        <p class="lede">Start with the camera guide, or browse recommendations shaped around your picks.</p>
+        <div class="launch-card">
+          <div class="launch-card__count" id="pose-count">48</div>
+          <p class="launch-card__copy">recommended poses, ready for your next shoot</p>
+          <div class="curated-list" id="curated-list" aria-label="Selected interests"></div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer" id="footer">
+      <button class="button" id="primary-button" type="button">Show me how</button>
+      <button class="button button--secondary" id="secondary-button" type="button" hidden>Maybe later</button>
+      <p class="footer__hint" id="footer-hint">No account required</p>
+    </footer>
+  </div>
+
+  <script>
+    (() => {
+      const stageEls = [...document.querySelectorAll('.stage')];
+      const progressEls = [...document.querySelectorAll('.progress__segment')];
+      const backButton = document.querySelector('#back-button');
+      const skipButton = document.querySelector('#skip-button');
+      const primaryButton = document.querySelector('#primary-button');
+      const secondaryButton = document.querySelector('#secondary-button');
+      const footerHint = document.querySelector('#footer-hint');
+      const progress = document.querySelector('#progress');
+      const interestButtons = [...document.querySelectorAll('.interest')];
+      const selectionCount = document.querySelector('#selection-count');
+      const slider = document.querySelector('#alignment-slider');
+      const demo = document.querySelector('#demo');
+      const demoOutlines = [...document.querySelectorAll('.demo__outline')];
+      const matchPill = document.querySelector('#match-pill');
+      const curatedList = document.querySelector('#curated-list');
+      const poseCount = document.querySelector('#pose-count');
+      const params = new URLSearchParams(location.search);
+      const replay = params.get('replay') === 'true';
+      const requestedStage = Number(params.get('step'));
+      const selected = new Set();
+      let stage = Number.isInteger(requestedStage) && requestedStage >= 1 && requestedStage <= 5 ? requestedStage : 1;
+      let matched = false;
+      let permissionStatus = 'not_requested';
+
+      const config = {
+        1: { primary: 'Show me how', hint: 'No account required' },
+        2: { primary: 'Build my pose list', hint: 'Choose at least one interest' },
+        3: { primary: 'I’ve got it', hint: 'Find the perfect match to continue' },
+        4: { primary: 'Continue to camera', secondary: 'Maybe later', hint: 'You can change this in Settings' },
+        5: { primary: 'Open camera with guide', secondary: 'Browse recommended poses', hint: 'Your interests are saved on this device' }
+      };
+
+      function haptic() {
+        if ('vibrate' in navigator) navigator.vibrate(8);
+      }
+
+      function updateSelection() {
+        interestButtons.forEach((button) => button.setAttribute('aria-pressed', String(selected.has(button.dataset.interest))));
+        selectionCount.textContent = `${selected.size} selected`;
+        if (stage === 2) primaryButton.disabled = selected.size === 0;
+      }
+
+      function updateDemo() {
+        const value = Number(slider.value);
+        matched = Math.abs(value) <= 6;
+        demoOutlines.forEach((outline) => outline.style.setProperty('--guide-offset', `${value}px`));
+        demo.classList.toggle('is-matched', matched);
+        matchPill.textContent = matched ? 'Perfect match' : 'Keep aligning';
+        if (stage === 3) primaryButton.disabled = !matched;
+      }
+
+      function renderSummary() {
+        const interests = selected.size ? [...selected] : ['Portrait', 'Travel'];
+        curatedList.replaceChildren(...interests.map((interest) => {
+          const pill = document.createElement('span');
+          pill.className = 'curated-pill';
+          pill.textContent = interest;
+          return pill;
+        }));
+        poseCount.textContent = String(24 + interests.length * 12);
+      }
+
+      function render(nextStage, direction = 1) {
+        const previous = stage;
+        stage = nextStage;
+        stageEls.forEach((el) => {
+          const active = Number(el.dataset.stage) === stage;
+          el.classList.toggle('is-active', active);
+          el.classList.toggle('is-backward', !active && direction < 0 && Number(el.dataset.stage) === previous);
+          el.setAttribute('aria-hidden', String(!active));
+          if (active) el.scrollTop = 0;
+        });
+        progressEls.forEach((el, index) => el.classList.toggle('is-complete', index < stage));
+        progress.setAttribute('aria-valuenow', String(stage));
+        progress.setAttribute('aria-label', `Step ${stage} of 5`);
+        backButton.hidden = stage === 1;
+        skipButton.hidden = stage > 3;
+        skipButton.textContent = replay ? 'Exit' : 'Skip';
+        skipButton.setAttribute('aria-label', replay ? 'Exit to Settings' : 'Skip onboarding');
+        const current = config[stage];
+        primaryButton.textContent = current.primary;
+        secondaryButton.hidden = !current.secondary;
+        if (current.secondary) secondaryButton.textContent = current.secondary;
+        footerHint.textContent = current.hint;
+        primaryButton.disabled = (stage === 2 && selected.size === 0) || (stage === 3 && !matched);
+        if (stage === 5) renderSummary();
+        history.replaceState(null, '', `${location.pathname}?step=${stage}${replay ? '&replay=true' : ''}`);
+      }
+
+      function finish(destination) {
+        localStorage.setItem('has_completed_onboarding', 'true');
+        localStorage.setItem('user_selected_interests', JSON.stringify(selected.size ? [...selected] : ['Portrait', 'Travel']));
+        localStorage.setItem('camera_permissions_status', permissionStatus);
+        localStorage.setItem('onboarding_completed_at', new Date().toISOString());
+        location.href = destination;
+      }
+
+      interestButtons.forEach((button) => button.addEventListener('click', () => {
+        const value = button.dataset.interest;
+        selected.has(value) ? selected.delete(value) : selected.add(value);
+        haptic();
+        updateSelection();
+      }));
+
+      slider.addEventListener('input', () => {
+        const wasMatched = matched;
+        updateDemo();
+        if (!wasMatched && matched) haptic();
+      });
+
+      backButton.addEventListener('click', () => { if (stage > 1) render(stage - 1, -1); });
+      skipButton.addEventListener('click', () => {
+        if (replay) location.href = 'settings.html';
+        else finish('poses-list.html');
+      });
+
+      primaryButton.addEventListener('click', () => {
+        if (stage < 4) render(stage + 1);
+        else if (stage === 4) {
+          permissionStatus = 'primed';
+          render(5);
+        } else finish('camera-live.html');
+      });
+
+      secondaryButton.addEventListener('click', () => {
+        if (stage === 4) {
+          permissionStatus = 'deferred';
+          render(5);
+        } else if (stage === 5) finish('poses-list.html');
+      });
+
+      updateSelection();
+      updateDemo();
+      render(stage);
+    })();
+  </script>
+</body>
+</html>
