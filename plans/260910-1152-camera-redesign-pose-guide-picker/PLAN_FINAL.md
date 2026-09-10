@@ -1,0 +1,17 @@
+# PLAN_FINAL — Camera Redesign & Published Pose Guide Picker
+
+**Status:** READY_FOR_WORK after fresh independent review `d021db9d-ee00-4b2d-8477-cc09ebab338a`; final candidate for implementation.
+
+**Goal.** Deliver the SCR-001-01 CameraScreen redesign for FEAT-001 and a full-screen FEAT-008 published pose-guide picker while preserving permission/capture truth, local-photo persistence, camera settings, lifecycle behavior, and the verified `PreparedPoseReference` handoff.
+
+**Architecture.** Camera owns a full-screen picker child entered from HDR-003 and returned directly to Camera. The bottom rail stays thumbnail/shutter/flip; HDR-003 is the top-header image action beside Tools. The picker reuses `PosesLibraryCoordinator`/`CommunityPose`, shared `SignInPromptController`/`SignInPrompt` with existing `TRY_POSE`, `PoseApiService.downloadImageBytes`, and `PoseImageVerification`. It does not instantiate `PoseDetailViewModel`, add a route, change API DTOs, or add account/Save/Unsave behavior.
+
+**Selection contract.** The picker retains the selected community item through preparation. A verified result emits the existing `PreparedPoseReference`. Camera applies one serialized main-thread selection transition that updates `activeReference`, `CameraUiState.overlaySource`, `PoseServiceLocator.preparedReference`, and existing settings-preserving snapshot persistence; snapshot input must never observe an intermediate broken state. Failed download or MIME verification retains the selected item, shows in-place retryable recovery, and leaves the current overlay, active reference, locator, and snapshot input unchanged.
+
+**Preview contract.** Entering the child stops preview through existing `CameraController.stopPreview()`. Back or verified selection first completes picker unmount/teardown, then commits selection when applicable, then issues existing `startPreview()` once for authorized foreground Camera. No `resume()` or readiness API is invented. The implementation must not start preview from a card callback or race child teardown/AV transition.
+
+**Ownership and write set.** General Lead `b726ad3f-3a3c-49d2-926c-29d0d9610ce0` owns outcome, freeze, and implementation coordination. Tiêu Hà `7ba538b7-add9-4971-9266-869478b2f8ea` owns this plan handoff. After this gate, the assigned implementer may modify `CameraScreen.kt`, create `PoseGuidePickerScreen.kt`, and add focused common tests. Existing coordinator, contract, snapshot, navigation, and handoff code is regression evidence, not an intended edit.
+
+**Acceptance evidence.** Verify iOS permission/capture/persistence regressions; HDR-003 placement and bottom-rail separation; published-only picker loading/empty/error/retry; guest sign-in/cancel; successful atomic selection; failed-preparation retention; settings preservation; direct Back without picker back-stack residue; and ordered picker unmount then preview restart. On physical iOS, record duplicate AV-session ownership, interruptions, and thermal observations. Missing runtime evidence is `Pending-validation` and is owned by General Lead before implementation broadens.
+
+**Unresolved risks/non-goals.** Android has no configured target. FEAT-008 account/session and Save/Unsave persistence, FEAT-012 cold-relaunch durability, native picker states, scale/timeout/tools/feedback/frame-ratio decisions, FEAT-011 timing, and AV/thermal behavior remain unresolved where repo evidence is absent. Android, Search/Home/Gallery redesign, extraction, new backend/public contracts, and legacy-plan edits remain out of scope.
