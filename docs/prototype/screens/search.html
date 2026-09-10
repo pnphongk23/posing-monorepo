@@ -3,12 +3,13 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Search Poses - Snap Pose</title>
+  <title>Find a Pose - Snap Pose</title>
   <!-- Stylesheets -->
   <link rel="stylesheet" href="../styles/reset.css">
   <link rel="stylesheet" href="../styles/base.css">
   <link rel="stylesheet" href="../styles/utilities.css">
   <link rel="stylesheet" href="../styles/components.css">
+  <link rel="stylesheet" href="../styles/search.css">
 </head>
 <body>
   <div class="nb-phone">
@@ -27,45 +28,68 @@
         </svg>
       </div>
     </div>
-    
+
     <!-- Phone Content Area -->
-    <main class="nb-phone__content" id="pose-search">
-      <!-- Search Header -->
-      <header class="nb-nav-bar">
+    <main class="nb-phone__content nb-search-screen" id="pose-search">
+      <header class="nb-nav-bar nb-search-nav">
         <div class="nb-nav-bar__left">
           <a href="poses-list.html" class="nb-btn nb-btn--square nb-btn--white" aria-label="Back to pose library">
             <svg aria-hidden="true"><use href="#icon-back"></use></svg>
           </a>
         </div>
-        <h1 class="nb-nav-bar__title nb-nav-bar__title--page">Search</h1>
+        <h1 class="nb-nav-bar__title nb-search-nav__title">Search</h1>
         <div class="nb-nav-bar__right" aria-hidden="true"></div>
       </header>
 
-      <!-- Search Input Container -->
-      <div class="nb-search-container u-mb-md">
-        <label for="search-screen-input" class="nb-search-label">Search pose titles</label>
-        <div class="nb-search-bar" style="display: flex; margin-bottom: 0; position: relative;">
-          <svg width="16" height="16" aria-hidden="true" style="color: var(--nb-color-gray); flex-shrink: 0; margin-right: var(--nb-space-sm);"><use href="#icon-search"></use></svg>
-          <input type="search" id="search-screen-input" class="nb-search-bar__input" placeholder="Type a title" autocomplete="off" enterkeyhint="search" autofocus>
-          <button id="search-clear-btn" class="nb-btn nb-btn--square nb-btn--white" aria-label="Clear Search" style="position: absolute; right: 0; border: none; box-shadow: none; background: transparent; display: none; width: 44px; height: 44px; justify-content: center; align-items: center; padding: 0;">
-            <svg aria-hidden="true" style="width: 16px; height: 16px;"><use href="#icon-close"></use></svg>
+      <form class="nb-search-form" id="search-form" role="search">
+        <label for="search-screen-input" class="sr-only">Search poses</label>
+        <div class="nb-search-field">
+          <svg aria-hidden="true"><use href="#icon-search"></use></svg>
+          <input type="search" id="search-screen-input" class="nb-search-bar__input" placeholder="Search poses" autocomplete="off" enterkeyhint="search" autofocus>
+          <button id="search-clear-btn" class="nb-search-clear" type="button" aria-label="Clear search" hidden>
+            <svg aria-hidden="true"><use href="#icon-close"></use></svg>
           </button>
         </div>
+      </form>
+
+      <div id="search-state-message" class="nb-state-message nb-search-state" role="status" aria-live="polite" hidden></div>
+
+      <div id="search-discovery" class="nb-search-discovery" aria-live="polite">
+        <section class="nb-search-section" aria-labelledby="recent-heading">
+          <div class="nb-search-section__header">
+            <h2 id="recent-heading">Recent searches</h2>
+          </div>
+          <div class="nb-search-chip-row" id="search-recent-chips" aria-label="Recent searches">
+            <button type="button" class="nb-search-chip" data-search-query="Dancing">Dancing</button>
+            <button type="button" class="nb-search-chip" data-search-query="Stretching">Stretching</button>
+            <button type="button" class="nb-search-chip" data-search-query="Warrior">Warrior</button>
+          </div>
+        </section>
       </div>
 
-      <div id="search-state-message" class="nb-state-message" role="status" aria-live="polite" hidden></div>
-      <div id="search-results-count" class="nb-grid-group-title nb-grid-group-title--count-only" aria-live="polite">
-        <span class="nb-grid-group-count">6 poses</span>
-      </div>
-
-      <!-- Results Grid -->
-      <div class="nb-grid-scroll-area">
-        <div class="nb-grid--masonry" id="search-results-grid">
-          <!-- Populated dynamically by scripts/app.js -->
+      <section id="search-results-panel" class="nb-search-results-panel" aria-labelledby="search-results-heading" hidden>
+        <div class="nb-search-results-header">
+          <div>
+            <p class="nb-search-kicker">YOUR MATCHES</p>
+            <h2 id="search-results-heading">Results</h2>
+          </div>
+          <span id="search-results-count" class="nb-search-results-count" aria-live="polite">0 poses</span>
         </div>
-      </div>
+
+        <div class="nb-search-filter-row" role="group" aria-label="Filter search results">
+          <button type="button" class="nb-search-filter is-active" data-search-source="all" aria-pressed="true">All poses</button>
+          <button type="button" class="nb-search-filter" data-search-source="my-poses" aria-pressed="false">My poses</button>
+          <button type="button" class="nb-search-filter" data-search-source="community" aria-pressed="false">Community</button>
+        </div>
+
+        <div class="nb-grid-scroll-area nb-search-results-scroll">
+          <div class="nb-grid--masonry" id="search-results-grid" aria-live="polite">
+            <!-- Populated dynamically by scripts/app.js -->
+          </div>
+        </div>
+      </section>
     </main>
-    
+
     <!-- Home Bar Indicator -->
     <div class="nb-phone__footer">
       <div class="nb-phone__home-indicator"></div>

@@ -211,10 +211,11 @@ document.addEventListener('DOMContentLoaded', function() {
     const detailPoseSvg = document.getElementById('detail-pose-svg-container');
     const detailMetadata = document.getElementById('detail-metadata');
     const detailTryPoseBtn = document.getElementById('detail-try-pose-btn');
-    const detailDeleteBtn = document.getElementById('detail-delete-btn');
-    const confirmDeleteBtn = document.getElementById('confirm-delete-btn');
-    const deleteModal = document.getElementById('delete-pose-modal');
-    const detailReturnLink = document.getElementById('detail-return-link');
+      const detailDeleteBtn = document.getElementById('detail-delete-btn');
+      const confirmDeleteBtn = document.getElementById('confirm-delete-btn');
+      const deleteModal = document.getElementById('delete-pose-modal');
+      const detailReturnLink = document.getElementById('detail-return-link');
+      const detailBackLink = document.getElementById('detail-back');
 
     function showDetailUnavailable() {
       detailContent.hidden = true;
@@ -257,9 +258,19 @@ document.addEventListener('DOMContentLoaded', function() {
         detailPoseSource.classList.toggle('nb-tag--blue', pose.category === 'community');
         detailPoseSource.classList.toggle('nb-tag--green', pose.category !== 'community');
       }
-      if (detailPoseContext) detailPoseContext.textContent = metadata.context || 'Metadata not provided';
-      if (detailPoseSvg) detailPoseSvg.innerHTML = pose.svg;
-      if (detailMetadata) {
+        if (detailPoseContext) detailPoseContext.textContent = metadata.context || 'Metadata not provided';
+        if (detailPoseSvg) detailPoseSvg.innerHTML = pose.svg;
+        if (detailBackLink) {
+          const searchOrigin = new URLSearchParams();
+          if (params.get('q')) searchOrigin.set('q', params.get('q'));
+          if (params.get('source')) searchOrigin.set('source', params.get('source'));
+          const cameFromSearch = params.has('q');
+          detailBackLink.href = cameFromSearch
+            ? `search.html${searchOrigin.toString() ? `?${searchOrigin.toString()}` : ''}`
+            : `poses-list.html?tab=${pose.category === 'community' ? 'community' : 'my-poses'}`;
+          detailBackLink.setAttribute('aria-label', cameFromSearch ? 'Back to Search' : 'Back to pose library');
+        }
+        if (detailMetadata) {
         detailMetadata.innerHTML = '';
         appendMetadata('Author', metadata.author);
         appendMetadata('Difficulty', metadata.difficulty);
@@ -301,106 +312,250 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   }
 
-  // 3. Shutter Click Flash Simulation
+  // 3. Camera state and capture feedback
   const shutterBtn = document.getElementById('shutter-btn');
   const cameraViewport = document.getElementById('camera-feed');
+  const cameraStatus = document.getElementById('camera-status');
+  const cameraShutterLabel = document.getElementById('camera-shutter-label');
+  const galleryThumb = document.getElementById('camera-gallery-thumb');
+  const permissionOverlay = document.getElementById('camera-permission-state');
+  const permissionAction = document.getElementById('camera-permission-action');
+    const cameraSettingsBtn = document.getElementById('camera-settings-btn');
+      const cameraZoomBtn = document.getElementById('camera-zoom-btn');
+      const cameraZoomSlider = document.getElementById('camera-zoom-slider');
+    const cameraFlipBtn = document.getElementById('camera-flip-btn');
+    const cameraGuideBtn = document.querySelector('.nb-camera-guide-chip');
+    const cameraShutterDefaultLabel = shutterBtn
+      ? shutterBtn.getAttribute('aria-label') || 'Capture photo'
+      : 'Capture photo';
+    const cameraState = new URLSearchParams(window.location.search).get('state');
+
+  function setCameraStatus(message, tone, hideAfter) {
+    if (!cameraStatus) return;
+    cameraStatus.textContent = message;
+    cameraStatus.dataset.tone = tone || 'success';
+    cameraStatus.hidden = false;
+    window.clearTimeout(cameraStatus._hideTimer);
+    if (hideAfter) {
+      cameraStatus._hideTimer = window.setTimeout(() => {
+        cameraStatus.hidden = true;
+      }, hideAfter);
+    }
+  }
+
+  function setCameraUnavailable(isUnavailable) {
+    if (permissionOverlay) permissionOverlay.hidden = !isUnavailable;
+      [shutterBtn, cameraSettingsBtn, cameraZoomBtn, cameraZoomSlider, cameraFlipBtn, cameraGuideBtn, galleryThumb].forEach(control => {
+      if (!control) return;
+      control.disabled = isUnavailable;
+      control.setAttribute('aria-disabled', String(isUnavailable));
+    });
+    if (shutterBtn) shutterBtn.classList.toggle('is-disabled', isUnavailable);
+  }
+
+  if (cameraViewport) {
+    if (cameraState === 'permission-denied') {
+      setCameraUnavailable(true);
+    } else if (cameraState === 'loading') {
+      cameraViewport.dataset.cameraState = 'loading';
+      setCameraStatus('Starting camera…', 'info');
+    } else if (cameraState === 'error') {
+      setCameraStatus('We could not save that photo. Try again.', 'error');
+    }
+  }
+
+  if (permissionAction) {
+    permissionAction.addEventListener('click', function() {
+      setCameraStatus('Open your device Settings to allow camera access.', 'info');
+    });
+  }
+
+  if (galleryThumb) {
+    galleryThumb.addEventListener('click', function() {
+      if (galleryThumb.disabled) return;
+      window.location.href = 'gallery.html';
+    });
+  }
 
   if (shutterBtn && cameraViewport) {
-    shutterBtn.addEventListener('click', function(e) {
+    let captureInFlight = false;
+    shutterBtn.addEventListener('click', function() {
+      if (captureInFlight || shutterBtn.disabled) return;
       if (sessionStorage.getItem('ai-pose.premium') !== 'true') {
         window.location.href = paywallUrl('camera-live.html');
         return;
       }
-      // Simulate physical flash card blink
-      const flash = document.createElement('div');
-      flash.style.position = 'absolute';
-      flash.style.top = '0';
-      flash.style.left = '0';
-      flash.style.width = '100%';
-      flash.style.height = '100%';
-      flash.style.backgroundColor = '#FFFFFF';
-      flash.style.opacity = '1';
-      flash.style.transition = 'opacity 0.25s ease';
-      flash.style.zIndex = '999';
-      cameraViewport.appendChild(flash);
 
-      // Sound feedback (if supported, silent fallback)
-      try {
-        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        const osc = audioCtx.createOscillator();
-        const gain = audioCtx.createGain();
-        osc.connect(gain);
-        gain.connect(audioCtx.destination);
-        osc.frequency.value = 1000;
-        gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
-        osc.start();
-        osc.stop(audioCtx.currentTime + 0.1);
-      } catch (err) {}
+        captureInFlight = true;
+        shutterBtn.disabled = true;
+        shutterBtn.classList.add('is-busy');
+        shutterBtn.setAttribute('aria-busy', 'true');
+        shutterBtn.setAttribute('aria-label', 'Saving photo');
+        if (cameraStatus) cameraStatus.hidden = true;
+        if (cameraShutterLabel) cameraShutterLabel.textContent = 'Saving…';
 
-      // Fade out flash and redirect to Extracting screen
-      setTimeout(() => {
-        flash.style.opacity = '0';
-        setTimeout(() => {
-          window.location.href = 'camera-extracting.html';
-        }, 150);
-      }, 50);
+        window.setTimeout(() => {
+          captureInFlight = false;
+          shutterBtn.disabled = false;
+          shutterBtn.classList.remove('is-busy');
+          shutterBtn.removeAttribute('aria-busy');
+          shutterBtn.setAttribute('aria-label', cameraShutterDefaultLabel);
+          if (cameraShutterLabel) cameraShutterLabel.textContent = cameraShutterDefaultLabel;
+          if (galleryThumb) {
+            galleryThumb.style.backgroundImage = cameraViewport.style.backgroundImage;
+            galleryThumb.setAttribute('aria-label', 'Open Gallery, latest captured photo');
+            galleryThumb.classList.add('is-new');
+          }
+        }, 600);
     });
   }
 
   // 4. Gallery Screen Logic
-  const galleryGrid = document.getElementById('gallery-grid');
+    const galleryGrid = document.getElementById('gallery-grid');
 
-  if (galleryGrid && typeof GALLERY_FIXTURES !== 'undefined') {
-    // Combine today and yesterday into one continuous list
-    const allPhotos = [...GALLERY_FIXTURES.today, ...GALLERY_FIXTURES.yesterday];
-    let gallerySearchQuery = '';
-
-    function renderGallery() {
-      galleryGrid.innerHTML = '';
-
-      const filtered = allPhotos.filter(photo => {
-        const queryLower = gallerySearchQuery.toLowerCase();
-        const titleMatch = photo.title.toLowerCase().includes(queryLower);
-        const tagMatch = photo.tag ? photo.tag.toLowerCase().includes(queryLower) : false;
-        return titleMatch || tagMatch;
-      });
-
-      if (filtered.length === 0) {
-        galleryGrid.innerHTML = `
-          <div class="nb-gallery-empty u-text-center u-text-muted">
-            No photos found.
-          </div>
-        `;
-        return;
+    if (galleryGrid && typeof GALLERY_FIXTURES !== 'undefined') {
+      const galleryGroups = [
+        { key: 'today', label: 'Today', daysAgo: 0, photos: GALLERY_FIXTURES.today },
+        { key: 'yesterday', label: 'Yesterday', daysAgo: 1, photos: GALLERY_FIXTURES.yesterday }
+      ];
+      function dateKeyForDaysAgo(daysAgo) {
+        const date = new Date();
+        date.setHours(12, 0, 0, 0);
+        date.setDate(date.getDate() - daysAgo);
+        return date.toISOString().slice(0, 10);
       }
 
-      const aspectClasses = ['nb-card--aspect-tall', 'nb-card--aspect-square', 'nb-card--aspect-short'];
-      filtered.forEach(photo => {
-        const item = document.createElement('div');
-        item.className = 'nb-grid-photo-item';
-        const detailHref = `gallery-detail-v2.html?id=${encodeURIComponent(photo.id)}`;
-        const aspectClass = aspectClasses[galleryGrid.children.length % aspectClasses.length];
+      const galleryItems = galleryGroups.flatMap(group => group.photos.map(photo => ({
+        photo,
+        dateLabel: group.label,
+        daysAgo: group.daysAgo,
+        dateKey: dateKeyForDaysAgo(group.daysAgo)
+      })));
+      const filterButtons = document.querySelectorAll('[data-gallery-filter]');
+      const dateInput = document.getElementById('gallery-date-input');
+      const dateFilterLabel = document.querySelector('[data-gallery-filter-label="custom"]');
+      const validFilters = new Set(['all', 'today', 'week', 'month', 'custom']);
+      const params = new URLSearchParams(window.location.search);
+      let galleryFilter = validFilters.has(params.get('filter')) ? params.get('filter') : 'all';
+      let galleryDate = /^\d{4}-\d{2}-\d{2}$/.test(params.get('date') || '') ? params.get('date') : '';
+      if (galleryFilter === 'custom' && !galleryDate) galleryFilter = 'all';
+      if (dateInput) dateInput.value = galleryDate;
 
-        if (photo.placeholder) {
+      function getVisibleGalleryItems(filter = galleryFilter) {
+        return galleryItems.filter(item => {
+          if (filter === 'today') return item.daysAgo === 0;
+          if (filter === 'week') return item.daysAgo < 7;
+          if (filter === 'month') return item.daysAgo < 30;
+          if (filter === 'custom') return item.dateKey === galleryDate;
+          return true;
+        });
+      }
+
+      function formatGalleryDate(dateValue) {
+        if (!dateValue) return 'Date';
+        return new Intl.DateTimeFormat('en-US', {month: 'short', day: 'numeric'}).format(new Date(`${dateValue}T12:00:00`));
+      }
+
+      function syncGalleryFilterControls() {
+        filterButtons.forEach(button => {
+          const isActive = button.dataset.galleryFilter === galleryFilter;
+          button.classList.toggle('is-active', isActive);
+          button.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+        });
+        if (dateFilterLabel) dateFilterLabel.textContent = galleryFilter === 'custom' ? formatGalleryDate(galleryDate) : 'Date';
+      }
+
+      function syncGalleryUrl() {
+        const nextParams = new URLSearchParams(window.location.search);
+        if (galleryFilter === 'all') nextParams.delete('filter');
+        else nextParams.set('filter', galleryFilter);
+        if (galleryFilter === 'custom' && galleryDate) nextParams.set('date', galleryDate);
+        else nextParams.delete('date');
+        nextParams.delete('view');
+        const query = nextParams.toString();
+        window.history.replaceState({}, '', `${window.location.pathname}${query ? `?${query}` : ''}`);
+      }
+
+      function renderGallery() {
+        galleryGrid.innerHTML = '';
+
+        const visiblePhotos = getVisibleGalleryItems();
+        const visibleCount = visiblePhotos.length;
+
+        if (visibleCount === 0) {
+          galleryGrid.innerHTML = `
+            <p class="nb-gallery-empty u-text-center u-text-muted" role="status">No photos in this filter yet.</p>
+          `;
+          return;
+        }
+
+        const leadStaggerIndex = visiblePhotos.length > 1 ? Math.ceil(visiblePhotos.length / 2) : -1;
+        visiblePhotos.forEach(({photo, dateLabel}, photoIndex) => {
+          const item = document.createElement('div');
+          item.className = 'nb-gallery-item';
+            const detailParams = new URLSearchParams({
+              id: photo.id,
+              filter: galleryFilter
+            });
+            if (galleryFilter === 'custom' && galleryDate) detailParams.set('date', galleryDate);
+            const detailHref = `gallery-detail-v2.html?${detailParams.toString()}`;
+          const photoStyle = photo.photoUrl ? ` style="background-image: url('${photo.photoUrl}');"` : '';
+          const staggerClass = photoIndex === leadStaggerIndex
+            ? 'nb-gallery-item__media--square'
+            : ['nb-gallery-item__media--tall', 'nb-gallery-item__media--square', 'nb-gallery-item__media--wide'][photoIndex % 3];
+          const tag = photo.tag ? `<span class="nb-gallery-item__tag">${escapeHtml(photo.tag)}</span>` : '';
+          const placeholder = photo.placeholder
+            ? '<svg class="nb-gallery-item__placeholder" aria-hidden="true"><use href="#icon-image"></use></svg>'
+            : '';
+
           item.innerHTML = `
-            <a href="${detailHref}" class="nb-card nb-card--gallery-dense nb-card--placeholder ${aspectClass}" aria-label="${escapeHtml(photo.title)}">
-              <svg class="nb-card__placeholder-icon"><use href="#icon-image"></use></svg>
+            <a href="${detailHref}" class="nb-gallery-item__link" aria-label="${escapeHtml(photo.title)}, ${escapeHtml(dateLabel)} at ${escapeHtml(photo.time)}">
+              <span class="nb-gallery-item__media ${staggerClass}${photo.placeholder ? ' nb-gallery-item__media--placeholder' : ''}"${photoStyle}>${placeholder}</span>
+              <span class="nb-gallery-item__meta">
+                <strong class="nb-gallery-item__title">${escapeHtml(photo.title)}</strong>
+                <span class="nb-gallery-item__details">${tag}<span>${escapeHtml(photo.time)}</span></span>
+              </span>
             </a>
           `;
-        } else {
-          item.innerHTML = `
-            <a href="${detailHref}" class="nb-card nb-card--gallery-dense ${aspectClass}" style="background-image: url('${photo.photoUrl}');" aria-label="${escapeHtml(photo.title)}"></a>
-          `;
-        }
-        galleryGrid.appendChild(item);
+          galleryGrid.appendChild(item);
+        });
+      }
+
+      filterButtons.forEach(button => {
+        button.addEventListener('click', () => {
+          if (button.dataset.galleryFilter === 'custom') {
+            if (dateInput) {
+              if (typeof dateInput.showPicker === 'function') dateInput.showPicker();
+              else {
+                dateInput.focus();
+                dateInput.click();
+              }
+            }
+            return;
+          }
+          galleryFilter = button.dataset.galleryFilter;
+          galleryDate = '';
+          syncGalleryFilterControls();
+          renderGallery();
+          syncGalleryUrl();
+        });
       });
+
+      if (dateInput) {
+        dateInput.addEventListener('change', () => {
+          if (!dateInput.value) return;
+          galleryDate = dateInput.value;
+          galleryFilter = 'custom';
+          syncGalleryFilterControls();
+          renderGallery();
+          syncGalleryUrl();
+        });
+      }
+
+      syncGalleryFilterControls();
+      renderGallery();
+      syncGalleryUrl();
     }
-
-    // Search listener removed (plumbing moved to dedicated search screen)
-
-    renderGallery();
-  }
 
   // 4b. Gallery Detail Screen Logic
   const galleryDetailScreen = document.getElementById('gallery-detail-screen');
@@ -466,119 +621,204 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   }
 
-  // 6. Search Screen Logic
-  const searchResultsGrid = document.getElementById('search-results-grid');
-  const searchScreenInput = document.getElementById('search-screen-input');
-  const searchClearBtn = document.getElementById('search-clear-btn');
+    // 6. Search Screen Logic
+    const searchResultsGrid = document.getElementById('search-results-grid');
+    const searchScreenInput = document.getElementById('search-screen-input');
+    const searchClearBtn = document.getElementById('search-clear-btn');
+    const searchForm = document.getElementById('search-form');
+    const searchDiscovery = document.getElementById('search-discovery');
+    const searchResultsPanel = document.getElementById('search-results-panel');
 
-  if (searchResultsGrid && posePrototype) {
-    const searchStateMessage = document.getElementById('search-state-message');
-    const searchResultsCount = document.getElementById('search-results-count');
-    const searchParams = new URLSearchParams(window.location.search);
-    let searchQuery = searchParams.get('q') || '';
-    let forcedState = posePrototype.getPrototypeState();
+    if (searchResultsGrid && posePrototype) {
+        const searchStateMessage = document.getElementById('search-state-message');
+      const searchResultsCount = document.getElementById('search-results-count');
+      const searchResultsHeading = document.getElementById('search-results-heading');
+      const searchParams = new URLSearchParams(window.location.search);
+      const validSources = new Set(['all', 'my-poses', 'community']);
+      let searchQuery = searchParams.get('q') || '';
+      let searchSource = validSources.has(searchParams.get('source')) ? searchParams.get('source') : 'all';
+      let forcedState = posePrototype.getPrototypeState();
 
-    function getSearchResults() {
-      const queryLower = searchQuery.trim().toLocaleLowerCase();
-      return posePrototype.getVisiblePoseFixtures().filter(pose => {
-        const isPublishedCommunity = pose.category !== 'community' || pose.visibility === 'published';
-        return isPublishedCommunity && pose.title.toLocaleLowerCase().includes(queryLower);
-      });
-    }
-
-    function clearSearch() {
-      searchQuery = '';
-      if (searchScreenInput) {
-        searchScreenInput.value = '';
-        searchScreenInput.focus();
-      }
-      if (searchClearBtn) searchClearBtn.style.display = 'none';
-      forcedState = 'ready';
-      renderSearchResults();
-    }
-
-    function renderSearchResults() {
-      const queryLabel = searchQuery.trim() ? ` for “${searchQuery.trim()}”` : '';
-
-      if (forcedState === 'loading') {
-        searchResultsGrid.innerHTML = '<div class="nb-pose-loading" role="status">Searching…</div>';
-        searchResultsGrid.setAttribute('aria-busy', 'true');
-        if (searchResultsCount) searchResultsCount.querySelector('span').textContent = 'Loading';
-        setStateMessage(searchStateMessage, 'loading', 'Searching', 'Looking through pose titles.');
-        return;
-      }
-
-      if (forcedState === 'error') {
-        searchResultsGrid.innerHTML = '';
-        searchResultsGrid.hidden = true;
-        if (searchResultsCount) searchResultsCount.querySelector('span').textContent = 'Unavailable';
-        setStateMessage(searchStateMessage, 'error', 'Search unavailable', 'Something went wrong. Try again.', {
-          label: 'Retry',
-          onClick: () => {
-            forcedState = 'ready';
-            renderSearchResults();
-          }
+      function getAvailablePoses() {
+        return posePrototype.getVisiblePoseFixtures().filter(pose => {
+          return pose.category !== 'community' || pose.visibility === 'published';
         });
-        return;
       }
 
-      const filtered = forcedState === 'empty' ? [] : getSearchResults();
-      searchResultsGrid.innerHTML = '';
-      searchResultsGrid.hidden = false;
-      searchResultsGrid.removeAttribute('aria-busy');
-
-      if (searchResultsCount) {
-        searchResultsCount.querySelector('span').textContent = `${filtered.length} ${filtered.length === 1 ? 'pose' : 'poses'}${queryLabel}`;
-      }
-
-      if (filtered.length === 0) {
-        const emptyCopy = searchQuery.trim()
-          ? `No poses match “${searchQuery.trim()}”. Try a different title.`
-          : 'No poses to search yet.';
-        setStateMessage(searchStateMessage, 'empty', 'No matching poses', emptyCopy, {
-          label: 'Clear search',
-          onClick: clearSearch
+      function getSearchResults() {
+        const queryLower = searchQuery.trim().toLocaleLowerCase();
+        return getAvailablePoses().filter(pose => {
+          const matchesSource = searchSource === 'all' || pose.category === searchSource;
+          const matchesQuery = !queryLower || pose.title.toLocaleLowerCase().includes(queryLower);
+          return matchesSource && matchesQuery;
         });
-        searchResultsGrid.hidden = true;
-        return;
       }
 
-      filtered.forEach((pose, index) => {
-        const card = createPoseCard(pose, index, 'search');
-        if (pose.category === 'community' && searchQuery.trim()) {
-          const link = card.querySelector('a');
-          const route = new URL(link.href, window.location.href);
-          route.searchParams.set('q', searchQuery.trim());
-          link.href = route.href;
-        }
-        searchResultsGrid.appendChild(card);
-      });
-      clearStateMessage(searchStateMessage);
-    }
+      function updateSourceControls() {
+        document.querySelectorAll('.nb-search-filter').forEach(button => {
+          const isActive = button.dataset.searchSource === searchSource;
+          button.classList.toggle('is-active', isActive);
+          button.setAttribute('aria-pressed', String(isActive));
+        });
 
-    if (searchScreenInput) {
-      searchScreenInput.value = searchQuery;
-      searchScreenInput.addEventListener('input', function() {
-        searchQuery = searchScreenInput.value;
-        forcedState = 'ready';
-        if (searchClearBtn) searchClearBtn.style.display = searchQuery ? 'inline-flex' : 'none';
+      }
+
+      function updateUrl() {
         const nextUrl = new URL(window.location.href);
-        if (searchQuery) nextUrl.searchParams.set('q', searchQuery);
+        if (searchQuery.trim()) nextUrl.searchParams.set('q', searchQuery.trim());
         else nextUrl.searchParams.delete('q');
+        if (searchSource !== 'all') nextUrl.searchParams.set('source', searchSource);
+        else nextUrl.searchParams.delete('source');
         nextUrl.searchParams.delete('state');
         window.history.replaceState({}, '', nextUrl);
+      }
+
+      function updateSearchField() {
+        if (searchScreenInput) searchScreenInput.value = searchQuery;
+        if (searchClearBtn) searchClearBtn.hidden = !searchQuery.trim();
+      }
+
+      function clearSearch() {
+        searchQuery = '';
+        forcedState = 'ready';
+        updateSearchField();
+        updateUrl();
         renderSearchResults();
+        if (searchScreenInput) searchScreenInput.focus();
+      }
+
+      function setQuery(value) {
+        searchQuery = value;
+        forcedState = 'ready';
+        updateSearchField();
+        updateUrl();
+        renderSearchResults();
+      }
+
+      function setSource(source) {
+        if (!validSources.has(source)) return;
+        searchSource = source;
+        forcedState = 'ready';
+        updateSourceControls();
+        updateUrl();
+        renderSearchResults();
+      }
+
+      function renderSearchResults() {
+        const sourceLabel = searchSource === 'my-poses' ? 'My poses' : searchSource === 'community' ? 'Community' : '';
+        const hasSearchIntent = Boolean(searchQuery.trim()) || searchSource !== 'all' || forcedState !== 'ready';
+
+        updateSourceControls();
+
+        if (searchDiscovery) searchDiscovery.hidden = hasSearchIntent;
+        if (searchResultsPanel) searchResultsPanel.hidden = !hasSearchIntent;
+        if (!hasSearchIntent) {
+          clearStateMessage(searchStateMessage);
+          searchResultsGrid.innerHTML = '';
+          searchResultsGrid.hidden = false;
+          searchResultsGrid.removeAttribute('aria-busy');
+          return;
+        }
+
+        if (searchResultsHeading) {
+          searchResultsHeading.textContent = searchQuery.trim()
+            ? `Results for “${searchQuery.trim()}”`
+            : sourceLabel || 'Results';
+        }
+
+        if (forcedState === 'loading') {
+          searchResultsGrid.innerHTML = '<div class="nb-pose-loading" role="status">Searching the library…</div>';
+          searchResultsGrid.setAttribute('aria-busy', 'true');
+          if (searchResultsCount) searchResultsCount.textContent = 'Searching…';
+          setStateMessage(searchStateMessage, 'loading', 'Searching', 'Looking through your library and the community.');
+          return;
+        }
+
+        if (forcedState === 'error') {
+          searchResultsGrid.innerHTML = '';
+          searchResultsGrid.hidden = true;
+          searchResultsGrid.removeAttribute('aria-busy');
+          if (searchResultsCount) searchResultsCount.textContent = 'Unavailable';
+          setStateMessage(searchStateMessage, 'error', 'Search is paused', 'We could not load results right now. Your query is still here.', {
+            label: 'Try again',
+            onClick: () => {
+              forcedState = 'ready';
+              renderSearchResults();
+            }
+          });
+          return;
+        }
+
+        const filtered = forcedState === 'empty' ? [] : getSearchResults();
+        const isOffline = forcedState === 'offline';
+        searchResultsGrid.innerHTML = '';
+        searchResultsGrid.hidden = false;
+        searchResultsGrid.removeAttribute('aria-busy');
+
+        if (searchResultsCount) {
+          const resultLabel = `${filtered.length} ${filtered.length === 1 ? 'pose' : 'poses'}`;
+          searchResultsCount.textContent = `${resultLabel}${sourceLabel ? ` · ${sourceLabel}` : ''}`;
+        }
+
+        if (filtered.length === 0) {
+          const emptyTitle = searchQuery.trim() ? 'No close matches' : 'Nothing here yet';
+          const emptyCopy = searchQuery.trim()
+            ? `Try a shorter title, or browse another source.`
+            : `There are no poses in ${sourceLabel.toLocaleLowerCase() || 'this library'} yet.`;
+          setStateMessage(searchStateMessage, 'empty', emptyTitle, emptyCopy, {
+            label: searchQuery.trim() ? 'Clear search' : 'Show all poses',
+            onClick: searchQuery.trim() ? clearSearch : () => setSource('all')
+          });
+          searchResultsGrid.hidden = true;
+          return;
+        }
+
+        filtered.forEach((pose, index) => {
+          const card = createPoseCard(pose, index, 'search');
+          const link = card.querySelector('a');
+          if (link) {
+            const route = new URL(link.href, window.location.href);
+            if (searchQuery.trim()) route.searchParams.set('q', searchQuery.trim());
+            if (searchSource !== 'all') route.searchParams.set('source', searchSource);
+            link.href = route.href;
+          }
+          searchResultsGrid.appendChild(card);
+        });
+        if (isOffline) {
+          setStateMessage(searchStateMessage, 'success', 'Offline library', 'Showing the last confirmed pose list. Community results may be out of date.');
+        } else {
+          clearStateMessage(searchStateMessage);
+        }
+      }
+
+      updateSearchField();
+
+      if (searchScreenInput) {
+        searchScreenInput.addEventListener('input', function() {
+          setQuery(searchScreenInput.value);
+        });
+        window.setTimeout(() => searchScreenInput.focus(), 100);
+      }
+
+      if (searchClearBtn) searchClearBtn.addEventListener('click', clearSearch);
+
+      if (searchForm) {
+        searchForm.addEventListener('submit', function(event) {
+          event.preventDefault();
+          if (searchScreenInput) searchScreenInput.blur();
+          renderSearchResults();
+        });
+      }
+
+      document.querySelectorAll('[data-search-query]').forEach(button => {
+        button.addEventListener('click', () => setQuery(button.dataset.searchQuery || ''));
       });
 
-      window.setTimeout(() => searchScreenInput.focus(), 100);
-    }
+      document.querySelectorAll('[data-search-source]').forEach(button => {
+        button.addEventListener('click', () => setSource(button.dataset.searchSource || 'all'));
+      });
 
-    if (searchClearBtn) {
-      searchClearBtn.style.display = searchQuery ? 'inline-flex' : 'none';
-      searchClearBtn.addEventListener('click', clearSearch);
+      renderSearchResults();
     }
-
-    renderSearchResults();
-  }
 
 });

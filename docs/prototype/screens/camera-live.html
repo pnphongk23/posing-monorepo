@@ -3,130 +3,158 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Snap Pose</title>
-  <!-- Stylesheets -->
+  <title>Snap Pose · Camera</title>
   <link rel="stylesheet" href="../styles/reset.css">
   <link rel="stylesheet" href="../styles/base.css">
   <link rel="stylesheet" href="../styles/utilities.css">
   <link rel="stylesheet" href="../styles/components.css">
+  <link rel="stylesheet" href="../styles/components/camera-viewport.css?camera-scale-factor-2">
 </head>
-<body>
-  <div class="nb-phone">
-    <!-- Status Bar overlaying the camera view -->
+<body class="nb-camera-screen">
+  <div class="nb-phone nb-camera-phone">
     <div class="nb-phone__header nb-phone__header--light">
       <span class="nb-phone__time">9:41</span>
-      <div class="nb-phone__status-icons">
-        <!-- Wifi icon -->
+      <div class="nb-phone__status-icons" aria-hidden="true">
         <svg class="nb-phone__icon" fill="currentColor" viewBox="0 0 24 24">
           <path d="M12 21a2 2 0 1 1 0-4 2 2 0 0 1 0 4zm-4.95-4.95a7 7 0 0 1 9.9 0l-1.42 1.42a5 5 0 0 0-7.06 0L7.05 16.05zm-2.83-2.83a11 11 0 0 1 15.56 0l-1.42 1.42a9 9 0 0 0-12.72 0L4.22 13.22z"/>
         </svg>
-        <!-- Signal icon -->
         <svg class="nb-phone__icon" fill="currentColor" viewBox="0 0 24 24">
           <path d="M2 22h20V2zM20 20h-2V9h2v11zm-4 0h-2V12h2v8zm-4 0h-2V15h2v5z"/>
         </svg>
-        <!-- Battery icon -->
         <svg class="nb-phone__icon" fill="currentColor" viewBox="0 0 24 24" style="width: 20px;">
           <path d="M17 5H3a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2zm1 9h-2V10h2v4z"/>
         </svg>
       </div>
     </div>
-    
-    <!-- Phone Content Area (Full Bleed for Camera) -->
+
     <div class="nb-phone__content nb-phone__content--full">
-      <!-- Camera Viewport with smiling man photo -->
-      <div class="nb-camera-viewport" id="camera-feed" style="background-image: url('https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=600');">
-        
-        <!-- 3x3 Grid Overlay -->
-        <div class="nb-camera-viewport__grid-overlay" id="camera-grid">
-          <div class="nb-camera-viewport__grid-line-h"></div>
-          <div class="nb-camera-viewport__grid-line-h"></div>
-          <div class="nb-camera-viewport__grid-line-v"></div>
-          <div class="nb-camera-viewport__grid-line-v"></div>
-        </div>
+      <main class="nb-camera-surface" aria-label="Camera">
+        <div class="nb-camera-viewport nb-camera-viewport--immersive" id="camera-feed" style="background-image: url('https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=85&w=900');">
+          <div class="nb-camera-viewport__top-scrim" aria-hidden="true"></div>
+          <div class="nb-camera-viewport__bottom-scrim" aria-hidden="true"></div>
 
-        <!-- Face Guide -->
-        <div class="nb-camera-viewport__face-guide">
-          <div class="nb-camera-viewport__face-circle"></div>
-          <!-- Chin/nose guide lines -->
-          <div class="nb-camera-viewport__face-line nb-camera-viewport__face-line--left"></div>
-          <div class="nb-camera-viewport__face-line nb-camera-viewport__face-line--right"></div>
-          <div class="nb-camera-viewport__face-line nb-camera-viewport__face-line--center"></div>
-          <div class="nb-camera-viewport__face-line nb-camera-viewport__face-line--chin-left"></div>
-          <div class="nb-camera-viewport__face-line nb-camera-viewport__face-line--chin-right"></div>
-        </div>
-
-        <!-- Close Button (floating) -->
-        <button id="camera-close-btn" class="nb-btn nb-btn--square nb-btn--white nb-camera-viewport__close-btn" aria-label="Close Camera">
-          <svg style="width: 18px; height: 18px;"><use href="#icon-close"></use></svg>
-        </button>
-
-        <!-- Dots Settings Button (floating) -->
-        <button class="nb-btn nb-btn--square nb-btn--white nb-camera-viewport__dots-btn" aria-label="Camera Settings" aria-expanded="false">
-          <svg style="width: 18px; height: 18px;"><use href="#icon-settings"></use></svg>
-        </button>
-
-        <!-- Dropdown settings menu -->
-        <div class="nb-dropdown" role="menu">
-          <div class="nb-dropdown__row" id="flash-row" style="cursor: pointer;">
-            <span class="nb-dropdown__label">
-              <svg fill="currentColor"><use href="#icon-flash"></use></svg>
-              Flash
-            </span>
-            <span class="nb-dropdown__value" id="flash-value">Auto</span>
+          <div class="nb-camera-viewport__grid-overlay is-hidden" id="camera-grid" aria-hidden="true">
+            <div class="nb-camera-viewport__grid-line-h"></div>
+            <div class="nb-camera-viewport__grid-line-h"></div>
+            <div class="nb-camera-viewport__grid-line-v"></div>
+            <div class="nb-camera-viewport__grid-line-v"></div>
           </div>
-          <div class="nb-dropdown__row">
-            <span class="nb-dropdown__label">
-              <svg stroke="currentColor" fill="none" viewBox="0 0 24 24"><use href="#icon-grid"></use></svg>
-              Grid
+
+          <div class="nb-camera-framing-guide" aria-hidden="true">
+            <span class="nb-camera-framing-guide__corner nb-camera-framing-guide__corner--tl"></span>
+            <span class="nb-camera-framing-guide__corner nb-camera-framing-guide__corner--tr"></span>
+            <span class="nb-camera-framing-guide__corner nb-camera-framing-guide__corner--bl"></span>
+            <span class="nb-camera-framing-guide__corner nb-camera-framing-guide__corner--br"></span>
+          </div>
+
+          <div class="nb-camera-viewport__top-controls">
+            <button id="camera-close-btn" class="nb-btn nb-btn--compact-action nb-camera-action" aria-label="Close Camera">
+              <span class="nb-btn__compact-surface nb-btn__compact-surface--white">
+                <svg><use href="#icon-close"></use></svg>
+              </span>
+            </button>
+            <button id="camera-settings-btn" class="nb-btn nb-btn--compact-action nb-camera-action nb-camera-viewport__dots-btn" aria-label="Open camera tools" aria-expanded="false" aria-controls="camera-settings-sheet">
+              <span class="nb-btn__compact-surface nb-btn__compact-surface--white">
+                <svg><use href="#icon-settings"></use></svg>
+              </span>
+            </button>
+          </div>
+
+          <div class="nb-camera-zoom-control nb-camera-viewport__zoom-btn" id="camera-zoom-control">
+            <div id="camera-zoom-panel" class="nb-camera-zoom-panel" aria-hidden="true" hidden>
+              <output id="camera-zoom-value" class="nb-camera-zoom-value" for="camera-zoom-slider" aria-live="polite">1x</output>
+              <input id="camera-zoom-slider" class="nb-camera-zoom-slider" type="range" min="0" max="2" step="1" value="1" aria-label="Zoom 1x" aria-valuetext="1x">
+            </div>
+            <button id="camera-zoom-btn" class="nb-camera-zoom-toggle" type="button" aria-controls="camera-zoom-panel" aria-expanded="false" aria-label="Scale factor">
+              <span id="camera-zoom-toggle-value">1x</span>
+            </button>
+          </div>
+
+          <a href="pose-guide.html" class="nb-btn nb-btn--compact-action nb-camera-guide-chip nb-camera-viewport__profile-btn" aria-label="Choose a pose guide">
+            <span class="nb-btn__compact-surface nb-camera-guide-surface">
+              <svg><use href="#icon-image"></use></svg>
             </span>
-            <label class="nb-switch">
-              <input type="checkbox" id="grid-switch" checked>
-              <span class="nb-switch__slider"></span>
-            </label>
+          </a>
+
+          <p id="camera-status" class="nb-camera-status" role="status" aria-live="polite" hidden></p>
+
+          <div id="camera-settings-sheet" class="nb-camera-settings-sheet" aria-hidden="true" hidden>
+            <button class="nb-camera-settings-sheet__backdrop" type="button" data-close-camera-settings aria-label="Close camera tools"></button>
+            <section class="nb-camera-settings-panel" role="dialog" aria-modal="true" aria-labelledby="camera-settings-title">
+              <div class="nb-camera-settings-panel__handle" aria-hidden="true"></div>
+              <header class="nb-camera-settings-panel__header">
+                <h2 id="camera-settings-title">Camera tools</h2>
+                <button type="button" class="nb-btn nb-btn--compact-action nb-camera-action" data-close-camera-settings aria-label="Close camera tools">
+                  <span class="nb-btn__compact-surface nb-btn__compact-surface--white">
+                    <svg><use href="#icon-close"></use></svg>
+                  </span>
+                </button>
+              </header>
+
+              <div class="nb-camera-settings-list">
+                <button type="button" class="nb-camera-setting-row" id="flash-row" aria-label="Flash Auto, tap to change">
+                  <span class="nb-camera-setting-row__label">
+                    <svg><use href="#icon-flash"></use></svg>
+                    <span>Flash</span>
+                  </span>
+                  <span class="nb-camera-setting-row__value" id="flash-value">Auto</span>
+                </button>
+                <div class="nb-camera-setting-row">
+                  <span class="nb-camera-setting-row__label">
+                    <svg><use href="#icon-grid"></use></svg>
+                    <span>Grid</span>
+                  </span>
+                  <label class="nb-switch nb-camera-setting-switch">
+                    <span class="sr-only">Show camera grid</span>
+                    <input type="checkbox" id="grid-switch">
+                    <span class="nb-switch__slider"></span>
+                  </label>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <div id="camera-permission-state" class="nb-camera-permission" hidden>
+            <div class="nb-camera-permission__icon">
+              <svg><use href="#icon-camera"></use></svg>
+            </div>
+            <h2>Camera access is off</h2>
+            <p>Allow camera access in Settings to line up and capture your pose.</p>
+            <button type="button" id="camera-permission-action" class="nb-btn nb-btn--white">Open Settings</button>
           </div>
         </div>
 
-        <!-- Zoom level button (floating) -->
-        <button type="button" class="nb-btn nb-btn--square nb-btn--white nb-camera-viewport__zoom-btn nb-camera-viewport__zoom-chip" id="camera-zoom-btn" aria-label="Zoom 1x">
-          1x
-        </button>
+        <div class="nb-shutter-bar nb-shutter-bar--redesign" aria-label="Capture controls">
+          <button id="camera-gallery-thumb" class="nb-shutter-bar__thumb" type="button" style="background-image: url('https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=150');" aria-label="Open Gallery"></button>
 
-        <!-- Profile button (floating) -->
-        <a href="poses-list.html" class="nb-btn nb-btn--circle nb-btn--blue nb-camera-viewport__profile-btn" aria-label="Browse poses">
-          <svg style="width: 20px; height: 20px;"><use href="#icon-profile"></use></svg>
-        </a>
-      </div>
+          <div class="nb-shutter-bar__capture">
+            <span id="camera-shutter-label" class="sr-only">Capture photo</span>
+            <button id="shutter-btn" class="nb-btn nb-btn--shutter" type="button" aria-label="Capture photo">
+              <span class="nb-shutter-spinner" aria-hidden="true"></span>
+              <span class="sr-only">Capture photo</span>
+            </button>
+          </div>
 
-      <!-- Bottom Shutter Bar -->
-      <div class="nb-shutter-bar">
-        <!-- Gallery thumbnail pointing to gallery -->
-        <a href="gallery.html" class="nb-shutter-bar__thumb" style="background-image: url('https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=150');" aria-label="Open Gallery"></a>
-        
-        <!-- Pink Shutter Button -->
-        <button id="shutter-btn" class="nb-btn nb-btn--shutter" aria-label="Capture photo"></button>
-        
-        <!-- Flip Camera Button -->
-        <a href="camera-pose-overlay.html" class="nb-btn nb-btn--square nb-btn--white" aria-label="Switch camera">
-          <svg style="width: 20px; height: 20px;"><use href="#icon-flip"></use></svg>
-        </a>
-      </div>
+          <button id="camera-flip-btn" class="nb-btn nb-btn--square nb-btn--white nb-camera-flip" type="button" aria-label="Switch to front camera">
+            <svg><use href="#icon-flip"></use></svg>
+          </button>
+        </div>
+      </main>
     </div>
-    
-    <!-- Home indicator overlaying the shutter bar -->
+
     <div class="nb-phone__footer">
       <div class="nb-phone__home-indicator"></div>
     </div>
   </div>
 
-  <!-- Shared Scripts -->
   <script src="../scripts/icons.js"></script>
   <script src="../scripts/fixtures.js"></script>
-  <script src="../scripts/toggle.js"></script>
+  <script src="../scripts/toggle.js?camera-scale-factor-1"></script>
   <script src="../scripts/tabs.js"></script>
   <script src="../scripts/progress.js"></script>
-  <script src="../scripts/modal.js"></script>
+  <script src="../scripts/modal.js?camera-redesign-1"></script>
   <script src="../scripts/view-toggle.js"></script>
   <script src="../scripts/button-press.js"></script>
-  <script src="../scripts/app.js"></script>
+  <script src="../scripts/app.js?camera-scale-factor-1"></script>
 </body>
 </html>
