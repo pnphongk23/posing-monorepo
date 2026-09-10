@@ -76,3 +76,16 @@ The pre-review draft remains in `PLAN_DRAFT.md` for traceability. `PLAN_FINAL.md
 - [ ] All unresolved account, Android, and persistence questions are surfaced to the reviewer/General Lead.
 
 <!-- slug: camera-redesign-pose-guide-picker -->
+
+---
+
+## Visual Prototype Parity Contract (MANDATORY)
+
+Implementation is strictly governed by the HTML prototypes and design tokens:
+- **Specification Document:** [Visual Prototype Specification](./visual-prototype-spec.md)
+- **Visual References:**
+  - Camera Screen: `docs/prototype/screenshots/camera-live.png` (Prototype: `docs/prototype/screens/camera-live.html`)
+  - Pose Guide Picker: `docs/prototype/screenshots/pose-guide.png` (Prototype: `docs/prototype/screens/pose-guide.html`)
+- **Key Visual Requirements:**
+  - **Camera Screen:** Shutter button MUST be a circle (`CircleShape`, 72dp, `#E89CAE`, 2px solid black border, 5px black offset shadow). Center framing brackets (`┌ ┐`, `└ ┘`). White square 44dp close button.
+  - **Pose Guide Picker:** Full screen `#FBF6EF`, white square 44dp back button, 2-column grid of 1:1 square cards with 14dp rounded corners, 2px solid black border, 3px offset shadow, alternating pastel surfaces (Yellow, Pink, Blue, Green), centered bold stick figure, bold pose title below card.

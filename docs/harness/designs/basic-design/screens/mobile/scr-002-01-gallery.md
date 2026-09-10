@@ -55,11 +55,13 @@ Thuộc **local gallery leg** (FEAT-002): reactive `Photo` records từ SQLDelig
 | 1 | SCR-002-01-SCA-001 | Scaffold shell | `Scaffold` + `SnackbarHost` | Req | Container `AiPoseColors.Background`; snackbar cho delete/save errors — **Observed** (`76-78`, `73`) |
 | 2 | SCR-002-01-HDR-001 | Back control | Icon button 32dp | Opt | Chỉ khi `onBack != null`; `testTag=gallery-back-btn` — **Observed** (`99-116`; Voyager detail host) |
 | 3 | SCR-002-01-HDR-002 | Screen title | Text | Req | Label `"Gallery"`; `NavigationTitle` — **Observed** (`119-123`) |
-| 4 | SCR-002-01-ST-001 | Initial loading | `CircularProgressIndicator` | — | Khi `uiState.isLoading` — **Observed** (`129-132`) |
-| 5 | SCR-002-01-ST-002 | Empty gallery | Card + CTA | — | `"No photos yet"` + `PrimaryButton` "Open camera" → `onOpenCamera` — **Observed** (`136-150`; FEAT-002 A1) |
-| 6 | SCR-002-01-GRD-001 | Date section header | `SectionHeader` | Req | Một header per `groupedByDate` key; count = photos.size — **Observed** (`163-176`) |
-| 7 | SCR-002-01-GRD-002 | Photo grid | `LazyVerticalGrid` 3 cột | Req | `GalleryGridDefaults.DENSE_COLUMN_COUNT=3`, gap 3dp; `MainDockContentInset` bottom padding — **Observed** (`155-161`, `GalleryGridDefaults.kt`) |
-| 8 | SCR-002-01-GRD-003 | Photo card | `PhotoCard` dense | Req | Tap → `onPhotoClick` hoặc `viewModel.selectPhoto` → [detail](#scr-002-01-gallery-dtl-photo-detail) — **Observed** (`182-186`) |
+| 4 | SCR-002-01-HDR-003 | Crown upgrade CTA | Icon button 44dp / yellow surface | Opt | Nút vương miện vàng dẫn tới Paywall (`paywall.html`) per prototype `gallery.html:38-43` |
+| 5 | SCR-002-01-FLT-001 | Date filter chips | Horizontal row of chips | Req | Hàng chip lọc ngày (`All`, `Today`, `7 days`, `30 days`, `Date`), active chip nền hồng per prototype `gallery.html:47-63`. **KHÔNG CÓ SEARCH BAR**. |
+| 6 | SCR-002-01-ST-001 | Initial loading | `CircularProgressIndicator` | — | Khi `uiState.isLoading` — **Observed** (`129-132`) |
+| 7 | SCR-002-01-ST-002 | Empty gallery | Card + CTA | — | `"No photos yet"` + `PrimaryButton` "Open camera" → `onOpenCamera` — **Observed** (`136-150`; FEAT-002 A1) |
+| 8 | SCR-002-01-GRD-001 | Date section header | `SectionHeader` | Req | Một header per `groupedByDate` key; count = photos.size — **Observed** (`163-176`) |
+| 9 | SCR-002-01-GRD-002 | Photo grid | `LazyVerticalGrid` 3 cột | Req | `GalleryGridDefaults.DENSE_COLUMN_COUNT=3`, gap 3dp; `MainDockContentInset` bottom padding — **Observed** (`155-161`, `GalleryGridDefaults.kt`) |
+| 10 | SCR-002-01-GRD-003 | Photo card | `PhotoCard` dense | Req | Tap → `onPhotoClick` hoặc `viewModel.selectPhoto` → [detail](#scr-002-01-gallery-dtl-photo-detail) — **Observed** (`182-186`) |
 
 ## 6. Screen flow and feature links
 

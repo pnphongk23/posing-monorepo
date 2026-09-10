@@ -82,3 +82,16 @@ Do not edit `plans/260909-1137-gallery-photo-viewer-v2`, `Photo.sq` schema, view
 - [ ] Independent Planning Reviewer READY_FOR_WORK is recorded before PLAN_FINAL finalization; implementation remains gated by the mission handoff.
 
 <!-- slug: search-gallery-list-refresh -->
+
+---
+
+## Visual Prototype Parity Contract (MANDATORY)
+
+Implementation is strictly governed by the HTML prototypes and design tokens:
+- **Specification Document:** [Visual Prototype Specification](./visual-prototype-spec.md)
+- **Visual References:**
+  - Search Screen: `docs/prototype/screenshots/search.png` (Prototype: `docs/prototype/screens/search.html`)
+  - Gallery Screen: `docs/prototype/screenshots/gallery.png` (Prototype: `docs/prototype/screens/gallery.html`)
+- **Key Visual Requirements:**
+  - **Gallery Screen:** STRICTLY NO SEARCH BAR. Date-first navigation with Date filter chips (`All`, `Today`, `7 days`, `30 days`, `Date`), Crown upgrade button in header, dense 3-column photo grid.
+  - **Search Screen:** 56dp search input with 14dp radius, 2px border, 3px shadow, magnifying glass icon, placeholder `"Search poses"`. Discovery state displays "Recent searches" heading with rounded chips (`Dancing`, `Stretching`, `Warrior`). Search result panel with source filters (`All poses`, `My poses`, `Community`).

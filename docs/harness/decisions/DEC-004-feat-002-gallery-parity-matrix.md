@@ -57,8 +57,8 @@ the matrix.
 | **Grid/list toggle** | `gallery.html` (no visible toggle; list CSS `grid.css:68-76`) | `gallery-grid-toggle` / `gallery-list-toggle` | **Partial** — production toggle retained; prototype gallery omits UI — WI-05 |
 | **Group headers** | `nb-grid-group-title` (`grid.css:40-56`) | `SectionHeader` + `groupPhotosByDate` (TODAY/YESTERDAY/MONTH DAY) | **Aligned** — regression WI-05 |
 | **Empty gallery** | prototype empty tip | `GalleryScreen.kt` "NO PHOTOS YET" + "OPEN CAMERA" | **Aligned** — regression WI-05 |
-| **Search: title OR tag filter** | `app.js:348-352` (`titleMatch` OR `tagMatch`, case-insensitive) | `GalleryViewModel.kt` + `GalleryScreen.kt` | **Gap** — WI-02 |
-| **Search: field mapping (Option A)** | fixture `title`/`tag` → pose-name text | substring on `Photo.poseName` + linked `Pose.name` when `poseId != null` | **Resolved** (Maintainer 2026-08-19) — WI-02 |
+| **Search: title OR tag filter** | `gallery.html` (NO search bar; Date-first navigation) | `GalleryScreen.kt` | **Superseded / Removed** (Product Authority 2026-09-10) — Aligned with prototype `gallery.html` & `SCR-002-01` |
+| **Search: field mapping (Option A)** | N/A (search bar removed from Gallery UI) | `GalleryViewModel.kt` | **Superseded** — UI text search removed; date filtering is authority |
 | **Detail back / save / delete** | `gallery-detail.html` back + `gallery-save-btn` + `gallery-delete-btn` + modal | `PhotoDetailDialog.kt` back / Save / trash + `AlertDialog` | **Aligned** (controls); export semantics **Gap** — WI-05 / WI-04 |
 | **Delete: metadata + owned file** | `gallery-detail.html` "permanently deleted" | `PhotoRepository.deletePhoto` row only (`PhotoRepository.kt:35-37`) | **Gap** — WI-03 |
 | **Delete: linked PersonalPose cascade** | N/A (prototype has no pose link) | last-reference: cascade when `getPhotosByPoseId` count → 0 after delete | **Gap** — WI-03 (last-reference, Maintainer 2026-08-19) |
@@ -75,10 +75,8 @@ the matrix.
 
 ## Material scope decisions
 
-1. **Search is IN scope (Maintainer closed):** gallery filter per
-   `app.js:348-352` (title OR tag, case-insensitive). The prototype search
-   listener was removed (`app.js:384`), so the search affordance placement is a
-   Cook/UI decision; filter semantics are the authority.
+1. **Search in Gallery REMOVED / SUPERSEDED (Product Authority 2026-09-10):**
+   In alignment with the approved visual prototype (`docs/prototype/screens/gallery.html`) and Basic Design (`SCR-002-01`), the search bar affordance is removed from GalleryScreen. Gallery navigation is strictly Date-first (filter chips: All, Today, 7 days, 30 days, Date; grouped dense grid). Search across published poses is owned exclusively by SearchScreen (`SCR-003-02`).
 2. **Deletion cascade (last-reference, Maintainer 2026-08-19):** photo delete
    removes Photo row + owned `imagePath` always; when `poseId != null`, also
    delete linked `PersonalPose` + owned assets using the `PoseRepository.deletePose`
