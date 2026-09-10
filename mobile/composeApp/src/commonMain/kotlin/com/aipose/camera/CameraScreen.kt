@@ -82,6 +82,12 @@ import com.aipose.purchases.premiumTestBypassEnabled
 import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
 
+private val CameraPrototypeBackground = Color(0xFFFBF6EF)
+private val CameraPrototypePink = Color(0xFFE89CAE)
+private val CameraPrototypeBlue = Color(0xFF7FBBE6)
+private val CameraPrototypeBlack = Color(0xFF121212)
+private val CameraPrototypeWhite = Color.White
+
 @Composable
 fun CameraScreen(
     modifier: Modifier = Modifier,
@@ -298,7 +304,7 @@ fun CameraScreen(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(AiPoseColors.SurfaceVariant),
+            .background(CameraPrototypeBackground),
     ) {
     Column(
         modifier = Modifier.fillMaxSize(),
@@ -551,30 +557,29 @@ private fun CenterCrosshair() {
         contentAlignment = Alignment.Center,
         modifier = Modifier.fillMaxSize().alpha(0.9f),
     ) {
-        Box(
+        Canvas(
             modifier = Modifier
-                .size(140.dp)
-                .offset(y = (-48).dp),
+                .fillMaxSize()
+                .semantics { contentDescription = "Face framing guide" },
         ) {
-            Box(
-                modifier = Modifier
-                    .size(70.dp)
-                    .align(Alignment.Center)
-                    .border(2.dp, AiPoseColors.Surface.copy(alpha = 0.9f), CircleShape)
-                    .background(AiPoseColors.Surface.copy(alpha = 0.1f), CircleShape),
-            )
-            FaceGuideLine(Modifier.align(Alignment.BottomStart).offset(x = 30.dp, y = (-17).dp).graphicsLayer { rotationZ = 35f })
-            FaceGuideLine(Modifier.align(Alignment.BottomEnd).offset(x = (-30).dp, y = (-17).dp).graphicsLayer { rotationZ = -35f })
-            FaceGuideLine(Modifier.align(Alignment.BottomCenter).offset(y = (-7).dp).height(35.dp))
-            FaceGuideLine(Modifier.align(Alignment.BottomStart).offset(x = 42.dp, y = (-20).dp).height(35.dp).graphicsLayer { rotationZ = 15f })
-            FaceGuideLine(Modifier.align(Alignment.BottomEnd).offset(x = (-42).dp, y = (-20).dp).height(35.dp).graphicsLayer { rotationZ = -15f })
+            val strokeWidth = 2.dp.toPx()
+            val cornerLength = 28.dp.toPx()
+            val left = size.width * 0.18f
+            val right = size.width * 0.82f
+            val top = size.height * 0.25f
+            val bottom = size.height * 0.82f
+            val color = CameraPrototypeWhite.copy(alpha = 0.9f)
+
+            drawLine(color, Offset(left, top), Offset(left + cornerLength, top), strokeWidth)
+            drawLine(color, Offset(left, top), Offset(left, top + cornerLength), strokeWidth)
+            drawLine(color, Offset(right, top), Offset(right - cornerLength, top), strokeWidth)
+            drawLine(color, Offset(right, top), Offset(right, top + cornerLength), strokeWidth)
+            drawLine(color, Offset(left, bottom), Offset(left + cornerLength, bottom), strokeWidth)
+            drawLine(color, Offset(left, bottom), Offset(left, bottom - cornerLength), strokeWidth)
+            drawLine(color, Offset(right, bottom), Offset(right - cornerLength, bottom), strokeWidth)
+            drawLine(color, Offset(right, bottom), Offset(right, bottom - cornerLength), strokeWidth)
         }
     }
-}
-
-@Composable
-private fun FaceGuideLine(modifier: Modifier = Modifier) {
-    Box(modifier = modifier.width(2.dp).height(48.dp).background(AiPoseColors.Surface.copy(alpha = 0.9f)))
 }
 
 @Composable
@@ -607,8 +612,8 @@ private fun CameraCloseButton(
             contentDescription = "Close Camera"
         }.size(44.dp),
         shape = RoundedCornerShape(10.dp),
-        backgroundColor = AiPoseColors.Surface,
-        shadowColor = AiPoseColors.Foreground,
+        backgroundColor = CameraPrototypeWhite,
+        shadowColor = CameraPrototypeBlack,
         shadowOffset = 3.dp,
         onClick = onClick,
     ) {
@@ -628,8 +633,8 @@ private fun CameraMoreButton(
             contentDescription = "Camera Settings"
         }.size(44.dp),
         shape = RoundedCornerShape(10.dp),
-        backgroundColor = AiPoseColors.Surface,
-        shadowColor = AiPoseColors.Foreground,
+        backgroundColor = CameraPrototypeWhite,
+        shadowColor = CameraPrototypeBlack,
         shadowOffset = 2.dp,
         onClick = if (enabled) onClick else null
     ) {
@@ -659,8 +664,8 @@ private fun CameraGuideButton(
             contentDescription = "Choose a pose guide"
         }.size(44.dp),
         shape = RoundedCornerShape(10.dp),
-        backgroundColor = AiPoseColors.AccentBlue,
-        shadowColor = AiPoseColors.Foreground,
+        backgroundColor = CameraPrototypeBlue,
+        shadowColor = CameraPrototypeBlack,
         shadowOffset = 2.dp,
         onClick = if (enabled) onClick else null,
     ) {
@@ -686,11 +691,11 @@ private fun CameraZoomIndicator(
     onClick: () -> Unit,
 ) {
     NeoBrutalismContainer(
-        modifier = modifier.semantics { testTag = "zoomButton" }.size(44.dp),
+        modifier = modifier.semantics { testTag = "zoomButton" }.size(36.dp),
         shape = CircleShape,
-        backgroundColor = AiPoseColors.SurfaceVariant,
-        shadowColor = AiPoseColors.Foreground,
-        shadowOffset = 2.dp,
+        backgroundColor = CameraPrototypeWhite,
+        shadowColor = CameraPrototypeBlack,
+        shadowOffset = 1.5.dp,
         onClick = if (enabled) onClick else null
     ) {
         Box(
@@ -786,25 +791,19 @@ private fun CaptureButton(
     NeoBrutalismContainer(
         modifier = Modifier
             .size(72.dp)
+            .alpha(if (enabled) 1f else 0.35f)
             .semantics {
                 testTag = "camera-capture-btn"
                 contentDescription = if (enabled) "Capture photo" else "Capture photo unavailable"
             },
-        shape = RoundedCornerShape(18.dp),
-        backgroundColor = AiPoseColors.Primary,
-        shadowColor = AiPoseColors.Foreground,
+        shape = CircleShape,
+        backgroundColor = CameraPrototypePink,
+        shadowColor = CameraPrototypeBlack,
+        borderWidth = 2.dp,
         shadowOffset = 5.dp,
         onClick = if (enabled) onClick else null
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(4.dp)
-                .clip(RoundedCornerShape(18.dp))
-                .background(AiPoseColors.Primary)
-                .border(2.dp, AiPoseColors.Foreground, RoundedCornerShape(18.dp))
-                .alpha(if (enabled) 1f else 0.35f),
-        )
+        Box(modifier = Modifier.fillMaxSize())
     }
 }
 
@@ -818,10 +817,10 @@ private fun GalleryThumbnailButton(
             testTag = "camera-gallery-thumbnail"
             contentDescription = if (thumbnailState is ThumbnailState.Available) "Open Gallery, latest photo available" else "Open Gallery, no latest photo"
         },
-        shape = RoundedCornerShape(10.dp),
-        backgroundColor = AiPoseColors.SurfaceVariant,
-        shadowColor = AiPoseColors.Warning,
-        shadowOffset = 3.dp,
+        shape = RoundedCornerShape(14.dp),
+        backgroundColor = CameraPrototypeWhite,
+        shadowColor = CameraPrototypeBlack,
+        shadowOffset = 2.dp,
         onClick = onClick
     ) {
         when (thumbnailState) {
@@ -834,8 +833,8 @@ private fun GalleryThumbnailButton(
                         contentScale = ContentScale.Crop,
                         modifier = Modifier
                             .fillMaxSize()
-                            .clip(RoundedCornerShape(10.dp))
-                            .border(2.dp, AiPoseColors.Foreground, RoundedCornerShape(10.dp)),
+                            .clip(RoundedCornerShape(14.dp))
+                            .border(2.dp, CameraPrototypeBlack, RoundedCornerShape(14.dp)),
                         onError = { thumbnailFailed = true }
                     )
                 } else {
@@ -858,10 +857,10 @@ private fun GalleryThumbnailButton(
 private fun FlipShortcutButton(enabled: Boolean = true, onClick: () -> Unit) {
     NeoBrutalismContainer(
         modifier = Modifier.size(48.dp).semantics { testTag = "camera-flip-btn" },
-        shape = RoundedCornerShape(10.dp),
-        backgroundColor = AiPoseColors.Surface,
-        shadowColor = AiPoseColors.Foreground,
-        shadowOffset = 3.dp,
+        shape = RoundedCornerShape(14.dp),
+        backgroundColor = CameraPrototypeWhite,
+        shadowColor = CameraPrototypeBlack,
+        shadowOffset = 2.dp,
         onClick = if (enabled) onClick else null
     ) {
         Icon(

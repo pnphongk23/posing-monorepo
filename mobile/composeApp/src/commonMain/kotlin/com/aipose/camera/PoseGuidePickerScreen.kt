@@ -1,5 +1,6 @@
 package com.aipose.camera
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -19,10 +20,7 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Image
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -34,19 +32,13 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
-import coil3.compose.LocalPlatformContext
-import coil3.compose.SubcomposeAsyncImage
-import coil3.request.ImageRequest
 import com.aipose.auth.SignInIntent
 import com.aipose.auth.SignInPrompt
 import com.aipose.auth.SignInPromptController
@@ -64,18 +56,18 @@ import com.aipose.ui.components.PrimaryButton
 import com.aipose.ui.screens.poses.COMMUNITY_LOADING_ALPHA
 import com.aipose.ui.screens.poses.COMMUNITY_LOADING_SIZE
 import com.aipose.ui.screens.poses.COMMUNITY_LOADING_STROKE
-import com.aipose.ui.screens.poses.communityImageTargetSize
 import com.aipose.ui.screens.poses.communityPoseGridKey
-import com.aipose.ui.screens.poses.poseThumbnailContentScale
-import com.aipose.ui.screens.poses.resolveCommunityImageModel
 import com.aipose.ui.theme.AiPoseColors
 import com.aipose.ui.theme.AiPoseTypography
-import com.aipose.ui.theme.CornerRadius
 import com.aipose.ui.theme.Spacing
 import kotlinx.coroutines.launch
 
 internal const val POSE_GUIDE_PICKER_TEST_TAG = "pose-guide-picker"
 internal const val POSE_GUIDE_PICKER_BACK_TEST_TAG = "pose-guide-picker-back"
+
+private val PoseGuidePrototypeBackground = Color(0xFFFBF6EF)
+private val PoseGuidePrototypeBlack = Color(0xFF121212)
+private val PoseGuidePrototypeWhite = Color.White
 
 sealed interface PoseGuidePickerActionState {
     data object Idle : PoseGuidePickerActionState
@@ -113,6 +105,13 @@ internal fun guideCardAccentColor(index: Int): Color = when (index % 4) {
     1 -> AiPoseColors.Primary
     2 -> AiPoseColors.AccentBlue
     else -> AiPoseColors.Success
+}
+
+private fun guideCardPrototypeColor(index: Int): Color = when (index % 4) {
+    0 -> Color(0xFFFED766)
+    1 -> Color(0xFFE89CAE)
+    2 -> Color(0xFF7FBBE6)
+    else -> Color(0xFFB5E2B9)
 }
 
 /** Dismiss sign-in before resuming preparation so error/retry UI stays interactable. */
@@ -202,7 +201,7 @@ fun PoseGuidePickerScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(AiPoseColors.Background)
+            .background(PoseGuidePrototypeBackground)
             .statusBarsPadding()
             .navigationBarsPadding()
             .testTag(POSE_GUIDE_PICKER_TEST_TAG),
@@ -210,7 +209,7 @@ fun PoseGuidePickerScreen(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = Spacing.md, vertical = Spacing.sm),
+                .padding(horizontal = 16.dp, vertical = Spacing.sm),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
         ) {
@@ -220,17 +219,18 @@ fun PoseGuidePickerScreen(
                     .testTag(POSE_GUIDE_PICKER_BACK_TEST_TAG)
                     .semantics { contentDescription = "Back to Camera" },
                 shape = RoundedCornerShape(10.dp),
-                backgroundColor = AiPoseColors.Surface,
-                shadowColor = AiPoseColors.Foreground,
+                backgroundColor = PoseGuidePrototypeWhite,
+                borderColor = PoseGuidePrototypeBlack,
+                shadowColor = PoseGuidePrototypeBlack,
                 shadowOffset = 3.dp,
                 onClick = onBack,
             ) {
-                Text("←", color = AiPoseColors.Foreground, style = AiPoseTypography.Control)
+                Text("←", color = PoseGuidePrototypeBlack, style = AiPoseTypography.Control)
             }
             Text(
                 text = "Choose a guide",
                 style = AiPoseTypography.ScreenTitle,
-                color = AiPoseColors.Foreground,
+                color = PoseGuidePrototypeBlack,
                 modifier = Modifier.weight(1f),
             )
         }
@@ -301,9 +301,9 @@ fun PoseGuidePickerScreen(
                     columns = GridCells.Fixed(2),
                     state = gridState,
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(horizontal = Spacing.md, vertical = Spacing.sm),
-                    horizontalArrangement = Arrangement.spacedBy(Spacing.md),
-                    verticalArrangement = Arrangement.spacedBy(Spacing.md),
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
                     itemsIndexed(
                         communityState.items,
@@ -381,21 +381,7 @@ private fun GuidePickerCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val model = remember(pose.thumbnailUrl, pose.skeletonUrl) { resolveCommunityImageModel(pose) }
-    var cellSizePx by remember { mutableStateOf<IntSize?>(null) }
-    val platformContext = LocalPlatformContext.current
-    val request = remember(model, cellSizePx, platformContext) {
-        val cell = cellSizePx
-        if (model == null || cell == null) null
-        else {
-            val target = communityImageTargetSize(cell)
-            ImageRequest.Builder(platformContext)
-                .data(model)
-                .size(target.width, target.height)
-                .build()
-        }
-    }
-    val cardShape = RoundedCornerShape(CornerRadius.md)
+    val cardShape = RoundedCornerShape(14.dp)
 
     Column(
         modifier = modifier.fillMaxWidth(),
@@ -405,64 +391,99 @@ private fun GuidePickerCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(1f)
-                .clip(cardShape)
                 .semantics { contentDescription = "Use ${pose.name} guide" }
                 .testTag("pose-guide-card-${pose.poseId}"),
             shape = cardShape,
-            backgroundColor = guideCardAccentColor(index),
+            backgroundColor = guideCardPrototypeColor(index),
+            borderColor = PoseGuidePrototypeBlack,
+            shadowColor = PoseGuidePrototypeBlack,
             borderWidth = if (isSelected) 3.dp else 2.dp,
-            shadowOffset = if (isSelected) 4.dp else 2.dp,
+            shadowOffset = if (isSelected) 4.dp else 3.dp,
             onClick = onClick,
         ) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .onSizeChanged { cellSizePx = it }
-                    .padding(Spacing.sm),
+                    .padding(8.dp),
                 contentAlignment = Alignment.Center,
             ) {
                 when {
                     isPreparing -> CircularProgressIndicator(
-                        color = AiPoseColors.Foreground,
+                        color = PoseGuidePrototypeBlack,
                         modifier = Modifier.size(28.dp),
                     )
-                    model == null -> Icon(
-                        imageVector = Icons.Default.Image,
-                        contentDescription = null,
-                        tint = AiPoseColors.Foreground.copy(alpha = 0.7f),
-                        modifier = Modifier.size(40.dp),
-                    )
-                    request != null -> SubcomposeAsyncImage(
-                        model = request,
-                        contentDescription = pose.name,
-                        contentScale = poseThumbnailContentScale(),
-                        modifier = Modifier.fillMaxSize().clip(cardShape),
-                        loading = {
-                            CircularProgressIndicator(
-                                color = AiPoseColors.Foreground.copy(alpha = COMMUNITY_LOADING_ALPHA),
-                                modifier = Modifier.size(COMMUNITY_LOADING_SIZE.dp),
-                                strokeWidth = COMMUNITY_LOADING_STROKE.dp,
-                            )
-                        },
-                        error = {
-                            Icon(
-                                imageVector = Icons.Default.Image,
-                                contentDescription = null,
-                                tint = AiPoseColors.Foreground.copy(alpha = 0.7f),
-                                modifier = Modifier.size(40.dp),
-                            )
-                        },
+                    else -> PoseStickFigure(
+                        modifier = Modifier.fillMaxSize(),
+                        variant = index % 4,
                     )
                 }
             }
         }
         Text(
             text = pose.name,
-            style = AiPoseTypography.Control,
-            color = AiPoseColors.Foreground,
+            style = AiPoseTypography.Control.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Bold),
+            color = PoseGuidePrototypeBlack,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.padding(horizontal = 2.dp),
         )
+    }
+}
+
+@Composable
+private fun PoseStickFigure(
+    modifier: Modifier = Modifier,
+    variant: Int,
+) {
+    Canvas(
+        modifier = modifier.semantics {
+            contentDescription = "Pose guide preview ${variant + 1}"
+        },
+    ) {
+        val stroke = 5.dp.toPx()
+        val figureColor = PoseGuidePrototypeBlack
+        val width = size.width
+        val height = size.height
+        val headRadius = (width.coerceAtMost(height) * 0.07f).coerceAtLeast(6.dp.toPx())
+        val head = androidx.compose.ui.geometry.Offset(width * 0.5f, height * 0.13f)
+        val drawSegment: (Float, Float, Float, Float) -> Unit = { x1, y1, x2, y2 ->
+            drawLine(
+                color = figureColor,
+                start = androidx.compose.ui.geometry.Offset(width * x1, height * y1),
+                end = androidx.compose.ui.geometry.Offset(width * x2, height * y2),
+                strokeWidth = stroke,
+                cap = StrokeCap.Round,
+            )
+        }
+
+        drawCircle(color = figureColor, radius = headRadius, center = head)
+        drawSegment(0.5f, 0.20f, 0.5f, 0.58f)
+
+        when (variant) {
+            0 -> {
+                drawSegment(0.5f, 0.30f, 0.25f, 0.45f)
+                drawSegment(0.5f, 0.30f, 0.75f, 0.45f)
+                drawSegment(0.5f, 0.58f, 0.34f, 0.88f)
+                drawSegment(0.5f, 0.58f, 0.66f, 0.88f)
+            }
+            1 -> {
+                drawSegment(0.5f, 0.30f, 0.22f, 0.16f)
+                drawSegment(0.5f, 0.30f, 0.78f, 0.16f)
+                drawSegment(0.5f, 0.58f, 0.28f, 0.83f)
+                drawSegment(0.5f, 0.58f, 0.72f, 0.83f)
+            }
+            2 -> {
+                drawSegment(0.5f, 0.30f, 0.30f, 0.08f)
+                drawSegment(0.5f, 0.30f, 0.70f, 0.08f)
+                drawSegment(0.5f, 0.58f, 0.36f, 0.90f)
+                drawSegment(0.5f, 0.58f, 0.64f, 0.90f)
+            }
+            else -> {
+                drawSegment(0.5f, 0.30f, 0.18f, 0.40f)
+                drawSegment(0.5f, 0.30f, 0.78f, 0.21f)
+                drawSegment(0.5f, 0.58f, 0.28f, 0.82f)
+                drawSegment(0.5f, 0.58f, 0.76f, 0.72f)
+            }
+        }
     }
 }

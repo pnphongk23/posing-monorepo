@@ -16,8 +16,8 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 /**
- * Gallery state: photos load from the repository, group by date, filter by pose name,
- * and support selection/delete/favorite.
+ * Gallery state: photos load from the repository, group by date, and support
+ * selection/delete/favorite without an in-gallery search query.
  */
 class GalleryViewModelTest {
 
@@ -43,29 +43,6 @@ class GalleryViewModelTest {
             poseName = poseName,
             createdAt = createdAt,
             isFavorite = 0L,
-        )
-    }
-
-    private fun insertLocalPose(
-        database: AiPoseDatabase,
-        poseId: String,
-        name: String,
-    ) {
-        database.poseQueries.insertPose(
-            poseId = poseId,
-            ownerAccountId = "00000000-0000-0000-0000-000000000001",
-            name = name,
-            description = null,
-            tags = "[]",
-            difficulty = null,
-            bodyParts = "[]",
-            status = "local",
-            originalPath = "orig-$poseId.jpg",
-            skeletonPath = "skel-$poseId.jpg",
-            thumbnailPath = "thumb-$poseId.jpg",
-            currentJobId = null,
-            createdAt = "100",
-            updatedAt = "100",
         )
     }
 
@@ -111,125 +88,11 @@ class GalleryViewModelTest {
     }
 
     @Test
-    fun filtersByStoredPoseNameCaseInsensitively() = runBlocking<Unit> {
-        val driver = DatabaseDriverFactory().createDriver()
-        val job = SupervisorJob()
-        val scope = CoroutineScope(job + Dispatchers.Default)
-        try {
-            val database = AiPoseDatabase(driver)
-            clearDatabase(database)
-            insertPhoto(database, poseName = "Warrior Pose", imageTag = "a")
-            insertPhoto(database, poseName = "Tree Pose", imageTag = "b")
-
-            val viewModel = GalleryViewModel(database)
-            scope.launch { viewModel.load() }
-            waitForLoaded(viewModel)
-
-            viewModel.onQueryChange("warrior")
-            val state = viewModel.uiState.value
-            assertEquals(2, state.photos.size)
-            assertEquals(1, state.groupedPhotos().size)
-            assertEquals("Warrior Pose", state.groupedPhotos().single().poseName)
-        } finally {
-            job.cancel()
-            driver.close()
-        }
-    }
-
-    @Test
-    fun filtersByLinkedLocalPoseNameWhenStoredNameBlank() = runBlocking<Unit> {
-        val driver = DatabaseDriverFactory().createDriver()
-        val job = SupervisorJob()
-        val scope = CoroutineScope(job + Dispatchers.Default)
-        try {
-            val database = AiPoseDatabase(driver)
-            clearDatabase(database)
-            insertLocalPose(database, poseId = "local-1", name = "Linked Warrior")
-            insertPhoto(database, poseName = "", imageTag = "a", poseId = "local-1")
-
-            val viewModel = GalleryViewModel(database)
-            scope.launch { viewModel.load() }
-            waitForLoaded(viewModel)
-
-            viewModel.onQueryChange("linked")
-            val state = viewModel.uiState.value
-            assertEquals(1, state.photos.size)
-            assertEquals(1, state.groupedPhotos().size)
-        } finally {
-            job.cancel()
-            driver.close()
-        }
-    }
-
-    @Test
-    fun excludesUnresolvedLinkWithEmptyStoredNameFromFilterResults() = runBlocking<Unit> {
-        val driver = DatabaseDriverFactory().createDriver()
-        val job = SupervisorJob()
-        val scope = CoroutineScope(job + Dispatchers.Default)
-        try {
-            val database = AiPoseDatabase(driver)
-            clearDatabase(database)
-            insertPhoto(database, poseName = "", imageTag = "orphan", poseId = "published-not-local")
-            insertPhoto(database, poseName = "Visible Warrior", imageTag = "visible")
-
-            val viewModel = GalleryViewModel(database)
-            scope.launch { viewModel.load() }
-            waitForLoaded(viewModel)
-            assertEquals(2, viewModel.uiState.value.photos.size)
-
-            viewModel.onQueryChange("warrior")
-            val state = viewModel.uiState.value
-            assertEquals(2, state.photos.size)
-            assertEquals(1, state.groupedPhotos().size)
-            assertEquals("Visible Warrior", state.groupedPhotos().single().poseName)
-        } finally {
-            job.cancel()
-            driver.close()
-        }
-    }
-
-    @Test
-    fun metadataOnlyQueryDoesNotMatchUnrelatedPhotos() {
-        val photo = Photo(
-            id = 1L,
-            imagePath = "img-a.jpg",
-            poseId = null,
-            poseName = "Warrior Pose",
-            createdAt = "200",
-            isFavorite = 0L,
+    fun dateFilterLabelsMatchGalleryPrototype() {
+        assertEquals(
+            listOf("All", "Today", "7 days", "30 days", "Date"),
+            galleryDateFilterLabels,
         )
-        val filtered = filterPhotosByPoseName(
-            photos = listOf(photo),
-            poseNameById = emptyMap(),
-            query = "img-a",
-        )
-        assertTrue(filtered.isEmpty())
-    }
-
-    @Test
-    fun blankQueryShowsAllPhotos() = runBlocking<Unit> {
-        val driver = DatabaseDriverFactory().createDriver()
-        val job = SupervisorJob()
-        val scope = CoroutineScope(job + Dispatchers.Default)
-        try {
-            val database = AiPoseDatabase(driver)
-            clearDatabase(database)
-            insertPhoto(database, poseName = "Warrior Pose", imageTag = "a")
-            insertPhoto(database, poseName = "Tree Pose", imageTag = "b")
-
-            val viewModel = GalleryViewModel(database)
-            scope.launch { viewModel.load() }
-            waitForLoaded(viewModel)
-
-            viewModel.onQueryChange("zzz")
-            assertTrue(viewModel.uiState.value.groupedPhotos().isEmpty())
-
-            viewModel.onQueryChange("")
-            assertEquals(2, viewModel.uiState.value.groupedPhotos().size)
-        } finally {
-            job.cancel()
-            driver.close()
-        }
     }
 
     @Test
@@ -249,20 +112,7 @@ class GalleryViewModelTest {
             insertPhoto(database, poseName = "Beta Pose", imageTag = "b")
             waitForState(viewModel) { it.photos.size == 2 }
 
-            insertLocalPose(database, poseId = "local-2", name = "Linked Beta")
-            val photoId = database.photoQueries.getAllPhotos().executeAsList()
-                .first { it.poseName == "Beta Pose" }.id
-            database.photoQueries.insertPhoto(
-                imagePath = "img-linked.jpg",
-                poseId = "local-2",
-                poseName = "",
-                createdAt = "201",
-                isFavorite = 0L,
-            )
-            waitForState(viewModel) { it.photos.size == 3 }
-
-            viewModel.onQueryChange("linked")
-            waitForState(viewModel) { it.groupedPhotos().size == 1 }
+            waitForState(viewModel) { it.groupedPhotos().size == 2 }
         } finally {
             job.cancel()
             driver.close()

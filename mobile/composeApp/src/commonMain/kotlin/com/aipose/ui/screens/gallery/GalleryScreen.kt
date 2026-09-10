@@ -1,5 +1,6 @@
 package com.aipose.ui.screens.gallery
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -7,8 +8,11 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyGridState
@@ -19,26 +23,27 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import org.jetbrains.compose.resources.painterResource
 import ai_pose.composeapp.generated.resources.Res
 import ai_pose.composeapp.generated.resources.ic_chevron_left
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTag
 import androidx.compose.ui.unit.dp
@@ -49,15 +54,20 @@ import com.aipose.ui.components.NeoBrutalismContainer
 import com.aipose.ui.components.cardChrome
 import com.aipose.ui.theme.AiPoseColors
 import com.aipose.ui.theme.AiPoseTypography
-import com.aipose.ui.theme.CornerRadius
 import com.aipose.ui.theme.Spacing
 import com.aipose.platform.saveToPhotos
 import com.aipose.platform.shareImage
 import com.aipose.data.resolveImagePath
 import com.aipose.navigation.MainDockContentInset
-import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalMaterial3Api::class)
+internal val galleryDateFilterLabels = listOf("All", "Today", "7 days", "30 days", "Date")
+
+private val GalleryPrototypeBackground = Color(0xFFFBF6EF)
+private val GalleryPrototypePink = Color(0xFFE89CAE)
+private val GalleryPrototypeYellow = Color(0xFFFED766)
+private val GalleryPrototypeBlack = Color(0xFF121212)
+private val GalleryPrototypeWhite = Color.White
+
 @Composable
 fun GalleryScreen(
     viewModel: GalleryViewModel,
@@ -65,10 +75,10 @@ fun GalleryScreen(
     onOpenCamera: () -> Unit,
     onBack: (() -> Unit)? = null,
     onPhotoClick: ((com.aipose.Photo) -> Unit)? = null,
+    onUpgrade: () -> Unit = {},
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    val hasFilterQuery = uiState.query.trim().isNotEmpty()
-    val isFilterEmpty = hasFilterQuery && uiState.photos.isNotEmpty() && uiState.groupedByDate.isEmpty()
+    var selectedDateFilter by remember { mutableStateOf(galleryDateFilterLabels.first()) }
     // Voyager disposes the list composition while detail is on top, so its
     // collector is cancelled too. Re-collect whenever the list re-enters to
     // pick up deletions and other changes made from detail.
@@ -79,7 +89,7 @@ fun GalleryScreen(
     Box(modifier = Modifier.fillMaxSize()) {
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
-        containerColor = AiPoseColors.Background
+        containerColor = GalleryPrototypeBackground,
     ) { innerPadding ->
         Column(
             modifier = Modifier
@@ -92,7 +102,7 @@ fun GalleryScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 4.dp)
-                    .padding(top = 8.dp, bottom = 16.dp),
+                    .padding(top = 8.dp, bottom = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
@@ -102,85 +112,89 @@ fun GalleryScreen(
                 ) {
                     if (onBack != null) {
                         NeoBrutalismContainer(
-                            modifier = Modifier
-                                .semantics { testTag = "gallery-back-btn" }
-                                .size(32.dp),
+                                modifier = Modifier
+                                    .semantics { testTag = "gallery-back-btn" }
+                                .size(44.dp),
                             shape = RoundedCornerShape(10.dp),
-                            backgroundColor = AiPoseColors.Background,
-                            shadowOffset = 2.dp,
+                            backgroundColor = GalleryPrototypeWhite,
+                            shadowColor = GalleryPrototypeBlack,
+                            shadowOffset = 3.dp,
                             borderWidth = 2.dp,
                             onClick = onBack
                         ) {
                             Icon(
                                 painter = painterResource(Res.drawable.ic_chevron_left),
                                 contentDescription = "Back",
-                                tint = AiPoseColors.Foreground,
-                                modifier = Modifier.size(16.dp)
+                                tint = GalleryPrototypeBlack,
+                                modifier = Modifier.size(20.dp)
                             )
                         }
                     }
 
                     Text(
                         text = "Gallery",
-                        style = AiPoseTypography.NavigationTitle,
-                        color = AiPoseColors.Foreground,
+                        style = AiPoseTypography.ScreenTitle,
+                        color = GalleryPrototypeBlack,
                     )
+                }
+
+                NeoBrutalismContainer(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .semantics {
+                            testTag = "gallery-upgrade-btn"
+                            contentDescription = "Upgrade to Premium"
+                        },
+                    shape = RoundedCornerShape(10.dp),
+                    backgroundColor = GalleryPrototypeYellow,
+                    shadowColor = GalleryPrototypeBlack,
+                    shadowOffset = 2.dp,
+                    borderWidth = 2.dp,
+                    onClick = onUpgrade,
+                ) {
+                    GalleryCrownIcon()
                 }
             }
 
-            OutlinedTextField(
-                value = uiState.query,
-                onValueChange = viewModel::onQueryChange,
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(bottom = Spacing.sm)
-                    .semantics { testTag = "gallery-search-field" },
-                placeholder = {
-                    Text(
-                        "Search by pose name",
-                        style = AiPoseTypography.Input,
-                        color = AiPoseColors.Subtext,
-                    )
-                },
-                textStyle = AiPoseTypography.Input,
-                singleLine = true,
-                colors = TextFieldDefaults.outlinedTextFieldColors(
-                    focusedBorderColor = AiPoseColors.Foreground,
-                    unfocusedBorderColor = AiPoseColors.Foreground,
-                    containerColor = AiPoseColors.Surface,
-                    cursorColor = AiPoseColors.Foreground,
-                ),
-                shape = RoundedCornerShape(CornerRadius.md),
-                leadingIcon = {
-                    Icon(
-                        imageVector = Icons.Default.Search,
-                        contentDescription = null,
-                        tint = AiPoseColors.Foreground,
-                    )
-                },
-                trailingIcon = {
-                    if (uiState.query.isNotEmpty()) {
-                        IconButton(
-                            onClick = { viewModel.onQueryChange("") },
-                            modifier = Modifier
-                                .size(44.dp)
-                                .semantics { testTag = "gallery-search-clear-button" },
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Close,
-                                contentDescription = "Clear",
-                                tint = AiPoseColors.Foreground,
-                            )
-                        }
+                    .horizontalScroll(rememberScrollState())
+                    .padding(bottom = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                galleryDateFilterLabels.forEach { label ->
+                    val isActive = label == selectedDateFilter
+                    NeoBrutalismContainer(
+                        modifier = Modifier
+                            .height(36.dp)
+                            .semantics {
+                                testTag = "gallery-date-filter-${label.filter { it.isLetterOrDigit() }}"
+                                contentDescription = "$label gallery date filter"
+                            },
+                        shape = RoundedCornerShape(8.dp),
+                        backgroundColor = if (isActive) GalleryPrototypePink else GalleryPrototypeWhite,
+                        shadowColor = GalleryPrototypeBlack,
+                        shadowOffset = if (isActive) 1.5.dp else 0.dp,
+                        borderWidth = if (isActive) 2.dp else 1.5.dp,
+                        hasShadow = isActive,
+                        onClick = { selectedDateFilter = label },
+                    ) {
+                        Text(
+                            text = label,
+                            style = AiPoseTypography.MetaLabel,
+                            color = GalleryPrototypeBlack,
+                            modifier = Modifier.padding(horizontal = 12.dp),
+                        )
                     }
-                },
-            )
+                }
+            }
 
             // ── Content states ───────────────────────────────────────────────
             when {
                 uiState.isLoading -> {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(color = AiPoseColors.Primary)
+                        CircularProgressIndicator(color = GalleryPrototypePink)
                     }
                 }
 
@@ -202,35 +216,7 @@ fun GalleryScreen(
                     }
                 }
 
-                isFilterEmpty -> {
-                    Box(
-                        Modifier
-                            .fillMaxSize()
-                            .semantics { testTag = "gallery-filter-empty-state" },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .cardChrome()
-                                .padding(Spacing.lg),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(Spacing.md),
-                        ) {
-                            Text("No matching photos", style = AiPoseTypography.Heading3)
-                            Text(
-                                text = "No photos match “${uiState.query.trim()}”.",
-                                style = AiPoseTypography.Body,
-                                color = AiPoseColors.Subtext,
-                            )
-                            PrimaryButton(
-                                text = "Clear search",
-                                onClick = { viewModel.onQueryChange("") },
-                            )
-                        }
-                    }
-                }
-
-                // Grid is the only gallery layout (prototype reference).
+                  // Grid is the only gallery layout (prototype reference).
                 else -> {
                     LazyVerticalGrid(
                         columns = GridCells.Fixed(GalleryGridDefaults.DENSE_COLUMN_COUNT),
@@ -290,4 +276,37 @@ fun GalleryScreen(
         )
     }
     } // end Box overlay
+}
+
+@Composable
+private fun GalleryCrownIcon() {
+    Canvas(modifier = Modifier.size(22.dp)) {
+        val strokeWidth = 2.5.dp.toPx()
+        val crown = Path().apply {
+            moveTo(size.width * 0.12f, size.height * 0.28f)
+            lineTo(size.width * 0.30f, size.height * 0.50f)
+            lineTo(size.width * 0.50f, size.height * 0.20f)
+            lineTo(size.width * 0.70f, size.height * 0.50f)
+            lineTo(size.width * 0.88f, size.height * 0.28f)
+            lineTo(size.width * 0.78f, size.height * 0.76f)
+            lineTo(size.width * 0.22f, size.height * 0.76f)
+            close()
+        }
+        drawPath(
+            path = crown,
+            color = GalleryPrototypeBlack,
+            style = Stroke(
+                width = strokeWidth,
+                cap = StrokeCap.Round,
+                join = StrokeJoin.Round,
+            ),
+        )
+        drawLine(
+            color = GalleryPrototypeBlack,
+            start = androidx.compose.ui.geometry.Offset(size.width * 0.20f, size.height * 0.86f),
+            end = androidx.compose.ui.geometry.Offset(size.width * 0.80f, size.height * 0.86f),
+            strokeWidth = strokeWidth,
+            cap = StrokeCap.Round,
+        )
+    }
 }

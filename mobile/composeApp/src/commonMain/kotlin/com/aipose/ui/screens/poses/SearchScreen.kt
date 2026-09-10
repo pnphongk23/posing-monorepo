@@ -4,16 +4,21 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
 import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
 import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridItemSpan
 import androidx.compose.foundation.lazy.staggeredgrid.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.Alignment
@@ -23,6 +28,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTag
 import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.core.screen.Screen
 import com.aipose.data.CommunitySearchPagingController
@@ -33,7 +39,6 @@ import com.aipose.ui.components.NeoBrutalismContainer
 import com.aipose.ui.components.PrimaryButton
 import com.aipose.ui.theme.AiPoseColors
 import com.aipose.ui.theme.AiPoseTypography
-import com.aipose.ui.theme.CornerRadius
 import com.aipose.ui.theme.Spacing
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -46,6 +51,13 @@ import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.painterResource
 import ai_pose.composeapp.generated.resources.Res
 import ai_pose.composeapp.generated.resources.ic_chevron_left
+
+private val SearchPrototypeBackground = Color(0xFFFBF6EF)
+private val SearchPrototypePink = Color(0xFFE89CAE)
+private val SearchPrototypeBlack = Color(0xFF121212)
+private val SearchPrototypeWhite = Color.White
+private val searchSourceFilterLabels = listOf("All poses", "My poses", "Community")
+private val recentSearchLabels = listOf("Dancing", "Stretching", "Warrior")
 
 data class SearchUiState(
     val query: String = "",
@@ -153,7 +165,6 @@ class SearchScreen(
     private val onBack: () -> Unit,
 ) : Screen {
 
-    @OptIn(ExperimentalMaterial3Api::class)
     @Composable
     override fun Content() {
         val viewModel = remember { SearchViewModel() }
@@ -161,22 +172,26 @@ class SearchScreen(
         val focusRequester = remember { FocusRequester() }
         val focusManager = LocalFocusManager.current
         val keyboardController = LocalSoftwareKeyboardController.current
+        var selectedSourceFilter by remember { mutableStateOf(searchSourceFilterLabels.first()) }
 
-        LaunchedEffect(Unit) {
-            focusRequester.requestFocus()
-        }
-
-        val publishedCount = uiState.publishedResults.size
         val hasActiveQuery = uiState.query.trim().isNotEmpty()
+        val displayedResults = if (selectedSourceFilter == "My poses") {
+            emptyList()
+        } else {
+            uiState.publishedResults
+        }
+        val displayedCount = displayedResults.size
+        val showResultsPanel = hasActiveQuery || uiState.searchError != null
         val showEmptyState =
+            showResultsPanel &&
             !uiState.isInitialLoading &&
-                publishedCount == 0 &&
+                displayedCount == 0 &&
                 uiState.searchError == null
 
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(AiPoseColors.Background)
+                .background(SearchPrototypeBackground)
                 .statusBarsPadding()
                 .padding(Spacing.lg)
                 .clickable(
@@ -190,88 +205,163 @@ class SearchScreen(
         ) {
             Column(
                 modifier = Modifier.fillMaxSize(),
-                verticalArrangement = Arrangement.spacedBy(Spacing.md),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(44.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(Spacing.md),
+                    horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
                     NeoBrutalismContainer(
-                        modifier = Modifier.size(32.dp),
+                        modifier = Modifier.size(44.dp),
                         shape = RoundedCornerShape(10.dp),
-                        backgroundColor = AiPoseColors.Background,
-                        shadowOffset = 2.dp,
+                        backgroundColor = SearchPrototypeWhite,
+                        shadowColor = SearchPrototypeBlack,
+                        shadowOffset = 3.dp,
                         borderWidth = 2.dp,
                         onClick = onBack,
                     ) {
                         Icon(
                             painter = painterResource(Res.drawable.ic_chevron_left),
                             contentDescription = "Back",
-                            tint = AiPoseColors.Foreground,
-                            modifier = Modifier.size(16.dp),
+                            tint = SearchPrototypeBlack,
+                            modifier = Modifier.size(20.dp),
                         )
                     }
-                    Text(
-                        text = "Search",
-                        style = AiPoseTypography.NavigationTitle,
-                        color = AiPoseColors.Foreground,
-                    )
+                    Box(
+                        modifier = Modifier.weight(1f),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            text = "Search",
+                            style = AiPoseTypography.NavigationTitle,
+                            color = SearchPrototypeBlack,
+                        )
+                    }
+                    Spacer(modifier = Modifier.size(44.dp))
                 }
 
-                Box(
+                NeoBrutalismContainer(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(vertical = Spacing.xs),
+                        .height(56.dp)
+                        .testTag("search-field")
+                        .semantics { contentDescription = "Search poses by title" },
+                    shape = RoundedCornerShape(14.dp),
+                    backgroundColor = SearchPrototypeWhite,
+                    shadowColor = SearchPrototypeBlack,
+                    shadowOffset = 3.dp,
+                    borderWidth = 2.dp,
                 ) {
-                    OutlinedTextField(
+                    BasicTextField(
                         value = uiState.query,
                         onValueChange = viewModel::onQueryChange,
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .focusRequester(focusRequester)
-                            .testTag("search-field")
-                            .semantics { contentDescription = "Search poses by title" },
-                        placeholder = {
-                            Text(
-                                "Type a title",
-                                style = AiPoseTypography.Input,
-                                color = AiPoseColors.Subtext,
-                            )
-                        },
-                        textStyle = AiPoseTypography.Input,
+                            .fillMaxSize()
+                            .focusRequester(focusRequester),
+                        textStyle = AiPoseTypography.Input.copy(color = SearchPrototypeBlack),
                         singleLine = true,
-                        colors = TextFieldDefaults.outlinedTextFieldColors(
-                            focusedBorderColor = AiPoseColors.Foreground,
-                            unfocusedBorderColor = AiPoseColors.Foreground,
-                            containerColor = AiPoseColors.Surface,
-                            cursorColor = AiPoseColors.Foreground,
-                        ),
-                        shape = RoundedCornerShape(CornerRadius.md),
-                        leadingIcon = {
-                            Icon(
-                                imageVector = Icons.Default.Search,
-                                contentDescription = null,
-                                tint = AiPoseColors.Foreground,
-                            )
-                        },
-                        trailingIcon = {
-                            if (uiState.query.isNotEmpty()) {
-                                IconButton(
-                                    onClick = viewModel::clearQuery,
+                        cursorBrush = SolidColor(SearchPrototypeBlack),
+                        decorationBox = { innerTextField ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(start = 12.dp, end = 2.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Search,
+                                    contentDescription = null,
+                                    tint = SearchPrototypeBlack,
+                                    modifier = Modifier.size(20.dp),
+                                )
+                                Box(
                                     modifier = Modifier
-                                        .size(44.dp)
-                                        .testTag("search-clear-button"),
+                                        .weight(1f)
+                                        .padding(horizontal = 8.dp),
+                                    contentAlignment = Alignment.CenterStart,
                                 ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Close,
-                                        contentDescription = "Clear",
-                                        tint = AiPoseColors.Foreground,
-                                    )
+                                    if (uiState.query.isEmpty()) {
+                                        Text(
+                                            text = "Search poses",
+                                            style = AiPoseTypography.Input,
+                                            color = AiPoseColors.Subtext,
+                                        )
+                                    }
+                                    innerTextField()
+                                }
+                                if (uiState.query.isNotEmpty()) {
+                                    IconButton(
+                                        onClick = {
+                                            selectedSourceFilter = searchSourceFilterLabels.first()
+                                            viewModel.clearQuery()
+                                        },
+                                        modifier = Modifier
+                                            .size(44.dp)
+                                            .testTag("search-clear-button"),
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Close,
+                                            contentDescription = "Clear",
+                                            tint = SearchPrototypeBlack,
+                                        )
+                                    }
+                                } else {
+                                    Spacer(modifier = Modifier.size(44.dp))
                                 }
                             }
                         },
                     )
+                }
+
+                if (!hasActiveQuery && uiState.searchError == null) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("recent-searches"),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Text(
+                            text = "Recent searches",
+                            style = AiPoseTypography.Heading3,
+                            color = SearchPrototypeBlack,
+                        )
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            recentSearchLabels.forEach { label ->
+                                NeoBrutalismContainer(
+                                    modifier = Modifier
+                                        .height(44.dp)
+                                        .semantics {
+                                            testTag = "recent-search-chip-${label.lowercase()}"
+                                            contentDescription = "Search recent $label"
+                                        },
+                                    shape = RoundedCornerShape(10.dp),
+                                    backgroundColor = SearchPrototypeWhite,
+                                    shadowColor = SearchPrototypeBlack,
+                                    shadowOffset = 1.5.dp,
+                                    borderWidth = 1.5.dp,
+                                    onClick = {
+                                        selectedSourceFilter = searchSourceFilterLabels.first()
+                                        viewModel.onQueryChange(label)
+                                    },
+                                ) {
+                                    Text(
+                                        text = label,
+                                        style = AiPoseTypography.Control,
+                                        color = SearchPrototypeBlack,
+                                        modifier = Modifier.padding(horizontal = 12.dp),
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
 
                 uiState.searchError?.let { message ->
@@ -299,17 +389,73 @@ class SearchScreen(
                     }
                 }
 
-                if (hasActiveQuery || publishedCount > 0 || uiState.searchError != null) {
-                    Text(
-                        text = when {
-                            uiState.isInitialLoading -> "Loading"
-                            uiState.searchError != null && publishedCount == 0 -> "Unavailable"
-                            else -> searchResultsCountLabel(publishedCount, uiState.query)
-                        },
-                        style = AiPoseTypography.Caption,
-                        color = AiPoseColors.Subtext,
-                        modifier = Modifier.testTag("search-results-count"),
-                    )
+                if (showResultsPanel) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.Bottom,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text(
+                                    text = "YOUR MATCHES",
+                                    style = AiPoseTypography.MetaLabel,
+                                    color = AiPoseColors.Subtext,
+                                )
+                                Text(
+                                    text = "Results",
+                                    style = AiPoseTypography.Heading3,
+                                    color = SearchPrototypeBlack,
+                                )
+                            }
+                            Text(
+                                text = when {
+                                    uiState.isInitialLoading -> "Loading"
+                                    uiState.searchError != null && displayedCount == 0 -> "Unavailable"
+                                    else -> searchResultsCountLabel(displayedCount, uiState.query)
+                                },
+                                style = AiPoseTypography.Caption,
+                                color = AiPoseColors.Subtext,
+                                modifier = Modifier.testTag("search-results-count"),
+                            )
+                        }
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState())
+                                .testTag("search-source-filters"),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            searchSourceFilterLabels.forEach { label ->
+                                val isActive = selectedSourceFilter == label
+                                NeoBrutalismContainer(
+                                    modifier = Modifier
+                                        .height(44.dp)
+                                        .semantics {
+                                            testTag = "search-source-filter-${label.lowercase().replace(' ', '-') }"
+                                            contentDescription = "$label search filter"
+                                        },
+                                    shape = RoundedCornerShape(10.dp),
+                                    backgroundColor = if (isActive) SearchPrototypePink else SearchPrototypeWhite,
+                                    shadowColor = SearchPrototypeBlack,
+                                    shadowOffset = if (isActive) 1.5.dp else 0.dp,
+                                    borderWidth = if (isActive) 2.dp else 1.5.dp,
+                                    hasShadow = isActive,
+                                    onClick = { selectedSourceFilter = label },
+                                ) {
+                                    Text(
+                                        text = label,
+                                        style = AiPoseTypography.Control,
+                                        color = SearchPrototypeBlack,
+                                        modifier = Modifier.padding(horizontal = 12.dp),
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
 
                 if (showEmptyState) {
@@ -343,7 +489,7 @@ class SearchScreen(
                             )
                         }
                     }
-                } else if (uiState.isInitialLoading && publishedCount == 0 && hasActiveQuery) {
+                } else if (uiState.isInitialLoading && displayedCount == 0 && hasActiveQuery) {
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
@@ -352,7 +498,7 @@ class SearchScreen(
                     ) {
                         CircularProgressIndicator(color = AiPoseColors.Primary)
                     }
-                } else if (publishedCount > 0) {
+                } else if (displayedCount > 0) {
                     LazyVerticalStaggeredGrid(
                         modifier = Modifier.fillMaxSize(),
                         columns = StaggeredGridCells.Fixed(2),
@@ -360,7 +506,7 @@ class SearchScreen(
                         verticalItemSpacing = Spacing.sm,
                     ) {
                         itemsIndexed(
-                            uiState.publishedResults,
+                            displayedResults,
                             key = { index, pose -> "published-${communityPoseGridKey(pose, index)}" },
                         ) { index, pose ->
                             CommunityPoseCard(
@@ -370,7 +516,7 @@ class SearchScreen(
                             )
                         }
 
-                        if (uiState.communityHasMore) {
+                        if (uiState.communityHasMore && selectedSourceFilter != "My poses") {
                             if (uiState.isLoadingMore) {
                                 item(span = StaggeredGridItemSpan.FullLine) {
                                     Box(
