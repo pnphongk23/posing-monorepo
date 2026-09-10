@@ -4,42 +4,84 @@ import com.aipose.Photo
 import com.aipose.data.AiPoseDatabase
 import com.aipose.data.DatabaseDriverFactory
 import com.aipose.data.PhotoRepository
+import com.aipose.data.PoseRepository
 import com.aipose.data.createDatabase
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.datetime.Clock
 
 data class GalleryUiState(
+    val query: String = "",
     val photos: List<Photo> = emptyList(),
     val groupedByDate: Map<String, List<Photo>> = emptyMap(),
     val isLoading: Boolean = true,
     val selectedPhoto: Photo? = null,
 )
 
+internal fun filterPhotosByPoseName(
+    photos: List<Photo>,
+    poseNameById: Map<String, String>,
+    query: String,
+): List<Photo> {
+    val trimmed = query.trim()
+    if (trimmed.isEmpty()) return photos
+
+    return photos.filter { photo ->
+        val storedName = photo.poseName.takeIf { it.isNotBlank() }
+        val linkedName = photo.poseId?.let { poseNameById[it]?.takeIf { name -> name.isNotBlank() } }
+        val matchesStored = storedName?.contains(trimmed, ignoreCase = true) == true
+        val matchesLinked = linkedName?.contains(trimmed, ignoreCase = true) == true
+        matchesStored || matchesLinked
+    }
+}
+
 class GalleryViewModel(
     database: AiPoseDatabase = createDatabase(DatabaseDriverFactory()),
-    private val repository: PhotoRepository = PhotoRepository(database),
+    private val photoRepository: PhotoRepository = PhotoRepository(database),
+    private val poseRepository: PoseRepository = PoseRepository(database),
 ) {
     private val _uiState = MutableStateFlow(GalleryUiState())
     val uiState: StateFlow<GalleryUiState> = _uiState.asStateFlow()
 
+    private var poseNameById: Map<String, String> = emptyMap()
+    private var activeLoadJob: Job? = null
+
     suspend fun load() {
-        repository.getAllPhotos().collectLatest { photos ->
-            _uiState.update {
-                it.copy(
-                    photos = photos,
-                    groupedByDate = groupPhotosByDate(photos),
-                    isLoading = false,
-                )
+        val existing = activeLoadJob
+        if (existing?.isActive == true) return
+
+        try {
+            coroutineScope {
+                activeLoadJob = currentCoroutineContext()[Job]
+                combine(
+                    photoRepository.getAllPhotos(),
+                    poseRepository.getMyPoses(),
+                ) { photos, poses ->
+                    poseNameById = poses.associate { it.poseId to it.name }
+                    photos
+                }.collectLatest { photos ->
+                    reproject(photos)
+                }
             }
+        } finally {
+            activeLoadJob = null
         }
     }
 
+    fun onQueryChange(query: String) {
+        _uiState.update { it.copy(query = query) }
+        reproject(_uiState.value.photos)
+    }
+
     suspend fun deletePhoto(id: Long) {
-        repository.deletePhoto(id)
+        photoRepository.deletePhoto(id)
 
         // The list's flow collector is cancelled while Voyager shows detail.
         // Apply the successful deletion locally before returning so the list is
@@ -49,18 +91,32 @@ class GalleryViewModel(
             val remainingPhotos = currentState.photos.filterNot { it.id == id }
             currentState.copy(
                 photos = remainingPhotos,
-                groupedByDate = groupPhotosByDate(remainingPhotos),
+                groupedByDate = groupPhotosByDate(
+                    filterPhotosByPoseName(remainingPhotos, poseNameById, currentState.query),
+                ),
                 selectedPhoto = currentState.selectedPhoto?.takeUnless { it.id == id },
             )
         }
     }
 
     suspend fun toggleFavorite(id: Long) {
-        repository.toggleFavorite(id)
+        photoRepository.toggleFavorite(id)
     }
 
     fun selectPhoto(photo: Photo?) {
         _uiState.value = _uiState.value.copy(selectedPhoto = photo)
+    }
+
+    private fun reproject(allPhotos: List<Photo>) {
+        val query = _uiState.value.query
+        val filtered = filterPhotosByPoseName(allPhotos, poseNameById, query)
+        _uiState.update {
+            it.copy(
+                photos = allPhotos,
+                groupedByDate = groupPhotosByDate(filtered),
+                isLoading = false,
+            )
+        }
     }
 
     private fun groupPhotosByDate(photos: List<Photo>): Map<String, List<Photo>> {
@@ -102,7 +158,7 @@ private fun floorToUtcDay(millis: Long): Long =
 
 private val MONTHS = arrayOf(
     "JAN", "FEB", "MAR", "APR", "MAY", "JUN",
-    "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"
+    "JUL", "AUG", "SEP", "OCT", "NOV", "DEC",
 )
 
 private fun formatMonthDay(millis: Long): String {

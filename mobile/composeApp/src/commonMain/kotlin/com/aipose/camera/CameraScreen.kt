@@ -33,7 +33,8 @@ import ai_pose.composeapp.generated.resources.ic_refresh_cw
 import ai_pose.composeapp.generated.resources.ic_more_horizontal
 import ai_pose.composeapp.generated.resources.ic_zap
 import ai_pose.composeapp.generated.resources.ic_grid
-import ai_pose.composeapp.generated.resources.ic_users
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Image
 
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
@@ -62,6 +63,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTag
 import cafe.adriel.voyager.navigator.tab.LocalTabNavigator
 import coil3.compose.AsyncImage
+import com.aipose.data.PreparedPoseReference
 import com.aipose.data.PoseServiceLocator
 import com.aipose.data.resolveImagePath
 import com.aipose.data.DatabaseDriverFactory
@@ -131,6 +133,10 @@ fun CameraScreen(
           mutableStateOf(CameraZoomUiState(zoomValue = restoredSnapshot.settings.zoom))
       }
     var flashVisible by remember { mutableStateOf(false) }
+    var isGuidePickerVisible by remember { mutableStateOf(false) }
+    var pendingVerifiedReference by remember { mutableStateOf<PreparedPoseReference?>(null) }
+    var isAppForeground by remember { mutableStateOf(true) }
+    var wasGuidePickerVisible by remember { mutableStateOf(false) }
 
       val poseOverlay = uiState.overlaySource as? OverlaySourceState.PoseImage
     val guideAsset = poseOverlay?.let { guide ->
@@ -183,6 +189,24 @@ fun CameraScreen(
               uiState = uiState.withoutPose()
           }
 
+      fun commitVerifiedPoseReference(reference: PreparedPoseReference) {
+          PoseServiceLocator.preparedReference = reference
+          activeReference = reference
+          uiState = applyVerifiedPickerSelection(uiState, reference)
+      }
+
+      fun openGuidePicker() {
+          if (!cameraControlsEnabled) return
+          uiState = uiState.copy(isMoreMenuVisible = false)
+          cameraController.stopPreview()
+          isGuidePickerVisible = true
+      }
+
+      fun dismissGuidePicker(reference: PreparedPoseReference? = null) {
+          pendingVerifiedReference = reference
+          isGuidePickerVisible = false
+      }
+
       LaunchedEffect(Unit) {
           coordinator.onLaunch()
           coordinator.refreshLatestThumbnail()
@@ -199,27 +223,51 @@ fun CameraScreen(
         }
 
 
-    // Start the native preview after permission is authorized, including the
-    // initial authorized-entry and the completion of a permission request.
-    LaunchedEffect(permissionState) {
-        if (permissionState == CameraPermissionState.AUTHORIZED) {
+    // Single serialized picker/preview authority: stop while picker is visible;
+    // on unmount commit pending reference once, then startPreview at most once
+    // when authorized and foreground. Persistence follows via the save effect.
+    LaunchedEffect(isGuidePickerVisible, permissionState, isAppForeground) {
+        val pickerJustClosed = wasGuidePickerVisible && !isGuidePickerVisible
+        wasGuidePickerVisible = isGuidePickerVisible
+
+        if (isGuidePickerVisible) {
+            cameraController.stopPreview()
+            return@LaunchedEffect
+        }
+
+        if (pickerJustClosed) {
+            val exitPlan = planGuidePickerExit(pendingVerifiedReference, permissionState, isAppForeground)
+            exitPlan.committedReference?.let { reference ->
+                commitVerifiedPoseReference(reference)
+                pendingVerifiedReference = null
+            }
+            if (exitPlan.shouldStartPreview) {
+                cameraController.startPreview()
+            } else {
+                cameraController.stopPreview()
+            }
+            return@LaunchedEffect
+        }
+
+        if (permissionState == CameraPermissionState.AUTHORIZED && isAppForeground) {
             cameraController.startPreview()
         } else {
             cameraController.stopPreview()
         }
     }
 
-    // WI-04: app background/foreground → cancel in-flight capture, stop/restart
-    // the native preview session; the coordinator restores controls on re-entry.
+    // WI-04: app background/foreground → cancel in-flight capture; preview
+    // restart is owned by the unified picker/preview effect above.
     DisposableEffect(coordinator) {
         val cancel = observeAppLifecycle(
             onBackground = {
+                isAppForeground = false
                 coordinator.onBackground()
                 cameraController.stopPreview()
             },
             onForeground = {
+                isAppForeground = true
                 coordinator.onForeground()
-                cameraController.startPreview()
             },
         )
         onDispose { cancel() }
@@ -247,10 +295,13 @@ fun CameraScreen(
         }
     }
 
-    Column(
+    Box(
         modifier = modifier
             .fillMaxSize()
             .background(AiPoseColors.SurfaceVariant),
+    ) {
+    Column(
+        modifier = Modifier.fillMaxSize(),
     ) {
         Box(
             modifier = Modifier
@@ -326,16 +377,22 @@ fun CameraScreen(
                 onClick = onDismiss,
             )
 
-            // Top Right — More/settings; behind the status bar/notch.
-            Box(
+            // Top Right — HDR-003 guide entry beside Tools (SCR-001-01).
+            Row(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
                     .statusBarsPadding()
-                    .padding(top = 8.dp, end = 12.dp)
+                    .padding(top = 8.dp, end = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
+                CameraGuideButton(
+                    enabled = cameraControlsEnabled,
+                    onClick = ::openGuidePicker,
+                )
                 CameraMoreButton(
                     enabled = cameraControlsEnabled,
-                    onClick = { uiState = uiState.copy(isMoreMenuVisible = !uiState.isMoreMenuVisible) }
+                    onClick = { uiState = uiState.copy(isMoreMenuVisible = !uiState.isMoreMenuVisible) },
                 )
             }
 
@@ -373,14 +430,6 @@ fun CameraScreen(
                     }
                 }
             }
-
-            // Bottom Right
-            CameraUsersButton(
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(end = 12.dp, bottom = 12.dp),
-                onClick = if (cameraControlsEnabled) onDismiss else null
-            )
 
             // Bottom Center
             Box(
@@ -470,6 +519,15 @@ fun CameraScreen(
         if (permissionState == CameraPermissionState.DENIED || permissionState == CameraPermissionState.RESTRICTED) {
             PermissionDeniedOverlay(controller = cameraController)
         }
+    }
+
+    if (isGuidePickerVisible) {
+        PoseGuidePickerScreen(
+            modifier = Modifier.fillMaxSize(),
+            onBack = { dismissGuidePicker() },
+            onVerifiedSelection = { dismissGuidePicker(it) },
+        )
+    }
     }
 }
 @Composable
@@ -590,30 +648,31 @@ private fun CameraMoreButton(
 }
 
 @Composable
-private fun CameraUsersButton(
+private fun CameraGuideButton(
     modifier: Modifier = Modifier,
-    onClick: (() -> Unit)?,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
 ) {
     NeoBrutalismContainer(
         modifier = modifier.semantics {
-            testTag = "poseButton"
-            contentDescription = "Browse poses"
-        }.size(48.dp),
-        shape = CircleShape,
+            testTag = "camera-guide-btn"
+            contentDescription = "Choose a pose guide"
+        }.size(44.dp),
+        shape = RoundedCornerShape(10.dp),
         backgroundColor = AiPoseColors.AccentBlue,
         shadowColor = AiPoseColors.Foreground,
         shadowOffset = 2.dp,
-        onClick = onClick
+        onClick = if (enabled) onClick else null,
     ) {
         Box(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().alpha(if (enabled) 1f else 0.45f),
             contentAlignment = Alignment.Center,
         ) {
             Icon(
-                painter = painterResource(Res.drawable.ic_users),
-                contentDescription = "Browse poses",
+                imageVector = Icons.Default.Image,
+                contentDescription = "Choose a pose guide",
                 tint = AiPoseColors.Foreground,
-                modifier = Modifier.size(16.dp)
+                modifier = Modifier.size(18.dp),
             )
         }
     }

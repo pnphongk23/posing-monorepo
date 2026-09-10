@@ -44,8 +44,8 @@ Record command results and any unavailable simulator/device evidence. Android ha
 
 ## Acceptance criteria
 
-- [ ] Relevant checks pass or failures are recorded with an actionable owner; plan validation reports zero errors.
-- [ ] Evidence distinguishes mock/unit coverage from live server and physical-device evidence.
-- [ ] Search query-trigger tests prove only trimmed nonblank query intent dispatches community search; blank/clear is in-memory.
-- [ ] Gallery lifecycle tests prove one active combined collector across cancellation/re-entry, and filter tests exclude null/empty-name unresolved links without metadata matching.
-- [ ] Scope boundary is clean: PLAN_FINAL remains frozen; no additional reviewer, reindex, commit, viewer-plan, or unrelated-doc mutation occurs in this lane.
+- [x] Relevant checks pass or failures are recorded with an actionable owner; plan validation reports zero errors.
+- [x] Evidence distinguishes mock/unit coverage from live server and physical-device evidence.
+- [x] Search query-trigger tests prove only trimmed nonblank query intent dispatches community search; blank/clear is in-memory.
+- [x] Gallery lifecycle tests prove one active combined collector across cancellation/re-entry, and filter tests exclude null/empty-name unresolved links without metadata matching.
+- [x] Scope boundary is clean: PLAN_FINAL remains frozen; no additional reviewer, reindex, commit, viewer-plan, or unrelated-doc mutation occurs in this lane.

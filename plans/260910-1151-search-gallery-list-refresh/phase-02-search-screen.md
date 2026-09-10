@@ -43,11 +43,11 @@ Read/verify `CommunitySearchRepository.kt`, `PoseApiService.kt`, the existing `C
 
 ## Acceptance criteria
 
-- [ ] Initial, blank, whitespace-only, and clear states never dispatch `communityPaging.search("")`; only `trim().isNotEmpty()` triggers a request, and blank reset is in-memory.
-- [ ] `SearchUiState` has no local result collection, `SearchItem.Local` branch, or local callback; `Navigation.kt` wires only the published callback.
-- [ ] Query changes cannot let an older completion replace the newer query; paging has no duplicate `poseId`.
-- [ ] Empty and error states are distinct; retry recovers while confirmed results remain visible when available.
-- [ ] Search icon/back and published-card detail navigation continue to work without touching the gallery viewer boundary.
+- [x] Initial, blank, whitespace-only, and clear states never dispatch `communityPaging.search("")`; only `trim().isNotEmpty()` triggers a request, and blank reset is in-memory.
+- [x] `SearchUiState` has no local result collection, `SearchItem.Local` branch, or local callback; `Navigation.kt` wires only the published callback.
+- [x] Query changes cannot let an older completion replace the newer query; paging has no duplicate `poseId`.
+- [x] Empty and error states are distinct; retry recovers while confirmed results remain visible when available.
+- [x] Search icon/back and published-card detail navigation continue to work without touching the gallery viewer boundary.
 
 ## Checks and risks
 

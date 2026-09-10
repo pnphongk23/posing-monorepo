@@ -1,6 +1,7 @@
 package com.aipose.camera
 
 import androidx.compose.ui.geometry.Offset
+import com.aipose.data.PreparedPoseReference
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
@@ -28,6 +29,38 @@ data class CameraUiState(
 
 /** Clears only the selected pose/overlay; all current camera settings remain unchanged. */
 fun CameraUiState.withoutPose(): CameraUiState = copy(overlaySource = OverlaySourceState.None)
+
+/** Applies a verified [PreparedPoseReference] while preserving all camera settings. */
+fun CameraUiState.withVerifiedPoseReference(reference: PreparedPoseReference): CameraUiState =
+    copy(
+        overlaySource = OverlaySourceState.PoseImage(reference.poseId, reference.skeletonPath),
+        isOverlayVisible = true,
+    )
+
+/**
+ * Single serialized picker-exit plan: commit the pending reference (if any), then
+ * decide whether preview may restart. Persistence is owned by the existing
+ * settings/pose save effect — no duplicate replacePose here.
+ */
+data class GuidePickerExitPlan(
+    val committedReference: PreparedPoseReference?,
+    val shouldStartPreview: Boolean,
+)
+
+fun planGuidePickerExit(
+    pendingReference: PreparedPoseReference?,
+    permission: CameraPermissionState,
+    isAppForeground: Boolean,
+): GuidePickerExitPlan = GuidePickerExitPlan(
+    committedReference = pendingReference,
+    shouldStartPreview = permission == CameraPermissionState.AUTHORIZED && isAppForeground,
+)
+
+/** Atomic in-memory commit for a verified picker selection. */
+fun applyVerifiedPickerSelection(
+    currentUiState: CameraUiState,
+    reference: PreparedPoseReference,
+): CameraUiState = currentUiState.withVerifiedPoseReference(reference)
 
 enum class PoseLineColor { White, Black }
 

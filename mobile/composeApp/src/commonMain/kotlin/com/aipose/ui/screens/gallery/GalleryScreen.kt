@@ -19,13 +19,19 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import org.jetbrains.compose.resources.painterResource
 import ai_pose.composeapp.generated.resources.Res
 import ai_pose.composeapp.generated.resources.ic_chevron_left
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -43,6 +49,7 @@ import com.aipose.ui.components.NeoBrutalismContainer
 import com.aipose.ui.components.cardChrome
 import com.aipose.ui.theme.AiPoseColors
 import com.aipose.ui.theme.AiPoseTypography
+import com.aipose.ui.theme.CornerRadius
 import com.aipose.ui.theme.Spacing
 import com.aipose.platform.saveToPhotos
 import com.aipose.platform.shareImage
@@ -60,6 +67,8 @@ fun GalleryScreen(
     onPhotoClick: ((com.aipose.Photo) -> Unit)? = null,
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val hasFilterQuery = uiState.query.trim().isNotEmpty()
+    val isFilterEmpty = hasFilterQuery && uiState.photos.isNotEmpty() && uiState.groupedByDate.isEmpty()
     // Voyager disposes the list composition while detail is on top, so its
     // collector is cancelled too. Re-collect whenever the list re-enters to
     // pick up deletions and other changes made from detail.
@@ -119,6 +128,54 @@ fun GalleryScreen(
                 }
             }
 
+            OutlinedTextField(
+                value = uiState.query,
+                onValueChange = viewModel::onQueryChange,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = Spacing.sm)
+                    .semantics { testTag = "gallery-search-field" },
+                placeholder = {
+                    Text(
+                        "Search by pose name",
+                        style = AiPoseTypography.Input,
+                        color = AiPoseColors.Subtext,
+                    )
+                },
+                textStyle = AiPoseTypography.Input,
+                singleLine = true,
+                colors = TextFieldDefaults.outlinedTextFieldColors(
+                    focusedBorderColor = AiPoseColors.Foreground,
+                    unfocusedBorderColor = AiPoseColors.Foreground,
+                    containerColor = AiPoseColors.Surface,
+                    cursorColor = AiPoseColors.Foreground,
+                ),
+                shape = RoundedCornerShape(CornerRadius.md),
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.Search,
+                        contentDescription = null,
+                        tint = AiPoseColors.Foreground,
+                    )
+                },
+                trailingIcon = {
+                    if (uiState.query.isNotEmpty()) {
+                        IconButton(
+                            onClick = { viewModel.onQueryChange("") },
+                            modifier = Modifier
+                                .size(44.dp)
+                                .semantics { testTag = "gallery-search-clear-button" },
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Clear",
+                                tint = AiPoseColors.Foreground,
+                            )
+                        }
+                    }
+                },
+            )
+
             // ── Content states ───────────────────────────────────────────────
             when {
                 uiState.isLoading -> {
@@ -141,6 +198,34 @@ fun GalleryScreen(
                             Text("📸", fontSize = 48.sp) // GalleryScreen.kt:146
                             Text("No photos yet", style = AiPoseTypography.Heading3)
                             PrimaryButton(text = "Open camera", onClick = { onOpenCamera() })
+                        }
+                    }
+                }
+
+                isFilterEmpty -> {
+                    Box(
+                        Modifier
+                            .fillMaxSize()
+                            .semantics { testTag = "gallery-filter-empty-state" },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .cardChrome()
+                                .padding(Spacing.lg),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(Spacing.md),
+                        ) {
+                            Text("No matching photos", style = AiPoseTypography.Heading3)
+                            Text(
+                                text = "No photos match “${uiState.query.trim()}”.",
+                                style = AiPoseTypography.Body,
+                                color = AiPoseColors.Subtext,
+                            )
+                            PrimaryButton(
+                                text = "Clear search",
+                                onClick = { viewModel.onQueryChange("") },
+                            )
                         }
                     }
                 }

@@ -31,6 +31,15 @@ class SearchNavigationWiringTest {
     }
 
     @Test
+    fun eSearchWired_searchScreenUsesPublishedOnlyCallback() {
+        val screen = SearchScreen(
+            onPublishedPoseClick = {},
+            onBack = {},
+        )
+        assertTrue(screen is SearchScreen)
+    }
+
+    @Test
     fun settingsSavedDestination_gatesGuestBeforePushingSaved() {
         var opened = 0
         var signInRequests = 0

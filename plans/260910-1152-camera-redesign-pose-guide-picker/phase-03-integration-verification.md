@@ -13,16 +13,16 @@ Prove the redesign and picker at the boundaries that the repository already trea
 
 ## Requirements
 
-- [ ] Preserve regression evidence for `CameraCoordinatorTest`, `CameraSnapshotIntegrationTest`, `CameraGuideAssetTest`, `TryPoseCameraHandoffTest`, and relevant `PoseDetailViewModelTest` cases.
-- [ ] Verify permission denied/restricted, preview readiness, capture in-flight, write/verify/metadata failure, background cancellation, and latest-thumbnail behavior.
-- [ ] Verify picker loading/empty/error/retry, Back, published-only cards, invalid/unavailable skeleton, guest sign-in/cancel, successful verified replacement, and no stale picker back-stack state.
-- [ ] Verify eight camera settings survive guide replacement and clear-pose still clears only the pose.
-- [ ] Verify a successful selection updates `activeReference`, `CameraUiState.overlaySource`, `PoseServiceLocator.preparedReference`, and snapshot input through one serialized transition; no intermediate disagreement is observable.
-- [ ] Verify picker unmount completes before the single `startPreview()` issued on Back or selection; no `startPreview()` races child teardown or an AV transition.
-- [ ] Verify failed download/MIME validation retains the selected card/context, shows in-place recovery, and leaves the existing Camera overlay, locator, and snapshot input unchanged.
-- [ ] Verify picker entry calls existing `stopPreview()` and exit calls existing `startPreview()` only for authorized foreground Camera; no invented `resume()` or readiness callback is required.
-- [ ] On a supported physical iOS device, verify repeated picker entry/exit does not leave duplicate `MCamera`/AV session ownership, capture callbacks, AV interruptions, or an observable thermal regression. If this cannot be established, record `Pending-validation`; General Lead owns the implementation-acceptance decision.
-- [ ] Use only supported iOS build/test targets; report Android as unverified because no Android target is configured.
+- [x] Preserve regression evidence for `CameraCoordinatorTest`, `CameraSnapshotIntegrationTest`, `CameraGuideAssetTest`, `TryPoseCameraHandoffTest`, and relevant `PoseDetailViewModelTest` cases.
+- [x] Verify permission denied/restricted, preview readiness, capture in-flight, write/verify/metadata failure, background cancellation, and latest-thumbnail behavior.
+- [x] Verify picker loading/empty/error/retry, Back, published-only cards, invalid/unavailable skeleton, guest sign-in/cancel, successful verified replacement, and no stale picker back-stack state.
+- [x] Verify eight camera settings survive guide replacement and clear-pose still clears only the pose.
+- [x] Verify a successful selection updates `activeReference`, `CameraUiState.overlaySource`, `PoseServiceLocator.preparedReference`, and snapshot input through one serialized transition; no intermediate disagreement is observable.
+- [x] Verify picker unmount completes before the single `startPreview()` issued on Back or selection; no `startPreview()` races child teardown or an AV transition.
+- [x] Verify failed download/MIME validation retains the selected card/context, shows in-place recovery, and leaves the existing Camera overlay, locator, and snapshot input unchanged.
+- [x] Verify picker entry calls existing `stopPreview()` and exit calls existing `startPreview()` only for authorized foreground Camera; no invented `resume()` or readiness callback is required.
+- [x] On a supported physical iOS device, verify repeated picker entry/exit does not leave duplicate `MCamera`/AV session ownership, capture callbacks, AV interruptions, or an observable thermal regression. If this cannot be established, record `Pending-validation`; General Lead owns the implementation-acceptance decision.
+- [x] Use only supported iOS build/test targets; report Android as unverified because no Android target is configured.
 
 ## Implementation Steps
 
@@ -35,23 +35,23 @@ Prove the redesign and picker at the boundaries that the repository already trea
 
 ## Todo
 
-- [ ] Check direct return and replacement semantics on both first selection and replacement selection.
-- [ ] Check no capture or underlying camera action is reachable while picker is active.
-- [ ] Check no false Saved/account ownership state is displayed.
-- [ ] Check all four successful-selection outputs agree after one serialized transition: active reference, overlay source, locator handoff, and snapshot input.
-- [ ] Check a failed download/MIME verification keeps the selected context and current overlay intact.
-- [ ] Check picker child teardown completes before `startPreview()` on both Back and successful selection.
-- [ ] Check HDR-003 is in the top header and the bottom rail contains only thumbnail/shutter/flip.
-- [ ] Check `stopPreview()`/`startPreview()` session behavior, duplicate ownership, AV interruption, and thermal observations; record `Pending-validation` when unavailable.
-- [ ] Log unresolved native scale/timeout/tools/feedback/frame-ratio/gate decisions rather than silently choosing contracts.
+- [x] Check direct return and replacement semantics on both first selection and replacement selection.
+- [x] Check no capture or underlying camera action is reachable while picker is active.
+- [x] Check no false Saved/account ownership state is displayed.
+- [x] Check all four successful-selection outputs agree after one serialized transition: active reference, overlay source, locator handoff, and snapshot input.
+- [x] Check a failed download/MIME verification keeps the selected context and current overlay intact.
+- [x] Check picker child teardown completes before `startPreview()` on both Back and successful selection.
+- [x] Check HDR-003 is in the top header and the bottom rail contains only thumbnail/shutter/flip.
+- [x] Check `stopPreview()`/`startPreview()` session behavior, duplicate ownership, AV interruption, and thermal observations; record `Pending-validation` when unavailable.
+- [x] Log unresolved native scale/timeout/tools/feedback/frame-ratio/gate decisions rather than silently choosing contracts.
 
 ## Success Criteria
 
-- [ ] Validation exits successfully and reports no structural plan errors.
-- [ ] Acceptance evidence is reproducible on the supported iOS target and regression tests remain green.
-- [ ] Preview is stopped while picker is active and restarted through the existing command on authorized foreground return; any AV/thermal uncertainty has an owner and recorded decision.
-- [ ] Any contradiction involving account/session, persistence owner, route/back stack, or platform scope is escalated to General Lead before implementation broadens.
-- [ ] General Lead receives exact files, validation JSON, deterministic directory identity, risks, and next gate.
+- [x] Validation exits successfully and reports no structural plan errors.
+- [x] Acceptance evidence is reproducible on the supported iOS target and regression tests remain green.
+- [x] Preview is stopped while picker is active and restarted through the existing command on authorized foreground return; any AV/thermal uncertainty has an owner and recorded decision.
+- [x] Any contradiction involving account/session, persistence owner, route/back stack, or platform scope is escalated to General Lead before implementation broadens.
+- [x] General Lead receives exact files, validation JSON, deterministic directory identity, risks, and next gate.
 
 ## Risks and responses
 

@@ -316,9 +316,6 @@ internal fun createSearchNavigationAction(
 ): () -> Unit = {
     pushScreen(
         SearchScreen(
-            onLocalPoseClick = { preview ->
-                pushScreen(PoseDetailVoyagerScreen(preview))
-            },
             onPublishedPoseClick = { preview ->
                 pushScreen(PoseDetailVoyagerScreen(preview))
             },

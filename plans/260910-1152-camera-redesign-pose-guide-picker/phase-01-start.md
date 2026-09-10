@@ -13,14 +13,14 @@ Redesign the supported CameraScreen composition around the full-bleed preview, H
 
 ## Requirements
 
-- [ ] Preserve `CameraCoordinator` phases, accepted-shutter gating, timeout/cancellation, JPEG verification, metadata failure compensation, and latest-valid-thumbnail semantics.
-- [ ] Preserve permission-denied/restricted recovery, background cancellation, foreground restart, and `onDismiss` behavior.
-- [ ] Keep grid/flash/flip/zoom/tools/settings behavior and the eight snapshot settings intact; do not change snapshot schema or persistence ownership.
-- [ ] Place one accessible image-icon guide control in the top header beside Tools, as SCR-001-01-HDR-003; the bottom rail contains only thumbnail, shutter, and flip.
-- [ ] While picker state is active, camera capture controls cannot be triggered underneath it and the native preview session is stopped.
-- [ ] On a verified picker return, commit `activeReference`, `CameraUiState.overlaySource`, `PoseServiceLocator.preparedReference`, and existing settings-preserving snapshot persistence in one serialized state transition; snapshot code must not observe an intermediate broken reference.
-- [ ] On picker Back or verified selection, call the existing `startPreview()` resume operation only when permission is authorized and the app is foreground; do not invent a `resume()` or preview-ready callback.
-- [ ] Serialize picker exit as child unmount first, then the single selection commit (when applicable), then `startPreview()`; no preview start may race child teardown or an AV transition.
+- [x] Preserve `CameraCoordinator` phases, accepted-shutter gating, timeout/cancellation, JPEG verification, metadata failure compensation, and latest-valid-thumbnail semantics.
+- [x] Preserve permission-denied/restricted recovery, background cancellation, foreground restart, and `onDismiss` behavior.
+- [x] Keep grid/flash/flip/zoom/tools/settings behavior and the eight snapshot settings intact; do not change snapshot schema or persistence ownership.
+- [x] Place one accessible image-icon guide control in the top header beside Tools, as SCR-001-01-HDR-003; the bottom rail contains only thumbnail, shutter, and flip.
+- [x] While picker state is active, camera capture controls cannot be triggered underneath it and the native preview session is stopped.
+- [x] On a verified picker return, commit `activeReference`, `CameraUiState.overlaySource`, `PoseServiceLocator.preparedReference`, and existing settings-preserving snapshot persistence in one serialized state transition; snapshot code must not observe an intermediate broken reference.
+- [x] On picker Back or verified selection, call the existing `startPreview()` resume operation only when permission is authorized and the app is foreground; do not invent a `resume()` or preview-ready callback.
+- [x] Serialize picker exit as child unmount first, then the single selection commit (when applicable), then `startPreview()`; no preview start may race child teardown or an AV transition.
 
 ## Implementation Steps
 
@@ -34,21 +34,21 @@ Redesign the supported CameraScreen composition around the full-bleed preview, H
 
 ## Todo
 
-- [ ] Confirm no production edits are required in `CameraCoordinator.kt`, `CameraContract.kt`, `CameraSnapshotRepository.kt`, `CameraSnapshotWriter.kt`, `Navigation.kt`, or `App.kt`.
-- [ ] Add/adjust only focused common tests needed to prove the state boundary; retain existing regression fixtures.
-- [ ] Record the top-header placement and bottom-rail screenshot/semantics evidence.
-- [ ] Prove the selection commit cannot expose a state where Camera overlay, active reference, locator handoff, and snapshot input disagree.
-- [ ] Prove picker child disposal precedes the single preview restart command on Back and selection.
-- [ ] Record any discovered AV session, thermal, or contract contradiction before changing scope.
+- [x] Confirm no production edits are required in `CameraCoordinator.kt`, `CameraContract.kt`, `CameraSnapshotRepository.kt`, `CameraSnapshotWriter.kt`, `Navigation.kt`, or `App.kt`.
+- [x] Add/adjust only focused common tests needed to prove the state boundary; retain existing regression fixtures.
+- [x] Record the top-header placement and bottom-rail screenshot/semantics evidence.
+- [x] Prove the selection commit cannot expose a state where Camera overlay, active reference, locator handoff, and snapshot input disagree.
+- [x] Prove picker child disposal precedes the single preview restart command on Back and selection.
+- [x] Record any discovered AV session, thermal, or contract contradiction before changing scope.
 
 ## Success Criteria
 
-- [ ] Camera UI matches the approved direction: dominant preview, compact top controls with HDR-003 guide entry, and thumbnail/shutter/flip-only bottom rail.
-- [ ] Capture and permission tests continue to prove truthful `PreviewReady`/persisted-photo behavior.
-- [ ] Entering picker stops preview; returning starts the existing preview command without duplicate session ownership; capture remains gated until the existing ready/permission state permits it.
-- [ ] A verified return updates active reference, overlay source, locator handoff, and snapshot input through one serialized transition; failed preparation changes none of them.
-- [ ] Returning from picker cannot reopen the picker through Back and cannot lose current camera settings.
-- [ ] No source outside the expected implementation write set is changed without General Lead escalation.
+- [x] Camera UI matches the approved direction: dominant preview, compact top controls with HDR-003 guide entry, and thumbnail/shutter/flip-only bottom rail.
+- [x] Capture and permission tests continue to prove truthful `PreviewReady`/persisted-photo behavior.
+- [x] Entering picker stops preview; returning starts the existing preview command without duplicate session ownership; capture remains gated until the existing ready/permission state permits it.
+- [x] A verified return updates active reference, overlay source, locator handoff, and snapshot input through one serialized transition; failed preparation changes none of them.
+- [x] Returning from picker cannot reopen the picker through Back and cannot lose current camera settings.
+- [x] No source outside the expected implementation write set is changed without General Lead escalation.
 
 ## Risks and responses
 

@@ -42,9 +42,9 @@ Read/verify `CommunitySearchRepository.kt`, `PosesLibraryCoordinator.kt`, `PoseA
 
 ## Acceptance criteria
 
-- [ ] Tests demonstrate published-only query results and no duplicate active `poseId` after paging or refresh.
-- [ ] A stale completion cannot replace newer query/refresh state; a failed refresh/load-more retains confirmed items and exposes retry.
-- [ ] No contract change is required to support Phase 2 or Phase 3.
+- [x] Tests demonstrate published-only query results and no duplicate active `poseId` after paging or refresh.
+- [x] A stale completion cannot replace newer query/refresh state; a failed refresh/load-more retains confirmed items and exposes retry.
+- [x] No contract change is required to support Phase 2 or Phase 3.
 
 ## Checks and risks
 

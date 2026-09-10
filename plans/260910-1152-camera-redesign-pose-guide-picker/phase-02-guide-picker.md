@@ -13,15 +13,15 @@ Build the dedicated subordinate picker direction described by SCR-001-01: a full
 
 ## Requirements
 
-- [ ] Render a full-screen header with Back to Camera, title `Choose a guide`, and a published-only guide grid using stable pose IDs and existing image fallback behavior.
-- [ ] Reuse `PosesLibraryCoordinator`/`CommunityPose` data and paging/dedupe behavior; do not reuse the mixed local/published `SearchScreen`.
-- [ ] Show deterministic loading, empty, load-more, error, and retry states without claiming a selected guide before verification.
-- [ ] Do not instantiate `PoseDetailViewModel` or copy its private `_signInIntent`/`pendingTrySuccess` state. Retain the selected `CommunityPose` locally in the picker.
-- [ ] For a signed-in selection, call existing `PoseApiService.downloadImageBytes` and `PoseImageVerification.detectImageMimeType`/`toDataUri`, then emit only the existing `PreparedPoseReference` on success.
-- [ ] For a guest selection, reuse existing `SignInPromptController`/`SignInPrompt` with `SignInIntent.TRY_POSE`; after real success retry the retained selection. Cancellation clears the existing interrupted intent and stays recoverable.
-- [ ] On failed download or MIME verification, retain the selected `CommunityPose` and show an in-place retryable error; do not clear, replace, or corrupt the current Camera overlay, active reference, locator handoff, or snapshot input.
-- [ ] Do not invent account, SavedEntry, Save, or Unsave APIs; the shared prompt is only the existing Try sign-in seam, not account persistence.
-- [ ] Back returns directly to Camera. Successful selection returns directly to Camera and replaces the current guide; the picker is not left in the Back stack.
+- [x] Render a full-screen header with Back to Camera, title `Choose a guide`, and a published-only guide grid using stable pose IDs and existing image fallback behavior.
+- [x] Reuse `PosesLibraryCoordinator`/`CommunityPose` data and paging/dedupe behavior; do not reuse the mixed local/published `SearchScreen`.
+- [x] Show deterministic loading, empty, load-more, error, and retry states without claiming a selected guide before verification.
+- [x] Do not instantiate `PoseDetailViewModel` or copy its private `_signInIntent`/`pendingTrySuccess` state. Retain the selected `CommunityPose` locally in the picker.
+- [x] For a signed-in selection, call existing `PoseApiService.downloadImageBytes` and `PoseImageVerification.detectImageMimeType`/`toDataUri`, then emit only the existing `PreparedPoseReference` on success.
+- [x] For a guest selection, reuse existing `SignInPromptController`/`SignInPrompt` with `SignInIntent.TRY_POSE`; after real success retry the retained selection. Cancellation clears the existing interrupted intent and stays recoverable.
+- [x] On failed download or MIME verification, retain the selected `CommunityPose` and show an in-place retryable error; do not clear, replace, or corrupt the current Camera overlay, active reference, locator handoff, or snapshot input.
+- [x] Do not invent account, SavedEntry, Save, or Unsave APIs; the shared prompt is only the existing Try sign-in seam, not account persistence.
+- [x] Back returns directly to Camera. Successful selection returns directly to Camera and replaces the current guide; the picker is not left in the Back stack.
 
 ## Implementation Steps
 
@@ -35,20 +35,20 @@ Build the dedicated subordinate picker direction described by SCR-001-01: a full
 
 ## Todo
 
-- [ ] Confirm `PoseGuidePickerScreen` can reuse `SignInPromptController`/`SignInPrompt` directly without a `Navigation.kt` change; otherwise stop and escalate rather than reintroducing `PoseDetailViewModel`.
-- [ ] Confirm `PoseApiService.downloadImageBytes` plus `PoseImageVerification` is the only preparation boundary; do not add a new public preparation API.
-- [ ] Confirm failed download/MIME verification retains selection context and does not mutate Camera-owned state.
-- [ ] Confirm no route is added through old Search/Home or the existing top-level Poses navigation.
-- [ ] Confirm native image/loading/empty/error details from accepted evidence during implementation; if absent, record them unresolved rather than inventing a backend response shape.
+- [x] Confirm `PoseGuidePickerScreen` can reuse `SignInPromptController`/`SignInPrompt` directly without a `Navigation.kt` change; otherwise stop and escalate rather than reintroducing `PoseDetailViewModel`.
+- [x] Confirm `PoseApiService.downloadImageBytes` plus `PoseImageVerification` is the only preparation boundary; do not add a new public preparation API.
+- [x] Confirm failed download/MIME verification retains selection context and does not mutate Camera-owned state.
+- [x] Confirm no route is added through old Search/Home or the existing top-level Poses navigation.
+- [x] Confirm native image/loading/empty/error details from accepted evidence during implementation; if absent, record them unresolved rather than inventing a backend response shape.
 
 ## Success Criteria
 
-- [ ] Picker is full-screen, published-only, directly reversible, and accessible.
-- [ ] Only a verified `PreparedPoseReference` can replace the camera guide.
-- [ ] Failed preparation keeps the selected card and in-place recovery state while preserving the existing overlay and handoff state.
-- [ ] Picker has no `PoseDetailViewModel` or detail-owned `_signInIntent` dependency; guest Try uses the existing shared prompt and remains truthful on cancel/failure.
-- [ ] Unavailable/invalid data remains recoverable and does not produce false Saved or ownership state.
-- [ ] Existing Try Pose handoff behavior and camera snapshot settings are unchanged.
+- [x] Picker is full-screen, published-only, directly reversible, and accessible.
+- [x] Only a verified `PreparedPoseReference` can replace the camera guide.
+- [x] Failed preparation keeps the selected card and in-place recovery state while preserving the existing overlay and handoff state.
+- [x] Picker has no `PoseDetailViewModel` or detail-owned `_signInIntent` dependency; guest Try uses the existing shared prompt and remains truthful on cancel/failure.
+- [x] Unavailable/invalid data remains recoverable and does not produce false Saved or ownership state.
+- [x] Existing Try Pose handoff behavior and camera snapshot settings are unchanged.
 
 ## Risks and responses
 

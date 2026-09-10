@@ -48,13 +48,13 @@ Read/verify `PhotoRepository.kt:31-34`, `PoseRepository.kt:31-46`, `Photo.sq`, `
 
 ## Acceptance criteria
 
-- [ ] Local results update from both existing repository flows and match `Photo.poseName` or linked local `Pose.name` without a new schema/API.
-- [ ] Repository query mapping remains on `Dispatchers.Default`; the ViewModel owns only the in-memory join/filter and the Composable does not query the database.
-- [ ] `load()` cancel/reuse semantics guarantee one active combined collector across detail push/pop and no duplicate collectors on re-entry.
-- [ ] A non-local/unresolved link with null/empty stored `poseName` is excluded only from nonblank pose-name results; no date or other metadata matches it, and it remains in the unfiltered gallery.
-- [ ] Gallery-empty and filter-empty are distinguishable; date grouping remains correct after filtering.
-- [ ] Three-column/3dp/square dense grid and list/detail state ownership remain intact.
-- [ ] No viewer, delete, export, share, save, or existing gallery-v2 file is changed.
+- [x] Local results update from both existing repository flows and match `Photo.poseName` or linked local `Pose.name` without a new schema/API.
+- [x] Repository query mapping remains on `Dispatchers.Default`; the ViewModel owns only the in-memory join/filter and the Composable does not query the database.
+- [x] `load()` cancel/reuse semantics guarantee one active combined collector across detail push/pop and no duplicate collectors on re-entry.
+- [x] A non-local/unresolved link with null/empty stored `poseName` is excluded only from nonblank pose-name results; no date or other metadata matches it, and it remains in the unfiltered gallery.
+- [x] Gallery-empty and filter-empty are distinguishable; date grouping remains correct after filtering.
+- [x] Three-column/3dp/square dense grid and list/detail state ownership remain intact.
+- [x] No viewer, delete, export, share, save, or existing gallery-v2 file is changed.
 
 ## Checks and risks
 

@@ -25,10 +25,8 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import cafe.adriel.voyager.core.screen.Screen
-import com.aipose.Pose
 import com.aipose.data.CommunitySearchPagingController
 import com.aipose.data.CommunitySearchRepository
-import com.aipose.data.PoseRepository
 import com.aipose.data.PoseServiceLocator
 import com.aipose.data.remote.CommunityPose
 import com.aipose.ui.components.NeoBrutalismContainer
@@ -51,7 +49,6 @@ import ai_pose.composeapp.generated.resources.ic_chevron_left
 
 data class SearchUiState(
     val query: String = "",
-    val localResults: List<Pose> = emptyList(),
     val publishedResults: List<CommunityPose> = emptyList(),
     val communityHasMore: Boolean = false,
     val isInitialLoading: Boolean = false,
@@ -83,13 +80,7 @@ internal fun emptySearchSubtitle(query: String): String {
 
 internal fun clearSearchActionLabel(): String = "Clear search"
 
-sealed class SearchItem {
-    data class Local(val pose: Pose) : SearchItem()
-    data class Published(val pose: CommunityPose) : SearchItem()
-}
-
 class SearchViewModel(
-    private val repository: PoseRepository = PoseServiceLocator.repository,
     private val communitySearchRepository: CommunitySearchRepository = PoseServiceLocator.communitySearchRepository,
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main),
 ) {
@@ -98,17 +89,12 @@ class SearchViewModel(
     private val _uiState = MutableStateFlow(SearchUiState())
     val uiState: StateFlow<SearchUiState> = _uiState.asStateFlow()
 
-    private var allLocalPoses: List<Pose> = emptyList()
-
     init {
         scope.launch {
-            repository.getMyPoses().collectLatest { poses ->
-                allLocalPoses = poses
-                applyLocalFilter(_uiState.value.query)
-            }
-        }
-        scope.launch {
             communityPaging.state.collectLatest { paging ->
+                val currentTrimmed = _uiState.value.query.trim()
+                if (currentTrimmed.isEmpty()) return@collectLatest
+                if (paging.query.trim() != currentTrimmed) return@collectLatest
                 _uiState.value = _uiState.value.copy(
                     publishedResults = paging.items,
                     communityHasMore = paging.hasMore,
@@ -119,13 +105,16 @@ class SearchViewModel(
                 )
             }
         }
-        communityPaging.search("")
     }
 
     fun onQueryChange(newQuery: String) {
         _uiState.value = _uiState.value.copy(query = newQuery)
-        applyLocalFilter(newQuery)
-        communityPaging.search(newQuery)
+        val trimmed = newQuery.trim()
+        if (trimmed.isNotEmpty()) {
+            communityPaging.search(trimmed)
+        } else {
+            resetPublishedStateInMemory()
+        }
     }
 
     fun clearQuery() {
@@ -133,7 +122,10 @@ class SearchViewModel(
     }
 
     fun retrySearch() {
-        communityPaging.retryInitial()
+        val trimmed = _uiState.value.query.trim()
+        if (trimmed.isNotEmpty()) {
+            communityPaging.retryInitial()
+        }
     }
 
     fun loadMoreCommunity() {
@@ -144,18 +136,19 @@ class SearchViewModel(
         communityPaging.retryLoadMore()
     }
 
-    private fun applyLocalFilter(query: String) {
-        val filteredLocal = if (query.isBlank()) {
-            allLocalPoses
-        } else {
-            allLocalPoses.filter { it.name.contains(query, ignoreCase = true) }
-        }
-        _uiState.value = _uiState.value.copy(localResults = filteredLocal)
+    private fun resetPublishedStateInMemory() {
+        _uiState.value = _uiState.value.copy(
+            publishedResults = emptyList(),
+            communityHasMore = false,
+            isInitialLoading = false,
+            isLoadingMore = false,
+            searchError = null,
+            loadMoreError = null,
+        )
     }
 }
 
 class SearchScreen(
-    private val onLocalPoseClick: (PosePreview) -> Unit,
     private val onPublishedPoseClick: (PosePreview) -> Unit,
     private val onBack: () -> Unit,
 ) : Screen {
@@ -173,16 +166,11 @@ class SearchScreen(
             focusRequester.requestFocus()
         }
 
-        val mixedItems = remember(uiState.localResults, uiState.publishedResults) {
-            val list = mutableListOf<SearchItem>()
-            list.addAll(uiState.localResults.map { SearchItem.Local(it) })
-            list.addAll(uiState.publishedResults.map { SearchItem.Published(it) })
-            list
-        }
-        val mixedCount = mixedItems.size
+        val publishedCount = uiState.publishedResults.size
+        val hasActiveQuery = uiState.query.trim().isNotEmpty()
         val showEmptyState =
             !uiState.isInitialLoading &&
-                mixedCount == 0 &&
+                publishedCount == 0 &&
                 uiState.searchError == null
 
         Box(
@@ -251,7 +239,7 @@ class SearchScreen(
                                 color = AiPoseColors.Subtext,
                             )
                         },
-                          textStyle = AiPoseTypography.Input,
+                        textStyle = AiPoseTypography.Input,
                         singleLine = true,
                         colors = TextFieldDefaults.outlinedTextFieldColors(
                             focusedBorderColor = AiPoseColors.Foreground,
@@ -311,16 +299,18 @@ class SearchScreen(
                     }
                 }
 
-                Text(
-                    text = when {
-                        uiState.isInitialLoading -> "Loading"
-                        uiState.searchError != null && mixedCount == 0 -> "Unavailable"
-                        else -> searchResultsCountLabel(mixedCount, uiState.query)
-                    },
-                    style = AiPoseTypography.Caption,
-                    color = AiPoseColors.Subtext,
-                    modifier = Modifier.testTag("search-results-count"),
-                )
+                if (hasActiveQuery || publishedCount > 0 || uiState.searchError != null) {
+                    Text(
+                        text = when {
+                            uiState.isInitialLoading -> "Loading"
+                            uiState.searchError != null && publishedCount == 0 -> "Unavailable"
+                            else -> searchResultsCountLabel(publishedCount, uiState.query)
+                        },
+                        style = AiPoseTypography.Caption,
+                        color = AiPoseColors.Subtext,
+                        modifier = Modifier.testTag("search-results-count"),
+                    )
+                }
 
                 if (showEmptyState) {
                     Column(
@@ -344,14 +334,16 @@ class SearchScreen(
                             color = AiPoseColors.Subtext,
                             modifier = Modifier.testTag("empty-search-subtitle"),
                         )
-                        Spacer(modifier = Modifier.height(Spacing.md))
-                        PrimaryButton(
-                            text = clearSearchActionLabel(),
-                            onClick = viewModel::clearQuery,
-                            modifier = Modifier.testTag("search-reset-button"),
-                        )
+                        if (hasActiveQuery) {
+                            Spacer(modifier = Modifier.height(Spacing.md))
+                            PrimaryButton(
+                                text = clearSearchActionLabel(),
+                                onClick = viewModel::clearQuery,
+                                modifier = Modifier.testTag("search-reset-button"),
+                            )
+                        }
                     }
-                } else if (uiState.isInitialLoading && mixedCount == 0) {
+                } else if (uiState.isInitialLoading && publishedCount == 0 && hasActiveQuery) {
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
@@ -360,7 +352,7 @@ class SearchScreen(
                     ) {
                         CircularProgressIndicator(color = AiPoseColors.Primary)
                     }
-                } else {
+                } else if (publishedCount > 0) {
                     LazyVerticalStaggeredGrid(
                         modifier = Modifier.fillMaxSize(),
                         columns = StaggeredGridCells.Fixed(2),
@@ -368,27 +360,14 @@ class SearchScreen(
                         verticalItemSpacing = Spacing.sm,
                     ) {
                         itemsIndexed(
-                            mixedItems,
-                            key = { index, item ->
-                                when (item) {
-                                    is SearchItem.Local -> "local-${item.pose.poseId}"
-                                    is SearchItem.Published -> "published-${communityPoseGridKey(item.pose, index)}"
-                                }
-                            },
-                            contentType = { _, item -> item::class },
-                        ) { index, item ->
-                            when (item) {
-                                is SearchItem.Local -> PoseCard(
-                                    pose = item.pose,
-                                    index = index,
-                                    onClick = onLocalPoseClick,
-                                )
-                                is SearchItem.Published -> CommunityPoseCard(
-                                    pose = item.pose,
-                                    index = index,
-                                    onClick = onPublishedPoseClick,
-                                )
-                            }
+                            uiState.publishedResults,
+                            key = { index, pose -> "published-${communityPoseGridKey(pose, index)}" },
+                        ) { index, pose ->
+                            CommunityPoseCard(
+                                pose = pose,
+                                index = index,
+                                onClick = onPublishedPoseClick,
+                            )
                         }
 
                         if (uiState.communityHasMore) {
