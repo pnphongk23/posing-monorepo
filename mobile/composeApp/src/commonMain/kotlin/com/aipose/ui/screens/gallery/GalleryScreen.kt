@@ -55,9 +55,6 @@ import com.aipose.ui.components.cardChrome
 import com.aipose.ui.theme.AiPoseColors
 import com.aipose.ui.theme.AiPoseTypography
 import com.aipose.ui.theme.Spacing
-import com.aipose.platform.saveToPhotos
-import com.aipose.platform.shareImage
-import com.aipose.data.resolveImagePath
 import com.aipose.navigation.MainDockContentInset
 
 internal val galleryDateFilterLabels = listOf("All", "Today", "7 days", "30 days", "Date")
@@ -74,7 +71,7 @@ fun GalleryScreen(
     gridState: LazyGridState = rememberLazyGridState(),
     onOpenCamera: () -> Unit,
     onBack: (() -> Unit)? = null,
-    onPhotoClick: ((com.aipose.Photo) -> Unit)? = null,
+    onPhotoClick: (com.aipose.Photo) -> Unit,
     onUpgrade: () -> Unit = {},
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -247,7 +244,7 @@ fun GalleryScreen(
                             ) { photo ->
                                 PhotoCard(
                                     photo = photo,
-                                    onClick = { onPhotoClick?.invoke(photo) ?: viewModel.selectPhoto(photo) },
+                                      onClick = { onPhotoClick(photo) },
                                     dense = true,
                                 )
                             }
@@ -258,24 +255,7 @@ fun GalleryScreen(
         }
     }
 
-    // Legacy inline detail remains available only to callers that do not provide
-    // navigation; list roots provide onPhotoClick and therefore never overlay it.
-    uiState.selectedPhoto?.let { photo ->
-        PhotoDetailDialog(
-            photo = photo,
-            onDismiss = { viewModel.selectPhoto(null) },
-            onDelete = { id -> mapGalleryDeletePhotoResult(viewModel::deletePhoto, id) },
-            onSave = { selected ->
-                val path = resolveImagePath(selected.imagePath) ?: selected.imagePath
-                saveToPhotos(path, null)
-            },
-            onShare = { selected ->
-                val path = resolveImagePath(selected.imagePath) ?: selected.imagePath
-                shareImage(path, null)
-            },
-        )
-    }
-    } // end Box overlay
+      } // end Box overlay
 }
 
 @Composable

@@ -81,7 +81,7 @@ import com.aipose.purchases.PurchaseGatewayProvider
 import com.aipose.settings.SettingsDestinationResult
 import com.aipose.ui.screens.gallery.GalleryScreen
 import com.aipose.ui.screens.gallery.GalleryViewModel
-import com.aipose.ui.screens.gallery.GalleryPhotoDetailScreen
+import com.aipose.ui.screens.gallery.GalleryDetailScreen
 import com.aipose.ui.screens.gallery.mapGalleryDeletePhotoResult
 import com.aipose.ui.screens.poses.PoseDetailScreen
 import com.aipose.ui.screens.poses.PoseDetailViewModel
@@ -274,7 +274,7 @@ class GalleryDetailVoyagerScreen(
     override fun Content() {
         val navigator = LocalNavigator.currentOrThrow
         var backOwned by remember { mutableStateOf(false) }
-        GalleryPhotoDetailScreen(
+        GalleryDetailScreen(
             photos = photos,
             initialPhotoId = initialPhotoId,
             onBack = {
