@@ -16,7 +16,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
-import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -180,7 +180,10 @@ fun GalleryDetailScreen(
         Scaffold(
             containerColor = Color.Transparent,
             snackbarHost = { SnackbarHost(snackbarHost) },
-            modifier = Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.systemBars),
+            // Scaffold applies system-bar insets through innerPadding below. Applying
+            // windowInsetsPadding here as well moves the fixed action tray too far up.
+            modifier = Modifier.fillMaxSize(),
+            contentWindowInsets = WindowInsets.systemBars,
         ) { innerPadding ->
             Column(
                 modifier = Modifier
@@ -212,7 +215,7 @@ fun GalleryDetailScreen(
                             },
                             onEnd = ::settleDrag,
                         ),
-                    contentAlignment = Alignment.Center,
+                    contentAlignment = Alignment.TopCenter,
                 ) {
                     if (deleted) {
                         DeletedPhoto(onBack = onBack)
@@ -225,7 +228,9 @@ fun GalleryDetailScreen(
                         ) {
                             HorizontalPager(
                                 state = pagerState,
-                                modifier = Modifier.fillMaxWidth(),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .wrapContentHeight(),
                                 userScrollEnabled = !focusMode && photos.size > 1,
                                 key = { photos[it].id },
                             ) { page ->
@@ -237,6 +242,7 @@ fun GalleryDetailScreen(
                                 Box(
                                     modifier = Modifier
                                         .fillMaxWidth()
+                                        .wrapContentHeight()
                                         .heightIn(min = if (focusMode) 1.dp else 320.dp)
                                         .clip(if (focusMode) RoundedCornerShape(0.dp) else GalleryDetailImageShape)
                                         .clickable(enabled = page == currentPage && pageState == DetailMediaState.Ready) {
@@ -258,8 +264,10 @@ fun GalleryDetailScreen(
                                         AsyncImage(
                                             model = pagePath,
                                             contentDescription = "Captured photo ${page + 1}",
-                                            modifier = Modifier.fillMaxWidth(),
-                                            contentScale = ContentScale.Fit,
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .wrapContentHeight(),
+                                            contentScale = ContentScale.FillWidth,
                                             onLoading = { mediaStates[pagePhoto.id] = DetailMediaState.Loading },
                                             onSuccess = { mediaStates[pagePhoto.id] = DetailMediaState.Ready },
                                             onError = { mediaStates[pagePhoto.id] = DetailMediaState.Missing },
@@ -269,18 +277,6 @@ fun GalleryDetailScreen(
                             }
                         }
 
-                        if (!focusMode && photos.size > 1) {
-                            Text(
-                                text = "${currentPage + 1} / ${photos.size}",
-                                style = AiPoseTypography.Caption.copy(fontSize = 12.sp, fontWeight = FontWeight.Bold),
-                                modifier = Modifier
-                                    .align(Alignment.BottomEnd)
-                                    .padding(Spacing.md)
-                                    .background(AiPoseColors.Background.copy(alpha = .88f), RoundedCornerShape(999.dp))
-                                    .padding(horizontal = 9.dp, vertical = 5.dp)
-                                    .semantics { contentDescription = "Photo ${currentPage + 1} of ${photos.size}" },
-                            )
-                        }
                     }
                 }
 
