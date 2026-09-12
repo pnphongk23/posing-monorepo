@@ -35,6 +35,8 @@ import com.aipose.data.CommunitySearchPagingController
 import com.aipose.data.CommunitySearchRepository
 import com.aipose.data.PoseServiceLocator
 import com.aipose.data.remote.CommunityPose
+import com.aipose.navigation.MainDock
+import com.aipose.navigation.MainDockContentInset
 import com.aipose.ui.components.NeoBrutalismContainer
 import com.aipose.ui.components.PrimaryButton
 import com.aipose.ui.theme.AiPoseColors
@@ -193,7 +195,6 @@ class SearchScreen(
                 .fillMaxSize()
                 .background(SearchPrototypeBackground)
                 .statusBarsPadding()
-                .padding(Spacing.lg)
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
@@ -204,7 +205,10 @@ class SearchScreen(
                 ),
         ) {
             Column(
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(Spacing.lg)
+                    .padding(bottom = MainDockContentInset),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 Row(
@@ -563,6 +567,10 @@ class SearchScreen(
                     }
                 }
             }
+
+            // Search is pushed above the Poses navigator. Keep the floating
+            // prototype dock visible at this destination as well.
+            MainDock(modifier = Modifier.align(Alignment.BottomCenter))
         }
     }
 }

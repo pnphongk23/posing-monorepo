@@ -12,17 +12,23 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
+import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
+import androidx.compose.foundation.lazy.staggeredgrid.itemsIndexed
+import androidx.compose.foundation.lazy.staggeredgrid.rememberLazyStaggeredGridState
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyGridState
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import org.jetbrains.compose.resources.painterResource
 import ai_pose.composeapp.generated.resources.Res
 import ai_pose.composeapp.generated.resources.ic_chevron_left
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Scaffold
@@ -43,19 +49,28 @@ import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTag
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil3.compose.AsyncImage
+import com.aipose.Photo
 import com.aipose.ui.components.PrimaryButton
-import com.aipose.ui.components.SectionHeader
 import com.aipose.ui.components.NeoBrutalismContainer
 import com.aipose.ui.components.cardChrome
 import com.aipose.ui.theme.AiPoseColors
 import com.aipose.ui.theme.AiPoseTypography
 import com.aipose.ui.theme.Spacing
+import com.aipose.data.resolveImagePath
 import com.aipose.navigation.MainDockContentInset
+import com.aipose.navigation.MatchedImageTransitionState
+import com.aipose.navigation.SharedTransitionPhase
 
 internal val galleryDateFilterLabels = listOf("All", "Today", "7 days", "30 days", "Date")
 
@@ -64,8 +79,11 @@ private val GalleryPrototypePink = Color(0xFFE89CAE)
 private val GalleryPrototypeYellow = Color(0xFFFED766)
 private val GalleryPrototypeBlack = Color(0xFF121212)
 private val GalleryPrototypeWhite = Color.White
+private val GalleryPrototypeGalleryCardShape = RoundedCornerShape(6.dp)
+private val GalleryPrototypeAspectRatios = listOf(4f / 5f, 1f, 5f / 4f)
 
 @Composable
+@Suppress("UNUSED_PARAMETER")
 fun GalleryScreen(
     viewModel: GalleryViewModel,
     gridState: LazyGridState = rememberLazyGridState(),
@@ -76,6 +94,9 @@ fun GalleryScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var selectedDateFilter by remember { mutableStateOf(galleryDateFilterLabels.first()) }
+    // Keep the legacy LazyGridState parameter source-compatible with Navigation.kt;
+    // the prototype gallery is now a staggered grid with its own scroll state.
+    val staggeredGridState = rememberLazyStaggeredGridState()
     // Voyager disposes the list composition while detail is on top, so its
     // collector is cancelled too. Re-collect whenever the list re-enters to
     // pick up deletions and other changes made from detail.
@@ -213,43 +234,27 @@ fun GalleryScreen(
                     }
                 }
 
-                  // Grid is the only gallery layout (prototype reference).
-                else -> {
-                    LazyVerticalGrid(
-                        columns = GridCells.Fixed(GalleryGridDefaults.DENSE_COLUMN_COUNT),
-                        state = gridState,
-                        contentPadding = PaddingValues(bottom = MainDockContentInset),
-                        verticalArrangement = Arrangement.spacedBy(GalleryGridDefaults.DENSE_GAP),
-                        horizontalArrangement = Arrangement.spacedBy(GalleryGridDefaults.DENSE_GAP),
-                        modifier = Modifier.fillMaxSize()
-                    ) {
-                        uiState.groupedByDate.forEach { (dateKey, photos) ->
-                            item(
-                                key = "gallery-section-$dateKey",
-                                contentType = "gallery:section",
-                                span = { GridItemSpan(GalleryGridDefaults.DENSE_COLUMN_COUNT) },
-                            ) {
-                                SectionHeader(
-                                    title = dateKey,
-                                    count = photos.size,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(vertical = Spacing.xs)
-                                )
-                            }
-                            items(
-                                items = photos,
-                                key = { photo -> photo.id },
-                                contentType = { "gallery:photo" },
-                            ) { photo ->
-                                PhotoCard(
-                                    photo = photo,
-                                      onClick = { onPhotoClick(photo) },
-                                    dense = true,
-                                )
-                            }
-                        }
-                    }
+                    // Gallery is one uninterrupted two-column masonry stream.
+                  else -> {
+                      LazyVerticalStaggeredGrid(
+                          columns = StaggeredGridCells.Fixed(2),
+                          state = staggeredGridState,
+                          contentPadding = PaddingValues(bottom = MainDockContentInset),
+                          horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+                          verticalItemSpacing = Spacing.sm,
+                          modifier = Modifier.fillMaxSize(),
+                      ) {
+                          itemsIndexed(
+                              items = uiState.groupedByDate.values.flatten(),
+                              key = { _, photo -> photo.id },
+                          ) { index, photo ->
+                              GalleryMasonryPhotoCard(
+                                  photo = photo,
+                                  index = index,
+                                  onClick = { onPhotoClick(photo) },
+                              )
+                          }
+                      }
                 }
             }
         }
@@ -288,5 +293,65 @@ private fun GalleryCrownIcon() {
             strokeWidth = strokeWidth,
             cap = StrokeCap.Round,
         )
+    }
+}
+
+@Composable
+private fun GalleryMasonryPhotoCard(
+    photo: Photo,
+    index: Int,
+    onClick: () -> Unit,
+) {
+    var sourceBounds by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
+    val resolvedPath = remember(photo.imagePath) {
+        resolveImagePath(photo.imagePath) ?: photo.imagePath.takeIf { it.isNotBlank() }
+    }
+    val isTransitioning = MatchedImageTransitionState.source?.key == "photo:${photo.id}" &&
+        MatchedImageTransitionState.transitionPhase != SharedTransitionPhase.IDLE
+    val shape = GalleryPrototypeGalleryCardShape
+    val aspectRatio = GalleryPrototypeAspectRatios[index % GalleryPrototypeAspectRatios.size]
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .aspectRatio(aspectRatio)
+            .clip(shape)
+            .background(GalleryPrototypeWhite)
+            .border(1.5.dp, GalleryPrototypeBlack, shape)
+            .clickable {
+                sourceBounds?.let {
+                    MatchedImageTransitionState.capture(
+                        key = "photo:${photo.id}",
+                        bounds = it,
+                        imageModel = resolvedPath,
+                        cornerRadius = 6.dp,
+                    )
+                }
+                onClick()
+            }
+            .semantics {
+                testTag = "gallery-photo-item-${photo.id}"
+                contentDescription = photo.poseName.ifBlank { "Gallery photo" }
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        if (!resolvedPath.isNullOrBlank()) {
+            AsyncImage(
+                model = resolvedPath,
+                contentDescription = photo.poseName.ifBlank { "Gallery photo" },
+                modifier = Modifier
+                    .fillMaxSize()
+                    .onGloballyPositioned { sourceBounds = it.boundsInWindow() }
+                    .graphicsLayer { alpha = if (isTransitioning) 0f else 1f },
+                contentScale = ContentScale.Crop,
+            )
+        } else {
+            Icon(
+                imageVector = Icons.Default.Image,
+                contentDescription = null,
+                modifier = Modifier.size(32.dp),
+                tint = AiPoseColors.Subtext,
+            )
+        }
     }
 }

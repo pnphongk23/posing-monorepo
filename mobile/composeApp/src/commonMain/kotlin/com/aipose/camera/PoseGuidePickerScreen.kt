@@ -34,6 +34,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -397,14 +398,15 @@ private fun GuidePickerCard(
             backgroundColor = guideCardPrototypeColor(index),
             borderColor = PoseGuidePrototypeBlack,
             shadowColor = PoseGuidePrototypeBlack,
-            borderWidth = if (isSelected) 3.dp else 2.dp,
-            shadowOffset = if (isSelected) 4.dp else 3.dp,
+            borderWidth = 2.dp,
+            shadowOffset = 0.dp,
+            hasShadow = false,
             onClick = onClick,
         ) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(8.dp),
+                    .padding(Spacing.xl),
                 contentAlignment = Alignment.Center,
             ) {
                 when {
@@ -440,7 +442,8 @@ private fun PoseStickFigure(
             contentDescription = "Pose guide preview ${variant + 1}"
         },
     ) {
-        val stroke = 5.dp.toPx()
+        val stroke = 2.dp.toPx()
+        val headStroke = 1.5.dp.toPx()
         val figureColor = PoseGuidePrototypeBlack
         val width = size.width
         val height = size.height
@@ -456,7 +459,12 @@ private fun PoseStickFigure(
             )
         }
 
-        drawCircle(color = figureColor, radius = headRadius, center = head)
+        drawCircle(
+            color = figureColor,
+            radius = headRadius,
+            center = head,
+            style = Stroke(width = headStroke),
+        )
         drawSegment(0.5f, 0.20f, 0.5f, 0.58f)
 
         when (variant) {

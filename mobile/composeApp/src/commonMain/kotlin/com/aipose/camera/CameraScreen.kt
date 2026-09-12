@@ -50,6 +50,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.geometry.Offset
@@ -383,8 +384,9 @@ fun CameraScreen(
                 onClick = onDismiss,
             )
 
-            // Top Right — HDR-003 guide entry beside Tools (SCR-001-01).
-            Row(
+              // Top Right — camera tools. Pose Guide belongs beside the zoom
+              // control at the bottom of the viewfinder in the prototype.
+              Row(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
                     .statusBarsPadding()
@@ -392,13 +394,9 @@ fun CameraScreen(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                CameraGuideButton(
-                    enabled = cameraControlsEnabled,
-                    onClick = ::openGuidePicker,
-                )
-                CameraMoreButton(
-                    enabled = cameraControlsEnabled,
-                    onClick = { uiState = uiState.copy(isMoreMenuVisible = !uiState.isMoreMenuVisible) },
+                  CameraMoreButton(
+                      enabled = cameraControlsEnabled,
+                      onClick = { uiState = uiState.copy(isMoreMenuVisible = !uiState.isMoreMenuVisible) },
                 )
             }
 
@@ -438,10 +436,10 @@ fun CameraScreen(
             }
 
             // Bottom Center
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = 12.dp)
+              Box(
+                  modifier = Modifier
+                      .align(Alignment.BottomCenter)
+                      .padding(bottom = 12.dp)
             ) {
                 CameraZoomIndicator(
                     value = zoomUiState.zoomValue,
@@ -472,6 +470,17 @@ fun CameraScreen(
                 }
             }
 
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(end = 12.dp, bottom = 12.dp),
+            ) {
+                CameraGuideButton(
+                    enabled = cameraControlsEnabled,
+                    onClick = ::openGuidePicker,
+                )
+            }
+
             if (flashVisible) {
                 Box(
                     modifier = Modifier
@@ -484,15 +493,25 @@ fun CameraScreen(
         // Shutter bar: gallery thumbnail 48dp | capture 64dp | flip 48dp
         // (prototype layout reference). Home-indicator safe area via
         // navigationBarsPadding (WI-03).
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(110.dp)
-                .navigationBarsPadding()
-                .padding(horizontal = 24.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
+          Row(
+              modifier = Modifier
+                  .fillMaxWidth()
+                  .height(110.dp)
+                  .navigationBarsPadding()
+                  .padding(horizontal = 24.dp, vertical = 8.dp)
+                  // Prototype separates the immersive viewfinder from the
+                  // shutter dock with a strong black top rule.
+                  .drawBehind {
+                      drawLine(
+                          color = CameraPrototypeBlack,
+                          start = Offset(0f, 0f),
+                          end = Offset(size.width, 0f),
+                          strokeWidth = 2.dp.toPx(),
+                      )
+                  },
+              horizontalArrangement = Arrangement.SpaceBetween,
+              verticalAlignment = Alignment.CenterVertically,
+          ) {
             GalleryThumbnailButton(
                 thumbnailState = thumbnailState,
                 onClick = if (cameraControlsEnabled) { { tabNavigator.current = GalleryTab } } else null,
