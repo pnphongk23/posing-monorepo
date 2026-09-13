@@ -1,0 +1,101 @@
+import AVFoundation
+import Foundation
+
+@MainActor
+protocol CameraControllerPort: AnyObject {
+    func currentPermissionState() -> CameraPermissionState
+    func requestPermission(onResult: @escaping @Sendable (CameraPermissionState) -> Void)
+    func capture(captureId: String, onResult: @escaping @Sendable (CameraCaptureResult) -> Void)
+    func cancelCapture()
+    func switchCamera()
+    func setFlashMode(_ mode: CameraFlashSetting)
+    func setTorchEnabled(_ enabled: Bool)
+    func setZoomFactor(_ factor: CGFloat)
+    var session: AVCaptureSession { get }
+    var facing: CameraFacing { get }
+}
+
+extension CameraControllerPort {
+    func setZoomFactor(_ factor: CGFloat) {}
+}
+
+protocol CaptureImageWriter: Sendable {
+    func writeJpeg(_ bytes: Data, captureId: String) -> String?
+    func verify(filename: String) -> Bool
+    func delete(filename: String)
+}
+
+protocol CapturePhotoMetadata: Sendable {
+    func insertCapturedPhoto(imagePath: String, poseId: String?, poseName: String) async throws -> Int64
+    func getLatestPhotoPath() async throws -> String?
+}
+
+protocol CameraClock: Sendable {
+    func nowMillis() -> Int64
+}
+
+protocol CameraIdGenerator: Sendable {
+    func nextCaptureId() -> String
+}
+
+struct SystemClock: CameraClock, Sendable {
+    func nowMillis() -> Int64 { Int64(Date().timeIntervalSince1970 * 1000) }
+}
+
+final class TimestampCounterIdGenerator: CameraIdGenerator, @unchecked Sendable {
+    private let clock: CameraClock
+    private var counter: Int64 = 0
+
+    init(clock: CameraClock = SystemClock()) { self.clock = clock }
+
+    func nextCaptureId() -> String {
+        let id = "\(clock.nowMillis())-\(counter)"
+        counter += 1
+        return id
+    }
+}
+
+actor InMemoryCapturePhotoMetadata: CapturePhotoMetadata {
+    private var rows: [CapturedPhotoRecord] = []
+    private var nextId: Int64 = 1
+    var failNextInsert = false
+
+    func insertCapturedPhoto(imagePath: String, poseId: String?, poseName: String) async throws -> Int64 {
+        if failNextInsert {
+            failNextInsert = false
+            throw NSError(domain: "test", code: 1)
+        }
+        let id = nextId
+        nextId += 1
+        rows.append(CapturedPhotoRecord(id: id, imagePath: imagePath))
+        return id
+    }
+
+    func getLatestPhotoPath() async throws -> String? {
+        rows.last?.imagePath
+    }
+
+    func setFailNextInsert(_ value: Bool) {
+        failNextInsert = value
+    }
+}
+
+struct PhotoRepositoryMetadataAdapter: CapturePhotoMetadata, Sendable {
+    let repository: PhotoRepository
+
+    func insertCapturedPhoto(imagePath: String, poseId: String?, poseName: String) async throws -> Int64 {
+        let record = PhotoRecord(
+            id: nil,
+            imagePath: imagePath,
+            poseId: poseId,
+            poseName: poseName,
+            createdAt: String(Int64(Date().timeIntervalSince1970 * 1000)),
+            isFavorite: 0
+        )
+        return try await repository.insert(record)
+    }
+
+    func getLatestPhotoPath() async throws -> String? {
+        try await repository.all().first?.imagePath
+    }
+}

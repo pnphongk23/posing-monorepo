@@ -1,147 +1,143 @@
-// iosApp/iosApp/AppDelegate.swift
 import UIKit
-import ComposeApp
+import SwiftUI
 import FirebaseCore
 import FirebaseRemoteConfig
 import FirebaseAnalytics
 import FirebaseCrashlytics
 
 @main
-class AppDelegate: UIResponder, UIApplicationDelegate {
+final class AppDelegate: UIResponder, UIApplicationDelegate {
     var window: UIWindow?
+    private(set) var isFirebaseConfigured = false
+
+    private(set) var galleryBootstrap: GalleryStoreBootstrap = .integrationBlocked("not bootstrapped")
 
     func application(
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
     ) -> Bool {
-        AIPoseCameraBridgeRuntime.install()
-
-        // WI-04: arm the Google sign-in bridge observer BEFORE any Kotlin
-        // com.aipose.google.signin.request can be posted, so the existing
-        // OAuthHandoff own-API flow can be started from the Compose layer.
-        // Minimal real access — no auth-semantics change, no second flow.
-        _ = OAuthSignInObserver.shared
-
-        // FEAT-010 / DEC-007: configure Firebase best-effort only when a real
-        // GoogleService-Info.plist is present in the bundle. The real plist is
-        // supplied out of band and git-ignored; a missing or placeholder-shaped
-        // plist is skipped so the app boots without Firebase.
-        tryConfigureFirebase()
+        isFirebaseConfigured = tryConfigureFirebase()
+        AppImage.configure()
+        galleryBootstrap = GalleryStoreBootstrap.make()
+        // RevenueCat owns the purchase surface (FEAT-011). Configure before any screen can mount so
+        // the paywall reads a real offering instead of the fail-closed `unconfigured` state.
         RevenueCatAdapter.shared.configureFromEnvironment()
-
-        // FEAT-010 / DEC-006: resolve the api_baseurl endpoint (cache/fetch/
-        // default) and apply it to both Kotlin holders BEFORE the Compose root
-        // is created, then show the root. The native launch screen covers the
-        // bounded wait.
+        // Account-scoped state follows session changes for the whole process, not per screen.
+        SessionScopeCoordinator.shared.start()
         resolveEndpointThenShowRoot()
-
         return true
     }
 
-    // MARK: - Firebase configuration
-
-    private func tryConfigureFirebase() {
+    private func tryConfigureFirebase() -> Bool {
         guard let url = Bundle.main.url(forResource: "GoogleService-Info", withExtension: "plist") else {
-            return
+            return false
         }
         guard let data = try? Data(contentsOf: url),
               let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any] else {
-            return
+            return false
         }
         guard let apiKey = plist["API_KEY"] as? String, !apiKey.isEmpty, apiKey.hasPrefix("AIza") else {
-            return
+            return false
         }
-        // Firebase GOOGLE_APP_ID shape: 1:<project-number>:ios:<hex> (four colon
-        // segments). Prior regex required a 7+ digit first segment and skipped
-        // valid production plists such as 1:##########:ios:##########.
         guard let appId = plist["GOOGLE_APP_ID"] as? String,
               appId.range(of: #"^1:\d{6,}:ios:[0-9a-f]+$"#, options: .regularExpression) != nil else {
-            return
+            return false
         }
-        // Reject obviously placeholder values.
         let joined = plist.values.compactMap { "\($0)" }.joined(separator: " ").lowercased()
         guard !joined.contains("placeholder") && !joined.contains("example") else {
-            return
+            return false
         }
         FirebaseApp.configure()
+        return FirebaseApp.app() != nil
     }
-
-    private var isFirebaseConfigured: Bool {
-        FirebaseApp.app() != nil
-    }
-
-    // MARK: - DEC-006 endpoint resolution
 
     private func resolveEndpointThenShowRoot() {
-        let defaultUrl = AppConfig.shared.SERVER_BASE_URL
-        let key = EndpointPolicy.shared.REMOTE_CONFIG_KEY
+        let defaultUrl = StartupEndpoint.defaultURL
+        let key = StartupEndpoint.remoteConfigKey
         let start = Date()
-        // Guard so the completion and the timeout can never apply/show twice.
-        var didResolve = false
 
-        // Single application path into Kotlin (sets both holders consistently),
-        // guarded by `didResolve`. Runs on the main queue.
-        let applyAndShow: (String, String) -> Void = { [weak self] finalUrl, source in
-            guard !didResolve else { return }
-            didResolve = true
-            AppStartupConfig.shared.applyEndpoint(url: finalUrl)
-            self?.logEndpointResolved(source: source, startedAt: start)
-            self?.showRootViewController()
-        }
+        // First paint must not wait for RemoteConfig. The previous version only built the window
+        // inside the `fetchAndActivate` callback, with a 5s `asyncAfter` fallback, so a slow or
+        // hanging fetch showed *nothing* (no tab bar, no poses, no gallery) for up to five seconds
+        // — the reported "first tap on Gallery/Camera takes forever" start. A RemoteConfig read
+        // that needs no network is the last-activated cache, which is available synchronously.
+        let preFetchCache = isFirebaseConfigured
+            ? StartupEndpoint.validate(raw: RemoteConfig.remoteConfig().configValue(forKey: key).stringValue)
+            : nil
+        let initialSource = preFetchCache != nil ? "cache" : "default"
+        AppConfig.shared.applyEndpoint(
+            StartupEndpoint.resolve(defaultUrl: defaultUrl, cachedRaw: preFetchCache, fetchedRaw: nil)
+        )
+        showRootViewController()
+        logFirstPaint(startedAt: start, endpointSource: initialSource)
 
         guard isFirebaseConfigured else {
-            // No Firebase: source default, no observability.
-            applyAndShow(defaultUrl, "default")
+            logEndpointResolved(source: initialSource, startedAt: start)
             return
         }
 
-        let remoteConfig = RemoteConfig.remoteConfig()
-        // Capture the pre-fetch valid cache BEFORE fetchAndActivate so a failed
-        // or invalid fetch can never clobber a last-known-good value.
-        let preFetchCache = EndpointPolicy.shared.validate(raw: remoteConfig.configValue(forKey: key).stringValue)
+        let latch = StartupLatch()
 
-        // Bounded wait safety net: if the callback never fires, use the
-        // pre-fetch cache (or the source default). Startup never blocks forever.
+        // Applies the fetched endpoint and finishes the launch bookkeeping exactly once. The root is
+        // only rebuilt when the fetch actually returns a different endpoint than the one already
+        // applied, which is rare (cache hit/default) and happens moments after launch.
+        let applyFetched: (String?) -> Void = { [weak self] fetchedRaw in
+            guard latch.admitFetch() else { return }
+            latch.seal()
+            guard let fetched = StartupEndpoint.validate(raw: fetchedRaw) else {
+                guard latch.claimFinalization() else { return }
+                self?.logEndpointResolved(source: initialSource, startedAt: start)
+                return
+            }
+            if fetched != AppConfig.shared.SERVER_BASE_URL {
+                AppConfig.shared.applyEndpoint(fetched)
+                #if DEBUG
+                NSLog("%@", "AIPOSE_PERF endpoint_swapped source=fetch")
+                #endif
+                self?.showRootViewController()
+            }
+            guard latch.claimFinalization() else { return }
+            self?.logEndpointResolved(source: "fetch", startedAt: start)
+        }
+
+        // Keeps the historical 5s budget for changing the base URL: after it, a late fetch can no
+        // longer re-point the app under an interaction that already started.
         let timeout = DispatchWorkItem { [weak self] in
-            let final = preFetchCache ?? defaultUrl
-            applyAndShow(final, preFetchCache != nil ? "cache" : "default")
+            latch.seal()
+            guard latch.claimFinalization() else { return }
+            self?.logEndpointResolved(source: initialSource, startedAt: start)
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 5.0, execute: timeout)
 
-        remoteConfig.fetchAndActivate { [weak self] status, _ in
+        let remoteConfig = RemoteConfig.remoteConfig()
+        remoteConfig.fetchAndActivate { status, _ in
             timeout.cancel()
-            // Only treat the post-fetch value as "fetched" when Firebase reports a
-            // successful activation (fetched from remote OR using pre-fetched data)
-            // AND it validates; otherwise fall back to the valid pre-fetch cache,
-            // then the provisional default. The decision is delegated to the shared
-            // pure-Kotlin resolver so precedence is covered by common tests.
-            let isSuccess = (status == RemoteConfigFetchAndActivateStatus.successFetchedFromRemote
-                || status == RemoteConfigFetchAndActivateStatus.successUsingPreFetchedData)
+            let isSuccess = status == .successFetchedFromRemote || status == .successUsingPreFetchedData
             let fetchedRaw: String? = isSuccess
                 ? remoteConfig.configValue(forKey: key).stringValue
                 : nil
-            let final = AppStartupConfig.shared.resolveEndpointValue(
-                defaultUrl: defaultUrl,
-                cachedRaw: preFetchCache,
-                fetchedRaw: fetchedRaw
-            )
-            let source: String
-            if isSuccess, EndpointPolicy.shared.validate(raw: fetchedRaw) != nil {
-                source = "fetch"
-            } else if preFetchCache != nil {
-                source = "cache"
-            } else {
-                source = "default"
-            }
-            applyAndShow(final, source)
+            applyFetched(fetchedRaw)
         }
     }
 
+    /// Simulator/device-visible evidence that the root exists before the endpoint resolves.
+    private func logFirstPaint(startedAt: Date, endpointSource: String) {
+        let durationMs = Int(Date().timeIntervalSince(startedAt) * 1000)
+        #if DEBUG
+        NSLog("%@", "AIPOSE_PERF launch_first_paint ms=\(durationMs) endpoint_source=\(sanitized(endpointSource))")
+        #endif
+        guard isFirebaseConfigured else { return }
+        Crashlytics.crashlytics().log("first_paint_ms=\(durationMs) endpoint_source=\(sanitized(endpointSource))")
+    }
+
     private func logEndpointResolved(source: String, startedAt: Date) {
+        let durationMs = Int(Date().timeIntervalSince(startedAt) * 1000)
+        #if DEBUG
+        // Pairs with the `launch_first_paint` line: first paint happens before this one.
+        NSLog("%@", "AIPOSE_PERF endpoint_finalized source=\(sanitized(source)) ms=\(durationMs)")
+        #endif
         guard isFirebaseConfigured else { return }
         Analytics.logEvent("app_start", parameters: nil)
-        let durationMs = Int(Date().timeIntervalSince(startedAt) * 1000)
-        // FR-004: only sanitized, non-sensitive metadata. No pose/camera/payment.
         Analytics.logEvent("endpoint_resolved", parameters: [
             "source": sanitized(source),
             "outcome": sanitized("applied"),
@@ -150,9 +146,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         Crashlytics.crashlytics().log("endpoint_source=\(sanitized(source))")
     }
 
-    // Mirror the Kotlin EventSanitizer value-safety contract minimally.
     private func sanitized(_ value: String) -> String {
-        // Only non-sensitive metadata is allowed: no URLs, spaces, or long tokens.
         if value.contains("://") || value.contains(" ") || value.count > 100 {
             return "redacted"
         }
@@ -160,9 +154,74 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     }
 
     private func showRootViewController() {
-        window = UIWindow(frame: UIScreen.main.bounds)
-        let mainViewController = MainViewControllerKt.MainViewController()
-        window?.rootViewController = mainViewController
-        window?.makeKeyAndVisible()
+        let rootView = ContentView(
+            isFirebaseConfigured: isFirebaseConfigured,
+            galleryBootstrap: galleryBootstrap
+        )
+        let host = UIHostingController(rootView: rootView)
+        if let window {
+            // Endpoint changed after the first paint: swap the root in the existing window so no
+            // blank frame is shown.
+            window.rootViewController = host
+            return
+        }
+        let window = UIWindow(frame: UIScreen.main.bounds)
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        self.window = window
+    }
+}
+
+/// One-shot guard for launch endpoint finalisation. The `fetchAndActivate` callback and the 5s
+/// seal timer can complete in either order, so "apply the endpoint once" needs a lock rather than
+/// the unsynchronised `didResolve` local the previous version used.
+private final class StartupLatch: @unchecked Sendable {
+    private let lock = NSLock()
+    private var isSealed = false
+    private var isFinalized = false
+
+    /// True while the fetch is still allowed to change the endpoint.
+    func admitFetch() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return !isSealed && !isFinalized
+    }
+
+    func seal() {
+        lock.lock()
+        isSealed = true
+        lock.unlock()
+    }
+
+    /// True for exactly one caller per launch, so the launch analytics event is logged once.
+    func claimFinalization() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        if isFinalized { return false }
+        isFinalized = true
+        return true
+    }
+}
+
+private enum StartupEndpoint {
+    static let defaultURL = "https://pose-extract-server-production.up.railway.app"
+    static let remoteConfigKey = "api_baseurl"
+
+    static func validate(raw: String?) -> String? {
+        guard let raw, !raw.isEmpty else { return nil }
+        guard let url = URL(string: raw),
+              let scheme = url.scheme?.lowercased(),
+              scheme == "http" || scheme == "https",
+              url.host != nil else {
+            return nil
+        }
+        if raw.contains(" ") || raw.count > 2048 { return nil }
+        return raw
+    }
+
+    static func resolve(defaultUrl: String, cachedRaw: String?, fetchedRaw: String?) -> String {
+        if let fetched = validate(raw: fetchedRaw) { return fetched }
+        if let cached = validate(raw: cachedRaw) { return cached }
+        return defaultUrl
     }
 }

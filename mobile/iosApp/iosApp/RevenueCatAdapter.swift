@@ -1,186 +1,226 @@
 import Foundation
+import Combine
 import RevenueCat
 import FirebaseAnalytics
 
-/// Native RevenueCat owner for StoreKit, configured only from an injected public key.
-/// Compose receives sanitized snapshots through the common purchase contract seam.
-final class RevenueCatAdapter: NSObject {
+enum PurchaseGatewayState: String, Sendable {
+    case loading = "LOADING"
+    case unconfigured = "UNCONFIGURED"
+    case noOffering = "NO_OFFERING"
+    case notEntitled = "NOT_ENTITLED"
+    case entitled = "ENTITLED"
+    case purchasePending = "PURCHASE_PENDING"
+    case purchaseCancelled = "PURCHASE_CANCELLED"
+    case purchaseFailed = "PURCHASE_FAILED"
+    case billingRetry = "BILLING_RETRY"
+    case expired = "EXPIRED"
+    case revoked = "REVOKED"
+}
+
+struct PurchaseProduct: Sendable, Equatable {
+    let identifier: String
+    let localizedPrice: String
+    let period: String?
+}
+
+struct PurchaseSnapshot: Sendable, Equatable {
+    let state: PurchaseGatewayState
+    let products: [PurchaseProduct]
+    let errorCode: String?
+}
+
+/// Native RevenueCat owner. Fails closed when SDK key is missing/placeholder or Firebase is unavailable for analytics only.
+@MainActor
+final class RevenueCatAdapter: NSObject, ObservableObject {
     static let shared = RevenueCatAdapter()
     static let entitlementID = "snap pose premium"
     static let offeringID = "default"
     static let productIDs = ["premium_yearly", "premium_monthly"]
 
     private(set) var isConfigured = false
-    private var requestObserver: NSObjectProtocol?
+    /// Account currently applied to the RevenueCat customer (`FEAT-011` FR-006). Nil while no
+    /// signed-in Account is linked, which is also what makes `linkAccount` idempotent.
+    private(set) var linkedAccountID: String?
 
     private override init() {}
 
     func configureFromEnvironment() {
-        installRequestObserver()
-        guard let key = Bundle.main.object(forInfoDictionaryKey: "RevenueCatPublicSDKKey") as? String,
-              !key.isEmpty,
-              !key.contains("$("),
-              !key.lowercased().contains("placeholder"),
-              !key.lowercased().contains("example") else {
-            return
-        }
-        Purchases.configure(withAPIKey: key)
+        let key = Bundle.main.object(forInfoDictionaryKey: "RevenueCatPublicSDKKey") as? String
+        guard RemoteConfigService.isValidRevenueCatKey(key) else { return }
+        Purchases.configure(withAPIKey: key!)
         Purchases.shared.delegate = self
         isConfigured = true
         refreshEntitlement()
     }
 
-    private func installRequestObserver() {
-        guard requestObserver == nil else { return }
-        requestObserver = NotificationCenter.default.addObserver(
-            forName: Notification.Name("com.aipose.revenuecat.request"),
-            object: nil,
-            queue: .main
-        ) { [weak self] notification in
-            self?.handle(notification: notification)
+    /// Binds the RevenueCat customer to the signed-in Account so a purchase follows that Account
+    /// across devices and re-entry instead of the anonymous app user id (`FEAT-011` FR-006).
+    func linkAccount(_ accountID: String) async {
+        guard isConfigured, !accountID.isEmpty, accountID != linkedAccountID else { return }
+        do {
+            let result = try await Purchases.shared.logIn(accountID)
+            linkedAccountID = accountID
+            lastSnapshot = snapshot(from: result.customerInfo)
+        } catch {
+            // A failed link must not leave a stale identity claiming to be current.
+            linkedAccountID = nil
         }
     }
 
-    private func handle(notification: Notification) {
-        guard let info = notification.userInfo,
-              let action = info["action"] as? String,
-              let requestId = info["requestId"] as? String else { return }
-        switch action {
-        case "load_offering":
-            post(state: "LOADING")
-            loadDefaultOffering { [weak self] offering in
-                guard let self else { return }
-                guard let offering else {
-                self.post(state: self.isConfigured ? "NO_OFFERING" : "UNCONFIGURED", requestId: requestId)
-                    return
-                }
-                Purchases.shared.getCustomerInfo { [weak self] customerInfo, _ in
-                    self?.publish(customerInfo: customerInfo, requestId: requestId, offering: offering)
-                }
-            }
-        case "purchase":
-            guard let productId = info["productId"] as? String else {
-                post(state: "PURCHASE_FAILED", requestId: requestId, errorCode: "invalid_product")
-                return
-            }
-            guard Self.productIDs.contains(productId) else {
-                post(state: "PURCHASE_FAILED", requestId: requestId, errorCode: "invalid_product")
-                return
-            }
-            post(state: "PURCHASE_PENDING")
-            loadDefaultOffering { [weak self] offering in
-                guard let self, let package = offering?.availablePackages.first(where: {
-                    $0.storeProduct.productIdentifier == productId
-                }) else {
-                    self?.post(state: self?.isConfigured == true ? "NO_OFFERING" : "UNCONFIGURED", requestId: requestId)
-                    return
-                }
-                self.purchase(package: package, requestId: requestId)
-            }
-        case "restore":
-            post(state: "LOADING")
-            restore(requestId: requestId)
-        default:
-            post(state: "PURCHASE_FAILED", requestId: requestId, errorCode: "unsupported_action")
+    /// Clears the provider context at sign-out/account switch so the next Account (or a guest)
+    /// can never reuse the previous Account's entitlement (`FEAT-011` E4). Local state is dropped
+    /// before the provider call so logout never depends on network success.
+    func clearAccount() async {
+        linkedAccountID = nil
+        let previousProducts = lastSnapshot.products
+        guard isConfigured else {
+            lastSnapshot = PurchaseSnapshot(state: .unconfigured, products: previousProducts, errorCode: nil)
+            return
+        }
+        lastSnapshot = PurchaseSnapshot(state: .loading, products: previousProducts, errorCode: nil)
+        do {
+            lastSnapshot = snapshot(from: try await Purchases.shared.logOut())
+        } catch {
+            // RevenueCat rejects `logOut` for an already-anonymous customer; the entitlement is
+            // gone either way, so report the truthful "no confirmed premium" state.
+            lastSnapshot = PurchaseSnapshot(state: .notEntitled, products: previousProducts, errorCode: nil)
         }
     }
 
     func refreshEntitlement() {
         guard isConfigured else { return }
         Purchases.shared.getCustomerInfo { [weak self] customerInfo, _ in
-            self?.publish(customerInfo: customerInfo)
+            Task { @MainActor in
+                guard let self else { return }
+                self.lastSnapshot = self.snapshot(from: customerInfo)
+            }
         }
     }
 
-    func loadDefaultOffering(completion: @escaping (Offering?) -> Void) {
-        guard isConfigured else { completion(nil); return }
-        Purchases.shared.getOfferings { offerings, _ in
-            completion(offerings?.offering(identifier: Self.offeringID))
-        }
-    }
+    @Published private(set) var lastSnapshot = PurchaseSnapshot(state: .unconfigured, products: [], errorCode: nil)
 
-    private func purchase(package: Package, requestId: String) {
+    func loadOffering() async -> PurchaseSnapshot {
         guard isConfigured else {
-            log(outcome: "unconfigured")
-            post(state: "UNCONFIGURED", requestId: requestId, errorCode: "sdk_not_configured")
-            return
+            return failClosed(state: .unconfigured, errorCode: "sdk_not_configured")
         }
-        Purchases.shared.purchase(package: package) { [weak self] _, customerInfo, error, userCancelled in
-            guard let self else { return }
-            if userCancelled {
-                self.log(outcome: "cancelled")
-                self.post(state: "PURCHASE_CANCELLED", requestId: requestId)
-                return
-            }
-            guard error == nil, let customerInfo else {
-                self.log(outcome: "error")
-                self.post(state: "PURCHASE_FAILED", requestId: requestId, errorCode: "purchase_failed")
-                return
-            }
-            self.publish(customerInfo: customerInfo, requestId: requestId)
+        guard let offering = await fetchDefaultOffering() else {
+            return failClosed(state: .noOffering)
         }
+        let customerInfo = await fetchCustomerInfo()
+        return snapshot(from: customerInfo, offering: offering)
     }
 
-    private func restore(requestId: String) {
-        guard isConfigured else { post(state: "UNCONFIGURED", requestId: requestId); return }
-        Purchases.shared.restorePurchases { [weak self] customerInfo, error in
-            guard let self, error == nil, let customerInfo else {
-                self?.log(outcome: "error")
-                self?.post(state: "PURCHASE_FAILED", requestId: requestId, errorCode: "restore_failed")
-                return
-            }
-            self.publish(customerInfo: customerInfo, requestId: requestId)
+    func purchase(productId: String) async -> PurchaseSnapshot {
+        guard isConfigured else {
+            return failClosed(state: .unconfigured, errorCode: "sdk_not_configured")
         }
-    }
-
-    private func publish(customerInfo: CustomerInfo?, requestId: String? = nil, offering: Offering? = nil) {
-        guard let entitlement = customerInfo?.entitlements[Self.entitlementID] else {
-            post(state: "NOT_ENTITLED", requestId: requestId, offering: offering)
-            return
+        guard Self.productIDs.contains(productId) else {
+            return failClosed(state: .purchaseFailed, errorCode: "invalid_product")
         }
-        let state: String
-        if entitlement.billingIssueDetectedAt != nil {
-            // RevenueCat exposes the billing issue, but this adapter does not
-            // receive a provider-specific grace-period boundary. Keep access
-            // conservative until CustomerInfo itself confirms active access.
-            state = "BILLING_RETRY"
-        } else if entitlement.isActive {
-            state = "ENTITLED"
-        } else if let expirationDate = entitlement.expirationDate, expirationDate < Date() {
-            state = "EXPIRED"
-        } else if entitlement.expirationDate == nil {
-            state = "REVOKED"
-        } else {
-            state = "NOT_ENTITLED"
+        guard let offering = await fetchDefaultOffering(),
+              let package = offering.availablePackages.first(where: { $0.storeProduct.productIdentifier == productId }) else {
+            return failClosed(state: isConfigured ? .noOffering : .unconfigured)
         }
-        log(outcome: state.lowercased())
-        post(state: state, requestId: requestId, offering: offering)
-    }
-
-    private func post(state: String, requestId: String? = nil, offering: Offering? = nil, errorCode: String? = nil) {
-        var info: [AnyHashable: Any] = ["state": state]
-        if let requestId { info["requestId"] = requestId }
-        if let errorCode { info["errorCode"] = errorCode }
-        if let offering {
-            // Bridge contract: products is an NSArray of NSDictionary values;
-            // required fields are strings and the optional period is omitted.
-            // This keeps localized StoreKit metadata intact without passing SDK
-            // objects, receipts, tokens, or prices from a non-localized source.
-            let products: [[String: String]] = offering.availablePackages
-                .filter { Self.productIDs.contains($0.storeProduct.productIdentifier) }
-                .compactMap { package in
-                var product: [String: String] = [
-                    "identifier": package.storeProduct.productIdentifier,
-                    "localizedPrice": package.storeProduct.localizedPriceString,
-                ]
-                if let period = Self.periodName(package.storeProduct.subscriptionPeriod?.unit) {
-                    product["period"] = period
+        return await withCheckedContinuation { continuation in
+            Purchases.shared.purchase(package: package) { [weak self] _, customerInfo, error, userCancelled in
+                Task { @MainActor in
+                    guard let self else {
+                        continuation.resume(returning: PurchaseSnapshot(state: .purchaseFailed, products: [], errorCode: "internal"))
+                        return
+                    }
+                    if userCancelled {
+                        self.log(outcome: "cancelled")
+                        continuation.resume(returning: self.failClosed(state: .purchaseCancelled))
+                        return
+                    }
+                    guard error == nil, let customerInfo else {
+                        self.log(outcome: "error")
+                        continuation.resume(returning: self.failClosed(state: .purchaseFailed, errorCode: "purchase_failed"))
+                        return
+                    }
+                    continuation.resume(returning: self.snapshot(from: customerInfo, offering: offering))
                 }
-                return product
             }
-            info["products"] = products
         }
-        NotificationCenter.default.post(name: Notification.Name("com.aipose.revenuecat.response"), object: nil, userInfo: info)
+    }
+
+    func restore() async -> PurchaseSnapshot {
+        guard isConfigured else {
+            return failClosed(state: .unconfigured)
+        }
+        return await withCheckedContinuation { continuation in
+            Purchases.shared.restorePurchases { [weak self] customerInfo, error in
+                Task { @MainActor in
+                    guard let self, error == nil, let customerInfo else {
+                        self?.log(outcome: "error")
+                        continuation.resume(returning: self?.failClosed(state: .purchaseFailed, errorCode: "restore_failed")
+                            ?? PurchaseSnapshot(state: .purchaseFailed, products: [], errorCode: "restore_failed"))
+                        return
+                    }
+                    continuation.resume(returning: self.snapshot(from: customerInfo))
+                }
+            }
+        }
+    }
+
+    private func fetchDefaultOffering() async -> Offering? {
+        await withCheckedContinuation { continuation in
+            Purchases.shared.getOfferings { offerings, _ in
+                continuation.resume(returning: offerings?.offering(identifier: Self.offeringID))
+            }
+        }
+    }
+
+    private func fetchCustomerInfo() async -> CustomerInfo? {
+        await withCheckedContinuation { continuation in
+            Purchases.shared.getCustomerInfo { info, _ in continuation.resume(returning: info) }
+        }
+    }
+
+    private func snapshot(from customerInfo: CustomerInfo?, offering: Offering? = nil) -> PurchaseSnapshot {
+        let products = productList(from: offering)
+        guard let entitlement = customerInfo?.entitlements[Self.entitlementID] else {
+            let snap = PurchaseSnapshot(state: .notEntitled, products: products, errorCode: nil)
+            lastSnapshot = snap
+            log(outcome: "not_entitled")
+            return snap
+        }
+        let state: PurchaseGatewayState
+        if entitlement.billingIssueDetectedAt != nil {
+            state = .billingRetry
+        } else if entitlement.isActive {
+            state = .entitled
+        } else if let expirationDate = entitlement.expirationDate, expirationDate < Date() {
+            state = .expired
+        } else if entitlement.expirationDate == nil {
+            state = .revoked
+        } else {
+            state = .notEntitled
+        }
+        log(outcome: state.rawValue.lowercased())
+        let snap = PurchaseSnapshot(state: state, products: products, errorCode: nil)
+        lastSnapshot = snap
+        return snap
+    }
+
+    private func productList(from offering: Offering?) -> [PurchaseProduct] {
+        guard let offering else { return [] }
+        return offering.availablePackages
+            .filter { Self.productIDs.contains($0.storeProduct.productIdentifier) }
+            .map { package in
+                PurchaseProduct(
+                    identifier: package.storeProduct.productIdentifier,
+                    localizedPrice: package.storeProduct.localizedPriceString,
+                    period: Self.periodName(package.storeProduct.subscriptionPeriod?.unit)
+                )
+            }
+    }
+
+    private func failClosed(state: PurchaseGatewayState, errorCode: String? = nil) -> PurchaseSnapshot {
+        log(outcome: state.rawValue.lowercased())
+        let snap = PurchaseSnapshot(state: state, products: [], errorCode: errorCode)
+        lastSnapshot = snap
+        return snap
     }
 
     private static func periodName(_ unit: SubscriptionPeriod.Unit?) -> String? {
@@ -195,14 +235,18 @@ final class RevenueCatAdapter: NSObject {
     }
 
     private func log(outcome: String) {
-        // Only fixed routing/outcome metadata is emitted. SDK errors, receipts,
-        // customer identifiers, tokens, and prices are intentionally excluded.
         Analytics.logEvent("purchase_state", parameters: ["source": "revenuecat", "outcome": outcome])
     }
 }
 
+extension RevenueCatAdapter: PurchaseGateway {
+    var snapshot: PurchaseSnapshot { lastSnapshot }
+}
+
 extension RevenueCatAdapter: PurchasesDelegate {
-    func purchases(_ purchases: Purchases, receivedUpdated customerInfo: CustomerInfo) {
-        publish(customerInfo: customerInfo)
+    nonisolated func purchases(_ purchases: Purchases, receivedUpdated customerInfo: CustomerInfo) {
+        Task { @MainActor in
+            self.lastSnapshot = self.snapshot(from: customerInfo)
+        }
     }
 }

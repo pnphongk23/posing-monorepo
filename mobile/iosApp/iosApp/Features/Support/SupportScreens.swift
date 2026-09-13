@@ -1,0 +1,816 @@
+import AVFoundation
+import SwiftUI
+import UIKit
+
+struct OnboardingScreen: View {
+    let onComplete: () -> Void
+    @State private var page = 0
+    private let pages = [
+        ("sparkles", "Pose with confidence", "Simple guides help you frame every shot."),
+        ("camera", "Line it up", "Adjust, flip, and fade a guide over the camera."),
+        ("lock.shield", "Your photos, your space", "Keep your gallery close and under your control."),
+    ]
+
+    var body: some View {
+        VStack(spacing: AIPoseSpacing.xl) {
+            Spacer()
+            TabView(selection: $page) {
+                ForEach(pages.indices, id: \.self) { index in
+                    VStack(spacing: AIPoseSpacing.lg) {
+                        Image(systemName: pages[index].0)
+                            .font(.system(size: 72))
+                            .foregroundStyle(AIPoseColor.primary)
+                        Text(pages[index].1).font(.largeTitle.bold())
+                        Text(pages[index].2)
+                            .multilineTextAlignment(.center)
+                            .foregroundStyle(AIPoseColor.subtext)
+                    }
+                    .padding()
+                    .tag(index)
+                }
+            }
+            .tabViewStyle(.page(indexDisplayMode: .always))
+            .frame(height: 360)
+            Button(page == pages.count - 1 ? "Get started" : "Continue") {
+                if page == pages.count - 1 { onComplete() } else { withAnimation { page += 1 } }
+            }
+            .buttonStyle(NeoButtonStyle())
+            .padding(.horizontal, AIPoseSpacing.xl)
+            Button("Skip") { onComplete() }.font(.footnote).foregroundStyle(AIPoseColor.subtext)
+        }
+        .padding(.bottom, AIPoseSpacing.xl)
+        .background(AIPoseColor.background)
+    }
+}
+
+// MARK: - Account
+
+/// Account surface: read-only identity/provider for a valid session, sign-in when there
+/// is none, and an explicit sign-out. Owned by `AccountSessionModel` so the screen never
+/// invents identity values (see FEAT-014).
+struct AccountScreen: View {
+    let posesModel: PosesViewModel
+    var onTryPose: (NativePose) -> Void = { _ in }
+    @StateObject private var model: AccountSessionModel
+    @ObservedObject private var purchaseState = RevenueCatAdapter.shared
+    @Environment(\.dismiss) private var dismiss
+
+    init(
+        posesModel: PosesViewModel,
+        onTryPose: @escaping (NativePose) -> Void = { _ in },
+        model: @autoclosure @escaping () -> AccountSessionModel = AccountSessionModel()
+    ) {
+        self.posesModel = posesModel
+        self.onTryPose = onTryPose
+        _model = StateObject(wrappedValue: model())
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Own header instead of the system navigation bar: the prototype `.nb-nav-bar` puts a
+            // 32pt bordered surface inside a 44pt transparent target, and a `ToolbarItem` renders
+            // its content with the platform's own button chrome, which turns that surface into a
+            // heavy black box. `NeoSubscreenHeader` is what every other sub-screen already uses.
+            NeoSubscreenHeader(title: "Account", onBack: { dismiss() }) {
+                if case .signedIn = model.state {
+                    NeoCompactActionButton(
+                        systemImage: "rectangle.portrait.and.arrow.right",
+                        accessibilityLabel: "Sign out",
+                        action: { model.signOut() }
+                    )
+                }
+            }
+            ScrollView {
+                VStack(spacing: AIPoseSpacing.lg) {
+                    switch model.state {
+                    case .loading:
+                        loadingCard
+                    case .signedOut:
+                        signedOutCard
+                    case .signedIn(let account):
+                        accountProfileCard(account)
+                        savedPosesRow
+                        if purchaseState.lastSnapshot.state != .entitled {
+                            unlockPremiumCTA
+                        }
+                    case .failed(let message):
+                        failedCard(message)
+                    }
+                }
+                .padding(.horizontal, AIPoseSpacing.lg)
+                .padding(.top, AIPoseSpacing.sm)
+                .padding(.bottom, AIPoseSpacing.xl)
+            }
+        }
+        .background(AIPoseColor.background)
+        .neoHiddenNavigationBar()
+        .task { model.start() }
+    }
+
+    private var loadingCard: some View {
+        VStack(spacing: AIPoseSpacing.md) {
+            ProgressView()
+            Text("Loading account…")
+                .font(.subheadline)
+                .foregroundStyle(AIPoseColor.subtext)
+        }
+        .frame(maxWidth: .infinity, minHeight: 120)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Loading account")
+    }
+
+    private var signedOutCard: some View {
+        VStack(alignment: .leading, spacing: AIPoseSpacing.md) {
+            Text("You're signed out").font(.title3.bold())
+            Text("Sign in to view your account and account-scoped Saved poses.")
+                .font(.subheadline)
+                .foregroundStyle(AIPoseColor.subtext)
+            if let authError = model.authError {
+                Text(authError)
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(AIPoseColor.error)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityLabel("Sign-in failed. \(authError)")
+            }
+            ContinueWithGoogleButton(isAuthenticating: model.isAuthenticating) { model.signIn() }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .neoCard()
+    }
+
+    private func failedCard(_ message: String) -> some View {
+        VStack(alignment: .leading, spacing: AIPoseSpacing.md) {
+            Text("Account unavailable").font(.title3.bold())
+            Text(message)
+                .font(.subheadline)
+                .foregroundStyle(AIPoseColor.error)
+                .fixedSize(horizontal: false, vertical: true)
+            Button("Retry") { model.retry() }
+                .buttonStyle(NeoButtonStyle(fill: AIPoseColor.surface))
+                .accessibilityLabel("Retry loading account")
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .neoCard()
+    }
+
+    private func accountProfileCard(_ account: AccountSummary) -> some View {
+        let name = account.displayName.isEmpty ? "Signed-in account" : account.displayName
+        return HStack(spacing: AIPoseSpacing.md) {
+            Image(systemName: "person.crop.circle.fill")
+                .font(.system(size: 40))
+                .foregroundStyle(AIPoseColor.accentBlue)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(name).font(.headline.bold())
+                // Google is the only enabled provider in v1 (FEAT-013), so this label is a
+                // frozen contract value rather than a fabricated per-account field.
+                Text("Signed in with Google")
+                    .font(.subheadline)
+                    .foregroundStyle(AIPoseColor.subtext)
+            }
+            Spacer(minLength: 0)
+        }
+        .neoCard()
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(name), Signed in with Google")
+    }
+
+    private var savedPosesRow: some View {
+        NavigationLink(destination: SavedPosesScreen(model: posesModel, onTryPose: onTryPose)) {
+            HStack(spacing: AIPoseSpacing.md) {
+                Image(systemName: "bookmark.fill")
+                    .font(.body.weight(.bold))
+                    .accessibilityHidden(true)
+                Text("Saved poses").font(.headline.bold())
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(AIPoseColor.subtext)
+                    .accessibilityHidden(true)
+            }
+            .foregroundStyle(AIPoseColor.foreground)
+            .frame(minHeight: 44)
+            .neoCard()
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Saved poses")
+    }
+
+    private var unlockPremiumCTA: some View {
+        NavigationLink(destination: PaywallScreen()) {
+            HStack(spacing: AIPoseSpacing.md) {
+                Image(systemName: "crown.fill")
+                    .font(.title3.weight(.bold))
+                    .frame(width: 44, height: 44)
+                    .background(AIPoseColor.surface)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(AIPoseColor.foreground, lineWidth: 2))
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Unlock Premium").font(.headline.bold())
+                    Text("Explore more ways to pose")
+                        .font(.subheadline)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.bold))
+                    .accessibilityHidden(true)
+            }
+            .foregroundStyle(AIPoseColor.foreground)
+            .padding(AIPoseSpacing.lg)
+            .frame(minHeight: 44)
+            .background(AIPoseColor.accentYellow)
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .overlay(RoundedRectangle(cornerRadius: 12).stroke(AIPoseColor.foreground, lineWidth: 2))
+            .shadow(color: AIPoseColor.foreground, radius: 0, x: 4, y: 4)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Upgrade to Premium")
+    }
+}
+
+// MARK: - Settings
+
+struct SettingsScreen: View {
+    let posesModel: PosesViewModel
+    var onTryPose: (NativePose) -> Void = { _ in }
+    @ObservedObject private var purchaseState = RevenueCatAdapter.shared
+    @Environment(\.openURL) private var openURL
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var showsAboutSheet = false
+    @State private var showsReplayOnboarding = false
+    @State private var cameraAccess: CameraAccessStatus = .unknown
+
+    private let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0"
+    private let buildNumber = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "42"
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: AIPoseSpacing.xl) {
+                settingsGroup(title: "Account") {
+                    NavigationLink(destination: AccountScreen(posesModel: posesModel, onTryPose: onTryPose)) {
+                        SupportSettingsRow(
+                            icon: "person.crop.circle",
+                            iconColor: AIPoseColor.accentBlue,
+                            title: "Account",
+                            description: "Manage your account and sign-in options."
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Open Account")
+                    NavigationLink(destination: SavedPosesScreen(model: posesModel, onTryPose: onTryPose)) {
+                        SupportSettingsRow(
+                            icon: "bookmark.fill",
+                            iconColor: AIPoseColor.accentGreen,
+                            title: "Saved poses",
+                            description: "Review the poses you've saved."
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Open Saved poses")
+                    if purchaseState.lastSnapshot.state != .entitled {
+                        NavigationLink(destination: PaywallScreen()) {
+                            SupportSettingsRow(
+                                icon: "crown.fill",
+                                iconColor: AIPoseColor.accentYellow,
+                                title: "Premium",
+                                description: "Explore more ways to pose with Premium."
+                            )
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Open Premium")
+                    }
+                }
+
+                settingsGroup(title: "Privacy") {
+                    Button { openSystemSettings() } label: {
+                        SupportSettingsRow(
+                            icon: "info.circle.fill",
+                            iconColor: AIPoseColor.accentBlue,
+                            title: "Camera access",
+                            description: "Check permission status or open iOS Settings.",
+                            trailing: .status(cameraAccess.label, cameraAccess.badgeColor)
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Camera access, \(cameraAccess.label). Open iOS Settings")
+                    Button { openWeb(SupportDestinations.termsOfServiceURL) } label: {
+                        SupportSettingsRow(
+                            icon: "info.circle.fill",
+                            iconColor: AIPoseColor.primary,
+                            title: "Terms of Service",
+                            description: "Read the Terms of Service in your browser.",
+                            trailing: .external
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Terms of Service, opens in browser")
+                    Button { openWeb(SupportDestinations.privacyPolicyURL) } label: {
+                        SupportSettingsRow(
+                            icon: "info.circle.fill",
+                            iconColor: AIPoseColor.primary,
+                            title: "Privacy Policy",
+                            description: "Read the Privacy Policy in your browser.",
+                            trailing: .external
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Privacy Policy, opens in browser")
+                }
+
+                settingsGroup(title: "Help & support") {
+                    Button { showsReplayOnboarding = true } label: {
+                        SupportSettingsRow(
+                            icon: "sparkles",
+                            iconColor: AIPoseColor.primary,
+                            title: "Replay onboarding",
+                            description: "Review the introduction, pose matching demo, and vibe picker."
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Replay onboarding guide")
+                    Button { openWeb(SupportDestinations.supportURL) } label: {
+                        SupportSettingsRow(
+                            icon: "info.circle.fill",
+                            iconColor: AIPoseColor.accentYellow,
+                            title: "Support & feedback",
+                            description: "Send feedback or request help in your browser.",
+                            trailing: .external
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Support and feedback, opens in browser")
+                    Button { showsAboutSheet = true } label: {
+                        SupportSettingsRow(
+                            icon: "info.circle.fill",
+                            iconColor: AIPoseColor.accentGreen,
+                            title: "About",
+                            description: "Snap Pose app information and credits.",
+                            trailing: .value("v\(appVersion) (Build \(buildNumber))")
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("About Snap Pose, version \(appVersion) Build \(buildNumber)")
+                }
+            }
+            .padding(.horizontal, AIPoseSpacing.lg)
+            .padding(.vertical, AIPoseSpacing.sm)
+        }
+        .background(AIPoseColor.background)
+        .navigationTitle("Settings")
+        .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $showsAboutSheet) { AboutSnapPoseSheet(appVersion: appVersion, buildNumber: buildNumber) }
+        .fullScreenCover(isPresented: $showsReplayOnboarding) {
+            OnboardingScreen { showsReplayOnboarding = false }
+        }
+        .onAppear { cameraAccess = CameraAccessStatus.current() }
+        // The user can flip the permission in iOS Settings and come back; re-read on foreground.
+        .onChange(of: scenePhase) { phase in
+            if phase == .active { cameraAccess = CameraAccessStatus.current() }
+        }
+    }
+
+    @ViewBuilder
+    private func settingsGroup(title: String, @ViewBuilder content: () -> some View) -> some View {
+        VStack(alignment: .leading, spacing: AIPoseSpacing.sm) {
+            Text(title).font(.headline.bold())
+            VStack(spacing: AIPoseSpacing.sm) { content() }
+        }
+    }
+
+    private func openWeb(_ url: URL?) {
+        guard let url else { return }
+        openURL(url)
+    }
+
+    private func openSystemSettings() {
+        guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+        openURL(url)
+    }
+}
+
+/// Camera permission projection for the Settings privacy row (`PA-015-06`).
+enum CameraAccessStatus: String {
+    case allowed, denied, restricted, notDetermined, unknown
+
+    var label: String {
+        switch self {
+        case .allowed: return "Allowed"
+        case .denied, .restricted: return "Blocked"
+        case .notDetermined: return "Not set"
+        case .unknown: return "Unknown"
+        }
+    }
+
+    var badgeColor: Color {
+        switch self {
+        case .allowed: return AIPoseColor.accentGreen
+        case .denied, .restricted: return AIPoseColor.error
+        case .notDetermined, .unknown: return AIPoseColor.accentYellow
+        }
+    }
+
+    static func current() -> CameraAccessStatus {
+        switch AVCaptureDevice.authorizationStatus(for: .video) {
+        case .authorized: return .allowed
+        case .denied: return .denied
+        case .restricted: return .restricted
+        case .notDetermined: return .notDetermined
+        @unknown default: return .unknown
+        }
+    }
+}
+
+// MARK: - Paywall
+
+/// Paid-access surface (`FEAT-011`). Plans, prices and renewal terms come from the StoreKit
+/// offering through `PurchaseGateway`; the prototype's hardcoded prices are gone because StoreKit
+/// metadata is authoritative. An unconfigured SDK or missing offering is shown truthfully as a
+/// retryable state rather than fabricated as purchasable plans.
+struct PaywallScreen: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
+    @StateObject private var model: PaywallModel
+
+    init(model: @autoclosure @escaping () -> PaywallModel = PaywallModel()) {
+        _model = StateObject(wrappedValue: model())
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: AIPoseSpacing.xl) {
+                    paywallHeader
+                    paywallStory
+                    paywallBenefitsPanel
+                    paywallOffer
+                }
+                .padding(.horizontal, AIPoseSpacing.lg)
+                .padding(.top, AIPoseSpacing.sm)
+                .padding(.bottom, AIPoseSpacing.lg)
+            }
+            paywallDock
+        }
+        .background(AIPoseColor.background)
+        .navigationBarHidden(true)
+        .task { model.start() }
+    }
+
+    private var paywallHeader: some View {
+        HStack {
+            HStack(spacing: AIPoseSpacing.sm) {
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(AIPoseColor.accentYellow)
+                    .frame(width: 4, height: 28)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("AI Pose").font(.caption.weight(.semibold)).foregroundStyle(AIPoseColor.subtext)
+                    Text("Premium studio").font(.headline.bold())
+                }
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("AI Pose Premium")
+            Spacer(minLength: 0)
+            Button { dismiss() } label: {
+                Image(systemName: "xmark")
+                    .font(.body.weight(.bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 44, height: 44)
+                    .background(AIPoseColor.foreground)
+                    .clipShape(Circle())
+            }
+            .accessibilityLabel("Close Premium and go back")
+        }
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(AIPoseColor.foreground).frame(height: 2).offset(y: AIPoseSpacing.md)
+        }
+        .padding(.bottom, AIPoseSpacing.lg)
+    }
+
+    private var paywallStory: some View {
+        VStack(alignment: .leading, spacing: AIPoseSpacing.sm) {
+            Text("Pose with confidence.").font(.largeTitle.bold())
+            Text("Explore poses, frame the shot, and keep every favorite.")
+                .foregroundStyle(AIPoseColor.subtext)
+        }
+    }
+
+    private var paywallBenefitsPanel: some View {
+        HStack(spacing: 0) {
+            paywallBenefit(icon: "square.grid.2x2", title: "Discover", subtitle: "Community poses")
+            Divider().background(Color.white.opacity(0.3)).frame(height: 56)
+            paywallBenefit(icon: "camera.fill", title: "Frame", subtitle: "Full pose camera")
+            Divider().background(Color.white.opacity(0.3)).frame(height: 56)
+            paywallBenefit(icon: "square.and.arrow.up", title: "Keep", subtitle: "Save and share")
+        }
+        .padding(.vertical, AIPoseSpacing.md)
+        .background(AIPoseColor.foreground)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Premium benefits: Discover community poses, Frame with full pose camera, Keep by saving and sharing")
+    }
+
+    private func paywallBenefit(icon: String, title: String, subtitle: String) -> some View {
+        VStack(spacing: AIPoseSpacing.xs) {
+            Image(systemName: icon).foregroundStyle(.white)
+            Text(title).font(.caption.weight(.bold)).foregroundStyle(.white)
+            Text(subtitle).font(.caption2).foregroundStyle(.white.opacity(0.7))
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    @ViewBuilder
+    private var paywallOffer: some View {
+        Text("Choose your plan").font(.title3.bold())
+        switch model.phase {
+        case .signInRequired:
+            paywallNotice(
+                model.authError ?? "Your purchase is tied to your account. Sign in to continue.",
+                isError: model.authError != nil,
+                accessibilityLabel: "Sign in to continue with Premium"
+            )
+            ContinueWithGoogleButton(isAuthenticating: model.isAuthenticating) {
+                Task { await model.signIn() }
+            }
+        case .loadingPlans:
+            HStack(spacing: AIPoseSpacing.sm) {
+                ProgressView()
+                Text("Loading plans…").foregroundStyle(AIPoseColor.subtext)
+            }
+            .frame(maxWidth: .infinity, minHeight: 60)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Loading Premium plans")
+        case .unavailable(let message):
+            paywallNotice(message, isError: true, accessibilityLabel: "Premium unavailable")
+            Button("Retry") { Task { await model.retry() } }
+                .buttonStyle(NeoButtonStyle(fill: AIPoseColor.surface))
+                .accessibilityLabel("Retry loading Premium plans")
+        case .ready, .processing, .purchaseCancelled, .purchaseFailed, .entitled:
+            paywallPlanCards
+            if let message = model.statusMessage {
+                paywallNotice(
+                    message,
+                    isError: model.phase != .entitled,
+                    accessibilityLabel: model.phase == .entitled ? "Premium access confirmed" : "Purchase result"
+                )
+            }
+        }
+    }
+
+    private var paywallPlanCards: some View {
+        VStack(spacing: AIPoseSpacing.md) {
+            ForEach(model.plans, id: \.identifier) { product in
+                PaywallPlanCard(
+                    product: product,
+                    isSelected: product.identifier == model.selectedProductID,
+                    onSelect: { model.select(product.identifier) }
+                )
+            }
+        }
+        .accessibilityElement(children: .contain)
+    }
+
+    private func paywallNotice(_ text: String, isError: Bool, accessibilityLabel: String) -> some View {
+        Text(text)
+            .font(.footnote.weight(.semibold))
+            .foregroundStyle(isError ? AIPoseColor.error : AIPoseColor.primary900)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityLabel("\(accessibilityLabel). \(text)")
+    }
+
+    private var paywallDock: some View {
+        VStack(spacing: AIPoseSpacing.md) {
+            // The purchase CTA only exists when there is a purchasable plan: the sign-in-required
+            // and unavailable states own their own action, so a dead disabled button is never shown.
+            if let plan = model.selectedPlan {
+                Button { Task { await model.purchase() } } label: {
+                    Text(model.ctaTitle)
+                }
+                .buttonStyle(NeoButtonStyle())
+                .frame(minHeight: 44)
+                .disabled(model.isBusy)
+                .accessibilityLabel(model.ctaTitle)
+
+                Text(PaywallPlanCatalog.summaryLine(for: plan))
+                    .font(.footnote)
+                    .foregroundStyle(AIPoseColor.subtext)
+                    .multilineTextAlignment(.center)
+                    .accessibilityLabel(PaywallPlanCatalog.summaryLine(for: plan))
+            }
+            HStack(spacing: AIPoseSpacing.lg) {
+                paywallLegalLink("Restore purchases", action: { Task { await model.restore() } })
+                paywallLegalLink("Terms", url: SupportDestinations.termsOfServiceURL)
+                paywallLegalLink("Privacy", url: SupportDestinations.privacyPolicyURL)
+            }
+            Text("Cancel anytime in App Store settings. No free trial.")
+                .font(.caption)
+                .foregroundStyle(AIPoseColor.subtext)
+                .multilineTextAlignment(.center)
+        }
+        .padding(AIPoseSpacing.lg)
+        .background(AIPoseColor.background)
+        .overlay(alignment: .top) { Rectangle().fill(AIPoseColor.foreground.opacity(0.15)).frame(height: 1) }
+    }
+
+    private func paywallLegalLink(_ title: String, url: URL? = nil, action: (() -> Void)? = nil) -> some View {
+        Button {
+            if let action { action() } else if let url { openURL(url) }
+        } label: {
+            Text(title)
+                .font(.footnote.weight(.bold))
+                .supportUnderlinedLink()
+        }
+        .frame(minHeight: 44)
+        .accessibilityLabel(title == "Terms" ? "Terms of Use" : title == "Privacy" ? "Privacy Policy" : title)
+    }
+}
+
+// MARK: - Shared support components
+
+private enum SupportSettingsTrailing {
+    case chevron, external, status(String, Color), value(String)
+}
+
+private struct SupportSettingsRow: View {
+    let icon: String
+    let iconColor: Color
+    let title: String
+    let description: String
+    var trailing: SupportSettingsTrailing = .chevron
+
+    var body: some View {
+        HStack(alignment: .top, spacing: AIPoseSpacing.md) {
+            Image(systemName: icon)
+                .font(.body.weight(.bold))
+                .frame(width: 40, height: 40)
+                .background(iconColor)
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+                .overlay(RoundedRectangle(cornerRadius: 10).stroke(AIPoseColor.foreground, lineWidth: 2))
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.headline.bold())
+                Text(description).font(.subheadline).foregroundStyle(AIPoseColor.subtext)
+            }
+            Spacer(minLength: 0)
+            trailingView
+        }
+        .foregroundStyle(AIPoseColor.foreground)
+        .frame(minHeight: 44, alignment: .top)
+        .neoCard()
+    }
+
+    @ViewBuilder
+    private var trailingView: some View {
+        switch trailing {
+        case .chevron:
+            Image(systemName: "chevron.right")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(AIPoseColor.subtext)
+                .accessibilityHidden(true)
+        case .external:
+            Image(systemName: "arrow.up.right")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(AIPoseColor.subtext)
+                .accessibilityHidden(true)
+        case .status(let label, let color):
+            Text(label)
+                .font(.caption.weight(.bold))
+                .padding(.horizontal, AIPoseSpacing.sm)
+                .padding(.vertical, AIPoseSpacing.xs)
+                .background(color)
+                .clipShape(Capsule())
+                .overlay(Capsule().stroke(AIPoseColor.foreground, lineWidth: 1.5))
+        case .value(let label):
+            HStack(spacing: AIPoseSpacing.xs) {
+                Text(label).font(.caption.weight(.semibold)).foregroundStyle(AIPoseColor.subtext)
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(AIPoseColor.subtext)
+                    .accessibilityHidden(true)
+            }
+        }
+    }
+}
+
+private struct PaywallPlanCard: View {
+    let product: PurchaseProduct
+    let isSelected: Bool
+    let onSelect: () -> Void
+
+    private var isAnnual: Bool { PaywallPlanCatalog.isAnnual(product) }
+
+    var body: some View {
+        Button(action: onSelect) {
+            VStack(alignment: .leading, spacing: AIPoseSpacing.sm) {
+                HStack(spacing: AIPoseSpacing.sm) {
+                    Circle()
+                        .strokeBorder(AIPoseColor.foreground, lineWidth: 2)
+                        .background(Circle().fill(isSelected ? AIPoseColor.foreground : .clear).padding(5))
+                        .frame(width: 22, height: 22)
+                        .accessibilityHidden(true)
+                    Text(PaywallPlanCatalog.label(for: product).uppercased())
+                        .font(.caption.weight(.bold))
+                    if isAnnual {
+                        Text("Recommended")
+                            .font(.caption2.weight(.bold))
+                            .padding(.horizontal, AIPoseSpacing.sm)
+                            .padding(.vertical, 2)
+                            .background(AIPoseColor.accentYellow)
+                            .clipShape(Capsule())
+                            .overlay(Capsule().stroke(AIPoseColor.foreground, lineWidth: 1.5))
+                    }
+                    Spacer(minLength: 0)
+                }
+                HStack(alignment: .firstTextBaseline, spacing: AIPoseSpacing.xs) {
+                    Text(product.localizedPrice).font(.title3.bold())
+                    Text("/ \(PaywallPlanCatalog.periodLabel(for: product))")
+                        .font(.subheadline.weight(.bold))
+                }
+                Text(PaywallPlanCatalog.termsLine(for: product))
+                    .font(.footnote)
+                    .foregroundStyle(AIPoseColor.subtext)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(AIPoseSpacing.lg)
+            .background(AIPoseColor.surface)
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .stroke(AIPoseColor.foreground, lineWidth: isSelected ? 3 : 2)
+            )
+            .shadow(color: AIPoseColor.foreground, radius: 0, x: isSelected ? 4 : 2, y: isSelected ? 4 : 2)
+        }
+        .buttonStyle(.plain)
+        .frame(minHeight: 44)
+        .accessibilityLabel(accessibilityLabel)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
+    private var accessibilityLabel: String {
+        let selection = isSelected ? "selected" : "not selected"
+        let recommendation = isAnnual ? ", recommended" : ""
+        return "\(PaywallPlanCatalog.label(for: product)) plan, \(selection), \(product.localizedPrice) per \(PaywallPlanCatalog.periodLabel(for: product))\(recommendation)"
+    }
+}
+
+private struct AboutSnapPoseSheet: View {
+    let appVersion: String
+    let buildNumber: String
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(spacing: AIPoseSpacing.lg) {
+            Capsule().fill(AIPoseColor.subtext.opacity(0.3)).frame(width: 36, height: 4).padding(.top, AIPoseSpacing.sm)
+            Text("Snap Pose")
+                .font(.headline.bold())
+                .padding(.horizontal, AIPoseSpacing.lg)
+                .padding(.vertical, AIPoseSpacing.md)
+                .background(AIPoseColor.accentYellow)
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .overlay(RoundedRectangle(cornerRadius: 12).stroke(AIPoseColor.foreground, lineWidth: 2))
+                .shadow(color: AIPoseColor.foreground, radius: 0, x: 3, y: 3)
+            Text("About Snap Pose").font(.title2.bold())
+            Text("Strike the pose. Snap the moment.")
+            Text("Snap Pose v\(appVersion) (Build \(buildNumber))")
+                .font(.subheadline.weight(.semibold))
+            Text("© 2026 Snap Pose. All rights reserved.")
+                .font(.footnote)
+                .foregroundStyle(AIPoseColor.subtext)
+            Text("Credits and open-source licenses are available in the production app bundle.")
+                .font(.footnote)
+                .foregroundStyle(AIPoseColor.subtext)
+                .multilineTextAlignment(.center)
+            Button("Close") { dismiss() }
+                .buttonStyle(NeoButtonStyle(fill: AIPoseColor.surface))
+                .frame(minHeight: 44)
+                .accessibilityLabel("Close About Snap Pose")
+            Spacer(minLength: 0)
+        }
+        .padding(AIPoseSpacing.lg)
+        .supportSheetPresentation()
+        .accessibilityAddTraits(.isModal)
+    }
+}
+
+private extension View {
+    func supportUnderlinedLink() -> some View {
+        overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(AIPoseColor.foreground)
+                .frame(height: 1)
+                .offset(y: 1)
+        }
+    }
+
+    @ViewBuilder
+    func supportSheetPresentation() -> some View {
+        if #available(iOS 16.0, *) {
+            self
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.hidden)
+        } else {
+            self
+        }
+    }
+}

@@ -1,5 +1,5 @@
 // Development debug configuration. Public SDK/legal values are placeholders.
-#include "../Pods/Target Support Files/Pods-iosApp/Pods-iosApp.debug-dev.xcconfig"
 AIPOSE_ENVIRONMENT = DEV
 AIPOSE_BUILD_CONFIGURATION = Debug
 REVENUECAT_PUBLIC_SDK_KEY = REPLACE_WITH_DEV_PUBLIC_SDK_KEY
+DEVELOPMENT_TEAM = 878758XF68
