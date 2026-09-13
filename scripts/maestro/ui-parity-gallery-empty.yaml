@@ -1,0 +1,41 @@
+# UI parity verification flow — GALLERY EMPTY variants (all-empty vs filter-empty).
+# Run this on a FRESH install (clearState: true, no photos captured yet): the empty gallery
+# states only exist when the photo library is empty. The two variants are exercised SEPARATELY
+# and labelled distinctly so a reviewer never conflates them.
+#
+# Run (per-run output dir convention — never reuse a directory across runs):
+#   ~/.maestro/bin/maestro test scripts/maestro/ui-parity-gallery-empty.yaml \
+#     --device <SIM_UDID> --test-output-dir /tmp/parity-out-gallery-empty
+#
+# References matched (docs/prototype/screenshots/reference/):
+#   01-gallery-all-empty    -> gallery.png is the populated base; the all-empty counterpart is
+#                              NO COUNTERPART on the prototype side by URL (renderGallery(),
+#                              docs/prototype/scripts/app.js:543-552, never reads ?state=empty)
+#                              — capture the app state anyway so DL-B can eyeball it.
+#   02-gallery-filter-empty -> gallery-filter-empty.png (filter=custom&date=2000-01-01).
+#
+# Do NOT assert the "Open Camera" CTA in the all-empty state: the prototype renders one
+# (app.js:549-551) but the app passes no actionTitle/action there (GalleryFeature.swift:420).
+# Capture the state; the absence is the finding.
+#
+# Selector policy: semantic text: only — NO coordinate taps. Chip titles are exactly
+# "All" / "Today" / "7 days" / "30 days" (GalleryFeature.swift:253-258; rendered via
+# Text(title), AIPoseComponents.swift:9). If DL-A adds accessibilityIdentifier s, prefer id:.
+appId: camerapose.app
+---
+- launchApp:
+    clearState: true
+- waitForAnimationToEnd
+- tapOn:
+    text: "Continue"
+    optional: true
+- tapOn:
+    text: "Gallery"
+- waitForAnimationToEnd
+# All-empty: "All" chip active by default, fresh install = no photos.
+- takeScreenshot: 01-gallery-all-empty
+# Filter-empty: "Today" selected with no photos in range.
+- tapOn:
+    text: "Today"
+- waitForAnimationToEnd
+- takeScreenshot: 02-gallery-filter-empty

@@ -1,7 +1,12 @@
-# UI parity verification flow — drives the built app to every screen that must match the HTML
-# prototype, so the screenshots can be diffed against docs/prototype/screenshots/reference/.
+# UI parity verification flow — CORE screens (poses, search, saved, gallery, account).
+# Camera-surface states live in scripts/maestro/ui-parity-camera.yaml so a label shift there
+# cannot abort this flow's evidence.
 #
-# Run:
+# Drives the built app to every screen that must match the HTML prototype, so the screenshots
+# can be diffed against docs/prototype/screenshots/reference/ (see
+# docs/evidence/260913-parity-gate/dlb-state-map.md for the authoritative state list).
+#
+# Run (per-run output dir convention — never reuse a directory across runs):
 #   ~/.maestro/bin/maestro test scripts/maestro/ui-parity.yaml \
 #     --device <SIM_UDID> --test-output-dir /tmp/parity-out
 #   # screenshots -> /tmp/parity-out/screenshots/
@@ -12,10 +17,16 @@
 # Reboot the simulator if the XCUITest driver stops reading the hierarchy (a known flake after
 # many consecutive runs): xcrun simctl shutdown <UDID> && xcrun simctl boot <UDID>
 #
+# Selector policy (no coordinate taps anywhere — a coordinate tap can crash the runner):
+#  - Only two accessibilityIdentifier families exist in the app today: poses.open-search and
+#    search.* (PosesFeature.swift). Everything else is targeted by its accessibilityLabel.
+#  - Labels flagged MAY-SHIFT are the prototype-required wording the parity gate mandates;
+#    the app's current wording may differ until the DL-A sync lands (Phase 2 verifies).
+#
 # NOTE on queries: the real catalogue has no pose literally named "Warrior" (that name comes from
-# the prototype's fixtures), so tapping the Warrior chip exercises the EMPTY state. The populated
-# GRID — the state that must be compared with reference/search-results.png — needs a query that
-# matches real data, e.g. "Pose". Both states are captured below.
+# the prototype's fixtures), so a Warrior query exercises the NO-MATCH state. The populated GRID —
+# the state compared with reference/search-results.png — needs a query that matches real data,
+# e.g. "Pose". Both states are captured below.
 appId: camerapose.app
 ---
 - launchApp:
@@ -25,43 +36,45 @@ appId: camerapose.app
 - tapOn:
     text: "Continue"
     optional: true
-# Wait for real data: the catalogue is fetched over the network and the cards render a grey
-# placeholder until it lands. Without this the "results" screenshot is a loading state.
+# Wait for the Poses screen itself: `poses.open-search` (PosesFeature.swift:373) is always
+# present once the screen is up. The visible pose count was deliberately REMOVED in AC2, so
+# the old `extendedWaitUntil: visible: "[0-9]+ poses?"` was a stale harness expectation that
+# could never resolve. The painted grid (remote artwork) is captured later by the settle
+# re-shot — 'loaded' is not 'painted'.
 - extendedWaitUntil:
-    visible: "[0-9]+ poses?"
+    visible:
+      id: "poses.open-search"
     timeout: 20000
+- waitForAnimationToEnd
 - takeScreenshot: 01-poses
 
-# --- Camera (reference/camera-live.png). Must show NO dock tab bar. ---
-- tapOn:
-    text: "Open Camera"
-- waitForAnimationToEnd
-- takeScreenshot: 02-camera
-
-# --- Guide picker (reference/pose-guide.png) ---
-- tapOn:
-    text: "Choose a pose guide"
-- waitForAnimationToEnd
-- takeScreenshot: 03-guide-picker
-- tapOn:
-    text: "Back"
-- waitForAnimationToEnd
-- tapOn:
-    text: "Close camera"
-- waitForAnimationToEnd
-- takeScreenshot: 04-back-to-poses
-
-# --- Search, blank/empty state (reference/search-blank.png). Dock must be visible. ---
+# --- Search, blank/discovery state (reference/search-blank.png). Dock must be visible. ---
 - tapOn:
     id: "poses.open-search"
 - waitForAnimationToEnd
-- takeScreenshot: 05-search-blank
+- takeScreenshot: 02-search-blank
 
-# --- Search, empty result (no prototype counterpart; documents our empty state) ---
+# --- Search, no-match state (reference/search-no-match.png) ---
+# Do everything that needs the field inside one focus session: the search.field identifier
+# stops resolving once the field holds a value and the keyboard has been dismissed.
 - tapOn:
-    id: "search.recent.warrior"
+    id: "search.field"
+- inputText: "zzzz"
+# Keyboard up: the dock must stay pinned to the bottom, not ride above the keyboard.
+- takeScreenshot: 03-search-no-match-keyboard-up
+# Press the keyboard's Search key. Do NOT use `hideKeyboard`: on iOS it dismisses by tapping
+# outside the field, which can land on a result card and navigate into the pose detail.
+- pressKey: Enter
 - waitForAnimationToEnd
-- takeScreenshot: 06-search-no-match
+# The search is DEBOUNCED: immediately after Enter the panel shows the transient loading state
+# (`Searching` / `Looking through your library and the community.`) and the count reads
+# `Searching…`. Screenshotting there captures a loading state under a no-match filename and
+# makes the comparison meaningless. Wait for the settled no-match card first.
+- extendedWaitUntil:
+    visible: ".*No poses match.*"
+    timeout: 15000
+- waitForAnimationToEnd
+- takeScreenshot: 04-search-no-match
 
 # --- Search, populated results (reference/search-results.png) ---
 - tapOn:
@@ -70,16 +83,98 @@ appId: camerapose.app
 - tapOn:
     id: "search.field"
 - inputText: "Pose"
-- waitForAnimationToEnd
-# Wait for the count to stop saying "Searching…" — otherwise the grid is captured mid-load with
-# grey placeholders instead of pose artwork.
 - extendedWaitUntil:
     visible: "[0-9]+ poses?"
     timeout: 20000
-# Keyboard up: the dock must stay pinned to the bottom, not ride above the keyboard.
-- takeScreenshot: 08-search-keyboard-up
-# Press the keyboard's Search key. Do NOT use `hideKeyboard`: on iOS it dismisses by tapping
-# outside the field, which can land on a result card and navigate into the pose detail.
+- takeScreenshot: 05-search-results-keyboard-up
 - pressKey: Enter
 - waitForAnimationToEnd
-- takeScreenshot: 07-search-results
+- takeScreenshot: 06-search-results
+
+# --- Search, community source filter (reference/search-results-community.png) ---
+- tapOn:
+    id: "search.source.community"
+- waitForAnimationToEnd
+- takeScreenshot: 07-search-results-community
+- tapOn:
+    id: "search.back"
+- waitForAnimationToEnd
+
+# --- Saved list. The prototype routes Poses -> sign-in-prompt when signed out, while the
+# app's "Open Saved poses" may go straight to SavedPosesScreen. Capture whichever appeared,
+# then tolerantly get past a gate if one is showing. ---
+- tapOn:
+    text: "Open Saved poses"
+- waitForAnimationToEnd
+- takeScreenshot: 08-saved-or-sign-in-gate
+- tapOn:
+    text: "Continue with Google"
+    optional: true
+- waitForAnimationToEnd
+- takeScreenshot: 09-saved-list
+
+# --- Gallery (reference/gallery.png; dock renders on the gallery root). Filter chips EXIST:
+# GalleryFeature.swift:403-405 renders a NeoFilterChip per GalleryTimeFilter, raw values are
+# exactly "All", "Today", "7 days", "30 days" (GalleryFeature.swift:253-258), and the chip
+# renders Text(title) (AIPoseComponents.swift:9) — so text: is the correct selector today.
+# If DL-A lands accessibilityIdentifier s on the chips, prefer id: and drop these text taps.
+- launchApp:
+    clearState: false
+- waitForAnimationToEnd
+- tapOn:
+    text: "Gallery"
+- waitForAnimationToEnd
+- takeScreenshot: 10-gallery
+- tapOn:
+    text: "Today"
+- waitForAnimationToEnd
+- takeScreenshot: 11-gallery-filter-today
+- tapOn:
+    text: "7 days"
+- waitForAnimationToEnd
+- takeScreenshot: 12-gallery-filter-week
+- tapOn:
+    text: "30 days"
+- waitForAnimationToEnd
+- takeScreenshot: 13-gallery-filter-month
+- tapOn:
+    text: "All"
+- waitForAnimationToEnd
+# Gallery items expose "<title>, <date> at <time>" accessibility labels
+# (GalleryFeature.swift:669, e.g. "Dancing Match, 14 Sep 2026 at 10:30"). The old
+# `text: ".+, ."` regex failed twice on the real hierarchy (cycle 1 + this run) — the label
+# lives on the photo cell (an image, not a Text element) and the regex's greedy form does not
+# survive Maestro's text matching. Match the fixture title prefix instead, semantically.
+- tapOn:
+    text: "Dancing Match.*"
+- waitForAnimationToEnd
+- takeScreenshot: 14-gallery-detail
+# The all-empty / filter-empty gallery variants are captured SEPARATELY by
+# scripts/maestro/ui-parity-gallery-empty.yaml on a fresh install (no photos). Do NOT assert
+# the prototype's "Open Camera" CTA here: the app passes no actionTitle/action in the
+# all-empty state (GalleryFeature.swift:420) — the absence is a finding, not a flow fix.
+
+# --- Settings -> Account -> signed-out (reference/account-signed-out.png). ---
+- launchApp:
+    clearState: false
+- waitForAnimationToEnd
+- tapOn:
+    text: "Poses"
+- waitForAnimationToEnd
+- tapOn:
+    text: "Open Settings"
+- waitForAnimationToEnd
+- takeScreenshot: 12-settings
+- tapOn:
+    text: "Open Account"
+- waitForAnimationToEnd
+- takeScreenshot: 13-account
+# The rig is UNAUTHENTICATED, so the Account screen is ALREADY in the signed-out state (the AC1
+# success-tone surface) and there is no `Sign out` control to tap — `SupportScreens.swift:84` renders
+# it only when `model.state == .signedIn`. Asserting the tap made the flow fail on a correct screen.
+# Assert the signed-out state instead, so the run proves the state rather than the tap.
+- extendedWaitUntil:
+    visible: ".*Signed out.*"
+    timeout: 10000
+- waitForAnimationToEnd
+- takeScreenshot: 14-account-signed-out

@@ -45,6 +45,12 @@ struct OnboardingScreen: View {
 
 // MARK: - Account
 
+/// `account.html` signed-out feedback (report §3.8): the shared success state. Pure and testable.
+enum AccountStateCopy {
+    static let signedOutTitle = "Signed out"
+    static let signedOutMessage = "Sign in again to access your Saved poses."
+}
+
 /// Account surface: read-only identity/provider for a valid session, sign-in when there
 /// is none, and an explicit sign-out. Owned by `AccountSessionModel` so the screen never
 /// invents identity values (see FEAT-014).
@@ -119,12 +125,20 @@ struct AccountScreen: View {
         .accessibilityLabel("Loading account")
     }
 
+    /// `account.html` signed-out feedback renders through the shared `.success` tone (report §3.8).
+    /// Named and pure so the tone is assertable: this is the only `.success` producer in the app.
+    static let signedOutTone: FeatureStateTone = .success
+
+    /// `account.html` signed-out feedback (report §3.8): the shared success card. The sign-in
+    /// control stays below it so the screen still offers the way back in; an in-flight auth error
+    /// keeps its own truthful text (not a state listed by the report).
     private var signedOutCard: some View {
         VStack(alignment: .leading, spacing: AIPoseSpacing.md) {
-            Text("You're signed out").font(.title3.bold())
-            Text("Sign in to view your account and account-scoped Saved poses.")
-                .font(.subheadline)
-                .foregroundStyle(AIPoseColor.subtext)
+            FeatureStateView(
+                tone: Self.signedOutTone,
+                title: AccountStateCopy.signedOutTitle,
+                message: AccountStateCopy.signedOutMessage
+            )
             if let authError = model.authError {
                 Text(authError)
                     .font(.footnote.weight(.semibold))
@@ -134,8 +148,7 @@ struct AccountScreen: View {
             }
             ContinueWithGoogleButton(isAuthenticating: model.isAuthenticating) { model.signIn() }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .neoCard()
+        .accessibilityElement(children: .contain)
     }
 
     private func failedCard(_ message: String) -> some View {

@@ -256,6 +256,29 @@ enum GalleryTimeFilter: String, CaseIterable, Identifiable {
     case week = "7 days"
     case month = "30 days"
     var id: String { rawValue }
+
+    /// Stable Maestro/VoiceOver handle (AC6 drivability). The raw values contain spaces
+    /// ("7 days"), so the identifiers use the case names instead.
+    var filterIdentifier: String {
+        switch self {
+        case .all: return "gallery.filter.all"
+        case .today: return "gallery.filter.today"
+        case .week: return "gallery.filter.week"
+        case .month: return "gallery.filter.month"
+        }
+    }
+}
+
+/// User-visible copy for the Gallery state surfaces (report §3.7, `gallery.html`).
+/// Pure and testable: views call these instead of hardcoding strings.
+enum GalleryStateCopy {
+    static let emptyAllTitle = "No photos yet"
+    static let emptyAllMessage = "Capture a pose to start your gallery."
+    static let openCameraActionTitle = "Open Camera"
+    static let emptyFilterTitle = "No photos in this filter"
+    static let emptyFilterMessage = "Try another filter."
+    static let errorTitle = "Couldn't load gallery"
+    static let retryActionTitle = "Try again"
 }
 
 @MainActor final class GalleryViewModel: ObservableObject {
@@ -359,11 +382,18 @@ enum GalleryTimeFilter: String, CaseIterable, Identifiable {
 struct GalleryScreen: View {
     @StateObject var model: GalleryViewModel
     @ObservedObject private var purchaseState = RevenueCatAdapter.shared
+    /// All-gallery-empty recovery (`gallery.html` `Open Camera`). The owning root wires this to the
+    /// camera entry point; the default keeps every existing call site compiling untouched.
+    var onOpenCamera: () -> Void = {}
     var body: some View {
         VStack(spacing: 0) {
             galleryHeader
             content
         }
+        // R1: the shared state card no longer carries `maxHeight: .infinity` (the prototype has no
+        // full-height rule), so the root must top-anchor itself — otherwise a short `.empty` /
+        // `.failed` card lets the stack collapse and centres the header and filter chips.
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .neoHiddenNavigationBar()
         .background(AIPoseColor.background)
         .task { if case .idle = model.state { await model.load() } }
@@ -404,6 +434,8 @@ struct GalleryScreen: View {
                         NeoFilterChip(title: filter.rawValue, isSelected: model.timeFilter == filter) {
                             model.timeFilter = filter
                         }
+                        .accessibilityIdentifier(filter.filterIdentifier)
+                        .accessibilityLabel(filter.rawValue)
                     }
                 }
                 .padding(.horizontal, AIPoseSpacing.lg)
@@ -412,15 +444,61 @@ struct GalleryScreen: View {
         }
     }
 
+    /// State cards render in flow at the top of the content column (`gallery.html` mounts the
+    /// state inside the grid column, 16pt side padding, no centring); the frozen `FeatureStateView`
+    /// is a full-width top-anchored card with no icon slot.
     @ViewBuilder private var content: some View {
-        switch model.state {
-        case .idle, .loading:
+        // Card tone comes from the pure `Loadable.stateTone` mapper; the branches below only choose
+        // this screen's copy and placement.
+        switch model.state.stateTone {
+        case .some(.loading):
             ProgressView("Loading gallery…").frame(maxWidth: .infinity, maxHeight: .infinity)
-        case .empty:
-            FeatureStateView(icon: "photo.on.rectangle.angled", title: "Your gallery is empty", message: emptyMessage)
-        case .failed(let message):
-            FeatureStateView(icon: "exclamationmark.triangle", title: "Couldn't load gallery", message: message) { Task { await model.load() } }
-        case .loaded:
+        case .some(.empty):
+            // §3.7: only the all-gallery-empty state offers `Open Camera`; the filter-empty state
+            // stays actionless. The two states keep distinct copy. The prototype appends the card
+            // as a child of the masonry grid (`.nb-gallery-empty-state`: column-span all,
+            // `margin: var(--nb-space-md) 0`), so the card occupies the grid slot — 16pt vertical
+            // margin, the grid's 16pt side padding — while the header and filter chips stay
+            // visible and interactive above it (the chips are the only way out of an empty filter).
+            if model.timeFilter == .all {
+                FeatureStateView(
+                    tone: .empty,
+                    title: GalleryStateCopy.emptyAllTitle,
+                    message: GalleryStateCopy.emptyAllMessage,
+                    actionTitle: GalleryStateCopy.openCameraActionTitle
+                ) {
+                    onOpenCamera()
+                }
+                .padding(.horizontal, AIPoseSpacing.lg)
+                .padding(.vertical, AIPoseSpacing.lg)
+                .accessibilityIdentifier("gallery.empty.openCamera")
+            } else {
+                FeatureStateView(
+                    tone: .empty,
+                    title: GalleryStateCopy.emptyFilterTitle,
+                    message: GalleryStateCopy.emptyFilterMessage
+                )
+                .padding(.horizontal, AIPoseSpacing.lg)
+                .padding(.vertical, AIPoseSpacing.lg)
+            }
+        case .some(.error):
+            let message: String = {
+                if case .failed(let message) = model.state { return message }
+                return GalleryStateCopy.errorTitle
+            }()
+            FeatureStateView(
+                tone: .error,
+                title: GalleryStateCopy.errorTitle,
+                message: message,
+                actionTitle: GalleryStateCopy.retryActionTitle
+            ) {
+                Task { await model.load() }
+            }
+            .padding(.horizontal, AIPoseSpacing.lg)
+        case .some(.offline), .some(.success), .some(.warning):
+            // No producer for these tones on this surface.
+            EmptyView()
+        case nil:
             ScrollView {
                 GalleryPhotoGrid(sections: model.dateSections) { item in
                     model.select(item)
@@ -430,10 +508,6 @@ struct GalleryScreen: View {
                 .padding(.bottom, GalleryGridContract.dockInset)
             }
         }
-    }
-
-    private var emptyMessage: String {
-        model.timeFilter == .all ? "Photos you take will appear here." : "No photos in this time range."
     }
 }
 

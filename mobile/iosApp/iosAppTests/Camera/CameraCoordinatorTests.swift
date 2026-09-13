@@ -287,7 +287,11 @@ final class CameraCoordinatorTests: XCTestCase {
 
     func testGuideOpacityAndFlipDefaults() {
         let model = CameraViewModel()
-        XCTAssertEqual(model.guideOpacity, 0.55, accuracy: 0.001)
+        // Prototype default is 50%: `camera-live.html` renders `<output id="pose-opacity-value">50%</output>`
+        // for `<input id="pose-opacity-slider" min="0.1" max="1" step="0.05" value="0.5">`, and
+        // `camera-viewport.css` / the Camera Tools popup spec in UI-CHANGE-260913 §3.2 keep it at 50%.
+        // The previous 0.55 was not traceable to the prototype. Synced by DL-A in the merge gate.
+        XCTAssertEqual(model.guideOpacity, 0.5, accuracy: 0.001)
         XCTAssertFalse(model.guideFlipped)
         model.guideFlipped = true
         model.guideOpacity = 0.2

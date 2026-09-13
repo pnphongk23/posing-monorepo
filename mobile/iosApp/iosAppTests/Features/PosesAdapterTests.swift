@@ -197,24 +197,40 @@ final class PosesAdapterTests: XCTestCase {
         XCTAssertEqual(SearchResultsCopy.countLabel(for: .failed("offline")), "Unavailable")
     }
 
+    /// Strings are `app.js:845-849` verbatim. The old expectations pinned a native invention
+    /// (`No poses found` + a `clear the search` instruction) that the prototype never renders; the
+    /// reference `search-no-match.png` shows `No poses match “zzzz”` / `Try a different pose name.`
+    /// with no card action at all.
     func testSearchResultsCopyEmptyStateCopyIsContextAware() {
-        XCTAssertEqual(SearchResultsCopy.emptyTitle(query: "Dancing", filter: .all), "No poses found")
-        XCTAssertEqual(
-            SearchResultsCopy.emptyMessage(query: "Dancing", filter: .all),
-            "No poses match “Dancing”. Try a different title or clear the search."
-        )
-        XCTAssertEqual(SearchResultsCopy.emptyRecoveryTitle(query: "Dancing", filter: .all), "Clear search")
+        // Query present: title embeds the query, short copy, and NO card action (`app.js:847`).
+        XCTAssertEqual(SearchResultsCopy.emptyTitle(query: "Dancing", filter: .all), "No poses match “Dancing”")
+        XCTAssertEqual(SearchResultsCopy.emptyMessage(query: "Dancing", filter: .all), "Try a different pose name.")
+        XCTAssertNil(SearchResultsCopy.emptyRecoveryTitle(query: "Dancing", filter: .all))
+        XCTAssertNil(SearchResultsCopy.emptyRecoveryTitle(query: "Dancing", filter: .saved))
+        XCTAssertNil(SearchResultsCopy.emptyRecoveryTitle(query: "Dancing", filter: .community))
 
-        XCTAssertEqual(SearchResultsCopy.emptyTitle(query: "", filter: .saved), "No saved poses")
-        XCTAssertEqual(
-            SearchResultsCopy.emptyMessage(query: "", filter: .saved),
-            "Save poses from Community to see them here."
-        )
-        XCTAssertNil(SearchResultsCopy.emptyRecoveryTitle(query: "", filter: .saved))
+        // No query, non-All source: `No poses in <source> yet` + `Show all poses`.
+        XCTAssertEqual(SearchResultsCopy.emptyTitle(query: "", filter: .saved), "No poses in my poses yet")
+        XCTAssertEqual(SearchResultsCopy.emptyMessage(query: "", filter: .saved), "Choose another source to continue.")
+        XCTAssertEqual(SearchResultsCopy.emptyRecoveryTitle(query: "", filter: .saved), "Show all poses")
 
-        XCTAssertEqual(SearchResultsCopy.emptyTitle(query: "", filter: .community), "No poses")
-        XCTAssertEqual(SearchResultsCopy.emptyMessage(query: "", filter: .community), "Try another search or category.")
-        XCTAssertNil(SearchResultsCopy.emptyRecoveryTitle(query: "", filter: .community))
+        XCTAssertEqual(SearchResultsCopy.emptyTitle(query: "", filter: .community), "No poses in community yet")
+        XCTAssertEqual(SearchResultsCopy.emptyMessage(query: "", filter: .community), "Choose another source to continue.")
+        XCTAssertEqual(SearchResultsCopy.emptyRecoveryTitle(query: "", filter: .community), "Show all poses")
+
+        // All source: `app.js:846` falls back to `this library`, and `app.js:847` gives no action.
+        XCTAssertEqual(SearchResultsCopy.emptyTitle(query: "", filter: .all), "No poses in this library yet")
+        XCTAssertEqual(SearchResultsCopy.emptyMessage(query: "", filter: .all), "Choose another source to continue.")
+        XCTAssertNil(SearchResultsCopy.emptyRecoveryTitle(query: "", filter: .all))
+    }
+
+    /// `app.js:837` — `searchResultsCount.hidden = filtered.length === 0`.
+    func testSearchResultsCountIsHiddenWhenNothingMatches() {
+        XCTAssertTrue(SearchResultsCopy.hidesCount(for: .empty))
+        XCTAssertFalse(SearchResultsCopy.hidesCount(for: .loaded([sampleNativePose])))
+        XCTAssertFalse(SearchResultsCopy.hidesCount(for: .idle))
+        XCTAssertFalse(SearchResultsCopy.hidesCount(for: .loading))
+        XCTAssertFalse(SearchResultsCopy.hidesCount(for: .failed("offline")))
     }
 
     @MainActor func testUnmatchedQueryProducesEmptyStateWithoutFabricatedResults() async {

@@ -70,7 +70,13 @@ struct AppFeatureRoot: View {
         case .gallery:
             RootNavigation {
                 tabRoot {
-                    GalleryScreen(model: GalleryViewModel(store: galleryStore))
+                    GalleryScreen(
+                        model: GalleryViewModel(store: galleryStore),
+                        // `gallery.html` all-empty `Open Camera` — the gallery's only entry point to
+                        // capture. Wired here because the destination is app-level tab routing;
+                        // `GalleryScreen` only owns the action site.
+                        onOpenCamera: { tab = .camera }
+                    )
                 }
             }
         }

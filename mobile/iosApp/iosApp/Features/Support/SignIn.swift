@@ -36,6 +36,14 @@ enum ErrorCopy {
     }
 }
 
+/// `sign-in-prompt.html` failed sign-in state (report §3.8): the shared error card with its
+/// `Try again` action retrying the handoff. Pure and testable.
+enum SignInPromptStateCopy {
+    static let failureTitle = "Sign-in failed"
+    static let failureMessage = "Try again to continue."
+    static let failureActionTitle = "Try again"
+}
+
 /// The single "start Google sign-in" seam.
 ///
 /// Every caller (Account screen, paywall, shared prompt) goes through this so they all report
@@ -147,12 +155,19 @@ struct SignInPromptView: View {
                     .font(.subheadline)
                     .foregroundStyle(AIPoseColor.subtext)
                     .fixedSize(horizontal: false, vertical: true)
-                if let error = model.error {
-                    Text(error)
-                        .font(.footnote.weight(.semibold))
-                        .foregroundStyle(AIPoseColor.error)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .accessibilityLabel("Sign-in failed. \(error)")
+                if model.error != nil {
+                    // §3.8: the shared error card replaces the old plain error Text. The frozen
+                    // copy is fixed; the launcher's specific error text is not displayed (its
+                    // truthfulness contract lives on surfaces not covered by this card).
+                    FeatureStateView(
+                        tone: .error,
+                        title: SignInPromptStateCopy.failureTitle,
+                        message: SignInPromptStateCopy.failureMessage,
+                        actionTitle: SignInPromptStateCopy.failureActionTitle
+                    ) {
+                        Task { await continueWithGoogle() }
+                    }
+                    .accessibilityIdentifier("sign-in.retry")
                 }
                 ContinueWithGoogleButton(isAuthenticating: model.isAuthenticating) {
                     Task { await continueWithGoogle() }

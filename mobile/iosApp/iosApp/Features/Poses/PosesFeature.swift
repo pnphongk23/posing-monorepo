@@ -39,32 +39,83 @@ enum SearchResultsCopy {
         }
     }
 
-    static func emptyIcon(query: String, filter: PoseLibraryFilter) -> String {
-        if !trimmedQuery(query).isEmpty { return "magnifyingglass" }
-        return filter == .saved ? "bookmark" : "figure.stand"
-    }
-
-    static func emptyTitle(query: String, filter: PoseLibraryFilter) -> String {
-        if !trimmedQuery(query).isEmpty { return "No poses found" }
-        return filter == .saved ? "No saved poses" : "No poses"
-    }
-
-    static func emptyMessage(query: String, filter: PoseLibraryFilter) -> String {
-        let trimmed = trimmedQuery(query)
-        if !trimmed.isEmpty {
-            return "No poses match “\(trimmed)”. Try a different title or clear the search."
+    /// `app.js:777` — `searchSource === 'my-poses' ? 'My poses' : searchSource === 'community' ? 'Community' : ''`.
+    /// `app.js:846` substitutes `this library` when that label is empty (the All source).
+    static func sourceLabel(for filter: PoseLibraryFilter) -> String {
+        switch filter {
+        case .saved: return "My poses"
+        case .community: return "Community"
+        case .all: return "this library"
         }
-        return filter == .saved ? "Save poses from Community to see them here." : "Try another search or category."
     }
 
-    /// Only an unmatched query offers a recovery action; the saved/other empty states stay actionless.
+    /// `app.js:845` — `query ? 'No poses match “<query>”' : 'No poses in <sourceLabel.toLocaleLowerCase() || 'this library'> yet'`.
+    static func emptyTitle(query: String, filter: PoseLibraryFilter) -> String {
+        let trimmed = trimmedQuery(query)
+        if !trimmed.isEmpty { return "No poses match “\(trimmed)”" }
+        // `toLocaleLowerCase()` in the prototype — `My poses` -> `my poses`, `Community` -> `community`.
+        return "No poses in \(sourceLabel(for: filter).lowercased()) yet"
+    }
+
+    /// `app.js:846` — exactly `Try a different pose name.` with a query, `Choose another source to
+    /// continue.` without one. The prototype appends nothing else; an earlier native string restated
+    /// the title and added a `clear the search` instruction the prototype never renders.
+    static func emptyMessage(query: String, filter: PoseLibraryFilter) -> String {
+        trimmedQuery(query).isEmpty ? "Choose another source to continue." : "Try a different pose name."
+    }
+
+    /// `app.js:847-849` — the action is `null` when a query is present **or** the source is All; the
+    /// only card action is `Show all poses` on the no-query, non-All branch. The search field keeps
+    /// its own clear/X affordance, which is separate and stays.
     static func emptyRecoveryTitle(query: String, filter: PoseLibraryFilter) -> String? {
-        trimmedQuery(query).isEmpty ? nil : "Clear search"
+        guard trimmedQuery(query).isEmpty, filter != .all else { return nil }
+        return "Show all poses"
+    }
+
+    /// `app.js:837` — `searchResultsCount.hidden = filtered.length === 0`; the reference
+    /// `search-no-match.png` renders the header without any count.
+    static func hidesCount(for state: Loadable<[NativePose]>) -> Bool {
+        if case .empty = state { return true }
+        return false
     }
 
     private static func trimmedQuery(_ query: String) -> String {
         query.trimmingCharacters(in: .whitespacesAndNewlines)
     }
+}
+
+/// User-visible copy for the Poses library state surfaces (report §3.4, `poses-list.html`).
+/// Pure and testable: views call these instead of hardcoding strings.
+enum PosesListStateCopy {
+    static let loadingTitle = "Loading poses"
+    static let loadingMessage = "Getting the pose library ready."
+    static let emptyTitle = "No poses yet"
+    static let emptyMessage = "New poses will appear here when they're available."
+    static let errorTitle = "Couldn't load poses"
+    static let errorMessage = "Check your connection and try again."
+    static let retryActionTitle = "Try again"
+}
+
+/// User-visible copy for the `PoseResultsList` transient states, per owner surface:
+/// `search.html` (report §3.5) vs `saved-list.html` (report §3.8).
+/// Pure and testable: views call these instead of hardcoding strings.
+enum PoseResultsStateCopy {
+    static let retryActionTitle = "Try again"
+
+    // MARK: Search (`search.html` §3.5)
+    static let searchLoadingTitle = "Searching"
+    static let searchLoadingMessage = "Looking through your library and the community."
+    static let searchErrorTitle = "Search is paused"
+    static let searchErrorMessage = "We could not load results right now. Your query is still here."
+
+    // MARK: Saved (`saved-list.html` §3.8)
+    static let savedLoadingTitle = "Loading saved poses"
+    static let savedLoadingMessage = "Getting your saved collection ready."
+    static let savedErrorTitle = "Couldn't load saved poses"
+    static let savedErrorMessage = "Check your connection and try again."
+    static let savedEmptyTitle = "No saved poses yet"
+    static let savedEmptyMessage = "Save poses from Community to find them here."
+    static let browseCommunityActionTitle = "Browse Community"
 }
 
 /// Low-intensity motion for the Search discovery/results state change (SCR-003-02 "Motion and animation").
@@ -181,6 +232,22 @@ struct PoseAPIBookmarkService: PoseBookmarkServing {
         let filtered = filter == .saved ? poses.filter(\.isSaved) : poses
         state = filtered.isEmpty ? .empty : .loaded(filtered)
     }
+
+    /// Pose detail availability check (report §3.6, `pose-detail.html` unavailable state): a detail
+    /// route is only valid while the pose still resolves through the service. Only the definitive
+    /// `poseNotFound` signal flips the screen; an inconclusive failure (offline, 5xx) must never
+    /// demote a working detail to "unavailable".
+    func confirmPublished(_ pose: NativePose) async -> Bool {
+        do {
+            _ = try await service.pose(id: pose.id)
+            return true
+        } catch let error as PoseAdapterError {
+            if case .poseNotFound = error { return false }
+            return true
+        } catch {
+            return true
+        }
+    }
 }
 
 // MARK: - Prototype metrics (single source of truth, in pt)
@@ -288,8 +355,9 @@ struct PosesScreen: View {
                     .zIndex(1)
             }
         }
-        .navigationTitle("Poses")
-        .navigationBarTitleDisplayMode(.inline)
+        // R8: the page title now lives in the single in-content row (`.nb-nav-bar--poses`), so the
+        // centred system nav-bar title is gone; keeping both would render the title twice.
+        .neoHiddenNavigationBar()
         .background(AIPoseColor.background)
         .task { if case .idle = model.state { await model.load() } }
         .onChange(of: model.filter) { _ in Task { await model.load() } }
@@ -300,111 +368,107 @@ struct PosesScreen: View {
         onSearchVisibilityChange(shown)
     }
 
-    /// Two rows on purpose. The prototype keeps `.nb-tabs--toolbar` and `.nb-nav-bar__right--actions`
-    /// in one flex row, but measuring the real strings shows the row needs ~474pt for three category
-    /// pills (297.7pt) plus four 32pt actions (140pt) plus margins, while a 390pt screen only has
-    /// 358pt. Even at a 6pt pill padding the content still overflows, and the reference shot itself
-    /// shows the two groups colliding — so the actions get their own line instead of clipping or
-    /// wrapping the labels.
+    /// ONE row: left-aligned page title plus the four page actions, per `nav-bar.css:60-80`
+    /// (`.nb-nav-bar--poses` — flex, `align-items: center`, `justify-content: flex-start`, gap 8,
+    /// `height: 52px`, `margin-bottom: var(--nb-space-md)`; the title is `text-align: left` and the
+    /// action group is `margin-left: auto`).
+    ///
+    /// `reference/poses-list.png` proves the shape: one 67px band at dsf2 (y=112..178) with the
+    /// title ink left-aligned at x=39. The previous two-row render (centred system nav-bar title plus
+    /// a separate actions row) was justified by a comment about three `My poses`/`Community` category
+    /// pills needing 297.7pt beside four 32pt actions. AC2 deleted those pills (report §3.4), so that
+    /// constraint is gone and the justification was stale — which is how the two-row header survived
+    /// implementation and review. Title ~54pt + actions ~171pt now fit a 390pt screen with room to
+    /// spare. `Create Pose` is not part of this surface (§3.4).
     private var posesHeader: some View {
-        VStack(spacing: 8) {
-            HStack(spacing: 4) {
-                Spacer(minLength: 0)
-                if purchaseState.lastSnapshot.state != .entitled {
-                    NavigationLink(destination: PaywallScreen()) {
-                        PosesHeaderIconLabel(systemImage: "crown.fill", fill: AIPoseColor.accentYellow)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Upgrade to Premium")
-                }
-
-                Button { setShowsSearch(true) } label: {
-                    PosesHeaderIconLabel(systemImage: "magnifyingglass")
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Search")
-                .accessibilityIdentifier("poses.open-search")
-
-                NavigationLink(destination: SavedPosesScreen(model: model, onTryPose: onTryPose)) {
-                    PosesHeaderIconLabel(systemImage: "bookmark.fill")
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Open Saved poses")
-
-                NavigationLink(destination: SettingsScreen(posesModel: model, onTryPose: onTryPose)) {
-                    PosesHeaderIconLabel(systemImage: "gearshape.fill")
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Open Settings")
-            }
-
-            HStack(spacing: 4) {
-                ForEach(PoseLibraryFilter.allCases) { item in
-                    PosesFilterTab(title: item.rawValue, isSelected: model.filter == item) {
-                        model.filter = item
-                    }
-                }
-                Spacer(minLength: 0)
-            }
-        }
-        .padding(.horizontal, AIPoseSpacing.lg)
-        .padding(.vertical, AIPoseSpacing.sm)
-    }
-
-    @ViewBuilder private var content: some View {
-        switch model.state {
-        case .idle, .loading:
-            ProgressView("Finding poses…").frame(maxWidth: .infinity, maxHeight: .infinity)
-        case .empty:
-            FeatureStateView(icon: "figure.stand", title: "No poses", message: emptyMessage)
-        case .failed(let message):
-            FeatureStateView(icon: "wifi.exclamationmark", title: "Couldn't load poses", message: message) { Task { await model.load() } }
-        case .loaded(let poses):
-            ScrollView {
-                Text("\(poses.count) poses")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(AIPoseColor.subtext)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, PoseGridMetrics.horizontalPadding)
-                    .padding(.bottom, 8)
-                PoseGrid(poses: poses, model: model, onTryPose: onTryPose)
-                    .padding(.horizontal, PoseGridMetrics.horizontalPadding)
-                    .padding(.bottom, PoseGridMetrics.dockClearance)
-            }
-        }
-    }
-
-    private var emptyMessage: String {
-        model.filter == .saved ? "Save poses from Community to see them here." : "Try another search or category."
-    }
-}
-
-/// Prototype toolbar tabs (`.nb-tabs--toolbar .nb-tab-btn`): one line per label, never wrapped.
-/// Kept `private` because the shared `NeoToolbarTab` pill padding (16pt each side) cannot fit three
-/// category labels next to four header actions on a 390pt screen.
-private struct PosesFilterTab: View {
-    let title: String
-    let isSelected: Bool
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Text(title)
-                .font(.system(size: 15, weight: .bold))
+        HStack(spacing: AIPoseSpacing.sm) {
+            // `.nb-nav-bar__center { flex: 1 1 auto }` with a left-aligned title.
+            Text("Poses")
+                .font(.system(size: 20, weight: .bold))
                 .foregroundStyle(AIPoseColor.foreground)
                 .lineLimit(1)
-                .fixedSize(horizontal: true, vertical: false)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 8)
-                .background(isSelected ? AIPoseColor.accentBlue : .clear)
-                .clipShape(RoundedRectangle(cornerRadius: 20))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 20)
-                        .stroke(isSelected ? AIPoseColor.foreground : .clear, lineWidth: 1.5)
-                )
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityAddTraits(.isHeader)
+
+            if purchaseState.lastSnapshot.state != .entitled {
+                NavigationLink(destination: PaywallScreen()) {
+                    PosesHeaderIconLabel(systemImage: "crown.fill", fill: AIPoseColor.accentYellow)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Upgrade to Premium")
+            }
+
+            Button { setShowsSearch(true) } label: {
+                PosesHeaderIconLabel(systemImage: "magnifyingglass")
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Search")
+            .accessibilityIdentifier("poses.open-search")
+
+            NavigationLink(destination: SavedPosesScreen(model: model, onTryPose: onTryPose)) {
+                PosesHeaderIconLabel(systemImage: "bookmark.fill")
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Open Saved poses")
+
+            NavigationLink(destination: SettingsScreen(posesModel: model, onTryPose: onTryPose)) {
+                PosesHeaderIconLabel(systemImage: "gearshape.fill")
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Open Settings")
         }
-        .buttonStyle(.plain)
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
+        // `.nb-nav-bar { height: 52px; margin-bottom: 16px }`.
+        .frame(height: 52)
+        .padding(.horizontal, AIPoseSpacing.lg)
+        .padding(.bottom, AIPoseSpacing.lg)
+    }
+
+    /// State cards render in flow at the top of the content column — `poses-list.html` mounts
+    /// `.nb-state-message` inside `.nb-phone__content` (16pt side padding, no centring) — and the
+    /// frozen `FeatureStateView` is a full-width top-anchored card with no icon slot.
+    @ViewBuilder private var content: some View {
+        // The card tone is read from the pure `Loadable.stateTone` mapper rather than restated per
+        // branch, so the tone a screen produces for a condition is verifiable in a unit test even
+        // when the UI state cannot be driven (Saved signed-in states in the parity rig).
+        switch model.state.stateTone {
+        case .some(.loading):
+            FeatureStateView(
+                tone: .loading,
+                title: PosesListStateCopy.loadingTitle,
+                message: PosesListStateCopy.loadingMessage
+            )
+            .padding(.horizontal, PoseGridMetrics.horizontalPadding)
+        case .some(.empty):
+            // §3.4: the empty state has no personal Create CTA — poses appear when available.
+            FeatureStateView(
+                tone: .empty,
+                title: PosesListStateCopy.emptyTitle,
+                message: PosesListStateCopy.emptyMessage
+            )
+            .padding(.horizontal, PoseGridMetrics.horizontalPadding)
+        case .some(.error):
+            FeatureStateView(
+                tone: .error,
+                title: PosesListStateCopy.errorTitle,
+                message: PosesListStateCopy.errorMessage,
+                actionTitle: PosesListStateCopy.retryActionTitle
+            ) {
+                Task { await model.load() }
+            }
+            .padding(.horizontal, PoseGridMetrics.horizontalPadding)
+        // `stateTone` cannot be these for a `Loadable`; listed so the switch stays exhaustive.
+        case .some(.offline), .some(.success), .some(.warning):
+            EmptyView()
+        case nil:
+            if case .loaded(let poses) = model.state {
+                ScrollView {
+                    // §3.4: the visible "<N> poses" catalogue count is removed with the tablist.
+                    PoseGrid(poses: poses, model: model, onTryPose: onTryPose)
+                        .padding(.horizontal, PoseGridMetrics.horizontalPadding)
+                        .padding(.bottom, PoseGridMetrics.dockClearance)
+                }
+            }
+        }
     }
 }
 
@@ -535,6 +599,10 @@ struct PoseDetailScreen: View {
     @State private var isSaved: Bool
     @State private var showsPaywall = false
     @State private var pendingSignIn: SignInIntent?
+    /// Report §3.6 (`pose-detail.html` unavailable state): set only by the definitive
+    /// `poseNotFound` signal from `PosesViewModel.confirmPublished` — a stale/deleted pose renders
+    /// the shared error state instead of dead detail content.
+    @State private var isUnavailable = false
     @Environment(\.dismiss) private var dismiss
     private let boundary = ServiceLocator.sessionBoundary
     init(pose: NativePose, model: PosesViewModel, onTryPose: @escaping (NativePose) -> Void) {
@@ -544,6 +612,32 @@ struct PoseDetailScreen: View {
         _isSaved = State(initialValue: pose.isSaved)
     }
     var body: some View {
+        VStack(spacing: 0) {
+            if isUnavailable {
+                unavailableState
+            } else {
+                detailContent
+            }
+        }
+        // R2: `unavailableState` is a header plus one short card, so without this the whole subscreen
+        // collapses to the card's height and centres, putting the back button mid-screen.
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(AIPoseColor.background)
+        .neoHiddenNavigationBar()
+        .sheet(isPresented: $showsPaywall) { PaywallScreen() }
+        // Saving is account-scoped, so a guest is asked to sign in and the interrupted save
+        // resumes once — never silently dropped, never replayed later (FEAT-013 sign-in gating).
+        .signInPrompt($pendingSignIn) { intent in
+            guard intent == .savePose else { return }
+            Task { await toggleBookmark() }
+        }
+        .task {
+            // §3.6: a detail route is only valid while the pose is still confirmed as published.
+            if !(await model.confirmPublished(pose)) { isUnavailable = true }
+        }
+    }
+
+    private var detailContent: some View {
         VStack(spacing: 0) {
             NeoSubscreenHeader(title: pose.name, onBack: { dismiss() })
             ScrollView {
@@ -574,14 +668,24 @@ struct PoseDetailScreen: View {
                 }.padding()
             }
         }
-        .background(AIPoseColor.background)
-        .neoHiddenNavigationBar()
-        .sheet(isPresented: $showsPaywall) { PaywallScreen() }
-        // Saving is account-scoped, so a guest is asked to sign in and the interrupted save
-        // resumes once — never silently dropped, never replayed later (FEAT-013 sign-in gating).
-        .signInPrompt($pendingSignIn) { intent in
-            guard intent == .savePose else { return }
-            Task { await toggleBookmark() }
+    }
+
+    /// Report §3.6: the shared error state for a pose that is no longer confirmed as published,
+    /// with the `Return to Poses` recovery action (this screen is always pushed, so dismissal is
+    /// the honest route back). The frozen component is top-anchored with no icon slot.
+    private var unavailableState: some View {
+        VStack(spacing: 0) {
+            NeoSubscreenHeader(title: "Pose unavailable", onBack: { dismiss() })
+            FeatureStateView(
+                tone: .error,
+                title: "Pose unavailable",
+                message: "This pose could not be confirmed as published. Return to Poses and try again.",
+                actionTitle: "Return to Poses"
+            ) {
+                dismiss()
+            }
+            .padding(.horizontal, PoseSurfaceMetrics.horizontalPadding)
+            .accessibilityIdentifier("poseDetail.returnToPoses")
         }
     }
 
@@ -785,36 +889,33 @@ struct SearchScreen: View {
             filterRow
             PoseResultsList(
                 model: model,
+                context: .search,
                 bottomInset: PoseGridMetrics.searchDockClearance,
                 emptyPresentation: .hidden
             )
         }
     }
 
-    /// `.nb-state-message`: white card, 1.5pt border, radius 10, `margin: 0 0 16px`.
-    /// Copy is unchanged (`SearchResultsCopy`); only the presentation moved into the results flow.
+    /// `.nb-state-message.nb-search-state` (report §3.5 no-match): the frozen shared card carries
+    /// the tone surface, structure and a11y; copy stays `SearchResultsCopy`. The wrapper adds 8pt of
+    /// bottom padding because `.nb-search-state { margin: 0 0 16px }` on top of the component's own
+    /// 8pt bottom margin makes the prototype's 16px total.
     private var noMatchBanner: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(SearchResultsCopy.emptyTitle(query: model.query, filter: model.filter))
-                .font(.system(size: 18, weight: .bold))
-                .foregroundStyle(AIPoseColor.foreground)
-            Text(SearchResultsCopy.emptyMessage(query: model.query, filter: model.filter))
-                .font(.system(size: 14))
-                .foregroundStyle(AIPoseColor.foreground)
-                .fixedSize(horizontal: false, vertical: true)
-            if let recoveryTitle = SearchResultsCopy.emptyRecoveryTitle(query: model.query, filter: model.filter) {
-                Button(recoveryTitle) { clearSearch() }
-                    .buttonStyle(SearchStateButtonStyle())
-                    .padding(.top, 4)
+        FeatureStateView(
+            tone: .empty,
+            title: SearchResultsCopy.emptyTitle(query: model.query, filter: model.filter),
+            message: SearchResultsCopy.emptyMessage(query: model.query, filter: model.filter),
+            actionTitle: SearchResultsCopy.emptyRecoveryTitle(query: model.query, filter: model.filter)
+        ) {
+            // `app.js:848` `Show all poses` -> `setSource('all')`, the same path the source chip takes.
+            withAnimation(SearchMotion.animation(reduceMotion: reduceMotion)) {
+                selectedSource = .all
+                model.filter = .all
             }
+            Task { await model.load() }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
-        .background(AIPoseColor.surface)
-        .clipShape(RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).stroke(AIPoseColor.foreground, lineWidth: 1.5))
         .padding(.horizontal, PoseSurfaceMetrics.horizontalPadding)
-        .padding(.bottom, 16)
+        .padding(.bottom, 8)
         .accessibilityIdentifier("search-empty-banner")
     }
 
@@ -835,13 +936,17 @@ struct SearchScreen: View {
                     .accessibilityIdentifier("search-results-heading")
             }
             Spacer(minLength: 0)
-            Text(SearchResultsCopy.countLabel(for: model.state))
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(AIPoseColor.subtext)
-                .multilineTextAlignment(.trailing)
-                .lineLimit(2)
-                .frame(maxWidth: 110, alignment: .trailing)
-                .accessibilityIdentifier("search-results-count")
+            // R12: `app.js:837` hides the count at zero, and `search-no-match.png` shows the header
+            // with no count. The label function is unchanged; only its visibility is conditional.
+            if !SearchResultsCopy.hidesCount(for: model.state) {
+                Text(SearchResultsCopy.countLabel(for: model.state))
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(AIPoseColor.subtext)
+                    .multilineTextAlignment(.trailing)
+                    .lineLimit(2)
+                    .frame(maxWidth: 110, alignment: .trailing)
+                    .accessibilityIdentifier("search-results-count")
+            }
         }
         .padding(.horizontal, PoseSurfaceMetrics.horizontalPadding)
         .padding(.bottom, 16)
@@ -900,21 +1005,11 @@ private struct SearchNavHeader: View {
     }
 }
 
-/// Prototype `.nb-state-message .nb-btn`: `padding: 12px 16px`, 2pt border, radius 10, shadow 3,
-/// `min-height: 44px`, and `width: auto` (unlike the full-width `NeoButtonStyle`).
-private struct SearchStateButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.system(size: 14, weight: .bold))
-            .foregroundStyle(AIPoseColor.foreground)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
-            .frame(minHeight: PoseSurfaceMetrics.touchMinimum)
-            .background(AIPoseColor.surface)
-            .clipShape(RoundedRectangle(cornerRadius: 10))
-            .overlay(RoundedRectangle(cornerRadius: 10).stroke(AIPoseColor.foreground, lineWidth: 2))
-            .shadow(color: AIPoseColor.foreground, radius: 0, x: 3, y: 3)
-    }
+/// Which owner surface renders a `PoseResultsList` — Search (`search.html`) and Saved
+/// (`saved-list.html`) carry different frozen state copy.
+enum PoseResultsContext {
+    case search
+    case saved
 }
 
 /// How `PoseResultsList` renders the `.empty` state.
@@ -969,6 +1064,27 @@ private struct SearchChip: View {
 
 // MARK: - Saved
 
+enum SavedSurfaceStage: Equatable {
+    case resolvingSession
+    case signInRequired
+    case list
+
+    static func resolve(isSessionResolved: Bool, isSignedIn: Bool) -> SavedSurfaceStage {
+        guard isSessionResolved else { return .resolvingSession }
+        return isSignedIn ? .list : .signInRequired
+    }
+
+    /// Tone of the shared state card this stage renders on its own; `nil` hands off to the list,
+    /// which derives its own tone from `Loadable.stateTone`.
+    var tone: FeatureStateTone? {
+        switch self {
+        case .resolvingSession: return .loading
+        case .signInRequired: return .empty
+        case .list: return nil
+        }
+    }
+}
+
 /// Account-scoped Saved collection. The list only exists in a signed-in context: while no session
 /// is stored (or right after a 401 cleared it) the screen shows the sign-in-required panel instead
 /// of calling `/api/me/saved`, so a guest can never be shown cached rows as current (FEAT-013/FEAT-014).
@@ -977,21 +1093,36 @@ struct SavedPosesScreen: View {
     var onTryPose: (NativePose) -> Void = { _ in }
     @StateObject private var session = SessionPresenceModel()
     @State private var pendingSignIn: SignInIntent?
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         Group {
-            if !session.isResolved {
-                ProgressView("Checking session…").frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if session.isSignedIn {
-                PoseResultsList(model: model, onTryPose: onTryPose)
-                    .onAppear {
-                        model.filter = .saved
-                        Task { await model.load() }
-                    }
-            } else {
+            // The stage decision is pure (`SavedSurfaceStage.resolve`) so the signed-in states that
+            // `GET /api/me/saved` returns 401 for in the parity rig remain verifiable in unit tests.
+            switch SavedSurfaceStage.resolve(isSessionResolved: session.isResolved, isSignedIn: session.isSignedIn) {
+            case .resolvingSession:
+                savedResolvingSession
+            case .signInRequired:
                 savedSignInRequired
+            case .list:
+                PoseResultsList(
+                    model: model,
+                    onTryPose: onTryPose,
+                    context: .saved,
+                    // `saved-list.html` `Browse Community` returns to the published Poses collection;
+                    // this screen is always pushed, so dismissal is the only honest route there.
+                    onBrowseCommunity: { dismiss() }
+                )
+                .onAppear {
+                    model.filter = .saved
+                    Task { await model.load() }
+                }
             }
         }
+        // R3: the session-resolve, sign-in-gate and non-loaded list states are single short cards;
+        // without a top-aligned expander they centre in the pushed view instead of anchoring under
+        // the navigation bar. A loaded `PoseResultsList` (ScrollView) still fills the frame.
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .navigationTitle("Saved poses")
         .task { session.start() }
         // A successful sign-in flips `SessionPresenceModel` through the boundary's `.signedIn`
@@ -999,27 +1130,35 @@ struct SavedPosesScreen: View {
         .signInPrompt($pendingSignIn)
     }
 
-    /// Mirrors `SignInRequiredPanel` in the KMP `SavedScreen`: explain, then one CTA.
+    /// `saved-list.html` loading state through the shared component (report §3.8). The card is
+    /// top-anchored like every state surface; the frozen component owns the geometry.
+    private var savedResolvingSession: some View {
+        FeatureStateView(
+            tone: .loading,
+            title: PoseResultsStateCopy.savedLoadingTitle,
+            message: PoseResultsStateCopy.savedLoadingMessage
+        )
+        .padding(.horizontal, PoseSurfaceMetrics.horizontalPadding)
+    }
+
+    /// FEAT-013 auth gate. Copy stays native (`SignInRequiredPanel` in the KMP `SavedScreen`); the
+    /// presentation is the shared state component instead of the old one-off Image/Text stack.
     private var savedSignInRequired: some View {
         VStack(spacing: AIPoseSpacing.md) {
-            Image(systemName: "bookmark")
-                .font(.system(size: 40))
-                .foregroundStyle(AIPoseColor.subtext)
-                .accessibilityHidden(true)
-            Text("Sign in to view your saved poses")
-                .font(.title3.bold())
-                .multilineTextAlignment(.center)
-            Text("Your saved poses are tied to your account. Continue with Google to keep them synced.")
-                .font(.subheadline)
-                .foregroundStyle(AIPoseColor.subtext)
-                .multilineTextAlignment(.center)
-            Button("Continue with Google") { pendingSignIn = .openSaved }
-                .buttonStyle(NeoButtonStyle())
-                .frame(minHeight: 44)
+            FeatureStateView(
+                tone: .empty,
+                title: "Sign in to view your saved poses",
+                message: "Your saved poses are tied to your account. Continue with Google to keep them synced."
+            )
+            .padding(.horizontal, PoseSurfaceMetrics.horizontalPadding)
+            // The spinner state lives inside the presented sign-in prompt (`SignInPromptModel`),
+            // so the gate button itself never needs the in-flight flag.
+            ContinueWithGoogleButton(isAuthenticating: false) { pendingSignIn = .openSaved }
+                .padding(.horizontal, PoseSurfaceMetrics.horizontalPadding)
                 .accessibilityLabel("Continue with Google")
+                .accessibilityIdentifier("saved.signIn")
         }
-        .padding(AIPoseSpacing.xl)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(.vertical, AIPoseSpacing.xl)
         .accessibilityElement(children: .contain)
     }
 }
@@ -1027,21 +1166,20 @@ struct SavedPosesScreen: View {
 struct PoseResultsList: View {
     @ObservedObject var model: PosesViewModel
     var onTryPose: (NativePose) -> Void = { _ in }
+    /// Owner surface: Search and Saved have different frozen loading/error/empty copy.
+    var context: PoseResultsContext = .search
     /// Bottom clearance for the dock overlay; the shared Search workspace reserves less than the tab root.
     var bottomInset: CGFloat = PoseGridMetrics.dockClearance
     /// The Search workspace renders its own inline banner instead (prototype `#search-state-message`).
     var emptyPresentation: PoseResultsEmptyPresentation = .centered
+    /// Saved list only: recovery for the empty state (prototype `Browse Community` → back to Poses).
+    var onBrowseCommunity: () -> Void = {}
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        switch model.state {
-        case .idle, .loading:
-            ProgressView("Finding poses…").frame(maxWidth: .infinity, maxHeight: .infinity)
-        case .empty:
-            if emptyPresentation == .centered { emptyState }
-        case .failed(let message):
-            FeatureStateView(icon: "wifi.exclamationmark", title: "Couldn't load poses", message: message) { Task { await model.load() } }
-        case .loaded(let poses):
+        if let tone = stateTone {
+            stateCard(tone: tone)
+        } else if case .loaded(let poses) = model.state {
             ScrollView {
                 PoseGrid(poses: poses, model: model, onTryPose: onTryPose)
                     .padding(.horizontal, PoseGridMetrics.horizontalPadding)
@@ -1051,21 +1189,98 @@ struct PoseResultsList: View {
         }
     }
 
-    /// Context-aware empty state (SCR-003-02-ST-003). Shared with `SavedPosesScreen`, which keeps
-    /// the "No saved poses" copy whenever its query is empty.
-    @ViewBuilder private var emptyState: some View {
-        if let recoveryTitle = SearchResultsCopy.emptyRecoveryTitle(query: model.query, filter: model.filter) {
+    /// Shared-card tone for the current result, or `nil` when this surface draws the grid — or
+    /// nothing at all, which is how Search renders its own inline `#search-state-message` banner.
+    /// Derived from the pure `Loadable.stateTone` mapper so the Saved list states the parity rig
+    /// cannot drive (`GET /api/me/saved` → 401) stay mechanically verifiable.
+    var stateTone: FeatureStateTone? {
+        switch model.state {
+        case .loaded:
+            return nil
+        case .empty:
+            return emptyPresentation == .centered ? model.state.stateTone : nil
+        case .idle, .loading, .failed:
+            return model.state.stateTone
+        }
+    }
+
+    @ViewBuilder private func stateCard(tone: FeatureStateTone) -> some View {
+        switch tone {
+        case .loading:
             FeatureStateView(
-                icon: SearchResultsCopy.emptyIcon(query: model.query, filter: model.filter),
+                tone: .loading,
+                title: stateCopy.loadingTitle,
+                message: stateCopy.loadingMessage
+            )
+            .padding(.horizontal, PoseSurfaceMetrics.horizontalPadding)
+        case .error:
+            FeatureStateView(
+                tone: .error,
+                title: stateCopy.errorTitle,
+                message: stateCopy.errorMessage,
+                actionTitle: PoseResultsStateCopy.retryActionTitle
+            ) {
+                Task { await model.load() }
+            }
+            .padding(.horizontal, PoseSurfaceMetrics.horizontalPadding)
+            .accessibilityIdentifier(context == .saved ? "saved.retry" : "search.retry")
+        case .empty:
+            emptyState
+        case .offline, .success, .warning:
+            // No `Loadable` producer maps to these tones on this surface; the camera pose picker owns
+            // `.offline` separately (see `PosePickerViewModel.stateTone`).
+            EmptyView()
+        }
+    }
+
+    /// Per-surface loading/error copy (report §3.5 vs §3.8).
+    private var stateCopy: (loadingTitle: String, loadingMessage: String, errorTitle: String, errorMessage: String) {
+        switch context {
+        case .search:
+            return (
+                PoseResultsStateCopy.searchLoadingTitle,
+                PoseResultsStateCopy.searchLoadingMessage,
+                PoseResultsStateCopy.searchErrorTitle,
+                PoseResultsStateCopy.searchErrorMessage
+            )
+        case .saved:
+            return (
+                PoseResultsStateCopy.savedLoadingTitle,
+                PoseResultsStateCopy.savedLoadingMessage,
+                PoseResultsStateCopy.savedErrorTitle,
+                PoseResultsStateCopy.savedErrorMessage
+            )
+        }
+    }
+
+    /// Context-aware empty state (SCR-003-02-ST-003). Search keeps the `SearchResultsCopy` copy;
+    /// with a query present the card has no action at all (`app.js:847`), and the only action is
+    /// `Show all poses` on the no-query, non-All branch. The Saved list owns the `saved-list.html`
+    /// "No saved poses yet" state with `Browse Community` whenever no query is in play.
+    @ViewBuilder private var emptyState: some View {
+        if context == .saved, model.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            FeatureStateView(
+                tone: .empty,
+                title: PoseResultsStateCopy.savedEmptyTitle,
+                message: PoseResultsStateCopy.savedEmptyMessage,
+                actionTitle: PoseResultsStateCopy.browseCommunityActionTitle
+            ) {
+                onBrowseCommunity()
+            }
+            .padding(.horizontal, PoseSurfaceMetrics.horizontalPadding)
+            .accessibilityIdentifier("saved.browseCommunity")
+        } else if let recoveryTitle = SearchResultsCopy.emptyRecoveryTitle(query: model.query, filter: model.filter) {
+            FeatureStateView(
+                tone: .empty,
                 title: SearchResultsCopy.emptyTitle(query: model.query, filter: model.filter),
                 message: SearchResultsCopy.emptyMessage(query: model.query, filter: model.filter),
-                retryTitle: recoveryTitle
+                actionTitle: recoveryTitle
             ) {
                 Task { await model.startSearch(for: "") }
             }
         } else {
             FeatureStateView(
-                icon: SearchResultsCopy.emptyIcon(query: model.query, filter: model.filter),
+                tone: .empty,
                 title: SearchResultsCopy.emptyTitle(query: model.query, filter: model.filter),
                 message: SearchResultsCopy.emptyMessage(query: model.query, filter: model.filter)
             )

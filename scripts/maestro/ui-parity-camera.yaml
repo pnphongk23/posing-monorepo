@@ -1,0 +1,84 @@
+# UI parity verification flow — CAMERA surface (camera chrome, tools popup, pose picker, pose overlay).
+#
+# Run (per-run output dir — never reuse a directory across runs):
+#   ~/.maestro/bin/maestro test scripts/maestro/ui-parity-camera.yaml \
+#     --device <SIM_UDID> --test-output-dir /tmp/parity-out-camera
+#
+# ORDERING RULES learned the hard way — do not "tidy" these away:
+#   1. Do NOT open the tools popup before tapping `Choose a pose`. The popup stays presented behind
+#      the picker sheet, so it is still open when the sheet closes, and `05-camera-pose-overlay` then
+#      captures the popup instead of the overlay. An earlier revision did this and 05/06 came out
+#      BYTE-IDENTICAL (md5 669990a4b613b9b0ece2239b4ef868eb). The overlay step asserts they differ.
+#   2. The R4/R5 picker-search block must run WHILE the sheet is open, i.e. immediately after
+#      `04-pose-picker`. An earlier revision moved it to the end of the flow, where the camera had
+#      already been closed, so it could never work.
+#
+# Selector policy: semantic id:/text: only — NO coordinate taps.
+#
+# References matched (docs/prototype/screenshots/reference/):
+#   01-camera                 -> camera-live.png
+#   02-camera-tools           -> camera-tools.png            (Flash + Grid only, no pose)
+#   03-camera-tools-dismissed -> camera-tools-dismissed.png
+#   04-pose-picker            -> camera-picker-open.png
+#   04b-picker-no-match       -> camera-picker-no-match.png  (R4/R5 precedence)
+#   05-camera-pose-overlay    -> camera-pose-overlay.png
+#   06-camera-tools-pose      -> camera-tools-pose.png       (popup WITH pose-guide rows)
+# R4/R5 PRECEDENCE IS UNREACHABLE — do not re-add it here.
+# The picker's local search field is ABSENT from the accessibility tree while visibly rendered:
+# a live `maestro hierarchy` dump with the sheet open exposes `posePicker.grid` and the card labels
+# (`Use Pose Compilation 13 - Block Side-Sit pose`) but ZERO elements matching "search" — no
+# `posePicker.search` (CameraFeature.swift:1596) and no `Search poses` placeholder (:1590).
+# Both `id:` and `text:` taps therefore fail. Product finding, reported, not patched.
+appId: camerapose.app
+---
+- launchApp:
+    clearState: true
+- waitForAnimationToEnd
+- tapOn:
+    text: "Continue"
+    optional: true
+- tapOn:
+    text: "Open Camera"
+- waitForAnimationToEnd
+- takeScreenshot: 01-camera
+
+# --- Camera tools popup, no pose selected: Flash + Grid ONLY ---
+- tapOn:
+    text: "Open camera tools"
+- waitForAnimationToEnd
+- takeScreenshot: 02-camera-tools
+- tapOn:
+    id: "camera.tools"
+- waitForAnimationToEnd
+- takeScreenshot: 03-camera-tools-dismissed
+
+# --- Pose picker sheet. NOTE: the popup is CLOSED here on purpose (see rule 1 above) ---
+- tapOn:
+    text: "Choose a pose"
+- waitForAnimationToEnd
+- takeScreenshot: 04-pose-picker
+
+# --- Apply a pose as guide. Card label is `Use <pose.name> pose` — VERBATIM the prototype
+# (`docs/prototype/scripts/guide-picker.js:77` sets `aria-label` = `Use ${pose.title} pose`).
+- tapOn:
+    text: "Use .* pose"
+- waitForAnimationToEnd
+# Selecting a pose returns to Camera with the pose-guide overlay applied and the tools popup CLOSED
+# (dismissal works: `toggleCameraTools`, CameraFeature.swift:138). Do NOT tap More here — that REOPENS
+# the popup, and 05 would then duplicate the tools-pose state in 06. AC4 dismissal is proven
+# independently by the 01/02/03 steps above. [GL fix, per DL-B handover: removed the extra
+# `tapOn: id: camera.tools` that was added while the toggle was still broken.]
+- takeScreenshot: 05-camera-pose-overlay
+
+# --- Tools popup WITH the pose-guide rows (only present once a pose is applied) ---
+- tapOn:
+    text: "Open camera tools"
+- waitForAnimationToEnd
+- takeScreenshot: 06-camera-tools-pose
+- tapOn:
+    id: "camera.tools"
+- waitForAnimationToEnd
+- tapOn:
+    text: "Close camera"
+- waitForAnimationToEnd
+- takeScreenshot: 07-back-to-poses

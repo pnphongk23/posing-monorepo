@@ -49,6 +49,7 @@
 		6F97E6341D69FA7794C701DB /* CameraViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04EB53E66ACEF51BFBFAD6D4 /* CameraViewController.swift */; };
 		70F357B4617B371502C1404C /* PoseAPIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F268FEE9D95DFE81D66C708A /* PoseAPIService.swift */; };
 		7342797CFF2900F85521D10B /* RevenueCatAdapterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E5F21303DBA6D3D4B9DF921 /* RevenueCatAdapterTests.swift */; };
+		73919AF6C09FD6F4B94E56C1 /* PosePickerViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D33F377EAE99AD4407CC35B /* PosePickerViewModelTests.swift */; };
 		789107807CC6F86349D0BFDF /* CaptureImageStorageTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1FADCC33F02A7BB84B9C89D2 /* CaptureImageStorageTests.swift */; };
 		7BC50DEF02537220E6F2A152 /* SessionScopeCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D49ED5731A9555D73FC2614 /* SessionScopeCoordinator.swift */; };
 		7D3B733594872CA7A26DBE84 /* OAuthHandoff.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FBAA5A4D55BE2A939B40CEF /* OAuthHandoff.swift */; };
@@ -56,7 +57,6 @@
 		81175F108740A045DDB8FF9D /* PosesAdapterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AFAF36860E03C97F64302597 /* PosesAdapterTests.swift */; };
 		814C3719274137F4368B3FC2 /* RemoteConfigService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 012C20542B9E2F237F77D49C /* RemoteConfigService.swift */; };
 		8248ECED9F1A1DC7A59EBDF5 /* RuntimeConfigResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = E286C264229F73A6A9FF42D9 /* RuntimeConfigResolver.swift */; };
-		853D383D25ACA9B3583787FD /* GuidePickerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 314D28C848C00C933DFF7402 /* GuidePickerTests.swift */; };
 		85EC64B6F6E7F3864625BB20 /* APIError.swift in Sources */ = {isa = PBXBuildFile; fileRef = 109560EA6993EA5DCD3440AF /* APIError.swift */; };
 		87DB43EFD90129A2CFB64805 /* PosesFeature.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8629798E4E2AFC175A0D19E /* PosesFeature.swift */; };
 		918893F6A3A4D3B860741BEC /* PaywallModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FFFEB0B6B2E4DD10BBAD259C /* PaywallModelTests.swift */; };
@@ -116,13 +116,13 @@
 		127AD2AAFA29205C2D63B787 /* CameraFeatureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraFeatureTests.swift; sourceTree = "<group>"; };
 		13014C50A5C1B9BA1364503E /* FeatureStateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeatureStateTests.swift; sourceTree = "<group>"; };
 		1BF0EC7C15D38373A4A93356 /* AppDatabase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDatabase.swift; sourceTree = "<group>"; };
+		1D33F377EAE99AD4407CC35B /* PosePickerViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PosePickerViewModelTests.swift; sourceTree = "<group>"; };
 		1F6B2754084B0CD392E52DEE /* Dev-Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "Dev-Release.xcconfig"; sourceTree = "<group>"; };
 		1FADCC33F02A7BB84B9C89D2 /* CaptureImageStorageTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureImageStorageTests.swift; sourceTree = "<group>"; };
 		21F759916DD6C60D0A6AE6E8 /* GalleryFeatureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalleryFeatureTests.swift; sourceTree = "<group>"; };
 		2D49ED5731A9555D73FC2614 /* SessionScopeCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionScopeCoordinator.swift; sourceTree = "<group>"; };
 		2ECB98D7629FBEB99B72912B /* CameraPorts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraPorts.swift; sourceTree = "<group>"; };
 		2EE0355F95175C0D3D140424 /* AIPoseDesignSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIPoseDesignSystem.swift; sourceTree = "<group>"; };
-		314D28C848C00C933DFF7402 /* GuidePickerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuidePickerTests.swift; sourceTree = "<group>"; };
 		3199C4916FBCFAB168D672B3 /* FeatureService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeatureService.swift; sourceTree = "<group>"; };
 		31B8B5FE18422BFB70F0CC0B /* LegacyDatabaseCompatibilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegacyDatabaseCompatibilityTests.swift; sourceTree = "<group>"; };
 		346C81403D18D752BB15A3B5 /* CameraFeature.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraFeature.swift; sourceTree = "<group>"; };
@@ -416,9 +416,9 @@
 				127AD2AAFA29205C2D63B787 /* CameraFeatureTests.swift */,
 				13014C50A5C1B9BA1364503E /* FeatureStateTests.swift */,
 				21F759916DD6C60D0A6AE6E8 /* GalleryFeatureTests.swift */,
-				314D28C848C00C933DFF7402 /* GuidePickerTests.swift */,
 				FFFEB0B6B2E4DD10BBAD259C /* PaywallModelTests.swift */,
 				E683518697C7CD04E17A0D94 /* PoseDetailFeatureTests.swift */,
+				1D33F377EAE99AD4407CC35B /* PosePickerViewModelTests.swift */,
 				AFAF36860E03C97F64302597 /* PosesAdapterTests.swift */,
 				45368C62926856229D2723C7 /* SignInTests.swift */,
 				45864E41E850EBD2CD84515E /* SupportDestinationsTests.swift */,
@@ -661,12 +661,12 @@
 				B18D5F82BD558E93E1715A47 /* EndpointPolicyTests.swift in Sources */,
 				91FA61089DA34D6C20DEE23B /* FeatureStateTests.swift in Sources */,
 				5E2B44D1C4A9B540A480E0BA /* GalleryFeatureTests.swift in Sources */,
-				853D383D25ACA9B3583787FD /* GuidePickerTests.swift in Sources */,
 				6431F9D53B5E03561AB351B3 /* LegacyDatabaseCompatibilityTests.swift in Sources */,
 				C862DA62FE077F181481D5AC /* OAuthCallbackParserTests.swift in Sources */,
 				918893F6A3A4D3B860741BEC /* PaywallModelTests.swift in Sources */,
 				AA92157B0E277FD36C849306 /* PerformanceBaselineTests.swift in Sources */,
 				1E0244096A7F89E47C305A09 /* PoseDetailFeatureTests.swift in Sources */,
+				73919AF6C09FD6F4B94E56C1 /* PosePickerViewModelTests.swift in Sources */,
 				81175F108740A045DDB8FF9D /* PosesAdapterTests.swift in Sources */,
 				5B75892791A663E2D073CB5E /* RemoteConfigServiceTests.swift in Sources */,
 				7342797CFF2900F85521D10B /* RevenueCatAdapterTests.swift in Sources */,
