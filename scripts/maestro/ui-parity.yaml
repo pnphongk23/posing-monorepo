@@ -1,0 +1,85 @@
+# UI parity verification flow — drives the built app to every screen that must match the HTML
+# prototype, so the screenshots can be diffed against docs/prototype/screenshots/reference/.
+#
+# Run:
+#   ~/.maestro/bin/maestro test scripts/maestro/ui-parity.yaml \
+#     --device <SIM_UDID> --test-output-dir /tmp/parity-out
+#   # screenshots -> /tmp/parity-out/screenshots/
+#
+# Before the first run on a fresh simulator:
+#   xcrun simctl privacy <SIM_UDID> grant camera camerapose.app
+#   xcrun simctl privacy <SIM_UDID> grant photos camerapose.app
+# Reboot the simulator if the XCUITest driver stops reading the hierarchy (a known flake after
+# many consecutive runs): xcrun simctl shutdown <UDID> && xcrun simctl boot <UDID>
+#
+# NOTE on queries: the real catalogue has no pose literally named "Warrior" (that name comes from
+# the prototype's fixtures), so tapping the Warrior chip exercises the EMPTY state. The populated
+# GRID — the state that must be compared with reference/search-results.png — needs a query that
+# matches real data, e.g. "Pose". Both states are captured below.
+appId: camerapose.app
+---
+- launchApp:
+    clearState: true
+- waitForAnimationToEnd
+# First-run iOS keyboard onboarding can cover the lower half of the screen; dismiss if present.
+- tapOn:
+    text: "Continue"
+    optional: true
+# Wait for real data: the catalogue is fetched over the network and the cards render a grey
+# placeholder until it lands. Without this the "results" screenshot is a loading state.
+- extendedWaitUntil:
+    visible: "[0-9]+ poses?"
+    timeout: 20000
+- takeScreenshot: 01-poses
+
+# --- Camera (reference/camera-live.png). Must show NO dock tab bar. ---
+- tapOn:
+    text: "Open Camera"
+- waitForAnimationToEnd
+- takeScreenshot: 02-camera
+
+# --- Guide picker (reference/pose-guide.png) ---
+- tapOn:
+    text: "Choose a pose guide"
+- waitForAnimationToEnd
+- takeScreenshot: 03-guide-picker
+- tapOn:
+    text: "Back"
+- waitForAnimationToEnd
+- tapOn:
+    text: "Close camera"
+- waitForAnimationToEnd
+- takeScreenshot: 04-back-to-poses
+
+# --- Search, blank/empty state (reference/search-blank.png). Dock must be visible. ---
+- tapOn:
+    id: "poses.open-search"
+- waitForAnimationToEnd
+- takeScreenshot: 05-search-blank
+
+# --- Search, empty result (no prototype counterpart; documents our empty state) ---
+- tapOn:
+    id: "search.recent.warrior"
+- waitForAnimationToEnd
+- takeScreenshot: 06-search-no-match
+
+# --- Search, populated results (reference/search-results.png) ---
+- tapOn:
+    text: "Clear search"
+- waitForAnimationToEnd
+- tapOn:
+    id: "search.field"
+- inputText: "Pose"
+- waitForAnimationToEnd
+# Wait for the count to stop saying "Searching…" — otherwise the grid is captured mid-load with
+# grey placeholders instead of pose artwork.
+- extendedWaitUntil:
+    visible: "[0-9]+ poses?"
+    timeout: 20000
+# Keyboard up: the dock must stay pinned to the bottom, not ride above the keyboard.
+- takeScreenshot: 08-search-keyboard-up
+# Press the keyboard's Search key. Do NOT use `hideKeyboard`: on iOS it dismisses by tapping
+# outside the field, which can land on a result card and navigate into the pose detail.
+- pressKey: Enter
+- waitForAnimationToEnd
+- takeScreenshot: 07-search-results
