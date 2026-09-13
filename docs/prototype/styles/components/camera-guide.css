@@ -1,95 +1,209 @@
-/* docs/prototype/styles/components/camera-guide.css */
-.nb-camera-guide-content {
-  min-height: 0;
-  padding-top: var(--nb-space-md);
-  padding-bottom: 0;
-  overflow: hidden;
+/* Pose picker: a camera-local browse surface, not a standalone guide screen. */
+.nb-camera-surface {
+  position: relative;
 }
 
-.nb-camera-guide-header {
+.nb-pose-picker-sheet {
+  position: absolute;
+  inset: 44px 0 0;
+  z-index: var(--nb-z-index-modal);
   display: flex;
-  align-items: center;
-  gap: var(--nb-space-sm);
-  min-height: var(--nb-touch-min);
-  margin-bottom: var(--nb-space-md);
+  align-items: flex-end;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity var(--nb-transition-normal), visibility 0s linear var(--nb-transition-normal);
 }
 
-.nb-camera-guide-header .nb-btn svg {
-  width: 18px;
-  height: 18px;
-}
-
-.nb-camera-guide-header h1 {
-  flex: 1 1 auto;
-  min-width: 0;
-  font-size: var(--nb-font-size-xl);
-  line-height: var(--nb-line-height-snug);
-  font-weight: var(--nb-font-weight-bold);
-}
-
-.nb-camera-guide-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--nb-space-md);
-  overflow-y: auto;
-  padding-bottom: var(--nb-space-xl);
-  scrollbar-width: none;
-}
-
-.nb-camera-guide-grid::-webkit-scrollbar {
+.nb-pose-picker-sheet[hidden] {
   display: none;
 }
 
-.nb-camera-guide-card {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: var(--nb-space-sm);
-  color: var(--nb-color-dark);
-  text-decoration: none;
+.nb-pose-picker-sheet.is-open {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transition-delay: 0s;
 }
 
-.nb-camera-guide-card__surface {
-  display: grid;
-  aspect-ratio: 1;
-  place-items: center;
-  padding: var(--nb-space-lg);
+.nb-pose-picker-sheet__backdrop {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background-color: rgba(18, 18, 18, 0.48);
+  cursor: pointer;
+}
+
+.nb-pose-picker-panel {
+  position: relative;
+  display: flex;
+  width: 100%;
+  height: min(82%, 700px);
+  min-height: 420px;
+  max-height: calc(100% - var(--nb-space-md));
+  min-width: 0;
+  flex-direction: column;
+  overflow: hidden;
+  box-sizing: border-box;
+  padding: 10px var(--nb-space-md) calc(var(--nb-space-md) + env(safe-area-inset-bottom, 0px));
+  color: var(--nb-color-dark);
+  background-color: var(--nb-color-bg);
   border: var(--nb-border-thick);
-  border-radius: var(--nb-radius-large);
-  box-shadow: none;
+  border-bottom: 0;
+  border-radius: 22px 22px 0 0;
+  box-shadow: 0 -4px 0 var(--nb-color-border);
+  transform: translateY(18px);
+  transition: transform var(--nb-transition-normal);
+}
+
+.nb-pose-picker-sheet.is-open .nb-pose-picker-panel {
+  transform: translateY(0);
+}
+
+.nb-pose-picker-panel__handle {
+  width: 42px;
+  height: 4px;
+  flex: 0 0 auto;
+  margin: 0 auto var(--nb-space-md);
+  background-color: var(--nb-color-dark);
+  border-radius: 2px;
+}
+
+.nb-pose-picker-panel__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--nb-space-sm);
+  flex: 0 0 auto;
+  margin-bottom: var(--nb-space-compact);
+}
+
+.nb-pose-picker-panel__header h2 {
+  margin: 0;
+  font-size: var(--nb-type-navigation-title-size);
+  font-weight: var(--nb-type-navigation-title-weight);
+  line-height: var(--nb-type-navigation-title-leading);
+  letter-spacing: var(--nb-type-navigation-title-tracking);
+}
+
+.nb-pose-picker-panel__header .nb-camera-action {
+  flex: 0 0 auto;
+  margin-top: -6px;
+}
+
+.nb-pose-picker-search {
+  flex: 0 0 auto;
+  margin: 0 0 var(--nb-space-compact);
+}
+
+.nb-pose-picker-search__field {
+  display: flex;
+  align-items: center;
+  min-height: 50px;
+  gap: var(--nb-space-sm);
+  padding: var(--nb-space-xs) var(--nb-space-xs) var(--nb-space-xs) var(--nb-space-compact);
+  background-color: var(--nb-color-white);
+  border: var(--nb-border-thick);
+  border-radius: var(--nb-radius-medium);
+  box-shadow: var(--nb-shadow-small);
   transition: transform var(--nb-transition-fast), box-shadow var(--nb-transition-fast);
 }
 
-.nb-camera-guide-card__surface--yellow {
-  background-color: var(--nb-color-accent-yellow);
+.nb-pose-picker-search__field:focus-within {
+  transform: translate(calc(var(--nb-shadow-offset-small) * -1), calc(var(--nb-shadow-offset-small) * -1));
+  box-shadow: var(--nb-shadow);
 }
 
-.nb-camera-guide-card__surface--pink {
-  background-color: var(--nb-color-accent-pink);
+.nb-pose-picker-search__field > svg {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+  color: var(--nb-color-dark);
+  stroke-width: 2.4;
 }
 
-.nb-camera-guide-card__surface--blue {
-  background-color: var(--nb-color-accent-blue);
+.nb-pose-picker-search__field .nb-search-bar__input {
+  min-width: 0;
+  min-height: 44px;
+  flex: 1 1 auto;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  box-shadow: none;
+  background: transparent;
+  font-size: var(--nb-type-input-size);
 }
 
-.nb-camera-guide-card__surface--green {
-  background-color: var(--nb-color-accent-green);
+.nb-pose-picker-search__clear {
+  display: inline-flex;
+  width: var(--nb-touch-min);
+  height: var(--nb-touch-min);
+  min-width: var(--nb-touch-min);
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  padding: 0;
+  color: var(--nb-color-dark);
+  background: transparent;
+  border: 0;
+  border-radius: var(--nb-radius-medium);
+  cursor: pointer;
 }
 
-.nb-camera-guide-card__surface .nb-stick-figure {
-  width: 78%;
-  height: 78%;
+.nb-pose-picker-search__clear[hidden] {
+  display: none;
 }
 
-.nb-camera-guide-card__name {
-  padding-left: 2px;
-  font-size: var(--nb-font-size-base);
-  font-weight: var(--nb-font-weight-bold);
-  line-height: var(--nb-line-height-snug);
+.nb-pose-picker-search__clear svg {
+  width: 17px;
+  height: 17px;
 }
 
-.nb-camera-guide-card:active .nb-camera-guide-card__surface,
-.nb-camera-guide-card:focus-visible .nb-camera-guide-card__surface {
-  transform: translate(var(--nb-shadow-offset-small), var(--nb-shadow-offset-small));
-  box-shadow: var(--nb-shadow-pressed);
+.nb-pose-picker-scroll {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 2px 2px calc(40px + env(safe-area-inset-bottom, 0px));
+  scrollbar-width: none;
+}
+
+.nb-pose-picker-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.nb-pose-picker-grid {
+  padding-top: 2px;
+}
+
+.nb-pose-picker-grid .nb-grid-pose-item {
+  margin-bottom: calc(var(--nb-space-md) * 0.8);
+}
+
+.nb-pose-picker-grid .nb-card--pose-grid {
+  width: 100%;
+  cursor: pointer;
+}
+
+.nb-pose-picker-state {
+  margin: 0 0 var(--nb-space-md);
+}
+
+@media (max-width: 480px) {
+  .nb-pose-picker-panel {
+    height: min(82%, 680px);
+    padding-right: var(--nb-space-md);
+    padding-left: var(--nb-space-md);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nb-pose-picker-sheet,
+  .nb-pose-picker-panel,
+  .nb-pose-picker-search__field {
+    transition: none;
+  }
 }

@@ -9,6 +9,7 @@
 @import "./components/modal.css";
 @import "./components/nav-bar.css";
 @import "./components/grid.css";
+@import "./components/empty-state.css";
 @import "./components/camera-viewport.css";
 @import "./components/pose-overlay.css";
 @import "./components/view-toggle.css";

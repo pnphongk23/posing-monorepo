@@ -8,7 +8,7 @@
   <link rel="stylesheet" href="../styles/reset.css">
   <link rel="stylesheet" href="../styles/base.css">
   <link rel="stylesheet" href="../styles/utilities.css">
-  <link rel="stylesheet" href="../styles/components.css">
+    <link rel="stylesheet" href="../styles/components.css?empty-state-1">
 </head>
 <body>
   <div class="nb-phone">
@@ -32,13 +32,8 @@
     <main class="nb-phone__content" id="poses-library">
       <!-- Custom Poses Header -->
       <header class="nb-nav-bar nb-nav-bar--poses u-mb-sm">
-        <h1 class="sr-only">Poses</h1>
         <div class="nb-nav-bar__center">
-          <!-- Category tabs live in the toolbar to keep the browsing context visible. -->
-          <div class="nb-tabs nb-tabs--toolbar" role="tablist" aria-label="Pose category">
-            <button class="nb-tab-btn is-active" role="tab" aria-selected="true" data-category="my-poses">My poses</button>
-            <button class="nb-tab-btn" role="tab" aria-selected="false" data-category="community">Community</button>
-          </div>
+          <h1 class="nb-nav-bar__title">Poses</h1>
         </div>
         <div class="nb-nav-bar__right nb-nav-bar__right--actions">
           <a href="paywall.html?return=poses-list.html" class="nb-btn nb-btn--compact-action" aria-label="Upgrade to Premium" id="premium-upgrade-btn">
@@ -56,11 +51,6 @@
               <svg><use href="#icon-bookmark"></use></svg>
             </span>
           </a>
-          <a href="camera-live.html" class="nb-btn nb-btn--compact-action" aria-label="Create Pose">
-            <span class="nb-btn__compact-surface">
-              <svg><use href="#icon-plus"></use></svg>
-            </span>
-          </a>
           <a href="settings.html" class="nb-btn nb-btn--compact-action" aria-label="Open Settings" title="Settings">
             <span class="nb-btn__compact-surface nb-btn__compact-surface--white">
               <svg><use href="#icon-gear"></use></svg>
@@ -69,12 +59,7 @@
         </div>
       </header>
 
-      <div id="poses-state-message" class="nb-state-message" role="status" aria-live="polite" hidden></div>
-
-      <!-- Category Label Header -->
-      <div class="nb-grid-group-title nb-grid-group-title--count-only" style="margin-top: 0;">
-        <span id="poses-count-label" class="nb-grid-group-count">3 poses</span>
-      </div>
+      <nb-empty-state id="poses-state-message" hidden></nb-empty-state>
 
       <!-- Poses Dynamic Grid -->
       <div class="nb-grid-scroll-area">
@@ -97,10 +82,11 @@
   <script src="../scripts/tabs.js"></script>
   <script src="../scripts/progress.js"></script>
   <script src="../scripts/modal.js"></script>
-  <script src="../scripts/view-toggle.js"></script>
-  <script src="../scripts/button-press.js"></script>
-  <script src="../scripts/tab-bar.js"></script>
-  <script src="../scripts/app.js"></script>
+    <script src="../scripts/view-toggle.js"></script>
+    <script src="../scripts/button-press.js"></script>
+    <script src="../scripts/tab-bar.js"></script>
+    <script src="../scripts/empty-state.js"></script>
+    <script src="../scripts/app.js"></script>
   <script>initTabBar('poses');</script>
 </body>
 </html>

@@ -1,41 +1,41 @@
 /* docs/prototype/scripts/modal.js */
 function initModals() {
-  // Camera tools use a short bottom sheet on the redesigned live camera.
+  // Camera tools are a short anchored popup on the live camera.
   // Keep the dropdown fallback for the historical pose-overlay screen.
   const dotsBtn = document.getElementById('camera-settings-btn') || document.querySelector('.nb-camera-viewport__dots-btn');
-  const settingsSheet = document.getElementById('camera-settings-sheet');
+  const settingsMenu = document.getElementById('camera-tools-menu');
   const dropdown = document.querySelector('.nb-dropdown');
 
-  if (dotsBtn && settingsSheet) {
-    const closeButtons = settingsSheet.querySelectorAll('[data-close-camera-settings]');
-    const closeButton = settingsSheet.querySelector('.nb-camera-settings-panel [data-close-camera-settings]');
+  if (dotsBtn && settingsMenu) {
+    const firstFocusable = () => settingsMenu.querySelector('button:not([disabled]), input:not([disabled])');
 
     function setSettingsOpen(isOpen) {
-      settingsSheet.classList.toggle('is-open', isOpen);
-      settingsSheet.hidden = !isOpen;
-      settingsSheet.setAttribute('aria-hidden', String(!isOpen));
+      settingsMenu.classList.toggle('is-open', isOpen);
+      settingsMenu.hidden = !isOpen;
+      settingsMenu.setAttribute('aria-hidden', String(!isOpen));
       dotsBtn.setAttribute('aria-expanded', String(isOpen));
 
-      if (isOpen && closeButton) {
-        window.requestAnimationFrame(() => closeButton.focus());
-      } else if (!isOpen) {
-        dotsBtn.focus();
+      if (isOpen) {
+        const firstControl = firstFocusable();
+        if (firstControl) window.requestAnimationFrame(() => firstControl.focus());
+      } else if (document.activeElement && settingsMenu.contains(document.activeElement)) {
+        dotsBtn.focus({ preventScroll: true });
       }
     }
 
     dotsBtn.addEventListener('click', function(e) {
       e.stopPropagation();
-      setSettingsOpen(settingsSheet.hidden);
+      setSettingsOpen(settingsMenu.hidden);
     });
 
-    closeButtons.forEach(button => {
-      button.addEventListener('click', function() {
+    document.addEventListener('click', function(e) {
+      if (!settingsMenu.hidden && !settingsMenu.contains(e.target) && !dotsBtn.contains(e.target)) {
         setSettingsOpen(false);
-      });
+      }
     });
 
     document.addEventListener('keydown', function(e) {
-      if (e.key === 'Escape' && !settingsSheet.hidden) {
+      if (e.key === 'Escape' && !settingsMenu.hidden) {
         e.preventDefault();
         setSettingsOpen(false);
       }

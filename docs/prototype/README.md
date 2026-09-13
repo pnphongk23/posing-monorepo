@@ -26,8 +26,8 @@ docs/prototype/
 ├── index.html                  # App entry redirecting directly to Poses list
 ├── README.md                   # Setup details and screen inventory
 ├── screens/                    # Mobile Screen Views
-│   ├── camera-live.html        # Camera-first capture surface with pose framing guide and tools sheet
-│   ├── pose-guide.html         # Dedicated pose-guide picker entered from Camera
+│   ├── camera-live.html        # Camera-first capture surface with tools popup
+│   ├── pose-guide.html         # Compatibility redirect into Camera's pose picker sheet
 │   ├── camera-settings.html    # Redirects to camera live feed with settings open
 │   ├── camera-extracting.html  # Joint detection progress card (0 to 78%)
 │   ├── camera-pose-overlay.html# Semi-transparent pose matching skeleton aligner
@@ -61,7 +61,8 @@ docs/prototype/
 │       ├── grid.css            # Multicolumn scrolling lists and masonry items
 │       ├── camera-viewport.css # Grids, alignment guides, & shutter panels
 │       ├── pose-overlay.css    # SVG bone line links & joint node decorators
-│       └── view-toggle.css     # Gallery grid/list layout controllers
+│       ├── view-toggle.css     # Gallery grid/list layout controllers
+│       └── empty-state.css     # Shared empty/loading/error/offline state surface
 │   ├── saved-poses.css         # Token-based FEAT-013 prototype additions
 │   ├── account.css             # Account screen layout and action styles
 │   └── onboarding.css          # FEAT-016 Onboarding stage layout and interactive controls
@@ -79,7 +80,8 @@ docs/prototype/
     ├── saved-list.js            # Saved pagination and list state simulation
     ├── pose-detail-saved.js     # Saved detail mutation/auth state simulation
     ├── sign-in-prompt.js        # Auth prompt intent and outcome simulation
-    └── onboarding.js           # FEAT-016 Multi-stage state machine, alignment simulator, & preferences
+    ├── empty-state.js           # Shared state component renderer and semantics
+     └── onboarding.js           # FEAT-016 Multi-stage state machine, alignment simulator, & preferences
 ```
 
 ---
@@ -89,17 +91,18 @@ docs/prototype/
 The prototype features several interactive controls. However, due to its static, serverless nature, many features operate as limited simulations or contain historical placeholders:
 
 1. **Direct Mobile Flow**: Opening `index.html` loads the app and starts on the Poses tab. The bottom navigation bar allows switching between **Poses**, **Camera**, and **Gallery**. Header back buttons allow returning from sub-flows.
-2. **Camera Tools Sheet**: Open options by tapping the tools button in `camera-live.html`. Flash cycles through Auto/On/Off, while the Grid switch toggles the composition grid. The sheet can be dismissed with the close button, backdrop, or Escape.
+2. **Camera Tools Popup**: Open options by tapping More in `camera-live.html`. Flash cycles through Auto/On/Off, while the Grid switch toggles the composition grid. When a pose is selected, the popup also controls pose visibility, opacity, line color, and clearing. It dismisses on outside tap or Escape.
 3. **Capture Feedback (Prototype Simulation)**: Clicking the pink shutter button disables the capture control and shows an inline loading spinner, then returns the control to its ready state and updates the latest thumbnail. No success toast is shown. This mirrors FEAT-001's capture boundary; `camera-extracting.html` remains a separate historical extraction demo.
 4. **Joint Extraction Meter & Manual Save (Simulated)**: Opening `camera-extracting.html` triggers a mock progress meter animation counting from `0%` to `78%`. It also exposes a manual 'Save Pose' button to navigate back to `poses-list.html`. *Note: This is a prototype-only interaction. In the production app, the extraction is auto-saved and routes automatically to the list on completion; the prototype does not cover auto-save and deviates from this product behavior.*
 5. **Camera Facing Switch (Prototype Simulation)**: The flip button stays on the Camera surface and toggles front/back labels. It represents the native facing action without claiming to flip hardware in this static prototype.
-6. **Pose Guide Picker**: The image icon on Camera opens the dedicated `pose-guide.html` screen. Selecting a guide returns to Camera with a guide query parameter without leaving the picker in the Back stack; the picker does not reuse the Home/Poses list surface.
-7. **Pose Library Browsing (Mock)**: `poses-list.html` keeps My Poses and Community as distinct tab states. Cards show their source, Community only shows published mock fixtures, and personal deletion is available only from My Poses.
+6. **Pose Picker Bottom Sheet**: The image icon on Camera opens a camera-local bottom sheet. It reads the visible pose-library fixtures, presents the same two-column staggered pose cards plus local title search, and uses a `Close` button, backdrop, or Escape to dismiss. Selecting a pose returns to Camera with `pose` and `source` query parameters without creating a picker route; the picker is visually aligned with the Home/Poses library but is not the Home screen. The former `pose-guide.html` path is a compatibility redirect.
+7. **Poses Library Browsing (Mock)**: `poses-list.html` presents one published Poses collection with the shared staggered card layout. Cards are sourced from the published mock fixtures; the current surface does not expose My Poses, Create Pose, or a pose count.
 8. **Dedicated Title Search (Mock/Deferred)**: Tapping the search icon opens `search.html`, which filters fixture titles across both sources. The screen labels community matches as illustrative mock data; a production community title-search adapter is deferred.
-9. **Recoverable Library States**: Refresh briefly shows a retained-content loading state. For repeatable demonstrations, use `?state=loading`, `?state=error`, `?state=refresh-error`, or `?state=empty` on the list; search accepts the same loading/error/empty hooks. Empty and error states provide a next action or retry.
-10. **Source-aware Details**: Cards route with `source` and `id` query parameters. Detail only renders metadata present in the fixture, handles missing/unavailable records with a return path, and confirms personal deletion before removing it from the current `sessionStorage` prototype session.
-11. **Bounded Try Pose Handoff**: `Try Pose` records a mock handoff notice on the detail screen only. It does not navigate to or render `camera-pose-overlay.html`; Camera overlay persistence, rendering, controls, and extraction remain deferred to the pending handoff plan.
-12. **Existing Camera/Gallery Shortcuts**: The standalone `camera-pose-overlay.html` and the camera-facing shortcut remain historical prototype screens outside this Pose Library update. Gallery opens the current `gallery-detail-v2.html` photo detail redesign and keeps a full uncapped staggered photo collection; `gallery-detail.html` remains available as the legacy detail reference. The gallery layout toggle remains **inert** because its buttons are missing from `gallery.html`; camera settings still use `camera-live.html?settings=open`.
+ 9. **Recoverable Library States**: Refresh briefly shows a retained-content loading state. For repeatable demonstrations, use `?state=loading`, `?state=error`, `?state=refresh-error`, or `?state=empty` on the list; search accepts the same loading/error/empty hooks. Empty and error states provide a next action or retry.
+10. **Shared State Component**: `scripts/empty-state.js` exposes the `nb-empty-state` Web Component and `window.NBEmptyState.render/clear` API. Pose list, search, gallery, camera picker, Saved, detail-unavailable, account, and sign-in error states use the same semantic state surface; specialized media placeholders may keep their own geometry.
+11. **Source-aware Details**: Cards route with `source` and `id` query parameters. Detail only renders metadata present in the fixture, handles missing/unavailable records with a return path, and confirms personal deletion before removing it from the current `sessionStorage` prototype session.
+12. **Bounded Try Pose Handoff**: `Try Pose` records a mock handoff notice on the detail screen only. It does not navigate to or render `camera-pose-overlay.html`; Camera overlay persistence, rendering, controls, and extraction remain deferred to the pending handoff plan.
+13. **Existing Camera/Gallery Shortcuts**: The standalone `camera-pose-overlay.html` and the camera-facing shortcut remain historical prototype screens outside this Pose Library update. Gallery opens the current `gallery-detail-v2.html` photo detail redesign and keeps a full uncapped staggered photo collection; `gallery-detail.html` remains available as the legacy detail reference. The gallery layout toggle remains **inert** because its buttons are missing from `gallery.html`; camera settings still use `camera-live.html?settings=open`.
 
 ### FEAT-016 Onboarding prototype
 

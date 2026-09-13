@@ -7,6 +7,9 @@
   --nb-color-dark: #121212;
   --nb-color-gray: #6B7280;
   --nb-color-light-gray: #E5E7EB;
+  --nb-color-error-surface: #FFF4F5;
+  --nb-color-warning-surface: var(--nb-color-accent-yellow);
+  --nb-color-success-surface: var(--nb-color-accent-green);
 
   /* Pastel Accents */
   --nb-color-accent-pink: #E89CAE;

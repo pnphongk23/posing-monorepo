@@ -66,6 +66,10 @@
   gap: var(--nb-space-sm);
 }
 
+.nb-nav-bar--poses .nb-nav-bar__title {
+  text-align: left;
+}
+
 .nb-nav-bar__center {
   display: flex;
   flex: 1 1 auto;

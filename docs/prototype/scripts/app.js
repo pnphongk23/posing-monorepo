@@ -52,26 +52,17 @@ document.addEventListener('DOMContentLoaded', function() {
 
   function setStateMessage(element, state, title, copy, action) {
     if (!element) return;
-
-    element.className = `nb-state-message nb-state-message--${state}`;
-    element.innerHTML = `<strong>${escapeHtml(title)}</strong><p>${escapeHtml(copy)}</p>`;
-
-    if (action) {
-      const actionButton = document.createElement('button');
-      actionButton.type = 'button';
-      actionButton.className = 'nb-btn nb-btn--white';
-      actionButton.textContent = action.label;
-      actionButton.addEventListener('click', action.onClick);
-      element.appendChild(actionButton);
-    }
-
-    element.hidden = false;
+    window.NBEmptyState.render(element, {
+      action: action ? { label: action.label, onClick: action.onClick } : null,
+      copy,
+      state,
+      title
+    });
   }
 
   function clearStateMessage(element) {
     if (!element) return;
-    element.hidden = true;
-    element.innerHTML = '';
+    window.NBEmptyState.clear(element);
   }
 
   // 1. Poses List Screen Logic
@@ -79,55 +70,37 @@ document.addEventListener('DOMContentLoaded', function() {
 
   if (posesGrid && posePrototype) {
     const posesStateMessage = document.getElementById('poses-state-message');
-    const posesCountLabel = document.getElementById('poses-count-label');
     const params = new URLSearchParams(window.location.search);
-    let currentCategory = params.get('tab') === 'community' ? 'community' : 'my-poses';
     let forcedState = posePrototype.getPrototypeState();
-
-    function updatePoseTabPresentation() {
-      const activeTab = document.querySelector(`.nb-tab-btn[data-category="${currentCategory}"]`);
-
-      document.querySelectorAll('.nb-tab-btn').forEach(tab => {
-        const selected = tab === activeTab;
-        tab.classList.toggle('is-active', selected);
-        tab.setAttribute('aria-selected', String(selected));
-      });
-    }
 
     function getCurrentPoses() {
       return posePrototype.getVisiblePoseFixtures().filter(pose => {
-        const isPublishedCommunity = pose.category !== 'community' || pose.visibility === 'published';
-        return pose.category === currentCategory && isPublishedCommunity;
+        return pose.category === 'community' && pose.visibility === 'published';
       });
     }
 
     function renderPoseCards(poses) {
       posesGrid.innerHTML = '';
-      poses.forEach((pose, index) => posesGrid.appendChild(createPoseCard(pose, index, currentCategory === 'community' ? 'community' : 'personal')));
+      poses.forEach((pose, index) => posesGrid.appendChild(createPoseCard(pose, index, 'community')));
       posesGrid.hidden = false;
       posesGrid.removeAttribute('aria-busy');
-      if (posesCountLabel) posesCountLabel.textContent = `${poses.length} ${poses.length === 1 ? 'pose' : 'poses'}`;
     }
 
     function renderPoses() {
-      updatePoseTabPresentation();
       const currentPoses = getCurrentPoses();
-      const isCommunity = currentCategory === 'community';
 
       if (forcedState === 'loading') {
-        posesGrid.innerHTML = '<div class="nb-pose-loading" role="status">Loading poses…</div>';
-        posesGrid.hidden = false;
+        posesGrid.innerHTML = '';
+        posesGrid.hidden = true;
         posesGrid.setAttribute('aria-busy', 'true');
-        if (posesCountLabel) posesCountLabel.textContent = 'Loading';
-        setStateMessage(posesStateMessage, 'loading', 'Loading poses', 'Hang on while we load your library.');
+        setStateMessage(posesStateMessage, 'loading', 'Loading poses', 'Getting the pose library ready.');
         return;
       }
 
       if (forcedState === 'error') {
         posesGrid.innerHTML = '';
         posesGrid.hidden = true;
-        if (posesCountLabel) posesCountLabel.textContent = 'Unavailable';
-        setStateMessage(posesStateMessage, 'error', 'Unable to load poses', 'Something went wrong. Try again.', {
+        setStateMessage(posesStateMessage, 'error', 'Couldn’t load poses', 'Check your connection and try again.', {
           label: 'Retry',
           onClick: () => {
             forcedState = 'ready';
@@ -140,7 +113,7 @@ document.addEventListener('DOMContentLoaded', function() {
       renderPoseCards(currentPoses);
 
       if (forcedState === 'refresh-error') {
-        setStateMessage(posesStateMessage, 'error', 'Couldn’t refresh', 'Your current list is still here. Try again when you’re ready.', {
+        setStateMessage(posesStateMessage, 'warning', 'Couldn’t refresh', 'Your current list is still here. Try again when you’re ready.', {
           label: 'Retry',
           onClick: () => {
             forcedState = 'ready';
@@ -151,44 +124,18 @@ document.addEventListener('DOMContentLoaded', function() {
       }
 
       if (forcedState === 'empty' || currentPoses.length === 0) {
-        if (isCommunity) {
-          setStateMessage(posesStateMessage, 'empty', 'No community poses yet', 'Check back later for new poses from the community.', {
-            label: 'Retry',
-            onClick: () => {
-              forcedState = 'ready';
-              renderPoses();
-            }
-          });
-        } else {
-          setStateMessage(posesStateMessage, 'empty', 'No poses yet', 'Capture a pose to start your library.', {
-            label: 'Create a pose',
-            onClick: () => { window.location.href = 'camera-live.html'; }
-          });
-        }
+        setStateMessage(posesStateMessage, 'empty', 'No poses yet', 'New poses will appear here when they’re available.');
         posesGrid.hidden = true;
-        if (posesCountLabel) posesCountLabel.textContent = 'Empty';
         return;
       }
 
       clearStateMessage(posesStateMessage);
     }
 
-    if (typeof initTabs === 'function') {
-      initTabs(function(category) {
-        currentCategory = category === 'community' ? 'community' : 'my-poses';
-        forcedState = 'ready';
-        const nextUrl = new URL(window.location.href);
-        nextUrl.searchParams.set('tab', currentCategory);
-        nextUrl.searchParams.delete('state');
-        window.history.replaceState({}, '', nextUrl);
-        renderPoses();
-      });
-    }
-
     renderPoses();
 
     if (params.get('notice') === 'deleted') {
-      setStateMessage(posesStateMessage, 'success', 'Pose deleted', 'Removed from My Poses.');
+      setStateMessage(posesStateMessage, 'success', 'Pose removed', 'The pose is no longer in this collection.');
     }
   }
 
@@ -214,25 +161,18 @@ document.addEventListener('DOMContentLoaded', function() {
       const detailDeleteBtn = document.getElementById('detail-delete-btn');
       const confirmDeleteBtn = document.getElementById('confirm-delete-btn');
       const deleteModal = document.getElementById('delete-pose-modal');
-      const detailReturnLink = document.getElementById('detail-return-link');
-      const detailBackLink = document.getElementById('detail-back');
+        const detailBackLink = document.getElementById('detail-back');
 
-    function showDetailUnavailable() {
-      detailContent.hidden = true;
-      if (detailUnavailableState) {
-        const copy = document.getElementById('detail-unavailable-copy');
-        if (detailReturnLink) {
-          detailReturnLink.href = requestedSource === 'community'
-            ? 'poses-list.html?tab=community'
-            : 'poses-list.html?tab=my-poses';
+      function showDetailUnavailable() {
+        detailContent.hidden = true;
+        if (detailUnavailableState) {
+          window.NBEmptyState.render(detailUnavailableState, {
+            action: { href: 'poses-list.html', label: 'Return to Poses' },
+            copy: 'This pose could not be confirmed as published. Return to Poses and try again.',
+            state: 'error',
+            title: 'Pose unavailable'
+          });
         }
-        if (copy) {
-          copy.textContent = requestedSource === 'community'
-            ? 'This community pose could not be confirmed as published. Return to the Community tab and try again.'
-            : 'This personal pose is no longer in My Poses. Return to the library to see the current list.';
-        }
-        detailUnavailableState.hidden = false;
-      }
       if (detailPageTitle) detailPageTitle.textContent = 'Unavailable';
     }
 
@@ -267,7 +207,7 @@ document.addEventListener('DOMContentLoaded', function() {
           const cameFromSearch = params.has('q');
           detailBackLink.href = cameFromSearch
             ? `search.html${searchOrigin.toString() ? `?${searchOrigin.toString()}` : ''}`
-            : `poses-list.html?tab=${pose.category === 'community' ? 'community' : 'my-poses'}`;
+            : 'poses-list.html';
           detailBackLink.setAttribute('aria-label', cameFromSearch ? 'Back to Search' : 'Back to pose library');
         }
         if (detailMetadata) {
@@ -320,15 +260,90 @@ document.addEventListener('DOMContentLoaded', function() {
   const galleryThumb = document.getElementById('camera-gallery-thumb');
   const permissionOverlay = document.getElementById('camera-permission-state');
   const permissionAction = document.getElementById('camera-permission-action');
-    const cameraSettingsBtn = document.getElementById('camera-settings-btn');
-      const cameraZoomBtn = document.getElementById('camera-zoom-btn');
-      const cameraZoomSlider = document.getElementById('camera-zoom-slider');
-    const cameraFlipBtn = document.getElementById('camera-flip-btn');
-    const cameraGuideBtn = document.querySelector('.nb-camera-guide-chip');
-    const cameraShutterDefaultLabel = shutterBtn
-      ? shutterBtn.getAttribute('aria-label') || 'Capture photo'
-      : 'Capture photo';
-    const cameraState = new URLSearchParams(window.location.search).get('state');
+  const cameraSettingsBtn = document.getElementById('camera-settings-btn');
+  const cameraZoomBtn = document.getElementById('camera-zoom-btn');
+  const cameraZoomSlider = document.getElementById('camera-zoom-slider');
+  const cameraFlipBtn = document.getElementById('camera-flip-btn');
+  const cameraGuideBtn = document.querySelector('.nb-camera-guide-chip');
+  const cameraPoseReference = document.getElementById('camera-pose-reference');
+  const poseTools = document.querySelectorAll('[data-pose-tools]');
+  const poseVisibilityRow = document.getElementById('pose-visibility-row');
+  const poseVisibilityValue = document.getElementById('pose-visibility-value');
+  const poseOpacitySlider = document.getElementById('pose-opacity-slider');
+  const poseOpacityValue = document.getElementById('pose-opacity-value');
+  const poseLineColorBlack = document.getElementById('pose-line-color-black');
+  const poseLineColorWhite = document.getElementById('pose-line-color-white');
+  const clearPoseRow = document.getElementById('clear-pose-row');
+  const cameraShutterDefaultLabel = shutterBtn
+    ? shutterBtn.getAttribute('aria-label') || 'Capture photo'
+    : 'Capture photo';
+  const cameraParams = new URLSearchParams(window.location.search);
+  const cameraState = cameraParams.get('state');
+  const selectedPoseId = cameraParams.get('pose') || cameraParams.get('guide');
+  const selectedPose = posePrototype && selectedPoseId && typeof posePrototype.getPoseByReference === 'function'
+    ? posePrototype.getPoseByReference(selectedPoseId, cameraParams.get('source'))
+    : null;
+  let poseVisible = Boolean(selectedPose && selectedPose.svg);
+  let poseOpacity = poseOpacitySlider ? Number(poseOpacitySlider.value) : 0.5;
+  let poseLineColor = 'black';
+
+  function setPoseToolsVisible(isVisible) {
+    poseTools.forEach(tool => {
+      tool.hidden = !isVisible;
+      tool.setAttribute('aria-hidden', String(!isVisible));
+    });
+  }
+
+  function syncPoseReference() {
+    if (!cameraPoseReference) return;
+    cameraPoseReference.hidden = !(selectedPose && poseVisible);
+    cameraPoseReference.setAttribute('aria-hidden', String(!selectedPose || !poseVisible));
+    cameraPoseReference.style.opacity = poseVisible ? String(poseOpacity) : '0';
+    cameraPoseReference.style.setProperty(
+      '--nb-camera-pose-line-color',
+      poseLineColor === 'white' ? 'var(--nb-color-white)' : 'var(--nb-color-dark)'
+    );
+  }
+
+  function syncPoseVisibility() {
+    if (poseVisibilityValue) poseVisibilityValue.textContent = poseVisible ? 'Shown' : 'Hidden';
+    if (poseVisibilityRow) {
+      poseVisibilityRow.setAttribute('aria-pressed', String(poseVisible));
+      poseVisibilityRow.setAttribute('aria-label', `${poseVisible ? 'Hide' : 'Show'} pose guide`);
+    }
+    syncPoseReference();
+  }
+
+  function syncPoseOpacity() {
+    const percent = Math.round(poseOpacity * 100);
+    if (poseOpacityValue) poseOpacityValue.textContent = `${percent}%`;
+    if (poseOpacitySlider) {
+      poseOpacitySlider.setAttribute('aria-label', `Pose guide opacity ${percent} percent`);
+      poseOpacitySlider.setAttribute('aria-valuetext', `${percent}%`);
+    }
+    syncPoseReference();
+  }
+
+  function setPoseLineColor(nextColor) {
+    poseLineColor = nextColor === 'white' ? 'white' : 'black';
+    [poseLineColorBlack, poseLineColorWhite].forEach(button => {
+      if (!button) return;
+      const isSelected = button === (poseLineColor === 'white' ? poseLineColorWhite : poseLineColorBlack);
+      button.classList.toggle('is-selected', isSelected);
+      button.setAttribute('aria-pressed', String(isSelected));
+    });
+    syncPoseReference();
+  }
+
+  if (cameraPoseReference && selectedPose && selectedPose.svg) {
+    cameraPoseReference.innerHTML = selectedPose.svg;
+    setPoseToolsVisible(true);
+    syncPoseVisibility();
+    syncPoseOpacity();
+    setPoseLineColor('black');
+  } else {
+    setPoseToolsVisible(false);
+  }
 
   function setCameraStatus(message, tone, hideAfter) {
     if (!cameraStatus) return;
@@ -345,7 +360,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
   function setCameraUnavailable(isUnavailable) {
     if (permissionOverlay) permissionOverlay.hidden = !isUnavailable;
-      [shutterBtn, cameraSettingsBtn, cameraZoomBtn, cameraZoomSlider, cameraFlipBtn, cameraGuideBtn, galleryThumb].forEach(control => {
+    [shutterBtn, cameraSettingsBtn, cameraZoomBtn, cameraZoomSlider, cameraFlipBtn, cameraGuideBtn, galleryThumb].forEach(control => {
       if (!control) return;
       control.disabled = isUnavailable;
       control.setAttribute('aria-disabled', String(isUnavailable));
@@ -361,7 +376,50 @@ document.addEventListener('DOMContentLoaded', function() {
       setCameraStatus('Starting camera…', 'info');
     } else if (cameraState === 'error') {
       setCameraStatus('We could not save that photo. Try again.', 'error');
+    } else if (selectedPose) {
+      setCameraStatus(`${selectedPose.title} selected`, 'success', 2400);
     }
+  }
+
+  if (poseVisibilityRow) {
+    poseVisibilityRow.addEventListener('click', function() {
+      poseVisible = !poseVisible;
+      syncPoseVisibility();
+    });
+  }
+
+  if (poseOpacitySlider) {
+    poseOpacitySlider.addEventListener('input', function() {
+      poseOpacity = Number(poseOpacitySlider.value);
+      syncPoseOpacity();
+    });
+  }
+
+  if (poseLineColorBlack) {
+    poseLineColorBlack.addEventListener('click', function() {
+      setPoseLineColor('black');
+    });
+  }
+
+  if (poseLineColorWhite) {
+    poseLineColorWhite.addEventListener('click', function() {
+      setPoseLineColor('white');
+    });
+  }
+
+  if (clearPoseRow) {
+    clearPoseRow.addEventListener('click', function() {
+      if (!selectedPose) return;
+      poseVisible = false;
+      setPoseToolsVisible(false);
+      syncPoseVisibility();
+      const nextUrl = new URL(window.location.href);
+      nextUrl.searchParams.delete('pose');
+      nextUrl.searchParams.delete('guide');
+      nextUrl.searchParams.delete('source');
+      window.history.replaceState({}, '', nextUrl.pathname + (nextUrl.search ? nextUrl.search : ''));
+      setCameraStatus('Pose cleared', 'info', 1800);
+    });
   }
 
   if (permissionAction) {
@@ -480,14 +538,18 @@ document.addEventListener('DOMContentLoaded', function() {
         galleryGrid.innerHTML = '';
 
         const visiblePhotos = getVisibleGalleryItems();
-        const visibleCount = visiblePhotos.length;
+          const visibleCount = visiblePhotos.length;
 
-        if (visibleCount === 0) {
-          galleryGrid.innerHTML = `
-            <p class="nb-gallery-empty u-text-center u-text-muted" role="status">No photos in this filter yet.</p>
-          `;
-          return;
-        }
+          if (visibleCount === 0) {
+            const emptyState = document.createElement('nb-empty-state');
+            emptyState.className = 'nb-gallery-empty-state';
+            galleryGrid.appendChild(emptyState);
+            setStateMessage(emptyState, 'empty', galleryFilter === 'all' ? 'No photos yet' : 'No photos in this filter', galleryFilter === 'all' ? 'Capture a pose to start your gallery.' : 'Try another filter.', galleryFilter === 'all' ? {
+              label: 'Open Camera',
+              onClick: () => { window.location.href = 'camera-live.html'; }
+            } : null);
+            return;
+          }
 
         const leadStaggerIndex = visiblePhotos.length > 1 ? Math.ceil(visiblePhotos.length / 2) : -1;
         visiblePhotos.forEach(({photo, dateLabel}, photoIndex) => {
@@ -574,12 +636,19 @@ document.addEventListener('DOMContentLoaded', function() {
     const confirmDeleteBtn = document.getElementById('confirm-delete-photo-btn');
     const canOpen = photo && !photo.placeholder && photo.photoUrl;
 
-    if (!canOpen) {
-      if (detailContent) detailContent.hidden = true;
-      if (detailActions) detailActions.hidden = true;
-      if (unavailableState) unavailableState.hidden = false;
-      if (detailTitle) detailTitle.textContent = 'Unavailable';
-    } else {
+      if (!canOpen) {
+        if (detailContent) detailContent.hidden = true;
+        if (detailActions) detailActions.hidden = true;
+        if (unavailableState) {
+          window.NBEmptyState.render(unavailableState, {
+            action: { href: 'gallery.html', label: 'Return to gallery' },
+            copy: 'This photo can’t be opened. Return to Gallery to see your current photos.',
+            state: 'error',
+            title: 'Photo unavailable'
+          });
+        }
+        if (detailTitle) detailTitle.textContent = 'Unavailable';
+      } else {
       if (unavailableState) unavailableState.hidden = true;
       if (detailContent) detailContent.hidden = false;
       if (detailTitle) detailTitle.textContent = photo.title;
@@ -727,18 +796,25 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         if (forcedState === 'loading') {
-          searchResultsGrid.innerHTML = '<div class="nb-pose-loading" role="status">Searching the library…</div>';
-          searchResultsGrid.setAttribute('aria-busy', 'true');
-          if (searchResultsCount) searchResultsCount.textContent = 'Searching…';
-          setStateMessage(searchStateMessage, 'loading', 'Searching', 'Looking through your library and the community.');
-          return;
-        }
+            searchResultsGrid.innerHTML = '';
+            searchResultsGrid.hidden = true;
+            searchResultsGrid.setAttribute('aria-busy', 'true');
+            if (searchResultsCount) {
+              searchResultsCount.hidden = false;
+              searchResultsCount.textContent = 'Searching…';
+            }
+            setStateMessage(searchStateMessage, 'loading', 'Searching', 'Looking through your library and the community.');
+            return;
+          }
 
         if (forcedState === 'error') {
           searchResultsGrid.innerHTML = '';
           searchResultsGrid.hidden = true;
           searchResultsGrid.removeAttribute('aria-busy');
-          if (searchResultsCount) searchResultsCount.textContent = 'Unavailable';
+            if (searchResultsCount) {
+              searchResultsCount.hidden = false;
+              searchResultsCount.textContent = 'Unavailable';
+            }
           setStateMessage(searchStateMessage, 'error', 'Search is paused', 'We could not load results right now. Your query is still here.', {
             label: 'Try again',
             onClick: () => {
@@ -755,22 +831,25 @@ document.addEventListener('DOMContentLoaded', function() {
         searchResultsGrid.hidden = false;
         searchResultsGrid.removeAttribute('aria-busy');
 
-        if (searchResultsCount) {
-          const resultLabel = `${filtered.length} ${filtered.length === 1 ? 'pose' : 'poses'}`;
-          searchResultsCount.textContent = `${resultLabel}${sourceLabel ? ` · ${sourceLabel}` : ''}`;
-        }
+          if (searchResultsCount) {
+            const resultLabel = `${filtered.length} ${filtered.length === 1 ? 'pose' : 'poses'}`;
+            searchResultsCount.textContent = `${resultLabel}${sourceLabel ? ` · ${sourceLabel}` : ''}`;
+            searchResultsCount.hidden = filtered.length === 0;
+          }
 
-        if (filtered.length === 0) {
-          const emptyTitle = searchQuery.trim() ? 'No close matches' : 'Nothing here yet';
-          const emptyCopy = searchQuery.trim()
-            ? `Try a shorter title, or browse another source.`
-            : `There are no poses in ${sourceLabel.toLocaleLowerCase() || 'this library'} yet.`;
-          setStateMessage(searchStateMessage, 'empty', emptyTitle, emptyCopy, {
-            label: searchQuery.trim() ? 'Clear search' : 'Show all poses',
-            onClick: searchQuery.trim() ? clearSearch : () => setSource('all')
-          });
-          searchResultsGrid.hidden = true;
-          return;
+          if (filtered.length === 0) {
+            const query = searchQuery.trim();
+            const emptyTitle = query
+              ? `No poses match “${query}”`
+              : `No poses in ${sourceLabel.toLocaleLowerCase() || 'this library'} yet`;
+            const emptyCopy = searchQuery.trim()
+              ? 'Try a different pose name.'
+              : 'Choose another source to continue.';
+            setStateMessage(searchStateMessage, 'empty', emptyTitle, emptyCopy, query || searchSource === 'all'
+              ? null
+              : { label: 'Show all poses', onClick: () => setSource('all') });
+            searchResultsGrid.hidden = true;
+            return;
         }
 
         filtered.forEach((pose, index) => {
@@ -784,8 +863,8 @@ document.addEventListener('DOMContentLoaded', function() {
           }
           searchResultsGrid.appendChild(card);
         });
-        if (isOffline) {
-          setStateMessage(searchStateMessage, 'success', 'Offline library', 'Showing the last confirmed pose list. Community results may be out of date.');
+          if (isOffline) {
+            setStateMessage(searchStateMessage, 'offline', 'You’re offline', 'Showing your last available poses. Community results may be out of date.');
         } else {
           clearStateMessage(searchStateMessage);
         }

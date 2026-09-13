@@ -16,7 +16,19 @@
             ? { href: 'search.html' + (searchOrigin.toString() ? '?' + searchOrigin.toString() : ''), label: 'Back to Search' }
             : { href: 'poses-list.html?tab=community', label: 'Back to Community' };
     if (back) { back.href = backDestination.href; back.setAttribute('aria-label', backDestination.label); }
-    function unavailableState() { content.hidden = true; unavailable.innerHTML = '<strong>Pose unavailable</strong><p>Pose này đã xoá hoặc đã ẩn.</p><button class="nb-btn nb-btn--pink nb-saved-readonly" type="button" disabled>Try pose</button><button class="nb-btn nb-btn--white" type="button" id="detail-unavailable-back">' + backDestination.label + '</button>'; unavailable.hidden = false; document.getElementById('saved-detail-title').textContent = 'Unavailable'; document.getElementById('detail-unavailable-back').onclick = () => location.href = backDestination.href; }
+      function unavailableState() {
+        content.hidden = true;
+        window.NBEmptyState.render(unavailable, {
+          action: {
+            href: backDestination.href,
+            label: backDestination.label
+          },
+          copy: 'This pose has been removed or hidden.',
+          state: 'error',
+          title: 'Pose unavailable'
+        });
+        document.getElementById('saved-detail-title').textContent = 'Unavailable';
+      }
     if (state === 'unavailable' || !pose) { unavailableState(); return; }
     document.getElementById('saved-detail-title').textContent = pose.title; document.getElementById('saved-detail-name').textContent = pose.title; document.getElementById('saved-detail-art').innerHTML = pose.svg;
     const isSavedContext = origin === 'saved' || source === 'saved';
@@ -29,11 +41,18 @@
     function prompt(intent) { location.href = 'sign-in-prompt.html?intent=' + intent + '&return=' + encodeURIComponent(location.href); }
     toggle.onclick = function () { if (readonly) return; if (params.get('auth') === 'guest') { prompt('save'); return; } const was = saved; toggle.disabled = true; toggle.innerHTML = '<span>…</span>'; live.textContent = was ? 'Removing…' : 'Saving…'; if (state === 'error') { toggle.disabled = false; toggle.innerHTML = '<svg aria-hidden="true"><use href="#icon-bookmark"></use></svg><span id="saved-toggle-label">' + (saved ? 'Saved' : 'Save') + '</span>'; live.textContent = 'Couldn’t update Saved. Retry.'; return; } setTimeout(() => { saved = !was; toggle.disabled = false; toggle.innerHTML = '<svg aria-hidden="true"><use href="#icon-bookmark"></use></svg><span id="saved-toggle-label">' + (saved ? 'Saved' : 'Save') + '</span>'; paint(); live.textContent = saved ? 'Saved' : 'Removed from Saved'; }, 350); };
     tryBtn.onclick = function () { if (params.get('auth') === 'guest') prompt('try'); else { live.textContent = 'Try pose is ready in this prototype.'; } };
-    paint();
-    if (state === 'error') {
-      unavailable.className = 'nb-state-message nb-state-message--error'; unavailable.innerHTML = '<strong>Couldn’t update Saved</strong><p>Your confirmed state is unchanged.</p><button class="nb-btn nb-btn--white" type="button" id="saved-retry">Retry</button>'; unavailable.hidden = false;
-      document.getElementById('saved-retry').onclick = () => { location.href = 'pose-detail-saved.html?source=' + encodeURIComponent(params.get('source') || 'community') + '&id=' + encodeURIComponent(pose.id) + '&state=' + (saved ? 'saved' : 'unsaved'); };
-    }
+      paint();
+      if (state === 'error') {
+        window.NBEmptyState.render(unavailable, {
+          action: {
+            label: 'Try again',
+            onClick: () => { location.href = 'pose-detail-saved.html?source=' + encodeURIComponent(params.get('source') || 'community') + '&id=' + encodeURIComponent(pose.id) + '&state=' + (saved ? 'saved' : 'unsaved'); }
+          },
+          copy: 'Your confirmed state is unchanged.',
+          state: 'error',
+          title: 'Couldn’t update Saved'
+        });
+      }
     if (state === 'pending-save' || state === 'pending-unsave') {
       toggle.disabled = true; toggle.innerHTML = '<span>' + (state === 'pending-save' ? 'Saving…' : 'Removing…') + '</span>'; live.textContent = state === 'pending-save' ? 'Saving…' : 'Removing…';
       setTimeout(() => { saved = state === 'pending-save'; toggle.disabled = false; toggle.innerHTML = '<svg aria-hidden="true"><use href="#icon-bookmark"></use></svg><span id="saved-toggle-label">' + (saved ? 'Saved' : 'Save') + '</span>'; paint(); live.textContent = saved ? 'Saved' : 'Removed from Saved'; }, 500);

@@ -8,7 +8,7 @@
   <link rel="stylesheet" href="../styles/reset.css">
   <link rel="stylesheet" href="../styles/base.css">
   <link rel="stylesheet" href="../styles/utilities.css">
-  <link rel="stylesheet" href="../styles/components.css">
+    <link rel="stylesheet" href="../styles/components.css?empty-state-1">
 </head>
 <body>
   <div class="nb-phone">
@@ -41,11 +41,7 @@
         <div class="nb-nav-bar__right" aria-hidden="true"></div>
       </nav>
 
-      <div id="detail-unavailable-state" class="nb-state-message nb-state-message--error" role="alert" hidden>
-        <strong>Pose unavailable</strong>
-        <p id="detail-unavailable-copy">This pose is no longer available.</p>
-        <a id="detail-return-link" href="poses-list.html" class="nb-btn nb-btn--white">Return to pose library</a>
-      </div>
+        <nb-empty-state id="detail-unavailable-state" hidden></nb-empty-state>
 
       <div id="detail-content">
         <!-- Large Pose Detail Card -->
@@ -106,8 +102,9 @@
   <script src="../scripts/tabs.js"></script>
   <script src="../scripts/progress.js"></script>
   <script src="../scripts/modal.js"></script>
-  <script src="../scripts/view-toggle.js"></script>
-  <script src="../scripts/button-press.js"></script>
-  <script src="../scripts/app.js"></script>
+    <script src="../scripts/view-toggle.js"></script>
+    <script src="../scripts/button-press.js"></script>
+    <script src="../scripts/empty-state.js"></script>
+    <script src="../scripts/app.js"></script>
 </body>
 </html>

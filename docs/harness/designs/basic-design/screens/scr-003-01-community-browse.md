@@ -1,6 +1,6 @@
 ---
 screen_id: SCR-003-01
-screen_name: Community Browse
+screen_name: Poses
 related_feature: FEAT-003
 compose: PosesListScreen (wrapper) + PosesScreen (implementation)
 status: sample
@@ -8,7 +8,7 @@ template_version: 1
 canonical: false
 ---
 
-# SCR-003-01 — Community Browse (`PosesListScreen` + `PosesScreen`)
+# SCR-003-01 — Poses (`PosesListScreen` + `PosesScreen`)
 
 <a id="scr-003-01-community-browse-poseslistscreen-posesscreen"></a>
 
@@ -17,7 +17,7 @@ canonical: false
 | Field | Value |
 | --- | --- |
 | Screen ID | SCR-003-01 |
-| Screen name | Community Browse |
+| Screen name | Poses |
 | Related feature | FEAT-003 |
 | Compose / Voyager | `PosesListScreen` (wrapper) + `PosesScreen` (implementation) |
 | Stable anchor | `scr-003-01-community-browse-poseslistscreen-posesscreen` |
@@ -28,7 +28,7 @@ Hiển thị catalogue community published dạng masonry grid; hỗ trợ refre
 
 ## 3. Scope and ownership
 
-Thuộc **published-leg** FEAT-003: browse catalogue qua `GET /api/community/poses`. Header action Create Pose (+) là cross-ref [FEAT-004](../../../features/FEAT-004-extract-reusable-pose-images.md) — **out-of-slice**.
+Thuộc **published-leg** FEAT-003: browse catalogue qua `GET /api/community/poses`. Đây là một collection Poses duy nhất trong app hiện tại; chưa expose My Poses hoặc Create Pose trên surface này.
 
 ## 4. Data contract and evidence
 
@@ -40,19 +40,17 @@ Thuộc **published-leg** FEAT-003: browse catalogue qua `GET /api/community/pos
 | No. | Item ID | Tên item | Loại UI | Req/Opt | Ràng buộc / hành vi |
 | --- | --- | --- | --- | --- | --- |
 | 1 | SCR-003-01-WRAP-001 | `PosesListScreen` shell | Voyager `Screen` + `Box` | Req | Khi Tab Poses active → compose `PosesScreen` + `MainDock`; wrapper duy nhất gắn bottom dock |
-| 2 | SCR-003-01-HDR-001 | Screen title | Text | Req | Hiển thị label `"Community"`; typography `NavigationTitle` |
+| 2 | SCR-003-01-HDR-001 | Screen title | Text | Req | Hiển thị label `"Poses"`; typography `NavigationTitle` |
 | 3 | SCR-003-01-HDR-002 | Search affordance | Icon button (44dp) | Opt | Tap → push `SearchScreen`; `testTag=poses-search-button`; label a11y "Search poses" |
-| 4 | SCR-003-01-HDR-003 | Create Pose (+) | Icon button (44dp) | Opt | Tap → switch `CameraTab`; [FEAT-004](../../../features/FEAT-004-extract-reusable-pose-images.md); out-of-slice |
-| 5 | SCR-003-01-GRD-001 | Pose card grid | `LazyVerticalStaggeredGrid` 2 cột | Req | Scroll → render `CommunityPose`; staggered aspect ratio; thumbnail/skeleton fallback |
-| 6 | SCR-003-01-GRD-002 | Pose card | `CommunityPoseCard` | Req | Tap → `PosePreview` → detail; key `poseId`; không duplicate active ID khi load-more |
-| 7 | SCR-003-01-GRD-003 | Count label | Caption | Req | Hiển thị `pagination.total`; `testTag=poses-count-label` |
-| 8 | SCR-003-01-GRD-004 | Load more | Infinite scroll | Opt | Chạm cuối grid → request `page+1`; `pageSize=20`; spinner hoặc retry inline |
-| 9 | SCR-003-01-GRD-005 | Pull-to-refresh | Pull gesture | Opt | Pull down → re-fetch `page=1`; Flow **A2**; khi lỗi giữ catalogue đã xác nhận |
-| 10 | SCR-003-01-ST-001 | Initial loading | `CircularProgressIndicator` | — | Khi `items` rỗng và đang load |
-| 11 | SCR-003-01-ST-002 | Initial error | State message + Retry | — | Tap Retry → re-load initial; Flow **E1**; không fabricate published content |
-| 12 | SCR-003-01-ST-003 | Empty catalogue | Text | — | Hiển thị `"No poses found."`; Flow **A1**; API `200` + `data: []` |
-| 13 | SCR-003-01-ST-004 | Refresh error banner | Banner + Retry | — | Tap Retry → re-refresh; **Observed** retry; giữ catalogue trước đó |
-| 14 | SCR-003-01-ST-005 | Load-more error | Inline + Retry | — | Tap Retry → re-load-more; Flow **E1** (partial); **Observed** retry |
+| 4 | SCR-003-01-GRD-001 | Pose card grid | `LazyVerticalStaggeredGrid` 2 cột | Req | Scroll → render `CommunityPose`; staggered aspect ratio; thumbnail/skeleton fallback |
+| 5 | SCR-003-01-GRD-002 | Pose card | `CommunityPoseCard` | Req | Tap → `PosePreview` → detail; key `poseId`; không duplicate active ID khi load-more |
+| 6 | SCR-003-01-GRD-004 | Load more | Infinite scroll | Opt | Chạm cuối grid → request `page+1`; `pageSize=20`; spinner hoặc retry inline |
+| 7 | SCR-003-01-GRD-005 | Pull-to-refresh | Pull gesture | Opt | Pull down → re-fetch `page=1`; Flow **A2**; khi lỗi giữ catalogue đã xác nhận |
+| 8 | SCR-003-01-ST-001 | Initial loading | `CircularProgressIndicator` | — | Khi `items` rỗng và đang load |
+| 9 | SCR-003-01-ST-002 | Initial error | State message + Retry | — | Tap Retry → re-load initial; Flow **E1**; không fabricate published content |
+| 10 | SCR-003-01-ST-003 | Empty catalogue | Text | — | Hiển thị `"No poses found."`; Flow **A1**; API `200` + `data: []` |
+| 11 | SCR-003-01-ST-004 | Refresh error banner | Banner + Retry | — | Tap Retry → re-refresh; **Observed** retry; giữ catalogue trước đó |
+| 12 | SCR-003-01-ST-005 | Load-more error | Inline + Retry | — | Tap Retry → re-load-more; Flow **E1** (partial); **Observed** retry |
 
 ## 6. Screen flow and feature links
 
@@ -72,7 +70,7 @@ Thuộc **published-leg** FEAT-003: browse catalogue qua `GET /api/community/pos
 
 | Item | API | Model |
 | --- | --- | --- |
-| SCR-003-01-GRD-002, GRD-003, GRD-004 | `GET /api/community/poses` | `CommunityPose`, pagination envelope |
+| SCR-003-01-GRD-002, GRD-004, GRD-005 | `GET /api/community/poses` | `CommunityPose`, pagination envelope |
 | SCR-003-01-GRD-002 | — | `PosePreview` navigation hop → SCR-003-03 |
 
 HTTP contract: [../apis.md](../apis.md). Model: [../models.md](../models.md). Tổng flow: [./README.md](./README.md#overall-screen-flow).

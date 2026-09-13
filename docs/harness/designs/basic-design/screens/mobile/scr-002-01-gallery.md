@@ -10,7 +10,7 @@ canonical: false
 
 # SCR-002-01 — Gallery (`GalleryScreen` + `PhotoDetailDialog`)
 
-> **Template v2** — `docs/harness/designs/basic-design/screens/TEMPLATE.md`. Main list = `GalleryScreen`; full-screen detail và delete `AlertDialog` = sub-surfaces trong cùng file. `PaywallScreen` tham chiếu OVR canonical tại [SCR-001-01 §10](./scr-001-01-camera.md#scr-001-01-camera-ovr-paywall).
+> **Template v2** — `docs/harness/designs/basic-design/screens/TEMPLATE.md`. Main list = `GalleryScreen`; full-screen detail và delete `AlertDialog` = sub-surfaces trong cùng file. `PaywallScreen` tham chiếu OVR canonical tại [SCR-001-01 §11](./scr-001-01-camera.md#scr-001-01-camera-ovr-paywall).
 
 <a id="scr-002-01-gallery-galleryscreen"></a>
 
@@ -117,7 +117,7 @@ Full-screen `Box` (không Material dialog shell); mở từ SCR-002-01-GRD-003 h
 | 4 | SCR-002-01-DTL-004 | Share action | Icon button 44dp | Opt | Cùng premium gate → SCR-001-01-OVR-001; else `onShare(photo)` — **Observed** (`169-183`) |
 | 5 | SCR-002-01-DTL-005 | Delete action | Icon button 44dp | Req | `showDeleteConfirm = true` → [DLG delete](#scr-002-01-gallery-dlg-delete) — **Observed** (`185-202`) |
 
-**Paywall occurrence (FEAT-011):** Khi `showPaywall`, render `PaywallScreen` full-size (`PhotoDetailDialog.kt:286-291`). Item contract: dùng **SCR-001-01-OVR-001** … **SCR-001-01-OVR-008** tại [scr-001-01-camera.md §10](./scr-001-01-camera.md#scr-001-01-camera-ovr-paywall) — không duplicate bảng OVR tại file này.
+**Paywall occurrence (FEAT-011):** Khi `showPaywall`, render `PaywallScreen` full-size (`PhotoDetailDialog.kt:286-291`). Item contract: dùng **SCR-001-01-OVR-001** … **SCR-001-01-OVR-008** tại [scr-001-01-camera.md §11](./scr-001-01-camera.md#scr-001-01-camera-ovr-paywall) — không duplicate bảng OVR tại file này.
 
 ## 9. Dialog — delete confirmation (`AlertDialog`)
 

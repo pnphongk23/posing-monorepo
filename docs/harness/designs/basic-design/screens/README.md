@@ -13,6 +13,13 @@ Presentation layer inventory cho **Basic Design** (`docs/harness/designs/basic-d
 
 <a id="screen-inventory-by-area"></a>
 
+### 1.0 Mobile app-entry shell (`screens/`)
+
+<a id="inventory-mobile-shell"></a>
+| Screen ID | File | Compose / Voyager | Primary content dependency | Doc status |
+| --- | --- | --- | --- | --- |
+| SCR-000-01 | [scr-000-01-home.md](./scr-000-01-home.md#scr-000-01-home-posestab-poseslistscreen-posesscreen) | `App()` → `PosesTab` → `PosesListScreen` + `PosesScreen` + `MainDock` | FEAT-003 (content only); shell owner **Unresolved** | draft (template v2) |
+
 ### 1.1 Mobile (`screens/mobile/`)
 
 <a id="inventory-mobile"></a>
@@ -35,11 +42,13 @@ Presentation layer inventory cho **Basic Design** (`docs/harness/designs/basic-d
 <a id="inventory-legacy"></a>
 | Screen ID | File | Compose / Voyager | Primary feature | Doc status |
 | --- | --- | --- | --- | --- |
-| SCR-003-01 | [scr-003-01-community-browse.md](./scr-003-01-community-browse.md#scr-003-01-community-browse-poseslistscreen-posesscreen) | `PosesListScreen` + `PosesScreen` | FEAT-003 | sample (template v1) |
+| SCR-003-01 | [scr-003-01-community-browse.md](./scr-003-01-community-browse.md#scr-003-01-community-browse-poseslistscreen-posesscreen) | `PosesListScreen` + `PosesScreen` | FEAT-003 | sample (template v1; visible title: Poses) |
 | SCR-003-02 | [scr-003-02-search.md](./scr-003-02-search.md#scr-003-02-search-searchscreen) | `SearchScreen` | FEAT-003 | sample (template v1) |
 | SCR-003-03 | [scr-003-03-pose-detail.md](./scr-003-03-pose-detail.md#scr-003-03-pose-detail-posedetailscreen) | `PoseDetailScreen` (+ Voyager wrapper) | FEAT-003 | sample (template v1) |
 
-**Inventory count:** 8 screen files (2 mobile + 3 admin + 3 legacy root). Không gồm `TEMPLATE.md` hay file README này.
+**Inventory count:** 9 screen files (1 mobile shell + 2 mobile + 3 admin + 3 legacy root). Không gồm `TEMPLATE.md` hay file README này.
+
+**Home mapping note:** [SCR-000-01 Home](./scr-000-01-home.md#scr-000-01-home-posestab-poseslistscreen-posesscreen) là app-entry shell mapping cho `PosesTab` hiện tại. Nó không tạo thêm catalogue, không phục hồi `My poses`, và không thay ownership của [SCR-003-01 Poses](./scr-003-01-community-browse.md#scr-003-01-community-browse-poseslistscreen-posesscreen).
 
 **Navigation note (FEAT-003):** `PosesListScreen` bọc `PosesScreen` và gắn `MainDock`. `PoseDetailVoyagerScreen` truyền `PosePreview` vào `PoseDetailScreen` — không thêm business logic browse/search.
 
@@ -51,7 +60,7 @@ Presentation layer inventory cho **Basic Design** (`docs/harness/designs/basic-d
 | [FEAT-001](../../../features/FEAT-001-capture-a-photo-on-mobile.md) | **Yes** — SCR-001-01 | [Camera](./mobile/scr-001-01-camera.md#scr-001-01-camera-camerascreen) | Cross-slice: FEAT-008 overlay, FEAT-011 paywall gate, FEAT-012 snapshot |
 | [FEAT-002](../../../features/FEAT-002-manage-a-local-photo-gallery.md) | **Yes** — SCR-002-01 | [Gallery](./mobile/scr-002-01-gallery.md#scr-002-01-gallery-galleryscreen) | FEAT-011 paywall: **occurrence** cross-ref → [SCR-001-01 OVR](./mobile/scr-001-01-camera.md#scr-001-01-camera-ovr-paywall) only |
 | [FEAT-003](../../../features/FEAT-003-browse-and-search-published-poses.md) | **Yes** — SCR-003-01/02/03 | [Browse](./scr-003-01-community-browse.md), [Search](./scr-003-02-search.md), [Detail](./scr-003-03-pose-detail.md) | **Published-leg** ownership — xem [§6](#ownership-boundary-feat-003) |
-| [FEAT-004](../../../features/FEAT-004-extract-reusable-pose-images.md) | **No dedicated screen** | Entry: SCR-003-01-HDR-003 (+) → `CameraTab` — **out-of-slice** cross-ref only | Không invent screen file |
+| [FEAT-004](../../../features/FEAT-004-extract-reusable-pose-images.md) | **No dedicated screen** | No current entry on SCR-003-01; feature remains **out-of-slice** | Không invent screen file |
 | [FEAT-005](../../../features/FEAT-005-manage-a-pose-guide.md) | **No dedicated screen** | Shared UI trên SCR-003-03 — xem [§5](#shared-occurrence-register) | Delete dialog / deleting overlay |
 | [FEAT-006](../../../features/FEAT-006-publish-a-pose.md) | **No dedicated screen** | — | Policy/backend; admin status field **Observed** trên SCR-007-02, không phải owner screen |
 | [FEAT-007](../../../features/FEAT-007-operate-pose-content-from-admin-web.md) | **Yes** — SCR-007-01/02/03 | [Dashboard](./admin/scr-007-01-dashboard.md), [Community](./admin/scr-007-02-community.md), [Keys](./admin/scr-007-03-keys.md) | |
@@ -93,7 +102,7 @@ Nguồn trạng thái: [Harness inventory](../../../README.md) (bảng Features)
 | D-001 | FEAT-002 | Harness inventory **Draft** vs frontmatter **approved** | [Harness README](../../../README.md), [FEAT-002](../../../features/FEAT-002-manage-a-local-photo-gallery.md) |
 | D-002 | FEAT-003 | Harness **Proposed** vs frontmatter **approved**; title search `q` **Unresolved** (mock vs live) | [apis.md#unresolved](../apis.md#unresolved), screen docs SCR-003-02 |
 | D-003 | FEAT-003 | Mixed local/published search UI và local-first detail — **Observed**, không normative published-leg | [SCR-003-02](./scr-003-02-search.md), [SCR-003-03](./scr-003-03-pose-detail.md) |
-| D-004 | FEAT-004 | Inventory **Draft** vs frontmatter **approved**; chỉ (+) affordance SCR-003-01-HDR-003, không screen riêng | [SCR-003-01](./scr-003-01-community-browse.md) |
+| D-004 | FEAT-004 | Inventory **Draft** vs frontmatter **approved**; không có affordance trên Poses surface hiện tại, không screen riêng | [SCR-003-01](./scr-003-01-community-browse.md) |
 | D-005 | FEAT-005 | Inventory **Draft** vs frontmatter **approved**; delete UX shared trên Pose Detail, không file screen FEAT-005 | [SCR-003-03 §7](./scr-003-03-pose-detail.md#scr-003-03-pose-detail-posedetailscreen) |
 | D-006 | FEAT-007 | Inventory **Draft** vs frontmatter **approved** | Harness README vs FEAT-007 |
 | D-007 | FEAT-007 / SCR-007-02 | Feature **Not observed** async polling vs code poll 60×1s | [SCR-007-02](./admin/scr-007-02-community.md) |
@@ -118,7 +127,7 @@ Các UI/logic xuất hiện trên screen host nhưng **ownership** thuộc featu
 | `PaywallScreen` (Gallery save/share) — **occurrence** | `mobile/composeApp/.../gallery/PhotoDetailDialog.kt` | FEAT-011 | [SCR-002-01](./mobile/scr-002-01-gallery.md) | **Occurrence only** → cross-ref [SCR-001-01 OVR](./mobile/scr-001-01-camera.md#scr-001-01-camera-ovr-paywall); không Paywall Item ID trên SCR-002-01 |
 | Gallery delete `AlertDialog` | `PhotoDetailDialog.kt` | FEAT-002 | SCR-002-01 | Owned by host (SCR-002-01-DLG-*) |
 
-**Sole canonical PaywallScreen OVR (PLAN_FINAL):** Chỉ [SCR-001-01 §10 — `scr-001-01-camera-ovr-paywall`](./mobile/scr-001-01-camera.md#scr-001-01-camera-ovr-paywall) định nghĩa Paywall items (`SCR-001-01-OVR-001` … `OVR-008`). SCR-002-01 và SCR-003-03 chỉ ghi **occurrence** + cross-reference tới path/item Camera; không gọi Gallery/Pose Detail canonical; không invent Paywall item trên host đó.
+**Sole canonical PaywallScreen OVR (PLAN_FINAL):** Chỉ [SCR-001-01 §11 — `scr-001-01-camera-ovr-paywall`](./mobile/scr-001-01-camera.md#scr-001-01-camera-ovr-paywall) định nghĩa Paywall items (`SCR-001-01-OVR-001` … `OVR-008`). SCR-002-01 và SCR-003-03 chỉ ghi **occurrence** + cross-reference tới path/item Camera; không gọi Gallery/Pose Detail canonical; không invent Paywall item trên host đó.
 
 ## 6. Ownership boundary — FEAT-003 published-leg
 
@@ -130,7 +139,6 @@ Slice FEAT-003 (SCR-003-*) chỉ mô tả **published-leg**: browse catalogue, t
 | Local pose filter | SCR-003-02 | `PoseRepository` + local `Pose` — [FEAT-002](../../../features/FEAT-002-manage-a-local-photo-gallery.md) |
 | Local result cards | SCR-003-02 | RES-004 — mixed UI **Observed**, không normative FEAT-003 |
 | Local-first detail load | SCR-003-03 | `repository.getPoseById` trước API — navigation optimization |
-| Create Pose (+) | SCR-003-01 | [FEAT-004](../../../features/FEAT-004-extract-reusable-pose-images.md) — out-of-slice |
 | Try Pose / Save | SCR-003-03 | [FEAT-008](../../../features/FEAT-008-use-published-poses.md) — out-of-slice |
 | Delete / preparing / paywall | SCR-003-03 | [§5 shared register](#shared-occurrence-register) |
 
@@ -151,7 +159,7 @@ Chi tiết landing-level: [../README.md §2](../README.md#evidence-labeling).
 ```mermaid
 flowchart TD
     subgraph mobileDock["Mobile — MainDock tabs"]
-        PS[SCR-003-01 Poses / Community]
+        PS[SCR-003-01 Poses]
         GS[SCR-002-01 Gallery]
         CAM[SCR-001-01 Camera]
     end
@@ -168,7 +176,6 @@ flowchart TD
 
     PS -->|"HDR-002 search"| SS
     PS -->|"GRD-002 card"| PD
-    PS -->|"HDR-003 + FEAT-004"| CAM
     SS -->|"RES-003 published"| PD
     SS -->|"NAV-001 back"| PS
     PD -->|"NAV-001 back"| PS

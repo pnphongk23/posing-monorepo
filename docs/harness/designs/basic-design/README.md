@@ -9,7 +9,7 @@
 
 | Layer | File | Vai trò |
 | --- | --- | --- |
-| Screens | [screens/README.md](./screens/README.md) | Inventory 8 screen files (mobile / admin / legacy); flow, ownership, shared occurrences |
+| Screens | [screens/README.md](./screens/README.md) | Inventory 9 screen files (mobile shell / mobile / admin / legacy); flow, ownership, shared occurrences |
 | APIs | [apis.md](./apis.md) | **20 Normative operations** trong 6 modules + [proxy convention](./apis.md#api-proxy-01) và [Observed register](./apis.md#api-admin-community-obs-01) — link spec/OpenAPI, không duplicate |
 | Models | [models.md](./models.md) | **8 entity** + `PosePreview` + [enum register](./models.md#models-enum-register) / [ERD summary](./models.md#models-erd-summary) — link `docs/spec/data`, không duplicate |
 
@@ -29,10 +29,11 @@
 ## 3. Screens scope
 
 <a id="screens-scope"></a>
-**8 screen files** (không gồm `TEMPLATE.md`):
+**9 screen files** (không gồm `TEMPLATE.md`):
 
 | Area | Count | Screen IDs | Inventory |
 | --- | --- | --- | --- |
+| Mobile app-entry shell | 1 | SCR-000-01 | [Home](./screens/scr-000-01-home.md#scr-000-01-home-posestab-poseslistscreen-posesscreen) |
 | Mobile | 2 | SCR-001-01, SCR-002-01 | [screens/README §1.1](./screens/README.md#inventory-mobile) |
 | Admin Web | 3 | SCR-007-01, SCR-007-02, SCR-007-03 | [screens/README §1.2](./screens/README.md#inventory-admin) |
 | Legacy root (FEAT-003) | 3 | SCR-003-01, SCR-003-02, SCR-003-03 | [screens/README §1.3](./screens/README.md#inventory-legacy) |
@@ -84,6 +85,7 @@ Feature authority: [FEAT-003](../../features/FEAT-003-browse-and-search-publishe
 
 | Feature | Dedicated screen | Ghi chú |
 | --- | --- | --- |
+| App shell / Home | [SCR-000-01](./screens/scr-000-01-home.md#scr-000-01-home-posestab-poseslistscreen-posesscreen) | Root host for `PosesTab`; no separate Home Feature owner; FEAT-003 supplies Community content |
 | FEAT-001 | [SCR-001-01](./screens/mobile/scr-001-01-camera.md#scr-001-01-camera-camerascreen) | Paywall OVR canonical |
 | FEAT-002 | [SCR-002-01](./screens/mobile/scr-002-01-gallery.md#scr-002-01-gallery-galleryscreen) | |
 | FEAT-003 | SCR-003-01/02/03 | Published-leg — [screens/README §6](./screens/README.md#ownership-boundary-feat-003) |

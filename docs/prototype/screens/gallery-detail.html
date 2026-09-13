@@ -7,7 +7,7 @@
   <link rel="stylesheet" href="../styles/reset.css">
   <link rel="stylesheet" href="../styles/base.css">
   <link rel="stylesheet" href="../styles/utilities.css">
-  <link rel="stylesheet" href="../styles/components.css">
+    <link rel="stylesheet" href="../styles/components.css?empty-state-1">
 </head>
 <body>
   <div class="nb-phone">
@@ -44,11 +44,7 @@
         </div>
       </nav>
 
-      <div id="gallery-unavailable-state" class="nb-state-message nb-state-message--error" role="alert" hidden>
-        <strong>Photo unavailable</strong>
-        <p>This photo can’t be opened. Return to Gallery to see your current photos.</p>
-        <a href="gallery.html" class="nb-btn nb-btn--white">Return to gallery</a>
-      </div>
+        <nb-empty-state id="gallery-unavailable-state" hidden></nb-empty-state>
 
       <div id="gallery-detail-content" hidden>
         <div id="gallery-detail-photo" class="nb-card nb-card--photo-detail" role="img" aria-label="Photo"></div>
@@ -78,8 +74,9 @@
   <script src="../scripts/tabs.js"></script>
   <script src="../scripts/progress.js"></script>
   <script src="../scripts/modal.js"></script>
-  <script src="../scripts/view-toggle.js"></script>
-  <script src="../scripts/button-press.js"></script>
-  <script src="../scripts/app.js"></script>
+    <script src="../scripts/view-toggle.js"></script>
+    <script src="../scripts/button-press.js"></script>
+    <script src="../scripts/empty-state.js"></script>
+    <script src="../scripts/app.js"></script>
 </body>
 </html>
