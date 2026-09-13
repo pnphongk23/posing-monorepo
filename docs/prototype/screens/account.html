@@ -7,7 +7,7 @@
   <link rel="stylesheet" href="../styles/reset.css">
   <link rel="stylesheet" href="../styles/base.css">
   <link rel="stylesheet" href="../styles/utilities.css">
-  <link rel="stylesheet" href="../styles/components.css">
+    <link rel="stylesheet" href="../styles/components.css?empty-state-1">
   <link rel="stylesheet" href="../styles/account.css">
 </head>
 <body>
@@ -58,7 +58,7 @@
           </a>
         </nav>
 
-        <div id="account-status" class="nb-state-message nb-account-status" role="status" aria-live="polite" hidden></div>
+          <nb-empty-state id="account-status" class="nb-account-status" hidden></nb-empty-state>
 
         <div class="nb-account-actions">
           <a id="account-premium-cta" href="paywall.html?return=account.html" class="nb-btn nb-account-premium" aria-label="Upgrade to Premium">
@@ -82,7 +82,8 @@
     </div>
   </div>
 
-  <script src="../scripts/icons.js"></script>
-  <script src="../scripts/account.js"></script>
+    <script src="../scripts/icons.js"></script>
+    <script src="../scripts/empty-state.js"></script>
+    <script src="../scripts/account.js"></script>
 </body>
 </html>

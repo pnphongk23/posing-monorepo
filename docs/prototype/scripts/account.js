@@ -16,9 +16,11 @@
       if (accountName) accountName.textContent = 'Signed out';
       if (accountProvider) accountProvider.textContent = 'No active session';
       if (savedShortcut) savedShortcut.hidden = true;
-      status.textContent = 'Signed out. Sign in again to access your Saved poses.';
-      status.hidden = false;
-      status.className = 'nb-state-message nb-state-message--success nb-account-status';
+        window.NBEmptyState.render(status, {
+          copy: 'Sign in again to access your Saved poses.',
+          state: 'success',
+          title: 'Signed out'
+        });
     });
   });
 })();

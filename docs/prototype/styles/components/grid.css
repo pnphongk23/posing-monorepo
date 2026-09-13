@@ -244,47 +244,8 @@
   justify-content: flex-end;
 }
 
-.nb-state-message {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--nb-space-sm);
-  padding: var(--nb-space-md);
-  margin-bottom: var(--nb-space-sm);
-  background-color: var(--nb-color-white);
-  border: var(--nb-border-thin);
-  border-radius: var(--nb-radius-medium);
-  font-size: var(--nb-type-body-size);
-  line-height: var(--nb-type-body-leading);
-}
-
-.nb-state-message[hidden] {
-  display: none;
-}
-
-.nb-state-message--error {
-  background-color: #fff4f5;
-}
-
-.nb-state-message--success,
 .nb-inline-notice {
   background-color: var(--nb-color-accent-green);
-}
-
-.nb-state-message strong {
-  font-size: var(--nb-type-heading-3-size);
-  font-weight: var(--nb-type-heading-3-weight);
-  line-height: var(--nb-type-heading-3-leading);
-  letter-spacing: var(--nb-type-heading-3-tracking);
-}
-
-.nb-state-message p {
-  margin: 0;
-  font-size: var(--nb-type-body-size);
-}
-
-.nb-state-message .nb-btn {
-  width: auto;
 }
 
 .nb-inline-notice {

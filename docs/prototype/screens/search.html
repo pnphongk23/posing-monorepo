@@ -8,7 +8,7 @@
   <link rel="stylesheet" href="../styles/reset.css">
   <link rel="stylesheet" href="../styles/base.css">
   <link rel="stylesheet" href="../styles/utilities.css">
-  <link rel="stylesheet" href="../styles/components.css">
+    <link rel="stylesheet" href="../styles/components.css?empty-state-1">
   <link rel="stylesheet" href="../styles/search.css">
 </head>
 <body>
@@ -52,7 +52,7 @@
         </div>
       </form>
 
-      <div id="search-state-message" class="nb-state-message nb-search-state" role="status" aria-live="polite" hidden></div>
+        <nb-empty-state id="search-state-message" class="nb-search-state" hidden></nb-empty-state>
 
       <div id="search-discovery" class="nb-search-discovery" aria-live="polite">
         <section class="nb-search-section" aria-labelledby="recent-heading">
@@ -103,10 +103,11 @@
   <script src="../scripts/tabs.js"></script>
   <script src="../scripts/progress.js"></script>
   <script src="../scripts/modal.js"></script>
-  <script src="../scripts/view-toggle.js"></script>
-  <script src="../scripts/button-press.js"></script>
-  <script src="../scripts/tab-bar.js"></script>
-  <script src="../scripts/app.js"></script>
+    <script src="../scripts/view-toggle.js"></script>
+    <script src="../scripts/button-press.js"></script>
+    <script src="../scripts/tab-bar.js"></script>
+    <script src="../scripts/empty-state.js"></script>
+    <script src="../scripts/app.js"></script>
   <script>
     initTabBar(null);
   </script>

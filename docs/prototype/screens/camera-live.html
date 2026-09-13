@@ -7,8 +7,9 @@
   <link rel="stylesheet" href="../styles/reset.css">
   <link rel="stylesheet" href="../styles/base.css">
   <link rel="stylesheet" href="../styles/utilities.css">
-  <link rel="stylesheet" href="../styles/components.css">
-  <link rel="stylesheet" href="../styles/components/camera-viewport.css?camera-scale-factor-2">
+    <link rel="stylesheet" href="../styles/components.css?empty-state-1">
+  <link rel="stylesheet" href="../styles/components/camera-viewport.css?camera-tools-popup-2">
+  <link rel="stylesheet" href="../styles/components/camera-guide.css?pose-picker-2">
 </head>
 <body class="nb-camera-screen">
   <div class="nb-phone nb-camera-phone">
@@ -40,22 +41,12 @@
             <div class="nb-camera-viewport__grid-line-v"></div>
           </div>
 
-          <div class="nb-camera-framing-guide" aria-hidden="true">
-            <span class="nb-camera-framing-guide__corner nb-camera-framing-guide__corner--tl"></span>
-            <span class="nb-camera-framing-guide__corner nb-camera-framing-guide__corner--tr"></span>
-            <span class="nb-camera-framing-guide__corner nb-camera-framing-guide__corner--bl"></span>
-            <span class="nb-camera-framing-guide__corner nb-camera-framing-guide__corner--br"></span>
-          </div>
+          <div id="camera-pose-reference" class="nb-camera-pose-reference" aria-hidden="true" hidden></div>
 
           <div class="nb-camera-viewport__top-controls">
             <button id="camera-close-btn" class="nb-btn nb-btn--compact-action nb-camera-action" aria-label="Close Camera">
               <span class="nb-btn__compact-surface nb-btn__compact-surface--white">
                 <svg><use href="#icon-close"></use></svg>
-              </span>
-            </button>
-            <button id="camera-settings-btn" class="nb-btn nb-btn--compact-action nb-camera-action nb-camera-viewport__dots-btn" aria-label="Open camera tools" aria-expanded="false" aria-controls="camera-settings-sheet">
-              <span class="nb-btn__compact-surface nb-btn__compact-surface--white">
-                <svg><use href="#icon-settings"></use></svg>
               </span>
             </button>
           </div>
@@ -70,36 +61,33 @@
             </button>
           </div>
 
-          <a href="pose-guide.html" class="nb-btn nb-btn--compact-action nb-camera-guide-chip nb-camera-viewport__profile-btn" aria-label="Choose a pose guide">
+          <button id="camera-settings-btn" type="button" class="nb-btn nb-btn--compact-action nb-camera-action nb-camera-viewport__dots-btn nb-camera-viewport__tools-btn" aria-label="Open camera tools" aria-expanded="false" aria-controls="camera-tools-menu">
+            <span class="nb-btn__compact-surface nb-btn__compact-surface--white">
+              <svg><use href="#icon-settings"></use></svg>
+            </span>
+          </button>
+
+          <button id="camera-guide-btn" type="button" class="nb-btn nb-btn--compact-action nb-camera-guide-chip nb-camera-viewport__profile-btn" aria-label="Choose a pose" aria-expanded="false" aria-controls="pose-picker-sheet">
             <span class="nb-btn__compact-surface nb-camera-guide-surface">
               <svg><use href="#icon-image"></use></svg>
             </span>
-          </a>
+          </button>
 
           <p id="camera-status" class="nb-camera-status" role="status" aria-live="polite" hidden></p>
 
-          <div id="camera-settings-sheet" class="nb-camera-settings-sheet" aria-hidden="true" hidden>
-            <button class="nb-camera-settings-sheet__backdrop" type="button" data-close-camera-settings aria-label="Close camera tools"></button>
-            <section class="nb-camera-settings-panel" role="dialog" aria-modal="true" aria-labelledby="camera-settings-title">
-              <div class="nb-camera-settings-panel__handle" aria-hidden="true"></div>
-              <header class="nb-camera-settings-panel__header">
-                <h2 id="camera-settings-title">Camera tools</h2>
-                <button type="button" class="nb-btn nb-btn--compact-action nb-camera-action" data-close-camera-settings aria-label="Close camera tools">
-                  <span class="nb-btn__compact-surface nb-btn__compact-surface--white">
-                    <svg><use href="#icon-close"></use></svg>
-                  </span>
-                </button>
-              </header>
-
-              <div class="nb-camera-settings-list">
-                <button type="button" class="nb-camera-setting-row" id="flash-row" aria-label="Flash Auto, tap to change">
+          <div id="camera-tools-menu" class="nb-camera-tools-menu" aria-hidden="true" hidden>
+            <section class="nb-camera-tools-panel" role="menu" aria-labelledby="camera-tools-title">
+              <h2 id="camera-tools-title" class="sr-only">Camera tools</h2>
+              <div class="nb-camera-tools-list">
+                <button type="button" class="nb-camera-setting-row" id="flash-row" role="menuitem" aria-label="Flash Auto, tap to change">
                   <span class="nb-camera-setting-row__label">
                     <svg><use href="#icon-flash"></use></svg>
                     <span>Flash</span>
                   </span>
                   <span class="nb-camera-setting-row__value" id="flash-value">Auto</span>
                 </button>
-                <div class="nb-camera-setting-row">
+
+                <div class="nb-camera-setting-row" role="group" aria-label="Grid">
                   <span class="nb-camera-setting-row__label">
                     <svg><use href="#icon-grid"></use></svg>
                     <span>Grid</span>
@@ -110,6 +98,36 @@
                     <span class="nb-switch__slider"></span>
                   </label>
                 </div>
+
+                <div class="nb-camera-tools-divider" data-pose-tools hidden aria-hidden="true"></div>
+                <section class="nb-camera-tools-section" data-pose-tools hidden aria-labelledby="camera-pose-tools-title">
+                  <h3 id="camera-pose-tools-title">Pose guide</h3>
+
+                  <button type="button" class="nb-camera-setting-row" id="pose-visibility-row" role="menuitem" aria-pressed="true" aria-label="Hide pose guide">
+                    <span class="nb-camera-setting-row__label"><span>Pose guide</span></span>
+                    <span class="nb-camera-setting-row__value" id="pose-visibility-value">Shown</span>
+                  </button>
+
+                  <label class="nb-camera-tool-slider-row" for="pose-opacity-slider">
+                    <span class="nb-camera-tool-slider-row__heading">
+                      <span>Opacity</span>
+                      <output id="pose-opacity-value" for="pose-opacity-slider">50%</output>
+                    </span>
+                    <input id="pose-opacity-slider" type="range" min="0.1" max="1" step="0.05" value="0.5" aria-label="Pose guide opacity 50 percent" aria-valuetext="50%">
+                  </label>
+
+                  <div class="nb-camera-tool-choice-row" role="group" aria-label="Pose line color">
+                    <span>Line color</span>
+                    <div class="nb-camera-tool-choices">
+                      <button type="button" class="nb-camera-tool-choice is-selected" id="pose-line-color-black" aria-pressed="true">Black</button>
+                      <button type="button" class="nb-camera-tool-choice" id="pose-line-color-white" aria-pressed="false">White</button>
+                    </div>
+                  </div>
+
+                  <button type="button" class="nb-camera-setting-row nb-camera-setting-row--action" id="clear-pose-row" role="menuitem">
+                    <span class="nb-camera-setting-row__label"><span>Clear pose</span></span>
+                  </button>
+                </section>
               </div>
             </section>
           </div>
@@ -139,6 +157,39 @@
             <svg><use href="#icon-flip"></use></svg>
           </button>
         </div>
+
+        <div id="pose-picker-sheet" class="nb-pose-picker-sheet" aria-hidden="true" hidden>
+          <button class="nb-pose-picker-sheet__backdrop" type="button" data-close-pose-picker aria-label="Close pose picker"></button>
+          <section class="nb-pose-picker-panel" role="dialog" aria-modal="true" aria-labelledby="pose-picker-title">
+            <div class="nb-pose-picker-panel__handle" aria-hidden="true"></div>
+            <header class="nb-pose-picker-panel__header">
+              <div>
+                <h2 id="pose-picker-title">Choose a pose</h2>
+              </div>
+              <button type="button" id="pose-picker-close" class="nb-btn nb-btn--compact-action nb-camera-action" data-close-pose-picker aria-label="Close pose picker">
+                <span class="nb-btn__compact-surface nb-btn__compact-surface--white">
+                  <svg><use href="#icon-close"></use></svg>
+                </span>
+              </button>
+            </header>
+
+            <form id="pose-picker-search-form" class="nb-pose-picker-search" role="search">
+              <label for="pose-picker-search-input" class="sr-only">Search poses</label>
+              <div class="nb-pose-picker-search__field">
+                <svg aria-hidden="true"><use href="#icon-search"></use></svg>
+                <input id="pose-picker-search-input" class="nb-search-bar__input" type="search" placeholder="Search poses" autocomplete="off" enterkeyhint="search">
+                <button id="pose-picker-search-clear" class="nb-pose-picker-search__clear" type="button" aria-label="Clear search" hidden>
+                  <svg aria-hidden="true"><use href="#icon-close"></use></svg>
+                </button>
+              </div>
+            </form>
+
+            <div class="nb-pose-picker-scroll">
+                <nb-empty-state id="pose-picker-state" class="nb-pose-picker-state" hidden></nb-empty-state>
+              <div id="pose-picker-grid" class="nb-grid--masonry" aria-live="polite"></div>
+            </div>
+          </section>
+        </div>
       </main>
     </div>
 
@@ -149,12 +200,14 @@
 
   <script src="../scripts/icons.js"></script>
   <script src="../scripts/fixtures.js"></script>
-  <script src="../scripts/toggle.js?camera-scale-factor-1"></script>
+  <script src="../scripts/toggle.js?camera-tools-popup-1"></script>
   <script src="../scripts/tabs.js"></script>
   <script src="../scripts/progress.js"></script>
-  <script src="../scripts/modal.js?camera-redesign-1"></script>
-  <script src="../scripts/view-toggle.js"></script>
-  <script src="../scripts/button-press.js"></script>
-  <script src="../scripts/app.js?camera-scale-factor-1"></script>
+  <script src="../scripts/modal.js?camera-tools-popup-1"></script>
+    <script src="../scripts/view-toggle.js"></script>
+    <script src="../scripts/button-press.js"></script>
+    <script src="../scripts/empty-state.js"></script>
+    <script src="../scripts/guide-picker.js?pose-picker-2"></script>
+  <script src="../scripts/app.js?camera-tools-popup-1"></script>
 </body>
 </html>

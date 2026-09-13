@@ -137,7 +137,7 @@
     .photo-frame.is-deleted .empty-photo { display: grid; }
     .empty-photo svg { width: 34px; height: 34px; }
     .empty-photo strong { font-size: 16px; }
-    .empty-photo span { max-width: 220px; color: var(--ink-muted); font-size: 13px; line-height: 1.4; }
+      .empty-photo p { max-width: 220px; margin: 0; color: var(--ink-muted); font-size: 13px; line-height: 1.4; }
 
     .action-tray {
       padding: 18px 12px calc(16px + env(safe-area-inset-bottom));
@@ -250,11 +250,9 @@
       <div class="photo-frame" id="photo-frame">
           <img class="photo" id="photo" src="https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&amp;fit=crop&amp;q=80&amp;w=800" alt="Captured portrait in a relaxed hand-on-hip pose" width="800" height="1423">
         <div class="skeleton" aria-hidden="true"><div class="skeleton__block"></div></div>
-        <div class="empty-photo" id="empty-photo">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9" r="1.5"/><path d="m21 15-4.5-4.5L8 19"/></svg>
-          <strong id="empty-title">Photo unavailable</strong>
-          <span id="empty-copy">This local file is missing, but the gallery record is still safe to recover.</span>
-        </div>
+          <nb-empty-state class="empty-photo" id="empty-photo">
+            <svg data-empty-state-visual viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9" r="1.5"/><path d="m21 15-4.5-4.5L8 19"/></svg>
+          </nb-empty-state>
       </div>
     </section>
 
@@ -291,14 +289,14 @@
     </div>
   </main>
 
-  <script>
+    <script src="../scripts/empty-state.js"></script>
+    <script>
     (() => {
       const params = new URLSearchParams(location.search);
       const state = params.get('state') || 'ready';
       const photoFrame = document.querySelector('#photo-frame');
       const photo = document.querySelector('#photo');
-      const emptyTitle = document.querySelector('#empty-title');
-      const emptyCopy = document.querySelector('#empty-copy');
+        const emptyPhoto = document.querySelector('#empty-photo');
       const dateMain = document.querySelector('#photo-date-main');
       const timeMain = document.querySelector('#photo-time-main');
       const saveButton = document.querySelector('#save-button');
@@ -335,15 +333,13 @@
         }
         if (state === 'missing') {
           photoFrame.classList.add('is-missing');
-          emptyTitle.textContent = 'Photo unavailable';
-          emptyCopy.textContent = 'This local file is missing, but the gallery record is still safe to recover.';
+            window.NBEmptyState.render(emptyPhoto, { copy: 'This local file is missing, but the gallery record is still safe to recover.', preserveVisual: true, state: 'error', title: 'Photo unavailable' });
           retryButton.hidden = false;
           setActionAvailability(false);
         }
         if (state === 'deleted') {
           photoFrame.classList.add('is-deleted');
-          emptyTitle.textContent = 'Photo deleted';
-          emptyCopy.textContent = 'The local record has been removed. Return to Gallery to continue.';
+            window.NBEmptyState.render(emptyPhoto, { copy: 'The local record has been removed. Return to Gallery to continue.', preserveVisual: true, state: 'error', title: 'Photo deleted' });
           setActionAvailability(false);
         }
       }
@@ -406,9 +402,10 @@
       document.addEventListener('keydown', (event) => {
         if (event.key === 'Escape' && scrim.classList.contains('is-visible')) document.querySelector('#cancel-delete').click();
       });
-      photo.addEventListener('error', () => {
-        photoFrame.classList.add('is-missing');
-        setActionAvailability(false);
+        photo.addEventListener('error', () => {
+          photoFrame.classList.add('is-missing');
+          window.NBEmptyState.render(emptyPhoto, { copy: 'This local file is missing, but the gallery record is still safe to recover.', preserveVisual: true, state: 'error', title: 'Photo unavailable' });
+          setActionAvailability(false);
         retryButton.hidden = false;
         showToast('Photo file unavailable', true);
       });
