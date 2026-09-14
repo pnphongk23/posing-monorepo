@@ -4,7 +4,15 @@ import SwiftUI
 import UIKit
 
 enum GalleryMediaPath {
-    static func fileURL(for imagePath: String, captureStorage: CaptureImageStorage = CaptureImageStorage()) -> URL {
+    /// One shared resolver. `CaptureImageStorage.init` resolves the Application Support directory and
+    /// `createDirectory`s it, so building a fresh instance per gallery item was a filesystem call per
+    /// photo for no benefit.
+    private static let sharedCaptureStorage = CaptureImageStorage()
+
+    static func fileURL(
+        for imagePath: String,
+        captureStorage: CaptureImageStorage = GalleryMediaPath.sharedCaptureStorage
+    ) -> URL {
         if imagePath.hasPrefix("/") {
             return URL(fileURLWithPath: imagePath)
         }
@@ -100,149 +108,6 @@ enum GalleryDateParser {
 protocol GalleryStoring: Sendable {
     func photos() async throws -> [GalleryItem]
     func delete(id: Int64) async throws
-}
-
-/// A deterministic, offline gallery source used when a fresh local database has no captures.
-/// The bytes are owned by the Gallery feature and materialized into the app's cache directory,
-/// so local demo state never depends on a network URL.
-struct GalleryFixtureStore: GalleryStoring, Sendable {
-    private struct FixtureDefinition: Sendable {
-        let id: Int64
-        let filename: String
-        let title: String
-        let createdAt: Date
-        let imageBase64: String
-    }
-
-    private let items: [GalleryItem]
-
-    init(now: Date = Date(), directoryURL: URL? = nil, fileManager: FileManager = .default) throws {
-        let directory = directoryURL
-            ?? (fileManager.urls(for: .cachesDirectory, in: .userDomainMask).first
-                ?? URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true))
-                .appendingPathComponent("aipose/gallery-fixtures", isDirectory: true)
-        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
-
-        var materialized: [GalleryItem] = []
-        for fixture in Self.definitions(relativeTo: now) {
-            guard let imageData = Data(base64Encoded: fixture.imageBase64) else {
-                throw GalleryFixtureStoreError.invalidImageData(fixture.filename)
-            }
-            let fileURL = directory.appendingPathComponent(fixture.filename)
-            do {
-                try imageData.write(to: fileURL, options: .atomic)
-            } catch {
-                throw GalleryFixtureStoreError.unableToWriteImage(fileURL, underlying: error)
-            }
-            materialized.append(
-                GalleryItem(
-                    id: fixture.id,
-                    fileURL: fileURL,
-                    createdAt: fixture.createdAt,
-                    title: fixture.title
-                )
-            )
-        }
-        items = materialized
-    }
-
-    func photos() async throws -> [GalleryItem] { items }
-
-    func delete(id: Int64) async throws {
-        // Fixtures are a stable baseline; GalleryViewModel owns the current-screen removal.
-    }
-
-    private static func definitions(relativeTo now: Date) -> [FixtureDefinition] {
-        let calendar = Calendar.current
-        return [
-            FixtureDefinition(
-                id: -101,
-                filename: "gallery-fixture-dancing.png",
-                title: "Dancing Match",
-                createdAt: date(dayOffset: 0, hour: 10, minute: 30, relativeTo: now, calendar: calendar),
-                imageBase64: dancingImage
-            ),
-            FixtureDefinition(
-                id: -102,
-                filename: "gallery-fixture-stretching.png",
-                title: "Stretching Match",
-                createdAt: date(dayOffset: 0, hour: 9, minute: 15, relativeTo: now, calendar: calendar),
-                imageBase64: stretchingImage
-            ),
-            FixtureDefinition(
-                id: -103,
-                filename: "gallery-fixture-warrior.png",
-                title: "Warrior Match",
-                createdAt: date(dayOffset: 0, hour: 8, minute: 0, relativeTo: now, calendar: calendar),
-                imageBase64: warriorImage
-            ),
-            FixtureDefinition(
-                id: -104,
-                filename: "gallery-fixture-jumping.png",
-                title: "Jumping Match",
-                createdAt: date(dayOffset: 0, hour: 7, minute: 30, relativeTo: now, calendar: calendar),
-                imageBase64: jumpingImage
-            ),
-            FixtureDefinition(
-                id: -105,
-                filename: "gallery-fixture-portrait.png",
-                title: "Portrait Match",
-                createdAt: date(dayOffset: -1, hour: 17, minute: 45, relativeTo: now, calendar: calendar),
-                imageBase64: portraitImage
-            ),
-            FixtureDefinition(
-                id: -106,
-                filename: "gallery-fixture-sitting.png",
-                title: "Sitting Match",
-                createdAt: date(dayOffset: -1, hour: 16, minute: 30, relativeTo: now, calendar: calendar),
-                imageBase64: sittingImage
-            ),
-        ]
-    }
-
-    private static func date(dayOffset: Int, hour: Int, minute: Int, relativeTo now: Date, calendar: Calendar) -> Date {
-        guard let day = calendar.date(byAdding: .day, value: dayOffset, to: now),
-              let date = calendar.date(bySettingHour: hour, minute: minute, second: 0, of: day) else {
-            return now
-        }
-        return date
-    }
-
-    // Small deterministic PNG gradients keep the fixture local while still exercising real image decoding.
-    private static let dancingImage = "iVBORw0KGgoAAAANSUhEUgAAAGAAAACAEAIAAAArLieuAAAB6ElEQVR42u3d0Y2DMBAEUEdKfymSFuAnKQy+4tSAV8rI8nslnFY7O3DHPXp/vbatwZBn39v1ePtBYIBIDVD7+EEwOEDfwwZChBEcoNMAMR5he7uaAUKEkRsgLYzxAeoijNoNJMIY30CeA+GIRo1HC2PNAfIkGi2MYIS5gdDCCA2Q50CUa7wWhgjDAKHGo8bDzQhzRFOIMK8yKGwgz4FwA6HGo8azaoRpYYgwRBg2EKsN0KHGYwMRvIFO78KwgcgNkBsINZ7UBuoGCBFGKsIOv5GIFoYBwg3EkjXeL9UjwkgOkBZGIcLcQBQ2kL8Lww2ECMMRjQgDA4QbiIk2kFcZFAbIcyCqEaaFUTqi3UBoYRgg1HhsILg7QFoYwxHmORDFDXS6gXADkWthBojSBhJhaGGkBsj3gXADEdtAvhONGk82whzR2ECkBsirDLQwRBizDpAIY3yAfCcaNxBuINxAiDAQYfx3gPzPVNxApG4gfxeGGwgRhhrPqhGmheEGIhZhbiBsIEID5DkQxQ3kS/UUbyAtDDcQBogZI6yr8dhAJAfIEc1whHkORHUDuYFwA2GAmLLGe5VB9QbSwhBhpCLMAFHYQL4TjQjDADHxDaSFUarxNhAijFSEeRKNDURqgDwHQgtDhKHGs54fDNi5Vwi7q/cAAAAASUVORK5CYII="
-    private static let stretchingImage = "iVBORw0KGgoAAAANSUhEUgAAAGAAAACAEAIAAAArLieuAAACE0lEQVR42u3dwW3DMBAEQBlIBXGP7tcVJE+nCdI15PaxIDxTQrC4W4qSc9v7+Xw8Lhj5un733/XtD8E0QD/7JUBkE+juD8F8Allh6ED0AqQDYYVRCtBWokk70M0EYr7Clg6EUxjNEq0DYQLRCpAORLjCBIhpgLYVRtyBlGiCFaYD4RSGEs2ZE2gJENEKeynRRCvMbTzjAHkOhFMY1RWmA2ECUSzRAkR2jBcgrDB6K0yJZhqg7SoDHQinMJRolGj4fwdyG48VhhLNgQHy+0DEHcgEwgqjNYFcZWACUe1ASjRBgEwgrDBKAfJdGOkE8hyIsAMp0SQBchuPFYZjPEcGyFUG2QpTopkHaHudg3gCCRBKNL0A6UAEK0wHwgpDgHAK4+MCtL3SSjaBltt4dCAEiENLtOdAhBNIicYKo7XCBIh5gLwPRD6BdCB0IASIE1fY0oEwgWgGSIkmOIX5pXrmAfL7QKQTSIBQoukFyCutWGFYYZhAfOAx3lUG6QpTorHCUKI5MkA6EOEK04FIVpjbeJRoOgHyWQ9OYSjRHDuB/K8MshWmA+EUhhLNoRPIK63MA+SzHqwwlGhOPsbrQCQrzG08VhitCeQqg2wCucpgHqDtsx7SEm0CoURTm0A6EFYYzRWmRGMC0ZpAOhDzAHkfiHCFLR2IrES7jScp0ToQTmEUV5gAkU0gJZpgAulAzAPkORCJN658gFcZ+Vf6AAAAAElFTkSuQmCC"
-    private static let warriorImage = "iVBORw0KGgoAAAANSUhEUgAAAGAAAACAEAIAAAArLieuAAACIklEQVR42u3dW20DQRBE0R0pMgSHQELNoWVUobPhMPejNco5EKxWdfX6tR6P39/3+4ItH9fzel1fXgh2B+jzfl3fXgj2E+hnSSD2B0gCUQdIArHfgS4JhARisEQbIJRopjrQ/XLGU1aYBGJ/gJYSTS7REojSgSQQ7QozQCjRjCWQM57QgZRodCBGB0gCkUq0BGK/A93ejWd/gJYzHmc8SjSndiAlmpZASjTxjLfCCGe8FYYSzeAKc8bTSrQEwhnPXAcyQOwO0FKiqSVaAhE6kBKNM57REi2BcIUx1IGUaFoCKdE441GiObMD+VA9YYB8rYdeoiUQSjRjHcgKo11hEoi0wiQQYYX5wzniCpNAuMJQojmxAynRtATyJJr9AfK1HnKJdsYTOpAEwhmPEs2pA2SFUTqQFYYEYrBEezeemEAGiP0OZIURBmh5DoQSzWiJlkDoQMytMGc8ZYUp0SjRjHUgJRoJxOgASSDCCpNAOOMZGqDlSTRKNIMdSIkmJZASjTOewQTyXxm0DuSMxwpDiUYC8f86kBJNGKAlgcgrTAJRSrQzntCBrDBaAinROONRojmzA/liIRKI0RItgShnvOdAWGHMDJCfuEMCMXrGK9HEBDJAWGEMDZCPc5A60O3deFoC6UDoQLjCOLIDWWGEAVpPJRpnPEo0h3YgJZq4wiQQZYV5N56YQAaI1IGsMMoV5oxHiUaJ5sgOJIEIA+Qn7ij+ADh7oJgyIc9wAAAAAElFTkSuQmCC"
-    private static let jumpingImage = "iVBORw0KGgoAAAANSUhEUgAAAGAAAACACAIAAAB7vvvtAAACg0lEQVR42u3CeU/IAQAG4PeDuOece85VaqVEqZWQUitFSpTffZQSpRwlSq2UKLVSNMYwxhhjjDHGGGOMMcYY869v8H6C99mDiDGGkogcayiJqHGGkogebyiJmAmGkoidaCiJuEmGkoifbCiJhCmGkoicaiiJldMMJZE03VASyTMMJZEy01QSqbNMJZE221QS6XNMJZEx11QSa+eZSmL9fFNJZC4wlUTWQlNJZC8ylUTOYlNJ5C4xlUTeUlNJ5EdYSqIg0lIShVGWktiyzFISRdGWkiiOsZRESaylJErjLCWxfbmlJMriLSVRnmApCWOFpSTMREtJ2KtsJeEk2UrCS7aVhL/aVhJBiq0kKlJtJVGZZiuJqnRbSVSvsZVETYatJPastZVE7TpbSdRlOkqifoOjJBqyHCVxINtREgc3OkqiMcdREk25jpJoznOUxJF8R0m0bHKURGuBoyTaCh0l0b7ZURIdRa6S6NzqKomuYldJdJe4SqJnm6skTpa6SqJ3h6sk+spcJdFf7iqJgZ2ukhg0XCUxZLpKYthylcSI4ymJc66nJEY9T0mc9z0lcSHwlMTF0FMSlyo9JXF5l6ckrlR5SuJqtackru32lMT1Gk9J3NjrK4mbtb6SuFXnK4nb+3wlcafeVxJ3G3wlcW+/ryTuH/SVxINDvpJ42OgriUdNvpJ4fNhXEk+afSXx9GigJJ61BErieWugJF4cC5TEy7ZASbxqD5TE645ASbzpDJTE2+OBknjXFSiJ992BkvhwIlASH3sCJfHpVKgkPveGSuJLX6gkvp4OlcS3/lBJfB8IlcSPwVBJ/BwKlcSvM6GS+D0cKok/I6GS+Hs2VBL/RiuU/A/Yvn0sDWD9EgAAAABJRU5ErkJggg=="
-    private static let portraitImage = "iVBORw0KGgoAAAANSUhEUgAAAGAAAACAEAIAAAArLieuAAACLUlEQVR42u3cUW3DUBBE0WepWFoKARWjCI4EYTi0GPrux8rKORAqa3amjnw8Hrfb+71gy9fvfb2Ob38INh+gdR6v9eMPwXYCHa8lgdhOoPt6SiAkEFMdaOlASCAGH6BDAhFKtAQiJNB5PD1AhATyj0RSB3LCSDNeAhETyMtU0oyXQJQSbYVRZrxXGdQZL4FIM14CsX/CJBDxhJnxOGGY8Vy1A0kg9hPIy1RSB5JA1BItgdg+YaffRNNOmBWGEo0ZjwTCjIf/PkBephJmvM+7UE+YBGK/ROtApASywkgdSAIhgTDjueoJM+NxwjDjkUB83gNkxpNPmAQinLCn30RTZrwEoiSQB4jUgXxcAQnE3IyXQLQZ//QylXbCJBCpREsg9juQBEICYcbjhPGRJ8yMx4xnLIF0IFIH8ioDCcRcB5JAtBLtK62EE+Y70eQTJoFQojHjuWSJlkDEEyaBCCXay1TajJdA6EBMdSArDAnE2AN0+k80bcb7SivthJnxhBmvRKNEM9iBJBAlgaww0oy3wkgnTAJhxjM345VolGjMeCQQZjz8+4RZYbQTJoFIJVoCETqQBMIKY+6E+T4Q5YQp0ZjxzHUgJZqUQEo0ZjyDM94Ko5VoCUQr0RKI7QQ6lxmPGc9kB5JA7M94rzJoJ8yMp5wwCUQs0VYYYcZbYaQE8jKVeMIkEOGEeZlKTSAPEPsz3gkjlmgzHjMeHYhrnjCfdyGWaAnEdgL5OQcSiCl/fxblfHCuyR8AAAAASUVORK5CYII="
-    private static let sittingImage = "iVBORw0KGgoAAAANSUhEUgAAAGAAAACACAIAAAB7vvvtAAACVklEQVR42u3QVVqWYRQF0D0QKQGREglBUEBBVEAklBIwru3u7u7u7u7u7taRnPd45TeC/U9gP88awcK/v+OEgP8ZKwT89xgh4L/GCAH/OVoI+I/RQsC/dwkB/9YlRBTUKQT8a6cQ8C8dQsA/dwgB/zRKCPjHdiHgH9qFiILahIC/bxMC/q5VCPjbViHgb1qEgL9uEQL+qlkI+MtmIaKgkULAX4wQAv58hBDwZ01CwJ82CQF/0igE/HGjEFFQgxDwRw1CwB/WCwF/UC8E/P5wIeD36oSA360TAn5nmBAKihl0u1YI+K1aIeA3a4SA36gRAuF6tRAI16qFiIKGCoFwdagQCFeGCIFwebAQCJcGC4FwsUoIhAtVQiCcHySEgmIGnasUAuFspRAIZyqEQDhdIQTCqYFCIJwcIISCYgadKBcC4Xi5EAjHyoRAOFomBMKRUiEQDpcKgXCovxAKihl0sJ8QCAdKhEDYXyIEwr5iIRD2FguBsKevEAqKGbS7SAiEXUVCIOwsFAJhR6EQCNv7CIGwrUAIhK0FQkRB+UIgbMkXArY5TwjYpjwhYBtzhYBtyBUCtr63EAqKGbQuRwjY2hwhYGt6CQFbnS0EbFW2ELCVWULAVmQJEQVlCgFbnikEbFmGELClGULAlqQLAVucLgRsUU8hoqA0IWAL04SALeghBGx+DyFg81KFgM1NFQI2J0UI2OwUIaKgZCFgs5KFgM3sLgRsRpIQsOlJQsCmJQoBm5ooRBSUIARsSoIQsMnxQsAmxQsBmxgnBGxCnBCw8d2EUFAM/wF1lm5J2sp+3AAAAABJRU5ErkJggg=="
-}
-
-enum GalleryFixtureStoreError: LocalizedError {
-    case invalidImageData(String)
-    case unableToWriteImage(URL, underlying: Error)
-
-    var errorDescription: String? {
-        switch self {
-        case .invalidImageData(let filename):
-            return "Invalid gallery fixture image: \(filename)"
-        case .unableToWriteImage(let url, let underlying):
-            return "Unable to materialize gallery fixture at \(url.lastPathComponent): \(underlying.localizedDescription)"
-        }
-    }
-}
-
-struct GalleryStoreWithFallback: GalleryStoring, Sendable {
-    let primary: any GalleryStoring
-    let fallback: any GalleryStoring
-
-    func photos() async throws -> [GalleryItem] {
-        let primaryItems = try await primary.photos()
-        return primaryItems.isEmpty ? try await fallback.photos() : primaryItems
-    }
-
-    func delete(id: Int64) async throws {
-        try await primary.delete(id: id)
-    }
 }
 
 struct EmptyGalleryStore: GalleryStoring {

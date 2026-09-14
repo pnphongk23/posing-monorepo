@@ -146,10 +146,18 @@ struct FeatureStateView: View {
                 .frame(maxWidth: Self.copyMaxWidth, alignment: .leading)
                 .fixedSize(horizontal: false, vertical: true)
             if let actionTitle, let action {
-                Button(actionTitle, action: action)
-                    .buttonStyle(NeoButtonStyle(fill: AIPoseColor.surface))
-                    .fixedSize(horizontal: true, vertical: false)
-                    .padding(.top, 2)
+                // `NeoButtonStyle` is shared app-wide and carries no horizontal padding, so the
+                // state card's action used to hug the label exactly — glyphs sat on the 2pt border
+                // and the 4pt shadow drew a second box beside it. `.nb-btn` (`components/button.css`)
+                // is `padding: var(--nb-space-compact) var(--nb-space-md)` — 12pt vertical, 16pt
+                // horizontal — so the inline padding belongs here at the call site, not in the style.
+                Button(action: action) {
+                    Text(actionTitle)
+                        .padding(.horizontal, 16)
+                }
+                .buttonStyle(NeoButtonStyle(fill: AIPoseColor.surface))
+                .fixedSize(horizontal: true, vertical: false)
+                .padding(.top, 2)
             }
         }
         .padding(Self.contentPadding)

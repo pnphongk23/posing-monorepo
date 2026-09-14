@@ -22,29 +22,26 @@ enum GalleryStoreBootstrap: Sendable {
         }
     }
 
-    /// Launch stays cheap: this used to open the database (locator probe + pool + migrations) and
-    /// materialise the six fixture images right here, inside `didFinishLaunching` on the main
-    /// thread. Resolving is now deferred to the first `photos()` call, which is a non-isolated async
-    /// entry point, so the work happens off the main thread while the gallery shows its loading
-    /// state. Measured open+migrate was 3-9ms and fixture materialisation 1.6ms — small, but pure
-    /// launch-path blocking work that has no business being on the critical path.
+    /// Launch stays cheap: this used to open the database (locator probe + pool + migrations) right
+    /// here, inside `didFinishLaunching` on the main thread. Resolving is now deferred to the first
+    /// `photos()` call, which is a non-isolated async entry point, so the work happens off the main
+    /// thread while the gallery shows its loading state. Measured open+migrate was 3-9ms — small, but
+    /// pure launch-path blocking work that has no business being on the critical path.
     static func make() -> GalleryStoreBootstrap {
         .database(DeferredGalleryStore())
     }
 
     /// The blocking resolution that used to live in `make()`. Never call this from a UI path.
+    ///
+    /// There used to be a fixture fallback here: an empty database showed six fake photos, and
+    /// `delete(id:)` could never remove them because the next read saw an empty primary and handed
+    /// the fixtures back. A genuinely empty database now reads as empty, and a database that cannot
+    /// be opened reports why instead of hiding behind demo content.
     static func resolveBackend() -> any GalleryStoring {
         do {
-            let database = try AppDatabase()
-            let databaseStore = DatabaseGalleryStore(database: database)
-            let fixtureStore = try GalleryFixtureStore()
-            return GalleryStoreWithFallback(primary: databaseStore, fallback: fixtureStore)
+            return DatabaseGalleryStore(database: try AppDatabase())
         } catch {
-            do {
-                return try GalleryFixtureStore()
-            } catch let fixtureError {
-                return IntegrationBlockedGalleryStore(reason: "database: \(error); fixtures: \(fixtureError)")
-            }
+            return IntegrationBlockedGalleryStore(reason: "database: \(error)")
         }
     }
 }

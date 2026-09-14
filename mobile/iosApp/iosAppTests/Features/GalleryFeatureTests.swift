@@ -48,41 +48,6 @@ final class GalleryFeatureTests: XCTestCase {
         XCTAssertTrue(message.contains("simulator-db"))
     }
 
-    @MainActor func testGalleryFixturesProvideNonEmptyAllAndTodayWithLoadedImages() async throws {
-        let now = Date()
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("GalleryFeatureTests-\(UUID().uuidString)", isDirectory: true)
-        defer { try? FileManager.default.removeItem(at: directory) }
-
-        let store = try GalleryFixtureStore(now: now, directoryURL: directory)
-        let items = try await store.photos()
-
-        XCTAssertEqual(items.count, 6)
-        XCTAssertEqual(
-            Set(items.map(\.title)),
-            ["Dancing Match", "Stretching Match", "Warrior Match", "Jumping Match", "Portrait Match", "Sitting Match"]
-        )
-        XCTAssertEqual(
-            items.filter { Calendar.current.isDate($0.createdAt, inSameDayAs: now) }.count,
-            4
-        )
-        for item in items {
-            XCTAssertTrue(FileManager.default.fileExists(atPath: item.fileURL.path))
-            let image = try XCTUnwrap(UIImage(contentsOfFile: item.fileURL.path))
-            XCTAssertGreaterThan(image.size.width, 0)
-            XCTAssertGreaterThan(image.size.height, 0)
-        }
-
-        let model = GalleryViewModel(store: store)
-        await model.load()
-        guard case .loaded(let allItems) = model.state else { return XCTFail("Expected loaded All state") }
-        XCTAssertEqual(allItems.count, 6)
-        model.timeFilter = .today
-        model.applyFilter()
-        guard case .loaded(let todayItems) = model.state else { return XCTFail("Expected loaded Today state") }
-        XCTAssertEqual(todayItems.count, 4)
-    }
-
     func testGalleryGridContractUsesDenseThreeColumnLayout() {
         XCTAssertEqual(GalleryGridContract.columnCount, 3)
         XCTAssertEqual(GalleryGridContract.spacing, 3)
@@ -120,18 +85,6 @@ final class GalleryFeatureTests: XCTestCase {
         XCTAssertEqual(sections.first?.items.count, 4)
     }
 
-    @MainActor func testGalleryFixtureSectionsSplitIntoTodayAndYesterday() async throws {
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("GallerySectionTests-\(UUID().uuidString)", isDirectory: true)
-        defer { try? FileManager.default.removeItem(at: directory) }
-
-        let model = GalleryViewModel(store: try GalleryFixtureStore(now: Date(), directoryURL: directory))
-        await model.load()
-
-        XCTAssertEqual(model.dateSections.map(\.label), ["TODAY", "YESTERDAY"])
-        XCTAssertEqual(model.dateSections.map { $0.items.count }, [4, 2])
-    }
-
     /// 4 items on the current day + 2 items on the previous day, anchored at noon so the
     /// TODAY/YESTERDAY buckets stay stable across a midnight run boundary.
     private func daySpreadItems(now: Date? = nil) -> [GalleryItem] {
@@ -161,21 +114,6 @@ final class GalleryFeatureTests: XCTestCase {
 
     func testGalleryDetailPresentationUsesCreamV2Contract() {
         XCTAssertEqual(GalleryDetailPresentation.styleVersion, 2)
-    }
-
-    @MainActor func testGalleryStoreFallsBackToFixturesWhenPrimaryIsEmpty() async throws {
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("GalleryFallbackTests-\(UUID().uuidString)", isDirectory: true)
-        defer { try? FileManager.default.removeItem(at: directory) }
-
-        let fallback = try GalleryFixtureStore(directoryURL: directory)
-        let store = GalleryStoreWithFallback(primary: EmptyGalleryStore(), fallback: fallback)
-        let model = GalleryViewModel(store: store)
-        await model.load()
-
-        guard case .loaded(let items) = model.state else { return XCTFail("Expected fixture fallback") }
-        XCTAssertEqual(items.count, 6)
-        XCTAssertEqual(items.first?.title, "Dancing Match")
     }
 
     /// The sheet must never be handed the Application Support path (see `GallerySharePreparation`).

@@ -107,23 +107,6 @@ final class PerformanceBaselineTests: XCTestCase {
         }
     }
 
-    /// The gallery's fallback store materialises its images on disk. `GalleryStoreBootstrap.make()`
-    /// runs this at launch, on the main thread, inside `AppDelegate.didFinishLaunching`.
-    func testGalleryFixtureStoreMaterialisationCost() async throws {
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("perf-fixtures-\(UUID().uuidString)", isDirectory: true)
-        defer { try? FileManager.default.removeItem(at: directory) }
-        var store: GalleryFixtureStore?
-        let duration = ms { store = try? GalleryFixtureStore(directoryURL: directory) }
-        let items = ((try? await store?.photos()) ?? []) ?? []
-        print("PERF galleryFixtureStore.init(ms) = \(String(format: "%.1f", duration))  items = \(items.count)")
-        for item in items.prefix(8) {
-            let size = (try? FileManager.default.attributesOfItem(atPath: item.fileURL.path)[.size] as? NSNumber)??.intValue ?? 0
-            let dims = (UIImage(contentsOfFile: item.fileURL.path)).map { "\(Int($0.size.width))x\(Int($0.size.height))" } ?? "?"
-            print("PERF   fixture \(item.fileURL.lastPathComponent) bytes=\(size) px=\(dims)")
-        }
-    }
-
     /// Answers "why isn't the image cached by its URL alone?" with the library's real behaviour.
     ///
     /// Kingfisher keys the cache on the **image URL** and appends the decode size:
