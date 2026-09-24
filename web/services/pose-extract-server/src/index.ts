@@ -45,7 +45,9 @@ async function main(): Promise<void> {
     accountStore,
     supabaseUrl: env.SUPABASE_URL,
     supabaseAnonKey: env.SUPABASE_ANON_KEY,
+    supabaseServiceRoleKey: env.SUPABASE_SERVICE_ROLE_KEY,
     supabaseJwtKeyId: env.SUPABASE_JWT_KEY_ID,
+    r2PublicUrl: env.R2_PUBLIC_URL,
     backendPublicUrl: env.BACKEND_PUBLIC_URL,
     pendingAuthStore: new PendingAuthStore(),
     savedStore

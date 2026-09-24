@@ -1,4 +1,4 @@
-# AI Pose documentation
+# posing documentation
 
 ## Project map
 

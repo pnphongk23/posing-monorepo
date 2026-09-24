@@ -1,15 +1,17 @@
-# Snap Pose — Terms of Service
+# posing — Terms of Service
+
+> Published: https://sites.google.com/view/posingapp/terms-of-service
 
 **Effective date:** September 6, 2026
 **Last updated:** September 6, 2026
 
-These Terms of Service ("Terms") govern your use of the Snap Pose mobile application and related services (the "Service"). By using the Service, you agree to these Terms. If you do not agree, please do not use the Service.
+These Terms of Service ("Terms") govern your use of the posing mobile application and related services (the "Service"). By using the Service, you agree to these Terms. If you do not agree, please do not use the Service.
 
 Questions and support: **jamenguyen27021996@gmail.com**
 
 ## 1. The Service
 
-Snap Pose provides pose-reference browsing, camera and gallery tools, AI-generated pose guides, curated Community content, saved poses, and optional Premium features. AI outputs are for creative and informational use only. They may be incomplete or inaccurate and are not medical, fitness, safety, or professional advice.
+posing provides pose-reference browsing, camera and gallery tools, AI-generated pose guides, curated Community content, saved poses, and optional Premium features. AI outputs are for creative and informational use only. They may be incomplete or inaccurate and are not medical, fitness, safety, or professional advice.
 
 We may modify, suspend, or discontinue part of the Service when reasonably necessary for maintenance, security, legal compliance, or product changes. We do not guarantee uninterrupted or error-free availability.
 
@@ -43,7 +45,7 @@ Refunds are handled through the applicable app store or payment provider's offic
 
 ## 6. Intellectual property
 
-The Service, including its software, design, trademarks, text, curated pose library, and non-user content, is owned by or licensed to Snap Pose and protected by applicable law. We grant you a limited, personal, non-transferable, non-exclusive license to use the Service for its intended purpose while you comply with these Terms.
+The Service, including its software, design, trademarks, text, curated pose library, and non-user content, is owned by or licensed to posing and protected by applicable law. We grant you a limited, personal, non-transferable, non-exclusive license to use the Service for its intended purpose while you comply with these Terms.
 
 ## 7. Privacy
 
@@ -55,7 +57,7 @@ To the maximum extent permitted by law, the Service and AI-generated outputs are
 
 ## 9. Limitation of liability
 
-To the maximum extent permitted by law, Snap Pose will not be liable for indirect, incidental, special, consequential, exemplary, or punitive damages, or for loss of data, profits, goodwill, or business arising from or related to the Service. Our total liability for claims relating to the Service will not exceed the amount you paid for the Service during the twelve months before the event giving rise to the claim, or the minimum amount required by applicable law if greater.
+To the maximum extent permitted by law, posing will not be liable for indirect, incidental, special, consequential, exemplary, or punitive damages, or for loss of data, profits, goodwill, or business arising from or related to the Service. Our total liability for claims relating to the Service will not exceed the amount you paid for the Service during the twelve months before the event giving rise to the claim, or the minimum amount required by applicable law if greater.
 
 ## 10. Suspension and termination
 

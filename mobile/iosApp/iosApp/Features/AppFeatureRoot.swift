@@ -91,7 +91,7 @@ struct AppFeatureRoot: View {
         // The dock floats at `bottom: 16pt + safe area` in the prototype, i.e. anchored to the
         // screen — not to the keyboard. Without this, the whole stack shrinks for the keyboard and
         // the dock ends up floating in the middle of the results grid while the user types.
-        .ignoresSafeArea(.keyboard, edges: .bottom)
+        .ignoresSafeArea([.container, .keyboard], edges: .bottom)
     }
 
     private func openCamera(with pose: NativePose) {

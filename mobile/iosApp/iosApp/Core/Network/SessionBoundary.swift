@@ -40,7 +40,9 @@ actor SessionBoundary {
 
     /// Live session events. Deliberately not replayed: a late subscriber converges by
     /// reading `hasStoredSession()`/`currentGeneration` (which is what `AccountSessionModel.start()`
-    /// does), so a stale replay cannot restart a load that already finished.
+    /// does), so a stale replay cannot restart a load that already finished. Nothing is lost to a
+    /// late subscriber inside one launch either, because `observeSessions` now registers before it
+    /// awaits `onStart` and the stream buffers the newest event meanwhile.
     func events() -> AsyncStream<SessionEvent> {
         let id = nextObserverID
         nextObserverID += 1
@@ -54,6 +56,16 @@ actor SessionBoundary {
         }
         return stream
     }
+
+    #if DEBUG
+    /// Test support: how many live subscribers `events()` currently holds.
+    ///
+    /// `events()` is deliberately not replayed, so a test that mutates the session before its
+    /// projection has subscribed loses the event and can only fail by timing out. This lets a test
+    /// wait for the subscription (a real synchronization point) instead of sleeping and hoping.
+    /// No production behaviour depends on it.
+    func subscriberCountForTests() -> Int { observers.count }
+    #endif
 
     /// Establishes a backend-issued session and invalidates stale reads.
     func saveCredentials(_ credentials: SessionCredentials) {
@@ -140,14 +152,23 @@ extension SessionBoundary {
     /// `onStart` runs once before the first event: launching with an already-stored session emits
     /// nothing, so a projection that only listened for events would never converge. `onEvent` then
     /// runs for every change until the returned task is cancelled.
+    ///
+    /// The subscription is registered *before* `onStart` is awaited (S4). Registering it after
+    /// left a window exactly as long as `onStart` — measured 2.2 ms when `onStart` is empty and
+    /// 302 ms when it awaits a read — in which `emit` found no subscriber and the event was lost;
+    /// the projection then sat on whatever `onStart` read instead of converging (FEAT-014 FR-005:
+    /// a signed-out context must not keep the previous account's rows). Registering first keeps the
+    /// ordering contract: events emitted while `onStart` is in flight land in the stream's existing
+    /// newest-only buffer and are handled after `onStart` returns, so nothing is dropped and no
+    /// replay machinery is added.
     @discardableResult
     nonisolated func observeSessions(
         onStart: @escaping @MainActor () async -> Void = {},
         onEvent: @escaping @MainActor (SessionEvent) async -> Void
     ) -> Task<Void, Never> {
         Task { @MainActor in
-            await onStart()
             let events = await self.events()
+            await onStart()
             for await event in events {
                 if Task.isCancelled { return }
                 await onEvent(event)

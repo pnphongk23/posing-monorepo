@@ -45,6 +45,7 @@
 		616DE68C034960C7053F8E35 /* AIPoseNavigation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 567850A063D54AAE95B3BEC5 /* AIPoseNavigation.swift */; };
 		6431F9D53B5E03561AB351B3 /* LegacyDatabaseCompatibilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31B8B5FE18422BFB70F0CC0B /* LegacyDatabaseCompatibilityTests.swift */; };
 		66C2873F999B9E2D6F6686BC /* RevenueCatAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7AFB0BE693C47B4ECDC70499 /* RevenueCatAdapter.swift */; };
+		68C01F1892B8891425FF101C /* AppleSignInTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FFBB65B1A5B1CB61A47C46D /* AppleSignInTests.swift */; };
 		6E5D6E01C11EB04A57F1558E /* SupportScreens.swift in Sources */ = {isa = PBXBuildFile; fileRef = 69F99C45485E02CD56C6E0C2 /* SupportScreens.swift */; };
 		6F97E6341D69FA7794C701DB /* CameraViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04EB53E66ACEF51BFBFAD6D4 /* CameraViewController.swift */; };
 		70F357B4617B371502C1404C /* PoseAPIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F268FEE9D95DFE81D66C708A /* PoseAPIService.swift */; };
@@ -59,6 +60,7 @@
 		8248ECED9F1A1DC7A59EBDF5 /* RuntimeConfigResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = E286C264229F73A6A9FF42D9 /* RuntimeConfigResolver.swift */; };
 		85EC64B6F6E7F3864625BB20 /* APIError.swift in Sources */ = {isa = PBXBuildFile; fileRef = 109560EA6993EA5DCD3440AF /* APIError.swift */; };
 		87DB43EFD90129A2CFB64805 /* PosesFeature.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8629798E4E2AFC175A0D19E /* PosesFeature.swift */; };
+		8C8EC5B13461D52698AF9850 /* AppleSignIn.swift in Sources */ = {isa = PBXBuildFile; fileRef = E62EEBF4311843B030F88E58 /* AppleSignIn.swift */; };
 		918893F6A3A4D3B860741BEC /* PaywallModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FFFEB0B6B2E4DD10BBAD259C /* PaywallModelTests.swift */; };
 		91FA61089DA34D6C20DEE23B /* FeatureStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 13014C50A5C1B9BA1364503E /* FeatureStateTests.swift */; };
 		948FDDAA86AAF97BF07F0C41 /* SignIn.swift in Sources */ = {isa = PBXBuildFile; fileRef = CAB8CF8FAA81E9DB7793CEFD /* SignIn.swift */; };
@@ -80,6 +82,7 @@
 		C87B4FA04BDA1DA04158D48E /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = A55143988C4C8F291BE72E9A /* GoogleService-Info.plist */; };
 		CA8C401300356B2C6D094555 /* APIModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86C8472C23144F2FED1429A9 /* APIModels.swift */; };
 		CF04F22368C53517D5A58EDD /* GalleryFeature.swift in Sources */ = {isa = PBXBuildFile; fileRef = 811A9C4FB4A1C31DF47FACC7 /* GalleryFeature.swift */; };
+		CF55B6715CD91131AC93BC60 /* DeleteAccountTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F66C1C6FBEC0AA6C57DC660E /* DeleteAccountTests.swift */; };
 		D140B0ADEB322D73048D1243 /* SessionBoundaryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50332EA7FC91E3A2C9A013F2 /* SessionBoundaryTests.swift */; };
 		D53B2AE891DDB2AE2BD05028 /* DatabaseRecords.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6535A435C54DDB708745F381 /* DatabaseRecords.swift */; };
 		DB83404FF6D44ABA20CF2357 /* AppDatabaseSchema.swift in Sources */ = {isa = PBXBuildFile; fileRef = 073D00DD4CD6FF46576E948A /* AppDatabaseSchema.swift */; };
@@ -129,6 +132,7 @@
 		350521FDA70C1A18E6B3A61D /* SessionBoundary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionBoundary.swift; sourceTree = "<group>"; };
 		3E5F21303DBA6D3D4B9DF921 /* RevenueCatAdapterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RevenueCatAdapterTests.swift; sourceTree = "<group>"; };
 		3FBAA5A4D55BE2A939B40CEF /* OAuthHandoff.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OAuthHandoff.swift; sourceTree = "<group>"; };
+		3FFBB65B1A5B1CB61A47C46D /* AppleSignInTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleSignInTests.swift; sourceTree = "<group>"; };
 		45368C62926856229D2723C7 /* SignInTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignInTests.swift; sourceTree = "<group>"; };
 		45864E41E850EBD2CD84515E /* SupportDestinationsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupportDestinationsTests.swift; sourceTree = "<group>"; };
 		48401DA7CC886FCF008F1529 /* legacy-aipose-v1.sqlite */ = {isa = PBXFileReference; lastKnownFileType = file; path = "legacy-aipose-v1.sqlite"; sourceTree = "<group>"; };
@@ -138,7 +142,7 @@
 		4E3F05BA7D23C56F8F95252B /* AppImage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppImage.swift; sourceTree = "<group>"; };
 		50332EA7FC91E3A2C9A013F2 /* SessionBoundaryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionBoundaryTests.swift; sourceTree = "<group>"; };
 		5437BA40F635BF15721D441C /* ServiceLocator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceLocator.swift; sourceTree = "<group>"; };
-		56583BC252B5F01ED9DEA19D /* iosAppTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = iosAppTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		56583BC252B5F01ED9DEA19D /* iosAppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = iosAppTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		567850A063D54AAE95B3BEC5 /* AIPoseNavigation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIPoseNavigation.swift; sourceTree = "<group>"; };
 		59169CF64611E3D726C9D47A /* Prod-Debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "Prod-Debug.xcconfig"; sourceTree = "<group>"; };
 		5E26C008F7E8079D880FD29E /* APIClientTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClientTests.swift; sourceTree = "<group>"; };
@@ -151,11 +155,11 @@
 		811A9C4FB4A1C31DF47FACC7 /* GalleryFeature.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalleryFeature.swift; sourceTree = "<group>"; };
 		8333C84AE77479FB130F3F70 /* CaptureImageStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureImageStorage.swift; sourceTree = "<group>"; };
 		85E9E22C9FF4C823A8898A3F /* SessionCredentials.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionCredentials.swift; sourceTree = "<group>"; };
-		86038AE1032E284E79B32AD6 /* iosApp.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = iosApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		86038AE1032E284E79B32AD6 /* posing.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = posing.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		86C8472C23144F2FED1429A9 /* APIModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIModels.swift; sourceTree = "<group>"; };
 		8B6C1F485E0CF8BB70C9DDD2 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		9A0206C27EFC1CCEA91C3945 /* DatabaseRepositories.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DatabaseRepositories.swift; sourceTree = "<group>"; };
-		9BC94B44AEDD7B65B44E6EF4 /* AppIcon.svg */ = {isa = PBXFileReference; path = AppIcon.svg; sourceTree = "<group>"; };
+		9BC94B44AEDD7B65B44E6EF4 /* AppIcon.svg */ = {isa = PBXFileReference; lastKnownFileType = text; path = AppIcon.svg; sourceTree = "<group>"; };
 		9C522CF528E426B84E7C5887 /* TokenStorageTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TokenStorageTests.swift; sourceTree = "<group>"; };
 		9DEBB823DA597A76F4FC272E /* PaywallModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaywallModel.swift; sourceTree = "<group>"; };
 		A55143988C4C8F291BE72E9A /* GoogleService-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
@@ -165,8 +169,10 @@
 		B6445951590F553A1431E48F /* RemoteConfigServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteConfigServiceTests.swift; sourceTree = "<group>"; };
 		B6A0C48173DC401944D4A9DA /* CameraCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraCoordinatorTests.swift; sourceTree = "<group>"; };
 		B719EE2E7F62C33D73EBA475 /* CameraCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraCoordinator.swift; sourceTree = "<group>"; };
+		BB4BC7933064C43F00D975DF /* iosAppDebug-Prod.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "iosAppDebug-Prod.entitlements"; sourceTree = "<group>"; };
 		C117AD187833E2513BD2F553 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		C254D42661B28636ECF42B71 /* CameraTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraTypes.swift; sourceTree = "<group>"; };
+		C49B0B02429FBBC9F867DDE1 /* iosApp.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = iosApp.entitlements; sourceTree = "<group>"; };
 		C5B35EABCB9F1E49AA085E03 /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
 		C70C04976ADC916DD0D41A08 /* PhotosExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotosExporter.swift; sourceTree = "<group>"; };
 		CAB8CF8FAA81E9DB7793CEFD /* SignIn.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignIn.swift; sourceTree = "<group>"; };
@@ -177,12 +183,14 @@
 		D9D716AFFCACC5FB9D732D15 /* AccountSessionModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountSessionModel.swift; sourceTree = "<group>"; };
 		E0E74103CE18DA64904CA968 /* CameraGridOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraGridOverlay.swift; sourceTree = "<group>"; };
 		E286C264229F73A6A9FF42D9 /* RuntimeConfigResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RuntimeConfigResolver.swift; sourceTree = "<group>"; };
+		E62EEBF4311843B030F88E58 /* AppleSignIn.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleSignIn.swift; sourceTree = "<group>"; };
 		E683518697C7CD04E17A0D94 /* PoseDetailFeatureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PoseDetailFeatureTests.swift; sourceTree = "<group>"; };
 		EA2BE22C3F2AC2544865BC8E /* legacy-aipose-database-v1.sqlite */ = {isa = PBXFileReference; lastKnownFileType = file; path = "legacy-aipose-database-v1.sqlite"; sourceTree = "<group>"; };
 		EA9CF8A10FC8E52646BE4ADD /* EndpointPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EndpointPolicyTests.swift; sourceTree = "<group>"; };
-		ECD01519B875CB01EAA64D5D /* legacy-aipose-v1.sql */ = {isa = PBXFileReference; path = "legacy-aipose-v1.sql"; sourceTree = "<group>"; };
+		ECD01519B875CB01EAA64D5D /* legacy-aipose-v1.sql */ = {isa = PBXFileReference; lastKnownFileType = text; path = "legacy-aipose-v1.sql"; sourceTree = "<group>"; };
 		F268FEE9D95DFE81D66C708A /* PoseAPIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PoseAPIService.swift; sourceTree = "<group>"; };
 		F543015C899423D4B01CEB2E /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		F66C1C6FBEC0AA6C57DC660E /* DeleteAccountTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeleteAccountTests.swift; sourceTree = "<group>"; };
 		F8629798E4E2AFC175A0D19E /* PosesFeature.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PosesFeature.swift; sourceTree = "<group>"; };
 		FFFEB0B6B2E4DD10BBAD259C /* PaywallModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaywallModelTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -268,6 +276,7 @@
 		1DB4B685CAEE8BEFEBBAEF94 /* iosApp */ = {
 			isa = PBXGroup;
 			children = (
+				BB4BC7933064C43F00D975DF /* iosAppDebug-Prod.entitlements */,
 				8B6C1F485E0CF8BB70C9DDD2 /* AppDelegate.swift */,
 				9BC94B44AEDD7B65B44E6EF4 /* AppIcon.svg */,
 				F543015C899423D4B01CEB2E /* Assets.xcassets */,
@@ -275,6 +284,7 @@
 				CE8509E5A49E4A5CAAEB3ADB /* ContentView.swift */,
 				A55143988C4C8F291BE72E9A /* GoogleService-Info.plist */,
 				C117AD187833E2513BD2F553 /* Info.plist */,
+				C49B0B02429FBBC9F867DDE1 /* iosApp.entitlements */,
 				0CF0BA8A92206DCBD9D678DD /* LaunchScreen.storyboard */,
 				3FBAA5A4D55BE2A939B40CEF /* OAuthHandoff.swift */,
 				7AFB0BE693C47B4ECDC70499 /* RevenueCatAdapter.swift */,
@@ -392,7 +402,7 @@
 		94C98B8B3A2BFC1966447269 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				86038AE1032E284E79B32AD6 /* iosApp.app */,
+				86038AE1032E284E79B32AD6 /* posing.app */,
 				56583BC252B5F01ED9DEA19D /* iosAppTests.xctest */,
 			);
 			name = Products;
@@ -413,7 +423,9 @@
 			isa = PBXGroup;
 			children = (
 				4BFD8884125812979E9FED4B /* AccountSessionTests.swift */,
+				3FFBB65B1A5B1CB61A47C46D /* AppleSignInTests.swift */,
 				127AD2AAFA29205C2D63B787 /* CameraFeatureTests.swift */,
+				F66C1C6FBEC0AA6C57DC660E /* DeleteAccountTests.swift */,
 				13014C50A5C1B9BA1364503E /* FeatureStateTests.swift */,
 				21F759916DD6C60D0A6AE6E8 /* GalleryFeatureTests.swift */,
 				FFFEB0B6B2E4DD10BBAD259C /* PaywallModelTests.swift */,
@@ -445,6 +457,7 @@
 			isa = PBXGroup;
 			children = (
 				D9D716AFFCACC5FB9D732D15 /* AccountSessionModel.swift */,
+				E62EEBF4311843B030F88E58 /* AppleSignIn.swift */,
 				9DEBB823DA597A76F4FC272E /* PaywallModel.swift */,
 				0BE311B84AFAC354708F8B47 /* SessionPresenceModel.swift */,
 				CAB8CF8FAA81E9DB7793CEFD /* SignIn.swift */,
@@ -502,8 +515,8 @@
 				5F5D09D8B3AA79328B33FC59 /* GRDB */,
 				F1B03872049470BF84F3E5E2 /* Kingfisher */,
 			);
-			productName = iosApp;
-			productReference = 86038AE1032E284E79B32AD6 /* iosApp.app */;
+			productName = posing;
+			productReference = 86038AE1032E284E79B32AD6 /* posing.app */;
 			productType = "com.apple.product-type.application";
 		};
 		EDDC9037D014CD9DDCA653AC /* iosAppTests */ = {
@@ -536,9 +549,6 @@
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
-					78B53CC79860CBFC2F5543C6 = {
-						DevelopmentTeam = 878758XF68;
-					};
 					EDDC9037D014CD9DDCA653AC = {
 						DevelopmentTeam = 878758XF68;
 						ProvisioningStyle = Automatic;
@@ -556,7 +566,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				7C4F1707FE80007C7DCEAE3C /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
-				83B301D7911A436218E73B09 /* XCRemoteSwiftPackageReference "GRDB.swift" */,
+				83B301D7911A436218E73B09 /* XCRemoteSwiftPackageReference "GRDB" */,
 				84C3D3999E6C2150B760EEE9 /* XCRemoteSwiftPackageReference "Kingfisher" */,
 				48C9B18C9D61C362B2170CFB /* XCRemoteSwiftPackageReference "purchases-ios" */,
 			);
@@ -613,6 +623,7 @@
 				FDE52B8D57A097A60A4CF366 /* AppDelegate.swift in Sources */,
 				B76948567578B0EB3766F5C4 /* AppFeatureRoot.swift in Sources */,
 				33B27B4D310716CB30BEB63D /* AppImage.swift in Sources */,
+				8C8EC5B13461D52698AF9850 /* AppleSignIn.swift in Sources */,
 				26FEE10E47B59638546BA083 /* CameraCoordinator.swift in Sources */,
 				3800FE2DB2CD8CB2A2D81B76 /* CameraFeature.swift in Sources */,
 				F6972790D8A1C72BF2BE5A36 /* CameraGridOverlay.swift in Sources */,
@@ -655,9 +666,11 @@
 			files = (
 				47A55AA5F9180EFD72FD0412 /* APIClientTests.swift in Sources */,
 				291594201B0FF97BA4E9FD28 /* AccountSessionTests.swift in Sources */,
+				68C01F1892B8891425FF101C /* AppleSignInTests.swift in Sources */,
 				AF3FFA4E4C75C074D4D5DC09 /* CameraCoordinatorTests.swift in Sources */,
 				5E14AAEFC75F2D1FCC31ECFE /* CameraFeatureTests.swift in Sources */,
 				789107807CC6F86349D0BFDF /* CaptureImageStorageTests.swift in Sources */,
+				CF55B6715CD91131AC93BC60 /* DeleteAccountTests.swift in Sources */,
 				B18D5F82BD558E93E1715A47 /* EndpointPolicyTests.swift in Sources */,
 				91FA61089DA34D6C20DEE23B /* FeatureStateTests.swift in Sources */,
 				5E2B44D1C4A9B540A480E0BA /* GalleryFeatureTests.swift in Sources */,
@@ -702,11 +715,11 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = camerapose.appTests;
+				PRODUCT_BUNDLE_IDENTIFIER = posing.camera.appTests;
 				SDKROOT = iphoneos;
 				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/iosApp.app/iosApp";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/posing.app/posing";
 			};
 			name = "Release-Prod";
 		};
@@ -723,11 +736,11 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = camerapose.appTests;
+				PRODUCT_BUNDLE_IDENTIFIER = posing.camera.appTests;
 				SDKROOT = iphoneos;
 				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/iosApp.app/iosApp";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/posing.app/posing";
 			};
 			name = "Debug-Prod";
 		};
@@ -744,11 +757,11 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = camerapose.appTests;
+				PRODUCT_BUNDLE_IDENTIFIER = posing.camera.appTests;
 				SDKROOT = iphoneos;
 				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/iosApp.app/iosApp";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/posing.app/posing";
 			};
 			name = "Debug-Dev";
 		};
@@ -757,13 +770,17 @@
 			baseConfigurationReference = 49853AF9C91513CEAFF5C5E3 /* Prod-Release.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = iosApp/iosApp.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
+				DEVELOPMENT_TEAM = 878758XF68;
 				INFOPLIST_FILE = iosApp/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = camerapose.app;
+				PRODUCT_BUNDLE_IDENTIFIER = posing.camera.app;
+				PRODUCT_NAME = posing;
+				PRODUCT_MODULE_NAME = iosApp;
 				SDKROOT = iphoneos;
 				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -894,13 +911,19 @@
 			baseConfigurationReference = 59169CF64611E3D726C9D47A /* Prod-Debug.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_ENTITLEMENTS = "iosApp/iosAppDebug-Prod.entitlements";
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = WZL67P53F2;
 				INFOPLIST_FILE = iosApp/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = camerapose.app;
+				PRODUCT_BUNDLE_IDENTIFIER = posing.camera.app;
+				PRODUCT_NAME = posing;
+				PRODUCT_MODULE_NAME = iosApp;
+				PROVISIONING_PROFILE_SPECIFIER = "";
 				SDKROOT = iphoneos;
 				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -1031,13 +1054,16 @@
 			baseConfigurationReference = 1F6B2754084B0CD392E52DEE /* Dev-Release.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = iosApp/iosApp.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				INFOPLIST_FILE = iosApp/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = camerapose.app;
+				PRODUCT_BUNDLE_IDENTIFIER = posing.camera.app;
+				PRODUCT_NAME = posing;
+				PRODUCT_MODULE_NAME = iosApp;
 				SDKROOT = iphoneos;
 				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -1049,13 +1075,17 @@
 			baseConfigurationReference = 7A5D19BCF0E318F2ACC86812 /* Dev-Debug.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = iosApp/iosApp.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
+				DEVELOPMENT_TEAM = WZL67P53F2;
 				INFOPLIST_FILE = iosApp/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = camerapose.app;
+				PRODUCT_BUNDLE_IDENTIFIER = posing.camera.app;
+				PRODUCT_NAME = posing;
+				PRODUCT_MODULE_NAME = iosApp;
 				SDKROOT = iphoneos;
 				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -1075,11 +1105,11 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = camerapose.appTests;
+				PRODUCT_BUNDLE_IDENTIFIER = posing.camera.appTests;
 				SDKROOT = iphoneos;
 				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/iosApp.app/iosApp";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/posing.app/posing";
 			};
 			name = "Release-Dev";
 		};
@@ -1138,7 +1168,7 @@
 				version = 12.10.0;
 			};
 		};
-		83B301D7911A436218E73B09 /* XCRemoteSwiftPackageReference "GRDB.swift" */ = {
+		83B301D7911A436218E73B09 /* XCRemoteSwiftPackageReference "GRDB" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/groue/GRDB.swift";
 			requirement = {
@@ -1179,7 +1209,7 @@
 		};
 		5F5D09D8B3AA79328B33FC59 /* GRDB */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 83B301D7911A436218E73B09 /* XCRemoteSwiftPackageReference "GRDB.swift" */;
+			package = 83B301D7911A436218E73B09 /* XCRemoteSwiftPackageReference "GRDB" */;
 			productName = GRDB;
 		};
 		A1BE688F1F56E46F4CAF1BC4 /* FirebaseRemoteConfig */ = {
@@ -1194,7 +1224,7 @@
 		};
 		F90A59BAF38068F72C984D55 /* GRDB */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 83B301D7911A436218E73B09 /* XCRemoteSwiftPackageReference "GRDB.swift" */;
+			package = 83B301D7911A436218E73B09 /* XCRemoteSwiftPackageReference "GRDB" */;
 			productName = GRDB;
 		};
 /* End XCSwiftPackageProductDependency section */

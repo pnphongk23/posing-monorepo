@@ -41,7 +41,7 @@ Detailed screens inspected:
 
 ## Adopted pattern
 
-Snap Pose uses a camera-first composition with a quiet live preview. The bottom rail keeps the thumbnail,
+posing uses a camera-first composition with a quiet live preview. The bottom rail keeps the thumbnail,
 shutter, and camera flip in a stable position. `Choose pose` is an icon-only
 image action because selecting a pose is secondary and must not compete with
 capture.

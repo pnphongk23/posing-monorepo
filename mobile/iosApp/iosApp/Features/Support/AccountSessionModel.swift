@@ -9,6 +9,7 @@ import Foundation
 @MainActor
 final class AccountSessionModel: ObservableObject {
     typealias AccountReader = () async throws -> AccountSummary
+    typealias AccountDeleter = () async throws -> Void
 
     enum State: Equatable {
         case loading
@@ -20,10 +21,13 @@ final class AccountSessionModel: ObservableObject {
     @Published private(set) var state: State = .loading
     @Published private(set) var isAuthenticating = false
     @Published private(set) var authError: String?
+    @Published private(set) var isDeletingAccount = false
+    @Published private(set) var deleteAccountError: String?
 
     private let boundary: SessionBoundary
     private let readAccount: AccountReader
     private let signInAction: SignInAction
+    private let deleteAccountRequest: AccountDeleter
     private var generationID = 0
     private var sessionTask: Task<Void, Never>?
 
@@ -32,11 +36,15 @@ final class AccountSessionModel: ObservableObject {
         readAccount: @escaping AccountReader = {
             try await ServiceLocator.makePoseAPIService().getCurrentAccount()
         },
-        signInAction: SignInAction = SignInAction()
+        signInAction: SignInAction = SignInAction(),
+        deleteAccount: @escaping AccountDeleter = {
+            try await ServiceLocator.makePoseAPIService().deleteAccount()
+        }
     ) {
         self.boundary = boundary
         self.readAccount = readAccount
         self.signInAction = signInAction
+        self.deleteAccountRequest = deleteAccount
     }
 
     deinit {
@@ -116,6 +124,26 @@ final class AccountSessionModel: ObservableObject {
         }
     }
 
+    /// Deletes remotely first. Only the API client's accepted 204 path reaches `signOut()`, which
+    /// emits the existing session event for app-scope cache and RevenueCat cleanup.
+    func deleteAccount() {
+        guard !isDeletingAccount else { return }
+        isDeletingAccount = true
+        deleteAccountError = nil
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                try await self.deleteAccountRequest()
+                await self.boundary.signOut()
+                self.isDeletingAccount = false
+                self.state = .signedOut
+            } catch {
+                self.isDeletingAccount = false
+                self.deleteAccountError = Self.deleteAccountMessage(for: error)
+            }
+        }
+    }
+
     // MARK: - session observation
 
     private func observeSessionOnce() {
@@ -155,5 +183,15 @@ final class AccountSessionModel: ObservableObject {
 
     private static func accountMessage(for error: Error) -> String {
         ErrorCopy.text(for: error) ?? "Unable to load your account."
+    }
+
+    private static func deleteAccountMessage(for error: Error) -> String {
+        if let apiError = error as? PoseAPIError {
+            if apiError.isUnauthorized { return "Please sign in again." }
+            if ["503", "AUTH_PENDING_VALIDATION"].contains(apiError.code) {
+                return "Account deletion is temporarily unavailable. Try again later."
+            }
+        }
+        return ErrorCopy.text(for: error) ?? "Account deletion could not be completed."
     }
 }

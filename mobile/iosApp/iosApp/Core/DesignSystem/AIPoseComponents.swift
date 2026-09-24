@@ -334,8 +334,10 @@ struct NeoDockTabBar: View {
             .accessibilityLabel("Open Camera")
         }
         .padding(.horizontal, AIPoseSpacing.lg)
-        // Prototype `tab-bar.css`: `.nb-dock { bottom: calc(16px + env(safe-area-inset-bottom)) }`.
+        // The fixed prototype frame has no native home-indicator inset; keep the dock 16pt
+        // from the physical screen bottom instead of adding SwiftUI's container safe area.
         .padding(.bottom, AIPoseSpacing.lg)
+        .ignoresSafeArea(.container, edges: .bottom)
     }
 
     private func dockItem(tab: AppTab, icon: String, label: String) -> some View {

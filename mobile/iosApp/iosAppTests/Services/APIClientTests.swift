@@ -57,6 +57,131 @@ final class APIClientTests: XCTestCase {
         }
     }
 
+    // MARK: - email + password sign-in (PLAN §4)
+
+    /// POST /api/auth/email/signin must carry exactly the contracted method, path, header and
+    /// body keys, persist through `SessionBoundary.saveCredentials` and emit exactly ONE
+    /// `.signedIn` session event.
+    func testSignInWithPasswordSendsExactRequestSavesCredentialsAndEmitsOneSignedIn() async throws {
+        var capturedRequest: URLRequest?
+        MockURLProtocol.requestHandler = { request in
+            capturedRequest = request
+            let body = #"{"accessToken":"access-1","refreshToken":"refresh-1","account":{"id":"u1","displayName":"Reviewer","createdAt":"2026-01-01"}}"#
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, Data(body.utf8))
+        }
+        let storage = InMemoryTokenStorage()
+        let boundary = SessionBoundary(tokenStorage: storage)
+        let recorder = SessionEventRecorder()
+        let stream = await boundary.events()
+        let collector = Task {
+            for await event in stream { recorder.record(event) }
+        }
+        let client = APIClient(baseURL: "https://test.server", session: makeMockSession(), boundary: boundary)
+
+        try await client.signInWithPassword(email: "reviewer@example.com", password: "correct-horse")
+        // Give any duplicate event a chance to surface before asserting exactly one.
+        try await Task.sleep(nanoseconds: 100_000_000)
+        collector.cancel()
+
+        let request = try XCTUnwrap(capturedRequest)
+        XCTAssertEqual(request.httpMethod, "POST")
+        XCTAssertEqual(request.url?.path, "/api/auth/email/signin")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Content-Type"), "application/json")
+        let body = try XCTUnwrap(request.bodyData)
+        let json = try XCTUnwrap(try JSONSerialization.jsonObject(with: body) as? [String: String])
+        XCTAssertEqual(json, ["email": "reviewer@example.com", "password": "correct-horse"])
+
+        let credentials = try XCTUnwrap(storage.loadCredentials())
+        XCTAssertEqual(credentials.accessToken, "access-1")
+        XCTAssertEqual(credentials.refreshToken, "refresh-1")
+        XCTAssertEqual(recorder.recorded, [.signedIn], "Exactly ONE .signedIn event per sign-in")
+    }
+
+    /// A 401 from the sign-in endpoint is INVALID_CREDENTIALS, never a trigger for the refresh
+    /// cycle: exactly one network call, and no stored credentials were touched.
+    func testSignInWithPasswordWrongPasswordThrowsInvalidCredentialsWithoutRefreshing() async {
+        var callCount = 0
+        MockURLProtocol.requestHandler = { request in
+            callCount += 1
+            let body = #"{"error":{"code":"INVALID_CREDENTIALS","message":"Incorrect email or password."}}"#
+            return (HTTPURLResponse(url: request.url!, statusCode: 401, httpVersion: nil, headerFields: nil)!, Data(body.utf8))
+        }
+        let storage = InMemoryTokenStorage()
+        let client = APIClient(baseURL: "https://test.server", session: makeMockSession(), boundary: SessionBoundary(tokenStorage: storage))
+
+        do {
+            try await client.signInWithPassword(email: "who@example.com", password: "wrong")
+            XCTFail("Expected INVALID_CREDENTIALS")
+        } catch let error as PoseAPIError {
+            XCTAssertEqual(error.code, "INVALID_CREDENTIALS")
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+        XCTAssertEqual(callCount, 1, "No refresh attempt on a sign-in 401")
+        XCTAssertNil(storage.loadCredentials())
+    }
+
+    func testSignInWithPasswordRateLimitedThrowsRateLimited() async {
+        MockURLProtocol.requestHandler = { request in
+            let body = #"{"error":{"code":"RATE_LIMITED","message":"Too many attempts."}}"#
+            return (HTTPURLResponse(url: request.url!, statusCode: 429, httpVersion: nil, headerFields: nil)!, Data(body.utf8))
+        }
+        let client = APIClient(baseURL: "https://test.server", session: makeMockSession(), boundary: SessionBoundary(tokenStorage: InMemoryTokenStorage()))
+
+        do {
+            try await client.signInWithPassword(email: "who@example.com", password: "wrong")
+            XCTFail("Expected RATE_LIMITED")
+        } catch let error as PoseAPIError {
+            XCTAssertEqual(error.code, "RATE_LIMITED")
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
+    func testSignInWithApplePostsRawNonceAndStoresCredentials() async throws {
+        var capturedRequest: URLRequest?
+        MockURLProtocol.requestHandler = { request in
+            capturedRequest = request
+            let body = #"{"accessToken":"apple-access","refreshToken":"apple-refresh","account":{"id":"apple-1","displayName":"Apple User"}}"#
+            return (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, Data(body.utf8))
+        }
+        let storage = InMemoryTokenStorage()
+        let client = APIClient(baseURL: "https://test.server", session: makeMockSession(), boundary: SessionBoundary(tokenStorage: storage))
+
+        try await client.signInWithApple(identityToken: "id-token", nonce: "raw-nonce", fullName: "Apple User")
+
+        let request = try XCTUnwrap(capturedRequest)
+        XCTAssertEqual(request.httpMethod, "POST")
+        XCTAssertEqual(request.url?.path, "/api/auth/apple/signin")
+        let json = try XCTUnwrap(try JSONSerialization.jsonObject(with: try XCTUnwrap(request.bodyData)) as? [String: String])
+        XCTAssertEqual(json["identityToken"], "id-token")
+        XCTAssertEqual(json["nonce"], "raw-nonce")
+        XCTAssertEqual(json["fullName"], "Apple User")
+        XCTAssertEqual(storage.loadCredentials()?.accessToken, "apple-access")
+        XCTAssertEqual(storage.loadCredentials()?.refreshToken, "apple-refresh")
+    }
+
+    func testDeleteAccountAccepts204AndRejectsAnythingElse() async throws {
+        MockURLProtocol.requestHandler = { request in
+            (HTTPURLResponse(url: request.url!, statusCode: 204, httpVersion: nil, headerFields: nil)!, Data())
+        }
+        let client = APIClient(baseURL: "https://test.server", session: makeMockSession(), boundary: SessionBoundary(tokenStorage: InMemoryTokenStorage()))
+        try await client.deleteAccount()
+
+        MockURLProtocol.requestHandler = { request in
+            let body = #"{"error":{"code":"503","message":"Temporarily unavailable"}}"#
+            return (HTTPURLResponse(url: request.url!, statusCode: 503, httpVersion: nil, headerFields: nil)!, Data(body.utf8))
+        }
+        do {
+            try await client.deleteAccount()
+            XCTFail("Expected non-204 delete to fail")
+        } catch let error as PoseAPIError {
+            XCTAssertEqual(error.code, "503")
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
     private func makeMockSession() -> URLSession {
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [MockURLProtocol.self]
@@ -69,6 +194,45 @@ private final class InMemoryTokenStorage: TokenStoring, @unchecked Sendable {
     func saveCredentials(_ credentials: SessionCredentials) { self.credentials = credentials }
     func loadCredentials() -> SessionCredentials? { credentials }
     func clearCredentials() { credentials = nil }
+}
+
+/// `URLSession` delivers the request body as a stream through `URLProtocol`, so drain it here
+/// instead of reading `httpBody` (which is nil on the receiving side).
+private extension URLRequest {
+    var bodyData: Data? {
+        if let httpBody { return httpBody }
+        guard let stream = httpBodyStream else { return nil }
+        stream.open()
+        defer { stream.close() }
+        var data = Data()
+        let bufferSize = 1024
+        let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: bufferSize)
+        defer { buffer.deallocate() }
+        while stream.hasBytesAvailable {
+            let read = stream.read(buffer, maxLength: bufferSize)
+            if read <= 0 { break }
+            data.append(buffer, count: read)
+        }
+        return data
+    }
+}
+
+/// Thread-safe `SessionEvent` collector for asserting exactly-one event emissions.
+private final class SessionEventRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var events: [SessionEvent] = []
+
+    func record(_ event: SessionEvent) {
+        lock.lock()
+        events.append(event)
+        lock.unlock()
+    }
+
+    var recorded: [SessionEvent] {
+        lock.lock()
+        defer { lock.unlock() }
+        return events
+    }
 }
 
 private final class MockURLProtocol: URLProtocol {

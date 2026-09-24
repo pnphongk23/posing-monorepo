@@ -405,11 +405,13 @@ struct PosesScreen: View {
             .accessibilityLabel("Search")
             .accessibilityIdentifier("poses.open-search")
 
-            NavigationLink(destination: SavedPosesScreen(model: model, onTryPose: onTryPose)) {
-                PosesHeaderIconLabel(systemImage: "bookmark.fill")
+            if AppConfig.shared.isAccountFeatureEnabled {
+                NavigationLink(destination: SavedPosesScreen(model: model, onTryPose: onTryPose)) {
+                    PosesHeaderIconLabel(systemImage: "bookmark.fill")
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Open Saved poses")
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Open Saved poses")
 
             NavigationLink(destination: SettingsScreen(posesModel: model, onTryPose: onTryPose)) {
                 PosesHeaderIconLabel(systemImage: "gearshape.fill")
@@ -576,6 +578,7 @@ struct PoseGrid: View {
                     PoseCard(pose: pose, aspectRatio: PoseGridMetrics.aspectRatio(forRow: index / 2))
                 }
                 .buttonStyle(.plain)
+                .accessibilityIdentifier(index == 0 ? "poses.first-card" : "poses.card.\(pose.id)")
             }
         }
     }
@@ -649,9 +652,11 @@ struct PoseDetailScreen: View {
                         Label("\(index + 1). \(step)", systemImage: "sparkles")
                     }
                     HStack(spacing: AIPoseSpacing.md) {
-                        Button { Task { await toggleBookmark() } } label: {
-                            Label(isSaved ? "Saved" : "Save pose", systemImage: isSaved ? "bookmark.fill" : "bookmark")
-                        }.buttonStyle(NeoButtonStyle(fill: isSaved ? AIPoseColor.accentYellow : AIPoseColor.surface))
+                        if AppConfig.shared.isAccountFeatureEnabled {
+                            Button { Task { await toggleBookmark() } } label: {
+                                Label(isSaved ? "Saved" : "Save pose", systemImage: isSaved ? "bookmark.fill" : "bookmark")
+                            }.buttonStyle(NeoButtonStyle(fill: isSaved ? AIPoseColor.accentYellow : AIPoseColor.surface))
+                        }
                         Button {
                             switch poseTryPoseDestination(
                                 hasPremiumAccess: RevenueCatAdapter.shared.lastSnapshot.state == .entitled
@@ -715,6 +720,7 @@ struct PoseDetailScreen: View {
     private static let heroCardCornerRadius: CGFloat = 14
 
     private func toggleBookmark() async {
+        guard AppConfig.shared.isAccountFeatureEnabled else { return }
         let next = !isSaved
         guard await boundary.hasStoredSession() else {
             pendingSignIn = .savePose
@@ -1096,38 +1102,42 @@ struct SavedPosesScreen: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        Group {
-            // The stage decision is pure (`SavedSurfaceStage.resolve`) so the signed-in states that
-            // `GET /api/me/saved` returns 401 for in the parity rig remain verifiable in unit tests.
-            switch SavedSurfaceStage.resolve(isSessionResolved: session.isResolved, isSignedIn: session.isSignedIn) {
-            case .resolvingSession:
-                savedResolvingSession
-            case .signInRequired:
-                savedSignInRequired
-            case .list:
-                PoseResultsList(
-                    model: model,
-                    onTryPose: onTryPose,
-                    context: .saved,
-                    // `saved-list.html` `Browse Community` returns to the published Poses collection;
-                    // this screen is always pushed, so dismissal is the only honest route there.
-                    onBrowseCommunity: { dismiss() }
-                )
-                .onAppear {
-                    model.filter = .saved
-                    Task { await model.load() }
+        if AppConfig.shared.isAccountFeatureEnabled {
+            Group {
+                // The stage decision is pure (`SavedSurfaceStage.resolve`) so the signed-in states that
+                // `GET /api/me/saved` returns 401 for in the parity rig remain verifiable in unit tests.
+                switch SavedSurfaceStage.resolve(isSessionResolved: session.isResolved, isSignedIn: session.isSignedIn) {
+                case .resolvingSession:
+                    savedResolvingSession
+                case .signInRequired:
+                    savedSignInRequired
+                case .list:
+                    PoseResultsList(
+                        model: model,
+                        onTryPose: onTryPose,
+                        context: .saved,
+                        // `saved-list.html` `Browse Community` returns to the published Poses collection;
+                        // this screen is always pushed, so dismissal is the only honest route there.
+                        onBrowseCommunity: { dismiss() }
+                    )
+                    .onAppear {
+                        model.filter = .saved
+                        Task { await model.load() }
+                    }
                 }
             }
+            // R3: the session-resolve, sign-in-gate and non-loaded list states are single short cards;
+            // without a top-aligned expander they centre in the pushed view instead of anchoring under
+            // the navigation bar. A loaded `PoseResultsList` (ScrollView) still fills the frame.
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .navigationTitle("Saved poses")
+            .task { session.start() }
+            // A successful sign-in flips `SessionPresenceModel` through the boundary's `.signedIn`
+            // event, which mounts the list and loads it — no explicit resume needed here.
+            .signInPrompt($pendingSignIn)
+        } else {
+            EmptyView()
         }
-        // R3: the session-resolve, sign-in-gate and non-loaded list states are single short cards;
-        // without a top-aligned expander they centre in the pushed view instead of anchoring under
-        // the navigation bar. A loaded `PoseResultsList` (ScrollView) still fills the frame.
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .navigationTitle("Saved poses")
-        .task { session.start() }
-        // A successful sign-in flips `SessionPresenceModel` through the boundary's `.signedIn`
-        // event, which mounts the list and loads it — no explicit resume needed here.
-        .signInPrompt($pendingSignIn)
     }
 
     /// `saved-list.html` loading state through the shared component (report §3.8). The card is
@@ -1148,7 +1158,7 @@ struct SavedPosesScreen: View {
             FeatureStateView(
                 tone: .empty,
                 title: "Sign in to view your saved poses",
-                message: "Your saved poses are tied to your account. Continue with Google to keep them synced."
+                message: "Your saved poses are tied to your account. Sign in to keep them synced."
             )
             .padding(.horizontal, PoseSurfaceMetrics.horizontalPadding)
             // The spinner state lives inside the presented sign-in prompt (`SignInPromptModel`),

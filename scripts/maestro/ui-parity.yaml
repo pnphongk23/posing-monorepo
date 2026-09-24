@@ -12,8 +12,8 @@
 #   # screenshots -> /tmp/parity-out/screenshots/
 #
 # Before the first run on a fresh simulator:
-#   xcrun simctl privacy <SIM_UDID> grant camera camerapose.app
-#   xcrun simctl privacy <SIM_UDID> grant photos camerapose.app
+#   xcrun simctl privacy <SIM_UDID> grant camera posing.camera.app
+#   xcrun simctl privacy <SIM_UDID> grant photos posing.camera.app
 # Reboot the simulator if the XCUITest driver stops reading the hierarchy (a known flake after
 # many consecutive runs): xcrun simctl shutdown <UDID> && xcrun simctl boot <UDID>
 #
@@ -27,7 +27,7 @@
 # the prototype's fixtures), so a Warrior query exercises the NO-MATCH state. The populated GRID —
 # the state compared with reference/search-results.png — needs a query that matches real data,
 # e.g. "Pose". Both states are captured below.
-appId: camerapose.app
+appId: posing.camera.app
 ---
 - launchApp:
     clearState: true

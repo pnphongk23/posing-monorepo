@@ -1,4 +1,4 @@
-# Snap Pose Match - Mobile UI Prototype
+# posing Match - Mobile UI Prototype
 
 A static HTML/CSS/JS mobile user interface prototype running directly as a standalone web application. This prototype serves as a design and layout reference. It does not connect to a real database or replicate production business flows.
 

@@ -67,7 +67,7 @@ editing `PosesScreen.kt` or `Navigation.kt` while the active lane owns them.
 ### Preconditions
 
 - A Firebase iOS project and externally supplied `GoogleService-Info.plist`
-  exist for bundle `camerapose.app`.
+  exist for bundle `posing.camera.app` (project `camerapose-a0877`).
 - The current source endpoint remains the fallback until an approved migration.
 - **Baseline endpoint is provisional:** the compiled default
   (`https://specked-unhelpful-dispatch.ngrok-free.dev`) is a **TEMPORARY

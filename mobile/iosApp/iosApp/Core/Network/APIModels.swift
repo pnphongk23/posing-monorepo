@@ -137,3 +137,28 @@ struct SessionExchangeResponse: Codable, Sendable {
     let accessToken: String
     let refreshToken: String
 }
+
+/// POST /api/auth/email/signin (PLAN §4): token pair plus the signed-in account, the same shape
+/// `/api/auth/refresh` returns plus `account`.
+struct EmailSignInRequest: Codable, Sendable {
+    let email: String
+    let password: String
+}
+
+struct EmailSignInResponse: Codable, Sendable {
+    let accessToken: String
+    let refreshToken: String
+    let account: AccountSummary
+}
+
+struct AppleSignInRequest: Codable, Sendable {
+    let identityToken: String
+    let nonce: String
+    let fullName: String?
+}
+
+struct AppleSignInResponse: Codable, Sendable {
+    let accessToken: String
+    let refreshToken: String
+    let account: AccountSummary
+}

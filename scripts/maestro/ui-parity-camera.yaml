@@ -29,7 +29,7 @@
 # (`Use Pose Compilation 13 - Block Side-Sit pose`) but ZERO elements matching "search" — no
 # `posePicker.search` (CameraFeature.swift:1596) and no `Search poses` placeholder (:1590).
 # Both `id:` and `text:` taps therefore fail. Product finding, reported, not patched.
-appId: camerapose.app
+appId: posing.camera.app
 ---
 - launchApp:
     clearState: true

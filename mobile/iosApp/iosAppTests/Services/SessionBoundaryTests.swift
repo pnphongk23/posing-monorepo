@@ -30,6 +30,31 @@ private actor RefreshAttemptCounter {
     func record() { value += 1 }
 }
 
+private actor EventLog {
+    private var events: [SessionEvent] = []
+    func record(_ event: SessionEvent) { events.append(event) }
+    func contains(_ event: SessionEvent) -> Bool { events.contains(event) }
+}
+
+/// Holds `onStart` open so a test can act inside the window where the previous implementation had
+/// not yet registered its subscriber.
+@MainActor
+private final class StartGate {
+    private var continuation: CheckedContinuation<Void, Never>?
+    private var isOpen = false
+
+    func wait() async {
+        if isOpen { return }
+        await withCheckedContinuation { continuation = $0 }
+    }
+
+    func open() {
+        isOpen = true
+        continuation?.resume()
+        continuation = nil
+    }
+}
+
 final class SessionBoundaryTests: XCTestCase {
     private func makeBoundary() -> (SessionBoundary, InMemoryTokenStorage) {
         let storage = InMemoryTokenStorage()
@@ -209,7 +234,74 @@ final class SessionBoundaryTests: XCTestCase {
         XCTAssertEqual(event, .signInRequired)
     }
 
+    // MARK: - subscription ordering (S4)
+
+    /// `observeSessions` must register its subscriber BEFORE it awaits `onStart`.
+    ///
+    /// Registration used to happen after the await, so an event emitted while `onStart` was in
+    /// flight found no subscriber and was dropped, leaving the projection on whatever `onStart` had
+    /// read (302 ms window when `onStart` awaits a read, 2.2 ms when it does not). The window is
+    /// timing-dependent, so this asserts the ordering itself — the property — rather than a delay.
+    func testSubscriptionIsRegisteredBeforeOnStartReturns() async {
+        let (boundary, _) = makeBoundary()
+        let gate = StartGate()
+        let entered = expectation(description: "onStart entered")
+
+        let task = boundary.observeSessions(
+            onStart: {
+                entered.fulfill()
+                await gate.wait()
+            },
+            onEvent: { _ in }
+        )
+        await fulfillment(of: [entered], timeout: 2)
+
+        let subscriberCount = await boundary.subscriberCountForTests()
+        XCTAssertEqual(subscriberCount, 1, "Subscriber must exist while onStart is still awaiting")
+
+        await gate.open()
+        task.cancel()
+    }
+
+    /// A session change that lands inside that window is delivered once `onStart` settles, so an
+    /// in-flight launch read cannot swallow it (FEAT-014 FR-005: a sign-out that lands during
+    /// launch must still clear the previous account's rows).
+    func testEventEmittedWhileOnStartAwaitsIsDeliveredAfterStart() async {
+        let (boundary, _) = makeBoundary()
+        let gate = StartGate()
+        let entered = expectation(description: "onStart entered")
+        let log = EventLog()
+
+        let task = boundary.observeSessions(
+            onStart: {
+                entered.fulfill()
+                await gate.wait()
+            },
+            onEvent: { event in await log.record(event) }
+        )
+        await fulfillment(of: [entered], timeout: 2)
+
+        await boundary.saveCredentials(SessionCredentials(accessToken: "a", refreshToken: "r"))
+        await gate.open()
+
+        await waitUntil("the event emitted during onStart is delivered") { await log.contains(.signedIn) }
+        task.cancel()
+    }
+
     // MARK: - helpers
+
+    private func waitUntil(
+        _ description: String,
+        timeout: TimeInterval = 2,
+        _ condition: () async -> Bool
+    ) async {
+        let deadline = Date().addingTimeInterval(timeout)
+        while !(await condition()) && Date() < deadline {
+            try? await Task.sleep(nanoseconds: 5_000_000)
+        }
+        let satisfied = await condition()
+        XCTAssertTrue(satisfied, "Timed out waiting for \(description)")
+    }
 
     private func firstEvent(from stream: AsyncStream<SessionEvent>, timeout: TimeInterval = 2) async -> SessionEvent? {
         await withTaskGroup(of: SessionEvent?.self) { group in

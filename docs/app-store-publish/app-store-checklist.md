@@ -1,9 +1,8 @@
-# App Store Connect Checklist — Snap Pose 1.0 (Submission)
+# App Store Connect Checklist — posing 1.0 (Submission)
 
-> **Lane:** `app-store-publish-prep` · **Status:** DRAFT checklist — lane này KHÔNG submit; bàn giao cho lane submit khi PO duyệt.
-> **Baseline:** HEAD `49a2eb3`, staged=0 · **Build:** 1.0 (6) — đã upload TestFlight, `VALID_BINARY`
+Checklist tổng hợp các hạng mục cần chuẩn bị và điền trên App Store Connect cho ứng dụng **posing** (`posing.camera.app`).
 
-Quy ước cột Status: ✅ READY (đã có) · ⏳ PO (PO phải cấp/duyệt) · 👷 UCP/executor (làm theo runbook) · 🚫 N/A (chưa áp dụng ở v1.0)
+Quy ước: ✅ READY (đã có/sẵn sàng) · ⏳ Cần kiểm tra/duyệt · 🚫 N/A
 
 ---
 
@@ -11,88 +10,68 @@ Quy ước cột Status: ✅ READY (đã có) · ⏳ PO (PO phải cấp/duyệt
 
 | # | Hạng mục ASC | Giá trị / gợi ý | Điều kiện ASC | Status |
 | --- | --- | --- | --- | --- |
-| A1 | **App name** | `Snap Pose` | ≤30 ký tự | ⏳ PO duyệt (`app-store-metadata.md` §1) |
-| A2 | **Subtitle** | `Pose camera & AI guides` | ≤30 | ⏳ PO duyệt |
-| A3 | **Primary language** | English (US) | — | ⏳ PO chốt (EN đề xuất; VI annex sẵn) |
-| A4 | **Category (primary)** | `Lifestyle` | — | ⏳ PO chốt (alternative: Health & Fitness) |
-| A5 | **Category (secondary)** | `Photo & Video` | optional | ⏳ PO chốt |
-| A6 | **Description** | Bản EN trong metadata | ≤4000 ký tự | ⏳ PO duyệt copy |
-| A7 | **What's New** (v1.0) | Bản EN trong metadata | ≤4000 | ⏳ PO duyệt copy |
-| A8 | **Keywords** | `pose camera,pose reference,...` | ≤100 ký tự | ⏳ PO duyệt (91/100) |
-| A9 | **Promotional text** | tùy chọn | ≤170 | 🚫 bỏ trống được |
-| A10 | **App icon (1024)** | lấy từ binary; `AppIcon-1024.png` verified | no alpha | ✅ verified (kỹ thuật) + 👷 QA visual (
-`app-icon-check.md`) |
-| A11 | **Screenshots** | Đã có 4 ảnh app thật + 1 prototype Gallery reference ở 1179×2556; còn thiếu iPhone 6.7" + 6.5" + **iPad 12.9" (bắt buộc)** | xem runbook | ⚠️ PARTIAL — prototype Gallery **không dùng ASC**, Gallery thật hiện empty state |
-| A12 | **Copyright / trademark** | PO cấp (tên công ty/người phát hành, năm) | — | ⏳ PO |
-| A13 | **Support URL** | PO cấp https URL | bắt buộc | ⏳ PO (`privacy-support.md` §5) |
-| A14 | **Privacy Policy URL** | PO cấp https URL + duyệt nội dung nháp | bắt buộc | ⏳ PO (`privacy-support.md` §2) |
-| A15 | **Rating** (content) | Age 4+ đề xuất; questionnaire: None (không violence/sexual/tobacco...) | — | ⏳ PO duyệt |
-| A16 | **App Privacy** (nutrition labels) | bảng khai trong `privacy-support.md` §4 | bắt buộc đúng thật | ⏳ PO/developer điền |
+| A1 | **App name** | `posing` | ≤30 ký tự | ✅ Đã chốt |
+| A2 | **Subtitle** | `Pose camera & AI guides` | ≤30 | ⏳ Duyệt copy |
+| A3 | **Primary language** | English (US) | — | ⏳ Chốt ngôn ngữ chính |
+| A4 | **Category (primary)** | `Lifestyle` | — | ⏳ Chốt category |
+| A5 | **Category (secondary)** | `Photo & Video` | optional | ⏳ Chốt category |
+| A6 | **Description** | Bản EN trong `app-store-metadata.md` §5 | ≤4000 ký tự | ⏳ Duyệt copy |
+| A7 | **What's New** (v1.0) | Bản EN trong `app-store-metadata.md` §6 | ≤4000 | ⏳ Duyệt copy |
+| A8 | **Keywords** | `pose camera,pose reference,...` | ≤100 ký tự | ⏳ Duyệt (91/100) |
+| A9 | **Promotional text** | tùy chọn | ≤170 | 🚫 Bỏ trống được |
+| A10 | **App icon (1024)** | Lấy từ binary (`AppIcon-1024.png`) | No alpha | ✅ Verified |
+| A11 | **Screenshots** | iPhone 6.7", 6.5" và iPad 12.9" (bắt buộc) | Theo `screenshots-runbook.md` | ⏳ Capture từ build mới |
+| A12 | **Copyright / trademark** | Tên công ty/người phát hành, năm | — | ⏳ Điền thông tin |
+| A13 | **Support URL** | URL trang hỗ trợ công khai | Bắt buộc | ⏳ Điền URL |
+| A14 | **Privacy Policy URL** | `https://sites.google.com/view/posingapp/privacy-policy` | Bắt buộc | ✅ Đã publish |
+| A15 | **Rating** (content) | Questionnaire: Age 4+ (không violence/sexual/tobacco) | — | ⏳ Điền questionnaire |
+| A16 | **App Privacy** (nutrition labels) | Bảng khai trong `privacy-support.md` §4 | Bắt buộc chính xác | ⏳ Khai báo theo config & telemetry |
+| A17 | **Terms of Use (EULA) link** | `https://sites.google.com/view/posingapp/terms-of-service` ở cuối Description | **Bắt buộc** (Guideline 3.1.2) | ✅ Đã có trong Description |
+| A18 | **Subscription disclosure** | Tên gói + chu kỳ + auto-renew + cancel trong Description | Bắt buộc (Guideline 3.1.2) | ✅ Đã có trong Description |
+| A19 | **App Review Information** | Sign-in required = Yes; credential demo account (`app-review-notes.md`) | Bắt buộc (Guideline 2.1) | ⏳ Điền credential demo |
 
-## B. Version / Build
+## B. Version & Build
 
 | # | Hạng mục | Giá trị | Status |
 | --- | --- | --- | --- |
-| B1 | Version | `1.0` (ShortVersion, Info.plist:19) | ✅ |
-| B2 | Build | `6` (CFBundleVersion, Info.plist:21 — **đã khớp** build 6 TestFlight; không cần bump) | ✅ — không re-upload |
-| B3 | Build trên ASC | TestFlight build 6 `VALID_BINARY` | ✅ đã có |
-| B4 | Signing / team | `DEVELOPMENT_TEAM = 878758XF68` (pbxproj:353/376) | ✅ (PO xác nhận đúng ASC team) |
-| B5 | Export compliance | App chỉ dùng TLS/HTTPS (Firebase, Railway); không mã hóa tùy biến → khai "uses encryption only for standard HTTPS" | ⏳ PO/US xác nhận khi điền |
+| B1 | Version | `1.0` (CFBundleShortVersionString) | ✅ |
+| B2 | Build number | CFBundleVersion tương ứng | ⏳ Xác nhận theo build upload |
+| B3 | Build trên ASC | Chọn build release/TestFlight hợp lệ | ⏳ Upload và chọn build |
+| B4 | Signing / team | `DEVELOPMENT_TEAM = 878758XF68` | ✅ |
+| B5 | Export compliance | Standard TLS/HTTPS encryption | ⏳ Khai báo |
 | B6 | Deployment target | iOS 15.0 | ✅ |
 
-## C. Pricing & IAP
+## C. Pricing & In-App Purchases
 
 | # | Hạng mục | Giá trị | Status |
 | --- | --- | --- | --- |
-| C1 | Price (app) | **Free** — v1.0 không có IAP | ⏳ PO xác nhận |
-| C2 | Auto-renewable subscriptions | **Chưa có** — FEAT-011/DEC-008 define annual + monthly, but IAP/paywall chưa ship | 🚫 chờ FEAT-011 deployment |
-| C3 | Non-consumable / lifetime | **Không có trong launch contract** | 🚫 |
-| C4 | Paid-access gate | N/A ở v1.0 (app free, full tính năng hiện tại) | 🚫 |
+| C1 | Price (app) | **Free** (tải miễn phí) + IAP subscription | ⏳ Xác nhận |
+| C2 | Auto-renewable subscriptions | 2 gói: `premium_yearly` và `premium_monthly` trong 1 subscription group | ⏳ Tạo product IDs trên ASC |
+| C3 | Non-consumable / lifetime | Không có | 🚫 |
+| C4 | Paid-access gate | Gate cứng trong build: **Try Pose** | ✅ Đã tích hợp |
 
-> Khi FEAT-011 ship: tạo đúng hai product IDs trong ASC trước (`premium_annual` và
-> `premium_monthly`), đặt chúng trong một subscription group, không cấu hình trial
-> hoặc lifetime product, khai IAP mục C, cập nhật App Privacy (Purchase History),
-> và dùng copy đúng paywall — là **bản 1.0.x sau**, không nằm ở release này.
+## D. Cấu hình hệ thống
 
-## D. Cấu hình liên quan từ release-prep (liên hệ, KHÔNG phải việc lane này)
-
-| # | Nhắc nhở | Trạng thái | Ghi chú |
+| # | Hạng mục | Trạng thái | Ghi chú |
 | --- | --- | --- | --- |
-| D1 | M1 — default endpoint ngrok | **Đã xử lý trong dirty tree**: `AppConfig.kt:11` + `PoseServiceLocator.kt` = `https://pose-extract-server-production.up.railway.app` (prod) | ✅ (diff xác nhận) |
-| D2 | P1 — GoogleService-Info.plist chính chủ | PO xác nhận file firebase thuộc team (bundle `camerapose.app`) | ⏳ PO |
-| D3 | P2 — Remote Config `api_baseurl` = prod | PO set trên Firebase project | ⏳ PO |
-| D4 | M3 — xcodegen với real plist cho **archive tương lai** | Build 6 đã ok; các bản sau phải chạy xcodegen để bundle plist | 👷 UCP (bản sau) |
-| D5 | M5 — dSYM upload Crashlytics | Chưa có CI; cần step vào lúc archive release | 👷 CI owner (bản sau) |
-| D6 | D1 cũ — UGC không bật (privacy-ugc Giai đoạn 1) → policy không claim UGC | giữ nguyên như policy nháp | ✅ |
+| D1 | Default API endpoint | Prod endpoint: `https://pose-extract-server-production.up.railway.app` | ✅ Đã cấu hình |
+| D2 | Firebase iOS app | Đã cấu hình cho `posing.camera.app` trong project `camerapose-a0877` | ✅ Đã cấu hình |
+| D3 | Remote Config `api_baseurl` | Cấu hình trên Firebase Console | ⏳ Kiểm tra trên console |
+| D4 | Runtime Telemetry check | Quan sát Analytics/Crashlytics/Remote Config trên build posing | ⏳ Xác nhận qua DebugView |
+| D5 | Sign in with Apple | Enablement trên Apple Developer Portal & entitlements | ⏳ Portal pending (entitlements local đã có) |
 
-## E. Runbook submit (cho lane submit — KHÔNG chạy bởi lane này)
+## E. Quy trình submit
 
-Thứ tự đề xuất khi PO bấm nút "đủ điều kiện":
+1. Hoàn thiện toàn bộ metadata và URL trên App Store Connect.
+2. Chụp và upload bộ screenshot (iPhone 6.7", 6.5" và iPad 12.9") theo `screenshots-runbook.md`.
+3. Điền thông tin App Privacy (Nutrition Labels) theo `privacy-support.md` §4.
+4. Tạo 2 subscription products (`premium_yearly`, `premium_monthly`) trong Subscriptions group.
+5. Điền App Review Information: Sign-in required = Yes, điền username/password demo account và Notes theo `app-review-notes.md`.
+6. Chọn build release/TestFlight đã verify và bấm Submit for Review.
 
-1. PO duyệt toàn bộ metadata + supply URL/email (A1-A16, C1, D2, D3).
-2. Executor chụp screenshots theo runbook → PO duyệt ảnh → lưu ASC `Media Manager`.
-3. Developer/PO điền App Information (A), Privacy questionnaire (A16), Pricing (C).
-4. Chọn build 6 từ TestFlight → **Complete Submission** (hoặc "Add for Review" - ASO
-   phím này thuộc người có quyền ASC; PO quyết định).
-5. Theo dõi review; chuẩn bị sẵn metadata `What's New` bản sau (IAP) khi FEAT-011 ship.
+## F. Checklist các điều kiện bắt buộc
 
-> **Giới hạn lane này:** tất cả action ASC (điền form, upload ảnh, submit, upload
-> build, archive) thuộc lane submit sau khi PO duyệt — lane `app-store-publish-prep`
-> dừng ở việc "chuẩn bị + runbook".
-
-## F. Checklist tổng theo trạng thái
-
-| Trạng thái | Mục |
-| --- | --- |
-| ✅ READY (không cần làm gì) | B1, B2, B3, B6, A10 (kỹ thuật), D1 |
-| 👷 UCP/executor | A11 (capture lại đúng 6.7"/6.5"/iPad + seed Gallery), A10 (QA visual), D4, D5 (bản sau) |
-| ⏳ PO cấp/duyệt | A1-A9, A12-A16, C1, D2, D3 |
-| 🚫 N/A v1.0 | C2, C3, C4 |
-
-## G. Rủi ro chặn submit (chốt trước khi review)
-
-1. **Thiếu Privacy Policy URL hoặc Support URL** → ASC không cho submit (A13/A14).
-2. **Thiếu iPad screenshots** (family 1,2) → ASC reject (A11).
-3. Screenshots chứa UI chưa ship (paywall/overlay) → review reject (runbook §6).
-4. App Privacy khai sai (thiếu Firebase device ID/crash) → review hỏi lại (A16).
-5. Nếu QA visual icon FAIL → cần build mới (CFBundleVersion 5) + upload lại — báo PO sớm.
+1. **Terms of Use (EULA) & Privacy Policy URL** có mặt đầy đủ trong Description và truy cập công khai không cần login (Guideline 3.1.2).
+2. **App Review demo account** hoạt động được và đăng nhập thành công vào backend (Guideline 2.1).
+3. **iPad screenshots** đầy đủ kích thước 12.9" (app hỗ trợ iPad family).
+4. **App Privacy nutrition labels** khớp đúng các dịch vụ dữ liệu thật (Purchase History, Firebase telemetry).

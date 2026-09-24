@@ -14,6 +14,27 @@ final class RemoteConfigServiceTests: XCTestCase {
         XCTAssertEqual(resolution.source, .cache)
     }
 
+    func testParseBooleanRecognizesSupportedValuesAndRejectsMissingOrGarbage() {
+        XCTAssertNil(RemoteConfigService.parseBoolean(raw: nil))
+        XCTAssertNil(RemoteConfigService.parseBoolean(raw: "garbage"))
+        XCTAssertEqual(RemoteConfigService.parseBoolean(raw: "true"), true)
+        XCTAssertEqual(RemoteConfigService.parseBoolean(raw: "false"), false)
+        XCTAssertEqual(RemoteConfigService.parseBoolean(raw: "1"), true)
+        XCTAssertEqual(RemoteConfigService.parseBoolean(raw: "0"), false)
+        XCTAssertEqual(RemoteConfigService.parseBoolean(raw: "TrUe"), true)
+        XCTAssertEqual(RemoteConfigService.parseBoolean(raw: "FALSE"), false)
+        XCTAssertEqual(RemoteConfigService.parseBoolean(raw: "yes"), true)
+        XCTAssertEqual(RemoteConfigService.parseBoolean(raw: "no"), false)
+    }
+
+    func testResolveAccountEnabledPrefersFetchedThenCacheThenDefaultTrue() {
+        XCTAssertTrue(RemoteConfigService.resolveAccountEnabled(cachedRaw: "false", fetchedRaw: "true"))
+        XCTAssertFalse(RemoteConfigService.resolveAccountEnabled(cachedRaw: "false", fetchedRaw: nil))
+        XCTAssertFalse(RemoteConfigService.resolveAccountEnabled(cachedRaw: "false", fetchedRaw: "unparseable"))
+        XCTAssertTrue(RemoteConfigService.resolveAccountEnabled(cachedRaw: nil, fetchedRaw: nil))
+        XCTAssertTrue(RemoteConfigService.resolveAccountEnabled(cachedRaw: "unparseable", fetchedRaw: nil))
+    }
+
     func testRejectsPlaceholderRevenueCatKey() {
         XCTAssertFalse(RemoteConfigService.isValidRevenueCatKey("REPLACE_WITH_DEV_PUBLIC_SDK_KEY"))
         XCTAssertFalse(RemoteConfigService.isValidRevenueCatKey("$(REVENUECAT_PUBLIC_SDK_KEY)"))

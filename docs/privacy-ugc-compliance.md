@@ -7,7 +7,7 @@
 
 ## 1. Tại sao cần quan tâm?
 
-App AI Pose cho phép user upload ảnh chứa **khuôn mặt người thật** để extract pose. Theo cả luật Việt Nam lẫn yêu cầu Apple App Store, ảnh mặt người được phân loại là **dữ liệu cá nhân nhạy cảm (sensitive personal data)**. Xử lý sai có thể dẫn tới:
+App Posing cho phép user upload ảnh chứa **khuôn mặt người thật** để extract pose. Theo cả luật Việt Nam lẫn yêu cầu Apple App Store, ảnh mặt người được phân loại là **dữ liệu cá nhân nhạy cảm (sensitive personal data)**. Xử lý sai có thể dẫn tới:
 
 - App bị reject/remove khỏi App Store
 - Vi phạm Luật Bảo vệ Dữ liệu cá nhân Việt Nam (phạt hành chính + hình sự)
@@ -75,7 +75,7 @@ User phải tick checkbox xác nhận trước khi upload:
 ```
 ☐ Tôi xác nhận rằng:
   • Tôi là chủ sở hữu hoặc có quyền hợp pháp sử dụng ảnh này
-  • Tôi đồng ý cho AI Pose hiển thị ảnh này trong Community
+  • Tôi đồng ý cho Posing hiển thị ảnh này trong Community
   • Ảnh không chứa nội dung bất hợp pháp, khiêu dâm, hoặc bạo lực
   • Nếu ảnh chứa khuôn mặt người khác, tôi đã có sự đồng ý của họ
 ```
@@ -107,7 +107,7 @@ Cần tạo trang Privacy Policy (hosted trên web) bao gồm:
 - Hiển thị ảnh trong Community (nếu bạn chọn chia sẻ)
 
 ## Ai có quyền truy cập
-- Đội ngũ AI Pose (vận hành hệ thống)
+- Đội ngũ Posing (vận hành hệ thống)
 - Người dùng khác trong Community (nếu ảnh được publish)
 
 ## Thời gian lưu trữ

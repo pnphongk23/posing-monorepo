@@ -21,7 +21,7 @@
 # Selector policy: semantic text: only — NO coordinate taps. Chip titles are exactly
 # "All" / "Today" / "7 days" / "30 days" (GalleryFeature.swift:253-258; rendered via
 # Text(title), AIPoseComponents.swift:9). If DL-A adds accessibilityIdentifier s, prefer id:.
-appId: camerapose.app
+appId: posing.camera.app
 ---
 - launchApp:
     clearState: true

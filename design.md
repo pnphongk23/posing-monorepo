@@ -1,4 +1,4 @@
-# Design System: AI Pose Mobile UI
+# Design System: posing Mobile UI
 
 **Project ID:** N/A — local static prototype
 **Source of truth:** `docs/prototype/`
@@ -11,7 +11,7 @@ This document translates the current prototype tokens and component CSS into sem
 
 ## 1. Visual Theme & Atmosphere
 
-AI Pose is playful, tactile, and graphic rather than glossy. The interface uses a warm cream canvas, heavy black contours, flat pastel accents, and hard offset shadows to make controls feel physical and pressable.
+posing is playful, tactile, and graphic rather than glossy. The interface uses a warm cream canvas, heavy black contours, flat pastel accents, and hard offset shadows to make controls feel physical and pressable.
 
 - **Mood:** energetic, friendly, hands-on, and slightly editorial.
 - **Surface treatment:** flat fills with strong outlines; do not introduce gradients, glassmorphism, blur, or soft diffuse shadows.

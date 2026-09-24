@@ -1,12 +1,31 @@
 import { createHash } from "node:crypto";
 import { Router } from "express";
+import type { NextFunction, Request, Response } from "express";
+import { z } from "zod";
 
 import type { AccountStore } from "../db/accountStore";
 import { verifyJwt } from "../middleware/accountAuth";
+import { createAuthRateLimitMiddleware } from "../middleware/authRateLimit";
 import { PendingAuthStore } from "../services/pendingAuthStore";
 
 const GOOGLE_PROVIDER = "google";
 const PENDING_VALIDATION = { error: { code: "AUTH_PENDING_VALIDATION", message: "OAuth exchange is pending runtime validation" } };
+const INVALID_CREDENTIALS = { error: { code: "INVALID_CREDENTIALS", message: "Incorrect email or password" } };
+const EMAIL_NOT_CONFIRMED = { error: { code: "EMAIL_NOT_CONFIRMED", message: "Confirm your email address" } };
+const RATE_LIMITED = { error: { code: "RATE_LIMITED", message: "Too many sign-in attempts" } };
+const SIGNIN_UNAVAILABLE = { error: { code: "AUTH_PENDING_VALIDATION", message: "Sign-in is temporarily unavailable" } };
+const UNAUTHORIZED = { error: { code: "UNAUTHORIZED", message: "Unauthorized" } };
+
+const signInSchema = z.object({
+  email: z.string().trim().email(),
+  password: z.string().min(1)
+});
+
+const appleSignInSchema = z.object({
+  identityToken: z.string().min(1),
+  nonce: z.string().min(8).max(512),
+  fullName: z.string().trim().optional()
+});
 
 export interface AccountAuthRoutesOptions {
   supabaseUrl: string;
@@ -17,10 +36,30 @@ export interface AccountAuthRoutesOptions {
   pendingAuthStore?: PendingAuthStore;
   fetchImpl?: typeof fetch;
   fetchJwks?: typeof fetch;
+  authRateLimitWindowMs?: number;
+  authRateLimitMaxPerEmail?: number;
+  authRateLimitMaxPerIp?: number;
+}
+
+interface SupabaseTokenResponse {
+  access_token?: unknown;
+  refresh_token?: unknown;
+  error?: unknown;
+  error_description?: unknown;
+  error_code?: unknown;
+  msg?: unknown;
+  code?: unknown;
 }
 
 function unavailable(res: { status: (code: number) => { json: (body: unknown) => void } }): void {
   res.status(503).json(PENDING_VALIDATION);
+}
+
+function emailNotConfirmed(payload: SupabaseTokenResponse): boolean {
+  const candidates = [payload.error_code, payload.code, payload.error, payload.error_description, payload.msg]
+    .filter((value): value is string | number => typeof value === "string" || typeof value === "number")
+    .map((value) => String(value).toLowerCase());
+  return candidates.some((value) => value.includes("email_not_confirmed") || value.includes("email not confirmed"));
 }
 
 function callbackUri(publicUrl: string): string {
@@ -43,6 +82,17 @@ export function createAccountAuthRoutes(options: AccountAuthRoutesOptions): Rout
   const supabaseUrl = options.supabaseUrl.replace(/\/$/, "");
   const fetchImpl = options.fetchImpl ?? fetch;
   const authReady = Boolean(options.anonKey && options.backendPublicUrl && options.accountStore && options.pendingAuthStore && options.keyId);
+  const emailRateLimit = createAuthRateLimitMiddleware({
+    windowMs: options.authRateLimitWindowMs,
+    maxPerEmail: options.authRateLimitMaxPerEmail,
+    maxPerIp: options.authRateLimitMaxPerIp
+  });
+  const appleRateLimit = createAuthRateLimitMiddleware({
+    windowMs: options.authRateLimitWindowMs,
+    maxPerEmail: options.authRateLimitMaxPerEmail,
+    maxPerIp: options.authRateLimitMaxPerIp,
+    keyProvider: (req) => ({ ip: req.ip || "unknown", email: `apple:${req.ip || "unknown"}` })
+  });
 
   router.get("/google/start", (req, res) => {
     if (!authReady) return unavailable(res);
@@ -93,6 +143,114 @@ export function createAccountAuthRoutes(options: AccountAuthRoutesOptions): Rout
       res.redirect(`aipose://auth/callback?code=${encodeURIComponent(handoffCode)}`);
     } catch {
       res.status(503).json(PENDING_VALIDATION);
+    }
+  });
+
+  const emailSignInAvailability = (_req: Request, res: Response, next: NextFunction): void => {
+    if (!options.anonKey || !options.accountStore || !options.keyId) {
+      res.status(503).json(PENDING_VALIDATION);
+      return;
+    }
+    next();
+  };
+
+  router.post("/email/signin", emailSignInAvailability, emailRateLimit, async (req, res) => {
+    const anonKey = options.anonKey!;
+    const accountStore = options.accountStore!;
+    const keyId = options.keyId!;
+    const parsed = signInSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      const messages = parsed.error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`).join(", ");
+      res.status(400).json({ error: { code: "BAD_REQUEST", message: messages } });
+      return;
+    }
+    const { email, password } = parsed.data;
+
+    let response: Awaited<ReturnType<typeof fetchImpl>>;
+    try {
+      response = await fetchImpl(`${supabaseUrl}/auth/v1/token?grant_type=password`, {
+        method: "POST",
+        headers: { apikey: anonKey, "content-type": "application/json" },
+        body: JSON.stringify({ email, password })
+      });
+    } catch {
+      res.status(503).json(SIGNIN_UNAVAILABLE);
+      return;
+    }
+    try {
+      // Checked BEFORE parsing: an edge/CDN rate limit (Cloudflare in front of Supabase) answers
+      // 429 with an HTML block page, so `response.json()` would throw and the outer catch would
+      // report a rate-limited reviewer as a wrong password — the exact failure this branch exists
+      // to prevent. Never let a parse failure decide between 429 and 401.
+      if (response.status === 429) {
+        res.status(429).json(RATE_LIMITED);
+        return;
+      }
+      const payload = await response.json() as SupabaseTokenResponse;
+      if (!response.ok) {
+        if (emailNotConfirmed(payload)) {
+          res.status(403).json(EMAIL_NOT_CONFIRMED);
+          return;
+        }
+        res.status(401).json(INVALID_CREDENTIALS);
+        return;
+      }
+      if (typeof payload.access_token !== "string" || typeof payload.refresh_token !== "string") {
+        res.status(401).json(INVALID_CREDENTIALS);
+        return;
+      }
+      const claims = await verifyJwt(payload.access_token, {
+        supabaseUrl,
+        keyId,
+        accountStore,
+        fetchJwks: options.fetchJwks
+      });
+      const account = await accountStore.upsert({ id: claims.sub as string, displayName: accountDisplayName(claims, claims.sub as string) });
+      res.json({ accessToken: payload.access_token, refreshToken: payload.refresh_token, account });
+    } catch {
+      res.status(401).json(INVALID_CREDENTIALS);
+    }
+  });
+
+  router.post("/apple/signin", emailSignInAvailability, appleRateLimit, async (req, res) => {
+    const anonKey = options.anonKey!;
+    const accountStore = options.accountStore!;
+    const keyId = options.keyId!;
+    const parsed = appleSignInSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      const messages = parsed.error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`).join(", ");
+      res.status(400).json({ error: { code: "BAD_REQUEST", message: messages } });
+      return;
+    }
+
+    try {
+      const response = await fetchImpl(`${supabaseUrl}/auth/v1/token?grant_type=id_token`, {
+        method: "POST",
+        headers: { apikey: anonKey, "content-type": "application/json" },
+        body: JSON.stringify({ provider: "apple", id_token: parsed.data.identityToken, nonce: parsed.data.nonce })
+      });
+      if (!response.ok) {
+        res.status(401).json(UNAUTHORIZED);
+        return;
+      }
+      const payload = await response.json() as SupabaseTokenResponse;
+      if (typeof payload.access_token !== "string" || !payload.access_token || typeof payload.refresh_token !== "string" || !payload.refresh_token) {
+        res.status(401).json(UNAUTHORIZED);
+        return;
+      }
+      const claims = await verifyJwt(payload.access_token, {
+        supabaseUrl,
+        keyId,
+        accountStore,
+        fetchJwks: options.fetchJwks
+      });
+      const account = await accountStore.upsert({
+        id: claims.sub as string,
+        displayName: parsed.data.fullName || accountDisplayName(claims, claims.sub as string)
+      });
+      res.json({ accessToken: payload.access_token, refreshToken: payload.refresh_token, account });
+    } catch {
+      res.status(401).json(UNAUTHORIZED);
     }
   });
 

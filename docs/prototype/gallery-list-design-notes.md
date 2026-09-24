@@ -60,7 +60,7 @@ Collection URLs:
 | [Cosmos Media Library](https://mobbin.com/screens/b5a53d73-3302-4c4a-ba5a-5dec6fe5a873) | `Your Library`, search and add actions, filter chips (`All elements`, `Images`, `Videos`, `Links`), two-column tiles, and `Elements/Clusters`. | Closest structural reference for a personal media library with global filters. |
 | [CapCut Projects](https://mobbin.com/screens/0faea8ac-1eb1-40d2-bb07-76e7ae9f8809) | Large `New project` CTA followed by rows with thumbnail, timestamp, file size, duration, and overflow menu. | Strong list-mode reference for metadata-rich personal content. |
 | [Lapse Memories](https://mobbin.com/screens/ec30b588-bd9e-4443-b69a-4e79363fb06a) | `Snaps/Albums/Tagged`, a date rail, grouped memories, item counts, and a hold-to-view action. | Supports grouping a personal history by time without turning it into a social feed. |
-| [Airbnb Wishlists](https://mobbin.com/screens/f07129eb-51e2-4036-9085-514580621de3) | Named collection tiles with cover images, saved counts, and an `Edit` action. | Useful if Snap Pose later adds albums; too much structure for the current capture history. |
+| [Airbnb Wishlists](https://mobbin.com/screens/f07129eb-51e2-4036-9085-514580621de3) | Named collection tiles with cover images, saved counts, and an `Edit` action. | Useful if posing later adds albums; too much structure for the current capture history. |
 
 ### Flow anchors
 
@@ -88,7 +88,7 @@ Collection URLs:
 
 ## Meaningful variations
 
-| Variation | Seen in | Implication for Snap Pose |
+| Variation | Seen in | Implication for posing |
 | --- | --- | --- |
 | Equal three-column grid vs. variable two-column masonry | Instagram vs. Pinterest/Cosmos | Use predictable equal tiles for comparison; reserve masonry for a deliberate visual-first mode. |
 | Editorial hero/feed vs. personal library | Lemon8/YouTube/Unfold vs. Cosmos/CapCut/Lapse | Gallery should start with the user's captured items, not a hero or recommendation module. |
@@ -98,7 +98,7 @@ Collection URLs:
 
 ## Reference → Pattern → Principle → Product-specific implementation
 
-| Reference | Pattern | Principle | Snap Pose implementation |
+| Reference | Pattern | Principle | posing implementation |
 | --- | --- | --- | --- |
 | Cosmos Media Library, Lapse Memories | A personal collection has type/date context before the tiles. | Retrieval is faster when the collection explains what is being shown. | Keep `Today` and `Yesterday` sections, show a count per section when useful, and expose a compact `All / With match / Pending` filter only if those states exist in product data. |
 | Instagram Search, Pinterest Browse | Grid density is tuned to the scanning task. | Predictable positions support comparison; variable ratios support visual discovery. | Make a two-column staggered grid the only browse mode for captured photos. Keep each tile's full photo tappable, avoid adding text over the image, and keep date headers out of repeated content. |

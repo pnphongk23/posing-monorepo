@@ -1,4 +1,4 @@
-# Paywall Design Research — AI Pose Premium
+# Paywall Design Research — posing Premium
 
 > Research note for feat-011. Verified 2026-08-29 against Apple HIG IAP,
 > App Review 3.1.2, DEC-008, and FEAT-011. Pricing frozen per DEC-008.
@@ -19,7 +19,7 @@ product-model and layout conclusions**. Those conclusions shipped in
 | 3 | “alternatives are compact 3-column grid” (L24, L55, L95, L136) | **Anti-pattern vs Apple + vs Direction A** | On 390px each column is ~114px. Price, cadence, and VN anchors wrap or clip. Apple 3.1.2(c) and HIG require the total billing price and duration to be clear *before* purchase. `prototype-research.md` already chose stacked Direction A; the 08-28 research reversed it. |
 | 4 | Dual USD + “Vietnam planning anchor” on every consumer card (L57, L135) | **Misleading presentation** | StoreKit shows one localized price. Two currencies on one card reads as two charges. Locale belongs in prototype controls, not on the purchase surface. |
 | 5 | Annual selected state = warm pink fill (L24, L54) | **Color-only + contrast** | HIG: do not convey selection by color alone. Pink wash on `#E89CAE` muddies term text. Selection = badge text + thick border + offset shadow. Pink is reserved for the single CTA. |
-| 6 | “AI Pose’s freemium model” (L80) | **Contradicts DEC-008** | Explicitly a paid-access app. |
+| 6 | “posing’s freemium model” (L80) | **Contradicts DEC-008** | Explicitly a paid-access app. |
 | 7 | Heading “One Premium. Four ways to pay.” (L55) | **Weak hierarchy** | Meta line, not a plan name or benefit. Replace with a visible “Choose a plan” legend. |
 | 8 | Weekly equal weight in the 3-col grid | **Contradicts DEC-008** | Weekly is secondary and has a high annualized equivalent; period must be prominent, not a cramped third column. |
 | 9 | Ad-hoc hex `#4f545d` / `#555b64` / `#3f444b` (L117) | **Token bypass** | Use `--nb-color-dark` / `--nb-color-gray`. |
@@ -61,7 +61,7 @@ Valid prior claims **kept**: restore required; Terms/Privacy required; annual de
 
 Useful hypotheses: outcome headline, annual as default, one primary CTA, transparent “charged today / auto-renews / one-time,” less clutter.
 
-**Not** a license to hide comparison prices. “Minimal variants” in RC blogs means reduce *cognitive* load, not shrink three prices into unread columns. AI Pose launches with four DEC-008 packages; all four stay visible and comparable.
+**Not** a license to hide comparison prices. “Minimal variants” in RC blogs means reduce *cognitive* load, not shrink three prices into unread columns. posing launches with four DEC-008 packages; all four stay visible and comparable.
 
 | RC pattern | Design decision |
 | --- | --- |
@@ -74,7 +74,7 @@ Useful hypotheses: outcome headline, annual as default, one primary CTA, transpa
 
 ## 3. Real-app examples — what to copy vs discard
 
-| Source | Keep | Discard for AI Pose |
+| Source | Keep | Discard for posing |
 | --- | --- | --- |
 | Headspace | Outcome framing, cancel-in-settings reassurance | Not a template for layout |
 | Calm / Duolingo | — | Freemium “what stays free” copy. Contradicts paid-access. |

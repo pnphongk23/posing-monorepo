@@ -1,4 +1,4 @@
-# Onboarding Design Research — AI Pose First-Time User Experience (FTUE)
+# Onboarding Design Research — posing First-Time User Experience (FTUE)
 
 > **Research & Architecture Note for FEAT-016**  
 > **Author:** Paseo Team — Lead Architect & Code King  
@@ -9,8 +9,8 @@
 
 ## 1. Executive Summary & Problem Statement
 
-### 1.1 The Cold Start Problem in AI Pose
-When a first-time user installs **AI Pose**, they arrive with high expectations ("I want to look good in photos without feeling awkward") but zero context on how the core mechanic works. 
+### 1.1 The Cold Start Problem in posing
+When a first-time user installs **posing**, they arrive with high expectations ("I want to look good in photos without feeling awkward") but zero context on how the core mechanic works. 
 
 If dumped directly into an empty camera viewfinder or an uncategorized list of 200+ poses:
 1. **Decision Paralysis:** The user doesn't know which pose fits their current setting (cafe, street, gym, portrait).
@@ -36,21 +36,21 @@ The onboarding experience must not be an administrative chore or a passive slide
   - **Dynamic Threshold CTA:** The primary CTA button ("Next") tracks progress dynamically, e.g., "Choose 3 or more" with an active count badge (`2/3 selected`).
   - **Tactile Feedback:** Selected pills invert contrast or apply brand accent borders with subtle micro-spring animations.
   - **Skip Affordance:** Explicit "Skip for now" in the top navigation bar prevents churn for users who want to jump straight to browsing.
-- **AI Pose Translation:** Adopt tactile neo-brutalist interest chips for 7 canonical pose vibes: Portrait, Cafe, Travel, Street, Fitness, Couples, Professional. Pre-filters the community pose feed so the user's first catalog view is 100% relevant.
+- **posing Translation:** Adopt tactile neo-brutalist interest chips for 7 canonical pose vibes: Portrait, Cafe, Travel, Street, Fitness, Couples, Professional. Pre-filters the community pose feed so the user's first catalog view is 100% relevant.
 
 ### 2.2 Reddit — Overcoming Cold Start via Community Seeding
 - **Pattern:** After topic selection, Reddit immediately transitions into "Recommended Communities" with pre-checked top subreddits.
 - **Key UX Mechanics:**
   - **Endowed Progress Effect:** Showing users that their feed is already being built ("Setting up your home feed...").
   - **Pre-Selected Defaults with Instant Customization:** Avoids the blank screen trap by offering curated popular picks while giving full control to uncheck or customize.
-- **AI Pose Translation:** Following interest selection, present a tailored collection preview ("Curated 18 poses matching your vibes") before handoff to the camera or library.
+- **posing Translation:** Following interest selection, present a tailored collection preview ("Curated 18 poses matching your vibes") before handoff to the camera or library.
 
 ### 2.3 Duolingo — Time-to-Value (TTV) via "Learning by Doing"
 - **Pattern:** Zero passive slides. Within 15 seconds of launch, Duolingo drops the user into an interactive translation mini-exercise. The user completes one micro-task *before* ever being asked to sign up or configure settings.
 - **Key UX Mechanics:**
   - **Immediate Micro-Win:** Achieving a micro-success triggers dopamine and validates product efficacy.
   - **Lazy Registration:** Account creation is deferred until after the first lesson.
-- **AI Pose Translation:** Build an **Interactive Pose Match Demo** directly in the onboarding flow. A simulated camera viewport allows the user to drag an alignment slider or adjust silhouette opacity to see the ghost lines lock into green alignment. The user learns the core mechanic in 5 seconds without needing to stand up or take a real photo.
+- **posing Translation:** Build an **Interactive Pose Match Demo** directly in the onboarding flow. A simulated camera viewport allows the user to drag an alignment slider or adjust silhouette opacity to see the ghost lines lock into green alignment. The user learns the core mechanic in 5 seconds without needing to stand up or take a real photo.
 
 ### 2.4 BeReal & Creator Camera Apps — Contextual Permission Priming
 - **Pattern:** Camera and notification permissions are never requested cold. A high-contrast preflight card explains *why* access is required.
@@ -58,13 +58,13 @@ The onboarding experience must not be an administrative chore or a passive slide
   - **The "Why" Card:** Visual icon + benefit-driven headline ("To show real-time pose overlays") + privacy pledge ("All joint detection runs 100% on your device").
   - **Dual Action Paths:** "Enable Camera Access" (launches native iOS prompt) and "Maybe Later" (graceful fallback).
   - **HIG Compliance:** Conforms to Apple HIG 5.1.1 (Data Collection & Permissions): explains data use prior to trigger, provides alternate path on denial.
-- **AI Pose Translation:** Stage 4 dedicated permission primer card with neo-brutalist styling, explaining on-device AI privacy and giving both "Enable Access" and "Not Now" options.
+- **posing Translation:** Stage 4 dedicated permission primer card with neo-brutalist styling, explaining on-device AI privacy and giving both "Enable Access" and "Not Now" options.
 
 ---
 
 ## 3. Behavioral Psychology & UX Frameworks
 
-| Psychology Principle | Mechanism in AI Pose Onboarding | Expected Impact* |
+| Psychology Principle | Mechanism in posing Onboarding | Expected Impact* |
 | --- | --- | --- |
 | **The Hook Model** (Nir Eyal) | Trigger (desire for aesthetic photo) → Action (select interests & try demo) → Variable Reward (seeing personalized curated poses) → Investment (saved vibe preferences). | Increases D1/D7 retention by 25–35%. |
 | **Endowed Progress Effect** | Step indicator (`Step 1 of 4`) starts filled at 25%, giving a sense of immediate forward momentum. | Reduces onboarding abandonment by 18%. |
@@ -79,7 +79,7 @@ The onboarding experience must not be an administrative chore or a passive slide
 
 ```text
 ┌────────────────────────────────────────────────────────────────────────┐
-│                        AI POSE ONBOARDING FLOW                         │
+│                        posing ONBOARDING FLOW                         │
 └────────────────────────────────────────────────────────────────────────┘
                                    │
                                    ▼

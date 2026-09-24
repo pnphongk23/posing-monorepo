@@ -10,14 +10,14 @@ export const viewport = {
 };
 
 export const metadata = {
-  title: "PoseIt — AI Pose Camera",
+  title: "posing admin",
   description: "Upload a photo, extract the pose as line art, and use it as a camera overlay guide to recreate perfect poses.",
   keywords: ["pose", "camera", "AI", "line art", "photography", "pose guide"],
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "PoseIt",
+    title: "posing",
   },
 };
 

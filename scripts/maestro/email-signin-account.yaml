@@ -1,0 +1,57 @@
+# Email/password sign-in — Account card (signed-out) + its email entry point (S3 verification).
+#
+#   01 settings            (entry point to Account)
+#   02 account-signed-out  the card that no longer claims "Signed in with Google", with the new
+#                          "Sign in with email" peer entry
+#   03 account-email-sheet email sheet opened from the Account card — its intent line must be the
+#                          Account copy, not the Saved-gate copy
+#
+# The SIGNED-IN card ("Signed in", no Google claim) is not reachable in this rig: it requires a
+# real session. That state is covered by the live end-to-end pass, not here.
+#
+# Run (never reuse the output dir across runs):
+#   ~/.maestro/bin/maestro test scripts/maestro/email-signin-account.yaml \
+#     --device 5CD6001E-54E4-4EE2-AA20-F22DEA07F84C --test-output-dir /tmp/s3-email-account
+appId: posing.camera.app
+---
+- launchApp:
+    clearState: true
+- waitForAnimationToEnd
+- tapOn:
+    text: "Continue"
+    optional: true
+- extendedWaitUntil:
+    visible:
+      id: "poses.open-search"
+    timeout: 20000
+- waitForAnimationToEnd
+
+- tapOn:
+    text: "Open Settings"
+- waitForAnimationToEnd
+- takeScreenshot: 01-settings
+
+- tapOn:
+    text: "Open Account"
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: ".*Signed out.*"
+    timeout: 10000
+- waitForAnimationToEnd
+# The signed-out card must offer BOTH providers; the email entry is a peer, not a replacement.
+- assertVisible:
+    id: "signin.emailEntry"
+- takeScreenshot: 02-account-signed-out
+
+- tapOn:
+    id: "signin.emailEntry"
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible:
+      id: "signin.email"
+    timeout: 10000
+- waitForAnimationToEnd
+# Account entry point carries the Account intent line, not the Saved-gate one.
+- assertVisible: "Sign in again to access your Saved poses."
+- assertNotVisible: "View your saved poses."
+- takeScreenshot: 03-account-email-sheet
