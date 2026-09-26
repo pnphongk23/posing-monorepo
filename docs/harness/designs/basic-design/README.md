@@ -9,7 +9,7 @@
 
 | Layer | File | Vai trò |
 | --- | --- | --- |
-| Screens | [screens/README.md](./screens/README.md) | Inventory 9 screen files (mobile shell / mobile / admin / legacy); flow, ownership, shared occurrences |
+| Screens | [screens/README.md](./screens/README.md) | Inventory 11 screen files (mobile shell / mobile / admin / legacy); flow, ownership, shared occurrences |
 | APIs | [apis.md](./apis.md) | **20 Normative operations** trong 6 modules + [proxy convention](./apis.md#api-proxy-01) và [Observed register](./apis.md#api-admin-community-obs-01) — link spec/OpenAPI, không duplicate |
 | Models | [models.md](./models.md) | **8 entity** + `PosePreview` + [enum register](./models.md#models-enum-register) / [ERD summary](./models.md#models-erd-summary) — link `docs/spec/data`, không duplicate |
 
@@ -29,12 +29,12 @@
 ## 3. Screens scope
 
 <a id="screens-scope"></a>
-**9 screen files** (không gồm `TEMPLATE.md`):
+**11 screen files** (không gồm `TEMPLATE.md`):
 
 | Area | Count | Screen IDs | Inventory |
 | --- | --- | --- | --- |
 | Mobile app-entry shell | 1 | SCR-000-01 | [Home](./screens/scr-000-01-home.md#scr-000-01-home-posestab-poseslistscreen-posesscreen) |
-| Mobile | 2 | SCR-001-01, SCR-002-01 | [screens/README §1.1](./screens/README.md#inventory-mobile) |
+| Mobile | 4 | SCR-001-01, SCR-002-01, SCR-004-01, SCR-005-01 | [screens/README §1.1](./screens/README.md#inventory-mobile) |
 | Admin Web | 3 | SCR-007-01, SCR-007-02, SCR-007-03 | [screens/README §1.2](./screens/README.md#inventory-admin) |
 | Legacy root (FEAT-003) | 3 | SCR-003-01, SCR-003-02, SCR-003-03 | [screens/README §1.3](./screens/README.md#inventory-legacy) |
 
@@ -77,7 +77,7 @@ Pattern tham khảo (design slice khác): [FEAT-013 saved poses design](../feat-
 | E1 | Catalogue unavailable | SCR-003-01, SCR-003-02 | Lỗi transport/5xx | Giữ list đã xác nhận |
 | E2 | Detail unavailable | SCR-003-03 | `404 NOT_FOUND` | Giải thích NotFound/Error; **return to list**; cấm stale detail |
 
-**Main 2 ghi chú:** Pagination và refresh thuộc published catalogue (**Normative**). Query `q` được khai báo trong [`community.md`](../../../spec/api/modules/community.md) / OpenAPI (**Normative** contract), nhưng evidence status **Unresolved** — FEAT-003 Current evidence vẫn mock-backed; mobile live vs mock tension — xem [apis.md](./apis.md#unresolved). Filter `difficulty` / `tag`: API hỗ trợ (**Normative**); mobile filter UI **Unresolved** / chưa proven — không mô tả UI filter trong slice.
+**Main 2 ghi chú:** Pagination và refresh thuộc published catalogue (**Normative**). Query `q` được khai báo trong [`api-contract.md`](../../specs/api-contract.md) / OpenAPI (**Normative** contract), nhưng evidence status **Unresolved** — FEAT-003 Current evidence vẫn mock-backed; mobile live vs mock tension — xem [apis.md](./apis.md#unresolved). Filter `difficulty` / `tag`: API hỗ trợ (**Normative**); mobile filter UI **Unresolved** / chưa proven — không mô tả UI filter trong slice.
 
 Feature authority: [FEAT-003](../../features/FEAT-003-browse-and-search-published-poses.md).
 
@@ -89,8 +89,10 @@ Feature authority: [FEAT-003](../../features/FEAT-003-browse-and-search-publishe
 | FEAT-001 | [SCR-001-01](./screens/mobile/scr-001-01-camera.md#scr-001-01-camera-camerascreen) | Paywall OVR canonical |
 | FEAT-002 | [SCR-002-01](./screens/mobile/scr-002-01-gallery.md#scr-002-01-gallery-galleryscreen) | |
 | FEAT-003 | SCR-003-01/02/03 | Published-leg — [screens/README §6](./screens/README.md#ownership-boundary-feat-003) |
+| FEAT-004 | [SCR-004-01](./screens/mobile/scr-004-01-add-pose.md#scr-004-01-add-pose) | Add Pose form + processing sub-surface |
+| FEAT-005 | [SCR-004-01](./screens/mobile/scr-004-01-add-pose.md#scr-004-01-add-pose), [SCR-005-01](./screens/mobile/scr-005-01-jobs.md#scr-005-01-jobs) | Add Pose metadata + Jobs screen |
 | FEAT-007 | SCR-007-01/02/03 | |
-| FEAT-004/005/006/008/010/011/012/013/014 | No dedicated screen | Chi tiết: [screens/README §2](./screens/README.md#feature-mapping) |
+| FEAT-006/008/010/011/012/013/014 | No dedicated screen | Chi tiết: [screens/README §2](./screens/README.md#feature-mapping) |
 
 ## 7. Source-of-truth and evidence rules
 
@@ -98,8 +100,8 @@ Feature authority: [FEAT-003](../../features/FEAT-003-browse-and-search-publishe
 | Layer | Canonical source | Vai trò của slice này |
 | --- | --- | --- |
 | Behavior | Harness Feature | Map flow ID → screen/API |
-| Data | [`docs/spec/data`](../../../spec/data/README.md) | Link entity/enum/ERD |
-| HTTP | [`docs/spec/api`](../../../spec/api/README.md) | Link module + OpenAPI |
+| Data | [`docs/harness/specs/data-contract.md`](../../specs/data-contract.md) | Link entity/enum/ERD |
+| HTTP | [`docs/harness/specs/api-contract.md`](../../specs/api-contract.md) | Link module + OpenAPI |
 | Visual language | [UI/UX System](../../specs/ui-ux-system.md) | Neo-brutalism, explicit states |
 | Code | `mobile/`, `web/` (**Observed** only) | Không định nghĩa behavior trong design doc |
 

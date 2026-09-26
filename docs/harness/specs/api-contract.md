@@ -25,29 +25,32 @@ relationships:
     - web/services/pose-extract-server/src/app.ts
     - web/services/pose-extract-server/src/routes/adminRoutes.ts
     - web/services/pose-extract-server/src/routes/extractPoseRoutes.ts
+    - web/services/pose-extract-server/src/routes/extractJobsRoutes.ts
     - web/services/pose-extract-server/src/routes/communityRoutes.ts
     - web/services/pose-extract-server/src/routes/adminCommunityRoutes.ts
     - web/services/pose-extract-server/src/routes/jobStatusRoutes.ts
-    - web/admin-ui/src/app/api
-    - mobile/shared/src/commonMain/kotlin/com/aipose/data/remote/PoseApiService.kt
+    - mobile/iosApp/iosApp/Core/Network/PoseAPIService.swift
+    - mobile/iosApp/iosApp/Core/Network/APIModels.swift
 ---
 
 # API Contract
 
 Single source of truth cho **HTTP contract product** của ai-pose: paths, schemas,
 status codes, conventions, và semantics theo module. Mô tả hợp đồng **mà Features
-yêu cầu**; tên path/field tiếng Anh, mô tả tiếng Việt. URL thật `/api/...`,
-không có `/v1/`.
+yêu cầu**; route chưa mount trong Express được ghi rõ là chưa triển khai. Tên
+path/field tiếng Anh, mô tả tiếng Việt. URL thật `/api/...`, không có `/v1/`.
 
 Schemas chi tiết: [`openapi.yaml`](./api/openapi.yaml) (OpenAPI 3.1). Domain model:
-[`data-contract.md`](./data-contract.md).
+[[data-contract]].
 
 **Creation timing & status codes:** `Pose` được tạo **chỉ sau khi extraction
-`succeeded`** — `202 Accepted` là job start (`jobId`, chưa có Pose); `201 Created`
-là Pose creation/completion (pose được tạo với `poseId` stable và ba media role
-`original`, `skeleton`, `thumbnail` materialize ngay). `ownerAccountId` bắt buộc
-trên mọi Pose; response dùng camelCase `poseId`, `ownerAccountId`, `originalUrl`,
-`skeletonUrl`, `thumbnailUrl`. `CommunityPose` là published-only DTO.
+`succeeded`** bởi server worker trong một transaction (`202 Accepted` là job start,
+`jobId`, chưa có Pose; `succeeded` tạo Pose và ba media role `original`, `skeleton`,
+`thumbnail` materialize ngay). Caller gửi ảnh và draft metadata (`name`, `tags`,
+optional `description`) qua authenticated `POST /api/extract-pose`. Server sở hữu và quản lý
+trạng thái job cho từng `Account`. Client không gọi endpoint lưu riêng sau extraction.
+`ownerAccountId` bắt buộc trên mọi Pose và ExtractionJob; response dùng camelCase
+`poseId`, `ownerAccountId`, `originalUrl`, `skeletonUrl`, `thumbnailUrl`. `CommunityPose` là published-only DTO.
 
 ## Routes theo Feature
 
@@ -55,7 +58,7 @@ trên mọi Pose; response dùng camelCase `poseId`, `ownerAccountId`, `original
 |---|---|---|
 | — | [Health](#health) | `GET /api/health` |
 | FEAT-003 | [Community](#community-public) | `GET /api/community/poses` |
-| FEAT-004 | [Extract Pose](#extract-pose) | `POST /api/extract-pose` |
+| FEAT-004 / FEAT-005 | [Extract Pose & Jobs](#extract-pose--jobs) | `POST /api/extract-pose`, `GET /api/extract-jobs/:jobId`, `GET /api/me/extract-jobs`, `POST /api/me/extract-jobs/:id/retry`, `DELETE /api/me/extract-jobs/:id` |
 | FEAT-005 | [Pose Guides](#pose-guides) | `/api/guides` |
 | FEAT-006 | [Publish](#publish) | `/api/guides/:id/publish`, `/unpublish` |
 | FEAT-007 | [Admin Keys](#admin-keys), [Admin Community](#admin-community), [Admin Jobs](#admin-jobs) | `/api/admin/*` |
@@ -71,11 +74,11 @@ có HTTP. Admin Web không định nghĩa API riêng: proxy inject Bearer, contr
 
 - Mọi business route mount `/api/...`. Không có prefix `/v1/`.
 - Public catalogue: `/api/community/poses`
+- Extraction & Jobs: `/api/extract-pose`, `/api/extract-jobs/:jobId`, `/api/me/extract-jobs`, `/api/me/extract-jobs/:id/retry`
 - Pose (model hợp nhất thành `Pose`): `/api/guides`
 - Signed-in collection: `/api/me/saved`
 - Admin: `/api/admin/keys`, `/api/admin/community/poses`, `/api/admin/jobs`
 - Health: `/api/health`
-- Direct extract: `/api/extract-pose`
 
 ### HTTP methods và status codes
 
@@ -86,7 +89,7 @@ có HTTP. Admin Web không định nghĩa API riêng: proxy inject Bearer, contr
 | **Pose creation/completion** (post-extraction) | POST | **201** |
 | Cập nhật partial | PATCH | 200 |
 | Publish / unpublish / revert (đổi trạng thái) | POST | 200 |
-| Xóa | DELETE | 204 (empty body) |
+| Xóa / Ẩn (job soft-hide, unsave, delete pose) | DELETE | 204 (empty body) |
 | Upsert saved | PUT | 200 |
 | Reset counters | POST | 200 |
 
@@ -97,18 +100,18 @@ có HTTP. Admin Web không định nghĩa API riêng: proxy inject Bearer, contr
 
 | Actor | Cơ chế | Routes |
 |---|---|---|
-| Visitor | Không auth | `GET /api/community/poses`, `GET /api/community/poses/:id`, `POST /api/extract-pose`, `GET /api/health` |
-| Signed-in `Account` | Session của Account | `/api/me/saved`, `/api/guides` (owner) |
-| Admin operator | `Authorization: Bearer <ADMIN_SECRET>` | `/api/admin/*`; Admin cũng gọi `/api/guides` và publish |
+| Visitor | Không auth | `GET /api/community/poses`, `GET /api/community/poses/:id`, `GET /api/health` |
+| Signed-in `Account` | Session của Account | `POST /api/extract-pose`, `GET /api/extract-jobs/:jobId` (owner-checked), `GET /api/me/extract-jobs`, `POST /api/me/extract-jobs/:id/retry`, `DELETE /api/me/extract-jobs/:id`, `/api/me/saved`, `/api/guides` (owner) |
+| Admin operator | `Authorization: Bearer <ADMIN_SECRET>` | `/api/admin/*`; Admin cũng có thể gọi `POST /api/extract-pose` (kèm `ownerAccountId` tường minh), `/api/guides` và publish |
 
 **authenticated actor vs owner:** `ownerAccountId` là **bắt buộc** trên mọi
-`Pose`. Với `AccountSession`, owner = session account (không gửi trong body).
-Với Admin `Bearer`, request tạo pose phải kèm `ownerAccountId` tường minh.
+`Pose` và `ExtractionJob`. Với `AccountSession`, owner = session account (không gửi trong body).
+Với Admin `Bearer`, request tạo job / pose phải kèm `ownerAccountId` tường minh.
 Secret admin không bao giờ gửi từ browser.
 
 ### Rate limiting
 
-- `POST /api/extract-pose`: giới hạn theo IP.
+- `POST /api/extract-pose`: giới hạn theo account / IP.
 - `/api/admin/keys` và `/api/admin/community/*`: giới hạn admin.
 - `GET /api/admin/jobs/:jobId` có Bearer, không gắn admin rate-limit (cần poll).
 
@@ -123,6 +126,16 @@ Secret admin không bao giờ gửi từ browser.
 
 `page` default `1`; `limit` max `100` (default 20 public, 50 admin); `total` =
 tổng record thỏa filter.
+
+Cursor pagination cho `/api/me/extract-jobs`:
+
+```json
+{
+  "success": true,
+  "data": [ ... ],
+  "meta": { "nextCursor": "cursor-string-or-null" }
+}
+```
 
 ### Filtering và search
 
@@ -215,23 +228,26 @@ Chi tiết một published pose. Tăng `downloadCount`.
 
 **Errors:** `404 NOT_FOUND`, `500 INTERNAL_SERVER_ERROR`.
 
-## Extract Pose
+## Extract Pose & Jobs
 
-Một ảnh nguồn → một ảnh pose dùng lại được (FEAT-004). Persistence thuộc caller
-hoặc `Pose` (FEAT-005); route này không publish. Kết quả job (`result`) là ảnh
-**skeleton**. Engine xử lý được chọn toàn cục bởi Admin qua FEAT-009 + DEC-001;
+Một ảnh nguồn → một ảnh pose dùng lại được (FEAT-004, FEAT-005). Server sở hữu toàn bộ vòng đời job
+theo tài khoản người dùng (`ownerAccountId`). Khi extraction thành công (`succeeded`), server tự động
+tạo canonical `Pose` (với stable `poseId`) và ba `MediaAsset` trong cùng một transaction; client không
+cần gọi endpoint lưu riêng. Engine xử lý được chọn toàn cục bởi Admin qua FEAT-009 + DEC-001;
 caller không chọn provider.
-
-**Creation timing:** `POST /api/extract-pose` chỉ **enqueue job** (`202` +
-`jobId`) — **không tạo `Pose`** tại đây. `Pose` (với `poseId` stable) chỉ được tạo
-sau khi job `succeeded`, qua `POST /api/guides` (owner) hoặc admin intake (`201`).
 
 ### POST /api/extract-pose (async — canonical)
 
-- Không auth. Rate limit theo IP.
-- Request: `multipart/form-data`, field `image` (JPEG/PNG, tối đa 10 MB).
+- **Authentication:** Bắt buộc (`AccountSession` hoặc Admin `Bearer` kèm `ownerAccountId`).
+- Rate limit theo IP / account.
+- **Request:** `multipart/form-data`:
+  - `image`: binary (JPEG/PNG, tối đa 10 MB, bắt buộc).
+  - `name`: string (tên pose dự kiến, bắt buộc).
+  - `tags`: string[] hoặc JSON string array (nhãn lọc, bắt buộc).
+  - `description`: string (mô tả tùy chọn).
+  - `ownerAccountId`: UUID (bắt buộc đối với Admin Bearer; AccountSession tự lấy từ token/session).
   OperationId `extractPose`.
-- Response: `202 Accepted`
+- **Response:** `202 Accepted`
 
 ```json
 {
@@ -246,17 +262,22 @@ sau khi job `succeeded`, qua `POST /api/guides` (owner) hoặc admin intake (`20
 | BR-EXTRACT-001 | Chọn key `active`; hết quota thì đánh `exhausted` và xoay key. |
 | BR-EXTRACT-002 | Hết key `active` → `503 ALL_KEYS_EXHAUSTED` (pre-queue) hoặc job `error_code` `PROVIDER_CREDENTIALS_EXHAUSTED`. |
 | BR-EXTRACT-003 | Mỗi attempt ghi `ProviderRequestLog`. |
+| BR-EXTRACT-004 | Job lưu `poseDraft` (`name`, `tags`, `description`) và gắn với `ownerAccountId`. |
 | BR-EXTRACT-005 | Provider thất bại thì không tuyên bố usable image. |
-| BR-EXTRACT-006 | Ảnh không hợp lệ / quá lớn thì không enqueue job. |
-| BR-EXTRACT-007 | Worker dùng engine toàn cục tại thời điểm `claimNext`. |
+| BR-EXTRACT-006 | Ảnh không hợp lệ / quá lớn hoặc thiếu metadata bắt buộc thì không enqueue job. |
+| BR-EXTRACT-007 | Worker dùng engine toàn cục tại thời điểm `claimNext`. Khi extraction `succeeded`, worker tạo `Pose` + 3 `MediaAsset` tự động và gán `poseId`. |
 
-**Pre-queue errors:** `INVALID_IMAGE` 400, `IMAGE_TOO_LARGE` 413, `RATE_LIMITED` 429.
+**Pre-queue errors:** `UNAUTHORIZED` 401, `INVALID_IMAGE` 400, `INVALID_METADATA` 400, `IMAGE_TOO_LARGE` 413, `RATE_LIMITED` 429.
 
 ### GET /api/extract-jobs/:jobId
 
-- Không auth. Rate limit theo IP. OperationId (poll).
-- Response: `200` khi job tồn tại; `result` chỉ khi `status === "succeeded"`;
-  `error` (object `{ code, message }`) chỉ khi `status === "failed"`.
+- **Authentication:** Bắt buộc (`AccountSession` hoặc Admin `Bearer`).
+- **Owner-checked:** Trả về `404 NOT_FOUND` nếu job không tồn tại hoặc không thuộc về `ownerAccountId` của caller (tránh leak thông tin giữa các tài khoản).
+- OperationId `getExtractJob`.
+- **Response:** `200 OK`:
+  - `result` chỉ khi `status === "succeeded"`.
+  - `poseId` (UUID) được trả về khi `status === "succeeded"` (trỏ tới `Pose` đã tự động tạo).
+  - `error` (object `{ code, message }`) chỉ khi `status === "failed"`.
 
 ```json
 {
@@ -264,6 +285,7 @@ sau khi job `succeeded`, qua `POST /api/guides` (owner) hoặc admin intake (`20
   "data": {
     "jobId": "<uuid>",
     "status": "queued | processing | succeeded | failed",
+    "poseId": "<uuid-or-null>",
     "result": { "imageBase64": "...", "mimeType": "image/png" },
     "error": { "code": "PROVIDER_ERROR", "message": "..." },
     "updatedAt": "2026-08-17T12:00:00.000Z"
@@ -271,13 +293,78 @@ sau khi job `succeeded`, qua `POST /api/guides` (owner) hoặc admin intake (`20
 }
 ```
 
-Sau `succeeded`, client dùng `jobId` để **tạo `Pose`** (`POST /api/guides`, `201`).
+**UX Row mapping:** Mobile UI hiển thị trực tiếp từ trạng thái server:
+- `queued` → `Queued`
+- `processing` → `Processing`
+- `failed` → `Failed` (hiển thị lỗi, nút hành động `Retry`)
+- `succeeded` → `Ready` (nút hành động `View pose`, điều hướng tới Pose Detail qua `poseId`)
 
 **Job `error_code` values (provider-neutral):** `PROVIDER_QUOTA_EXCEEDED`,
 `PROVIDER_CREDENTIALS_EXHAUSTED`, `PROVIDER_ERROR`, `PROVIDER_AUTH_REQUIRED`,
-`PROVIDER_TIMEOUT`, `PROVIDER_CLI_FAILED`. Deprecated aliases (một release):
-`GEMINI_QUOTA_EXCEEDED` → `PROVIDER_QUOTA_EXCEEDED`; `GEMINI_ERROR` →
-`PROVIDER_ERROR`.
+`PROVIDER_TIMEOUT`, `PROVIDER_CLI_FAILED`, `LINEART_BG_REMOVAL_FAILED`.
+
+### GET /api/me/extract-jobs
+
+- **Authentication:** Bắt buộc (`AccountSession` hoặc Admin `Bearer`).
+- Liệt kê toàn bộ extraction jobs thuộc sở hữu của caller (ngoại trừ các job đã bị ẩn qua `DELETE /api/me/extract-jobs/:jobId`).
+- **Query parameters:**
+  - `state`: enum `active | finished` (optional; `active` gồm `queued`, `processing`; `finished` gồm `succeeded`, `failed`).
+  - `cursor`: string (optional pagination cursor, sắp xếp newest-first theo `createdAt`).
+  - `limit`: integer (optional, default 20, max 100).
+- OperationId `listMyExtractJobs`.
+- **Response:** `200 OK`:
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "jobId": "<uuid>",
+      "status": "queued | processing | succeeded | failed",
+      "poseDraft": { "name": "Standing pose", "tags": ["standing"], "description": null },
+      "poseId": "<uuid-or-null>",
+      "errorCode": null,
+      "errorMessage": null,
+      "createdAt": "2026-09-25T10:00:00.000Z",
+      "updatedAt": "2026-09-25T10:00:05.000Z"
+    }
+  ],
+  "meta": {
+    "nextCursor": "<cursor-string-or-null>"
+  }
+}
+```
+
+**Errors:** `401 UNAUTHORIZED`, `400 BAD_REQUEST`, `500 INTERNAL_SERVER_ERROR`.
+
+### POST /api/me/extract-jobs/:jobId/retry
+
+- **Authentication:** Bắt buộc (`AccountSession` hoặc Admin `Bearer`).
+- **Owner-checked:** Chỉ owner của job mới được retry; trả `404 NOT_FOUND` nếu khác owner.
+- **Điều kiện:** Chỉ cho phép thử lại đối với job đang ở trạng thái `failed`. Nếu job đang ở trạng thái khác (`queued`, `processing`, `succeeded`), trả về `409 CONFLICT` (`JOB_NOT_RETRYABLE`).
+- Requeue job với attempt mới hoặc reset trạng thái về `queued`.
+- OperationId `retryExtractJob`.
+- **Response:** `202 Accepted`
+
+```json
+{
+  "success": true,
+  "data": { "jobId": "<uuid>", "status": "queued" },
+  "meta": { "pollUrl": "/api/extract-jobs/<uuid>" }
+}
+```
+
+- **Errors:** `401 UNAUTHORIZED`, `404 NOT_FOUND`, `409 JOB_NOT_RETRYABLE`, `500 INTERNAL_SERVER_ERROR`.
+
+### DELETE /api/me/extract-jobs/:jobId
+
+- **Authentication:** Bắt buộc (`AccountSession` hoặc Admin `Bearer`).
+- **Owner-checked:** Chỉ owner của job mới được ẩn; trả `404 NOT_FOUND` nếu khác owner.
+- Đánh dấu ẩn job khỏi danh sách cá nhân bằng cách set `hidden_at = NOW()`.
+- **Lưu ý quan trọng:** Hành động này **không bao giờ** xóa `Pose` đã được tạo trên server.
+- OperationId `hideExtractJob`.
+- **Response:** `204 No Content` (empty body).
+- **Errors:** `401 UNAUTHORIZED`, `404 NOT_FOUND`, `500 INTERNAL_SERVER_ERROR`.
 
 ### Legacy sync contract (deprecated)
 
@@ -291,6 +378,11 @@ Trước Plan 260816-2240, `POST /api/extract-pose` trả `200` đồng bộ
 
 Lifecycle `Pose` (FEAT-005). Owner `Account` hoặc Admin operator.
 
+> **Ghi chú về luồng Add Pose:** Đối với luồng trích xuất Add Pose (FEAT-005),
+> server worker tự động tạo `Pose` khi extraction `succeeded`. Client không gọi
+> `POST /api/guides` để lưu sau extraction. `POST /api/guides` được giữ lại như
+> hợp đồng khởi tạo Pose thủ công nếu cần.
+
 ### GET /api/guides
 
 Danh sách pose của caller (My Poses). Admin có thể liệt kê theo owner.
@@ -299,29 +391,29 @@ Signed-in Account hoặc Bearer admin. Query `page`, `limit`. OperationId
 
 ### POST /api/guides
 
-Tạo `Pose` `local` **sau khi extraction `succeeded`** (post-extraction). Không
-nhận ảnh — ảnh đã nộp qua `POST /api/extract-pose` (`202` + `jobId`).
+Tạo `Pose` `local` trực tiếp (manual intake). Route này nhận JSON metadata.
 
 - Request JSON — operationId `createGuide`:
 
 | Field | Required | Ghi chú |
 |---|---|---|
-| `jobId` | ✓ | `jobId` của `ExtractionJob` đã `succeeded` |
-| `ownerAccountId` | admin | Bắt buộc khi gọi bằng Admin Bearer; bỏ qua với `AccountSession` |
+| `jobId` | — | `jobId` của `ExtractionJob` nếu có |
+| `ownerAccountId` | admin | Mobile `AccountSession` không gửi; owner lấy từ session. Admin Bearer phải gửi UUID owner tường minh. |
 | `name` | ✓ | Non-empty |
-| `bodyParts` | ✓ | Ít nhất 1 item |
+| `bodyParts` | — | Optional |
 | `tags` / `difficulty` / `description` | — | |
 
 - Response: `201 Created` `{ data: { pose: Pose } }` — `poseId` stable, `status =
-  local`, ba `MediaAsset` materialize ngay (`originalUrl`/`skeletonUrl`/`thumbnailUrl`).
+  local`, `ownerAccountId` là Account đang đăng nhập, ba `MediaAsset` materialize
+  ngay (`originalUrl`/`skeletonUrl`/`thumbnailUrl`).
 
 | ID | Rule |
 |---|---|
-| BR-GUIDE-001 | `202` (job start) ≠ Pose tồn tại; pose chỉ tạo sau khi job `succeeded` (`201`). |
+| BR-GUIDE-001 | `202` (job start) ≠ Pose tồn tại; pose tạo khi job `succeeded` hoặc qua creation endpoint (`201`). |
 | BR-GUIDE-002 | Không public cho đến khi skeleton `MediaAsset` `ready`. |
-| BR-GUIDE-003 | `jobId` chưa `succeeded` thì từ chối tạo pose (`400 JOB_NOT_SUCCEEDED` / `404`). |
 
-**Errors:** `400 JOB_NOT_SUCCEEDED` / `BAD_REQUEST`, `401`, `404`, `500`.
+**Errors:** `400 BAD_REQUEST`, `401 UNAUTHORIZED`, `500 INTERNAL_SERVER_ERROR`.
+
 
 ### GET /api/guides/:id
 

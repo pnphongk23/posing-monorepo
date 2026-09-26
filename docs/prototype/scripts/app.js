@@ -74,9 +74,43 @@ document.addEventListener('DOMContentLoaded', function() {
     let forcedState = posePrototype.getPrototypeState();
 
     function getCurrentPoses() {
-      return posePrototype.getVisiblePoseFixtures().filter(pose => {
+      const poses = posePrototype.getVisiblePoseFixtures().filter(pose => {
         return pose.category === 'community' && pose.visibility === 'published';
       });
+
+      const demoPoseParam = params.get('demoPose');
+      if (demoPoseParam && window.PoseJobsDemo) {
+        const job = window.PoseJobsDemo.get(demoPoseParam) || window.PoseJobsDemo.all().find(j => j.id === demoPoseParam || j.localId === demoPoseParam || j.poseId === demoPoseParam);
+        if (job) {
+          const createdPose = {
+            id: job.poseId || job.id || job.localId,
+            title: job.name,
+            tag: (job.tags && job.tags[0]) || 'Mine',
+            tagColor: 'green',
+            hearts: null,
+            category: 'my-poses',
+            source: 'personal',
+            visibility: 'personal',
+            metadata: {
+              author: 'You',
+              context: job.description || 'Created from Photo Library',
+              difficulty: 'All levels'
+            },
+            svg: `<svg viewBox="0 0 24 24" class="nb-stick-figure">
+              <circle cx="12" cy="7" r="3"/>
+              <line x1="12" y1="10" x2="12" y2="17"/>
+              <line x1="12" y1="12" x2="7" y2="15"/>
+              <line x1="12" y1="12" x2="17" y2="15"/>
+              <line x1="12" y1="17" x2="8" y2="22"/>
+              <line x1="12" y1="17" x2="16" y2="22"/>
+            </svg>`
+          };
+          if (!poses.some(p => p.id === createdPose.id)) {
+            poses.unshift(createdPose);
+          }
+        }
+      }
+      return poses;
     }
 
     function renderPoseCards(poses) {
@@ -134,6 +168,41 @@ document.addEventListener('DOMContentLoaded', function() {
 
     renderPoses();
 
+    function updateJobsBadge() {
+      const entry = document.getElementById('poses-jobs-entry');
+      const badge = document.getElementById('poses-jobs-badge');
+      if (!badge) return;
+      const urlParams = new URLSearchParams(window.location.search);
+      let count = 0;
+      if (urlParams.has('jobs_count')) {
+        count = parseInt(urlParams.get('jobs_count'), 10) || 0;
+      } else if (urlParams.get('jobs') === 'active' || urlParams.get('state') === 'active-jobs') {
+        count = 2;
+      } else if (window.PoseJobsDemo) {
+        if (typeof window.PoseJobsDemo.countActive === 'function') {
+          count = window.PoseJobsDemo.countActive();
+        } else if (typeof window.PoseJobsDemo.all === 'function') {
+          const jobs = window.PoseJobsDemo.all();
+          count = jobs.filter(j => ['queued', 'processing'].includes(j.status)).length;
+        }
+      }
+      if (count > 0) {
+        badge.textContent = count;
+        badge.hidden = false;
+        if (entry) entry.setAttribute('aria-label', `Jobs, ${count} in progress`);
+        badge.setAttribute('aria-hidden', 'true');
+      } else {
+        badge.textContent = '0';
+        badge.hidden = true;
+        if (entry) entry.setAttribute('aria-label', 'Jobs');
+        badge.removeAttribute('aria-hidden');
+      }
+    }
+
+    updateJobsBadge();
+    window.addEventListener('pose-jobs-change', updateJobsBadge);
+    setInterval(updateJobsBadge, 1000);
+
     if (params.get('notice') === 'deleted') {
       setStateMessage(posesStateMessage, 'success', 'Pose removed', 'The pose is no longer in this collection.');
     }
@@ -148,9 +217,47 @@ document.addEventListener('DOMContentLoaded', function() {
     const requestedId = params.get('id') || 'dancing';
     const requestedSource = params.get('source') || (params.has('id') ? null : 'community');
     const forcedState = posePrototype.getPrototypeState();
-    const pose = forcedState === 'unavailable'
+    let pose = forcedState === 'unavailable'
       ? null
       : posePrototype.getPoseByReference(requestedId, requestedSource);
+
+    if (!pose && forcedState !== 'unavailable') {
+      let job = null;
+      if (window.PoseJobsDemo) {
+        job = window.PoseJobsDemo.get(requestedId) || window.PoseJobsDemo.all().find(j => j.id === requestedId || j.localId === requestedId || j.poseId === requestedId);
+      }
+      if (!job) {
+        try {
+          const stored = JSON.parse(localStorage.getItem('snap-pose.prototype.jobs.v2') || localStorage.getItem('snap-pose.prototype.jobs.v1') || '[]');
+          job = stored.find(j => j.id === requestedId || j.localId === requestedId || j.poseId === requestedId);
+        } catch (_) {}
+      }
+      if (job) {
+        pose = {
+          id: job.poseId || job.id || job.localId,
+          title: job.name,
+          tag: (job.tags && job.tags[0]) || 'Mine',
+          tagColor: 'green',
+          hearts: null,
+          category: 'my-poses',
+          source: 'personal',
+          visibility: 'personal',
+          metadata: {
+            author: 'You',
+            context: job.description || 'Created from Photo Library',
+            difficulty: 'All levels'
+          },
+          svg: `<svg viewBox="0 0 24 24" class="nb-stick-figure">
+            <circle cx="12" cy="7" r="3"/>
+            <line x1="12" y1="10" x2="12" y2="17"/>
+            <line x1="12" y1="12" x2="7" y2="15"/>
+            <line x1="12" y1="12" x2="17" y2="15"/>
+            <line x1="12" y1="17" x2="8" y2="22"/>
+            <line x1="12" y1="17" x2="16" y2="22"/>
+          </svg>`
+        };
+      }
+    }
     const detailPageTitle = document.getElementById('detail-page-title');
     const detailPoseName = document.getElementById('detail-pose-name');
     const detailPoseSource = document.getElementById('detail-pose-source');

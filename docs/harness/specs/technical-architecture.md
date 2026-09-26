@@ -10,7 +10,8 @@ relationships:
     - "[[model-entity-catalogue]]"
     - "[[erd]]"
     - "[[api-catalogue]]"
-  decisions: []
+  decisions:
+    - "[[DEC-001-extraction-provider-selection-policy|DEC-001]]"
   plans: []
   reports: []
   rules: []
@@ -21,21 +22,20 @@ relationships:
     - "[[FEAT-004-extract-reusable-pose-images|FEAT-004]]"
     - "[[FEAT-005-manage-a-pose-guide|FEAT-005]]"
   source_paths:
-    - settings.gradle.kts
-    - gradle/libs.versions.toml
-    - mobile/composeApp
-    - mobile/shared
+    - package.json
+    - mobile/iosApp/project.yml
+    - mobile/iosApp/Podfile
     - web/admin-ui
     - web/services/pose-extract-server/src
+    - web/services/pose-extract-server/scripts/remove_bg_lineart.py
 ---
 
 # Technical Architecture
 
 Tài liệu kỹ thuật của monorepo `ai-pose`: **công nghệ dùng, build, setup, và
 những lưu ý khi làm việc**. Hợp đồng dữ liệu/API và domain model nằm tại
-[`docs/spec/`](./data-contract.md); hành vi product theo Feature tại
-[`docs/harness/features/`](../features). File này chỉ mô tả cấu trúc kỹ thuật
-thực thi.
+[[data-contract]] và [[api-contract]]; hành vi product theo các Feature trong
+`docs/harness/features/`. File này chỉ mô tả cấu trúc kỹ thuật thực thi.
 
 ## Tech stack
 
@@ -50,7 +50,7 @@ thực thi.
 | API service | Node + Express + TypeScript | Node ≥ 20, Express 5.2.1, TS 6 | `web/services/pose-extract-server`; validation bằng zod 4, log pino |
 | DB server | Postgres (production) | `postgres` 3.4.9 driver | `DATABASE_URL`; dev stack dùng Postgres 16 container |
 | Object storage | Cloudflare R2 (AWS SDK v3) | — | Cộng đồng poses/community objects |
-| Extraction worker | Playwright 1.59 | — | Worker xử lý job qua browser session (Gemini app) |
+| Extraction worker | Node/TypeScript + Gemini REST hoặc Higgsfield CLI | — | Worker claim job, tạo provider qua factory, xử lý ảnh kết quả bằng Python lineart remover |
 | Deploy | Railway + Docker | — | `railway.toml`, Dockerfile per service |
 
 Nguồn version: `gradle/libs.versions.toml`, `package.json` từng web workspace,
@@ -67,11 +67,39 @@ npm run backend:build     # tsc + copy schema
 npm run backend:start     # node dist/index.js
 npm run backend:dev       # tsx watch (host)
 
-# worker (Playwright) — riêng
+# worker xử lý extraction job — process riêng
 npm --prefix web/services/pose-extract-server run worker        # dev
 npm --prefix web/services/pose-extract-server run start:worker  # prod
-npm --prefix web/services/pose-extract-server run worker:preflight  # kiểm tra auth profile
 ```
+
+### Extraction worker và provider factory
+
+`worker-main.ts` chạy `worker-loop.ts`; mỗi lượt `processNextJob` claim một
+`ExtractionJob`, đọc provider toàn cục từ `ProviderSettingsStore`, rồi gọi
+`createPoseExtractorProvider`. Factory có hai nhánh:
+
+- `gemini_native`: `GeminiNativeProvider` lấy API key từ `KeyPoolManager` và gọi
+  Gemini REST qua `GeminiService`.
+- `higgsfield_cli`: `HiggsfieldCliProvider` spawn lệnh `higgsfield generate create`,
+  đọc JSON kết quả và tải ảnh từ result URL; credential nằm ở worker.
+
+Theo [[DEC-001-extraction-provider-selection-policy|DEC-001]], Admin chọn một
+provider toàn cục; mặc định là `gemini_native`. Lựa chọn mới có hiệu lực từ job
+được claim tiếp theo. Job đang chạy giữ provider đã chọn; Higgsfield thiếu hoặc
+hết hạn credential làm job thất bại với mã lỗi tường minh, không tự đổi sang Gemini.
+
+Sau provider, `LineartBackgroundRemover` spawn
+`scripts/remove_bg_lineart.py` bằng `PYTHON_BIN` (mặc định `python3`) để tạo
+ảnh PNG đã gỡ nền. Có thể tắt bước này bằng `LINEART_BG_REMOVAL_ENABLED=false`;
+mọi lỗi spawn, timeout hoặc script thoát lỗi ghi `LINEART_BG_REMOVAL_FAILED`
+vào job.
+
+Khi extraction thành công (`succeeded`), worker thực hiện một database transaction duy nhất:
+1. Tạo bản ghi `Pose` canonical (`status = 'local'`) với `pose_id` UUID ổn định, `owner_account_id` từ job, và metadata từ `pose_draft` (`name`, `tags`, `description`).
+2. Tạo 3 bản ghi `MediaAsset` (`original`, `skeleton`, `thumbnail`) gắn với `pose_id`.
+3. Gán `pose_id` vào `extraction_jobs`, cập nhật `status = 'succeeded'`.
+4. Giải phóng `result_image_base64` và `source_image_base64` (retention policy).
+Quy trình này đảm bảo tính lũy đẳng (idempotent) theo `jobId`. Client không gọi endpoint lưu riêng.
 
 ### Admin UI (web/admin-ui)
 
@@ -102,14 +130,19 @@ rồi regenerate, không sửa tay `.xcodeproj`.
 ### Backend env — `web/services/pose-extract-server/.env`
 
 Bắt buộc (zod validate lúc boot, thiếu là crash):
-`DATABASE_URL`, `ADMIN_SECRET`, `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`,
+`DATABASE_URL`, `ADMIN_SECRET`, `SUPABASE_URL`, `SUPABASE_JWT_KEY_ID`,
+`R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`,
 `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, `R2_PUBLIC_URL`.
 
-Có default/safe: `PORT` (3000), `SUPABASE_URL`/`SUPABASE_JWT_KEY_ID`,
-`RATE_LIMIT_WINDOW_MS`/`RATE_LIMIT_MAX` (60s/10 req), `BROWSER_HEADLESS` (true).
+Có default/safe: `PORT` (3000), `RATE_LIMIT_WINDOW_MS`/`RATE_LIMIT_MAX`
+(60s/10 req).
 
-Worker: `BROWSER_PROFILE_DIR` (browser profile đã login Gemini),
-`HIGGSFIELD_CREDENTIALS_PATH` + `HIGGSFIELD_CLI_TIMEOUT_MS` (nếu dùng Higgsfield).
+Worker: `HIGGSFIELD_CREDENTIALS_PATH` + `HIGGSFIELD_CLI_TIMEOUT_MS` khi dùng
+Higgsfield; `PYTHON_BIN`, `LINEART_BG_SCRIPT_PATH`,
+`LINEART_BG_REMOVAL_ENABLED`, `LINEART_BG_REMOVAL_STRENGTH`,
+`LINEART_BG_REMOVAL_THRESHOLD`, `LINEART_BG_REMOVAL_SOFTNESS` và
+`LINEART_BG_REMOVAL_TIMEOUT_MS` điều khiển bước gỡ nền. Các biến worker này
+đọc trực tiếp từ `process.env`, không thuộc zod schema lúc API boot.
 
 > Nguồn sự thật cho config: `web/services/pose-extract-server/src/config/env.ts`.
 > Không commit secret thật; `.env.example` chỉ chứa giá trị mẫu.
@@ -166,22 +199,24 @@ pose-extract-server, mounts `/app/data` + `/app/higgsfield`).
 6. **Swift 6 strict concurrency bị tắt** (`SWIFT_STRICT_CONCURRENCY = minimal`)
    trong Podfile `post_install` — đừng "sửa" ngược lại.
 7. **Framework ComposeApp là static (`isStatic = true`)** cho cả 3 targets.
-8. **Worker cần browser profile đã login** — không phải config-only; production
-   activation chưa được chứng minh chỉ bằng repo config.
+8. **Worker cần credential của provider được chọn** — Gemini dùng key pool;
+   Higgsfield dùng CLI credentials. Thiếu credential Higgsfield làm job fail rõ mã
+   lỗi theo DEC-001.
 9. **Skeleton từ khóa chuẩn hóa** — theo
-   [`pose-domain-glossary.md`](./pose-domain-glossary.md), thuật ngữ extraction
+   [[pose-domain-glossary]], thuật ngữ extraction
    result là `skeleton`, không dùng `render`/`result image`/`extract`.
 10. **Thủ tục khởi động (DB, R2, secret) không đổi** — bất kỳ thay đổi schema
     fetch/khởi tạo runtime phải coi là thay đổi hành vi (xem Feature workflow).
 
 ## Boundary & storage
 
-- Mobile: photo bytes trong app-private storage; metadata SQLDelight
-  (`mobile/shared/src/commonMain/sqldelight/`).
-- Server: Postgres qua `DATABASE_URL` (production/Supabase); key, community, job
-  state không còn SQLite.
+- Mobile: photo bytes trong app-private storage; `Pose` local cache trong SQLDelight
+  (`mobile/shared/src/commonMain/sqldelight/`). Không lưu trữ extraction jobs trên thiết bị (server-authoritative).
+- Server: Postgres qua `DATABASE_URL` (production/Supabase); `extraction_jobs` lưu `owner_account_id`, `pose_draft` (jsonb), `pose_id`, `hidden_at` và index `(owner_account_id, created_at)`.
 - R2: community objects; credential + admin secret chỉ ở server.
-- Playwright worker: profile browser riêng, tách biệt khỏi API path trực tiếp.
+- Extraction worker: process riêng, dùng provider factory và Python lineart
+  remover; tạo Pose và MediaAssets tự động khi thành công; job state lưu trong Postgres.
+- Identity & Jobs: Jobs thuộc về Account trên server; đăng xuất không xóa job; đăng nhập lại hiển thị đầy đủ jobs trên bất kỳ thiết bị nào.
 
 ## Verification
 

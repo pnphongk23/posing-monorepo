@@ -19,10 +19,10 @@ relationships:
     - "[[FEAT-005-manage-a-pose-guide|FEAT-005]]"
   source_paths:
     - docs/design-reference/neo-brutalism.md
-    - mobile/composeApp/src/commonMain/kotlin/com/aipose/ui/theme
-    - mobile/composeApp/src/commonMain/kotlin/com/aipose/ui/components
+    - mobile/iosApp/iosApp/Core/DesignSystem/AIPoseDesignSystem.swift
+    - mobile/iosApp/iosApp/Core/DesignSystem/AIPoseComponents.swift
+    - mobile/iosApp/iosApp/Core/DesignSystem/AIPoseNavigation.swift
     - web/admin-ui/src/app/globals.css
-    - docs/prototype
 ---
 
 # UI UX System
@@ -90,7 +90,8 @@ The web-admin/shared body contract is `body { font-family: var(--font-sans); }`.
 - Camera keeps the preview dominant, places secondary controls around its edges, and separates the capture action from navigation.
 - Gallery and pose libraries support explicit loading, empty, content, and detail states.
 - Destructive actions (such as permanent deletion of local photos or personal poses) require confirmation in a dialog modal before execution.
-- Pose extraction (FEAT-004) uses a dedicated visual processing screen that shows an honest estimated or indeterminate processing status (rather than a fake percentage progress meter or claiming live backend connection status) and displays an illustrative skeletal overlay animation on top of the source image. The screen must offer a clear, accessible cancel button. Error states (timeouts, pre-validation failures, missing human figures) and success states must navigate cleanly according to the defined feature flows.
+- Pose extraction (FEAT-004) uses a dedicated visual processing screen that shows an honest estimated or indeterminate processing status (rather than a fake percentage progress meter or claiming live backend connection status) and displays an illustrative skeletal overlay animation on top of the source image. There is no cancel button and no "Cancel" label anywhere in this surface — the extraction API has no cancel operation, and leaving the screen never cancels the server job. The processing screen instead offers `View jobs` (primary, opens the Jobs screen) and `Done` (closes the surface without navigating away); job progress after that point is tracked from the Jobs screen (FEAT-005 FR-005), not re-shown here. Error states (timeouts, pre-validation failures, missing human figures) and success states must navigate cleanly according to the defined feature flows.
+- The Jobs screen (FEAT-005 FR-005) displays server-owned extraction jobs for the signed-in account, newest-first in `Processing` (active) and `Finish` (completed/failed) sections or tabs. Row states map cleanly: `Queued`, `Processing`, `Failed → Retry` (action: Retry failed extraction), and `Ready → View pose` (action: View pose, navigating to the auto-created Pose Detail). Each row shows the optional pose description when present. Swipe-to-remove / delete on finished rows hides the job via `DELETE /api/me/extract-jobs/:id` (sets `hidden_at`) and never deletes the created `Pose`. An offline banner is shown when disconnected (no data cached offline; list is empty; retry actions disabled). Jobs belong to the account on the server; signing out does not delete jobs, and signing back in on any device restores them. Poses entry surfaces a `Jobs` button with an active-job count badge (hidden at zero) next to `Add pose`; it is not a bottom tab.
 - Admin secrets remain behind server-side proxy routes; UI copy must not imply client-side authentication that does not exist.
 
 ## Current inconsistencies

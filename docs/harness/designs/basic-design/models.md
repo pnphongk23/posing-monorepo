@@ -295,15 +295,18 @@ ERD: [`erd/server.md`](../../../spec/data/erd/server.md)
 
 ### 7.1 Overview — DTO vs storage
 
-**Persisted** server job. `id` = **`jobId`** — correlation key khi **chưa có** `Pose`. Submit trả `202` + `jobId`; `Pose` tạo **sau** `succeeded`. `poseId` nullable tới lúc back-fill.
+**Persisted** server job. `id` = **`jobId`** — correlation key khi **chưa có** `Pose`. Thuộc sở hữu của `Account` (`ownerAccountId`). Submit trả `202` + `jobId`; `Pose` được máy chủ tạo tự động từ `poseDraft` **sau khi** trích xuất `succeeded`. `poseId` được gán vào job sau khi tạo Pose.
 
 ### 7.2 Field summary
 
 | Field | Vai trò (summary) |
 | --- | --- |
 | `id` | PK = `jobId` (UUID) |
-| `poseId` | FK → `Pose`; NULL tới succeeded |
-| `status` | `ExtractionJobStatus` |
+| `ownerAccountId` | FK → `Account` (bắt buộc) |
+| `poseDraft` | JSONB draft metadata (`name`, `tags`, `description`) |
+| `poseId` | FK → `Pose`; NULL tới khi succeeded |
+| `status` | `ExtractionJobStatus` (`queued`, `processing`, `succeeded`, `failed`) |
+| `hiddenAt` | Timestamp khi người dùng ẩn dòng job; NULL nếu còn hiển thị |
 | `sourceMediaId`, `skeletonMediaId` | FK `MediaAsset` khi có |
 | `errorCode`, `errorMessage` | Khi `failed` |
 | `attempts`, `maxAttempts` | Retry control |
@@ -315,8 +318,9 @@ SoT: [`extraction-job.md`](../../../spec/data/entities/extraction-job.md)
 
 | Relation | Mô tả |
 | --- | --- |
-| `ExtractionJob` → `Pose` | Nhiều job một pose; `poseId` late-bound |
-| Job `succeeded` | Tạo `Pose` + materialize ba `MediaAsset` |
+| `ExtractionJob.ownerAccountId` → `Account` | Thuộc về tài khoản người dùng |
+| `ExtractionJob` → `Pose` | Gán `poseId` sau khi trích xuất thành công |
+| Job `succeeded` | Tạo `Pose` + materialize ba `MediaAsset` và dọn dẹp base64 |
 | Provider ops | `ApiKeyCredential` / `ProviderRequestLog` — **out-of-slice** entity |
 
 ERD: [`erd/server.md`](../../../spec/data/erd/server.md)
@@ -332,24 +336,28 @@ ERD: [`erd/server.md`](../../../spec/data/erd/server.md)
 | ID | Tóm tắt |
 | --- | --- |
 | BR-JOB-001 | Trạng thái: `queued` → `processing` → `succeeded` \| `failed` |
-| BR-JOB-002 | Retry trong `maxAttempts`; hết → `failed` |
-| BR-JOB-003 | `succeeded` cần skeleton `ready` trước publish |
+| BR-JOB-002 | Retry trong `maxAttempts`; hết → `failed`; hỗ trợ manual retry qua API |
+| BR-JOB-003 | `succeeded` tự động tạo `Pose` và ba `MediaAsset` |
 | BR-JOB-004 | GET: `result`/`error` theo status |
 | BR-JOB-005 | Không usable image khi provider fail |
 | BR-JOB-006 | Không `Pose` persisted trước `succeeded` |
+| BR-JOB-007 | Xoá/ẩn job chỉ cập nhật `hiddenAt`, không bao giờ xoá `Pose` |
 
 ### 7.6 Traceability — model → API → screen
 
 | Model | API | Screen |
 | --- | --- | --- |
+| `ExtractionJob` (mobile jobs) | `GET /api/me/extract-jobs`, `GET /api/extract-jobs/:id`, `POST /api/me/extract-jobs/:id/retry`, `DELETE /api/me/extract-jobs/:id` | [SCR-005-01 Jobs](./screens/mobile/scr-005-01-jobs.md#scr-005-01-jobs) |
 | `ExtractionJob` (admin upload) | [API-PROXY-01](./apis.md#api-proxy-01) + [API-ADMIN-EXTRACT-JOBS-OBS-01](./apis.md#api-admin-extract-jobs-obs-01) (**Observed** poll) | [SCR-007-02 Upload](./screens/admin/scr-007-02-community.md#scr-007-02-admin-community-poses) |
 | Extract engine setting | Provider API — FEAT-009 **Unresolved** | [SCR-007-03 Keys](./screens/admin/scr-007-03-keys.md#scr-007-03-admin-keys-main) |
+
+Mobile Jobs đọc trực tiếp danh sách `ExtractionJob` từ server theo tài khoản. UI hiển thị các trạng thái: `Queued`, `Processing`, `Failed → Retry` (gọi `POST /api/me/extract-jobs/:id/retry`), và `Ready → View pose` (mở Pose Detail). Tab `Processing` chứa job `queued` và `processing`; tab `Finish` gộp `Ready` (Success) và `Failed` (Fail). Trường `poseDraft.description` không rỗng được hiển thị làm phụ đề card. Ẩn dòng qua `DELETE /api/me/extract-jobs/:id` đặt `hiddenAt` trên máy chủ mà không ảnh hưởng tới `Pose`.
 
 ### 7.7 Evidence
 
 | Label | Ghi chú |
 | --- | --- |
-| **Normative** | Job lifecycle + BR tại SoT |
+| **Normative** | Server-authoritative job lifecycle + BR theo `plans/260925-server-authoritative-jobs/plan.md` |
 | **Observed** | Admin extract→poll→create pose trên SCR-007-02 |
 
 ---

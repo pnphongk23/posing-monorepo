@@ -1,13 +1,13 @@
 # APIs — Product HTTP Contract Summary
 
-Tóm tắt contract HTTP cho sáu module product trong [`docs/spec/api/modules/`](../../../spec/api/modules/) — **không** duplicate source-of-truth; chỉ summary, evidence labels, và flat links tới spec/OpenAPI/features/screens.
+Tóm tắt contract HTTP cho các module product trong [`docs/harness/specs/api-contract.md`](../../specs/api-contract.md) — **không** duplicate source-of-truth; chỉ summary, evidence labels, và flat links tới spec/OpenAPI/features/screens.
 
 | Canonical source | Link |
 | --- | --- |
-| API catalogue | [`docs/spec/api/README.md`](../../../spec/api/README.md) |
-| OpenAPI paths/schemas | [`openapi.yaml`](../../../spec/api/openapi.yaml) |
-| Conventions (auth, pagination, proxy) | [`conventions.md`](../../../spec/api/conventions.md) |
-| Module semantics | [`community`](../../../spec/api/modules/community.md) · [`extract-pose`](../../../spec/api/modules/extract-pose.md) · [`guides`](../../../spec/api/modules/guides.md) · [`publish`](../../../spec/api/modules/publish.md) · [`saved`](../../../spec/api/modules/saved.md) · [`admin-community`](../../../spec/api/modules/admin-community.md) |
+| API catalogue | [`docs/harness/specs/api-contract.md`](../../specs/api-contract.md) |
+| OpenAPI paths/schemas | [`openapi.yaml`](../../specs/api/openapi.yaml) |
+| Conventions (auth, pagination, proxy) | [`api-contract.md`](../../specs/api-contract.md) |
+| Module semantics | [`community`](../../specs/api-contract.md#community) · [`extract-pose`](../../specs/api-contract.md#extract-pose) · [`guides`](../../specs/api-contract.md#pose-guides) · [`publish`](../../specs/api-contract.md#publish) · [`saved`](../../specs/api-contract.md#saved) · [`admin-community`](../../specs/api-contract.md#admin-community) |
 | DTO projection | [`models.md`](./models.md) |
 
 **20 stable Normative IDs** (thứ tự cố định): API-COMMUNITY-01/02 · API-EXTRACT-POSE-01/02 · API-GUIDES-01…08 · API-PUBLISH-01/02 · API-SAVED-01…03 · API-ADMIN-COMMUNITY-01…03.
@@ -30,7 +30,7 @@ Tóm tắt contract HTTP cho sáu module product trong [`docs/spec/api/modules/`
 
 ### 2.1 Community — FEAT-003
 
-Module: [`community.md`](../../../spec/api/modules/community.md) · Feature: [FEAT-003](../../../harness/features/FEAT-003-browse-and-search-published-poses.md)
+Module: [`api-contract.md §Community`](../../specs/api-contract.md#community) · Feature: [FEAT-003](../../features/FEAT-003-browse-and-search-published-poses.md)
 
 <a id="api-community-01"></a>
 
@@ -101,7 +101,7 @@ Module: [`community.md`](../../../spec/api/modules/community.md) · Feature: [FE
 
 ### 2.2 Extract Pose — FEAT-004
 
-Module: [`extract-pose.md`](../../../spec/api/modules/extract-pose.md) · Feature: [FEAT-004](../../../harness/features/FEAT-004-extract-reusable-pose-images.md)
+Module: [`api-contract.md §Extract Pose`](../../specs/api-contract.md#extract-pose) · Feature: [FEAT-004](../../features/FEAT-004-extract-reusable-pose-images.md)
 
 <a id="api-extract-pose-01"></a>
 
@@ -112,24 +112,24 @@ Module: [`extract-pose.md`](../../../spec/api/modules/extract-pose.md) · Featur
 | **Stable ID** | API-EXTRACT-POSE-01 |
 | **Label** | **Normative** |
 | **Method** | `POST` |
-| **Auth** | Không (rate limit IP) |
+| **Auth** | Account session (hoặc Bearer admin) |
 | **Path** | `/api/extract-pose` |
 | **operationId** | `extractPose` |
 
-**Request:** `multipart/form-data`, field `image` (JPEG/PNG, max 10 MB).
+**Request:** `multipart/form-data`, field `image` (JPEG/PNG, max 10 MB), kèm `name`, `tags` (bắt buộc), `description` (tùy chọn) lưu vào `pose_draft`.
 
 **Response:** `202` `ExtractionJobAccepted` (`jobId`, `status: queued`, `meta.pollUrl`) · pre-queue: `400 INVALID_IMAGE`, `413 IMAGE_TOO_LARGE`, `429 RATE_LIMITED`, `503 ALL_KEYS_EXHAUSTED`.
 
-**Business rules:** BR-EXTRACT-001…007.
+**Business rules:** BR-EXTRACT-001…007; Server worker tự động tạo `Pose` và ba `MediaAsset` khi job `succeeded`.
 
 **Feature-flow mapping:**
 
 | Flow | Usage |
 | --- | --- |
-| [Main 1–2](../../../harness/features/FEAT-004-extract-reusable-pose-images.md#main-flow) | Validate + enqueue job (`202`; **không** tạo `Pose`) |
-| [A1](../../../harness/features/FEAT-004-extract-reusable-pose-images.md#alternative-flows) | Key rotation khi quota |
-| [E1](../../../harness/features/FEAT-004-extract-reusable-pose-images.md#exception-flows) | Invalid/oversized image |
-| [E2](../../../harness/features/FEAT-004-extract-reusable-pose-images.md#exception-flows) | Provider unavailable |
+| [Main 1–2](../../features/FEAT-004-extract-reusable-pose-images.md#main-flow) | Validate + enqueue job (`202`; lưu `pose_draft`, tạo `Pose` tự động khi `succeeded`) |
+| [A1](../../features/FEAT-004-extract-reusable-pose-images.md#alternative-flows) | Key rotation khi quota |
+| [E1](../../features/FEAT-004-extract-reusable-pose-images.md#exception-flows) | Invalid/oversized image |
+| [E2](../../features/FEAT-004-extract-reusable-pose-images.md#exception-flows) | Provider unavailable |
 
 ---
 
@@ -142,11 +142,11 @@ Module: [`extract-pose.md`](../../../spec/api/modules/extract-pose.md) · Featur
 | **Stable ID** | API-EXTRACT-POSE-02 |
 | **Label** | **Normative** |
 | **Method** | `GET` |
-| **Auth** | Không (rate limit IP) |
+| **Auth** | Account session (owner-checked, 404 cho tài khoản khác) hoặc Bearer admin |
 | **Path** | `/api/extract-jobs/:jobId` |
 | **operationId** | `getExtractJob` |
 
-**Response:** `200` job status (`queued` \| `processing` \| `succeeded` \| `failed`); `result` khi succeeded; `error` khi failed · `404` nếu job không tồn tại.
+**Response:** `200` job status (`queued` \| `processing` \| `succeeded` \| `failed`); `result` khi succeeded (kèm `poseId` đã được server tạo); `error` khi failed · `404` nếu job không tồn tại hoặc không thuộc quyền sở hữu.
 
 **Business rules:** BR-EXTRACT-005; job `error_code` provider-neutral (module).
 
@@ -154,16 +154,24 @@ Module: [`extract-pose.md`](../../../spec/api/modules/extract-pose.md) · Featur
 
 | Flow | Usage |
 | --- | --- |
-| [Main 4](../../../harness/features/FEAT-004-extract-reusable-pose-images.md#main-flow) | Public per-job poll (mobile/admin visitor path) |
-| [FEAT-005 Main 4](../../../harness/features/FEAT-005-manage-a-pose-guide.md#main-flow) | Mobile Jobs screen poll cùng endpoint |
+| [Main 4](../../features/FEAT-004-extract-reusable-pose-images.md#main-flow) | Per-job poll theo tài khoản |
+| [FEAT-005 Main 4](../../features/FEAT-005-manage-a-pose-guide.md#main-flow) | Mobile Jobs screen ([SCR-005-01](./screens/mobile/scr-005-01-jobs.md)) và Add Pose ([SCR-004-01](./screens/mobile/scr-004-01-add-pose.md)) poll endpoint này |
 
-**Poll distinction:** Public poll canonical — xem [§6](#6-poll-endpoint-distinctions). **Không** gộp với `getAdminJob` hay [API-ADMIN-EXTRACT-JOBS-OBS-01](#api-admin-extract-jobs-obs-01).
+---
+
+#### Account Extraction Jobs — FEAT-004 / FEAT-005
+
+| Operation | Method & Path | Auth | Mô tả | Label |
+| --- | --- | --- | --- | --- |
+| `listMyExtractJobs` | `GET /api/me/extract-jobs?state=active\|finished&cursor=` | Account session | Liệt kê danh sách jobs của tài khoản hiện tại | **Normative** |
+| `retryExtractJob` | `POST /api/me/extract-jobs/:id/retry` | Account session | Thử lại job trích xuất bị `failed` | **Normative** |
+| `hideExtractJob` | `DELETE /api/me/extract-jobs/:id` | Account session | Ẩn dòng job hoàn tất (`hidden_at`), không xoá `Pose` | **Normative** |
 
 ---
 
 ### 2.3 Guides — FEAT-005
 
-Module: [`guides.md`](../../../spec/api/modules/guides.md) · Feature: [FEAT-005](../../../harness/features/FEAT-005-manage-a-pose-guide.md)
+Module: [`api-contract.md §Pose Guides`](../../specs/api-contract.md#pose-guides) · Feature: [FEAT-005](../../features/FEAT-005-manage-a-pose-guide.md)
 
 <a id="api-guides-01"></a>
 
@@ -197,18 +205,13 @@ Module: [`guides.md`](../../../spec/api/modules/guides.md) · Feature: [FEAT-005
 | **Path** | `/api/guides` |
 | **operationId** | `createGuide` |
 
-**Request:** JSON — `jobId` (succeeded), `name`, `bodyParts` (≥1), optional `tags`, `difficulty`, `description`; admin Bearer bắt buộc `ownerAccountId`.
+**Request:** JSON — `jobId` (succeeded), `name` (bắt buộc); optional `tags`, `description`, `difficulty`, `bodyParts`; admin Bearer bắt buộc `ownerAccountId`.
 
-**Response:** `201` `{ data: { pose: Pose } }` · `400 JOB_NOT_SUCCEEDED` / `BAD_REQUEST` · `401` · `404` · `500`.
+**Ghi chú luồng di động Add Pose:** Với luồng Add Pose di động (FEAT-005), máy chủ tự động tạo `Pose` và media assets khi job `succeeded` từ `pose_draft`. Client di động **không** cần gọi endpoint này để lưu pose sau trích xuất.
 
-**Business rules:** BR-GUIDE-001, BR-GUIDE-002, BR-GUIDE-003.
+**Response:** `201` `{ data: { pose: Pose } }` · `400 BAD_REQUEST` · `401` · `404` · `409 JOB_ALREADY_CONSUMED` · `500`.
 
-**Feature-flow mapping:**
-
-| Flow | Usage |
-| --- | --- |
-| [FEAT-005 Main 3–5](../../../harness/features/FEAT-005-manage-a-pose-guide.md#main-flow) | Tạo `Pose` sau job `succeeded` (`201`) |
-| [E1](../../../harness/features/FEAT-005-manage-a-pose-guide.md#exception-flows) | Queue/metadata failure |
+**Business rules:** BR-GUIDE-001, BR-GUIDE-002, BR-GUIDE-004.
 
 ---
 
@@ -322,7 +325,7 @@ Module: [`guides.md`](../../../spec/api/modules/guides.md) · Feature: [FEAT-005
 
 ### 2.4 Publish — FEAT-006
 
-Module: [`publish.md`](../../../spec/api/modules/publish.md) · Feature: [FEAT-006](../../../harness/features/FEAT-006-publish-a-pose.md)
+Module: [`api-contract.md §Publish`](../../specs/api-contract.md#publish) · Feature: [FEAT-006](../../features/FEAT-006-publish-a-pose.md)
 
 <a id="api-publish-01"></a>
 
@@ -347,9 +350,9 @@ Module: [`publish.md`](../../../spec/api/modules/publish.md) · Feature: [FEAT-0
 
 | Flow | Usage |
 | --- | --- |
-| [Main 1–2](../../../harness/features/FEAT-006-publish-a-pose.md#main-flow) | Visibility transition → public catalogue |
-| [E1](../../../harness/features/FEAT-006-publish-a-pose.md#exception-flows) | Asset not ready |
-| [E2](../../../harness/features/FEAT-006-publish-a-pose.md#exception-flows) | Owner/auth unknown |
+| [Main 1–2](../../features/FEAT-006-publish-a-pose.md#main-flow) | Visibility transition → public catalogue |
+| [E1](../../features/FEAT-006-publish-a-pose.md#exception-flows) | Asset not ready |
+| [E2](../../features/FEAT-006-publish-a-pose.md#exception-flows) | Owner/auth unknown |
 
 **Ghi chú:** Admin PATCH `status` trên SCR-007-02 là **Observed** shortcut — **không** thay `publishGuide` (**Normative**). Xem [API-ADMIN-COMMUNITY-OBS-02](#api-admin-community-obs-02).
 
@@ -376,7 +379,7 @@ Module: [`publish.md`](../../../spec/api/modules/publish.md) · Feature: [FEAT-0
 
 ### 2.5 Saved — FEAT-008
 
-Module: [`saved.md`](../../../spec/api/modules/saved.md) · Feature: [FEAT-008](../../../harness/features/FEAT-008-use-published-poses.md)
+Module: [`api-contract.md §Saved`](../../specs/api-contract.md#saved) · Feature: [FEAT-008](../../features/FEAT-008-use-published-poses.md)
 
 <a id="api-saved-01"></a>
 
@@ -418,7 +421,7 @@ Module: [`saved.md`](../../../spec/api/modules/saved.md) · Feature: [FEAT-008](
 
 **Business rules:** BR-SAVED-001, BR-SAVED-002, BR-SAVED-005.
 
-**Feature-flow mapping:** [A2](../../../harness/features/FEAT-008-use-published-poses.md#alternative-flows) (sign-in gate); [E2](../../../harness/features/FEAT-008-use-published-poses.md#exception-flows) (account state unavailable — **Unresolved** runtime).
+**Feature-flow mapping:** [A2](../../features/FEAT-008-use-published-poses.md#alternative-flows) (sign-in gate); [E2](../../features/FEAT-008-use-published-poses.md#exception-flows) (account state unavailable — **Unresolved** runtime).
 
 ---
 
@@ -441,7 +444,7 @@ Module: [`saved.md`](../../../spec/api/modules/saved.md) · Feature: [FEAT-008](
 
 ### 2.6 Admin Community — FEAT-007
 
-Module: [`admin-community.md`](../../../spec/api/modules/admin-community.md) · Feature: [FEAT-007](../../../harness/features/FEAT-007-operate-pose-content-from-admin-web.md)
+Module: [`api-contract.md §Admin Community`](../../specs/api-contract.md#admin-community) · Feature: [FEAT-007](../../features/FEAT-007-operate-pose-content-from-admin-web.md)
 
 <a id="api-admin-community-01"></a>
 
@@ -519,8 +522,8 @@ Module: [`admin-community.md`](../../../spec/api/modules/admin-community.md) · 
 | Feature | Module | Normative stable IDs | Dedicated screen | Ghi chú |
 | --- | --- | --- | --- | --- |
 | [FEAT-003](../../../harness/features/FEAT-003-browse-and-search-published-poses.md) | community | API-COMMUNITY-01, API-COMMUNITY-02 | SCR-003-01/02/03 | Aliases API-003-01/02 |
-| [FEAT-004](../../../harness/features/FEAT-004-extract-reusable-pose-images.md) | extract-pose | API-EXTRACT-POSE-01, API-EXTRACT-POSE-02 | — | No dedicated screen |
-| [FEAT-005](../../../harness/features/FEAT-005-manage-a-pose-guide.md) | guides | API-GUIDES-01…08 | — | Shared SCR-003-03 delete UX |
+| [FEAT-004](../../../harness/features/FEAT-004-extract-reusable-pose-images.md) | extract-pose | API-EXTRACT-POSE-01, API-EXTRACT-POSE-02 | [SCR-004-01](./screens/mobile/scr-004-01-add-pose.md) | Add Pose extraction flow |
+| [FEAT-005](../../../harness/features/FEAT-005-manage-a-pose-guide.md) | guides | API-GUIDES-01…08 | [SCR-004-01](./screens/mobile/scr-004-01-add-pose.md), [SCR-005-01](./screens/mobile/scr-005-01-jobs.md) | Add Pose metadata + dedicated Jobs tracking screen; shared SCR-003-03 delete UX |
 | [FEAT-006](../../../harness/features/FEAT-006-publish-a-pose.md) | publish | API-PUBLISH-01, API-PUBLISH-02 | — | Admin status PATCH **Observed**, không owner screen |
 | [FEAT-007](../../../harness/features/FEAT-007-operate-pose-content-from-admin-web.md) | admin-community (+ proxy) | API-ADMIN-COMMUNITY-01…03; API-PROXY-01…06 | SCR-007-01/02/03 | Observed by-id + admin poll riêng |
 | [FEAT-008](../../../harness/features/FEAT-008-use-published-poses.md) | saved | API-SAVED-01…03 | — | Try Pose: no HTTP |
@@ -536,6 +539,8 @@ Module: [`admin-community.md`](../../../spec/api/modules/admin-community.md) · 
 | [SCR-003-02](./screens/scr-003-02-search.md) | `GET /api/community/poses?q=...` | API-COMMUNITY-01 (**Normative** contract; `q` evidence **Unresolved**) | Published title search |
 | [SCR-003-03](./screens/scr-003-03-pose-detail.md) | `GET /api/community/poses/:id` | API-COMMUNITY-02 (**Normative**) | Detail sau published `poseId` |
 | SCR-003-03 (FEAT-008) | `PUT/DELETE /api/me/saved/:poseId` | API-SAVED-02/03 (**Normative**; runtime **Unresolved**) | Save / Unsave |
+| [SCR-004-01](./screens/mobile/scr-004-01-add-pose.md) | `POST /api/extract-pose` (image + metadata draft) → poll `GET /api/extract-jobs/:jobId` | API-EXTRACT-POSE-01 (**Normative**), API-EXTRACT-POSE-02 (**Normative**) | Submit ảnh và draft metadata, poll tiến độ; server tạo Pose tự động khi `succeeded`. UI trạng thái: `Queued`, `Processing`, `Failed → Retry`, `Ready → View pose` |
+| [SCR-005-01](./screens/mobile/scr-005-01-jobs.md) | `GET /api/me/extract-jobs` (list) → `GET /api/extract-jobs/:jobId` (poll) → `POST /api/me/extract-jobs/:id/retry` (retry) → `DELETE /api/me/extract-jobs/:id` (hide) | API-EXTRACT-POSE-02 (**Normative**), `listMyExtractJobs` (**Normative**), `retryExtractJob` (**Normative**), `hideExtractJob` (**Normative**) | Liệt kê, poll, retry và ẩn jobs của tài khoản; nhãn UI là `Queued`, `Processing`, `Failed → Retry`, `Ready → View pose` |
 | [SCR-007-02](./screens/admin/scr-007-02-community.md) | `GET /api/admin/community/poses` | API-ADMIN-COMMUNITY-01 via [API-PROXY-02](#api-proxy-02) | List refresh |
 | SCR-007-02 | `POST /api/admin/extract-pose` → poll → `POST /api/admin/community/poses` | API-PROXY-01 + [API-ADMIN-EXTRACT-JOBS-OBS-01](#api-admin-extract-jobs-obs-01) + API-ADMIN-COMMUNITY-03 | Upload flow |
 | SCR-007-02 (edit overlay) | `PATCH /api/admin/community/poses/:id` | [API-ADMIN-COMMUNITY-OBS-02](#api-admin-community-obs-02) (**Observed**) | Save metadata + `status` |
@@ -543,13 +548,13 @@ Module: [`admin-community.md`](../../../spec/api/modules/admin-community.md) · 
 | [SCR-007-03](./screens/admin/scr-007-03-keys.md) | `GET/PUT /api/admin/settings/extraction-provider` | FEAT-009 cross-ref (**Observed**; **Unresolved**) | Extract Engine panel |
 | SCR-007-03 | Admin keys routes | API-PROXY-03…05 | Key CRUD (ngoài 20 Normative) |
 
-Model response: [`models.md`](./models.md) — [`CommunityPose`](../../../spec/data/entities/community-pose.md), [`Pose`](../../../spec/data/entities/pose.md), [`SavedEntry`](../../../spec/data/entities/saved-entry.md).
+Model response: [`models.md`](./models.md) — [`CommunityPose`](../../specs/data-contract.md#communitypose-deprecated-as-entity--public-dtoview), [`Pose`](../../specs/data-contract.md#pose), [`SavedEntry`](../../specs/data-contract.md#savedentry).
 
 ---
 
 ## 5. Admin proxy convention (API-PROXY-01 … API-PROXY-06)
 
-Next.js Admin Web inject Bearer server-side; contract upstream nằm ở Express ([`conventions.md` § Next.js proxy](../../../spec/api/conventions.md#nextjs-proxy-không-phải-contract-riêng)). Mỗi hàng: **transport** (Next path) → **upstream** (Express).
+Next.js Admin Web inject Bearer server-side; contract upstream nằm ở Express ([`api-contract.md` § Next.js proxy](../../specs/api-contract.md#nextjs-proxy-không-phải-contract-riêng)). Mỗi hàng: **transport** (Next path) → **upstream** (Express).
 
 | Stable ID | Transport (Next.js) | Upstream (Express) | Ghi chú |
 | --- | --- | --- | --- |
@@ -558,7 +563,7 @@ Next.js Admin Web inject Bearer server-side; contract upstream nằm ở Express
 | <a id="api-proxy-03"></a>**API-PROXY-03** | `GET`, `POST /api/admin/keys` | `/api/admin/keys` | Ngoài 20 Normative (`admin-keys` module) |
 | <a id="api-proxy-04"></a>**API-PROXY-04** | `PATCH`, `DELETE /api/admin/keys/:id` | `/api/admin/keys/:id` | Ngoài 20 Normative |
 | <a id="api-proxy-05"></a>**API-PROXY-05** | `POST /api/admin/keys/reset` | `/api/admin/keys/reset` | Ngoài 20 Normative |
-| <a id="api-proxy-06"></a>**API-PROXY-06** | Job poll: `GET /api/admin/jobs/:jobId` | `GET /api/admin/jobs/:jobId` | Upstream `getAdminJob` — **ngoài** 20 Normative; module [`admin-jobs.md`](../../../spec/api/modules/admin-jobs.md) |
+| <a id="api-proxy-06"></a>**API-PROXY-06** | Job poll: `GET /api/admin/jobs/:jobId` | `GET /api/admin/jobs/:jobId` | Upstream `getAdminJob` — **ngoài** 20 Normative; module [`api-contract.md §Admin Jobs`](../../specs/api-contract.md#admin-jobs) |
 
 **Không gộp:** `getAdminJob` (API-PROXY-06 upstream) ≠ [API-EXTRACT-POSE-02](#api-extract-pose-02) ≠ [API-ADMIN-EXTRACT-JOBS-OBS-01](#api-admin-extract-jobs-obs-01).
 
@@ -568,9 +573,9 @@ Next.js Admin Web inject Bearer server-side; contract upstream nằm ở Express
 
 | # | Stable ID / route | Auth | Transport | Mục đích | Label |
 | --- | --- | --- | --- | --- | --- |
-| 1 | [API-EXTRACT-POSE-02](#api-extract-pose-02) `GET /api/extract-jobs/:jobId` | Không (IP limit) | Express direct | Public/mobile per-job poll | **Normative** |
+| 1 | [API-EXTRACT-POSE-02](#api-extract-pose-02) `GET /api/extract-jobs/:jobId` | Account session (owner-checked, 404 cho tài khoản khác) hoặc Bearer admin | Express direct | Account/mobile per-job poll | **Normative** |
 | 2 | `getAdminJob` `GET /api/admin/jobs/:jobId` | Bearer admin | Express upstream (API-PROXY-06) | Admin job poll canonical upstream | **Normative** (ngoài 20) |
-| 3 | [API-ADMIN-EXTRACT-JOBS-OBS-01](#api-admin-extract-jobs-obs-01) `GET /api/admin/extract-jobs/:jobId` | Admin proxy session | Next.js forward → public poll | SCR-007-02 upload poll | **Observed** |
+| 3 | [API-ADMIN-EXTRACT-JOBS-OBS-01](#api-admin-extract-jobs-obs-01) `GET /api/admin/extract-jobs/:jobId` | Admin proxy session | Next.js forward → owner/admin poll | SCR-007-02 upload poll | **Observed** |
 
 ---
 
@@ -648,11 +653,11 @@ Các route sau có delivery evidence nhưng **không** nằm trong sáu module s
 | **Auth** | Admin proxy (Next.js) |
 | **Path** | `/api/admin/extract-jobs/:jobId` |
 
-**Hành vi (Observed):** Next.js route forward tới public poll [`GET /api/extract-jobs/:jobId`](#api-extract-pose-02).
+**Hành vi (Observed):** Next.js route forward tới [`GET /api/extract-jobs/:jobId`](#api-extract-pose-02) (owner/admin authenticated).
 
 **Screen:** [SCR-007-02](./screens/admin/scr-007-02-community.md) upload poll (60×1s).
 
-**Tách biệt:** **Không** merge với [API-EXTRACT-POSE-02](#api-extract-pose-02) (public Express) hay [API-PROXY-06](#api-proxy-06) / `getAdminJob` (admin jobs upstream).
+**Tách biệt:** **Không** merge với [API-EXTRACT-POSE-02](#api-extract-pose-02) (Express per-job poll) hay [API-PROXY-06](#api-proxy-06) / `getAdminJob` (admin jobs upstream).
 
 ---
 
@@ -663,7 +668,7 @@ Các route sau có delivery evidence nhưng **không** nằm trong sáu module s
 | `/api/admin/settings/extraction-provider` | `GET` | **Observed** | [SCR-007-03](./screens/admin/scr-007-03-keys.md) Extract Engine panel |
 | `/api/admin/settings/extraction-provider` | `PUT` | **Observed** | Body `{ provider }` |
 
-**Không** có module ID trong sáu module summary; absent OpenAPI catalogue slice; semantics **Unresolved** vs [FEAT-009](../../../harness/features/FEAT-009-configure-extraction-provider.md) Current evidence.
+**Không** có module ID trong sáu module summary; absent OpenAPI catalogue slice; semantics **Unresolved** vs [FEAT-009](../../features/FEAT-009-configure-extraction-provider.md) Current evidence.
 
 ---
 
@@ -687,7 +692,7 @@ Các route sau có delivery evidence nhưng **không** nằm trong sáu module s
 | Chiều | Trạng thái |
 | --- | --- |
 | **`ckh validate` `scope.path.unsupported`** | `docs/harness/designs/basic-design/apis.md` không phải supported Harness document kind — ghi nhận khi chạy `ckh validate` |
-| **`q` — Normative contract** | [`community.md`](../../../spec/api/modules/community.md), OpenAPI `listCommunityPoses` — **declared** |
+| **`q` — Normative contract** | [`api-contract.md §Community`](../../specs/api-contract.md#community-public), OpenAPI `listCommunityPoses` — **declared** |
 | **`q` — FEAT-003 Current evidence** | Feature file vẫn ghi mock-backed / *"no server title search query exists"* — **Unresolved** vs spec/server |
 | **`q` — Mobile E2E** | Live vs mock repository — production title search **chưa proven** |
 | **`limit` override** | Server `limit=20` khi `q` — **Observed**, không phải OpenAPI default/range |

@@ -1,0 +1,760 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Add pose · Snap Pose</title>
+  <link rel="stylesheet" href="../styles/reset.css">
+  <link rel="stylesheet" href="../styles/base.css">
+  <link rel="stylesheet" href="../styles/utilities.css">
+  <link rel="stylesheet" href="../styles/components.css?empty-state-1">
+  <style>
+    .add-pose-content {
+      flex: 1 1 auto;
+      min-height: 0;
+      padding-bottom: 16px;
+      gap: 0;
+    }
+
+    .add-pose-source-cta svg,
+    .add-pose-submit svg {
+      width: 18px;
+      height: 18px;
+      flex: 0 0 auto;
+    }
+
+    .add-pose-intro {
+      margin: 0 0 12px;
+      color: var(--nb-color-gray);
+    }
+
+    .add-pose-form {
+      display: grid;
+      gap: 10px;
+      margin: 0;
+    }
+
+      .add-pose-form[hidden] {
+        display: none;
+      }
+
+      .add-pose-nav[hidden],
+      .add-pose-intro[hidden],
+      .add-pose-processing[hidden],
+      .add-pose-prototype-note[hidden] {
+        display: none !important;
+      }
+
+      .add-pose-processing {
+        display: grid;
+        align-content: start;
+        gap: 14px;
+        min-height: 100%;
+        padding: 12px 0 20px;
+      }
+
+      .add-pose-processing__heading {
+        margin: 0;
+        text-align: center;
+      }
+
+      .add-pose-processing__eyebrow {
+        margin: 0 0 6px;
+        color: var(--nb-color-gray);
+        font-size: var(--nb-type-caption-size);
+        font-weight: var(--nb-font-weight-bold);
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+
+      .add-pose-processing__heading h1 {
+        margin: 0;
+        font-size: var(--nb-type-heading-2-size);
+        line-height: var(--nb-type-heading-2-leading);
+      }
+
+      .add-pose-processing__copy {
+        margin: 6px 0 0;
+        color: #4B5057;
+      }
+
+      .add-pose-processing__figure {
+        margin: 0;
+        padding: 8px;
+        border: var(--nb-border-thick);
+        border-radius: var(--nb-radius-medium);
+        background: var(--nb-color-white);
+        box-shadow: var(--nb-shadow-small);
+      }
+
+      .add-pose-processing__image-wrap {
+        position: relative;
+        width: 100%;
+        aspect-ratio: 1.18;
+        overflow: hidden;
+        border: var(--nb-border-thin);
+        border-radius: var(--nb-radius-small);
+        background: var(--nb-color-bg);
+      }
+
+      .add-pose-processing__image-wrap img {
+        display: block;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+
+      .add-pose-processing__overlay {
+        filter: drop-shadow(0 1px 1px rgba(255, 255, 255, 0.88));
+      }
+
+      .add-pose-processing__overlay .nb-pose-bone--skeleton {
+        stroke: var(--nb-color-accent-blue);
+      }
+
+      .add-pose-processing__overlay .nb-pose-bone--skeleton-lower {
+        stroke: var(--nb-color-accent-yellow);
+      }
+
+      .add-pose-processing__overlay .nb-pose-joint--head,
+      .add-pose-processing__overlay .nb-pose-joint--knees {
+        fill: var(--nb-color-accent-yellow);
+      }
+
+      .add-pose-processing__overlay .nb-pose-joint--eyes {
+        fill: #85C7F2;
+      }
+
+      .add-pose-processing__overlay .nb-pose-joint--shoulders {
+        fill: #F28482;
+      }
+
+      .add-pose-processing__overlay .nb-pose-joint--elbows {
+        fill: var(--nb-color-accent-green);
+      }
+
+      .add-pose-processing__overlay .nb-pose-joint--wrists {
+        fill: #7FE5F0;
+      }
+
+      .add-pose-processing__overlay .nb-pose-joint--hips {
+        fill: #E07A5F;
+      }
+
+      .add-pose-processing__overlay .nb-pose-bone {
+        animation: pose-bone-scan 1.6s ease-in-out infinite alternate;
+      }
+
+      .add-pose-processing__overlay .nb-pose-joint {
+        transform-box: fill-box;
+        transform-origin: center;
+        animation: pose-joint-scan 1.1s ease-in-out infinite alternate;
+      }
+
+      .add-pose-processing__overlay .nb-pose-joint--head,
+      .add-pose-processing__overlay .nb-pose-joint--hips {
+        animation-delay: 0.25s;
+      }
+
+      .add-pose-processing__caption {
+        margin: 8px 2px 0;
+        color: #4B5057;
+        font-size: var(--nb-type-caption-size);
+        line-height: var(--nb-type-caption-leading);
+        overflow-wrap: anywhere;
+      }
+
+      .add-pose-processing__status {
+        padding: 12px;
+        border: var(--nb-border-thick);
+        border-radius: var(--nb-radius-medium);
+        background: var(--nb-color-warning-surface);
+        box-shadow: var(--nb-shadow-small);
+      }
+
+    .add-pose-form__fields {
+      display: grid;
+      gap: 10px;
+      min-width: 0;
+      margin: 0;
+      padding: 0;
+      border: 0;
+    }
+
+    .add-pose-form__fields > legend {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      clip-path: inset(50%);
+    }
+
+    .add-pose-section {
+      min-width: 0;
+      margin: 0;
+      padding: 12px;
+      border: var(--nb-border-thick);
+      border-radius: var(--nb-radius-medium);
+      background: var(--nb-color-white);
+      box-shadow: var(--nb-shadow-small);
+    }
+
+    .add-pose-section > legend,
+    .add-pose-label {
+      padding: 0;
+      color: var(--nb-color-dark);
+      font-size: var(--nb-type-control-size);
+      font-weight: var(--nb-font-weight-bold);
+      line-height: var(--nb-type-control-leading);
+    }
+
+    .add-pose-section > legend {
+      max-width: 100%;
+      padding-inline: 4px;
+    }
+
+    .add-pose-required {
+      color: #8A1C24;
+      font-size: var(--nb-type-caption-size);
+      font-weight: var(--nb-font-weight-semibold);
+    }
+
+    .add-pose-field {
+      display: grid;
+      gap: 6px;
+      min-width: 0;
+    }
+
+    .add-pose-input,
+    .add-pose-textarea {
+      width: 100%;
+      min-height: 48px;
+      padding: 10px 12px;
+      border: var(--nb-border-thick);
+      border-radius: var(--nb-radius-small);
+      background: var(--nb-color-white);
+      color: var(--nb-color-dark);
+      font-size: var(--nb-type-input-size);
+      line-height: var(--nb-type-input-leading);
+    }
+
+    .add-pose-textarea {
+      min-height: 78px;
+      resize: vertical;
+    }
+
+    .add-pose-input::placeholder,
+    .add-pose-textarea::placeholder {
+      color: #5B6068;
+      opacity: 1;
+    }
+
+    .add-pose-hint {
+      margin: 0;
+      color: #4B5057;
+      font-size: var(--nb-type-caption-size);
+      line-height: var(--nb-type-caption-leading);
+    }
+
+    .add-pose-source-input {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      clip-path: inset(50%);
+      white-space: nowrap;
+    }
+
+    .add-pose-source-cta {
+      display: grid;
+      justify-items: center;
+      align-content: center;
+      gap: 8px;
+      width: 100%;
+      min-height: 148px;
+      padding: 18px 14px;
+      text-align: center;
+      cursor: pointer;
+    }
+
+    .add-pose-source-cta svg {
+      width: 36px;
+      height: 36px;
+    }
+
+    .add-pose-source-cta strong {
+      font-size: var(--nb-type-heading-3-size);
+      line-height: var(--nb-type-heading-3-leading);
+    }
+
+    .add-pose-source-cta span {
+      font-size: var(--nb-type-caption-size);
+      line-height: var(--nb-type-caption-leading);
+    }
+
+    .add-pose-source-input:focus-visible + .add-pose-source-cta {
+      outline: 3px solid var(--nb-color-dark);
+      outline-offset: 3px;
+    }
+
+    #image-field.has-image .add-pose-source-cta {
+      grid-template-columns: 24px 1fr;
+      justify-items: start;
+      column-gap: 10px;
+      row-gap: 0;
+      min-height: 56px;
+      margin-top: 10px;
+      padding: 8px 12px;
+      text-align: left;
+    }
+
+    #image-field.has-image .add-pose-source-cta svg {
+      grid-row: 1 / span 2;
+      width: 22px;
+      height: 22px;
+    }
+
+    .add-pose-preview {
+      margin: 10px 0 0;
+      overflow: hidden;
+      border: var(--nb-border-thin);
+      border-radius: var(--nb-radius-small);
+      background: var(--nb-color-bg);
+    }
+
+    .add-pose-preview img {
+      display: block;
+      width: 100%;
+      max-height: 190px;
+      aspect-ratio: 16 / 9;
+      object-fit: cover;
+    }
+
+    .add-pose-preview figcaption {
+      padding: 6px 8px;
+      color: #4B5057;
+      font-size: var(--nb-type-caption-size);
+    }
+
+    .add-pose-field[aria-invalid="true"] .add-pose-input,
+    .add-pose-field[aria-invalid="true"] .add-pose-textarea {
+      border-color: #8A1C24;
+    }
+
+    .add-pose-error {
+      margin: 0;
+      color: #8A1C24;
+      font-size: var(--nb-type-caption-size);
+      font-weight: var(--nb-font-weight-semibold);
+      line-height: var(--nb-type-caption-leading);
+    }
+
+    .add-pose-error[hidden],
+    .add-pose-preview[hidden],
+    .add-pose-feedback[hidden],
+    .add-pose-retry[hidden],
+    .add-pose-cancel[hidden],
+    .add-pose-return[hidden] {
+      display: none !important;
+    }
+
+    .add-pose-submit {
+      width: 100%;
+      min-height: 48px;
+      margin-top: 2px;
+    }
+
+    .add-pose-submit:disabled {
+      cursor: wait;
+      opacity: 0.7;
+    }
+
+    .add-pose-feedback {
+      margin-top: 12px;
+      padding: 12px;
+      border: var(--nb-border-thick);
+      border-radius: var(--nb-radius-medium);
+      background: var(--nb-color-warning-surface);
+      box-shadow: var(--nb-shadow-small);
+    }
+
+    .add-pose-feedback[data-state="success"] {
+      background: var(--nb-color-success-surface);
+    }
+
+    .add-pose-feedback[data-state="failure"],
+    .add-pose-feedback[data-state="offline"] {
+      background: var(--nb-color-error-surface);
+    }
+
+    .add-pose-feedback h2 {
+      margin: 0 0 4px;
+      font-size: var(--nb-type-heading-3-size);
+      line-height: var(--nb-type-heading-3-leading);
+    }
+
+    .add-pose-feedback p {
+      margin: 0;
+    }
+
+    .add-pose-progress {
+      height: 10px;
+      margin: 10px 0;
+      overflow: hidden;
+      border: var(--nb-border-thin);
+      border-radius: 999px;
+      background: var(--nb-color-white);
+    }
+
+    .add-pose-progress__fill {
+      width: 40%;
+      height: 100%;
+      background: var(--nb-color-accent-blue);
+      animation: add-pose-progress 1.1s ease-in-out infinite alternate;
+    }
+
+      @keyframes add-pose-progress {
+        from { transform: translateX(0); }
+        to { transform: translateX(145%); }
+      }
+
+      @keyframes pose-bone-scan {
+        from { opacity: 0.58; }
+        to { opacity: 1; }
+      }
+
+      @keyframes pose-joint-scan {
+        from { transform: scale(0.88); }
+        to { transform: scale(1.2); }
+      }
+
+    .add-pose-feedback-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .add-pose-feedback-actions .nb-btn {
+      min-height: 44px;
+    }
+
+    .add-pose-prototype-note {
+      margin: 10px 2px 0;
+      color: #4B5057;
+      font-size: var(--nb-type-caption-size);
+      line-height: var(--nb-type-caption-leading);
+    }
+
+      @media (prefers-reduced-motion: reduce) {
+        .add-pose-processing__overlay .nb-pose-bone,
+        .add-pose-processing__overlay .nb-pose-joint {
+          animation: none;
+        }
+
+        .add-pose-progress__fill {
+          width: 60%;
+          animation: none;
+        }
+
+        .add-pose-processing__overlay .nb-pose-bone {
+          opacity: 1;
+        }
+
+        .add-pose-processing__overlay .nb-pose-joint {
+          transform: none;
+        }
+      }
+
+    /* Add Pose refinement: make the source photo the visual starting point. */
+    .add-pose-content.is-processing {
+      padding-bottom: 18px;
+    }
+
+    .add-pose-intro {
+      max-width: 34ch;
+      margin-bottom: 14px;
+      color: #4B5057;
+    }
+
+    .add-pose-form {
+      gap: 16px;
+    }
+
+    .add-pose-form__fields {
+      gap: 16px;
+    }
+
+    .add-pose-section.add-pose-media {
+      padding: 12px;
+      border-color: var(--nb-color-border);
+      background: #F5E9D7;
+      box-shadow: var(--nb-shadow);
+    }
+
+    .add-pose-media > legend {
+      padding-inline: 6px;
+      font-size: 15px;
+    }
+
+    .add-pose-source-cta {
+      border-color: var(--nb-color-dark);
+      background: var(--nb-color-accent-blue);
+      box-shadow: var(--nb-shadow);
+    }
+
+    .add-pose-preview {
+      margin-top: 10px;
+      border: var(--nb-border-thin);
+      background: var(--nb-color-bg);
+    }
+
+    .add-pose-preview img {
+      height: clamp(180px, 61vw, 240px);
+      max-height: 240px;
+      aspect-ratio: 4 / 3;
+      object-fit: contain;
+    }
+
+    .add-pose-preview figcaption {
+      background: var(--nb-color-white);
+    }
+
+    .add-pose-details {
+      display: grid;
+      gap: 14px;
+      min-width: 0;
+      padding: 16px;
+      border: var(--nb-border-thick);
+      border-radius: var(--nb-radius-medium);
+      background: var(--nb-color-white);
+      box-shadow: var(--nb-shadow-small);
+    }
+
+    .add-pose-details__heading {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+      padding-bottom: 10px;
+      border-bottom: var(--nb-border-hairline);
+    }
+
+    .add-pose-details__heading h2 {
+      margin: 0;
+      font-size: var(--nb-type-heading-3-size);
+      line-height: var(--nb-type-heading-3-leading);
+    }
+
+      .add-pose-details__heading span {
+        margin: 0;
+        color: #4B5057;
+        font-size: var(--nb-type-caption-size);
+      font-weight: var(--nb-font-weight-semibold);
+    }
+
+    .add-pose-section:not(.add-pose-media) {
+      min-width: 0;
+      padding: 0;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      box-shadow: none;
+    }
+
+    .add-pose-detail-divider {
+      padding-top: 14px !important;
+      border-top: 1px solid #D7D0C5 !important;
+    }
+
+    .add-pose-details .add-pose-hint {
+      color: #4B5057;
+    }
+
+    .add-pose-action-bar {
+      position: relative;
+      flex: 0 0 auto;
+      z-index: calc(var(--nb-z-index-sticky) - 1);
+      margin-bottom: 0;
+      padding: 8px 16px calc(8px + env(safe-area-inset-bottom, 0px));
+      background: var(--nb-color-bg);
+    }
+
+    .add-pose-action-bar[hidden] {
+      display: none !important;
+    }
+
+    .add-pose-submit {
+      min-height: 52px;
+      margin: 0;
+      box-shadow: var(--nb-shadow);
+    }
+
+    .add-pose-feedback {
+      margin: 0 0 14px;
+    }
+  </style>
+</head>
+<body>
+  <div class="nb-phone">
+    <div class="nb-phone__header" aria-hidden="true">
+      <span class="nb-phone__time">9:41</span>
+      <div class="nb-phone__status-icons">
+        <svg class="nb-phone__icon" fill="currentColor" viewBox="0 0 24 24"><path d="M12 21a2 2 0 1 1 0-4 2 2 0 0 1 0 4zm-4.95-4.95a7 7 0 0 1 9.9 0l-1.42 1.42a5 5 0 0 0-7.06 0zM4.22 13.22a11 11 0 0 1 15.56 0l-1.42 1.42a9 9 0 0 0-12.72 0z"/></svg>
+        <svg class="nb-phone__icon" fill="currentColor" viewBox="0 0 24 24"><path d="M2 22h20V2zM20 20h-2V9h2v11zm-4 0h-2V12h2v8zm-4 0h-2V15h2v5z"/></svg>
+        <svg class="nb-phone__icon" fill="currentColor" viewBox="0 0 24 24"><path d="M17 5H3a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2zm1 9h-2v-4h2z"/></svg>
+      </div>
+    </div>
+
+      <main class="nb-phone__content add-pose-content" id="add-pose-screen">
+        <nav class="nb-nav-bar add-pose-nav" id="add-pose-nav" aria-label="Add pose navigation">
+          <div class="nb-nav-bar__left">
+            <a class="nb-btn nb-btn--square nb-btn--white" href="poses-list.html" aria-label="Back to Poses">
+              <svg aria-hidden="true"><use href="#icon-back"></use></svg>
+            </a>
+          </div>
+          <h1 id="add-pose-title" class="nb-nav-bar__title">Add pose</h1>
+          <div class="nb-nav-bar__right"><a class="nb-btn nb-btn--white add-pose-jobs-link" href="jobs.html?from=add-pose">Jobs</a></div>
+        </nav>
+        <p class="add-pose-intro" id="add-pose-intro">Choose a photo from your Photo Library, then add the details for this pose.</p>
+
+        <section id="processing-screen" class="add-pose-processing" aria-live="polite" aria-atomic="false" aria-busy="false" hidden>
+          <header class="add-pose-processing__heading">
+            <p class="add-pose-processing__eyebrow">Pose extraction</p>
+            <h1 id="processing-title" tabindex="-1">Processing</h1>
+            <p id="processing-copy" class="add-pose-processing__copy">You can leave this screen at any time. Processing continues in the background.</p>
+          </header>
+
+          <figure class="add-pose-processing__figure">
+            <div class="add-pose-processing__image-wrap">
+              <img id="processing-image" alt="Selected pose photo">
+              <svg viewBox="0 0 100 100" class="nb-pose-overlay nb-stick-figure add-pose-processing__overlay" preserveAspectRatio="none" aria-hidden="true" focusable="false">
+                <line x1="38" y1="28" x2="62" y2="28" class="nb-pose-bone nb-pose-bone--skeleton" />
+                <line x1="50" y1="14" x2="50" y2="28" class="nb-pose-bone nb-pose-bone--skeleton" />
+                <line x1="38" y1="28" x2="28" y2="43" class="nb-pose-bone nb-pose-bone--skeleton" />
+                <line x1="28" y1="43" x2="24" y2="57" class="nb-pose-bone nb-pose-bone--skeleton" />
+                <line x1="62" y1="28" x2="72" y2="41" class="nb-pose-bone nb-pose-bone--skeleton" />
+                <line x1="72" y1="41" x2="78" y2="55" class="nb-pose-bone nb-pose-bone--skeleton" />
+                <line x1="50" y1="28" x2="50" y2="52" class="nb-pose-bone nb-pose-bone--skeleton" />
+                <line x1="40" y1="55" x2="60" y2="55" class="nb-pose-bone nb-pose-bone--skeleton-lower" />
+                <line x1="40" y1="55" x2="38" y2="72" class="nb-pose-bone nb-pose-bone--skeleton-lower" />
+                <line x1="38" y1="72" x2="36" y2="88" class="nb-pose-bone nb-pose-bone--skeleton-lower" />
+                <line x1="60" y1="55" x2="62" y2="70" class="nb-pose-bone nb-pose-bone--skeleton-lower" />
+                <line x1="62" y1="70" x2="64" y2="86" class="nb-pose-bone nb-pose-bone--skeleton-lower" />
+                <circle cx="50" cy="14" class="nb-pose-joint nb-pose-joint--head" />
+                <circle cx="47" cy="12" class="nb-pose-joint nb-pose-joint--eyes" />
+                <circle cx="53" cy="12" class="nb-pose-joint nb-pose-joint--eyes" />
+                <circle cx="50" cy="28" class="nb-pose-joint nb-pose-joint--shoulders" />
+                <circle cx="38" cy="28" class="nb-pose-joint nb-pose-joint--shoulders" />
+                <circle cx="62" cy="28" class="nb-pose-joint nb-pose-joint--shoulders" />
+                <circle cx="28" cy="43" class="nb-pose-joint nb-pose-joint--elbows" />
+                <circle cx="72" cy="41" class="nb-pose-joint nb-pose-joint--elbows" />
+                <circle cx="24" cy="57" class="nb-pose-joint nb-pose-joint--wrists" />
+                <circle cx="78" cy="55" class="nb-pose-joint nb-pose-joint--wrists" />
+                <circle cx="40" cy="55" class="nb-pose-joint nb-pose-joint--hips" />
+                <circle cx="60" cy="55" class="nb-pose-joint nb-pose-joint--hips" />
+                <circle cx="38" cy="72" class="nb-pose-joint nb-pose-joint--knees" />
+                <circle cx="62" cy="70" class="nb-pose-joint nb-pose-joint--knees" />
+                <circle cx="36" cy="88" class="nb-pose-joint nb-pose-joint--wrists" />
+                <circle cx="64" cy="86" class="nb-pose-joint nb-pose-joint--wrists" />
+              </svg>
+            </div>
+            <figcaption id="processing-image-caption" class="add-pose-processing__caption">Selected pose photo</figcaption>
+          </figure>
+
+          <div class="add-pose-processing__status" role="status" aria-live="polite" aria-atomic="true">
+              <div id="flow-progress" class="add-pose-progress" role="progressbar" aria-label="Pose extraction progress" aria-valuetext="Processing">
+              <div class="add-pose-progress__fill"></div>
+            </div>
+            <div class="add-pose-feedback-actions">
+              <a id="processing-view-jobs" class="nb-btn nb-btn--blue" href="jobs.html?from=add-pose">View jobs</a>
+              <a id="processing-done" class="nb-btn nb-btn--white" href="poses-list.html">Done</a>
+            </div>
+          </div>
+        </section>
+
+      <section id="flow-feedback" class="add-pose-feedback" data-state="" aria-live="polite" aria-atomic="true" hidden>
+        <h2 id="flow-title"></h2>
+        <p id="flow-copy"></p>
+        <div class="add-pose-feedback-actions">
+          <button id="retry-pose" class="nb-btn nb-btn--yellow add-pose-retry" type="button" hidden>Retry</button>
+          <a id="return-to-poses" class="nb-btn nb-btn--green add-pose-return" href="poses-list.html" hidden>Back to Poses</a>
+        </div>
+      </section>
+
+      <form id="add-pose-form" class="add-pose-form" novalidate aria-describedby="prototype-note">
+        <fieldset id="form-fields" class="add-pose-form__fields">
+          <legend>Add pose form</legend>
+
+          <fieldset class="add-pose-section add-pose-media">
+            <legend id="image-label">Source photo <span class="add-pose-required">Required</span></legend>
+            <div id="image-field" class="add-pose-field" role="group" aria-labelledby="image-label" aria-describedby="image-hint image-error">
+                <p id="image-hint" class="add-pose-hint">Choose a photo from your Photo Library to use as the pose reference.</p>
+                <figure id="image-preview" class="add-pose-preview" hidden>
+                  <img id="image-preview-img" alt="">
+                  <figcaption id="image-preview-caption">Selected pose photo</figcaption>
+                </figure>
+                <input class="add-pose-source-input" type="file" id="library-source" name="libraryImage" accept="image/*" aria-describedby="image-hint image-error">
+                <label id="image-source-prompt" class="nb-btn nb-btn--blue add-pose-source-cta" for="library-source">
+                  <svg aria-hidden="true" viewBox="0 0 48 48" fill="none" focusable="false">
+                    <rect x="7" y="8" width="27" height="31" rx="3" fill="#FED766" stroke="#121212" stroke-width="2"/>
+                    <rect x="14" y="5" width="27" height="31" rx="3" fill="#FFFFFF" stroke="#121212" stroke-width="2"/>
+                    <circle cx="22" cy="14" r="3" fill="#E89CAE" stroke="#121212" stroke-width="2"/>
+                    <path d="m16 31 7-8 5 5 4-4 6 7H16Z" fill="#7FBBE6" stroke="#121212" stroke-width="2" stroke-linejoin="round"/>
+                  </svg>
+                  <strong id="image-source-title">Start with a photo</strong>
+                  <span>Choose from Photo Library</span>
+                </label>
+                <p id="image-error" class="add-pose-error" role="alert" hidden></p>
+            </div>
+          </fieldset>
+
+          <section class="add-pose-details" aria-labelledby="pose-details-heading">
+              <header class="add-pose-details__heading">
+                <h2 id="pose-details-heading">Pose details</h2>
+                <span>2 required</span>
+            </header>
+
+            <div id="name-field" class="add-pose-field">
+              <label class="add-pose-label" for="pose-name">Name <span class="add-pose-required">Required</span></label>
+              <input class="add-pose-input" type="text" id="pose-name" name="name" maxlength="60" autocomplete="off" placeholder="e.g. Window-light portrait" aria-describedby="name-hint name-error">
+              <p id="name-hint" class="add-pose-hint">Choose a short name that is easy to scan.</p>
+              <p id="name-error" class="add-pose-error" role="alert" hidden></p>
+            </div>
+
+            <div id="tags-field" class="add-pose-field add-pose-detail-divider">
+              <label class="add-pose-label" for="pose-tags">Tags <span class="add-pose-required">Required</span></label>
+              <input class="add-pose-input" type="text" id="pose-tags" name="tags" maxlength="120" autocomplete="off" placeholder="Portrait, window light" aria-describedby="tags-hint tags-error">
+              <p id="tags-hint" class="add-pose-hint">Add one or more tags, separated by commas.</p>
+              <p id="tags-error" class="add-pose-error" role="alert" hidden></p>
+            </div>
+
+              <div class="add-pose-field add-pose-detail-divider">
+                <label class="add-pose-label" for="pose-description">Description <span class="add-pose-hint">Optional</span></label>
+                <textarea class="add-pose-textarea" id="pose-description" name="description" maxlength="280" placeholder="Add context, tips, or a short note."></textarea>
+              </div>
+          </section>
+        </fieldset>
+      </form>
+
+        <p id="prototype-note" class="add-pose-prototype-note">Prototype simulation: submitting sends your photo and draft details to the server. Extraction continues in the background and automatically creates the pose upon completion.</p>
+    </main>
+
+    <div id="add-pose-action-bar" class="add-pose-action-bar">
+      <button class="nb-btn nb-btn--pink add-pose-submit" id="create-pose" type="submit" form="add-pose-form">
+        <span>Create pose</span>
+        <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+      </button>
+    </div>
+
+    <div class="nb-phone__footer"><div class="nb-phone__home-indicator"></div></div>
+  </div>
+
+  <script src="../scripts/icons.js"></script>
+  <script src="../scripts/jobs.js"></script>
+  <script src="../scripts/add-pose-demo.js"></script>
+</body>
+</html>

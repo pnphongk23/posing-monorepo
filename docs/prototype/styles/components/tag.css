@@ -42,3 +42,25 @@
   font-size: var(--nb-type-meta-label-size);
   gap: 6px;
 }
+
+.nb-badge--count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background-color: var(--nb-color-accent-yellow);
+  border: var(--nb-border-thin);
+  font-family: var(--nb-font-family);
+  font-size: var(--nb-font-size-2xs);
+  font-weight: var(--nb-font-weight-bold);
+  line-height: 1;
+  color: var(--nb-color-dark);
+  margin-left: 4px;
+}
+
+.nb-badge--count[hidden] {
+  display: none !important;
+}

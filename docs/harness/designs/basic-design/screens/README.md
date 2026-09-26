@@ -27,6 +27,8 @@ Presentation layer inventory cho **Basic Design** (`docs/harness/designs/basic-d
 | --- | --- | --- | --- | --- |
 | SCR-001-01 | [scr-001-01-camera.md](./mobile/scr-001-01-camera.md#scr-001-01-camera-camerascreen) | `CameraScreen` (`CameraTab`) | FEAT-001 | draft (template v2) |
 | SCR-002-01 | [scr-002-01-gallery.md](./mobile/scr-002-01-gallery.md#scr-002-01-gallery-galleryscreen) | `GalleryScreen` + `PhotoDetailDialog` | FEAT-002 | draft (template v2) |
+| SCR-004-01 | [scr-004-01-add-pose.md](./mobile/scr-004-01-add-pose.md#scr-004-01-add-pose) | Native iOS `mobile/iosApp/iosApp/Features/Poses/` — Add Pose chưa tồn tại (**Next-plan prerequisite**) | FEAT-004 (+ FEAT-005) | draft (template v2) |
+| SCR-005-01 | [scr-005-01-jobs.md](./mobile/scr-005-01-jobs.md#scr-005-01-jobs) | Native iOS `mobile/iosApp/iosApp/Features/Poses/` — Jobs screen chưa tồn tại (**Next-plan prerequisite**) | FEAT-005 (+ FEAT-004) | draft (template v2) |
 
 ### 1.2 Admin Web (`screens/admin/`)
 
@@ -46,7 +48,7 @@ Presentation layer inventory cho **Basic Design** (`docs/harness/designs/basic-d
 | SCR-003-02 | [scr-003-02-search.md](./scr-003-02-search.md#scr-003-02-search-searchscreen) | `SearchScreen` | FEAT-003 | sample (template v1) |
 | SCR-003-03 | [scr-003-03-pose-detail.md](./scr-003-03-pose-detail.md#scr-003-03-pose-detail-posedetailscreen) | `PoseDetailScreen` (+ Voyager wrapper) | FEAT-003 | sample (template v1) |
 
-**Inventory count:** 9 screen files (1 mobile shell + 2 mobile + 3 admin + 3 legacy root). Không gồm `TEMPLATE.md` hay file README này.
+**Inventory count:** 11 screen files (1 mobile shell + 4 mobile + 3 admin + 3 legacy root). Không gồm `TEMPLATE.md` hay file README này.
 
 **Home mapping note:** [SCR-000-01 Home](./scr-000-01-home.md#scr-000-01-home-posestab-poseslistscreen-posesscreen) là app-entry shell mapping cho `PosesTab` hiện tại. Nó không tạo thêm catalogue, không phục hồi `My poses`, và không thay ownership của [SCR-003-01 Poses](./scr-003-01-community-browse.md#scr-003-01-community-browse-poseslistscreen-posesscreen).
 
@@ -60,8 +62,8 @@ Presentation layer inventory cho **Basic Design** (`docs/harness/designs/basic-d
 | [FEAT-001](../../../features/FEAT-001-capture-a-photo-on-mobile.md) | **Yes** — SCR-001-01 | [Camera](./mobile/scr-001-01-camera.md#scr-001-01-camera-camerascreen) | Cross-slice: FEAT-008 overlay, FEAT-011 paywall gate, FEAT-012 snapshot |
 | [FEAT-002](../../../features/FEAT-002-manage-a-local-photo-gallery.md) | **Yes** — SCR-002-01 | [Gallery](./mobile/scr-002-01-gallery.md#scr-002-01-gallery-galleryscreen) | FEAT-011 paywall: **occurrence** cross-ref → [SCR-001-01 OVR](./mobile/scr-001-01-camera.md#scr-001-01-camera-ovr-paywall) only |
 | [FEAT-003](../../../features/FEAT-003-browse-and-search-published-poses.md) | **Yes** — SCR-003-01/02/03 | [Browse](./scr-003-01-community-browse.md), [Search](./scr-003-02-search.md), [Detail](./scr-003-03-pose-detail.md) | **Published-leg** ownership — xem [§6](#ownership-boundary-feat-003) |
-| [FEAT-004](../../../features/FEAT-004-extract-reusable-pose-images.md) | **No dedicated screen** | No current entry on SCR-003-01; feature remains **out-of-slice** | Không invent screen file |
-| [FEAT-005](../../../features/FEAT-005-manage-a-pose-guide.md) | **No dedicated screen** | Shared UI trên SCR-003-03 — xem [§5](#shared-occurrence-register) | Delete dialog / deleting overlay |
+| [FEAT-004](../../../features/FEAT-004-extract-reusable-pose-images.md) | **Yes** — SCR-004-01 | [Add Pose](./mobile/scr-004-01-add-pose.md#scr-004-01-add-pose) | Extraction flow; provider selection thuộc FEAT-009; liên kết sang Jobs screen |
+| [FEAT-005](../../../features/FEAT-005-manage-a-pose-guide.md) | **Yes** — SCR-004-01, SCR-005-01 | [Add Pose](./mobile/scr-004-01-add-pose.md#scr-004-01-add-pose), [Jobs](./mobile/scr-005-01-jobs.md#scr-005-01-jobs) | Metadata + creation timing (SCR-004-01); dedicated Jobs tracking screen (SCR-005-01); delete UX vẫn shared trên SCR-003-03 — xem [§5](#shared-occurrence-register) |
 | [FEAT-006](../../../features/FEAT-006-publish-a-pose.md) | **No dedicated screen** | — | Policy/backend; admin status field **Observed** trên SCR-007-02, không phải owner screen |
 | [FEAT-007](../../../features/FEAT-007-operate-pose-content-from-admin-web.md) | **Yes** — SCR-007-01/02/03 | [Dashboard](./admin/scr-007-01-dashboard.md), [Community](./admin/scr-007-02-community.md), [Keys](./admin/scr-007-03-keys.md) | |
 | [FEAT-008](../../../features/FEAT-008-use-published-poses.md) | **No dedicated screen** | SCR-001-01 overlay; SCR-003-03 Try/Save/preparing — **out-of-slice** | Không invent screen file |
@@ -82,8 +84,8 @@ Nguồn trạng thái: [Harness inventory](../../../README.md) (bảng Features)
 | FEAT-001 | Approved | approved | SCR-001-01 | draft | Android parity **Unresolved** |
 | FEAT-002 | Draft | approved | SCR-002-01 | draft | **Discrepancy** inventory vs frontmatter |
 | FEAT-003 | Proposed | approved | SCR-003-01/02/03 | sample | **Discrepancy** — xem [§4](#discrepancy-register) |
-| FEAT-004 | Draft | approved | — (cross-ref only) | — | **Discrepancy**; no dedicated screen |
-| FEAT-005 | Draft | approved | — (shared SCR-003-03) | — | **Discrepancy**; no dedicated screen |
+| FEAT-004 | Draft | approved | SCR-004-01 | draft | Frontmatter approved |
+| FEAT-005 | Draft | approved | SCR-004-01, SCR-005-01 | draft | Approved 2026-09-24; Add Pose + Jobs specs active |
 | FEAT-006 | Draft | draft | — | — | Align |
 | FEAT-007 | Draft | approved | SCR-007-01/02/03 | draft | **Discrepancy** — xem [§4](#discrepancy-register) |
 | FEAT-008 | Draft | draft | — (cross-slice) | — | Align |
@@ -102,8 +104,8 @@ Nguồn trạng thái: [Harness inventory](../../../README.md) (bảng Features)
 | D-001 | FEAT-002 | Harness inventory **Draft** vs frontmatter **approved** | [Harness README](../../../README.md), [FEAT-002](../../../features/FEAT-002-manage-a-local-photo-gallery.md) |
 | D-002 | FEAT-003 | Harness **Proposed** vs frontmatter **approved**; title search `q` **Unresolved** (mock vs live) | [apis.md#unresolved](../apis.md#unresolved), screen docs SCR-003-02 |
 | D-003 | FEAT-003 | Mixed local/published search UI và local-first detail — **Observed**, không normative published-leg | [SCR-003-02](./scr-003-02-search.md), [SCR-003-03](./scr-003-03-pose-detail.md) |
-| D-004 | FEAT-004 | Inventory **Draft** vs frontmatter **approved**; không có affordance trên Poses surface hiện tại, không screen riêng | [SCR-003-01](./scr-003-01-community-browse.md) |
-| D-005 | FEAT-005 | Inventory **Draft** vs frontmatter **approved**; delete UX shared trên Pose Detail, không file screen FEAT-005 | [SCR-003-03 §7](./scr-003-03-pose-detail.md#scr-003-03-pose-detail-posedetailscreen) |
+| D-004 | FEAT-004 | Inventory **Draft** vs frontmatter **approved**; Add Pose screen spec có sẵn; entry affordance Poses và Jobs link đã chốt | [SCR-004-01](./mobile/scr-004-01-add-pose.md#scr-004-01-add-pose) |
+| D-005 | FEAT-005 | Inventory **Draft** vs frontmatter **approved**; Add Pose (SCR-004-01) + Jobs screen (SCR-005-01) specs đã có; delete UX shared trên Pose Detail | [SCR-004-01](./mobile/scr-004-01-add-pose.md#scr-004-01-add-pose), [SCR-005-01](./mobile/scr-005-01-jobs.md#scr-005-01-jobs), [SCR-003-03 §7](./scr-003-03-pose-detail.md#scr-003-03-pose-detail-posedetailscreen) |
 | D-006 | FEAT-007 | Inventory **Draft** vs frontmatter **approved** | Harness README vs FEAT-007 |
 | D-007 | FEAT-007 / SCR-007-02 | Feature **Not observed** async polling vs code poll 60×1s | [SCR-007-02](./admin/scr-007-02-community.md) |
 | D-008 | FEAT-007 / SCR-007-02 | Upload form `status` select không gửi POST; badge `local` vs options | [SCR-007-02](./admin/scr-007-02-community.md) |
@@ -174,8 +176,19 @@ flowchart TD
         KEY[SCR-007-03 Keys]
     end
 
+    AP[SCR-004-01 Add Pose]
+    JOB[SCR-005-01 Jobs]
+
     PS -->|"HDR-002 search"| SS
     PS -->|"GRD-002 card"| PD
+    PS -->|"HDR-001 entry"| AP
+    PS -->|"HDR jobs button"| JOB
+    AP -->|"HDR-001 back"| PS
+    AP -->|"HDR-003 / DTL-003 jobs"| JOB
+    AP -->|"IMG-001 library"| GS
+    JOB -->|"HDR-001 back"| PS
+    JOB -->|"ST-001 add pose"| AP
+    JOB -->|"ROW-004 view pose"| PD
     SS -->|"RES-003 published"| PD
     SS -->|"NAV-001 back"| PS
     PD -->|"NAV-001 back"| PS

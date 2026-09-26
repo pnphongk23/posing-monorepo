@@ -25,9 +25,12 @@ relationships:
     - "[[FEAT-007-operate-pose-content-from-admin-web|FEAT-007]]"
     - "[[FEAT-008-use-published-poses|FEAT-008]]"
   source_paths:
-    - mobile/shared/src/commonMain/sqldelight/com/aipose/Photo.sq
-    - mobile/shared/src/commonMain/sqldelight/com/aipose/Pose.sq
+    - mobile/iosApp/iosApp/Core/Database/AppDatabase.swift
+    - mobile/iosApp/iosApp/Core/Database/DatabaseRecords.swift
+    - mobile/iosApp/iosApp/Core/Database/DatabaseRepositories.swift
+    - mobile/iosApp/iosApp/Core/Database/AppDatabaseSchema.swift
     - web/services/pose-extract-server/src/db/schema.sql
+    - web/services/pose-extract-server/src/db/extractionJobStore.ts
 ---
 
 # Data Contract
@@ -46,8 +49,8 @@ Thuật ngữ chuẩn: [`pose-domain-glossary.md`](./pose-domain-glossary.md)
 
 | Layer | Thực thể | Ý nghĩa |
 |---|---|---|
-| Mobile local | `Photo`, `Pose` | Ảnh chụp sống trên thiết bị; `Pose` local được tạo **sau khi extraction `succeeded`** (`status = local`) và cùng `poseId` với server. Không có FK bắt buộc tới server. |
-| Server | `Pose`, `MediaAsset`, `ExtractionJob`, `Account`, `SavedEntry`, `ApiKeyCredential`, `ProviderRequestLog` | Entity canonical, media, job, identity, saved collection, vận hành provider. |
+| Mobile local | `Photo`, `Pose` | Ảnh chụp sống trên thiết bị; `Pose` local được lưu sau khi extraction `succeeded` (`status = local`) và cùng `poseId` với server. Không lưu extraction jobs trên thiết bị (mô hình server-authoritative). Không có FK bắt buộc tới server. |
+| Server | `Pose`, `MediaAsset`, `ExtractionJob`, `Account`, `SavedEntry`, `ApiKeyCredential`, `ProviderRequestLog` | Entity canonical, media, job (owner-scoped, server-owned), identity, saved collection, vận hành provider. |
 | Mobile conceptual | `PreparedPoseReference` | Hợp đồng in-memory tạm cho Try Pose. Không persist qua relaunch. |
 
 Không còn entity song song `PoseGuide`, `PersonalPose`, `CommunityPose`. `Pose` là
@@ -68,28 +71,33 @@ flowchart LR
 ```
 
 1. Photographer chụp `Photo` (FEAT-001) và quản lý gallery local (FEAT-002).
-2. Một ảnh nguồn (`original`) đi qua extraction (FEAT-004): submit enqueue
-   `ExtractionJob` (`202` + `jobId`), poll tới `succeeded`; **chưa có `Pose`**.
-3. Khi extraction thành công, `Pose` được tạo (FEAT-005): `poseId` (UUID) ổn định,
-   `status = local`, và cả ba `MediaAsset` (`original`, `skeleton`, `thumbnail`)
-   materialize ngay; sau đó Pose Owner quản lý metadata, retry, re-extract,
-   revert, xóa.
-4. Pose Owner publish khi pose đủ điều kiện: có `MediaAsset` skeleton `ready` và
+2. Khi người dùng nộp ảnh tạo pose (FEAT-005 Add Pose), client gửi ảnh kèm draft metadata
+   (`name`, `tags`, optional `description`) qua authenticated `POST /api/extract-pose`.
+   Server lưu `poseDraft` trên `ExtractionJob` (`ownerAccountId`), enqueue job
+   (`202` + `jobId`). Thiết bị không lưu bản ghi job cục bộ.
+3. Server extraction worker xử lý job (FEAT-004). Khi extraction thành công (`succeeded`),
+   server tự động tạo `Pose` (`poseId` UUID ổn định, `status = local`) và cả ba `MediaAsset`
+   (`original`, `skeleton`, `thumbnail`) trong cùng một transaction, gắn `poseId` vào
+   `ExtractionJob`, và dọn dẹp dữ liệu ảnh nhị phân thô (retention). Client không gọi endpoint save riêng.
+4. Pose Owner quản lý metadata, retry (với job failed), re-extract, revert, xóa.
+5. Pose Owner publish khi pose đủ điều kiện: có `MediaAsset` skeleton `ready` và
    đủ thẩm quyền (FEAT-006).
-5. Visitor/user duyệt catalogue published (view `Pose.status = published`), lọc,
+6. Visitor/user duyệt catalogue published (view `Pose.status = published`), lọc,
    tìm theo title (FEAT-003).
-6. Signed-in user lưu `SavedEntry` và chuẩn bị Try Pose (FEAT-008). Use không cấp
+7. Signed-in user lưu `SavedEntry` và chuẩn bị Try Pose (FEAT-008). Use không cấp
    quyền sở hữu.
-7. Admin Web (FEAT-007) vận hành cùng các hợp đồng trên; không định nghĩa model
+8. Admin Web (FEAT-007) vận hành cùng các hợp đồng trên; không định nghĩa model
    extraction/publication riêng.
 
 ### Ranh giới quan trọng
 
 - `Photo` không bắt buộc sync lên server; `Pose` local cùng `poseId` với server.
 - **Không có `Pose` persisted trước khi extraction thành công.** Trong lúc
-  extraction chỉ tồn tại `ExtractionJob` với `jobId` (correlation key); pose được
-  tạo sau `succeeded`.
-- `ownerAccountId` bắt buộc trên mọi `Pose`; authenticated actor (Admin Bearer)
+  extraction chỉ tồn tại `ExtractionJob` với `jobId` (correlation key); pose và 3 media
+  assets được tạo tự động bởi server worker sau khi job `succeeded`.
+- `ExtractionJob` thuộc quyền sở hữu của `Account` (`ownerAccountId`); không lưu
+  bản ghi job hay intent ID trên thiết bị di động.
+- `ownerAccountId` bắt buộc trên mọi `Pose` và `ExtractionJob`; authenticated actor (Admin Bearer)
   có thể khác owner trong API headers.
 - `published` chỉ hợp lệ khi skeleton asset `ready` — không đồng nghĩa với "đã
   enqueue job".
@@ -133,7 +141,8 @@ Entity trung tâm và **duy nhất** của domain product: một pose dùng lạ
 (FEAT-005) và đối tượng trên catalogue công khai khi `status = published`.
 
 **Creation timing:** `Pose` được tạo **chỉ sau khi extraction `succeeded`**
-(`202` + `jobId` là job start — chưa có Pose; `201` là pose creation). Lúc tạo,
+bởi server worker trong một transaction (`202` + `jobId` là job start — chưa có Pose;
+`succeeded` tạo Pose và materialize ba `MediaAsset`). Lúc tạo,
 cả ba `MediaAsset` (`original`, `skeleton`, `thumbnail`) materialize ngay,
 non-nullable. `ownerAccountId` **bắt buộc** trên mọi `Pose` (mobile + admin);
 authenticated actor có thể khác owner trong API headers (Admin Bearer phải kèm
@@ -146,8 +155,8 @@ authenticated actor có thể khác owner trong API headers (Admin Bearer phải
 | `name` | TEXT | ✓ | Tên hiển thị |
 | `description` | TEXT | — | Mô tả |
 | `tags` | TEXT[] | ✓ (default `[]`) | Nhãn lọc catalogue |
-| `difficulty` | TEXT | — | Enum `PoseDifficulty` |
-| `bodyParts` | TEXT[] | ✓ | Ít nhất một phần cơ thể |
+| `difficulty` | TEXT | — | Enum `PoseDifficulty`; Add Pose (FEAT-005) không thu thập |
+| `bodyParts` | TEXT[] | — | Không còn bắt buộc; Add Pose (FEAT-005) không thu thập (quyết định sản phẩm 2026-09-24) |
 | `status` | TEXT | ✓ (default `local`) | Enum `PoseStatus`: `local` \| `published` |
 | `originalMediaId` | TEXT (UUID) | ✓ | `MediaAsset` role `original` — materialize tại lúc tạo |
 | `skeletonMediaId` | TEXT (UUID) | ✓ | `MediaAsset` role `skeleton` — materialize tại lúc tạo; bắt buộc `ready` trước publish |
@@ -168,7 +177,7 @@ authenticated actor có thể khác owner trong API headers (Admin Bearer phải
 
 | ID | Rule |
 |---|---|
-| BR-POSE-001 | Submit ảnh hợp lệ chỉ enqueue `ExtractionJob` (`202` + `jobId`) — không tạo `Pose`. `Pose` tạo chỉ sau khi extraction `succeeded` (`201`). |
+| BR-POSE-001 | Submit ảnh hợp lệ chỉ enqueue `ExtractionJob` (`202` + `jobId`) — không tạo `Pose`. `Pose` tạo tự động chỉ sau khi extraction `succeeded`. |
 | BR-POSE-002 | Không tuyên bố pose public khi skeleton `MediaAsset` chưa `ready`. |
 | BR-POSE-003 | Retry / re-extract tạo hoặc tái xếp `ExtractionJob` gắn cùng `Pose`; không tạo pose mới. |
 | BR-POSE-004 | `poseId` gán một lần tại tạo và giữ nguyên khi `local` → `published`; publish không tạo entity thứ hai. |
@@ -210,18 +219,23 @@ của `Pose` đều non-nullable.
 
 ### ExtractionJob
 
-Job theo dõi một lần extraction ảnh pose (FEAT-004). **`id` của job chính là
-`jobId`** — correlation key trong lúc extraction: submit enqueue và trả `202` +
-`jobId` mà **chưa có `Pose`**. Khi job `succeeded`, hệ thống tạo `Pose` (stable
-`poseId`), materialize ba `MediaAsset`, và back-fill `poseId` của job.
+Job theo dõi một lần extraction ảnh pose (FEAT-004, FEAT-005). Thuộc quyền sở hữu
+của `ownerAccountId` trên server. **`id` của job chính là `jobId`** — correlation key
+trong lúc extraction: submit enqueue và trả `202` + `jobId` mà **chưa có `Pose`**.
+Lưu trữ `poseDraft` (`name`, `tags`, optional `description`) do client gửi lên lúc submit.
+Khi job `succeeded`, server worker tự động tạo `Pose` (stable `poseId`), materialize
+ba `MediaAsset`, back-fill `poseId` của job, và giải phóng payload ảnh thô.
 
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `id` | TEXT (UUID) | PK | `jobId` — server-generated UUID; correlation key khi pose chưa tồn tại |
-| `poseId` | TEXT (UUID) | — | `Pose` khi job thuộc pose flow; NULL tới khi extraction `succeeded` và `Pose` tạo |
-| `status` | TEXT | ✓ | Enum `ExtractionJobStatus` |
+| `ownerAccountId` | TEXT (UUID) | ✓ | `Account` sở hữu job — bắt buộc, phân vùng theo tài khoản |
+| `poseDraft` | JSONB | ✓ | Draft metadata nộp kèm submit: `{ name, tags, description? }` |
+| `poseId` | TEXT (UUID) | — | `Pose` khi job thuộc pose flow; NULL tới khi extraction `succeeded` và `Pose` được tạo tự động |
+| `status` | TEXT | ✓ | Enum `ExtractionJobStatus`: `queued` \| `processing` \| `succeeded` \| `failed` |
 | `sourceMediaId` | TEXT (UUID) | — | `MediaAsset` original khi có pose |
 | `skeletonMediaId` | TEXT (UUID) | — | `MediaAsset` skeleton khi `succeeded` |
+| `hiddenAt` | DATETIME | — | Thời điểm người dùng ẩn job khỏi danh sách cá nhân qua DELETE endpoint |
 | `errorCode` | TEXT | — | Khi `failed` |
 | `errorMessage` | TEXT | — | Khi `failed` |
 | `attempts` | INTEGER | ✓ (default `0`) | Số lần đã thử |
@@ -229,18 +243,20 @@ Job theo dõi một lần extraction ảnh pose (FEAT-004). **`id` của job ch�
 | `createdAt` | DATETIME | ✓ | Enqueue |
 | `updatedAt` | DATETIME | ✓ | Cập nhật cuối |
 
+- Nhiều `ExtractionJob` → một `Account` (`ownerAccountId`, index `(ownerAccountId, createdAt)`)
 - Nhiều `ExtractionJob` → một `Pose` (`poseId`, nullable tới khi pose tạo)
-- Job `succeeded` → tạo `Pose` + materialize ba `MediaAsset`; cập nhật `skeletonMediaId`
+- Job `succeeded` → server worker tạo `Pose` + materialize ba `MediaAsset` trong 1 transaction; cập nhật `poseId`, `skeletonMediaId`; drop base64 retention
 - Dùng `ApiKeyCredential` gián tiếp qua FEAT-004; mỗi attempt ghi `ProviderRequestLog`
 
 | ID | Rule |
 |---|---|
 | BR-JOB-001 | Trạng thái quan sát được: `queued`, `processing`, `succeeded`, `failed`. |
 | BR-JOB-002 | Còn lượt `attempts < maxAttempts` thì failure được requeue; hết lượt thì `failed`. |
-| BR-JOB-003 | `succeeded` mà chưa có `MediaAsset` skeleton `ready` thì pose chưa đủ điều kiện publish. |
-| BR-JOB-004 | `GET` job: `result` chỉ khi `succeeded`; `error` chỉ khi `failed`. |
-| BR-JOB-005 | Không tuyên bố usable image khi provider thất bại hoặc job chưa `succeeded`. |
-| BR-JOB-006 | Không tồn tại `Pose` persisted trước khi job `succeeded`; `Pose` được tạo sau `succeeded`. |
+| BR-JOB-003 | Khi job `succeeded`, server worker tự động tạo canonical `Pose` và ba `MediaAsset` (`original`, `skeleton`, `thumbnail`) trong một transaction, gán `poseId`, và dọn dẹp base64 retention. |
+| BR-JOB-004 | `GET` job: `result` chỉ khi `succeeded`; `error` chỉ khi `failed`. Đòi hỏi xác thực owner (`ownerAccountId`); trả 404 nếu khác owner. |
+| BR-JOB-005 | Không tồn tại `Pose` persisted trước khi job `succeeded`; `Pose` được tạo tự động sau `succeeded`. |
+| BR-JOB-006 | Thử lại (Retry) chỉ cho phép với job ở trạng thái `failed` qua `POST /api/me/extract-jobs/:id/retry`. |
+| BR-JOB-007 | Xóa / ẩn job hoàn tất qua `DELETE /api/me/extract-jobs/:id` (đánh dấu `hiddenAt`), chỉ ẩn khỏi danh sách Jobs của user và không bao giờ xóa `Pose` đã tạo. |
 
 ### CommunityPose (deprecated as entity — public DTO/view)
 
@@ -279,7 +295,7 @@ Job theo dõi một lần extraction ảnh pose (FEAT-004). **`id` của job ch�
 ### Account
 
 Identity của người dùng đã đăng nhập. Dùng cho quyền sở hữu `Pose` (FEAT-005,
-FEAT-006) và collection `SavedEntry` (FEAT-008). Admin operator không phải
+FEAT-006), extraction jobs (`ExtractionJob`), và collection `SavedEntry` (FEAT-008). Admin operator không phải
 `Account` (dùng Bearer admin secret), nhưng mọi `Pose` — kể cả pose Admin tạo —
 vẫn có `ownerAccountId` bắt buộc (Admin phải chỉ định owner tường minh).
 
@@ -290,6 +306,7 @@ vẫn có `ownerAccountId` bắt buộc (Admin phải chỉ định owner tườ
 | `createdAt` | DATETIME | ✓ | Thời điểm tạo |
 
 - Một `Account` 1 — 0..* `Pose` (owner)
+- Một `Account` 1 — 0..* `ExtractionJob` (owner)
 - Một `Account` 1 — 0..* `SavedEntry`
 
 | ID | Rule |
@@ -474,12 +491,14 @@ Dùng ID đơn giản `poseId` (UUID) + `mediaId` (UUID); không còn
 
 ### ExtractionJobStatus
 
-| Giá trị | Ý nghĩa |
-|---|---|
-| `queued` | Chờ xử lý |
-| `processing` | Đang extraction |
-| `succeeded` | Có kết quả; skeleton asset phải `ready` trước khi publish |
-| `failed` | Hết `maxAttempts` hoặc lỗi không retry |
+| Giá trị | Ý nghĩa | Nhãn UI Jobs | Hành động UI |
+|---|---|---|---|
+| `queued` | Chờ worker xử lý | `Queued` | Không |
+| `processing` | Đang extraction | `Processing` | Không |
+| `succeeded` | Đã hoàn tất; Pose và MediaAssets đã tạo tự động | `Ready` | `View pose` |
+| `failed` | Thất bại sau các lượt thử | `Failed` (hiển thị lỗi) | `Retry` |
+
+Server là nguồn sự thật duy nhất (server-authoritative) cho extraction jobs. Mobile UI hiển thị danh sách job từ `GET /api/me/extract-jobs` và ánh xạ trực tiếp các trạng thái trên vào hàng hiển thị.
 
 ### ApiKeyStatus
 
@@ -499,9 +518,10 @@ Entity canonical duy nhất là `Pose`; catalogue công khai là view/DTO
 ```mermaid
 erDiagram
     ACCOUNT ||--o{ POSE : "owns"
+    ACCOUNT ||--o{ EXTRACTION_JOB : "owns (ownerAccountId)"
     ACCOUNT ||--o{ SAVED_ENTRY : "saves"
     POSE ||--|{ MEDIA_ASSET : "has exactly 3 (original|skeleton|thumbnail)"
-    POSE ||--o{ EXTRACTION_JOB : "tracks"
+    POSE ||--o{ EXTRACTION_JOB : "tracks (poseId)"
     POSE ||--o{ SAVED_ENTRY : "saved as"
     API_KEY_CREDENTIAL ||--o{ PROVIDER_REQUEST_LOG : "logged as"
 
@@ -532,10 +552,13 @@ erDiagram
     }
     EXTRACTION_JOB {
         text id PK "jobId (correlation key)"
+        text ownerAccountId FK "REQUIRED (owner-scoped)"
+        jsonb poseDraft "name, tags, description"
         text poseId FK "nullable until pose created"
         text status
         text sourceMediaId FK
         text skeletonMediaId FK
+        datetime hiddenAt "nullable (soft-hide)"
         integer attempts
         integer maxAttempts
     }
@@ -563,6 +586,7 @@ erDiagram
 
 `Pose` local dùng canonical entity với `status = local`, tạo **sau khi extraction
 `succeeded`**. `Photo.poseId` → `Pose.poseId` optional (UUID), ON DELETE SET NULL.
+Mobile không lưu trữ bảng `ExtractionJob` cục bộ (mọi trạng thái job đọc từ server API).
 
 ```mermaid
 erDiagram

@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Jobs · Snap Pose</title>
+  <link rel="stylesheet" href="../styles/reset.css">
+  <link rel="stylesheet" href="../styles/base.css">
+  <link rel="stylesheet" href="../styles/utilities.css">
+  <link rel="stylesheet" href="../styles/components.css?empty-state-1">
+  <link rel="stylesheet" href="../styles/jobs.css?jobs-tabs-3">
+</head>
+<body>
+  <div class="nb-phone">
+    <!-- Phone Status Bar -->
+    <div class="nb-phone__header" aria-hidden="true">
+      <span class="nb-phone__time">9:41</span>
+      <div class="nb-phone__status-icons">
+        <svg class="nb-phone__icon" fill="currentColor" viewBox="0 0 24 24"><path d="M12 21a2 2 0 1 1 0-4 2 2 0 0 1 0 4zm-4.95-4.95a7 7 0 0 1 9.9 0l-1.42 1.42a5 5 0 0 0-7.06 0zM4.22 13.22a11 11 0 0 1 15.56 0l-1.42 1.42a9 9 0 0 0-12.72 0z"/></svg>
+        <svg class="nb-phone__icon" fill="currentColor" viewBox="0 0 24 24"><path d="M2 22h20V2zM20 20h-2V9h2v11zm-4 0h-2V12h2v8zm-4 0h-2V15h2v5z"/></svg>
+        <svg class="nb-phone__icon" fill="currentColor" viewBox="0 0 24 24"><path d="M17 5H3a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2zm1 9h-2v-4h2z"/></svg>
+      </div>
+    </div>
+
+    <!-- Phone Content Area -->
+    <main class="nb-phone__content jobs-content" id="jobs-screen">
+      <!-- Navigation Bar -->
+      <nav class="nb-nav-bar jobs-nav" aria-label="Jobs navigation">
+        <div class="nb-nav-bar__left">
+          <a id="jobs-back" class="nb-btn nb-btn--square nb-btn--white" href="poses-list.html" aria-label="Back to Poses">
+            <svg aria-hidden="true"><use href="#icon-back"></use></svg>
+          </a>
+        </div>
+        <h1 class="nb-nav-bar__title">Jobs</h1>
+        <div class="nb-nav-bar__right"></div>
+      </nav>
+
+      <!-- Offline Banner -->
+      <div id="jobs-offline-banner" class="jobs-offline-banner" role="status" hidden>
+        <svg aria-hidden="true" style="width:16px;height:16px;flex:0 0 auto;"><use href="#icon-info"></use></svg>
+        <span>You're offline — statuses update when you're back online.</span>
+      </div>
+
+      <p class="jobs-intro">Your pose requests appear here. You can leave this screen while processing continues.</p>
+      <p class="jobs-note">Prototype simulation: jobs are managed on the server. Succeeded extractions are automatically saved to your pose library.</p>
+
+      <div class="jobs-tabs" id="jobs-tabs" role="tablist" aria-label="Job status">
+        <button id="jobs-tab-processing" class="jobs-tab" type="button" role="tab" aria-controls="jobs-panel-processing" aria-selected="true" tabindex="0">Processing</button>
+        <button id="jobs-tab-finish" class="jobs-tab" type="button" role="tab" aria-controls="jobs-panel-finish" aria-selected="false" tabindex="-1">Finish</button>
+      </div>
+
+      <!-- Scrollable Jobs Area -->
+      <div class="jobs-scroll-area">
+        <!-- Empty State -->
+        <div id="jobs-empty" class="jobs-empty" hidden>
+          <h2>No jobs yet</h2>
+          <p>Add a pose from your Photo Library to see its progress here.</p>
+          <a class="nb-btn nb-btn--pink" href="add-pose.html">Add pose</a>
+        </div>
+
+        <!-- Processing Tab -->
+        <section class="jobs-section jobs-panel" id="jobs-panel-processing" role="tabpanel" aria-labelledby="jobs-tab-processing" tabindex="0">
+          <ul id="jobs-processing-list" class="jobs-list" aria-label="Processing jobs"></ul>
+          <p id="jobs-processing-empty" class="jobs-filter-empty" role="status" hidden></p>
+        </section>
+
+        <!-- Finish Tab -->
+        <section class="jobs-section jobs-panel" id="jobs-panel-finish" role="tabpanel" aria-labelledby="jobs-tab-finish" tabindex="0" hidden>
+          <div class="jobs-finish-filter">
+            <label for="jobs-finish-filter">Filter:</label>
+            <select id="jobs-finish-filter" aria-label="Filter finished jobs">
+              <option value="all">All results</option>
+              <option value="success">Success</option>
+              <option value="fail">Failed</option>
+            </select>
+          </div>
+          <ul id="jobs-finish-list" class="jobs-list" aria-label="Finished jobs"></ul>
+          <p id="jobs-finish-empty" class="jobs-filter-empty" role="status" hidden></p>
+        </section>
+      </div>
+
+      <!-- Interactive Fixture Switcher Bar -->
+      <div class="jobs-fixture-bar" id="jobs-fixture-bar" aria-label="Demo state fixture switcher">
+        <label for="jobs-fixture-select" class="jobs-fixture-bar__label">Fixture:</label>
+        <select id="jobs-fixture-select" class="jobs-fixture-bar__select">
+          <option value="all">All states (default)</option>
+          <option value="empty">Empty state</option>
+          <option value="in-progress">Processing only</option>
+          <option value="finished">Finish only</option>
+          <option value="offline">Offline mode</option>
+          <option value="queued">Queued</option>
+          <option value="processing">Processing</option>
+          <option value="failed">Failed</option>
+          <option value="ready">Ready</option>
+        </select>
+      </div>
+    </main>
+
+    <!-- Phone Footer Indicator -->
+    <div class="nb-phone__footer">
+      <div class="nb-phone__home-indicator"></div>
+    </div>
+  </div>
+
+  <!-- Hide Confirmation Sheet -->
+  <div id="jobs-remove-modal" class="jobs-scrim" hidden aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="jobs-remove-title" aria-describedby="jobs-remove-copy">
+    <div class="jobs-confirm-sheet nb-card">
+      <h2 id="jobs-remove-title" class="jobs-confirm-sheet__title">Hide job?</h2>
+      <p id="jobs-remove-copy" class="jobs-confirm-sheet__copy">This hides the job from your list. If the pose was created, it remains in your library.</p>
+      <div class="jobs-confirm-sheet__actions">
+        <button type="button" id="jobs-remove-cancel" class="nb-btn nb-btn--white">Cancel</button>
+        <button type="button" id="jobs-remove-confirm" class="nb-btn nb-btn--pink">Hide</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="../scripts/icons.js"></script>
+  <script src="../scripts/jobs.js"></script>
+</body>
+</html>

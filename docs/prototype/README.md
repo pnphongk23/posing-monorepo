@@ -31,7 +31,9 @@ docs/prototype/
 │   ├── camera-settings.html    # Redirects to camera live feed with settings open
 │   ├── camera-extracting.html  # Joint detection progress card (0 to 78%)
 │   ├── camera-pose-overlay.html# Semi-transparent pose matching skeleton aligner
-│   ├── poses-list.html         # Tabbed poses inventory list with category filters, a link to search, Account shortcut, and main navigation
+│   ├── poses-list.html         # Tabbed poses inventory list with category filters, Add pose and Jobs entry buttons with active badge, search link, and Account shortcut
+│   ├── add-pose.html           # FEAT-004 Add Pose form and honest post-submit extraction processing surface (photo + skeleton overlay, View jobs / Done actions)
+│   ├── jobs.html               # FEAT-005 Background pose extraction jobs list and status monitor (SCR-005-01)
 │   ├── account.html            # Account overview, Premium CTA, Saved shortcut, and sign-out prototype
 │   ├── search.html             # Dedicated search screen dynamically filtering mock poses by title
 │   ├── pose-detail.html        # Source-aware pose detail, personal delete, and bounded handoff
@@ -54,7 +56,7 @@ docs/prototype/
 │       ├── card.css            # Image and stick figure panel frames
 │       ├── tab.css             # Filter buttons with active pastel states
 │       ├── toggle.css          # Accessible check slider switches
-│       ├── tag.css             # Mini badges (Mine, Hot, New, Joint counts)
+│       ├── tag.css             # Mini badges (Mine, Hot, New, Joint counts, count badge)
 │       ├── progress.css        # Extraction meter with terminal handle
 │       ├── modal.css           # Options popovers and dialog templates
 │       ├── nav-bar.css         # Title headers and action touch targets
@@ -65,10 +67,13 @@ docs/prototype/
 │       └── empty-state.css     # Shared empty/loading/error/offline state surface
 │   ├── saved-poses.css         # Token-based FEAT-013 prototype additions
 │   ├── account.css             # Account screen layout and action styles
+│   ├── jobs.css                # FEAT-005 Background jobs list and swipe removal styles
 │   └── onboarding.css          # FEAT-016 Onboarding stage layout and interactive controls
 └── scripts/                    # Modular Interaction Code
     ├── icons.js                # DOM injector for reusable SVG symbol definitions
     ├── fixtures.js             # Local mock pose/photo catalog and session-only pose state
+    ├── jobs.js                 # Shared job storage and Jobs controller interface (FEAT-005)
+    ├── add-pose-demo.js        # Add Pose photo selection, client-side validation, and post-submit processing state
     ├── account.js              # Account sign-out and re-authentication simulation
     ├── button-press.js         # Accessible keyboard active button triggers
     ├── toggle.js               # Settings flash rotation & grid outline toggles
@@ -81,7 +86,7 @@ docs/prototype/
     ├── pose-detail-saved.js     # Saved detail mutation/auth state simulation
     ├── sign-in-prompt.js        # Auth prompt intent and outcome simulation
     ├── empty-state.js           # Shared state component renderer and semantics
-     └── onboarding.js           # FEAT-016 Multi-stage state machine, alignment simulator, & preferences
+    └── onboarding.js           # FEAT-016 Multi-stage state machine, alignment simulator, & preferences
 ```
 
 ---
@@ -96,13 +101,19 @@ The prototype features several interactive controls. However, due to its static,
 4. **Joint Extraction Meter & Manual Save (Simulated)**: Opening `camera-extracting.html` triggers a mock progress meter animation counting from `0%` to `78%`. It also exposes a manual 'Save Pose' button to navigate back to `poses-list.html`. *Note: This is a prototype-only interaction. In the production app, the extraction is auto-saved and routes automatically to the list on completion; the prototype does not cover auto-save and deviates from this product behavior.*
 5. **Camera Facing Switch (Prototype Simulation)**: The flip button stays on the Camera surface and toggles front/back labels. It represents the native facing action without claiming to flip hardware in this static prototype.
 6. **Pose Picker Bottom Sheet**: The image icon on Camera opens a camera-local bottom sheet. It reads the visible pose-library fixtures, presents the same two-column staggered pose cards plus local title search, and uses a `Close` button, backdrop, or Escape to dismiss. Selecting a pose returns to Camera with `pose` and `source` query parameters without creating a picker route; the picker is visually aligned with the Home/Poses library but is not the Home screen. The former `pose-guide.html` path is a compatibility redirect.
-7. **Poses Library Browsing (Mock)**: `poses-list.html` presents one published Poses collection with the shared staggered card layout. Cards are sourced from the published mock fixtures; the current surface does not expose My Poses, Create Pose, or a pose count.
+7. **Poses Library Browsing & Jobs Entry**: `poses-list.html` presents one published Poses collection with the shared staggered card layout. It includes `Add pose` and `Jobs` header actions with a dynamic active count badge (`queued`, `processing`) hidden when count is 0. Test active badge with `?jobs_count=N` or `?state=active-jobs`.
 8. **Dedicated Title Search (Mock/Deferred)**: Tapping the search icon opens `search.html`, which filters fixture titles across both sources. The screen labels community matches as illustrative mock data; a production community title-search adapter is deferred.
- 9. **Recoverable Library States**: Refresh briefly shows a retained-content loading state. For repeatable demonstrations, use `?state=loading`, `?state=error`, `?state=refresh-error`, or `?state=empty` on the list; search accepts the same loading/error/empty hooks. Empty and error states provide a next action or retry.
+9. **Recoverable Library States**: Refresh briefly shows a retained-content loading state. For repeatable demonstrations, use `?state=loading`, `?state=error`, `?state=refresh-error`, or `?state=empty` on the list; search accepts the same loading/error/empty hooks. Empty and error states provide a next action or retry.
 10. **Shared State Component**: `scripts/empty-state.js` exposes the `nb-empty-state` Web Component and `window.NBEmptyState.render/clear` API. Pose list, search, gallery, camera picker, Saved, detail-unavailable, account, and sign-in error states use the same semantic state surface; specialized media placeholders may keep their own geometry.
 11. **Source-aware Details**: Cards route with `source` and `id` query parameters. Detail only renders metadata present in the fixture, handles missing/unavailable records with a return path, and confirms personal deletion before removing it from the current `sessionStorage` prototype session.
 12. **Bounded Try Pose Handoff**: `Try Pose` records a mock handoff notice on the detail screen only. It does not navigate to or render `camera-pose-overlay.html`; Camera overlay persistence, rendering, controls, and extraction remain deferred to the pending handoff plan.
 13. **Existing Camera/Gallery Shortcuts**: The standalone `camera-pose-overlay.html` and the camera-facing shortcut remain historical prototype screens outside this Pose Library update. Gallery opens the current `gallery-detail-v2.html` photo detail redesign and keeps a full uncapped staggered photo collection; `gallery-detail.html` remains available as the legacy detail reference. The gallery layout toggle remains **inert** because its buttons are missing from `gallery.html`; camera settings still use `camera-live.html?settings=open`.
+
+### FEAT-004 Add Pose & FEAT-005 Jobs prototype
+
+- **Add Pose** ([`screens/add-pose.html`](screens/add-pose.html)): Photo Library photo picker, pose name, tags, and optional description. On submit, transitions to an honest extraction processing surface showing the source photo with animated skeleton overlay, status copy, and dual actions `View jobs` (primary) and `Done` (returns to Poses). Leaving never cancels background server jobs, and no Cancel action is offered.
+  - Query parameters: `?state=selected` (pre-filled photo and details), `?state=validation` (form field errors), `?state=processing` (processing surface with photo + skeleton), `?state=offline` (offline notice).
+- **Jobs list** ([`screens/jobs.html`](screens/jobs.html)): Displays server-authoritative pose extraction jobs (Queued, Processing, Failed → Retry, Ready → View pose). Supports swipe-to-hide for finished jobs and reflects offline state.
 
 ### FEAT-016 Onboarding prototype
 

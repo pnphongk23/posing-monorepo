@@ -1,0 +1,27 @@
+{
+  "missionId": "feat-004-005-design-closure",
+  "intentHash": "3d68e3ba2adb78ca",
+  "ownerId": "447c822b-c860-4a32-afd6-f28577b6ed21",
+  "leaseEpoch": 1,
+  "workspaceId": "wks_8a33543e994fce81",
+  "scope": "Close FEAT-004/FEAT-005 TBDs; Basic Design for Add Pose (scr-004-01) and new Jobs screen (scr-005-01); prototype Poses entry, Add Pose processing surface, Jobs screen. Streams: docs lead 1aded16d owns docs/harness/**; prototype lead 943c9153 owns docs/prototype/** + plans/260924-1738-feat-004-005-design-closure/screens/**.",
+  "nonGoals": [
+    "native iOS code",
+    "Cook/implementation plan",
+    "backend changes",
+    "changing FEAT-005 approval status",
+    "reopening Product Authority decisions",
+    "git commit"
+  ],
+  "acceptance": [
+    "ckh validate passes per touched harness doc",
+    "ckh workflow status FEAT-004/FEAT-005 no blockers",
+    "no TBD/Unresolved left except items recorded as next-plan prerequisites",
+    "prototype matches shared-contract.md, all states screenshotted at 390x844, zero console errors"
+  ],
+  "status": "completed",
+  "checkpoint": "Docs candidate sha256:aa012cb9\u2026 (reviewer CLEAR) and prototype candidate afb1e87b\u2026 (2 reviewers CLEAR) accepted by General Lead; verified independently.",
+  "predecessor": "b732d5b4-cca3-4c3a-a933-17443b5b35be",
+  "handoffRef": "plans/260924-1738-feat-004-005-design-closure/shared-contract.md",
+  "updatedAt": "2026-09-24T13:42:29Z"
+}

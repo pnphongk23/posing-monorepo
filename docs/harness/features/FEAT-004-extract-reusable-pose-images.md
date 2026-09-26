@@ -1,6 +1,6 @@
 ---
 schema_version: 1
-title: Extract Reusable Pose Images
+title: Trích xuất ảnh Pose có thể tái sử dụng
 relationships:
   specs:
     - "[[product-feature-inventory]]"
@@ -24,8 +24,8 @@ relationships:
   source_paths:
     - web/services/pose-extract-server/src/routes/extractPoseRoutes.ts
     - web/services/pose-extract-server/src/services/geminiService.ts
-    - mobile/shared/src/commonMain/kotlin/com/aipose/data/remote/PoseApiService.kt
-    - mobile/composeApp/src/commonMain/kotlin/com/aipose/ui/screens/poses/PosesScreen.kt
+    - mobile/iosApp/iosApp/Core/Network/PoseAPIService.swift
+    - mobile/iosApp/iosApp/Features/Poses/PosesFeature.swift
 type: feature
 id: FEAT-004
 status: approved
@@ -38,121 +38,104 @@ approved_by: Product Authority
 
 ## Introduction
 
-One source image is validated and sent through an extraction provider to produce
-one reusable skeleton (the extraction output). The common request/result contract is owned here;
-guide metadata/ownership is [FEAT-005](./FEAT-005-manage-a-pose-guide.md), the
-Admin operating surface is [FEAT-007](./FEAT-007-operate-pose-content-from-admin-web.md),
-and global extraction-engine selection is owned by
-[FEAT-009](./FEAT-009-configure-extraction-provider.md) per
+Một ảnh nguồn được xác thực rồi gửi qua nhà cung cấp trích xuất để tạo ra một
+skeleton (bộ khung xương) có thể tái sử dụng (đầu ra của quá trình trích xuất). Tài liệu này quy định hợp đồng yêu cầu/kết quả chung;
+metadata/quyền sở hữu hướng dẫn thuộc [FEAT-005](./FEAT-005-manage-a-pose-guide.md),
+bề mặt vận hành quản trị thuộc [FEAT-007](./FEAT-007-operate-pose-content-from-admin-web.md),
+còn việc chọn engine trích xuất toàn cục thuộc
+[FEAT-009](./FEAT-009-configure-extraction-provider.md) theo
 [DEC-001](../decisions/DEC-001-extraction-provider-selection-policy.md).
-This Feature documents dual-engine **processing** and async job flow; it does
-not own which engine is selected.
+Tính năng này mô tả **processing (quy trình xử lý)** bằng hai engine và luồng job bất đồng bộ; tài liệu
+không quy định engine nào được chọn.
 
 ## Business Understanding
 
 ### Actors
 
-| Actor | Type | Goal | Responsibility |
+| Vai trò | Loại | Mục tiêu | Trách nhiệm |
 | --- | --- | --- | --- |
-| Mobile user or Admin operator | User/business role | Produce one reusable pose skeleton | Submit one eligible source image |
-| AI provider | External system | Return the skeleton | Process the source and report outcome |
+| Người dùng di động hoặc quản trị viên | Vai trò người dùng/nghiệp vụ | Tạo bộ khung xương cho tư thế có thể tái sử dụng | Gửi một ảnh nguồn đủ điều kiện |
+| Nhà cung cấp AI | Hệ thống bên ngoài | Trả về bộ khung xương | Xử lý ảnh nguồn và báo kết quả |
 
 ### Preconditions
 
-- One supported image is supplied through a client path.
+- Ứng dụng khách cung cấp một ảnh được hỗ trợ thông qua một luồng tiếp nhận.
 
 ### Trigger
 
-The actor submits a source image for extraction.
+Tác nhân gửi một ảnh nguồn để trích xuất (kèm metadata draft trong luồng tạo Pose di động).
 
 ### Main flow
 
-1. **Actor:** The actor submits an image. **System:** The service validates the multipart payload and applies the direct-extraction limiter.
-2. **System:** The service enqueues an `ExtractionJob` and returns `202 Accepted` with `jobId` and poll URL (phase 1 target per [Plan 260816-2240](../plans/260816-2240-higgsfield-cli-parallel-extract-provider/plan.md)).
-3. **System:** The worker claims the job and invokes the globally configured engine (`gemini_native` or `higgsfield_cli`) via `PoseExtractorProvider` per [FEAT-009](./FEAT-009-configure-extraction-provider.md) / [DEC-001](../decisions/DEC-001-extraction-provider-selection-policy.md).
-4. **Actor:** The actor polls job status until `succeeded` or `failed`. For a mobile client this is the per-job endpoint `GET /api/extract-jobs/:jobId`; there is **no job-list API**. **System:** On success, returns the skeleton in job result; on failure, returns provider-neutral `error_code`.
-5. **Postcondition (creation timing):** The job start does **not** create a `Pose` — no Pose is persisted before extraction success. On `succeeded`, the caller finalizes creation through `POST /api/guides` (owner) or admin intake, which returns `201 Created` with the `Pose` (`poseId` stable, `status: local`) and the three media roles (`original`, `skeleton`, `thumbnail`) materialized.
+1. **Actor:** Tác nhân gửi một ảnh (kèm `name`, `tags`, `description` tùy chọn trong luồng di động có xác thực Account). **System:** Dịch vụ xác thực payload multipart và áp dụng bộ giới hạn trích xuất.
+2. **System:** Dịch vụ đưa một `ExtractionJob` vào hàng đợi (lưu `owner_account_id` và `pose_draft` trên job) và trả về `202 Accepted` cùng `jobId` và URL để thăm dò.
+3. **System:** Tiến trình xử lý nền nhận quyền xử lý job và gọi engine được cấu hình toàn cục (`gemini_native` hoặc `higgsfield_cli`) thông qua `PoseExtractorProvider` theo [FEAT-009](./FEAT-009-configure-extraction-provider.md) / [DEC-001](../decisions/DEC-001-extraction-provider-selection-policy.md).
+4. **Actor:** Tác nhân thăm dò hoặc liệt kê job từ máy chủ. Với ứng dụng khách di động, danh sách job được đọc qua `GET /api/me/extract-jobs?state=active|finished` và thăm dò qua `GET /api/extract-jobs/:id` (được kiểm tra theo quyền sở hữu tài khoản). **System:** Khi thành công, tiến trình xử lý tự động tạo `Pose` và ba media assets (`original`, `skeleton`, `thumbnail`) trong cùng transaction, gán `pose_id` cho job, và xóa dữ liệu base64 tạm thời; khi thất bại, trả về `error_code` độc lập với nhà cung cấp. Bốn trạng thái máy chủ (`queued`, `processing`, `succeeded`, `failed`) tương ứng với các trạng thái hàng trên UI di động: `Queued`, `Processing`, `Failed → Retry`, `Ready → View pose`.
+5. **Postcondition (creation timing):** Việc bắt đầu job **không** tạo `Pose` trước khi trích xuất thành công. Khi job `succeeded`, máy chủ tự động tạo `Pose` (`poseId` ổn định, `status: local`) và ba vai trò media (`original`, `skeleton`, `thumbnail`) một cách lũy đẳng theo `jobId`. Ứng dụng khách không cần gọi endpoint lưu riêng cho luồng này.
 
-**Observed (pre-Plan):** Steps 2–4 are synchronous `200` inline base64 today; the mobile client expects a sync response. The server async contract is in scope; mobile async client migration is out of **Plan 260816-2240** work-item scope, but the Feature-level mobile async behavior (per-job polling, no list API) is documented here and in [FEAT-005](./FEAT-005-manage-a-pose-guide.md), not deferred by that Plan's scope note.
+**Đã quan sát (2026-09-25):** Server jobs là server-authoritative theo tài khoản người dùng (`plans/260925-server-authoritative-jobs/plan.md`). Tuyến `POST /api/extract-pose` nhận ảnh kèm metadata draft theo tài khoản, trả `202`; máy chủ tự tạo Pose khi thành công; màn hình Jobs đọc trực tiếp danh sách từ máy chủ.
 
 ### Alternative flows
 
-- **A1 — Provider quota.** Source step: 2. Condition: the selected key is exhausted. Behavior: rotate to another active key when available. Resume at step: 2.
+- **A1 — Hạn mức nhà cung cấp.** Source step: 2. Condition: key được chọn đã hết hạn mức. Behavior: chuyển sang key đang hoạt động khác nếu có. Resume at step: 2.
+- **A2 — Thử lại trích xuất thất bại.** Source step: 4. Condition: job ở trạng thái `failed`. Behavior: gọi `POST /api/me/extract-jobs/:id/retry` để đưa job vào hàng đợi xử lý lại. Resume at step: 2.
 
 ### Exception flows
 
-- **E1 — Invalid/oversized image.** Source step: 1. Failure: validation rejects the upload. Handling: return the documented error envelope. Prohibited: invoking the provider.
-- **E2 — Provider unavailable.** Source step: 2. Failure: no successful provider result. Handling: return a failed/retryable outcome. Prohibited: claiming a usable image.
+- **E1 — Ảnh không hợp lệ/quá lớn.** Source step: 1. Failure: xác thực từ chối ảnh tải lên. Handling: trả về định dạng bao lỗi đã được tài liệu hóa. Prohibited: gọi nhà cung cấp.
+- **E2 — Nhà cung cấp không khả dụng.** Source step: 2. Failure: không nhận được kết quả thành công từ nhà cung cấp. Handling: trả về trạng thái `failed`/có thể thử lại qua API retry. Prohibited: khẳng định có ảnh dùng được.
 
 ### Postconditions
 
-- **Success:** One skeleton response is returned; the `Pose` (stable `poseId`) is created **after** the job is `succeeded` via the Pose-creation contract (`201`), not at enqueue time; persistence belongs to the caller/pose flow.
-- **Failure:** No usable result is claimed.
+- **Thành công:** Trả về kết quả trích xuất; `Pose` (`poseId` ổn định) và ba vai trò media được máy chủ tạo tự động **sau khi** job ở trạng thái `succeeded` theo `jobId`.
+- **Thất bại:** Không khẳng định có kết quả sử dụng được; cho phép thử lại qua `POST /api/me/extract-jobs/:id/retry`.
 
 ### Current evidence
 
-- **Observed:** Direct Express extraction is synchronous; it accepts multipart
-  image data, applies a process-local IP limiter, rotates active provider keys,
-  logs requests, and returns base64 plus MIME and timing metadata.
-- **Planned (draft):** [Plan 260816-2240](../plans/260816-2240-higgsfield-cli-parallel-extract-provider/plan.md)
-  adds a second engine (`higgsfield_cli` via spawn-per-job CLI, model
-  `gpt_image_2`) behind `PoseExtractorProvider`, unifies canonical extract with
-  async `ExtractionJob` enqueue + poll (phase 1), and generalizes provider error
-  codes. Processing uses the globally configured engine per
-  [FEAT-009](./FEAT-009-configure-extraction-provider.md) and
-  [DEC-001](../decisions/DEC-001-extraction-provider-selection-policy.md);
-  engine selection is not owned here. Mobile async client migration is out of
-  that Plan's work-item scope, not out of Feature scope: the intended mobile
-  async flow (per-job polling, no list API) is documented here and in FEAT-005.
-- **Observed (legacy / non-canonical):** Mobile `PosesScreen` can pick an image,
-  call the service via the synchronous client, and persist the result through
-  local pose storage. This picker path is legacy and does not follow the
-  canonical async job contract; the canonical mobile extraction entry point is
-  the dedicated Extract screen owned by [FEAT-005](./FEAT-005-manage-a-pose-guide.md).
-- **Boundary:** Mobile extraction does not own the CameraScreen/FEAT-001 business
-  flow; it reuses image source entry points (camera or local library) owned by
-  [FEAT-001](./FEAT-001-capture-a-photo-on-mobile.md)/[FEAT-002](./FEAT-002-manage-a-local-photo-gallery.md).
-- **Alternate path:** Admin Web also contains a legacy Replicate route. It is
-  catalogued separately and is not silently treated as the canonical API-003 contract.
-- **Gaps:** Content validation, cancellation/idempotency, retention, and error
-  envelope parity remain documented in [REP-002](../reports/REP-002-feature-gap-and-release-readiness-audit.md).
+- **Đã quan sát (2026-09-25):** Kế hoạch Server-authoritative Jobs ([`plans/260925-server-authoritative-jobs/plan.md`](../../../plans/260925-server-authoritative-jobs/plan.md)) quy định máy chủ sở hữu hoàn toàn trạng thái job theo tài khoản (`owner_account_id`, `pose_draft`, `pose_id`, `hidden_at`). [`extractPoseRoutes.ts`](../../../web/services/pose-extract-server/src/routes/extractPoseRoutes.ts) enqueue `ExtractionJob` và trả `202`. [`extractJobsRoutes.ts`](../../../web/services/pose-extract-server/src/routes/extractJobsRoutes.ts) phục vụ poll và list theo tài khoản.
+- **Ranh giới:** Add Pose trên di động chỉ nhận ảnh qua Photo Library theo FEAT-005/FEAT-002; không mở CameraScreen/FEAT-001.
+- **Ranh giới thiết kế và điều kiện tiên quyết:**
+  - **Không có API hủy:** Theo thiết kế (by design), không có API hủy job trích xuất phía máy chủ; giao diện người dùng không bao giờ cung cấp nút hoặc nhãn "Cancel".
+  - **Định dạng lỗi:** Chuẩn hóa các mã lỗi trung lập với nhà cung cấp (`PROVIDER_QUOTA_EXCEEDED`, `PROVIDER_CREDENTIALS_EXHAUSTED`, `PROVIDER_ERROR`, `PROVIDER_AUTH_REQUIRED`, `PROVIDER_TIMEOUT`, `PROVIDER_CLI_FAILED`, `LINEART_BG_REMOVAL_FAILED`).
+  - **Dọn dẹp kết quả (Retention):** Khi job thành công và tạo Pose xong, máy chủ xóa `result_image_base64` và `source_image_base64` để giải phóng bộ nhớ.
 
 ### Traceability
 
-| Concern | Canonical reference | Evidence |
+| Mối quan tâm | Tham chiếu chuẩn | Bằng chứng |
 | --- | --- | --- |
-| Entities | [`ExtractionJob`](../specs/data-contract.md#extractionjob), [`ApiKeyCredential`](../specs/data-contract.md#apikeycredential), [`ProviderRequestLog`](../specs/data-contract.md#providerrequestlog) | [`schema.sql`](../../../web/services/pose-extract-server/src/db/schema.sql), [`KeyStore`](../../../web/services/pose-extract-server/src/services/keyStore.ts) |
-| ERD | [Server physical graph](../specs/data-contract.md#server) | [`ExtractionJobStore`](../../../web/services/pose-extract-server/src/db/extractionJobStore.ts) |
-| APIs | [Direct extraction](../specs/api-contract.md#extract-pose), [legacy route in conventions](../specs/api-contract.md#conventions) | [`extractPoseRoutes.ts`](../../../web/services/pose-extract-server/src/routes/extractPoseRoutes.ts), [`route.js`](../../../web/admin-ui/src/app/api/extract/route.js) |
-| Supporting client | Mobile picker/service and proxy | [`PosesScreen.kt`](../../../mobile/composeApp/src/commonMain/kotlin/com/aipose/ui/screens/poses/PosesScreen.kt), [`poseExtractExtractPoseProxy.js`](../../../web/admin-ui/src/lib/poseExtractExtractPoseProxy.js) |
+| Thực thể | [`ExtractionJob`](../specs/data-contract.md#extractionjob), [`ApiKeyCredential`](../specs/data-contract.md#apikeycredential), [`ProviderRequestLog`](../specs/data-contract.md#providerrequestlog) | [`schema.sql`](../../../web/services/pose-extract-server/src/db/schema.sql), [`KeyStore`](../../../web/services/pose-extract-server/src/services/keyStore.ts) |
+| ERD | [Đồ thị vật lý phía máy chủ](../specs/data-contract.md#server) | [`ExtractionJobStore`](../../../web/services/pose-extract-server/src/db/extractionJobStore.ts) |
+| API | [Trích xuất trực tiếp](../specs/api-contract.md#extract-pose), [tuyến cũ trong quy ước](../specs/api-contract.md#conventions) | [`extractPoseRoutes.ts`](../../../web/services/pose-extract-server/src/routes/extractPoseRoutes.ts), [`extractJobsRoutes.ts`](../../../web/services/pose-extract-server/src/routes/extractJobsRoutes.ts) |
+| Ứng dụng khách hỗ trợ | Native iOS start/poll/list và proxy quản trị | [`PoseAPIService.swift`](../../../mobile/iosApp/iosApp/Core/Network/PoseAPIService.swift), [`poseExtractExtractPoseProxy.js`](../../../web/admin-ui/src/lib/poseExtractExtractPoseProxy.js) |
 
 ## Requirements
 
-- **FR-001:** The canonical direct route returns one structured skeleton (async: via job poll when `succeeded`); the `Pose` is created only afterward (`201`), never at job start.
-- **FR-002:** Direct and legacy extraction routes remain separately labelled until a Decision selects one path.
-- **FR-003:** Canonical extract enqueues an `ExtractionJob` and returns `202` with `jobId` (phase 1); worker processes via `PoseExtractorProvider` using the globally configured engine per FEAT-009/DEC-001.
-- **FR-004:** Supported engines: `gemini_native` (REST + key pool) and `higgsfield_cli` (spawn-per-job CLI, model `gpt_image_2`).
-- **BR-001:** A failed or unverified provider result must not be reported as usable.
-- **FR-005:** A mobile client polls the per-job endpoint `GET /api/extract-jobs/:jobId` until `succeeded` or `failed`; there is no job-list API.
-- **BR-002:** Engine selection is not owned here; processing consumes the global setting from FEAT-009.
-- **BR-003:** Mobile extraction does not own the CameraScreen business flow ([FEAT-001](./FEAT-001-capture-a-photo-on-mobile.md)); it reuses image source entry points only.
+- **FR-001:** Tuyến trích xuất chuẩn trả về `202 Accepted` cùng `jobId`; chỉ tạo `Pose` và media assets tự động sau khi job `succeeded`, không tạo lúc bắt đầu job.
+- **FR-002:** Các tuyến trích xuất trực tiếp và tuyến cũ tiếp tục được gắn nhãn riêng cho đến khi một Decision chọn một hướng.
+- **FR-003:** Tuyến trích xuất chuẩn đưa `ExtractionJob` vào hàng đợi (kèm `owner_account_id` và `pose_draft`) và trả về `202`; tiến trình xử lý nền xử lý job thông qua `PoseExtractorProvider` bằng engine được cấu hình toàn cục theo FEAT-009/DEC-001.
+- **FR-004:** Các engine được hỗ trợ: `gemini_native` (REST + nhóm key) và `higgsfield_cli` (CLI khởi chạy riêng cho mỗi job, model `gpt_image_2`).
+- **BR-001:** Không được báo kết quả từ nhà cung cấp là dùng được nếu kết quả `failed` hoặc chưa được xác minh.
+- **FR-005:** Ứng dụng khách di động liệt kê danh sách job của tài khoản qua `GET /api/me/extract-jobs` và thăm dò `GET /api/extract-jobs/:id` (owner-checked). Khi job `failed`, hỗ trợ thử lại qua `POST /api/me/extract-jobs/:id/retry`.
+- **BR-002:** Tài liệu này không sở hữu việc chọn engine; việc xử lý (processing) sử dụng cấu hình toàn cục từ FEAT-009.
+- **BR-003:** Trích xuất trên di động không sở hữu luồng nghiệp vụ CameraScreen ([FEAT-001](./FEAT-001-capture-a-photo-on-mobile.md)); chỉ sử dụng lại các điểm vào nguồn ảnh.
 
 ## Acceptance
 
-- [ ] Valid direct extraction returns the API-003 shape (`202` + `jobId`, poll; Pose created only on `succeeded`).
-- [ ] Invalid/oversized requests return documented errors.
-- [ ] Quota exhaustion and provider failures remain recoverable or explicit.
-- [ ] Mobile polling uses the per-job endpoint only and requires no job-list API.
+- [ ] Trích xuất trực tiếp hợp lệ trả về `202 Accepted` + `jobId`; máy chủ tự động tạo `Pose` khi `succeeded`.
+- [ ] Yêu cầu không hợp lệ/quá lớn trả về lỗi đã được tài liệu hóa.
+- [ ] Hết hạn mức và lỗi nhà cung cấp vẫn có thể khôi phục hoặc được nêu rõ; job `failed` có thể thử lại qua endpoint retry.
+- [ ] Ứng dụng di động liệt kê và thăm dò job theo tài khoản xác thực qua API máy chủ.
 
 ## Relationships
 
-- Shared references: [ExtractionJob](../specs/data-contract.md#extractionjob), [ERD server](../specs/data-contract.md#server), [Extract API](../specs/api-contract.md#extract-pose).
-- Related features: [FEAT-005](./FEAT-005-manage-a-pose-guide.md), [FEAT-007](./FEAT-007-operate-pose-content-from-admin-web.md), [FEAT-009](./FEAT-009-configure-extraction-provider.md) (global engine selection; this Feature consumes configured engine for processing).
-- Policy: [DEC-001 Extraction provider selection policy](../decisions/DEC-001-extraction-provider-selection-policy.md)
+- Tham chiếu chung: [ExtractionJob](../specs/data-contract.md#extractionjob), [ERD máy chủ](../specs/data-contract.md#server), [API trích xuất](../specs/api-contract.md#extract-pose).
+- Tính năng liên quan: [FEAT-005](./FEAT-005-manage-a-pose-guide.md), [FEAT-007](./FEAT-007-operate-pose-content-from-admin-web.md), [FEAT-009](./FEAT-009-configure-extraction-provider.md) (chọn engine toàn cục; tính năng này dùng engine đã cấu hình cho processing (quá trình xử lý)).
+- Chính sách: [DEC-001 Chính sách chọn nhà cung cấp trích xuất](../decisions/DEC-001-extraction-provider-selection-policy.md)
 ### Supporting evidence
 
 - [`extractPoseRoutes.ts`](../../../web/services/pose-extract-server/src/routes/extractPoseRoutes.ts)
 - [`geminiService.ts`](../../../web/services/pose-extract-server/src/services/geminiService.ts)
 - [`extractPose.test.ts`](../../../web/services/pose-extract-server/src/extractPose.test.ts)
-- [`PoseApiService.kt`](../../../mobile/shared/src/commonMain/kotlin/com/aipose/data/remote/PoseApiService.kt)
+- [`PoseAPIService.swift`](../../../mobile/iosApp/iosApp/Core/Network/PoseAPIService.swift)
 - [`REP-002`](../reports/REP-002-feature-gap-and-release-readiness-audit.md)
+- [`plans/260925-server-authoritative-jobs/plan.md`](../../../plans/260925-server-authoritative-jobs/plan.md)

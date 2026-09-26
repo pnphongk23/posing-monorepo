@@ -4,6 +4,7 @@ info:
   version: "0.5.0"
   description: |
     Hợp đồng API product theo FEAT-001–008.
+    Các operation /api/guides mô tả hợp đồng mục tiêu; Express hiện chưa mount route này.
     Next.js proxy và legacy POST /api/extract: conventions.md.
 
 servers:
@@ -57,8 +58,11 @@ components:
           type: string
           format: uuid
         status:
-          type: string
-          enum: [queued, processing, succeeded, failed]
+          $ref: "#/components/schemas/ExtractionJobStatus"
+        poseId:
+          type: [string, "null"]
+          format: uuid
+          description: Stable UUID of the auto-created Pose when status is succeeded
         result:
           oneOf:
             - type: "null"
@@ -85,6 +89,7 @@ components:
                     - PROVIDER_AUTH_REQUIRED
                     - PROVIDER_TIMEOUT
                     - PROVIDER_CLI_FAILED
+                    - LINEART_BG_REMOVAL_FAILED
                 message:
                   type: string
         updatedAt:
@@ -305,7 +310,49 @@ components:
 
     ExtractionJobStatus:
       type: string
+      description: Server-authoritative job lifecycle state.
       enum: [queued, processing, succeeded, failed]
+
+    PoseDraft:
+      type: object
+      description: Draft pose metadata attached to an ExtractionJob
+      required: [name, tags]
+      properties:
+        name:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        description:
+          type: [string, "null"]
+
+    ExtractionJobListItem:
+      type: object
+      description: Extraction job summary item for owner-scoped job listing
+      required: [jobId, status, poseDraft, createdAt, updatedAt]
+      properties:
+        jobId:
+          type: string
+          format: uuid
+        status:
+          $ref: "#/components/schemas/ExtractionJobStatus"
+        poseDraft:
+          $ref: "#/components/schemas/PoseDraft"
+        poseId:
+          type: [string, "null"]
+          format: uuid
+          description: Created Pose UUID when status is succeeded
+        errorCode:
+          type: [string, "null"]
+        errorMessage:
+          type: [string, "null"]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
 
 paths:
   /api/health:
@@ -340,24 +387,43 @@ paths:
   /api/extract-pose:
     post:
       operationId: extractPose
-      summary: Enqueue async pose extraction job
+      summary: Enqueue async pose extraction job with pose draft
       description: |
-        Phase 1 (Plan 260816-2240): enqueues an `ExtractionJob` and returns `202 Accepted`.
-        Poll `GET /api/extract-jobs/{jobId}` until `status` is `succeeded` or `failed`.
-        Worker engine is selected globally via admin settings at `claimNext` time.
+        Enqueues an owner-scoped `ExtractionJob` with pose draft metadata and returns `202 Accepted`.
+        Requires account authentication. When the job succeeds, the server worker creates the canonical
+        `Pose` and `MediaAsset`s automatically and drops raw image retention payload.
       tags: [Extract Pose]
+      security:
+        - AccountSession: []
+        - AdminBearer: []
       requestBody:
         required: true
         content:
           multipart/form-data:
             schema:
               type: object
-              required: [image]
+              required: [image, name, tags]
               properties:
                 image:
                   type: string
                   format: binary
                   description: JPEG or PNG image, max 10 MB
+                name:
+                  type: string
+                  minLength: 1
+                  description: Pose draft display name
+                tags:
+                  type: array
+                  items:
+                    type: string
+                  description: Tags for filtering
+                description:
+                  type: string
+                  description: Optional pose description
+                ownerAccountId:
+                  type: string
+                  format: uuid
+                  description: Required when called by AdminBearer; for AccountSession this is inferred from session
       responses:
         "202":
           description: Job enqueued
@@ -375,7 +441,7 @@ paths:
                     meta:
                       pollUrl: /api/extract-jobs/550e8400-e29b-41d4-a716-446655440000
         "400":
-          description: Invalid image (`INVALID_IMAGE`)
+          description: Invalid image or metadata (`INVALID_IMAGE` / `INVALID_METADATA`)
           content:
             application/json:
               schema:
@@ -383,6 +449,12 @@ paths:
               examples:
                 invalid_image:
                   value: { error: { code: INVALID_IMAGE, message: "Only JPEG/PNG images are supported" } }
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "413":
           description: Image too large (> 10 MB, `IMAGE_TOO_LARGE`)
           content:
@@ -408,8 +480,15 @@ paths:
   /api/extract-jobs/{jobId}:
     get:
       operationId: getExtractJob
-      summary: Poll public extraction job status
+      summary: Poll extraction job status (owner-checked)
+      description: |
+        Returns the extraction job status. Scoped to the authenticated owner; returns 404
+        if the job does not exist or is owned by another account. When status is succeeded,
+        includes poseId pointing to the auto-created Pose.
       tags: [Extract Pose]
+      security:
+        - AccountSession: []
+        - AdminBearer: []
       parameters:
         - name: jobId
           in: path
@@ -434,25 +513,213 @@ paths:
                     data:
                       jobId: 550e8400-e29b-41d4-a716-446655440000
                       status: queued
+                      poseId: null
                       result: null
+                      error: null
+                succeeded:
+                  value:
+                    data:
+                      jobId: 550e8400-e29b-41d4-a716-446655440000
+                      status: succeeded
+                      poseId: 550e8400-e29b-41d4-a716-446655440001
+                      result:
+                        imageBase64: "..."
+                        mimeType: "image/png"
                       error: null
                 failed_provider_auth:
                   value:
                     data:
                       jobId: 550e8400-e29b-41d4-a716-446655440000
                       status: failed
+                      poseId: null
                       result: null
                       error:
                         code: PROVIDER_AUTH_REQUIRED
                         message: Provider authentication required
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "404":
-          description: Job not found (`JOB_NOT_FOUND`)
+          description: Job not found or owned by another account (`JOB_NOT_FOUND`)
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
         "429":
           description: Rate limited (`RATE_LIMITED`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+
+  /api/me/extract-jobs:
+    get:
+      operationId: listMyExtractJobs
+      summary: List extraction jobs for the signed-in account
+      description: |
+        Returns the signed-in account's extraction jobs, sorted newest first.
+        Jobs marked hidden (via DELETE) are excluded.
+      tags: [Extract Pose]
+      security:
+        - AccountSession: []
+        - AdminBearer: []
+      parameters:
+        - name: state
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [active, finished]
+          description: Filter by state (active = queued/processing, finished = succeeded/failed)
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Pagination cursor
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        "200":
+          description: Paginated list of extraction jobs
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data, meta]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ExtractionJobListItem"
+                  meta:
+                    type: object
+                    required: [nextCursor]
+                    properties:
+                      nextCursor:
+                        type: [string, "null"]
+        "400":
+          description: Invalid query parameters
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+
+  /api/me/extract-jobs/{jobId}/retry:
+    post:
+      operationId: retryExtractJob
+      summary: Retry a failed extraction job
+      description: |
+        Requeues an extraction job for the signed-in account. Only jobs in 'failed' status
+        can be retried; other statuses return 409 Conflict.
+      tags: [Extract Pose]
+      security:
+        - AccountSession: []
+        - AdminBearer: []
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "202":
+          description: Job requeued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExtractionJobAccepted"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: Job not found or owned by another account
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "409":
+          description: Job is not in failed state (`JOB_NOT_RETRYABLE`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+
+  /api/me/extract-jobs/{jobId}:
+    delete:
+      operationId: hideExtractJob
+      summary: Hide an extraction job from the user's jobs list
+      description: |
+        Soft-hides the extraction job by setting hidden_at.
+        This NEVER deletes the created Pose.
+      tags: [Extract Pose]
+      security:
+        - AccountSession: []
+        - AdminBearer: []
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: Job hidden from list
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          description: Job not found or owned by another account
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "500":
+          description: Internal server error
           content:
             application/json:
               schema:
@@ -1120,12 +1387,11 @@ paths:
                 $ref: "#/components/schemas/ErrorEnvelope"
     post:
       operationId: createGuide
-      summary: Create a local Pose after a succeeded extraction job (post-extraction, 201)
+      summary: Create a local Pose directly (manual intake, 201)
       description: >-
-        Two-phase contract per the canonical domain model: first submit the image
-        via POST /api/extract-pose (202 + jobId) and poll until 'succeeded'; then
-        create the Pose here (stable poseId, status=local) with the three media
-        roles (original, skeleton, thumbnail) materialized.
+        Direct Pose creation endpoint. For standard Add Pose extraction workflows,
+        the server worker automatically creates the Pose when extraction succeeds, so
+        clients do not call this endpoint. Retained for direct manual creation.
       tags: [Guides]
       security:
         - AccountSession: []
@@ -1136,12 +1402,12 @@ paths:
           application/json:
             schema:
               type: object
-              required: [jobId, name, bodyParts]
+              required: [name]
               properties:
                 jobId:
                   type: string
                   format: uuid
-                  description: jobId of a 'succeeded' ExtractionJob (correlation key; no Pose existed before it)
+                  description: Optional jobId of an associated ExtractionJob
                 ownerAccountId:
                   type: string
                   format: uuid
@@ -1153,6 +1419,9 @@ paths:
                   minLength: 1
                 bodyParts:
                   type: array
+                  description: >-
+                    Optional. Add Pose (FEAT-005) no longer collects this field
+                    (product decision 2026-09-24); retained for other clients.
                   items:
                     type: string
                   minItems: 1
@@ -1165,22 +1434,65 @@ paths:
                   enum: [beginner, intermediate, advanced, null]
                 description:
                   type: [string, "null"]
+            examples:
+              mobilePersonalPose:
+                summary: Signed-in Mobile Account
+                value:
+                  jobId: 550e8400-e29b-41d4-a716-446655440000
+                  name: Standing reference
+                  bodyParts: [full_body]
+                  tags: [standing]
       responses:
+        "200":
+          description: Pose already created for this jobId (idempotent replay)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PoseCreated"
+              examples:
+                replayed:
+                  value:
+                    data:
+                      pose:
+                        poseId: 550e8400-e29b-41d4-a716-446655440001
+                        ownerAccountId: 550e8400-e29b-41d4-a716-446655440002
+                        name: Standing reference
+                        tags: [standing]
+                        bodyParts: [full_body]
+                        status: local
+                        originalUrl: https://example.com/original.png
+                        skeletonUrl: https://example.com/skeleton.png
+                        thumbnailUrl: https://example.com/thumbnail.png
+                        createdAt: 2026-08-17T12:00:00Z
+                        updatedAt: 2026-08-17T12:00:00Z
         "201":
           description: Pose created (post-extraction) with three media roles materialized; not yet public
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/PoseCreated"
+              examples:
+                created:
+                  value:
+                    data:
+                      pose:
+                        poseId: 550e8400-e29b-41d4-a716-446655440001
+                        ownerAccountId: 550e8400-e29b-41d4-a716-446655440002
+                        name: Standing reference
+                        tags: [standing]
+                        bodyParts: [full_body]
+                        status: local
+                        originalUrl: https://example.com/original.png
+                        skeletonUrl: https://example.com/skeleton.png
+                        thumbnailUrl: https://example.com/thumbnail.png
+                        createdAt: 2026-08-17T12:00:00Z
+                        updatedAt: 2026-08-17T12:00:00Z
         "400":
-          description: JOB_NOT_SUCCEEDED or BAD_REQUEST
+          description: Bad request
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
-              examples:
-                job_not_succeeded:
-                  value: { error: { code: JOB_NOT_SUCCEEDED, message: "Extraction job is not succeeded" } }
         "401":
           description: Unauthorized
           content:
@@ -1188,7 +1500,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
         "404":
-          description: Job not found
+          description: Not found
           content:
             application/json:
               schema:
@@ -1687,4 +1999,3 @@ tags:
     description: Admin intake onto the same Pose model (FEAT-007)
   - name: Admin Jobs
     description: Job status polling (FEAT-005, FEAT-007)
-
