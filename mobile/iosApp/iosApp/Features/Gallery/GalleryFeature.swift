@@ -246,7 +246,6 @@ enum GalleryStateCopy {
 
 struct GalleryScreen: View {
     @StateObject var model: GalleryViewModel
-    @ObservedObject private var purchaseState = RevenueCatAdapter.shared
     /// All-gallery-empty recovery (`gallery.html` `Open Camera`). The owning root wires this to the
     /// camera entry point; the default keeps every existing call site compiling untouched.
     var onOpenCamera: () -> Void = {}
@@ -282,14 +281,6 @@ struct GalleryScreen: View {
             HStack {
                 Text("Gallery").font(.title2.bold())
                 Spacer()
-                if purchaseState.lastSnapshot.state != .entitled {
-                    NavigationLink(destination: PaywallScreen()) {
-                        Image(systemName: "crown.fill").font(.body.weight(.semibold))
-                            .frame(width: 36, height: 36).background(AIPoseColor.accentYellow)
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                            .overlay(RoundedRectangle(cornerRadius: 8).stroke(AIPoseColor.foreground, lineWidth: 1.5))
-                    }
-                }
             }
             .padding(.horizontal, AIPoseSpacing.lg)
             .padding(.top, AIPoseSpacing.sm)

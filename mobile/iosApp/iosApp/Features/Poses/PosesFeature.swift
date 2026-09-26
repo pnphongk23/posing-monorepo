@@ -324,7 +324,6 @@ enum PoseGridMetrics {
 
 struct PosesScreen: View {
     @StateObject var model: PosesViewModel
-    @ObservedObject private var purchaseState = RevenueCatAdapter.shared
     var onTryPose: (NativePose) -> Void = { _ in }
     /// Lets `AppFeatureRoot` hide the dock's active pill while the Search overlay is up: Search is
     /// not a tab, and `reference/search-blank.png` shows both dock items plain grey.
@@ -389,14 +388,6 @@ struct PosesScreen: View {
                 .lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .accessibilityAddTraits(.isHeader)
-
-            if purchaseState.lastSnapshot.state != .entitled {
-                NavigationLink(destination: PaywallScreen()) {
-                    PosesHeaderIconLabel(systemImage: "crown.fill", fill: AIPoseColor.accentYellow)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Upgrade to Premium")
-            }
 
             Button { setShowsSearch(true) } label: {
                 PosesHeaderIconLabel(systemImage: "magnifyingglass")
@@ -600,7 +591,6 @@ struct PoseDetailScreen: View {
     @ObservedObject var model: PosesViewModel
     var onTryPose: (NativePose) -> Void
     @State private var isSaved: Bool
-    @State private var showsPaywall = false
     @State private var pendingSignIn: SignInIntent?
     /// Report §3.6 (`pose-detail.html` unavailable state): set only by the definitive
     /// `poseNotFound` signal from `PosesViewModel.confirmPublished` — a stale/deleted pose renders
@@ -627,7 +617,6 @@ struct PoseDetailScreen: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(AIPoseColor.background)
         .neoHiddenNavigationBar()
-        .sheet(isPresented: $showsPaywall) { PaywallScreen() }
         // Saving is account-scoped, so a guest is asked to sign in and the interrupted save
         // resumes once — never silently dropped, never replayed later (FEAT-013 sign-in gating).
         .signInPrompt($pendingSignIn) { intent in
@@ -657,18 +646,12 @@ struct PoseDetailScreen: View {
                                 Label(isSaved ? "Saved" : "Save pose", systemImage: isSaved ? "bookmark.fill" : "bookmark")
                             }.buttonStyle(NeoButtonStyle(fill: isSaved ? AIPoseColor.accentYellow : AIPoseColor.surface))
                         }
-                        Button {
-                            switch poseTryPoseDestination(
-                                hasPremiumAccess: RevenueCatAdapter.shared.lastSnapshot.state == .entitled
-                            ) {
-                            case .camera:
-                                onTryPose(pose)
-                            case .paywall:
-                                showsPaywall = true
-                            }
-                        } label: {
-                            Label("Use this pose", systemImage: "camera")
-                        }.buttonStyle(NeoButtonStyle())
+                          Button {
+                              routeTryPoseToCamera(pose, onTryPose: onTryPose)
+                          } label: {
+                              Label("Use this pose", systemImage: "camera")
+                          }
+                          .buttonStyle(NeoButtonStyle())
                     }
                 }.padding()
             }
@@ -736,13 +719,8 @@ struct PoseDetailScreen: View {
     }
 }
 
-enum PoseTryPoseDestination: Equatable {
-    case camera
-    case paywall
-}
-
-func poseTryPoseDestination(hasPremiumAccess: Bool) -> PoseTryPoseDestination {
-    hasPremiumAccess ? .camera : .paywall
+func routeTryPoseToCamera(_ pose: NativePose, onTryPose: (NativePose) -> Void) {
+    onTryPose(pose)
 }
 
 // MARK: - Search

@@ -6,7 +6,7 @@ final class AppConfig: @unchecked Sendable {
 
     private let lock = NSLock()
     private var _serverBaseURL = "https://pose-extract-server-production.up.railway.app"
-    private var _isAccountFeatureEnabled = true
+    private var _isAccountFeatureEnabled = false
 
     #if DEBUG
     /// Debug-only endpoint override for instrumented Simulator runs: `-AIPoseAPIBaseURL <url>` on

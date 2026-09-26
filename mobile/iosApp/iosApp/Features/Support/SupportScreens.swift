@@ -50,7 +50,7 @@ enum AccountStateCopy {
     static let signedOutTitle = "Signed out"
     static let signedOutMessage = "Sign in again to access your Saved poses."
     static let deleteAccountConfirmationTitle = "Delete account?"
-    static let deleteAccountConfirmationMessage = "This cannot be undone and your data cannot be recovered. Deleting your account does not cancel an Apple subscription."
+    static let deleteAccountConfirmationMessage = "This cannot be undone and your data cannot be recovered."
 }
 
 /// Account surface: read-only identity/provider for a valid session, sign-in when there
@@ -60,7 +60,6 @@ struct AccountScreen: View {
     let posesModel: PosesViewModel
     var onTryPose: (NativePose) -> Void = { _ in }
     @StateObject private var model: AccountSessionModel
-    @ObservedObject private var purchaseState = RevenueCatAdapter.shared
     @Environment(\.dismiss) private var dismiss
     @State private var showsEmailSignIn = false
     /// The email attempt lives on the screen, not in the sheet content: the Account card re-renders
@@ -110,10 +109,7 @@ struct AccountScreen: View {
                             FeatureStateView(tone: .error, title: "Account deletion failed", message: error)
                                 .accessibilityIdentifier("account.delete.error")
                         }
-                        if purchaseState.lastSnapshot.state != .entitled {
-                            unlockPremiumCTA
-                        }
-                    case .failed(let message):
+                      case .failed(let message):
                         failedCard(message)
                     }
                 }
@@ -279,37 +275,6 @@ struct AccountScreen: View {
         .accessibilityLabel("Delete account")
     }
 
-    private var unlockPremiumCTA: some View {
-        NavigationLink(destination: PaywallScreen()) {
-            HStack(spacing: AIPoseSpacing.md) {
-                Image(systemName: "crown.fill")
-                    .font(.title3.weight(.bold))
-                    .frame(width: 44, height: 44)
-                    .background(AIPoseColor.surface)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
-                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(AIPoseColor.foreground, lineWidth: 2))
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Unlock Premium").font(.headline.bold())
-                    Text("Explore more ways to pose")
-                        .font(.subheadline)
-                }
-                Spacer(minLength: 0)
-                Image(systemName: "chevron.right")
-                    .font(.caption.weight(.bold))
-                    .accessibilityHidden(true)
-            }
-            .foregroundStyle(AIPoseColor.foreground)
-            .padding(AIPoseSpacing.lg)
-            .frame(minHeight: 44)
-            .background(AIPoseColor.accentYellow)
-            .clipShape(RoundedRectangle(cornerRadius: 12))
-            .overlay(RoundedRectangle(cornerRadius: 12).stroke(AIPoseColor.foreground, lineWidth: 2))
-            .shadow(color: AIPoseColor.foreground, radius: 0, x: 4, y: 4)
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Upgrade to Premium")
-    }
 }
 
 // MARK: - Settings
@@ -317,7 +282,6 @@ struct AccountScreen: View {
 struct SettingsScreen: View {
     let posesModel: PosesViewModel
     var onTryPose: (NativePose) -> Void = { _ in }
-    @ObservedObject private var purchaseState = RevenueCatAdapter.shared
     @Environment(\.openURL) private var openURL
     @Environment(\.scenePhase) private var scenePhase
     @State private var showsAboutSheet = false
@@ -342,25 +306,20 @@ struct SettingsScreen: View {
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel("Open Account")
-                        NavigationLink(destination: SavedPosesScreen(model: posesModel, onTryPose: onTryPose)) {
-                            SupportSettingsRow(
+                          NavigationLink(destination: SavedPosesScreen(model: posesModel, onTryPose: onTryPose)) {
+                              SupportSettingsRow(
                                 icon: "bookmark.fill",
                                 iconColor: AIPoseColor.accentGreen,
                                 title: "Saved poses",
                                 description: "Review the poses you've saved."
-                            )
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Open Saved poses")
-                        premiumRow
-                    }
-                } else if purchaseState.lastSnapshot.state != .entitled {
-                    settingsGroup(title: "Premium") {
-                        premiumRow
-                    }
-                }
+                              )
+                          }
+                          .buttonStyle(.plain)
+                          .accessibilityLabel("Open Saved poses")
+                      }
+                  }
 
-                settingsGroup(title: "Privacy") {
+                  settingsGroup(title: "Privacy") {
                     Button { openSystemSettings() } label: {
                         SupportSettingsRow(
                             icon: "info.circle.fill",
@@ -453,22 +412,6 @@ struct SettingsScreen: View {
         VStack(alignment: .leading, spacing: AIPoseSpacing.sm) {
             Text(title).font(.headline.bold())
             VStack(spacing: AIPoseSpacing.sm) { content() }
-        }
-    }
-
-    @ViewBuilder
-    private var premiumRow: some View {
-        if purchaseState.lastSnapshot.state != .entitled {
-            NavigationLink(destination: PaywallScreen()) {
-                SupportSettingsRow(
-                    icon: "crown.fill",
-                    iconColor: AIPoseColor.accentYellow,
-                    title: "Premium",
-                    description: "Explore more ways to pose with Premium."
-                )
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Open Premium")
         }
     }
 

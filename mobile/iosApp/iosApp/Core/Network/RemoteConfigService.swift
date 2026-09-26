@@ -38,7 +38,7 @@ enum RemoteConfigService {
     }
 
     static func resolveAccountEnabled(cachedRaw: String?, fetchedRaw: String?) -> Bool {
-        parseBoolean(raw: fetchedRaw) ?? parseBoolean(raw: cachedRaw) ?? true
+        parseBoolean(raw: fetchedRaw) ?? parseBoolean(raw: cachedRaw) ?? false
     }
 
     static func applyAccountEnabled(_ enabled: Bool) {

@@ -27,12 +27,12 @@ final class RemoteConfigServiceTests: XCTestCase {
         XCTAssertEqual(RemoteConfigService.parseBoolean(raw: "no"), false)
     }
 
-    func testResolveAccountEnabledPrefersFetchedThenCacheThenDefaultTrue() {
+    func testResolveAccountEnabledPrefersFetchedThenCacheThenDefaultFalse() {
         XCTAssertTrue(RemoteConfigService.resolveAccountEnabled(cachedRaw: "false", fetchedRaw: "true"))
         XCTAssertFalse(RemoteConfigService.resolveAccountEnabled(cachedRaw: "false", fetchedRaw: nil))
         XCTAssertFalse(RemoteConfigService.resolveAccountEnabled(cachedRaw: "false", fetchedRaw: "unparseable"))
-        XCTAssertTrue(RemoteConfigService.resolveAccountEnabled(cachedRaw: nil, fetchedRaw: nil))
-        XCTAssertTrue(RemoteConfigService.resolveAccountEnabled(cachedRaw: "unparseable", fetchedRaw: nil))
+        XCTAssertFalse(RemoteConfigService.resolveAccountEnabled(cachedRaw: nil, fetchedRaw: nil))
+        XCTAssertFalse(RemoteConfigService.resolveAccountEnabled(cachedRaw: "unparseable", fetchedRaw: nil))
     }
 
     func testRejectsPlaceholderRevenueCatKey() {

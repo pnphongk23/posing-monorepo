@@ -84,10 +84,11 @@ final class DeleteAccountTests: XCTestCase {
         XCTAssertEqual(calls.value, 1)
     }
 
-    func testConfirmationCopyStatesIrreversibilityAndAppleSubscriptionLimit() {
+    func testConfirmationCopyStatesIrreversibilityWithoutSubscriptionClaim() {
         let copy = AccountStateCopy.deleteAccountConfirmationMessage
         XCTAssertTrue(copy.localizedCaseInsensitiveContains("cannot be recovered"))
-        XCTAssertTrue(copy.localizedCaseInsensitiveContains("does not cancel an Apple subscription"))
+        XCTAssertFalse(copy.localizedCaseInsensitiveContains("subscription"))
+        XCTAssertFalse(copy.localizedCaseInsensitiveContains("Apple"))
     }
 
     private func makeModel(

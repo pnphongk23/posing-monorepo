@@ -2,8 +2,8 @@ import XCTest
 @testable import iosApp
 
 final class AppConfigTests: XCTestCase {
-    func testAccountFeatureFlagDefaultsToEnabled() {
-        XCTAssertTrue(AppConfig().isAccountFeatureEnabled)
+    func testAccountFeatureFlagDefaultsToDisabled() {
+        XCTAssertFalse(AppConfig().isAccountFeatureEnabled)
     }
 
     func testAccountFeatureFlagCanBeAppliedInBothDirections() {

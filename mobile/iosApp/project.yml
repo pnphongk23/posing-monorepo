@@ -46,7 +46,7 @@ targets:
           CODE_SIGN_ENTITLEMENTS: iosApp/iosAppDebug-Prod.entitlements
       INFOPLIST_FILE: iosApp/Info.plist
       CODE_SIGN_STYLE: Automatic
-      DEVELOPMENT_TEAM: 878758XF68
+      DEVELOPMENT_TEAM: WZL67P53F2
     dependencies:
       - package: Firebase
         product: FirebaseCore
@@ -82,7 +82,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: posing.camera.appTests
         GENERATE_INFOPLIST_FILE: YES
         CODE_SIGN_STYLE: Automatic
-        DEVELOPMENT_TEAM: 878758XF68
+        DEVELOPMENT_TEAM: WZL67P53F2
     dependencies:
       - target: iosApp
       - package: GRDB
