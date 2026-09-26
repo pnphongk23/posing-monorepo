@@ -1,7 +1,7 @@
 {
-  "name": "PoseIt",
-  "short_name": "PoseIt",
-  "description": "AI Pose Camera — Extract poses and use as camera overlays",
+  "name": "posing",
+  "short_name": "posing",
+  "description": "posing — Extract poses and use as camera overlays",
   "start_url": "/poses",
   "display": "standalone",
   "background_color": "#f6f1e8",

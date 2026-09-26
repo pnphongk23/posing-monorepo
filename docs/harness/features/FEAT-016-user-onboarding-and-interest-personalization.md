@@ -34,7 +34,7 @@ relationships:
 
 ## Introduction
 
-**Purpose:** Provide a high-converting, value-first First-Time User Experience (FTUE) on mobile. The onboarding flow introduces the core value proposition of AI Pose, allows users to personalize their pose catalog by selecting shooting interests (X and Reddit model), provides an interactive pose alignment trial (Duolingo Time-to-Value model), primes camera and photo permissions with transparent privacy disclosures, and hands off smoothly to the camera or personalized pose catalog.
+**Purpose:** Provide a high-converting, value-first First-Time User Experience (FTUE) on mobile. The onboarding flow introduces the core value proposition of posing, allows users to personalize their pose catalog by selecting shooting interests (X and Reddit model), provides an interactive pose alignment trial (Duolingo Time-to-Value model), primes camera and photo permissions with transparent privacy disclosures, and hands off smoothly to the camera or personalized pose catalog.
 
 **In scope:**
 1. First-launch detection via local preference persistence (`has_completed_onboarding`).
@@ -81,7 +81,7 @@ relationships:
 
 | Actor | Type | Goal | Responsibility |
 | --- | --- | --- | --- |
-| First-time Photographer | Person / End User | Understand how AI Pose works and quickly find poses matching their photography style | Complete or skip onboarding and explore poses |
+| First-time Photographer | Person / End User | Understand how posing works and quickly find poses matching their photography style | Complete or skip onboarding and explore poses |
 | Returning User / Re-installer | Person / End User | Revisit the tutorial or re-configure preferred pose vibes | Trigger replay from Settings |
 | Product Authority | Business role | Ensure user retention, minimize initial churn, and maintain Apple App Store compliance | Approve business boundary and acceptance criteria |
 
@@ -156,7 +156,7 @@ relationships:
 ### Verification Scenarios
 
 **Scenario 1: Standard First-Run Happy Path**
-- **Given** a new user installs and opens AI Pose for the first time
+- **Given** a new user installs and opens posing for the first time
 - **When** the app completes initialization
 - **Then** the Onboarding Welcome screen (Stage 1) is displayed
 - **When** the user taps "Get Started" and selects "Portrait & Selfie" and "Cafe & Aesthetic"

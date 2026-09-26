@@ -78,12 +78,10 @@ final class FeatureStateTests: XCTestCase {
         XCTAssertEqual(PoseGridMetrics.aspectRatio(forRow: 3), 1 / 1.25, accuracy: 0.0001)
     }
 
-    func testTryPoseRoutesToPaywallWithoutPremium() {
-        XCTAssertEqual(poseTryPoseDestination(hasPremiumAccess: false), .paywall)
-    }
-
-    func testTryPosePreservesCameraRouteWithPremium() {
-        XCTAssertEqual(poseTryPoseDestination(hasPremiumAccess: true), .camera)
+    func testTryPoseOpensCameraWithoutPremium() {
+        var openedPoseID: String?
+        routeTryPoseToCamera(samplePose) { pose in openedPoseID = pose.id }
+        XCTAssertEqual(openedPoseID, samplePose.id)
     }
 
     @MainActor func testGalleryDeleteReloadsItems() async {

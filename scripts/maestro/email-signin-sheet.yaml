@@ -1,0 +1,93 @@
+# Email/password sign-in — saved-poses gate copy + new sign-in sheet (S3 verification).
+#
+# Covers every state of the email sign-in surface that needs NO backend response:
+#   01 saved-poses gate copy (the PosesFeature.swift:1151 fix)
+#   02 shared sign-in prompt with the new "Sign in with email" peer entry
+#   03 email sheet, initial (empty form, disabled CTA, intent line)
+#   04 email typed (keyboard up)
+#   05 filled form, password masked, CTA enabled
+#   06 password revealed
+#   07 password re-hidden — must still show dots (F3 regression guard)
+#
+# Submit-response states (wrong password / rate limited / transport failure) are NOT reachable
+# without a live POST /api/auth/email/signin and are deliberately not asserted here.
+#
+# Run (never reuse the output dir across runs):
+#   ~/.maestro/bin/maestro test scripts/maestro/email-signin-sheet.yaml \
+#     --device 5CD6001E-54E4-4EE2-AA20-F22DEA07F84C --test-output-dir /tmp/s3-email-sheet
+#
+# Selector policy: accessibility identifiers everywhere they exist (`saved.signIn`,
+# `signin.emailEntry`, `signin.email`, `signin.password`, `signin.submit`,
+# `signin.showPassword`), text only for labels with no id. No coordinate taps.
+appId: posing.camera.app
+---
+- launchApp:
+    clearState: true
+- waitForAnimationToEnd
+- tapOn:
+    text: "Continue"
+    optional: true
+- extendedWaitUntil:
+    visible:
+      id: "poses.open-search"
+    timeout: 20000
+- waitForAnimationToEnd
+
+# --- Saved-poses auth gate: the copy fix must be observable here. ---
+- tapOn:
+    text: "Open Saved poses"
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: "Sign in to view your saved poses"
+    timeout: 10000
+- waitForAnimationToEnd
+- takeScreenshot: 01-saved-gate-copy
+# The pre-fix copy must be gone, not merely joined by the new sentence.
+- assertNotVisible: "Continue with Google to keep them synced.*"
+
+# --- Shared sign-in prompt: email is a PEER of Google, not a replacement. ---
+- tapOn:
+    id: "saved.signIn"
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible:
+      id: "signin.emailEntry"
+    timeout: 10000
+- waitForAnimationToEnd
+- takeScreenshot: 02-signin-prompt-with-email-entry
+
+# --- The new email sheet, initial state. ---
+- tapOn:
+    id: "signin.emailEntry"
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible:
+      id: "signin.email"
+    timeout: 10000
+- waitForAnimationToEnd
+- takeScreenshot: 03-email-sheet-initial
+
+# --- Email typed. One focus session: `signin.email` stops resolving once the field holds a value
+#     in some Maestro versions, so the shot is taken before leaving the field. ---
+- tapOn:
+    id: "signin.email"
+- inputText: "reviewer@example.com"
+- waitForAnimationToEnd
+- takeScreenshot: 04-email-typed
+
+# `.next` return key must advance focus to the password field (EmailSignInScreen.onSubmit).
+- pressKey: Enter
+- inputText: "not-the-real-password"
+- waitForAnimationToEnd
+- takeScreenshot: 05-form-filled-masked
+
+# --- Reveal / hide round trip: re-hiding must restore the dots (the F3 `.id(isPasswordShown)`
+#     fix). A blank field here is a real defect, not a harness problem. ---
+- tapOn:
+    id: "signin.showPassword"
+- waitForAnimationToEnd
+- takeScreenshot: 06-password-revealed
+- tapOn:
+    id: "signin.showPassword"
+- waitForAnimationToEnd
+- takeScreenshot: 07-password-masked-again

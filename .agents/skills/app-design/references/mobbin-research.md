@@ -269,7 +269,7 @@ The similar sets also surfaced Grab, Venmo, Revolut, Setel, Cash App, Wise, Kaka
 
 ### Extracted decisions
 
-| Reference evidence | Pattern | Snap Pose decision |
+| Reference evidence | Pattern | posing decision |
 | --- | --- | --- |
 | Google Pay, Grab, Venmo, Revolut | Preview or scan target dominates; controls stay compact at the edges | Keep Camera full-bleed, with small Back and Tools surfaces inside full touch targets. |
 | Venmo, Grab, Cash App | Image/gallery action can be icon-only | Make Choose guide an image icon with an accessible label. |

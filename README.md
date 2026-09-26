@@ -1,6 +1,6 @@
-# AI Pose
+# posing
 
-AI Pose is a monorepo for an iOS pose-reference camera, a local photo/pose library, an extraction API, and a small operational admin UI.
+posing is a monorepo for an iOS pose-reference camera, a local photo/pose library, an extraction API, and a small operational admin UI.
 
 ## Repository lanes
 

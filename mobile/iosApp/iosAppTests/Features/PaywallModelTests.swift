@@ -267,6 +267,44 @@ final class PaywallModelTests: XCTestCase {
         XCTAssertEqual(gateway.loadCount, 1)
     }
 
+    /// Email sign-in seam (PLAN §4): the sheet signed in through `SessionBoundary`, so re-checking
+    /// the boundary lands in the same isSignedIn/loadPlans() outcome as the Google path.
+    func testResumeAfterEmailSignInLoadsPlansWhenSessionStored() async {
+        let storage = InMemoryTokenStorage()
+        let boundary = SessionBoundary(tokenStorage: storage)
+        let gateway = FakePurchaseGateway(nextLoad: readyOffering)
+        let model = PaywallModel(
+            gateway: gateway,
+            boundary: boundary,
+            signInAction: SignInAction(start: {})
+        )
+        model.start()
+        await waitUntil("sign in required") { model.phase == .signInRequired }
+
+        // Simulate the sheet having signed in through the same boundary.
+        await boundary.saveCredentials(session)
+        await model.resumeAfterEmailSignIn()
+
+        await waitUntil("ready") { model.phase == .ready }
+        XCTAssertTrue(model.isSignedIn)
+        XCTAssertNil(model.authError)
+        XCTAssertEqual(gateway.loadCount, 1)
+    }
+
+    /// Cancelling the sheet without signing in leaves the gate exactly as it was.
+    func testResumeAfterEmailSignInWithoutSessionStaysOnSignInRequired() async {
+        let gateway = FakePurchaseGateway(nextLoad: readyOffering)
+        let model = makeModel(gateway: gateway, storage: InMemoryTokenStorage())
+        model.start()
+        await waitUntil("sign in required") { model.phase == .signInRequired }
+
+        await model.resumeAfterEmailSignIn()
+
+        XCTAssertEqual(model.phase, .signInRequired)
+        XCTAssertFalse(model.isSignedIn)
+        XCTAssertEqual(gateway.loadCount, 0)
+    }
+
     func testStartIsIdempotent() async {
         let gateway = FakePurchaseGateway(nextLoad: readyOffering)
         let model = makeModel(gateway: gateway)

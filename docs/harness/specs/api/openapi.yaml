@@ -1,6 +1,6 @@
 openapi: "3.1.0"
 info:
-  title: AI Pose — Pose Extract Server API
+  title: posing — Pose Extract Server API
   version: "0.5.0"
   description: |
     Hợp đồng API product theo FEAT-001–008.

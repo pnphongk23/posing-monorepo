@@ -114,7 +114,7 @@ final class SessionScopeCoordinatorTests: XCTestCase {
             readAccount: { AccountSummary(id: "account-b", displayName: "B", createdAt: nil) }
         )
         coordinator.start()
-        await settle()
+        await waitUntilSubscribed(boundary)
 
         await boundary.saveCredentials(storedCredentials)
         await waitUntil("catalog cleared") { (try? await self.savedRowCount(temp)) == 0 }
@@ -139,7 +139,7 @@ final class SessionScopeCoordinatorTests: XCTestCase {
             readAccount: { AccountSummary(id: "account-a", displayName: "A", createdAt: nil) }
         )
         coordinator.start()
-        await settle()
+        await waitUntilSubscribed(boundary)
         let seededSaved = try await savedRowCount(temp)
         XCTAssertGreaterThan(seededSaved, 0, "an unchanged session keeps its catalog")
 
@@ -163,7 +163,7 @@ final class SessionScopeCoordinatorTests: XCTestCase {
             readAccount: { AccountSummary(id: "account-a", displayName: "A", createdAt: nil) }
         )
         coordinator.start()
-        await settle()
+        await waitUntilSubscribed(boundary)
 
         await boundary.clearForUnauthorized()
         await waitUntil("catalog cleared") { (try? await self.savedRowCount(temp)) == 0 }
@@ -198,6 +198,26 @@ final class SessionScopeCoordinatorTests: XCTestCase {
 
     private func settle() async {
         try? await Task.sleep(nanoseconds: 80_000_000)
+    }
+
+    /// `SessionBoundary.events()` is deliberately not replayed, and a subscriber registers only
+    /// after `onStart` has finished: an event emitted before that is dropped for good and the only
+    /// possible outcome is a timeout. A fixed `settle()` therefore made these tests timing-dependent
+    /// — measured registration latency is ~2 ms on an idle process but exactly as long as `onStart`
+    /// when `onStart` awaits anything (302 ms for a 300 ms Account read), and main-actor contention
+    /// can push past any fixed sleep. Waiting for the subscription is a real synchronization point.
+    private func waitUntilSubscribed(
+        _ boundary: SessionBoundary,
+        timeout: TimeInterval = 5,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) async {
+        let deadline = Date().addingTimeInterval(timeout)
+        while await boundary.subscriberCountForTests() == 0, Date() < deadline {
+            try? await Task.sleep(nanoseconds: 1_000_000)
+        }
+        let subscribed = await boundary.subscriberCountForTests() > 0
+        XCTAssertTrue(subscribed, "Timed out waiting for the coordinator to observe sessions", file: file, line: line)
     }
 
     private func waitUntil(

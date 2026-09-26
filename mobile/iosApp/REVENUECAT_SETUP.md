@@ -23,8 +23,8 @@ External dependencies, supplied outside this repository:
 
 The app's current legal pages are:
 
-- `LEGAL_TERMS_URL=https://sites.google.com/view/snappose/terms-of-service`
-- `LEGAL_PRIVACY_URL=https://sites.google.com/view/snappose/privacy-policy`
+- `LEGAL_TERMS_URL=https://sites.google.com/view/posingapp/terms-of-service`
+- `LEGAL_PRIVACY_URL=https://sites.google.com/view/posingapp/privacy-policy`
 
 When either value is unset or still marked as a placeholder, the runtime does
 not open a legal URL.

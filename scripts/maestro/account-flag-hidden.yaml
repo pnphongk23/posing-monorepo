@@ -1,0 +1,82 @@
+# Account feature flag acceptance: off surfaces plus an on control run.
+# Run with: ~/.maestro/bin/maestro test scripts/maestro/account-flag-hidden.yaml \
+#   --device 4C1D6E55-2C31-4BD7-9881-F86F21CC53C8 --test-output-dir /tmp/account-flag-hidden
+appId: posing.camera.app
+---
+- launchApp:
+    clearState: true
+    arguments:
+      AIPoseAccountEnabled: "false"
+- waitForAnimationToEnd
+- tapOn:
+    text: "Continue"
+    optional: true
+- extendedWaitUntil:
+    visible:
+      id: "poses.open-search"
+    timeout: 20000
+- assertVisible: "Upgrade to Premium"
+- assertVisible: "Open Settings"
+- assertNotVisible: "Open Saved poses"
+- takeScreenshot: 01-poses-hidden
+
+- tapOn: "Open Settings"
+- waitForAnimationToEnd
+- assertNotVisible: "Open Account"
+- assertNotVisible: "Open Saved poses"
+- assertVisible: "Premium"
+- assertVisible: "Privacy"
+- assertVisible: "Help & support"
+- takeScreenshot: 02-settings-hidden
+
+- launchApp:
+    clearState: false
+    arguments:
+      AIPoseAccountEnabled: "false"
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible:
+      id: "poses.first-card"
+    timeout: 30000
+- tapOn:
+    id: "poses.first-card"
+- waitForAnimationToEnd
+- assertNotVisible: "Save pose"
+- assertNotVisible: "Saved"
+- takeScreenshot: 03-pose-detail-hidden
+
+- launchApp:
+    clearState: false
+    arguments:
+      AIPoseAccountEnabled: "true"
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible:
+      id: "poses.open-search"
+    timeout: 20000
+- assertVisible: "Upgrade to Premium"
+- assertVisible: "Open Settings"
+- assertVisible: "Open Saved poses"
+- tapOn: "Open Settings"
+- waitForAnimationToEnd
+- assertVisible: "Open Account"
+- assertVisible: "Open Saved poses"
+- assertVisible: "Open Premium"
+- assertVisible: "Privacy"
+- assertVisible: "Help & support"
+- takeScreenshot: 04-settings-enabled
+
+- launchApp:
+    clearState: false
+    arguments:
+      AIPoseAccountEnabled: "true"
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible:
+      id: "poses.first-card"
+    timeout: 30000
+- tapOn:
+    id: "poses.first-card"
+- waitForAnimationToEnd
+- assertVisible: "Save pose"
+- takeScreenshot: 05-pose-detail-enabled

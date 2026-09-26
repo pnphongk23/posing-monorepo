@@ -49,6 +49,8 @@ struct OnboardingScreen: View {
 enum AccountStateCopy {
     static let signedOutTitle = "Signed out"
     static let signedOutMessage = "Sign in again to access your Saved poses."
+    static let deleteAccountConfirmationTitle = "Delete account?"
+    static let deleteAccountConfirmationMessage = "This cannot be undone and your data cannot be recovered."
 }
 
 /// Account surface: read-only identity/provider for a valid session, sign-in when there
@@ -58,8 +60,14 @@ struct AccountScreen: View {
     let posesModel: PosesViewModel
     var onTryPose: (NativePose) -> Void = { _ in }
     @StateObject private var model: AccountSessionModel
-    @ObservedObject private var purchaseState = RevenueCatAdapter.shared
     @Environment(\.dismiss) private var dismiss
+    @State private var showsEmailSignIn = false
+    /// The email attempt lives on the screen, not in the sheet content: the Account card re-renders
+    /// with the session it is observing, and an attempt opened from it must not be discarded by
+    /// that (S4).
+    @StateObject private var emailSignIn = EmailSignInModel()
+    @StateObject private var appleSignIn = AppleSignInModel()
+    @State private var showsDeleteConfirmation = false
 
     init(
         posesModel: PosesViewModel,
@@ -96,10 +104,12 @@ struct AccountScreen: View {
                     case .signedIn(let account):
                         accountProfileCard(account)
                         savedPosesRow
-                        if purchaseState.lastSnapshot.state != .entitled {
-                            unlockPremiumCTA
+                        deleteAccountRow
+                        if let error = model.deleteAccountError {
+                            FeatureStateView(tone: .error, title: "Account deletion failed", message: error)
+                                .accessibilityIdentifier("account.delete.error")
                         }
-                    case .failed(let message):
+                      case .failed(let message):
                         failedCard(message)
                     }
                 }
@@ -110,6 +120,16 @@ struct AccountScreen: View {
         }
         .background(AIPoseColor.background)
         .neoHiddenNavigationBar()
+        // Email sign-in (PLAN §4): presented from the signed-out card; success arrives through the
+        // existing `SessionBoundary` `.signedIn` event — no new navigation state (DESIGN §3.2).
+        .emailSignInSheet(model: emailSignIn, isPresented: $showsEmailSignIn, intentLine: AccountStateCopy.signedOutMessage)
+        .alert(AccountStateCopy.deleteAccountConfirmationTitle, isPresented: $showsDeleteConfirmation) {
+            Button("Delete account", role: .destructive) { model.deleteAccount() }
+                .disabled(model.isDeletingAccount)
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(AccountStateCopy.deleteAccountConfirmationMessage)
+        }
         .task { model.start() }
     }
 
@@ -147,6 +167,29 @@ struct AccountScreen: View {
                     .accessibilityLabel("Sign-in failed. \(authError)")
             }
             ContinueWithGoogleButton(isAuthenticating: model.isAuthenticating) { model.signIn() }
+            ContinueWithAppleButton(isAuthenticating: appleSignIn.isAuthenticating) {
+                Task { _ = await appleSignIn.signIn() }
+            }
+            if let error = appleSignIn.error {
+                Text(error)
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(AIPoseColor.error)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityLabel("Sign-in failed. \(error)")
+            }
+            Button { showsEmailSignIn = true } label: {
+                Text("Sign in with email")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(AIPoseColor.foreground)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(model.isAuthenticating)
+            .accessibilityIdentifier("signin.emailEntry")
+            .accessibilityLabel("Sign in with email")
         }
         .accessibilityElement(children: .contain)
     }
@@ -175,9 +218,10 @@ struct AccountScreen: View {
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(name).font(.headline.bold())
-                // Google is the only enabled provider in v1 (FEAT-013), so this label is a
-                // frozen contract value rather than a fabricated per-account field.
-                Text("Signed in with Google")
+                // S1 made email/password a second real provider, and the account payload carries no
+                // provider field, so naming Google here would be a fabricated claim for every
+                // email-signed-in account (the FEAT-013 "Google is the only provider" premise is gone).
+                Text("Signed in")
                     .font(.subheadline)
                     .foregroundStyle(AIPoseColor.subtext)
             }
@@ -185,7 +229,7 @@ struct AccountScreen: View {
         }
         .neoCard()
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(name), Signed in with Google")
+        .accessibilityLabel(name)
     }
 
     private var savedPosesRow: some View {
@@ -209,37 +253,28 @@ struct AccountScreen: View {
         .accessibilityLabel("Saved poses")
     }
 
-    private var unlockPremiumCTA: some View {
-        NavigationLink(destination: PaywallScreen()) {
+    private var deleteAccountRow: some View {
+        Button { showsDeleteConfirmation = true } label: {
             HStack(spacing: AIPoseSpacing.md) {
-                Image(systemName: "crown.fill")
-                    .font(.title3.weight(.bold))
-                    .frame(width: 44, height: 44)
-                    .background(AIPoseColor.surface)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
-                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(AIPoseColor.foreground, lineWidth: 2))
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Unlock Premium").font(.headline.bold())
-                    Text("Explore more ways to pose")
-                        .font(.subheadline)
+                if model.isDeletingAccount {
+                    ProgressView().tint(AIPoseColor.error)
+                } else {
+                    Image(systemName: "trash").accessibilityHidden(true)
                 }
+                Text(model.isDeletingAccount ? "Deleting account…" : "Delete account")
+                    .font(.headline.bold())
                 Spacer(minLength: 0)
-                Image(systemName: "chevron.right")
-                    .font(.caption.weight(.bold))
-                    .accessibilityHidden(true)
             }
-            .foregroundStyle(AIPoseColor.foreground)
-            .padding(AIPoseSpacing.lg)
-            .frame(minHeight: 44)
-            .background(AIPoseColor.accentYellow)
-            .clipShape(RoundedRectangle(cornerRadius: 12))
-            .overlay(RoundedRectangle(cornerRadius: 12).stroke(AIPoseColor.foreground, lineWidth: 2))
-            .shadow(color: AIPoseColor.foreground, radius: 0, x: 4, y: 4)
+            .foregroundStyle(AIPoseColor.error)
+            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            .contentShape(Rectangle())
+            .neoCard(background: AIPoseColor.surface)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Upgrade to Premium")
+        .disabled(model.isDeletingAccount)
+        .accessibilityLabel("Delete account")
     }
+
 }
 
 // MARK: - Settings
@@ -247,7 +282,6 @@ struct AccountScreen: View {
 struct SettingsScreen: View {
     let posesModel: PosesViewModel
     var onTryPose: (NativePose) -> Void = { _ in }
-    @ObservedObject private var purchaseState = RevenueCatAdapter.shared
     @Environment(\.openURL) private var openURL
     @Environment(\.scenePhase) private var scenePhase
     @State private var showsAboutSheet = false
@@ -260,42 +294,32 @@ struct SettingsScreen: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: AIPoseSpacing.xl) {
-                settingsGroup(title: "Account") {
-                    NavigationLink(destination: AccountScreen(posesModel: posesModel, onTryPose: onTryPose)) {
-                        SupportSettingsRow(
-                            icon: "person.crop.circle",
-                            iconColor: AIPoseColor.accentBlue,
-                            title: "Account",
-                            description: "Manage your account and sign-in options."
-                        )
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Open Account")
-                    NavigationLink(destination: SavedPosesScreen(model: posesModel, onTryPose: onTryPose)) {
-                        SupportSettingsRow(
-                            icon: "bookmark.fill",
-                            iconColor: AIPoseColor.accentGreen,
-                            title: "Saved poses",
-                            description: "Review the poses you've saved."
-                        )
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Open Saved poses")
-                    if purchaseState.lastSnapshot.state != .entitled {
-                        NavigationLink(destination: PaywallScreen()) {
+                if AppConfig.shared.isAccountFeatureEnabled {
+                    settingsGroup(title: "Account") {
+                        NavigationLink(destination: AccountScreen(posesModel: posesModel, onTryPose: onTryPose)) {
                             SupportSettingsRow(
-                                icon: "crown.fill",
-                                iconColor: AIPoseColor.accentYellow,
-                                title: "Premium",
-                                description: "Explore more ways to pose with Premium."
+                                icon: "person.crop.circle",
+                                iconColor: AIPoseColor.accentBlue,
+                                title: "Account",
+                                description: "Manage your account and sign-in options."
                             )
                         }
                         .buttonStyle(.plain)
-                        .accessibilityLabel("Open Premium")
-                    }
-                }
+                        .accessibilityLabel("Open Account")
+                          NavigationLink(destination: SavedPosesScreen(model: posesModel, onTryPose: onTryPose)) {
+                              SupportSettingsRow(
+                                icon: "bookmark.fill",
+                                iconColor: AIPoseColor.accentGreen,
+                                title: "Saved poses",
+                                description: "Review the poses you've saved."
+                              )
+                          }
+                          .buttonStyle(.plain)
+                          .accessibilityLabel("Open Saved poses")
+                      }
+                  }
 
-                settingsGroup(title: "Privacy") {
+                  settingsGroup(title: "Privacy") {
                     Button { openSystemSettings() } label: {
                         SupportSettingsRow(
                             icon: "info.circle.fill",
@@ -358,12 +382,12 @@ struct SettingsScreen: View {
                             icon: "info.circle.fill",
                             iconColor: AIPoseColor.accentGreen,
                             title: "About",
-                            description: "Snap Pose app information and credits.",
+                              description: "posing app information and credits.",
                             trailing: .value("v\(appVersion) (Build \(buildNumber))")
                         )
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("About Snap Pose, version \(appVersion) Build \(buildNumber)")
+                  .accessibilityLabel("About posing, version \(appVersion) Build \(buildNumber)")
                 }
             }
             .padding(.horizontal, AIPoseSpacing.lg)
@@ -372,7 +396,7 @@ struct SettingsScreen: View {
         .background(AIPoseColor.background)
         .navigationTitle("Settings")
         .navigationBarTitleDisplayMode(.inline)
-        .sheet(isPresented: $showsAboutSheet) { AboutSnapPoseSheet(appVersion: appVersion, buildNumber: buildNumber) }
+          .sheet(isPresented: $showsAboutSheet) { AboutPosingSheet(appVersion: appVersion, buildNumber: buildNumber) }
         .fullScreenCover(isPresented: $showsReplayOnboarding) {
             OnboardingScreen { showsReplayOnboarding = false }
         }
@@ -444,6 +468,9 @@ struct PaywallScreen: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
     @StateObject private var model: PaywallModel
+    @State private var showsEmailSignIn = false
+    /// The email attempt lives on the screen, not in the sheet content (S4).
+    @StateObject private var emailSignIn = EmailSignInModel()
 
     init(model: @autoclosure @escaping () -> PaywallModel = PaywallModel()) {
         _model = StateObject(wrappedValue: model())
@@ -466,6 +493,15 @@ struct PaywallScreen: View {
         }
         .background(AIPoseColor.background)
         .navigationBarHidden(true)
+        // Email sign-in as a peer of Google (PLAN §4): same `EmailSignInModel`/`APIClient` path,
+        // landing in the same isSignedIn/loadPlans() outcome via the call-site seam.
+        .emailSignInSheet(
+            model: emailSignIn,
+            isPresented: $showsEmailSignIn,
+            intentLine: "Your purchase is tied to your account. Sign in to continue."
+        ) {
+            Task { await model.resumeAfterEmailSignIn() }
+        }
         .task { model.start() }
     }
 
@@ -477,12 +513,12 @@ struct PaywallScreen: View {
                     .frame(width: 4, height: 28)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 0) {
-                    Text("AI Pose").font(.caption.weight(.semibold)).foregroundStyle(AIPoseColor.subtext)
+                      Text("posing").font(.caption.weight(.semibold)).foregroundStyle(AIPoseColor.subtext)
                     Text("Premium studio").font(.headline.bold())
                 }
             }
             .accessibilityElement(children: .combine)
-            .accessibilityLabel("AI Pose Premium")
+              .accessibilityLabel("posing Premium")
             Spacer(minLength: 0)
             Button { dismiss() } label: {
                 Image(systemName: "xmark")
@@ -545,6 +581,19 @@ struct PaywallScreen: View {
             ContinueWithGoogleButton(isAuthenticating: model.isAuthenticating) {
                 Task { await model.signIn() }
             }
+            Button { showsEmailSignIn = true } label: {
+                Text("Sign in with email")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(AIPoseColor.foreground)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(model.isAuthenticating)
+            .accessibilityIdentifier("signin.emailEntry")
+            .accessibilityLabel("Sign in with email")
         case .loadingPlans:
             HStack(spacing: AIPoseSpacing.sm) {
                 ProgressView()
@@ -767,7 +816,7 @@ private struct PaywallPlanCard: View {
     }
 }
 
-private struct AboutSnapPoseSheet: View {
+private struct AboutPosingSheet: View {
     let appVersion: String
     let buildNumber: String
     @Environment(\.dismiss) private var dismiss
@@ -775,7 +824,7 @@ private struct AboutSnapPoseSheet: View {
     var body: some View {
         VStack(spacing: AIPoseSpacing.lg) {
             Capsule().fill(AIPoseColor.subtext.opacity(0.3)).frame(width: 36, height: 4).padding(.top, AIPoseSpacing.sm)
-            Text("Snap Pose")
+              Text("posing")
                 .font(.headline.bold())
                 .padding(.horizontal, AIPoseSpacing.lg)
                 .padding(.vertical, AIPoseSpacing.md)
@@ -783,11 +832,11 @@ private struct AboutSnapPoseSheet: View {
                 .clipShape(RoundedRectangle(cornerRadius: 12))
                 .overlay(RoundedRectangle(cornerRadius: 12).stroke(AIPoseColor.foreground, lineWidth: 2))
                 .shadow(color: AIPoseColor.foreground, radius: 0, x: 3, y: 3)
-            Text("About Snap Pose").font(.title2.bold())
+              Text("About posing").font(.title2.bold())
             Text("Strike the pose. Snap the moment.")
-            Text("Snap Pose v\(appVersion) (Build \(buildNumber))")
+              Text("posing v\(appVersion) (Build \(buildNumber))")
                 .font(.subheadline.weight(.semibold))
-            Text("© 2026 Snap Pose. All rights reserved.")
+              Text("© 2026 posing. All rights reserved.")
                 .font(.footnote)
                 .foregroundStyle(AIPoseColor.subtext)
             Text("Credits and open-source licenses are available in the production app bundle.")
@@ -797,7 +846,7 @@ private struct AboutSnapPoseSheet: View {
             Button("Close") { dismiss() }
                 .buttonStyle(NeoButtonStyle(fill: AIPoseColor.surface))
                 .frame(minHeight: 44)
-                .accessibilityLabel("Close About Snap Pose")
+                  .accessibilityLabel("Close About posing")
             Spacer(minLength: 0)
         }
         .padding(AIPoseSpacing.lg)

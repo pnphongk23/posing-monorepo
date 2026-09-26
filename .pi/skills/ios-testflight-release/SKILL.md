@@ -15,7 +15,7 @@ for review, or deploy the backend.
 Real successful TestFlight upload for sanity-checking your own output (never
 reuse as a value):
 
-- iOS marketing `1.0`, build `3`, bundle `camerapose.app`
+- iOS marketing `1.0`, build `3`, bundle `posing.camera.app` (keychain item names below are local and unchanged)
 - `UPLOAD SUCCEEDED`; Delivery UUID: `1a7eb5d5-2b1b-46d8-b922-18c3b1a61749`
 - Transfer: `10,012,231 bytes in 0.043s`
 - IPA SHA-256: `f456318e1e20ee31e757acc598905bde835c8b31cd563441060eff74a2013c79`

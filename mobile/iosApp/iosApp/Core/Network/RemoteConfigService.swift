@@ -3,6 +3,7 @@ import Foundation
 /// Firebase Remote Config resolution with bounded timeout and config fallback.
 enum RemoteConfigService {
     static let defaultURL = "https://pose-extract-server-production.up.railway.app"
+    static let accountEnabledKey = "account_enabled"
 
     enum ResolutionSource: String, Sendable {
         case `default`, cache, fetch
@@ -23,6 +24,25 @@ enum RemoteConfigService {
     /// Applies resolved endpoint to [AppConfig] — call after startup gate completes.
     static func apply(_ resolution: Resolution) {
         AppConfig.shared.applyEndpoint(resolution.url)
+    }
+
+    static func parseBoolean(raw: String?) -> Bool? {
+        guard let value = raw?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() else {
+            return nil
+        }
+        switch value {
+        case "true", "1", "yes": return true
+        case "false", "0", "no": return false
+        default: return nil
+        }
+    }
+
+    static func resolveAccountEnabled(cachedRaw: String?, fetchedRaw: String?) -> Bool {
+        parseBoolean(raw: fetchedRaw) ?? parseBoolean(raw: cachedRaw) ?? false
+    }
+
+    static func applyAccountEnabled(_ enabled: Bool) {
+        AppConfig.shared.applyAccountFeatureEnabled(enabled)
     }
 
     /// Validates RevenueCat public SDK key from Info.plist; rejects placeholders.

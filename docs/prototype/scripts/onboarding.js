@@ -1,6 +1,6 @@
 /* docs/prototype/scripts/onboarding.js */
 /**
- * AI Pose Onboarding Engine
+ * posing Onboarding Engine
  * Handles multi-stage interactive onboarding, interest personalization,
  * live pose alignment simulation, permission priming, and local storage state.
  */

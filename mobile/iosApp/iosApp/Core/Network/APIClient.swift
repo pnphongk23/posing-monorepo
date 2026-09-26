@@ -101,6 +101,63 @@ struct APIClient: Sendable {
         }
     }
 
+    /// Email + password sign-in (PLAN §4). Mirrors `exchangeSession`, but runs without the
+    /// 401-refresh retry: a sign-in 401 is `INVALID_CREDENTIALS`, not an expired access token, so
+    /// letting it fall into the refresh cycle would clear a real session on a wrong password.
+    func signInWithPassword(email: String, password: String) async throws {
+        let body = try JSONEncoder().encode(EmailSignInRequest(email: email, password: password))
+        let (data, _) = try await performRequest(
+            path: "/api/auth/email/signin",
+            method: "POST",
+            query: [],
+            body: body,
+            contentType: "application/json",
+            acceptedStatus: [200],
+            allowRefresh: false
+        )
+        let response = try decoder.decode(EmailSignInResponse.self, from: data)
+        await boundary.saveCredentials(
+            SessionCredentials(accessToken: response.accessToken, refreshToken: response.refreshToken)
+        )
+    }
+
+    /// Apple sign-in sends the raw nonce paired with Apple's hashed request nonce. Like password
+    /// sign-in, a 401 is an auth failure and must not enter the refresh cycle.
+    func signInWithApple(identityToken: String, nonce: String, fullName: String?) async throws {
+        let body = try JSONEncoder().encode(AppleSignInRequest(
+            identityToken: identityToken,
+            nonce: nonce,
+            fullName: fullName
+        ))
+        let (data, _) = try await performRequest(
+            path: "/api/auth/apple/signin",
+            method: "POST",
+            query: [],
+            body: body,
+            contentType: "application/json",
+            acceptedStatus: [200],
+            allowRefresh: false
+        )
+        let response = try decoder.decode(AppleSignInResponse.self, from: data)
+        await boundary.saveCredentials(
+            SessionCredentials(accessToken: response.accessToken, refreshToken: response.refreshToken)
+        )
+    }
+
+    /// Account deletion succeeds only on 204. Credential ownership stays with the caller so a
+    /// failed delete cannot accidentally sign out the user.
+    func deleteAccount() async throws {
+        _ = try await performRequest(
+            path: "/api/account",
+            method: "DELETE",
+            query: [],
+            body: nil,
+            contentType: nil,
+            acceptedStatus: [204],
+            allowRefresh: false
+        )
+    }
+
     func exchangeSession(code: String) async throws {
         let body = try JSONEncoder().encode(SessionExchangeRequest(code: code))
         let (data, _) = try await request(

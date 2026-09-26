@@ -1,0 +1,76 @@
+# Email/password sign-in — submit-response states (S3 verification).
+#
+# Needs the live backend route `POST /api/auth/email/signin`. It uses ONLY a throwaway email
+# passed by env; it never touches a real account, so it cannot consume a real account's
+# per-email limiter bucket.
+#
+# Run (never reuse the output dir across runs):
+#   S3_EMAIL='s3-probe-nobody@example.com' S3_PASSWORD='definitely-not-the-password' \
+#   S3_SHOT_NAME=01-wrong-password-error S3_EXPECTED_COPY='Incorrect email or password.' \
+#   S3_OUT=/tmp/s3-err-401 \
+#   ~/.maestro/bin/maestro test -e S3_EMAIL="$S3_EMAIL" -e S3_PASSWORD="$S3_PASSWORD" \
+#     -e S3_SHOT_NAME="$S3_SHOT_NAME" -e S3_EXPECTED_COPY="$S3_EXPECTED_COPY" \
+#     scripts/maestro/email-signin-errors.yaml \
+#     --device 5CD6001E-54E4-4EE2-AA20-F22DEA07F84C --test-output-dir "$S3_OUT"
+#
+# The rate-limited run reuses the same file with the same throwaway email after its per-email
+# bucket has been exhausted: S3_SHOT_NAME=01-rate-limited-error \
+# S3_EXPECTED_COPY='Too many attempts. Try again in a few minutes.'
+#
+# BUDGET: each run costs ONE real sign-in attempt against the throwaway email's bucket AND one
+# unit of the shared per-IP bucket (30 per 15 min, shared with every other caller on this IP).
+appId: posing.camera.app
+---
+- launchApp:
+    clearState: true
+- waitForAnimationToEnd
+- tapOn:
+    text: "Continue"
+    optional: true
+- extendedWaitUntil:
+    visible:
+      id: "poses.open-search"
+    timeout: 20000
+- waitForAnimationToEnd
+
+- tapOn:
+    text: "Open Settings"
+- waitForAnimationToEnd
+- tapOn:
+    text: "Open Account"
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: ".*Signed out.*"
+    timeout: 10000
+- tapOn:
+    id: "signin.emailEntry"
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible:
+      id: "signin.email"
+    timeout: 10000
+- waitForAnimationToEnd
+
+- tapOn:
+    id: "signin.email"
+- inputText: "${S3_EMAIL}"
+# `.next` return key advances focus to the password field.
+- pressKey: Enter
+- inputText: "${S3_PASSWORD}"
+- waitForAnimationToEnd
+
+# Submit and wait for the rendered error region. `signin.error` is the FeatureStateView the sheet
+# shows for a failed submit; a missing error region fails the flow (never silently pass).
+- tapOn:
+    id: "signin.submit"
+- extendedWaitUntil:
+    visible:
+      id: "signin.error"
+    timeout: 25000
+- waitForAnimationToEnd
+- takeScreenshot: ${S3_SHOT_NAME}
+# The contracted copy for this response code must be the one actually rendered.
+- assertVisible: "${S3_EXPECTED_COPY}"
+# The CTA must come back so the user can retry (the in-flight state must not stick).
+- assertVisible:
+    id: "signin.submit"

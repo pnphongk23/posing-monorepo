@@ -11,7 +11,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Snap Pose</string>
+	<string>posing</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -19,7 +19,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>Snap Pose</string>
+	<string>posing</string>
 	<key>CFBundlePackageType</key>
 	<string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
 	<key>CFBundleShortVersionString</key>
@@ -38,7 +38,7 @@
 		</dict>
 	</array>
 	<key>CFBundleVersion</key>
-	<string>12</string>
+	<string>14</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>LSRequiresIPhoneOS</key>
@@ -46,7 +46,7 @@
 	<key>NSCameraUsageDescription</key>
 	<string>Capture photos for pose comparison.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
-	<string>AI Pose needs access to save your captured poses to Photos.</string>
+	<string>posing needs access to save your captured poses to Photos.</string>
 	<key>RevenueCatPublicSDKKey</key>
 	<string>$(REVENUECAT_PUBLIC_SDK_KEY)</string>
 	<key>UIApplicationSceneManifest</key>

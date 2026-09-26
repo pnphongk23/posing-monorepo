@@ -1,10 +1,8 @@
-# App Icon Check — Snap Pose 1.0
+# App Icon Check — posing 1.0
 
-> **Lane:** `app-store-publish-prep` · **Status:** VERIFIED (kỹ thuật) — QA thị giác chờ PO/UCP
-> **Baseline:** HEAD `49a2eb3`, staged=0
-> **File gốc:** `mobile/iosApp/iosApp/Assets.xcassets/AppIcon.appiconset/`
+File gốc: `mobile/iosApp/iosApp/Assets.xcassets/AppIcon.appiconset/`
 
-## 1. Kết quả verify tự động (2026-08-26 — Bàng Thống chạy `sips`/`ls`/`plutil`)
+## 1. Kết quả verify tự động (`sips`/`ls`/`plutil`)
 
 | Kiểm tra | Kết quả | Bằng chứng |
 | --- | --- | --- |

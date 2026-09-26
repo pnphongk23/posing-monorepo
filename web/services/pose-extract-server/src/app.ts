@@ -11,9 +11,10 @@ import { createCommunityRoutes } from "./routes/communityRoutes";
 import { createAdminCommunityRoutes } from "./routes/adminCommunityRoutes";
 import { createJobStatusRoutes } from "./routes/jobStatusRoutes";
 import { createAccountAuthMiddleware } from "./middleware/accountAuth";
+import { createAuthRateLimitMiddleware } from "./middleware/authRateLimit";
 import { PendingAuthStore } from "./services/pendingAuthStore";
 import type { ExtractionJobStore } from "./db/extractionJobStore";
-import { createUploadUrl } from "./services/r2Storage";
+import { createUploadUrl, deleteObject } from "./services/r2Storage";
 import { AppError } from "./services/errors";
 import type { KeyPoolManager } from "./services/keyPoolManager";
 import type { KeyStore } from "./services/keyStore";
@@ -21,6 +22,8 @@ import type { PoseStore } from "./db/communityStore";
 import type { AccountStore } from "./db/accountStore";
 import type { SavedStore } from "./db/savedStore";
 import { createAccountAuthRoutes } from "./routes/accountAuthRoutes";
+import { createAccountRoutes } from "./routes/accountRoutes";
+import { authRateLimitFromEnv } from "./config/env";
 import { createSavedRoutes } from "./routes/savedRoutes";
 import { logger } from "./utils/logger";
 import { sanitizeError } from "./utils/sanitizeError";
@@ -62,10 +65,18 @@ interface CreateAppOptions {
   accountStore?: AccountStore;
   supabaseUrl?: string;
   supabaseAnonKey?: string;
+  supabaseServiceRoleKey?: string;
   supabaseJwtKeyId?: string;
+  r2PublicUrl?: string;
   backendPublicUrl?: string;
   pendingAuthStore?: PendingAuthStore;
   savedStore?: SavedStore;
+  authRateLimitWindowMs?: number;
+  authRateLimitMaxPerEmail?: number;
+  authRateLimitMaxPerIp?: number;
+  fetchImpl?: typeof fetch;
+  fetchJwks?: typeof fetch;
+  deleteObject?: typeof deleteObject;
 }
 
 export function createCommunityExtractPoseImage(options: CreateAppOptions): ExtractPoseImage | null {
@@ -103,6 +114,7 @@ export function createCommunityExtractPoseImage(options: CreateAppOptions): Extr
   const app = express();
   const startedAtMs = options.startedAtMs ?? Date.now();
   const communityExtractPoseImage = createCommunityExtractPoseImage(options);
+  const envRateLimit = authRateLimitFromEnv();
 
   // Railway sits behind at least one reverse proxy hop.
   app.set("trust proxy", 1);
@@ -137,7 +149,25 @@ export function createCommunityExtractPoseImage(options: CreateAppOptions): Extr
         backendPublicUrl: options.backendPublicUrl,
         pendingAuthStore: options.pendingAuthStore,
         accountStore: options.accountStore,
-        keyId: options.supabaseJwtKeyId
+        keyId: options.supabaseJwtKeyId,
+        authRateLimitWindowMs: options.authRateLimitWindowMs ?? envRateLimit.windowMs,
+        authRateLimitMaxPerEmail: options.authRateLimitMaxPerEmail ?? envRateLimit.maxPerEmail,
+        authRateLimitMaxPerIp: options.authRateLimitMaxPerIp ?? envRateLimit.maxPerIp,
+        fetchImpl: options.fetchImpl,
+        fetchJwks: options.fetchJwks
+      }));
+      app.delete("/api/account", createAccountAuthMiddleware({
+        supabaseUrl: options.supabaseUrl,
+        keyId: options.supabaseJwtKeyId ?? "61218C19-FDB0-498D-B773-CEBE34CBF90A",
+        accountStore: options.accountStore,
+        fetchJwks: options.fetchJwks
+      }), createAccountRoutes({
+        supabaseUrl: options.supabaseUrl,
+        serviceRoleKey: options.supabaseServiceRoleKey,
+        r2PublicUrl: options.r2PublicUrl,
+        accountStore: options.accountStore,
+        fetchImpl: options.fetchImpl,
+        deleteObject: options.deleteObject
       }));
       app.get("/api/account/me", createAccountAuthMiddleware({
         supabaseUrl: options.supabaseUrl,

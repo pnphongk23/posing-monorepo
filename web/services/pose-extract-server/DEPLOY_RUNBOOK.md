@@ -240,8 +240,71 @@ If `prepare:false` **plus** loop-level resilience (A + C) does not stop the cras
 - **Out of scope for this fix:** a worker supervisor / separate Railway service (explicitly deferred per frozen plan; escalate if evidence later shows `wait -n` is unsafe).
 - **Fallback only (not in this deploy):** switching the production `DATABASE_URL` to the Supabase session pooler / direct DB — only if `prepare:false` + loop containment is insufficient, and only with lead approval.
 
+## 6. Account deletion + Sign in with Apple prerequisites
+
+**Status: REQUIRED BEFORE DEPLOY — CURRENTLY UNPROVISIONED.** Every item below is unverified or absent as of 260918. Deploying the current source without them does **not** break the service: the new code fails closed. But it also does not deliver the feature, so do not report account deletion or Apple sign-in as working until each item is confirmed.
+
+### 6a. `SUPABASE_SERVICE_ROLE_KEY` (server-only)
+
+Required by `DELETE /api/account`, which removes the Supabase Auth user through the Admin REST API (`DELETE {SUPABASE_URL}/auth/v1/admin/users/{id}`) before purging application data.
+
+| Field | Value |
+| --- | --- |
+| Where | Railway service variable (`c4350044-7a2f-4d48-9d37-f6ecb665ba29`, environment `production`) **and** the operator's local `web/services/pose-extract-server/.env` |
+| Value | The Supabase **service_role** key for project `jqvqsxzcbstscvkhizkw`. Never the anon key. |
+| Absent today? | Yes. `.env.example` documents the variable; the local `.env` and the Railway service do not yet set it. |
+
+Rules:
+
+- Server-only. Never ship it to a client, never add it to an `.env` file that is committed, never log it, never echo it in a response or a query string.
+- Optional by design so a misconfigured deploy still boots. When it is absent, `DELETE /api/account` answers `503 {"error":{"code":"AUTH_PENDING_VALIDATION","message":"Account deletion is pending runtime validation"}}` and the middleware in front of the route still answers `401` to an unauthenticated caller. That 503 is the intended safety property, not a bug — treat a live 503 as "key not provisioned yet".
+
+### 6b. Supabase Auth — Apple provider
+
+The backend exchanges the Apple identity token through `POST {SUPABASE_URL}/auth/v1/token?grant_type=id_token` using the existing **anon** key. For that grant to accept our tokens, the Supabase project must have the Apple provider enabled with our bundle identifier as an Authorized Client ID.
+
+| Field | Value |
+| --- | --- |
+| Provider | Apple, enabled for project `jqvqsxzcbstscvkhizkw` |
+| Authorized Client ID | `posing.camera.app` (the iOS `PRODUCT_BUNDLE_IDENTIFIER` in `mobile/iosApp/project.yml`) |
+| Absent today? | Yes — not configured, and not verifiable from this repository. |
+
+The `id_token` grant is marked **experimental** in the Supabase Auth OpenAPI. The nonce contract is the known trap: Apple signs the **SHA-256 hex** of the nonce into the identity token while Supabase expects the **raw** nonce. The client sends the hex form to Apple and the raw form to us; the server forwards the raw value unmodified. Sending the hashed form produces a `Nonces mismatch` rejection (supabase/auth issue #2378).
+
+### 6c. Apple Developer / App Store Connect
+
+| Field | Value |
+| --- | --- |
+| Entitlement | `com.apple.developer.applesignin` = `Default` — file `mobile/iosApp/iosApp/iosApp.entitlements`, wired via `CODE_SIGN_ENTITLEMENTS` in `project.yml` |
+| Capability | Sign in with Apple must be enabled on the App ID for `posing.camera.app` |
+| Team | `878758XF68` (automatic signing) |
+| Absent today? | The entitlement file and build wiring exist and build locally. The **provisioning** (App ID capability + profile) is an operator/portal action and is unverified. |
+
+A local `xcodebuild` pass proves the seam compiles and the unit tests hold; it does **not** prove the live handshake or the live Supabase exchange. Those stay unverified until 6b and 6c are provisioned and a real device/sandbox Apple ID completes a sign-in.
+
+### 6d. Post-deploy verification (run only after 6a-6c)
+
+Substitute `<PUBLIC_HOST>`; never print secrets.
+
+```bash
+# 1. Route is mounted and the auth boundary holds: MUST be 401, not 404 and not 503.
+curl -i -X DELETE https://<PUBLIC_HOST>/api/account
+
+# 2. With a real signed-in access token and no service-role key: MUST be 503 AUTH_PENDING_VALIDATION.
+#    After 6a is provisioned the same call MUST be 204 with an empty body.
+curl -i -X DELETE https://<PUBLIC_HOST>/api/account -H "Authorization: Bearer <ACCESS_TOKEN>"
+
+# 3. Apple exchange: a POST with a real identity token MUST return 200 with
+#    { accessToken, refreshToken, account } — the same body shape as /api/auth/email/signin.
+```
+
+Expected statuses are asserted by `src/routes/accountRoutes.test.ts` and `src/routes/accountAuthRoutes.test.ts`; the curl calls above confirm the deployment, not the code.
+
+---
+
 ## Related
 
+- Account deletion / Apple sign-in prerequisites: section 6 above.
 - Source fix: `src/db/connection.ts` (`prepare: false`), `src/worker/worker-loop.ts` (bounded retry loop), `src/worker/worker-main.ts` (wires loop + SIGINT/SIGTERM shutdown).
 - Regression tests: `src/db/connection.test.ts` (`prepare: false`), `src/worker/worker-loop.test.ts` (containment/backoff/reset/shutdown predicate, log sanitization).
 - Auth/volume ops: `docs/s1-auth-runbook.md` (same combined API+worker container, `wait -n` CMD unchanged).

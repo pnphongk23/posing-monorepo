@@ -41,17 +41,6 @@ function decodePart(value: string): unknown {
   return JSON.parse(Buffer.from(value, "base64url").toString("utf8"));
 }
 
-function displayNameFromClaims(claims: JwtClaims, sub: string): string {
-  const metadata = claims.user_metadata;
-  if (metadata && typeof metadata === "object") {
-    const candidate = (metadata as Record<string, unknown>).full_name ?? (metadata as Record<string, unknown>).name;
-    if (typeof candidate === "string" && candidate.trim()) return candidate.trim();
-  }
-  if (typeof claims.name === "string" && claims.name.trim()) return claims.name.trim();
-  if (typeof claims.email === "string" && claims.email.trim()) return claims.email.trim();
-  return sub;
-}
-
 async function verifyJwt(token: string, options: AccountAuthOptions): Promise<JwtClaims> {
   const parts = token.split(".");
   if (parts.length !== 3) throw new Error("malformed token");
@@ -90,7 +79,12 @@ export function createAccountAuthMiddleware(options: AccountAuthOptions) {
     if (!match) return unauthorized(res);
     try {
       const claims = await verifyJwt(match[1], options);
-      req.account = await options.accountStore.upsert({ id: claims.sub as string, displayName: displayNameFromClaims(claims, claims.sub as string) });
+      const account = await options.accountStore.getById(claims.sub as string);
+      if (!account) {
+        unauthorized(res);
+        return;
+      }
+      req.account = account;
       next();
     } catch {
       unauthorized(res);

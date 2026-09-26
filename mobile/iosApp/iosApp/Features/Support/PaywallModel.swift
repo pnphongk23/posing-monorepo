@@ -148,16 +148,27 @@ final class PaywallModel: ObservableObject {
 
         switch await signInAction.run() {
         case .succeeded:
-            isSignedIn = await boundary.hasStoredSession()
-            if isSignedIn {
-                await loadPlans()
-            } else {
-                phase = .signInRequired
-            }
+            await adoptSignedInSession()
         case .cancelled:
             break
         case .failed(let text):
             authError = text
+        }
+    }
+
+    /// Email sign-in seam (PLAN §4): the sheet signs in through `SessionBoundary`; when it reports
+    /// success, the paywall re-checks the same boundary and lands in the same isSignedIn/loadPlans()
+    /// outcome as the Google path. Call-site only — the phase machine is untouched.
+    func resumeAfterEmailSignIn() async {
+        await adoptSignedInSession()
+    }
+
+    private func adoptSignedInSession() async {
+        isSignedIn = await boundary.hasStoredSession()
+        if isSignedIn {
+            await loadPlans()
+        } else {
+            phase = .signInRequired
         }
     }
 

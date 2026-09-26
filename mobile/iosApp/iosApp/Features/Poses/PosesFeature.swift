@@ -324,7 +324,6 @@ enum PoseGridMetrics {
 
 struct PosesScreen: View {
     @StateObject var model: PosesViewModel
-    @ObservedObject private var purchaseState = RevenueCatAdapter.shared
     var onTryPose: (NativePose) -> Void = { _ in }
     /// Lets `AppFeatureRoot` hide the dock's active pill while the Search overlay is up: Search is
     /// not a tab, and `reference/search-blank.png` shows both dock items plain grey.
@@ -390,14 +389,6 @@ struct PosesScreen: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .accessibilityAddTraits(.isHeader)
 
-            if purchaseState.lastSnapshot.state != .entitled {
-                NavigationLink(destination: PaywallScreen()) {
-                    PosesHeaderIconLabel(systemImage: "crown.fill", fill: AIPoseColor.accentYellow)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Upgrade to Premium")
-            }
-
             Button { setShowsSearch(true) } label: {
                 PosesHeaderIconLabel(systemImage: "magnifyingglass")
             }
@@ -405,11 +396,13 @@ struct PosesScreen: View {
             .accessibilityLabel("Search")
             .accessibilityIdentifier("poses.open-search")
 
-            NavigationLink(destination: SavedPosesScreen(model: model, onTryPose: onTryPose)) {
-                PosesHeaderIconLabel(systemImage: "bookmark.fill")
+            if AppConfig.shared.isAccountFeatureEnabled {
+                NavigationLink(destination: SavedPosesScreen(model: model, onTryPose: onTryPose)) {
+                    PosesHeaderIconLabel(systemImage: "bookmark.fill")
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Open Saved poses")
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Open Saved poses")
 
             NavigationLink(destination: SettingsScreen(posesModel: model, onTryPose: onTryPose)) {
                 PosesHeaderIconLabel(systemImage: "gearshape.fill")
@@ -576,6 +569,7 @@ struct PoseGrid: View {
                     PoseCard(pose: pose, aspectRatio: PoseGridMetrics.aspectRatio(forRow: index / 2))
                 }
                 .buttonStyle(.plain)
+                .accessibilityIdentifier(index == 0 ? "poses.first-card" : "poses.card.\(pose.id)")
             }
         }
     }
@@ -597,7 +591,6 @@ struct PoseDetailScreen: View {
     @ObservedObject var model: PosesViewModel
     var onTryPose: (NativePose) -> Void
     @State private var isSaved: Bool
-    @State private var showsPaywall = false
     @State private var pendingSignIn: SignInIntent?
     /// Report §3.6 (`pose-detail.html` unavailable state): set only by the definitive
     /// `poseNotFound` signal from `PosesViewModel.confirmPublished` — a stale/deleted pose renders
@@ -624,7 +617,6 @@ struct PoseDetailScreen: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(AIPoseColor.background)
         .neoHiddenNavigationBar()
-        .sheet(isPresented: $showsPaywall) { PaywallScreen() }
         // Saving is account-scoped, so a guest is asked to sign in and the interrupted save
         // resumes once — never silently dropped, never replayed later (FEAT-013 sign-in gating).
         .signInPrompt($pendingSignIn) { intent in
@@ -649,21 +641,17 @@ struct PoseDetailScreen: View {
                         Label("\(index + 1). \(step)", systemImage: "sparkles")
                     }
                     HStack(spacing: AIPoseSpacing.md) {
-                        Button { Task { await toggleBookmark() } } label: {
-                            Label(isSaved ? "Saved" : "Save pose", systemImage: isSaved ? "bookmark.fill" : "bookmark")
-                        }.buttonStyle(NeoButtonStyle(fill: isSaved ? AIPoseColor.accentYellow : AIPoseColor.surface))
-                        Button {
-                            switch poseTryPoseDestination(
-                                hasPremiumAccess: RevenueCatAdapter.shared.lastSnapshot.state == .entitled
-                            ) {
-                            case .camera:
-                                onTryPose(pose)
-                            case .paywall:
-                                showsPaywall = true
-                            }
-                        } label: {
-                            Label("Use this pose", systemImage: "camera")
-                        }.buttonStyle(NeoButtonStyle())
+                        if AppConfig.shared.isAccountFeatureEnabled {
+                            Button { Task { await toggleBookmark() } } label: {
+                                Label(isSaved ? "Saved" : "Save pose", systemImage: isSaved ? "bookmark.fill" : "bookmark")
+                            }.buttonStyle(NeoButtonStyle(fill: isSaved ? AIPoseColor.accentYellow : AIPoseColor.surface))
+                        }
+                          Button {
+                              routeTryPoseToCamera(pose, onTryPose: onTryPose)
+                          } label: {
+                              Label("Use this pose", systemImage: "camera")
+                          }
+                          .buttonStyle(NeoButtonStyle())
                     }
                 }.padding()
             }
@@ -715,6 +703,7 @@ struct PoseDetailScreen: View {
     private static let heroCardCornerRadius: CGFloat = 14
 
     private func toggleBookmark() async {
+        guard AppConfig.shared.isAccountFeatureEnabled else { return }
         let next = !isSaved
         guard await boundary.hasStoredSession() else {
             pendingSignIn = .savePose
@@ -730,13 +719,8 @@ struct PoseDetailScreen: View {
     }
 }
 
-enum PoseTryPoseDestination: Equatable {
-    case camera
-    case paywall
-}
-
-func poseTryPoseDestination(hasPremiumAccess: Bool) -> PoseTryPoseDestination {
-    hasPremiumAccess ? .camera : .paywall
+func routeTryPoseToCamera(_ pose: NativePose, onTryPose: (NativePose) -> Void) {
+    onTryPose(pose)
 }
 
 // MARK: - Search
@@ -1096,38 +1080,42 @@ struct SavedPosesScreen: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        Group {
-            // The stage decision is pure (`SavedSurfaceStage.resolve`) so the signed-in states that
-            // `GET /api/me/saved` returns 401 for in the parity rig remain verifiable in unit tests.
-            switch SavedSurfaceStage.resolve(isSessionResolved: session.isResolved, isSignedIn: session.isSignedIn) {
-            case .resolvingSession:
-                savedResolvingSession
-            case .signInRequired:
-                savedSignInRequired
-            case .list:
-                PoseResultsList(
-                    model: model,
-                    onTryPose: onTryPose,
-                    context: .saved,
-                    // `saved-list.html` `Browse Community` returns to the published Poses collection;
-                    // this screen is always pushed, so dismissal is the only honest route there.
-                    onBrowseCommunity: { dismiss() }
-                )
-                .onAppear {
-                    model.filter = .saved
-                    Task { await model.load() }
+        if AppConfig.shared.isAccountFeatureEnabled {
+            Group {
+                // The stage decision is pure (`SavedSurfaceStage.resolve`) so the signed-in states that
+                // `GET /api/me/saved` returns 401 for in the parity rig remain verifiable in unit tests.
+                switch SavedSurfaceStage.resolve(isSessionResolved: session.isResolved, isSignedIn: session.isSignedIn) {
+                case .resolvingSession:
+                    savedResolvingSession
+                case .signInRequired:
+                    savedSignInRequired
+                case .list:
+                    PoseResultsList(
+                        model: model,
+                        onTryPose: onTryPose,
+                        context: .saved,
+                        // `saved-list.html` `Browse Community` returns to the published Poses collection;
+                        // this screen is always pushed, so dismissal is the only honest route there.
+                        onBrowseCommunity: { dismiss() }
+                    )
+                    .onAppear {
+                        model.filter = .saved
+                        Task { await model.load() }
+                    }
                 }
             }
+            // R3: the session-resolve, sign-in-gate and non-loaded list states are single short cards;
+            // without a top-aligned expander they centre in the pushed view instead of anchoring under
+            // the navigation bar. A loaded `PoseResultsList` (ScrollView) still fills the frame.
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .navigationTitle("Saved poses")
+            .task { session.start() }
+            // A successful sign-in flips `SessionPresenceModel` through the boundary's `.signedIn`
+            // event, which mounts the list and loads it — no explicit resume needed here.
+            .signInPrompt($pendingSignIn)
+        } else {
+            EmptyView()
         }
-        // R3: the session-resolve, sign-in-gate and non-loaded list states are single short cards;
-        // without a top-aligned expander they centre in the pushed view instead of anchoring under
-        // the navigation bar. A loaded `PoseResultsList` (ScrollView) still fills the frame.
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .navigationTitle("Saved poses")
-        .task { session.start() }
-        // A successful sign-in flips `SessionPresenceModel` through the boundary's `.signedIn`
-        // event, which mounts the list and loads it — no explicit resume needed here.
-        .signInPrompt($pendingSignIn)
     }
 
     /// `saved-list.html` loading state through the shared component (report §3.8). The card is
@@ -1148,7 +1136,7 @@ struct SavedPosesScreen: View {
             FeatureStateView(
                 tone: .empty,
                 title: "Sign in to view your saved poses",
-                message: "Your saved poses are tied to your account. Continue with Google to keep them synced."
+                message: "Your saved poses are tied to your account. Sign in to keep them synced."
             )
             .padding(.horizontal, PoseSurfaceMetrics.horizontalPadding)
             // The spinner state lives inside the presented sign-in prompt (`SignInPromptModel`),

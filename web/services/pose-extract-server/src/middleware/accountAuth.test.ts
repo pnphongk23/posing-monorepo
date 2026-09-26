@@ -29,7 +29,8 @@ function options(store: AccountStore): Parameters<typeof verifyJwt>[1] {
   return { supabaseUrl: SUPABASE_URL, keyId: KEY_ID, accountStore: store, now: () => 1_700_000_000, fetchJwks: async () => new Response(JSON.stringify({ keys: [jwk] }), { status: 200 }) };
 }
 
-const store = { upsert: async ({ id, displayName }: { id: string; displayName: string }): Promise<AccountRecord> => ({ id, displayName, createdAt: "2026-01-01T00:00:00.000Z" }) } as AccountStore;
+const storedAccount: AccountRecord = { id: "user-a", displayName: "Stored User", createdAt: "2026-01-01T00:00:00.000Z" };
+const store = { getById: async (id: string): Promise<AccountRecord | null> => id === storedAccount.id ? storedAccount : null } as AccountStore;
 
 describe("Account JWT contract (mock JWKS; live runtime Pending-validation)", () => {
   it("accepts valid ES256 token and maps sub to one Account", async () => {
@@ -60,16 +61,24 @@ describe("Account JWT contract (mock JWKS; live runtime Pending-validation)", ()
     expect(response.body).toEqual({ error: { code: "UNAUTHORIZED", message: "Unauthorized" } });
   });
 
-  it("keeps account correlation keyed by sub (cross-account isolation contract)", async () => {
-    const accounts = new Map<string, AccountRecord>();
-    const isolatedStore = { upsert: async (input: { id: string; displayName: string }) => { const account = { ...input, createdAt: "2026-01-01T00:00:00.000Z" }; accounts.set(input.id, account); return account; } } as AccountStore;
+  it("returns 401 for a valid JWT when the account row is missing without upserting", async () => {
+    const upsert = async (): Promise<AccountRecord> => { throw new Error("upsert must not be called"); };
+    const missingStore = {
+      getById: async (): Promise<AccountRecord | null> => null,
+      upsert
+    } as AccountStore;
     const app = express();
-    app.get("/api/account/me", createAccountAuthMiddleware(options(isolatedStore)), (req, res) => res.json({ data: req.account }));
-    const first = await request(app).get("/api/account/me").set("Authorization", `Bearer ${token({ sub: "user-a" })}`);
-    const second = await request(app).get("/api/account/me").set("Authorization", `Bearer ${token({ sub: "user-b" })}`);
-    expect(first.body.data.id).not.toBe(second.body.data.id);
-    expect(accounts.size).toBe(2);
-    expect(accounts.get("user-a")?.id).toBe("user-a");
-    expect(accounts.get("user-b")?.id).toBe("user-b");
+    app.get("/api/account/me", createAccountAuthMiddleware(options(missingStore)), (req, res) => res.json({ data: req.account }));
+    const response = await request(app).get("/api/account/me").set("Authorization", `Bearer ${token()}`);
+    expect(response.status).toBe(401);
+    expect(response.body).toEqual({ error: { code: "UNAUTHORIZED", message: "Unauthorized" } });
+  });
+
+  it("passes the stored account through for an existing row", async () => {
+    const app = express();
+    app.get("/api/account/me", createAccountAuthMiddleware(options(store)), (req, res) => res.json({ data: req.account }));
+    const response = await request(app).get("/api/account/me").set("Authorization", `Bearer ${token()}`);
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ data: storedAccount });
   });
 });

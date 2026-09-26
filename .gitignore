@@ -24,6 +24,8 @@
 # production
 /build
 /.gradle
+*/build
+/mobile/iosApp/build/
 
 # misc
 .DS_Store

@@ -10,8 +10,8 @@ import Foundation
 /// link, i.e. the reported "tap does nothing" symptom. Do not reintroduce that host
 /// without checking it resolves; `SupportDestinationsTests` guards it.
 enum SupportDestinations {
-    static let termsOfService = "https://sites.google.com/view/snappose/terms-of-service"
-    static let privacyPolicy = "https://sites.google.com/view/snappose/privacy-policy"
+    static let termsOfService = "https://sites.google.com/view/posingapp/terms-of-service"
+    static let privacyPolicy = "https://sites.google.com/view/posingapp/privacy-policy"
     /// FEAT-015 `PA-015-03`.
     static let support = "https://forms.gle/sample-aipose-feedback"
 

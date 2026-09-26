@@ -44,14 +44,14 @@ status: active
 
 **Baseline:** `main` @ `ca33cc2585dd62f66999555cf60c93343189efca` (2026-08-30)
 
-**Published scope:** Snap Pose iOS 1.0 — phản ánh trạng thái code trên `main` tại
+**Published scope:** posing iOS 1.0 — phản ánh trạng thái code trên `main` tại
 baseline. Không claim hành vi App Store Connect / production runtime nếu không có
 evidence ASC hoặc báo cáo delivery tương ứng (xem
 [REP-013](../reports/REP-013-backlog-lane-documentation-survey.md)).
 
 ## Scope
 
-Roadmap business cho AI Pose / Snap Pose. North Star:
+Roadmap business cho posing (formerly AI Pose / Snap Pose). North Star:
 
 > Người dùng mới chọn pose, thấy pose trong Camera, chụp ảnh, và xem kết quả.
 

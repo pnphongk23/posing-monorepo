@@ -1,14 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { getEnv, resetEnvCache } from "./env";
+import { authRateLimitFromEnv, getEnv, resetEnvCache } from "./env";
 
 const originalEnv = {
   NODE_ENV: process.env.NODE_ENV,
   PORT: process.env.PORT,
   DATABASE_URL: process.env.DATABASE_URL,
   ADMIN_SECRET: process.env.ADMIN_SECRET,
-  SUPABASE_URL: process.env.SUPABASE_URL,
-  SUPABASE_JWT_KEY_ID: process.env.SUPABASE_JWT_KEY_ID,
+    SUPABASE_URL: process.env.SUPABASE_URL,
+    SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
+    SUPABASE_JWT_KEY_ID: process.env.SUPABASE_JWT_KEY_ID,
   RATE_LIMIT_WINDOW_MS: process.env.RATE_LIMIT_WINDOW_MS,
   RATE_LIMIT_MAX: process.env.RATE_LIMIT_MAX,
   R2_ACCOUNT_ID: process.env.R2_ACCOUNT_ID,
@@ -47,7 +48,7 @@ afterEach(() => {
     process.env.ADMIN_SECRET = originalEnv.ADMIN_SECRET;
   }
 
-  for (const key of ["SUPABASE_URL", "SUPABASE_JWT_KEY_ID"] as const) {
+    for (const key of ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_JWT_KEY_ID"] as const) {
     if (originalEnv[key] === undefined) {
       delete process.env[key];
     } else {
@@ -144,6 +145,23 @@ describe("getEnv", () => {
     expect(env.R2_SECRET_ACCESS_KEY).toBe("prod-secret-access-key");
     expect(env.R2_BUCKET).toBe("prod-pose-bucket");
     expect(env.R2_PUBLIC_URL).toBe("https://cdn.prod.example.com");
+  });
+
+  it("parses the optional server-only Supabase service-role key", () => {
+    const env = getEnv({
+      DATABASE_URL,
+      ADMIN_SECRET: "secret",
+      SUPABASE_URL,
+      SUPABASE_SERVICE_ROLE_KEY: "server-only-key",
+      SUPABASE_JWT_KEY_ID,
+      R2_ACCOUNT_ID: "account-id",
+      R2_ACCESS_KEY_ID: "access-key-id",
+      R2_SECRET_ACCESS_KEY: "secret-access-key",
+      R2_BUCKET: "pose-bucket",
+      R2_PUBLIC_URL: "https://cdn.example.com"
+    });
+
+    expect(env.SUPABASE_SERVICE_ROLE_KEY).toBe("server-only-key");
   });
 
   it("throws on invalid environment variables", () => {
@@ -273,5 +291,72 @@ describe("getEnv", () => {
     expect(() =>
       getEnv({ ...r2BaseOverrides, R2_PUBLIC_URL: "not-a-valid-url" })
     ).toThrowError(/Invalid environment variables/);
+  });
+
+  it("parses optional AUTH_RATE_LIMIT overrides", () => {
+    resetEnvCache();
+    const env = getEnv({
+      ...r2BaseOverrides,
+      AUTH_RATE_LIMIT_WINDOW_MS: "900000",
+      AUTH_RATE_LIMIT_MAX: "10",
+      AUTH_RATE_LIMIT_IP_MAX: "30"
+    });
+
+    expect(env.AUTH_RATE_LIMIT_WINDOW_MS).toBe(900000);
+    expect(env.AUTH_RATE_LIMIT_MAX).toBe(10);
+    expect(env.AUTH_RATE_LIMIT_IP_MAX).toBe(30);
+    resetEnvCache();
+  });
+
+  it("leaves AUTH_RATE_LIMIT overrides undefined by default", () => {
+    resetEnvCache();
+    const env = getEnv(r2BaseOverrides);
+
+    expect(env.AUTH_RATE_LIMIT_WINDOW_MS).toBeUndefined();
+    expect(env.AUTH_RATE_LIMIT_MAX).toBeUndefined();
+    expect(env.AUTH_RATE_LIMIT_IP_MAX).toBeUndefined();
+    resetEnvCache();
+  });
+
+  it("rejects non-positive AUTH_RATE_LIMIT values", () => {
+    expect(() =>
+      getEnv({ ...r2BaseOverrides, AUTH_RATE_LIMIT_MAX: "0" })
+    ).toThrowError(/Invalid environment variables/);
+  });
+
+  describe("authRateLimitFromEnv", () => {
+    it("returns all undefined when nothing is set", () => {
+      expect(authRateLimitFromEnv({})).toEqual({ windowMs: undefined, maxPerEmail: undefined, maxPerIp: undefined });
+    });
+
+    it("parses valid values into the option shape", () => {
+      expect(authRateLimitFromEnv({
+        AUTH_RATE_LIMIT_WINDOW_MS: "900000",
+        AUTH_RATE_LIMIT_MAX: "10",
+        AUTH_RATE_LIMIT_IP_MAX: "30"
+      })).toEqual({ windowMs: 900000, maxPerEmail: 10, maxPerIp: 30 });
+    });
+
+    it("throws on a non-numeric value", () => {
+      expect(() => authRateLimitFromEnv({ AUTH_RATE_LIMIT_MAX: "ten" })).toThrowError(/Invalid environment variables/);
+    });
+
+    it("throws on a non-positive value", () => {
+      expect(() => authRateLimitFromEnv({ AUTH_RATE_LIMIT_IP_MAX: "0" })).toThrowError(/Invalid environment variables/);
+    });
+
+    it("reads from process.env by default without requiring other env vars", () => {
+      const saved = process.env.AUTH_RATE_LIMIT_MAX;
+      process.env.AUTH_RATE_LIMIT_MAX = "7";
+      try {
+        expect(authRateLimitFromEnv().maxPerEmail).toBe(7);
+      } finally {
+        if (saved === undefined) {
+          delete process.env.AUTH_RATE_LIMIT_MAX;
+        } else {
+          process.env.AUTH_RATE_LIMIT_MAX = saved;
+        }
+      }
+    });
   });
 });

@@ -64,10 +64,18 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
         let preFetchCache = isFirebaseConfigured
             ? StartupEndpoint.validate(raw: RemoteConfig.remoteConfig().configValue(forKey: key).stringValue)
             : nil
+        let preFetchAccountRaw = isFirebaseConfigured
+            ? RemoteConfig.remoteConfig().configValue(forKey: RemoteConfigService.accountEnabledKey).stringValue
+            : nil
+        let initialAccountEnabled = RemoteConfigService.resolveAccountEnabled(
+            cachedRaw: preFetchAccountRaw,
+            fetchedRaw: nil
+        )
         let initialSource = preFetchCache != nil ? "cache" : "default"
         AppConfig.shared.applyEndpoint(
             StartupEndpoint.resolve(defaultUrl: defaultUrl, cachedRaw: preFetchCache, fetchedRaw: nil)
         )
+        RemoteConfigService.applyAccountEnabled(initialAccountEnabled)
         showRootViewController()
         logFirstPaint(startedAt: start, endpointSource: initialSource)
 
@@ -78,24 +86,35 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
 
         let latch = StartupLatch()
 
-        // Applies the fetched endpoint and finishes the launch bookkeeping exactly once. The root is
-        // only rebuilt when the fetch actually returns a different endpoint than the one already
-        // applied, which is rare (cache hit/default) and happens moments after launch.
-        let applyFetched: (String?) -> Void = { [weak self] fetchedRaw in
+        // Applies fetched startup values and finishes the launch bookkeeping exactly once. The root
+        // is rebuilt only when the endpoint or account-feature value differs from the cached value.
+        let applyFetched: (String?, String?) -> Void = { [weak self] fetchedRaw, fetchedAccountRaw in
             guard latch.admitFetch() else { return }
             latch.seal()
+
+            let accountEnabledBeforeFetch = AppConfig.shared.isAccountFeatureEnabled
+            let fetchedAccountEnabled = RemoteConfigService.resolveAccountEnabled(
+                cachedRaw: preFetchAccountRaw,
+                fetchedRaw: fetchedAccountRaw
+            )
+            RemoteConfigService.applyAccountEnabled(fetchedAccountEnabled)
+            let accountFeatureChanged = accountEnabledBeforeFetch != AppConfig.shared.isAccountFeatureEnabled
+
             guard let fetched = StartupEndpoint.validate(raw: fetchedRaw) else {
+                if accountFeatureChanged { self?.showRootViewController() }
                 guard latch.claimFinalization() else { return }
                 self?.logEndpointResolved(source: initialSource, startedAt: start)
                 return
             }
-            if fetched != AppConfig.shared.SERVER_BASE_URL {
+
+            let endpointChanged = fetched != AppConfig.shared.SERVER_BASE_URL
+            if endpointChanged {
                 AppConfig.shared.applyEndpoint(fetched)
                 #if DEBUG
                 NSLog("%@", "AIPOSE_PERF endpoint_swapped source=fetch")
                 #endif
-                self?.showRootViewController()
             }
+            if endpointChanged || accountFeatureChanged { self?.showRootViewController() }
             guard latch.claimFinalization() else { return }
             self?.logEndpointResolved(source: "fetch", startedAt: start)
         }
@@ -116,7 +135,10 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
             let fetchedRaw: String? = isSuccess
                 ? remoteConfig.configValue(forKey: key).stringValue
                 : nil
-            applyFetched(fetchedRaw)
+            let fetchedAccountRaw: String? = isSuccess
+                ? remoteConfig.configValue(forKey: RemoteConfigService.accountEnabledKey).stringValue
+                : nil
+            applyFetched(fetchedRaw, fetchedAccountRaw)
         }
     }
 

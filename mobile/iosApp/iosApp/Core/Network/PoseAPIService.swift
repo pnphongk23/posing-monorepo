@@ -50,6 +50,10 @@ struct PoseAPIService: Sendable {
         return try client.decode(AccountSummaryResponse.self, from: data).data
     }
 
+    func deleteAccount() async throws {
+        try await client.deleteAccount()
+    }
+
     func getSavedPoses(page: Int = 1, limit: Int = 20) async throws -> PaginatedResult<CommunityPose> {
         precondition(page >= 1)
         precondition((1...100).contains(limit))

@@ -40,4 +40,22 @@ export class AccountStore {
     `) as AccountRow[];
     return rows[0] ? toAccount(rows[0]) : null;
   }
+
+  async getOwnedMediaLocators(accountId: string): Promise<string[]> {
+    const rows = (await this.db`
+      SELECT media_assets.locator
+      FROM media_assets
+      JOIN poses ON poses.pose_id = media_assets.pose_id
+      WHERE poses.owner_account_id = ${accountId}
+    `) as Array<{ locator: string }>;
+    return rows.map((row) => row.locator);
+  }
+
+  async purgeAccountData(accountId: string): Promise<void> {
+    await this.db.begin(async (transaction) => {
+      await transaction`DELETE FROM saved_entries WHERE account_id = ${accountId}`;
+      await transaction`DELETE FROM poses WHERE owner_account_id = ${accountId}`;
+      await transaction`DELETE FROM accounts WHERE id = ${accountId}`;
+    });
+  }
 }
