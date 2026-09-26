@@ -9,6 +9,7 @@ the [Data contract](./specs/data-contract.md) and [API contract](./specs/api-con
 
 ### Canonical shared references
 
+- [Release Gitflow and Worktree Lifecycle](./specs/release-gitflow.md) — quy trình tách biệt backlog (plan, design) và baseline (cook, test), quy chuẩn tạo nhánh release và merge ngược lại backlog.
 - [Data contract](./specs/data-contract.md) — landing cho data + API (single source of truth).
 - [Product delivery roadmap](./specs/product-delivery-roadmap.md) — thứ tự ưu tiên nghiệp vụ từ First Pose Capture đến Community operations.
 - [Pose Domain Glossary](./specs/pose-domain-glossary.md) — canonical Pose domain model: creation chỉ sau khi extraction `succeeded` (`jobId` → `poseId`), mandatory `ownerAccountId`, ba media role (`original`, `skeleton`, `thumbnail`) non-nullable, lifecycle `local` → `published`, terminology migration map.

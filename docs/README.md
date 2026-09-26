@@ -49,3 +49,12 @@ Frozen ignore list for bounded documentation work:
 `reports/`, `templates/`, and `workflows/`. Do not alter those paths unless a
 task contract explicitly reopens them. Generated Harness index and graph
 artifacts must be rebuilt through the CLI, never hand-edited.
+
+## Release Gitflow & Worktree Lifecycle
+
+The project adheres to a dual-worktree Gitflow strategy for development and releases:
+- **`backlog` worktree (`backlog` branch)**: Planning, UX/UI designs, feature specifications, and architectural documentation.
+- **`baseline` worktree (`main` / baseline lane)**: Implementation (`cook`), test execution, build verification, and release deployment.
+- **Release procedure**: Once a release candidate is approved and published (e.g. submitted to App Store), create branch `release/{version_name}` (e.g. `release/1.0`), then merge `release/{version_name}` back into `backlog` to keep planning tracks synchronized with shipped reality.
+
+Detailed contract: [Release Gitflow Specification](harness/specs/release-gitflow.md).
