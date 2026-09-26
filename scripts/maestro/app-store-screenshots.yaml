@@ -1,0 +1,55 @@
+# Native iOS App Store screenshot capture flow.
+# Run against a fresh Dev build on iPhone 17 Pro Max after applying the 9:41 status bar override:
+#   ~/.maestro/bin/maestro test scripts/maestro/app-store-screenshots.yaml \
+#     --device <SIM_UDID> --test-output-dir /tmp/posing-app-store
+# Screenshots are written to /tmp/posing-app-store/screenshots/.
+appId: posing.camera.app
+---
+- launchApp:
+    clearState: true
+- waitForAnimationToEnd
+- tapOn:
+    text: "Continue"
+    optional: true
+- extendedWaitUntil:
+    visible:
+      id: "poses.open-search"
+    timeout: 20000
+- waitForAnimationToEnd
+- takeScreenshot: 01-poses-community
+
+# Open the first live catalog card; use the detail's current native action label.
+- tapOn:
+    id: "poses.first-card"
+- waitForAnimationToEnd
+- takeScreenshot: 02-pose-detail
+- tapOn:
+    text: "Use this pose"
+- waitForAnimationToEnd
+- takeScreenshot: camera-simulator-no-feed
+- tapOn:
+    text: "Close Camera"
+- waitForAnimationToEnd
+
+# Search uses a live result query so the screenshot shows populated content.
+- tapOn:
+    id: "poses.open-search"
+- waitForAnimationToEnd
+- tapOn:
+    id: "search.field"
+- inputText: "Pose"
+- pressKey: Enter
+- extendedWaitUntil:
+    visible: "[0-9]+ poses?"
+    timeout: 20000
+- waitForAnimationToEnd
+- takeScreenshot: 03-search-results
+- tapOn:
+    id: "search.back"
+- waitForAnimationToEnd
+
+# This Dev install has no gallery fixture or saved captures; keep its actual empty state visible.
+- tapOn:
+    text: "Gallery"
+- waitForAnimationToEnd
+- takeScreenshot: 04-gallery-empty
