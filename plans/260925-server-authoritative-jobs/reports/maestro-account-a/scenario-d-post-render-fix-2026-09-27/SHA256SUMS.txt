@@ -1,0 +1,7 @@
+aa72be949432033ed6e1a0c9f7c5531edb413c4eafdd1aa2e190b86551f50486  plans/260925-server-authoritative-jobs/reports/maestro-account-a/scenario-d-post-render-fix-2026-09-27/scenario-d.yaml
+6a7ce18b0c964d81762fc73f7bc596fda13fef81909bd1b775704b78bcb8c815  plans/260925-server-authoritative-jobs/reports/maestro-account-a/scenario-d-post-render-fix-2026-09-27/preflight.txt
+cb04d67f110174eba509d827074ebc555ea81f178a8c039e4a70e5207b82e666  plans/260925-server-authoritative-jobs/reports/maestro-account-a/scenario-d-post-render-fix-2026-09-27/maestro-output.txt
+5b7aae57f23f5c2e67eac4287bce022d96e807cc64a521d74aef9ba555573286  plans/260925-server-authoritative-jobs/reports/maestro-account-a/scenario-d-post-render-fix-2026-09-27/report.md
+aa58fffa016ca576d66cfbe8b31a61c9fcd8bf9baccf5943b58af3e76779e1e4  plans/260925-server-authoritative-jobs/reports/maestro-account-a/scenario-d-post-render-fix-2026-09-27/preflight-screen.png
+6af38331f155dd6c78b2d261f1ac1b90b0021be6e1be5e97f18f7fddde92fe05  plans/260925-server-authoritative-jobs/reports/maestro-account-a/scenario-d-post-render-fix-2026-09-27/launched-app.png
+7e728dd1bf265e2c4233694713999ffd79ad57db5e96bcbd101105520ec15d89  plans/260925-server-authoritative-jobs/reports/maestro-account-a/scenario-d-post-render-fix-2026-09-27/maestro-artifacts/2026-09-27_161846/screenshot-❌-1790500750331-(scenario-d.yaml).png

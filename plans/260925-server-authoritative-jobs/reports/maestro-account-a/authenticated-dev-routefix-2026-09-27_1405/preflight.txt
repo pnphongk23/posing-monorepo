@@ -1,0 +1,9 @@
+Dev admin: HTTP 200 (https://admin-ui-production-a20c.up.railway.app/admin)
+Dev API health: HTTP 200 (https://pose-extract-server-production.up.railway.app/api/health)
+Target: AIPose-Parity-iPhone13 / 4C1D6E55-2C31-4BD7-9881-F86F21CC53C8
+Lead read-only hierarchy preflight: Poses root with poses.add-pose; no sign-in sheet.
+Run observation: Poses root was visible, but tapping Add Pose caused the sign-in sheet to appear. Flow stopped at the following photo-picker visibility assertion. No sign-in interaction or submit occurred.
+clearState: false
+credential-entry steps: none
+Maestro test invocations: 1
+Maestro test exit: 1

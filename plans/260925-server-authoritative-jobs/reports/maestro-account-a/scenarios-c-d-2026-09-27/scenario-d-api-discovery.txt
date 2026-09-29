@@ -1,0 +1,1 @@
+Account A authenticated pose ID discovery failed; response details withheld.

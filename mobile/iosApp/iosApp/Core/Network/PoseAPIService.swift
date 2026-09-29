@@ -3,10 +3,20 @@ import Foundation
 struct PoseAPIService: Sendable {
     let client: APIClient
 
-    func startPoseExtraction(imageBytes: Data, fileName: String) async throws -> PoseExtractionStartResponse {
+    func startPoseExtraction(imageBytes: Data, fileName: String, draft: PoseDraft? = nil) async throws -> PoseExtractionStartResponse {
+        var fields: [(String, String)] = []
+        if let draft {
+            fields.append(("name", draft.name))
+            for tag in draft.tags {
+                fields.append(("tags", tag))
+            }
+            if let description = draft.description {
+                fields.append(("description", description))
+            }
+        }
         let mimeType = mimeTypeFromFileName(fileName)
         let body = multipartBody(
-            fields: [],
+            fields: fields,
             fileField: "image",
             fileName: fileName,
             mimeType: mimeType,
@@ -25,6 +35,42 @@ struct PoseAPIService: Sendable {
     func getPoseExtractionJob(jobId: String) async throws -> PoseExtractionJobStatus {
         let (data, _) = try await client.request(path: "/api/extract-jobs/\(jobId)")
         return try client.decode(PoseExtractionJobStatus.self, from: data)
+    }
+
+    func listMyExtractJobs(
+        state: String? = nil,
+        cursor: String? = nil,
+        limit: Int = 20
+    ) async throws -> ExtractionJobListResponse {
+        var query = [
+            URLQueryItem(name: "limit", value: String(limit))
+        ]
+        if let state { query.append(URLQueryItem(name: "state", value: state)) }
+        if let cursor { query.append(URLQueryItem(name: "cursor", value: cursor)) }
+        let (data, _) = try await client.request(path: "/api/me/extract-jobs", query: query)
+        return try client.decode(ExtractionJobListResponse.self, from: data)
+    }
+
+    func retryExtractJob(id: String) async throws -> PoseExtractionStartResponse {
+        let (data, _) = try await client.request(
+            path: "/api/me/extract-jobs/\(id)/retry",
+            method: "POST",
+            acceptedStatus: [202]
+        )
+        return try client.decode(PoseExtractionStartResponse.self, from: data)
+    }
+
+    func hideExtractJob(id: String) async throws {
+        _ = try await client.request(
+            path: "/api/me/extract-jobs/\(id)",
+            method: "DELETE",
+            acceptedStatus: [204]
+        )
+    }
+
+    func getGuide(id: String) async throws -> GuidePose {
+        let (data, _) = try await client.request(path: "/api/guides/\(id)")
+        return try client.decode(GuidePoseDetailResponse.self, from: data).data
     }
 
     func getCommunityPoses(

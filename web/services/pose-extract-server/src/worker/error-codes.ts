@@ -1,4 +1,5 @@
 export const WORKER_ERROR_CODES = {
+  sourceMissing: "SOURCE_MISSING",
   providerError: "PROVIDER_ERROR",
   providerQuotaExceeded: "PROVIDER_QUOTA_EXCEEDED",
   providerCredentialsExhausted: "PROVIDER_CREDENTIALS_EXHAUSTED",
@@ -10,5 +11,6 @@ export const WORKER_ERROR_CODES = {
   browserTimeout: "BROWSER_TIMEOUT",
   browserUploadFailed: "BROWSER_UPLOAD_FAILED",
   browserDownloadFailed: "BROWSER_DOWNLOAD_FAILED",
-  browserAuthRequired: "BROWSER_AUTH_REQUIRED"
+  browserAuthRequired: "BROWSER_AUTH_REQUIRED",
+  poseMaterializeFailed: "POSE_MATERIALIZE_FAILED"
 } as const;

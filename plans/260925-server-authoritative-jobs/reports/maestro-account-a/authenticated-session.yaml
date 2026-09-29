@@ -1,0 +1,78 @@
+appId: posing.camera.app
+name: phase-06-account-a-preserve-session-rerun
+---
+- launchApp
+- waitForAnimationToEnd
+- assertVisible:
+    id: poses.jobs
+- tapOn:
+    id: poses.jobs
+- extendedWaitUntil:
+    visible:
+      text: No jobs yet
+    timeout: 30000
+- takeScreenshot: 00-authenticated-jobs
+- tapOn:
+    text: Add pose
+- extendedWaitUntil:
+    visible:
+      id: addPose.photoPicker
+    timeout: 30000
+- tapOn:
+    id: addPose.photoPicker
+- assertVisible:
+    text: server-authoritative-jobs-e2e-pose
+- tapOn:
+    text: server-authoritative-jobs-e2e-pose
+- extendedWaitUntil:
+    visible:
+      id: addPose.nameField
+    timeout: 30000
+- tapOn:
+    id: addPose.nameField
+- inputText: server-authoritative-jobs-e2e-pose
+- assertVisible:
+    id: addPose.nameField
+    text: server-authoritative-jobs-e2e-pose
+- tapOn:
+    id: addPose.tagsField
+- inputText: phase6,e2e
+- assertVisible:
+    id: addPose.nameField
+    text: server-authoritative-jobs-e2e-pose
+- takeScreenshot: 01-pre-submit-name-confirmed
+- tapOn:
+    id: addPose.submitButton
+- extendedWaitUntil:
+    visible:
+      text: Extracting Pose
+    timeout: 120000
+- waitForAnimationToEnd
+- takeScreenshot: 02-processing
+- extendedWaitUntil:
+    visible:
+      text: Pose Ready
+    timeout: 300000
+- waitForAnimationToEnd
+- assertVisible:
+    id: addPose.viewPoseButton
+- takeScreenshot: 03-ready
+- tapOn:
+    id: addPose.viewJobsButton
+- extendedWaitUntil:
+    visible:
+      id: jobs.tab.finish
+    timeout: 30000
+- tapOn:
+    id: jobs.tab.finish
+- assertVisible:
+    text: server-authoritative-jobs-e2e-pose, Ready, View pose
+- takeScreenshot: 04-owner-scoped-job-ready
+- tapOn:
+    text: View pose
+- extendedWaitUntil:
+    visible:
+      text: server-authoritative-jobs-e2e-pose
+    timeout: 30000
+- waitForAnimationToEnd
+- takeScreenshot: 05-pose-detail-media

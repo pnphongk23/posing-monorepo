@@ -1,7 +1,12 @@
 # Plan review summary
 
-Final candidate: plan content sha256 prefix `07101574235649cb` (plan.md + phase-01..06).
-Result: **CLEAR** from both independent lenses in cycle 7 (backend `e31b8e56`, iOS + contract `7302bc42`).
+Reviewed candidate: plan content sha256 prefix `07101574235649cb` (plan.md + phase-01..06 before the 2026-09-26 E2E/deploy directive).
+Result: **CLEAR** from both independent lenses in cycle 7 (backend `e31b8e56`, iOS + contract `7302bc42`). This historical verdict does not assess the later Phase 6 execution requirements below.
+
+## Post-review user directive (2026-09-26)
+- Phase 6 now requires Web checks in Docker, then dev deployment in order `admin-ui` → `pose-extract-server` with health checks.
+- Full iOS unit/integration tests and Maestro mobile E2E must run against dev; the E2E runner uses `codex/gpt-6-luna`.
+- Blockers are escalated immediately to Code Vương. These requirements are recorded in `phase-06-e2e-verification-and-docs.md`; implementation evidence remains pending.
 
 ## Cycle history
 | Cycle | Backend | iOS + contract | Main issues fixed |

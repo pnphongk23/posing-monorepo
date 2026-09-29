@@ -110,4 +110,10 @@ describe("createDatabase / applySchema (Postgres via PGlite)", () => {
     // sessions and rejects prepared statements with PostgresError 26000.
     expect(sql.options.prepare).toBe(false);
   });
+
+  it("applies schema idempotently when executed multiple times", async () => {
+    const sql = await setupDatabase();
+    await expect(applySchema(sql)).resolves.not.toThrow();
+    await expect(applySchema(sql)).resolves.not.toThrow();
+  });
 });

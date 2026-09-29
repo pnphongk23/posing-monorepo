@@ -1,0 +1,6 @@
+
+Waiting for flows to complete...
+[Failed] phase-06-account-a-authenticated-dev-2026-09-27_133218 (22s) (Assertion is false: id: addPose.photoPicker is visible)
+
+1/1 Flow Failed
+

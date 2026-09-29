@@ -1,0 +1,9 @@
+protected_env_mode=600
+dev_admin_http=200
+dev_api_health_http=200
+app_environment=DEV
+app_version=1.0
+app_build=14
+simulator_udid=4C1D6E55-2C31-4BD7-9881-F86F21CC53C8
+signin_http=200 account_me_http=200 jobs_http=200
+tester003_label=true owner_match=true job_match=true pose_match=true status=succeeded ui_label_match=true

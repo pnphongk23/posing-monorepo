@@ -1,0 +1,111 @@
+appId: posing.camera.app
+name: phase-06-account-a-authenticated-dev-2026-09-27_133805
+---
+- launchApp:
+    clearState: false
+- waitForAnimationToEnd
+- assertVisible:
+    id: poses.add-pose
+- tapOn:
+    id: poses.add-pose
+- runFlow:
+    when:
+      visible:
+        id: signin.emailEntry
+    commands:
+      - tapOn:
+          id: signin.emailEntry
+      - assertVisible:
+          id: signin.email
+      - tapOn:
+          id: signin.email
+      - inputText: ${TEST_EMAIL}
+      - tapOn:
+          id: signin.password
+      - inputText: ${TEST_PASSWORD}
+      - tapOn:
+          id: signin.submit
+      - extendedWaitUntil:
+          visible:
+            id: addPose.photoPicker
+          timeout: 60000
+- extendedWaitUntil:
+    visible:
+      id: addPose.photoPicker
+    timeout: 30000
+- tapOn:
+    id: addPose.photoPicker
+- tapOn:
+    point: 25%,25%
+- extendedWaitUntil:
+    visible:
+      text: Change Photo
+    timeout: 30000
+- assertVisible:
+    text: Change Photo
+- extendedWaitUntil:
+    visible:
+      id: addPose.nameField
+    timeout: 30000
+- tapOn:
+    id: addPose.nameField
+- eraseText: 128
+- inputText: server-authoritative-jobs-e2e-pose-account-2026-09-27_133805
+- assertVisible:
+    id: addPose.nameField
+    text: server-authoritative-jobs-e2e-pose-account-2026-09-27_133805
+- tapOn:
+    id: addPose.tagsField
+- eraseText: 128
+- inputText: phase6,e2e
+- assertVisible:
+    id: addPose.tagsField
+    text: phase6,e2e
+- pressKey: Enter
+- assertVisible:
+    text: Change Photo
+- assertVisible:
+    id: addPose.nameField
+    text: server-authoritative-jobs-e2e-pose-account-2026-09-27_133805
+- assertVisible:
+    id: addPose.tagsField
+    text: phase6,e2e
+- assertVisible:
+    id: addPose.submitButton
+    enabled: true
+- takeScreenshot: 01-pre-submit-assertions-passed
+- tapOn:
+    id: addPose.submitButton
+- extendedWaitUntil:
+    visible:
+      text: Extracting Pose
+    timeout: 120000
+- waitForAnimationToEnd
+- takeScreenshot: 02-processing
+- extendedWaitUntil:
+    visible:
+      text: Pose Ready
+    timeout: 300000
+- waitForAnimationToEnd
+- assertVisible:
+    id: addPose.viewPoseButton
+- takeScreenshot: 03-ready
+- tapOn:
+    id: addPose.viewJobsButton
+- extendedWaitUntil:
+    visible:
+      id: jobs.tab.finish
+    timeout: 30000
+- tapOn:
+    id: jobs.tab.finish
+- assertVisible:
+    text: server-authoritative-jobs-e2e-pose-account-2026-09-27_133805, Ready, View pose
+- takeScreenshot: 04-owner-scoped-job-ready
+- tapOn:
+    text: View pose
+- extendedWaitUntil:
+    visible:
+      text: server-authoritative-jobs-e2e-pose-account-2026-09-27_133805
+    timeout: 30000
+- waitForAnimationToEnd
+- takeScreenshot: 05-pose-detail-media

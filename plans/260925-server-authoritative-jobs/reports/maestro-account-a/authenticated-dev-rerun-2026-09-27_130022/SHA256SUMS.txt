@@ -1,0 +1,12 @@
+4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865  plans/260925-server-authoritative-jobs/reports/maestro-account-a/authenticated-dev-rerun-2026-09-27_130022/exit-code.txt
+00ab6f931eda632f41926c69539e7643f02fd986712fbdf5521b18de86694782  plans/260925-server-authoritative-jobs/reports/maestro-account-a/authenticated-dev-rerun-2026-09-27_130022/flow.yaml
+0875994e7e7228ed5235f8882160a4a316de5b590e6f635ddc2ebb238fa0ecce  plans/260925-server-authoritative-jobs/reports/maestro-account-a/authenticated-dev-rerun-2026-09-27_130022/maestro-report.html
+aacae86569179eaca2e14839cb5f821251bc9e3c5d93ae8094300c33ab7a2c41  plans/260925-server-authoritative-jobs/reports/maestro-account-a/authenticated-dev-rerun-2026-09-27_130022/pose-name.txt
+3d3fb32f080ddefb1de6dc970b344435bb43fe0cc412d1b9f7a8efc457fb72ad  plans/260925-server-authoritative-jobs/reports/maestro-account-a/authenticated-dev-rerun-2026-09-27_130022/raw-output.txt
+eacbcba5bbae14ade6f59e5adb3fa9aec715a75c4389908a93f4add433662098  plans/260925-server-authoritative-jobs/reports/maestro-account-a/authenticated-dev-rerun-2026-09-27_130022/report.md
+d6f59392af9162dca9a2c4bcd1eb1efe661126d714e6c5ed73695706f6adfab4  plans/260925-server-authoritative-jobs/reports/maestro-account-a/authenticated-dev-rerun-2026-09-27_130022/screenshot-extraction-failed-13-02.png
+cdd43d1dce5c034cd53b2b0bdd745c64b1cf7558b7148314c3b94f126fa1d6c3  plans/260925-server-authoritative-jobs/reports/maestro-account-a/authenticated-dev-rerun-2026-09-27_130022/screenshots/2026-09-27_130053/ai-(flow).json
+83d07bc68fc7ec0f6d5c59cd37d77a63d95bc94b0cda31ccd855fbe165073d05  plans/260925-server-authoritative-jobs/reports/maestro-account-a/authenticated-dev-rerun-2026-09-27_130022/screenshots/2026-09-27_130053/ai-report-flow.html
+b4cfb4bd38d50c213716af14a05b25812c21a182ee8d3e5692d92727ab96a5e9  plans/260925-server-authoritative-jobs/reports/maestro-account-a/authenticated-dev-rerun-2026-09-27_130022/screenshots/2026-09-27_130053/commands-(phase-06-account-a-authenticated-dev).json
+e65d4175d90cf563a516e5030f6d0e9afb75a8cc51d23f0b49c7663b384cf9d2  plans/260925-server-authoritative-jobs/reports/maestro-account-a/authenticated-dev-rerun-2026-09-27_130022/screenshots/2026-09-27_130053/screenshot-❌-1790489020006-(phase-06-account-a-authenticated-dev).png
+104fceb19b3c1c7c9dcfddd2d732f125dfcbfa5406d78327fcf91106a89ae519  plans/260925-server-authoritative-jobs/reports/maestro-account-a/authenticated-dev-rerun-2026-09-27_130022/screenshots/screenshots/01-pre-submit-assertions-passed.png

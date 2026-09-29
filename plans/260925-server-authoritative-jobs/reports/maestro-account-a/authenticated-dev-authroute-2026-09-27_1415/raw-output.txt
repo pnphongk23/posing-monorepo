@@ -1,0 +1,6 @@
+
+Waiting for flows to complete...
+[Failed] phase-06-account-a-authenticated-dev-authroute-20260927-1415 (47s) (Assertion is false: "server-authoritative-jobs-e2e-pose" is visible)
+
+1/1 Flow Failed
+

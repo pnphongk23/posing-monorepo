@@ -84,7 +84,7 @@ npm --prefix web/services/pose-extract-server run start:worker  # prod
   đọc JSON kết quả và tải ảnh từ result URL; credential nằm ở worker.
 
 Theo [[DEC-001-extraction-provider-selection-policy|DEC-001]], Admin chọn một
-provider toàn cục; mặc định là `gemini_native`. Lựa chọn mới có hiệu lực từ job
+provider toàn cục; mặc định là `higgsfield_cli`. Lựa chọn mới có hiệu lực từ job
 được claim tiếp theo. Job đang chạy giữ provider đã chọn; Higgsfield thiếu hoặc
 hết hạn credential làm job thất bại với mã lỗi tường minh, không tự đổi sang Gemini.
 
@@ -217,6 +217,16 @@ pose-extract-server, mounts `/app/data` + `/app/higgsfield`).
 - Extraction worker: process riêng, dùng provider factory và Python lineart
   remover; tạo Pose và MediaAssets tự động khi thành công; job state lưu trong Postgres.
 - Identity & Jobs: Jobs thuộc về Account trên server; đăng xuất không xóa job; đăng nhập lại hiển thị đầy đủ jobs trên bất kỳ thiết bị nào.
+- Extraction API auth (D5): `POST /api/extract-pose` and the legacy single-job read accept either
+  an Account session or the admin Bearer secret. With an Account session, the server derives the
+  owner from the verified session and ignores client-supplied ownership; with admin Bearer, an
+  explicit owner is required. User job routes (`/api/me/extract-jobs/**`) and guide reads require
+  an Account session and enforce owner scope. The admin secret stays server-side; an invalid admin
+  Bearer may fall through to Account authentication but never grants anonymous access.
+- Successful extraction materializes canonical R2 media at UUID-based public URLs. Job list
+  `thumbnailUrl` is the materialized thumbnail locator. Once a job has a `poseId`, both transient
+  image payload columns (`source_image_base64`, `result_image_base64`) are cleared; the durable
+  original/skeleton/thumbnail live in `MediaAsset` instead.
 
 ## Verification
 

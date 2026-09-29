@@ -1,0 +1,5 @@
+
+Waiting for flows to complete...
+[Failed] phase-06-scenario-d-hide-retention-retry-20260927 (47s) (Assertion is false: "server-authoritative-jobs-e2e-final-20260927-1425, Ready, View pose" is visible)
+
+1/1 Flow Failed

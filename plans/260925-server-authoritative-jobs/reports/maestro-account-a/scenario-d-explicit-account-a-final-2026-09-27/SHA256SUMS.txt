@@ -1,0 +1,5 @@
+eda0d218085127898c949ef917a0ec3f11cee3c0417b0c08422834f4322425ed  plans/260925-server-authoritative-jobs/reports/maestro-account-a/scenario-d-explicit-account-a-final-2026-09-27/scenario-d.yaml
+c329b040738b9a26446d40825341b7a36a09600e9f054c85ee501f6683eaf56e  plans/260925-server-authoritative-jobs/reports/maestro-account-a/scenario-d-explicit-account-a-final-2026-09-27/preflight.txt
+067197a294ffcabee823e05733f2ec85972fe1ee250d786a05b3f8cf2974f1d9  plans/260925-server-authoritative-jobs/reports/maestro-account-a/scenario-d-explicit-account-a-final-2026-09-27/maestro-output.txt
+4ee7354fbb4658ee646c4caf0d81f6588bf710b38d6a37f6992ac1086c00fcfb  plans/260925-server-authoritative-jobs/reports/maestro-account-a/scenario-d-explicit-account-a-final-2026-09-27/report.md
+6b48b890d7b7bae7b0754784dec5cad9e5083077a7e5fd4c29f59d7a3a061d5c  plans/260925-server-authoritative-jobs/reports/maestro-account-a/scenario-d-explicit-account-a-final-2026-09-27/maestro-artifacts/2026-09-27_160523/screenshot-❌-1790499971102-(scenario-d.yaml).png

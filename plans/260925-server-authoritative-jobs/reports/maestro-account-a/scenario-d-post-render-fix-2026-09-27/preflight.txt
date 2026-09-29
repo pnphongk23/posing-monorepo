@@ -1,0 +1,16 @@
+Dev admin HTTP: 200
+Dev API health HTTP: 200
+Protected Account A env mode: 600
+Simulator UDID: 4C1D6E55-2C31-4BD7-9881-F86F21CC53C8
+Installed app bundle: posing.camera.app
+AIPoseEnvironment: DEV
+App version/build: 1.0 / 14
+Authenticated sign-in/account/jobs HTTP: 200/200/200
+Account A tester003 label: matched
+Owner UUID b605c5e6-9b06-4f56-8b1e-0073d98c5068: matched
+Candidate job 998de1bb-a5a3-4d4d-8fbf-b98f2f429798: listed; status succeeded
+Candidate pose 8f9e6d4f-8276-4e0a-95d3-4c3f24619800: matched
+Candidate UI row: not reached; no pre-hide UI assertion
+Maestro syntax: PASS
+Maestro test invocation: 1; exit code 1 at Open Account
+Hide / guide GET: not performed

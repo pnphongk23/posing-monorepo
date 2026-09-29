@@ -1,9 +1,20 @@
 FROM node:20-bookworm-slim
 
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ca-certificates python3 python3-pip \
+  && rm -rf /var/lib/apt/lists/*
+
+RUN npm install -g @higgsfield/cli@1.1.23 \
+  && higgsfield --version
+
 WORKDIR /app
+ENV HIGGSFIELD_CREDENTIALS_PATH=/app/higgsfield/credentials.json
 
 COPY web/services/pose-extract-server/package.json web/services/pose-extract-server/package-lock.json ./
 RUN npm ci
+
+COPY web/services/pose-extract-server/requirements.txt ./requirements.txt
+RUN pip3 install --no-cache-dir --break-system-packages -r requirements.txt
 
 COPY web/services/pose-extract-server/tsconfig.json web/services/pose-extract-server/vitest.config.ts ./
 

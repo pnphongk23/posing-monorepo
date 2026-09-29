@@ -1,6 +1,6 @@
 const DEFAULT_TIMEOUT_MS = 20000;
 
-function getAdminConfig() {
+export function getAdminConfig() {
   const baseUrl = process.env.POSE_EXTRACT_SERVER_URL;
   const adminSecret = process.env.POSE_EXTRACT_ADMIN_SECRET;
 

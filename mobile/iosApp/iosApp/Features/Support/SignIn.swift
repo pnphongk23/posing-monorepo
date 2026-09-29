@@ -3,7 +3,7 @@ import SwiftUI
 /// Account-scoped entry points that may interrupt the user with the shared sign-in prompt.
 /// Copy matrix from the prototype `scripts/sign-in-prompt.js` (`intent=saved|save|try|account`).
 enum SignInIntent: String, Equatable, Sendable, CaseIterable {
-    case openSaved, savePose, tryPose, openAccount
+    case openSaved, savePose, tryPose, openAccount, addPose, openJobs
 
     var promptCopy: String {
         switch self {
@@ -11,6 +11,8 @@ enum SignInIntent: String, Equatable, Sendable, CaseIterable {
         case .savePose: return "Save this pose."
         case .tryPose: return "Try this pose."
         case .openAccount: return "Manage your account."
+        case .addPose: return "Add your own pose."
+        case .openJobs: return "See your pose jobs."
         }
     }
 }

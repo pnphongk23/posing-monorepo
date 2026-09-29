@@ -1,0 +1,18 @@
+Dev admin HTTP: 200
+Dev API health HTTP: 200
+Protected Account A env mode: 600; values were not printed or saved
+Authenticated sign-in HTTP: 200
+Authenticated account/me HTTP: 200
+Authenticated owner-scoped jobs HTTP: 200
+Account A label tester003: matched
+Owner UUID b605c5e6-9b06-4f56-8b1e-0073d98c5068: matched
+Candidate job 998de1bb-a5a3-4d4d-8fbf-b98f2f429798: listed; status succeeded
+Candidate pose 8f9e6d4f-8276-4e0a-95d3-4c3f24619800: matched
+Simulator: AIPose-Parity-iPhone13 / 4C1D6E55-2C31-4BD7-9881-F86F21CC53C8
+In-app identity: unverified
+Jobs/Finish candidate row: absent from hierarchy and screenshot
+Maestro syntax check: not run because candidate row precondition failed
+Maestro invocation count: 0
+Hide action: not performed
+Guide GET after hide: not performed
+App reset/sign-out/backend mutation: none

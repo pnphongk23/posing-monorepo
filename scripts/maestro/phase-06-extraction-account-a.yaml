@@ -1,0 +1,87 @@
+appId: posing.camera.app
+name: phase-06-extraction-account-a
+---
+- launchApp:
+    clearState: true
+- tapOn:
+    text: Skip
+    optional: true
+- waitForAnimationToEnd
+- tapOn:
+    id: poses.add-pose
+- assertVisible:
+    text: Add your own pose.
+- tapOn:
+    id: signin.emailEntry
+- assertVisible:
+    id: signin.email
+- tapOn:
+    id: signin.email
+- inputText: ${EMAIL}
+- pressKey: Enter
+- tapOn:
+    id: signin.showPassword
+- tapOn:
+    id: signin.password
+- inputText: ${PASSWORD}
+- tapOn:
+    id: signin.showPassword
+- tapOn:
+    id: signin.submit
+- extendedWaitUntil:
+    visible:
+      id: signin.error
+    timeout: 30000
+    optional: true
+- runFlow:
+    when:
+      visible:
+        id: signin.error
+    commands:
+      - tapOn:
+          id: signin.password
+      - eraseText: 128
+      - tapOn:
+          id: signin.email
+      - eraseText: 128
+      - takeScreenshot: 00-signin-rejected-cleared
+- assertVisible:
+    id: addPose.photoPicker
+- tapOn:
+    id: addPose.photoPicker
+- assertVisible:
+    text: server-authoritative-jobs-e2e-pose
+- tapOn:
+    text: server-authoritative-jobs-e2e-pose
+- extendedWaitUntil:
+    visible:
+      id: addPose.nameField
+    timeout: 30000
+- tapOn:
+    id: addPose.nameField
+- inputText: Phase 6 Account A E2E
+- tapOn:
+    id: addPose.tagsField
+- inputText: phase6,e2e
+- tapOn:
+    id: addPose.submitButton
+- extendedWaitUntil:
+    visible:
+      text: Extracting Pose
+    timeout: 120000
+- waitForAnimationToEnd
+- takeScreenshot: 01-processing
+- extendedWaitUntil:
+    visible:
+      text: Pose Ready
+    timeout: 300000
+- waitForAnimationToEnd
+- takeScreenshot: 02-ready
+- tapOn:
+    id: addPose.viewPoseButton
+- extendedWaitUntil:
+    visible:
+      text: Phase 6 Account A E2E
+    timeout: 30000
+- waitForAnimationToEnd
+- takeScreenshot: 03-pose-detail

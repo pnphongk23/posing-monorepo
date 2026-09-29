@@ -52,6 +52,30 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # Start explicitly with --profile worker to process queued jobs.
+  pose-extract-worker:
+    profiles: ["worker"]
+    build:
+      context: .
+      dockerfile: web/services/pose-extract-server/Dockerfile.dev
+    container_name: pose-extract-worker-dev
+    env_file:
+      - web/services/pose-extract-server/.env
+    environment:
+      NODE_ENV: development
+      HIGGSFIELD_CREDENTIALS_PATH: /root/.config/higgsfield/credentials.json
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/pose
+    command: npm run worker
+    volumes:
+      - ./web/services/pose-extract-server/src:/app/src
+      - ./web/services/pose-extract-server/scripts:/app/scripts
+      - pose_extract_dev_node_modules:/app/node_modules
+      - "${HOME}/.config/higgsfield:/root/.config/higgsfield:ro"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
   admin-ui:
     build:
       context: web/admin-ui

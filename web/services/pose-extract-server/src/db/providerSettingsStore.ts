@@ -13,7 +13,7 @@ export class ProviderSettingsStore {
 
     const row = rows[0];
     if (!row || !isExtractionProviderId(row.value)) {
-      return "gemini_native";
+      return "higgsfield_cli";
     }
 
     return row.value;

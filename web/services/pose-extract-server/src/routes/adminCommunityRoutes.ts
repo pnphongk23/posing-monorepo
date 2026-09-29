@@ -14,6 +14,7 @@ import {
   type CommunityObjectRole,
   type UploadUrlPayload
 } from "../services/r2Storage";
+import { materializePose } from "../services/poseMaterializer";
 
 const ALLOWED_MIME_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
 
@@ -159,7 +160,7 @@ export function createAdminCommunityRoutes(options: CreateAdminCommunityRoutesOp
       res.status(404).json({ error: { code: "JOB_NOT_FOUND", message: "Extraction job not found" } });
       return;
     }
-    if (job.status !== "succeeded" || !job.resultImageBase64 || !job.resultMimeType) {
+    if (job.status !== "succeeded" || !job.resultImageBase64 || !job.resultMimeType || !job.sourceImageBase64) {
       res.status(400).json({ error: { code: "JOB_NOT_SUCCEEDED", message: "Extraction job is not succeeded" } });
       return;
     }
@@ -170,45 +171,29 @@ export function createAdminCommunityRoutes(options: CreateAdminCommunityRoutesOp
     }
 
     const poseId = crypto.randomUUID();
-    const assets = [
-      { role: "original" as const, body: Buffer.from(job.sourceImageBase64, "base64"), mimeType: job.sourceMimeType },
-      { role: "skeleton" as const, body: Buffer.from(job.resultImageBase64, "base64"), mimeType: job.resultMimeType },
-      { role: "thumbnail" as const, body: Buffer.from(job.resultImageBase64, "base64"), mimeType: job.resultMimeType }
-    ];
-    const uploadedKeys: string[] = [];
-
-    try {
-      const locators = Object.fromEntries(
-        await Promise.all(
-          assets.map(async (asset) => {
-            const extension = asset.mimeType.split("/")[1] ?? "bin";
-            const fileKey = buildObjectKey(asset.role, extension, poseId);
-            await putObject({ fileKey, body: asset.body, mimeType: asset.mimeType });
-            uploadedKeys.push(fileKey);
-            return [asset.role, buildPublicUrl(publicUrlBase, fileKey)] as const;
-          })
-        )
-      ) as Record<CommunityObjectRole, string>;
-
-      const pose = await communityStore.createPose({
-        poseId,
-        ownerAccountId: parsed.data.ownerAccountId,
+    const pose = await materializePose({
+      poseId,
+      ownerAccountId: parsed.data.ownerAccountId,
+      currentJobId: job.id,
+      metadata: {
         name: parsed.data.name,
-        originalUrl: locators.original,
-        skeletonUrl: locators.skeleton,
-        thumbnailUrl: locators.thumbnail,
         tags: parsed.data.tags,
         difficulty: parsed.data.difficulty ?? null,
         description: parsed.data.description ?? null,
-        bodyParts: parsed.data.bodyParts,
-        currentJobId: job.id
-      });
+        bodyParts: parsed.data.bodyParts
+      },
+      source: { b64: job.sourceImageBase64, mime: job.sourceMimeType },
+      result: { b64: job.resultImageBase64, mime: job.resultMimeType },
+      keyPrefix: "community",
+      mediaStorage: {
+        put: (fileKey, body, mimeType) => putObject({ fileKey, body, mimeType }),
+        remove: (fileKey) => removeObject(fileKey),
+        publicUrl: (fileKey) => buildPublicUrl(publicUrlBase, fileKey)
+      },
+      createPose: (input) => communityStore.createPose(input)
+    });
 
-      res.status(201).json({ data: { pose } });
-    } catch (error) {
-      await Promise.allSettled(uploadedKeys.map((fileKey) => removeObject(fileKey)));
-      throw error;
-    }
+    res.status(201).json({ data: { pose } });
   });
 
   return router;

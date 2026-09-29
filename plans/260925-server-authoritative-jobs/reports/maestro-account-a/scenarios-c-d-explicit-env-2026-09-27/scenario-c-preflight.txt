@@ -1,0 +1,3 @@
+A_env_mode=600 B_env_mode=600 admin_http=200 api_http=200 syntax_exit=0 device_booted=(Booted)
+OK
+planned uninstall/reinstall=completed; debug launch=0; device=4C1D6E55-2C31-4BD7-9881-F86F21CC53C8

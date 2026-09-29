@@ -90,6 +90,7 @@ components:
                     - PROVIDER_TIMEOUT
                     - PROVIDER_CLI_FAILED
                     - LINEART_BG_REMOVAL_FAILED
+                    - POSE_MATERIALIZE_FAILED
                 message:
                   type: string
         updatedAt:
@@ -343,6 +344,10 @@ components:
           type: [string, "null"]
           format: uuid
           description: Created Pose UUID when status is succeeded
+        thumbnailUrl:
+          type: [string, "null"]
+          format: uri
+          description: Locator of the thumbnail MediaAsset when materialized
         errorCode:
           type: [string, "null"]
         errorMessage:
@@ -571,7 +576,6 @@ paths:
       tags: [Extract Pose]
       security:
         - AccountSession: []
-        - AdminBearer: []
       parameters:
         - name: state
           in: query
@@ -645,7 +649,6 @@ paths:
       tags: [Extract Pose]
       security:
         - AccountSession: []
-        - AdminBearer: []
       parameters:
         - name: jobId
           in: path
@@ -695,7 +698,6 @@ paths:
       tags: [Extract Pose]
       security:
         - AccountSession: []
-        - AdminBearer: []
       parameters:
         - name: jobId
           in: path
@@ -1515,11 +1517,10 @@ paths:
   /api/guides/{id}:
     get:
       operationId: getGuide
-      summary: Get one Pose (owner or admin)
+      summary: Get one Pose (owner only)
       tags: [Guides]
       security:
         - AccountSession: []
-        - AdminBearer: []
       parameters:
         - name: id
           in: path

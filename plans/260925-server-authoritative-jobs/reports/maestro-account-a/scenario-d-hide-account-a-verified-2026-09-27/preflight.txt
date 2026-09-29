@@ -1,0 +1,13 @@
+Dev admin HTTP: 200
+Dev API health HTTP: 200
+Protected Account A env mode: 600 (values not read or recorded)
+Simulator: AIPose-Parity-iPhone13 / 4C1D6E55-2C31-4BD7-9881-F86F21CC53C8
+Authenticated API preflight: sign-in 200; account/me 200; jobs 200
+Account label tester003 match: true
+Account owner UUID match b605c5e6-9b06-4f56-8b1e-0073d98c5068: true
+Candidate job 998de1bb-a5a3-4d4d-8fbf-b98f2f429798 listed: true; server status: succeeded
+Candidate pose 8f9e6d4f-8276-4e0a-95d3-4c3f24619800 match: true
+Simulator Jobs/Finish candidate Ready row: not visible; captured preflight-screen.png
+Maestro invocation: 0
+Hide action: not performed
+Post-hide guide GET: not performed (no hide occurred)

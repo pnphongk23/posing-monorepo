@@ -176,7 +176,7 @@ ON CONFLICT (pose_id, role) DO NOTHING;
 CREATE TABLE IF NOT EXISTS extraction_jobs (
   id TEXT PRIMARY KEY,
   status TEXT NOT NULL CHECK(status IN ('queued','processing','succeeded','failed')),
-  source_image_base64 TEXT NOT NULL,
+  source_image_base64 TEXT,
   source_mime_type TEXT NOT NULL,
   result_image_base64 TEXT,
   result_mime_type TEXT,
@@ -193,10 +193,18 @@ CREATE TABLE IF NOT EXISTS extraction_jobs (
 CREATE INDEX IF NOT EXISTS idx_extraction_jobs_status_created_at ON extraction_jobs(status, created_at);
 CREATE INDEX IF NOT EXISTS idx_extraction_jobs_locked_at ON extraction_jobs(locked_at);
 
+ALTER TABLE extraction_jobs ADD COLUMN IF NOT EXISTS owner_account_id TEXT;
+ALTER TABLE extraction_jobs ADD COLUMN IF NOT EXISTS pose_draft JSONB;
+ALTER TABLE extraction_jobs ADD COLUMN IF NOT EXISTS pose_id TEXT;
+ALTER TABLE extraction_jobs ADD COLUMN IF NOT EXISTS hidden_at TIMESTAMPTZ;
+ALTER TABLE extraction_jobs ALTER COLUMN source_image_base64 DROP NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_extraction_jobs_owner_created
+  ON extraction_jobs(owner_account_id, created_at DESC, id DESC) WHERE hidden_at IS NULL;
+
 CREATE TABLE IF NOT EXISTS app_settings (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-INSERT INTO app_settings (key, value) VALUES ('extraction_provider', 'gemini_native') ON CONFLICT (key) DO NOTHING;
+INSERT INTO app_settings (key, value) VALUES ('extraction_provider', 'higgsfield_cli') ON CONFLICT (key) DO NOTHING;

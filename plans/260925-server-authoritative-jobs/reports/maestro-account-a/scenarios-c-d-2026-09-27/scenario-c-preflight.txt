@@ -1,0 +1,1 @@
+Scenario C preflight: admin=200 api=200 A_env_mode=600 B_env_mode=600 syntax=OK device=booted

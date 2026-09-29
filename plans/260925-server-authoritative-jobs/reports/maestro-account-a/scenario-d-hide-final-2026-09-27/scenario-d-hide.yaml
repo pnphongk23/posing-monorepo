@@ -1,0 +1,53 @@
+appId: posing.camera.app
+name: phase-06-scenario-d-hide-retention-final-20260927
+---
+- launchApp:
+    stopApp: false
+    clearState: false
+- waitForAnimationToEnd
+- tapOn:
+    id: poses.jobs
+- extendedWaitUntil:
+    visible:
+      id: jobs.tab.finish
+    timeout: 15000
+- assertVisible:
+    text: Jobs
+- assertVisible:
+    id: jobs.tab.finish
+- tapOn:
+    id: jobs.tab.finish
+- extendedWaitUntil:
+    visible:
+      text: "server-authoritative-jobs-e2e-final-20260927-1425, Ready, View pose"
+    timeout: 15000
+- assertVisible:
+    text: "server-authoritative-jobs-e2e-final-20260927-1425, Ready, View pose"
+- takeScreenshot: 01-ready-before-hide
+- swipe:
+    from:
+      text: "server-authoritative-jobs-e2e-final-20260927-1425, Ready, View pose"
+    direction: LEFT
+    duration: 1200
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible:
+      id: jobs.row.remove.998de1bb-a5a3-4d4d-8fbf-b98f2f429798
+    timeout: 10000
+- assertVisible:
+    id: jobs.row.remove.998de1bb-a5a3-4d4d-8fbf-b98f2f429798
+- takeScreenshot: 02-remove-revealed
+- tapOn:
+    id: jobs.row.remove.998de1bb-a5a3-4d4d-8fbf-b98f2f429798
+- assertVisible:
+    text: Remove job?
+- takeScreenshot: 03-hide-confirmation
+- tapOn:
+    text: Remove
+- extendedWaitUntil:
+    notVisible:
+      text: "server-authoritative-jobs-e2e-final-20260927-1425, Ready, View pose"
+    timeout: 30000
+- assertNotVisible:
+    text: "server-authoritative-jobs-e2e-final-20260927-1425, Ready, View pose"
+- takeScreenshot: 04-row-hidden

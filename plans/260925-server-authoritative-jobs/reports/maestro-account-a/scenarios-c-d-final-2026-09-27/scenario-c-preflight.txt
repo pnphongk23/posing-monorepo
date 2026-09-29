@@ -1,0 +1,3 @@
+A_env_mode=600 B_env_mode=600 admin_http=200 api_http=200 syntax_exit=0 device_booted=(Booted)
+OK
+planned uninstall/reinstall=completed; debug launch=-AIPoseAccountEnabled true; exit=0

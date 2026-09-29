@@ -1,0 +1,12 @@
+Preflight:
+- Target AIPose-Parity-iPhone13 (4C1D6E55-2C31-4BD7-9881-F86F21CC53C8) reported Booted.
+- Dev admin endpoint returned HTTP 200.
+- Dev pose-extract API health endpoint returned HTTP 200.
+- Screenshot showed simulator Home Screen; posing app was not foreground, so signed-in session could not be verified without changing app navigation state.
+
+Maestro syntax check:
+$ maestro check-syntax flow.yaml
+OK
+exit=0
+
+Maestro test invocation: NOT RUN (preflight gate; existing signed-in session unverified).

@@ -1,0 +1,10 @@
+Dev admin health: HTTP 200
+Dev pose-extract API health: HTTP 200
+Target: AIPose-Parity-iPhone13 / 4C1D6E55-2C31-4BD7-9881-F86F21CC53C8 (Booted)
+Initial read-only screenshot: Poses root with Sign in sheet open.
+Protected env keys present before run: TEST_EMAIL, TEST_PASSWORD (values not recorded).
+Flow: clearState:false; conditional email sign-in; one Submit step gated behind photo/name/tags/enabled-button assertions.
+Maestro syntax check: OK (exit 0).
+Maestro test invocations: 1; exit status: 1.
+Env file after run: absent.
+Text credential/email scan after redaction: PASS.

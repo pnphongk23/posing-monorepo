@@ -1,0 +1,77 @@
+appId: posing.camera.app
+name: phase-06-account-a-authenticated-dev-routefix-20260927-1405
+---
+- launchApp:
+    clearState: false
+- waitForAnimationToEnd
+- assertVisible:
+    id: poses.add-pose
+- takeScreenshot: 00-authenticated-poses-root
+- tapOn:
+    id: poses.add-pose
+- assertVisible:
+    id: addPose.photoPicker
+- tapOn:
+    id: addPose.photoPicker
+- tapOn:
+    point: 25%,25%
+- extendedWaitUntil:
+    visible:
+      text: Change Photo
+    timeout: 30000
+- assertVisible:
+    text: Change Photo
+- tapOn:
+    id: addPose.nameField
+- eraseText: 128
+- inputText: server-authoritative-jobs-e2e-routefix-20260927-1405
+- assertVisible:
+    id: addPose.nameField
+    text: server-authoritative-jobs-e2e-routefix-20260927-1405
+- tapOn:
+    id: addPose.tagsField
+- eraseText: 128
+- inputText: phase6,e2e
+- assertVisible:
+    id: addPose.tagsField
+    text: phase6,e2e
+- pressKey: Enter
+- assertVisible:
+    id: addPose.submitButton
+    enabled: true
+- takeScreenshot: 01-pre-submit-name-confirmed
+- tapOn:
+    id: addPose.submitButton
+- extendedWaitUntil:
+    visible:
+      text: Extracting Pose
+    timeout: 120000
+- waitForAnimationToEnd
+- takeScreenshot: 02-processing
+- extendedWaitUntil:
+    visible:
+      text: Pose Ready
+    timeout: 300000
+- waitForAnimationToEnd
+- assertVisible:
+    id: addPose.viewPoseButton
+- takeScreenshot: 03-ready
+- tapOn:
+    id: addPose.viewJobsButton
+- extendedWaitUntil:
+    visible:
+      id: jobs.tab.finish
+    timeout: 30000
+- tapOn:
+    id: jobs.tab.finish
+- assertVisible:
+    text: server-authoritative-jobs-e2e-routefix-20260927-1405, Ready, View pose
+- takeScreenshot: 04-owner-scoped-job-ready
+- tapOn:
+    text: View pose
+- extendedWaitUntil:
+    visible:
+      text: server-authoritative-jobs-e2e-routefix-20260927-1405
+    timeout: 30000
+- waitForAnimationToEnd
+- takeScreenshot: 05-pose-detail-media

@@ -1,0 +1,7 @@
+8712cf5ddddda12cd8fb538f38915482bf8adbf05d094713a20962a21c681a73  plans/260925-server-authoritative-jobs/reports/maestro-account-a/scenario-d-account-feature-enabled-2026-09-27/scenario-d.yaml
+06f1504af45a8a40c8a463554d6036ad0e24ec1ddd42d7466a6123c64211eb2a  plans/260925-server-authoritative-jobs/reports/maestro-account-a/scenario-d-account-feature-enabled-2026-09-27/preflight.txt
+77cf33b99ad5bf68cb72736ddbdf536cc0eabd907cb110f7faf0be4e66d92e11  plans/260925-server-authoritative-jobs/reports/maestro-account-a/scenario-d-account-feature-enabled-2026-09-27/api-preflight.txt
+1ebcb3142368e8592ab05f73622ac4d821bbd394d1bb9b99e032804c9be564f5  plans/260925-server-authoritative-jobs/reports/maestro-account-a/scenario-d-account-feature-enabled-2026-09-27/maestro-output.txt
+5d372655ca9465763a0ae2dd65e9f9c6f1da7ce2d9405993fee99aff52417658  plans/260925-server-authoritative-jobs/reports/maestro-account-a/scenario-d-account-feature-enabled-2026-09-27/report.md
+992a09c55220d92745f0b95ce6b6d9025ffc5243c2718a05be12ebcc3cc1c4b4  plans/260925-server-authoritative-jobs/reports/maestro-account-a/scenario-d-account-feature-enabled-2026-09-27/preflight-screen.png
+b880184e6e9324570de0f7b8bb355294189a752ee721d58033071a06dc25c24b  plans/260925-server-authoritative-jobs/reports/maestro-account-a/scenario-d-account-feature-enabled-2026-09-27/maestro-artifacts/2026-09-27_162310/screenshot-❌-1790501018036-(scenario-d.yaml).png

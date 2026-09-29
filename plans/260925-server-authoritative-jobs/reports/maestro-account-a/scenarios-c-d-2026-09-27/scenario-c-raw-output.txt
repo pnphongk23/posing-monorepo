@@ -1,0 +1,6 @@
+
+Waiting for flows to complete...
+[Failed] phase-06-scenario-c-account-isolation-20260927 (21s) (Element not found: Text matching regex: Open Account)
+
+1/1 Flow Failed
+

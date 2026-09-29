@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import type { Fragment } from "postgres";
 
-import type { Sql } from "./connection";
+import type { Sql, SqlOrTx } from "./connection";
 import { pgTimestamp } from "./pgTypes";
 
 export type PoseStatus = "local" | "published";
@@ -96,7 +96,7 @@ export class PoseStore {
   constructor(private readonly db: Sql) {}
 
   /** Creates a local Pose atomically with all three required media roles. */
-  async createPose(input: CreatePoseInput): Promise<PoseRecord> {
+  async createPose(input: CreatePoseInput, tx?: SqlOrTx): Promise<PoseRecord> {
     const poseId = input.poseId ?? randomUUID();
     const media = [
       { mediaId: randomUUID(), role: "original", locator: input.originalUrl },
@@ -104,7 +104,7 @@ export class PoseStore {
       { mediaId: randomUUID(), role: "thumbnail", locator: input.thumbnailUrl }
     ] as const;
 
-    return this.db.begin(async (transaction) => {
+    const execute = async (transaction: SqlOrTx) => {
       const rows = (await transaction`
         INSERT INTO poses (
           pose_id,
@@ -146,7 +146,12 @@ export class PoseStore {
         skeleton_url: input.skeletonUrl,
         thumbnail_url: input.thumbnailUrl
       });
-    });
+    };
+
+    if (tx) {
+      return execute(tx);
+    }
+    return this.db.begin(execute);
   }
 
   async getPoseById(poseId: string): Promise<PoseRecord | null> {

@@ -93,3 +93,16 @@ export class ForbiddenError extends AppError {
     super(message, 403, "FORBIDDEN");
   }
 }
+
+export class InvalidMetadataError extends AppError {
+  constructor(message = "Invalid metadata") {
+    super(message, 400, "INVALID_METADATA");
+  }
+}
+
+export class JobNotRetryableError extends AppError {
+  constructor(message = "Job is not in failed state") {
+    super(message, 409, "JOB_NOT_RETRYABLE");
+  }
+}
+

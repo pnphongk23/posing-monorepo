@@ -55,6 +55,7 @@ code, no Cook plan in this mission.
 - Prototype: poses-list Jobs badge, add-pose processing (View jobs / Done), jobs.html + scripts/jobs.js; screenshots in `screens/`.
 
 ## Next-plan prerequisites
+Prerequisites 1–3 are superseded by `plans/260925-server-authoritative-jobs/`.
 1. Mount `POST /api/guides` (idempotent on `jobId`: 201 / 200 replay / 409).
 2. Server result retention/TTL for `extractionJobStore`.
 3. Native device-local JobRecord store (account partition, policy B wipe on sign-out) + Add Pose and Jobs SwiftUI screens.

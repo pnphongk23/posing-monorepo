@@ -1,0 +1,1 @@
+signin_http=200 guide_http=200 pose_id_match=true owner_match=true expected_name_match=true

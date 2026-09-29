@@ -1,0 +1,10 @@
+ec2e8a7b33f2ee67bf7d8fa3911d65894796d3a105af1a5406de5775c8b26f03  plans/260925-server-authoritative-jobs/reports/maestro-account-a/scenario-d-debug-account-token-2026-09-27/scenario-d.yaml
+3cd58cb0c6aea602efdcda902f7bf2c05f1e1a9b479598dc326a605f64c4767f  plans/260925-server-authoritative-jobs/reports/maestro-account-a/scenario-d-debug-account-token-2026-09-27/preflight.txt
+ebbc9640bdf354c6ed613c9e0e5f147ed6b6869c40b079aaeddc62a5775d05b8  plans/260925-server-authoritative-jobs/reports/maestro-account-a/scenario-d-debug-account-token-2026-09-27/api-preflight.txt
+dce379f7ad89ab5549180a7daf7bf9e510e7f8db99233cbe5ea742da6aa98021  plans/260925-server-authoritative-jobs/reports/maestro-account-a/scenario-d-debug-account-token-2026-09-27/guide-get.txt
+47be10b8b8f4c4065014f4095fd6e13f461663757e2f8a7606a6549928c3ced5  plans/260925-server-authoritative-jobs/reports/maestro-account-a/scenario-d-debug-account-token-2026-09-27/maestro-output.txt
+1c2c755158e760dea0a1848c885cb1193c644eb580c574f1be636192e26bbd4f  plans/260925-server-authoritative-jobs/reports/maestro-account-a/scenario-d-debug-account-token-2026-09-27/report.md
+980481941b2ce5b0d3c42fdbf7bdf354cff72000adcc6969552fe843cbbb46be  plans/260925-server-authoritative-jobs/reports/maestro-account-a/scenario-d-debug-account-token-2026-09-27/preflight-screen.png
+e834e5d4d8cc41618951ff7992100591ca2b40b45402aaf682bc586748bc5fa2  plans/260925-server-authoritative-jobs/reports/maestro-account-a/scenario-d-debug-account-token-2026-09-27/maestro-artifacts/screenshots/01-ready-before-hide.png
+919d47f323cc80a0003e4fd03df397accb4ccd8e4dc5ed531022a9786c967e3a  plans/260925-server-authoritative-jobs/reports/maestro-account-a/scenario-d-debug-account-token-2026-09-27/maestro-artifacts/screenshots/02-remove-target.png
+bd534adc191299c71f4a8b8c586f018756bc5da42b537735d681df11c8afa88c  plans/260925-server-authoritative-jobs/reports/maestro-account-a/scenario-d-debug-account-token-2026-09-27/maestro-artifacts/screenshots/03-hidden.png

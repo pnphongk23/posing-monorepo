@@ -1,0 +1,8 @@
+target_device=4C1D6E55-2C31-4BD7-9881-F86F21CC53C8
+device_name=AIPose-Parity-iPhone13
+device_state=Booted
+admin_http=200
+api_health_http=200
+preflight_screen=Simulator Home Screen; app not foreground
+authenticated_session=Unverified; stop before test invocation
+maestro_test_invocations=0

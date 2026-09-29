@@ -3,11 +3,13 @@ import "dotenv/config";
 import { getEnv } from "../config/env";
 import { applySchema, closeDatabase, createDatabase } from "../db/connection";
 import { ExtractionJobStore } from "../db/extractionJobStore";
+import { PoseStore } from "../db/communityStore";
 import { ProviderSettingsStore } from "../db/providerSettingsStore";
 import { GeminiService } from "../services/geminiService";
 import { KeyPoolManager } from "../services/keyPoolManager";
 import { KeyStore } from "../services/keyStore";
 import { createPoseExtractorProvider } from "../services/poseExtractorProvider";
+import { buildPublicUrl, deleteObject, uploadObject } from "../services/r2Storage";
 import { logger } from "../utils/logger";
 import { processNextJob } from "./job-processor";
 import { runWorkerLoop } from "./worker-loop";
@@ -22,9 +24,21 @@ async function run(): Promise<void> {
   await applySchema(sql);
   const jobStore = new ExtractionJobStore(sql);
   const providerSettingsStore = new ProviderSettingsStore(sql);
+  const communityStore = new PoseStore(sql);
   const keyStore = new KeyStore(sql);
   const keyPoolManager = new KeyPoolManager(keyStore);
   const geminiService = new GeminiService();
+
+  const publicUrlBase = process.env.R2_PUBLIC_URL ?? "";
+  const mediaStorage = {
+    put: async (fileKey: string, body: Buffer, mimeType: string) => {
+      await uploadObject({ fileKey, body, mimeType });
+    },
+    remove: async (fileKey: string) => {
+      await deleteObject(fileKey);
+    },
+    publicUrl: (fileKey: string) => buildPublicUrl(publicUrlBase, fileKey)
+  };
 
   const createProvider = (providerId: Parameters<typeof createPoseExtractorProvider>[0]["providerId"]) =>
     createPoseExtractorProvider({
@@ -70,7 +84,10 @@ async function run(): Promise<void> {
     createProvider,
     staleLockSeconds: STALE_LOCK_SECONDS,
     pollIntervalMs: POLL_INTERVAL_MS,
-    isShuttingDown: () => shuttingDown
+    isShuttingDown: () => shuttingDown,
+    db: sql,
+    communityStore,
+    mediaStorage
   });
 }
 

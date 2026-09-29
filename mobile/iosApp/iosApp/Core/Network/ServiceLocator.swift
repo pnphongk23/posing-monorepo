@@ -15,4 +15,7 @@ enum ServiceLocator {
     static func makePoseAPIService(baseURL: String? = nil) -> PoseAPIService {
         PoseAPIService(client: makeAPIClient(baseURL: baseURL))
     }
+
+    @MainActor
+    static let jobsService: JobsService = JobsService()
 }

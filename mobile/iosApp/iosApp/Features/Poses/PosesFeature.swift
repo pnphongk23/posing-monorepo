@@ -320,15 +320,33 @@ enum PoseGridMetrics {
     static let searchDockClearance: CGFloat = 40 + 34
 }
 
+enum PosesRoute: Hashable {
+    case addPose
+    case jobs(JobsTab)
+
+    var isJobs: Bool {
+        if case .jobs = self { return true }
+        return false
+    }
+
+    var jobsTab: JobsTab {
+        if case .jobs(let tab) = self { return tab }
+        return .processing
+    }
+}
+
 // MARK: - Poses
 
 struct PosesScreen: View {
     @StateObject var model: PosesViewModel
+    @ObservedObject var jobsService: JobsService = ServiceLocator.jobsService
+    @StateObject private var session = SessionPresenceModel()
     var onTryPose: (NativePose) -> Void = { _ in }
     /// Lets `AppFeatureRoot` hide the dock's active pill while the Search overlay is up: Search is
     /// not a tab, and `reference/search-blank.png` shows both dock items plain grey.
     var onSearchVisibilityChange: (Bool) -> Void = { _ in }
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
     /// The Search workspace is presented **in place** instead of being pushed on the stack.
     ///
     /// `AppFeatureRoot` overlays `NeoDockTabBar` on top of its `<tab>Root`, so a `NavigationLink`
@@ -338,6 +356,8 @@ struct PosesScreen: View {
     /// `AppFeatureRoot` owns the dock — so the Search screen is overlaid here, where the root ZStack
     /// still paints the dock above it.
     @State private var showsSearch = false
+    @State private var pendingSignIn: SignInIntent?
+    @State private var route: PosesRoute?
 
     var body: some View {
         ZStack {
@@ -358,8 +378,73 @@ struct PosesScreen: View {
         // centred system nav-bar title is gone; keeping both would render the title twice.
         .neoHiddenNavigationBar()
         .background(AIPoseColor.background)
-        .task { if case .idle = model.state { await model.load() } }
+        .task {
+            session.start()
+            if case .idle = model.state { await model.load() }
+            await jobsService.refresh()
+        }
         .onChange(of: model.filter) { _ in Task { await model.load() } }
+        .onChange(of: scenePhase) { newPhase in
+            if newPhase == .active {
+                Task { await jobsService.refresh() }
+            }
+        }
+        .signInPrompt($pendingSignIn) { intent in
+            Task {
+                await jobsService.refresh()
+                if intent == .addPose {
+                    route = .addPose
+                } else if intent == .openJobs {
+                    route = .jobs(.processing)
+                }
+            }
+        }
+        .background(
+            Group {
+                NavigationLink(
+                    destination: AddPoseScreen(
+                        posesModel: model,
+                        onTryPose: onTryPose,
+                        onOpenJobs: { tab in route = .jobs(tab) }
+                    ),
+                    isActive: Binding(
+                        get: { route == .addPose },
+                        set: { isPresented in
+                            if !isPresented && route == .addPose {
+                                route = nil
+                                Task { await jobsService.refresh() }
+                            }
+                        }
+                    )
+                ) {
+                    EmptyView()
+                }
+                .hidden()
+
+                NavigationLink(
+                    destination: JobsScreen(
+                        jobsService: jobsService,
+                        posesModel: model,
+                        initialTab: route?.jobsTab ?? .processing,
+                        onTryPose: onTryPose,
+                        onAddPose: { route = .addPose }
+                    )
+                    .id(route),
+                    isActive: Binding(
+                        get: { route?.isJobs == true },
+                        set: { isPresented in
+                            if !isPresented && route?.isJobs == true {
+                                route = nil
+                                Task { await jobsService.refresh() }
+                            }
+                        }
+                    )
+                ) {
+                    EmptyView()
+                }
+                .hidden()
+            }
+        )
     }
 
     private func setShowsSearch(_ shown: Bool) {
@@ -367,18 +452,7 @@ struct PosesScreen: View {
         onSearchVisibilityChange(shown)
     }
 
-    /// ONE row: left-aligned page title plus the four page actions, per `nav-bar.css:60-80`
-    /// (`.nb-nav-bar--poses` — flex, `align-items: center`, `justify-content: flex-start`, gap 8,
-    /// `height: 52px`, `margin-bottom: var(--nb-space-md)`; the title is `text-align: left` and the
-    /// action group is `margin-left: auto`).
-    ///
-    /// `reference/poses-list.png` proves the shape: one 67px band at dsf2 (y=112..178) with the
-    /// title ink left-aligned at x=39. The previous two-row render (centred system nav-bar title plus
-    /// a separate actions row) was justified by a comment about three `My poses`/`Community` category
-    /// pills needing 297.7pt beside four 32pt actions. AC2 deleted those pills (report §3.4), so that
-    /// constraint is gone and the justification was stale — which is how the two-row header survived
-    /// implementation and review. Title ~54pt + actions ~171pt now fit a 390pt screen with room to
-    /// spare. `Create Pose` is not part of this surface (§3.4).
+    /// ONE row: left-aligned page title plus the actions, per `nav-bar.css:60-80`
     private var posesHeader: some View {
         HStack(spacing: AIPoseSpacing.sm) {
             // `.nb-nav-bar__center { flex: 1 1 auto }` with a left-aligned title.
@@ -388,6 +462,44 @@ struct PosesScreen: View {
                 .lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .accessibilityAddTraits(.isHeader)
+
+            Button {
+                if session.isSignedIn {
+                    route = .addPose
+                } else {
+                    pendingSignIn = .addPose
+                }
+            } label: {
+                PosesHeaderIconLabel(systemImage: "plus")
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Add pose")
+            .accessibilityIdentifier("poses.add-pose")
+
+            Button {
+                if session.isSignedIn {
+                    route = .jobs(.processing)
+                } else {
+                    pendingSignIn = .openJobs
+                }
+            } label: {
+                ZStack(alignment: .topTrailing) {
+                    PosesHeaderIconLabel(systemImage: "clock.arrow.circlepath")
+                    if session.isSignedIn && jobsService.activeCount > 0 {
+                        Text("\(jobsService.activeCount)")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(AIPoseColor.surface)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 2)
+                            .background(AIPoseColor.error)
+                            .clipShape(Capsule())
+                            .offset(x: 4, y: -4)
+                    }
+                }
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Jobs\(session.isSignedIn && jobsService.activeCount > 0 ? ", \(jobsService.activeCount) active" : "")")
+            .accessibilityIdentifier("poses.jobs")
 
             Button { setShowsSearch(true) } label: {
                 PosesHeaderIconLabel(systemImage: "magnifyingglass")
@@ -590,6 +702,7 @@ struct PoseDetailScreen: View {
     let pose: NativePose
     @ObservedObject var model: PosesViewModel
     var onTryPose: (NativePose) -> Void
+    var isPrivate: Bool = false
     @State private var isSaved: Bool
     @State private var pendingSignIn: SignInIntent?
     /// Report §3.6 (`pose-detail.html` unavailable state): set only by the definitive
@@ -598,10 +711,11 @@ struct PoseDetailScreen: View {
     @State private var isUnavailable = false
     @Environment(\.dismiss) private var dismiss
     private let boundary = ServiceLocator.sessionBoundary
-    init(pose: NativePose, model: PosesViewModel, onTryPose: @escaping (NativePose) -> Void) {
+    init(pose: NativePose, model: PosesViewModel, onTryPose: @escaping (NativePose) -> Void, isPrivate: Bool = false) {
         self.pose = pose
         self.model = model
         self.onTryPose = onTryPose
+        self.isPrivate = isPrivate
         _isSaved = State(initialValue: pose.isSaved)
     }
     var body: some View {
@@ -625,7 +739,10 @@ struct PoseDetailScreen: View {
         }
         .task {
             // §3.6: a detail route is only valid while the pose is still confirmed as published.
-            if !(await model.confirmPublished(pose)) { isUnavailable = true }
+            // Private poses skip confirmPublished (D13)
+            if !isPrivate {
+                if !(await model.confirmPublished(pose)) { isUnavailable = true }
+            }
         }
     }
 
@@ -641,7 +758,7 @@ struct PoseDetailScreen: View {
                         Label("\(index + 1). \(step)", systemImage: "sparkles")
                     }
                     HStack(spacing: AIPoseSpacing.md) {
-                        if AppConfig.shared.isAccountFeatureEnabled {
+                        if !isPrivate && AppConfig.shared.isAccountFeatureEnabled {
                             Button { Task { await toggleBookmark() } } label: {
                                 Label(isSaved ? "Saved" : "Save pose", systemImage: isSaved ? "bookmark.fill" : "bookmark")
                             }.buttonStyle(NeoButtonStyle(fill: isSaved ? AIPoseColor.accentYellow : AIPoseColor.surface))

@@ -1,0 +1,17 @@
+Dev admin HTTP: 200
+Dev API health HTTP: 200
+Protected Account A env mode: 600; values not read into reports or printed
+API sign-in HTTP: 200; authenticated /api/account/me HTTP: 200; owner-scoped jobs HTTP: 200
+Account A tester003 label: matched
+Owner UUID b605c5e6-9b06-4f56-8b1e-0073d98c5068: matched
+Job 998de1bb-a5a3-4d4d-8fbf-b98f2f429798: present in API, status succeeded
+Pose 8f9e6d4f-8276-4e0a-95d3-4c3f24619800: matched
+Simulator UDID: 4C1D6E55-2C31-4BD7-9881-F86F21CC53C8
+UI route observed: Jobs > Finish > All results
+Hierarchy: Jobs/Finish present; tester003 label absent; candidate job/pose absent; Ready absent
+Screenshot: current-ui.png; blank results area
+UI actions: attempted `open -a Simulator`; CUA getApp('Simulator') returned cgWindowNotFound; read-only simctl screenshot and Maestro hierarchy succeeded
+App sign-in/sign-out: not performed; current identity was not displayed and no UI interaction channel attached
+Maestro test invocations: 0
+Hide/create/reinstall/app-state clear/backend mutation: none
+Conclusion: API owner-scoped job exists but app UI currently displays no rows; because app identity cannot be established, cannot attribute absence to wrong app session versus app/server sync defect.

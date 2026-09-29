@@ -4,6 +4,8 @@ import path from "node:path";
 import postgres from "postgres";
 
 export type Sql = postgres.Sql;
+export type TransactionSql = postgres.TransactionSql;
+export type SqlOrTx = postgres.Sql | postgres.TransactionSql;
 
 function resolveSchemaPath(): string {
   const schemaPath = path.resolve(__dirname, "schema.sql");

@@ -301,11 +301,11 @@ caller không chọn provider.
 
 **Job `error_code` values (provider-neutral):** `PROVIDER_QUOTA_EXCEEDED`,
 `PROVIDER_CREDENTIALS_EXHAUSTED`, `PROVIDER_ERROR`, `PROVIDER_AUTH_REQUIRED`,
-`PROVIDER_TIMEOUT`, `PROVIDER_CLI_FAILED`, `LINEART_BG_REMOVAL_FAILED`.
+`PROVIDER_TIMEOUT`, `PROVIDER_CLI_FAILED`, `LINEART_BG_REMOVAL_FAILED`, `POSE_MATERIALIZE_FAILED`.
 
 ### GET /api/me/extract-jobs
 
-- **Authentication:** Bắt buộc (`AccountSession` hoặc Admin `Bearer`).
+- **Authentication:** Bắt buộc (`AccountSession` only, D10).
 - Liệt kê toàn bộ extraction jobs thuộc sở hữu của caller (ngoại trừ các job đã bị ẩn qua `DELETE /api/me/extract-jobs/:jobId`).
 - **Query parameters:**
   - `state`: enum `active | finished` (optional; `active` gồm `queued`, `processing`; `finished` gồm `succeeded`, `failed`).
@@ -323,6 +323,7 @@ caller không chọn provider.
       "status": "queued | processing | succeeded | failed",
       "poseDraft": { "name": "Standing pose", "tags": ["standing"], "description": null },
       "poseId": "<uuid-or-null>",
+      "thumbnailUrl": "<uri-or-null>",
       "errorCode": null,
       "errorMessage": null,
       "createdAt": "2026-09-25T10:00:00.000Z",
@@ -339,7 +340,7 @@ caller không chọn provider.
 
 ### POST /api/me/extract-jobs/:jobId/retry
 
-- **Authentication:** Bắt buộc (`AccountSession` hoặc Admin `Bearer`).
+- **Authentication:** Bắt buộc (`AccountSession` only, D10).
 - **Owner-checked:** Chỉ owner của job mới được retry; trả `404 NOT_FOUND` nếu khác owner.
 - **Điều kiện:** Chỉ cho phép thử lại đối với job đang ở trạng thái `failed`. Nếu job đang ở trạng thái khác (`queued`, `processing`, `succeeded`), trả về `409 CONFLICT` (`JOB_NOT_RETRYABLE`).
 - Requeue job với attempt mới hoặc reset trạng thái về `queued`.
@@ -358,7 +359,7 @@ caller không chọn provider.
 
 ### DELETE /api/me/extract-jobs/:jobId
 
-- **Authentication:** Bắt buộc (`AccountSession` hoặc Admin `Bearer`).
+- **Authentication:** Bắt buộc (`AccountSession` only, D10).
 - **Owner-checked:** Chỉ owner của job mới được ẩn; trả `404 NOT_FOUND` nếu khác owner.
 - Đánh dấu ẩn job khỏi danh sách cá nhân bằng cách set `hidden_at = NOW()`.
 - **Lưu ý quan trọng:** Hành động này **không bao giờ** xóa `Pose` đã được tạo trên server.

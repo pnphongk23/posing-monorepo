@@ -11,6 +11,7 @@ import { createCommunityRoutes } from "./routes/communityRoutes";
 import { createAdminCommunityRoutes } from "./routes/adminCommunityRoutes";
 import { createJobStatusRoutes } from "./routes/jobStatusRoutes";
 import { createAccountAuthMiddleware } from "./middleware/accountAuth";
+import { createAccountOrAdminAuth } from "./middleware/accountOrAdminAuth";
 import { createAuthRateLimitMiddleware } from "./middleware/authRateLimit";
 import { PendingAuthStore } from "./services/pendingAuthStore";
 import type { ExtractionJobStore } from "./db/extractionJobStore";
@@ -25,6 +26,8 @@ import { createAccountAuthRoutes } from "./routes/accountAuthRoutes";
 import { createAccountRoutes } from "./routes/accountRoutes";
 import { authRateLimitFromEnv } from "./config/env";
 import { createSavedRoutes } from "./routes/savedRoutes";
+import { createMyExtractJobsRoutes } from "./routes/myExtractJobsRoutes";
+import { createGuideReadRoutes } from "./routes/guideReadRoutes";
 import { logger } from "./utils/logger";
 import { sanitizeError } from "./utils/sanitizeError";
 
@@ -142,7 +145,16 @@ export function createCommunityExtractPoseImage(options: CreateAppOptions): Extr
 
     });
 
-    if (options.accountStore && options.supabaseUrl) {
+    const accountAuthMiddleware = (options.accountStore && options.supabaseUrl)
+      ? createAccountAuthMiddleware({
+          supabaseUrl: options.supabaseUrl,
+          keyId: options.supabaseJwtKeyId ?? "61218C19-FDB0-498D-B773-CEBE34CBF90A",
+          accountStore: options.accountStore,
+          fetchJwks: options.fetchJwks
+        })
+      : undefined;
+
+    if (options.accountStore && options.supabaseUrl && accountAuthMiddleware) {
       app.use("/api/auth", createAccountAuthRoutes({
         supabaseUrl: options.supabaseUrl,
         anonKey: options.supabaseAnonKey,
@@ -156,12 +168,7 @@ export function createCommunityExtractPoseImage(options: CreateAppOptions): Extr
         fetchImpl: options.fetchImpl,
         fetchJwks: options.fetchJwks
       }));
-      app.delete("/api/account", createAccountAuthMiddleware({
-        supabaseUrl: options.supabaseUrl,
-        keyId: options.supabaseJwtKeyId ?? "61218C19-FDB0-498D-B773-CEBE34CBF90A",
-        accountStore: options.accountStore,
-        fetchJwks: options.fetchJwks
-      }), createAccountRoutes({
+      app.delete("/api/account", accountAuthMiddleware, createAccountRoutes({
         supabaseUrl: options.supabaseUrl,
         serviceRoleKey: options.supabaseServiceRoleKey,
         r2PublicUrl: options.r2PublicUrl,
@@ -169,17 +176,9 @@ export function createCommunityExtractPoseImage(options: CreateAppOptions): Extr
         fetchImpl: options.fetchImpl,
         deleteObject: options.deleteObject
       }));
-      app.get("/api/account/me", createAccountAuthMiddleware({
-        supabaseUrl: options.supabaseUrl,
-        keyId: options.supabaseJwtKeyId ?? "61218C19-FDB0-498D-B773-CEBE34CBF90A",
-        accountStore: options.accountStore
-      }), (req, res) => res.json({ data: req.account }));
+      app.get("/api/account/me", accountAuthMiddleware, (req, res) => res.json({ data: req.account }));
       if (options.savedStore) {
-        app.use("/api/me/saved", createAccountAuthMiddleware({
-          supabaseUrl: options.supabaseUrl,
-          keyId: options.supabaseJwtKeyId ?? "61218C19-FDB0-498D-B773-CEBE34CBF90A",
-          accountStore: options.accountStore
-        }), createSavedRoutes(options.savedStore));
+        app.use("/api/me/saved", accountAuthMiddleware, createSavedRoutes(options.savedStore));
       }
     }
 
@@ -207,11 +206,17 @@ export function createCommunityExtractPoseImage(options: CreateAppOptions): Extr
     );
   }
 
+  const extractAuthMiddleware = createAccountOrAdminAuth({
+    adminSecret: options.adminSecret,
+    accountAuth: accountAuthMiddleware
+  });
+
   if (options.extractionJobStore) {
     app.use(
       "/api/extract-pose",
       createExtractPoseRoutes({
         jobStore: options.extractionJobStore,
+        authMiddleware: extractAuthMiddleware,
         rateLimitWindowMs: options.extractRateLimitWindowMs,
         rateLimitMaxRequests: options.extractRateLimitMaxRequests
       })
@@ -220,8 +225,29 @@ export function createCommunityExtractPoseImage(options: CreateAppOptions): Extr
       "/api/extract-jobs",
       createExtractJobsRoutes({
         jobStore: options.extractionJobStore,
+        authMiddleware: extractAuthMiddleware,
         rateLimitWindowMs: options.extractRateLimitWindowMs,
         rateLimitMaxRequests: options.extractRateLimitMaxRequests
+      })
+    );
+  }
+
+  if (options.extractionJobStore && accountAuthMiddleware) {
+    app.use(
+      "/api/me/extract-jobs",
+      createMyExtractJobsRoutes({
+        jobStore: options.extractionJobStore,
+        authMiddleware: accountAuthMiddleware
+      })
+    );
+  }
+
+  if (options.communityStore && accountAuthMiddleware) {
+    app.use(
+      "/api/guides",
+      createGuideReadRoutes({
+        communityStore: options.communityStore,
+        authMiddleware: accountAuthMiddleware
       })
     );
   }

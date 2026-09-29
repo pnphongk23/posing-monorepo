@@ -1,0 +1,3 @@
+8c04484c791b14b8b55bef04e2a950bdbbe3c41024d57812f51e3f2eeb76f4b2  plans/260925-server-authoritative-jobs/reports/maestro-account-a/scenario-d-account-a-ui-verified-2026-09-27/preflight.txt
+73123889ca192c914343ff49d5f1cbbe46b52e0f8cfbe00d21b58702077f2013  plans/260925-server-authoritative-jobs/reports/maestro-account-a/scenario-d-account-a-ui-verified-2026-09-27/simulator-preflight.png
+90378fcd50f6ac499cc2ead89d511426c44ce4067118d6caeefb8c2d98ef32a0  plans/260925-server-authoritative-jobs/reports/maestro-account-a/scenario-d-account-a-ui-verified-2026-09-27/report.md

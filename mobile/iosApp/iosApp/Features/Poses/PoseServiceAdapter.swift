@@ -102,6 +102,28 @@ enum CommunityPoseMapper {
     }
 }
 
+enum GuidePoseMapper {
+    static func map(_ guide: GuidePose, baseURL: String) -> NativePose {
+        let instructions: [String] = {
+            if let description = guide.description?.trimmingCharacters(in: .whitespacesAndNewlines), !description.isEmpty {
+                return description
+                    .components(separatedBy: .newlines)
+                    .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                    .filter { !$0.isEmpty }
+            }
+            return []
+        }()
+        return NativePose(
+            id: guide.poseId,
+            name: guide.name,
+            category: guide.tags.first ?? "",
+            imageURL: CommunityPoseMapper.resolveURL(guide.skeletonUrl, baseURL: baseURL),
+            instructions: instructions,
+            isSaved: false
+        )
+    }
+}
+
 // MARK: - Offline pose catalog (cache-first)
 
 /// Which feed a catalog row was observed in. Combined with `PoseRecord.status` (the saved flag)

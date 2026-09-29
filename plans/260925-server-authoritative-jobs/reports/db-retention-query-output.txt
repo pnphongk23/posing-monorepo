@@ -1,0 +1,41 @@
+# Dev Database Extraction Jobs Retention Evidence
+# Generated: 2026-09-27T07:31:57.642Z
+# Requirement: SELECT source_image_base64 IS NULL, result_image_base64 IS NULL FROM extraction_jobs WHERE pose_id IS NOT NULL
+
+## Aggregate Assertion:
+{
+  "all_source_cleared": true,
+  "all_result_cleared": true,
+  "materialized_jobs_count": "3"
+}
+
+## Materialized Job Rows:
+[
+  {
+    "id": "998de1bb-a5a3-4d4d-8fbf-b98f2f429798",
+    "pose_id": "8f9e6d4f-8276-4e0a-95d3-4c3f24619800",
+    "status": "succeeded",
+    "source_image_null": true,
+    "result_image_null": true,
+    "created_at": "2026-09-27T07:18:25.611Z",
+    "updated_at": "2026-09-27T07:19:20.704Z"
+  },
+  {
+    "id": "7157d5b3-b208-48fa-9878-953693e81dae",
+    "pose_id": "774553de-4025-4379-97b1-3223235557cd",
+    "status": "succeeded",
+    "source_image_null": true,
+    "result_image_null": true,
+    "created_at": "2026-09-27T06:39:43.576Z",
+    "updated_at": "2026-09-27T06:40:46.175Z"
+  },
+  {
+    "id": "01793aa1-2264-446a-a594-52c7a2109b21",
+    "pose_id": "4e02f019-7e30-4913-99e1-af6c37a921ef",
+    "status": "succeeded",
+    "source_image_null": true,
+    "result_image_null": true,
+    "created_at": "2026-09-27T00:11:38.978Z",
+    "updated_at": "2026-09-27T00:12:42.374Z"
+  }
+]

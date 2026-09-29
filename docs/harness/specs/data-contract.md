@@ -232,6 +232,10 @@ ba `MediaAsset`, back-fill `poseId` của job, và giải phóng payload ảnh t
 | `ownerAccountId` | TEXT (UUID) | ✓ | `Account` sở hữu job — bắt buộc, phân vùng theo tài khoản |
 | `poseDraft` | JSONB | ✓ | Draft metadata nộp kèm submit: `{ name, tags, description? }` |
 | `poseId` | TEXT (UUID) | — | `Pose` khi job thuộc pose flow; NULL tới khi extraction `succeeded` và `Pose` được tạo tự động |
+| `sourceImageBase64` | TEXT | — | Payload ảnh nguồn dạng base64 trong lúc job chờ/xử lý; nullable để hỗ trợ migration và được dọn khi pose materialize thành công |
+| `sourceMimeType` | TEXT | ✓ | MIME type ảnh đầu vào |
+| `resultImageBase64` | TEXT | — | Payload skeleton dạng base64 tạm thời; được dọn khi media được materialize thành công |
+| `resultMimeType` | TEXT | — | MIME type của payload kết quả tạm thời |
 | `status` | TEXT | ✓ | Enum `ExtractionJobStatus`: `queued` \| `processing` \| `succeeded` \| `failed` |
 | `sourceMediaId` | TEXT (UUID) | — | `MediaAsset` original khi có pose |
 | `skeletonMediaId` | TEXT (UUID) | — | `MediaAsset` skeleton khi `succeeded` |
@@ -242,6 +246,11 @@ ba `MediaAsset`, back-fill `poseId` của job, và giải phóng payload ảnh t
 | `maxAttempts` | INTEGER | ✓ (default `3`) | Trần retry |
 | `createdAt` | DATETIME | ✓ | Enqueue |
 | `updatedAt` | DATETIME | ✓ | Cập nhật cuối |
+
+Retention rule: khi `poseId` đã được gán sau materialization thành công, cả
+`sourceImageBase64` và `resultImageBase64` phải là `NULL`. URL công khai của media
+được tạo từ R2 public base URL và UUID object key; API trả `thumbnailUrl` như locator
+cho media thumbnail đã sẵn sàng.
 
 - Nhiều `ExtractionJob` → một `Account` (`ownerAccountId`, index `(ownerAccountId, createdAt)`)
 - Nhiều `ExtractionJob` → một `Pose` (`poseId`, nullable tới khi pose tạo)

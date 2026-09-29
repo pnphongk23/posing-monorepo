@@ -1,0 +1,67 @@
+appId: posing.camera.app
+name: phase-06-scenario-d-hide-retention-20260927
+---
+- launchApp:
+    clearState: false
+    stopApp: false
+- waitForAnimationToEnd
+- tapOn:
+    text: Back
+    optional: true
+- tapOn:
+    id: poses.jobs
+- runFlow:
+    when:
+      visible:
+        id: signin.emailEntry
+    commands:
+      - tapOn:
+          id: signin.emailEntry
+      - tapOn:
+          id: signin.email
+      - inputText: ${A_TEST_EMAIL}
+      - tapOn:
+          id: signin.showPassword
+      - tapOn:
+          id: signin.password
+      - inputText: ${A_TEST_PASSWORD}
+      - tapOn:
+          id: signin.showPassword
+      - tapOn:
+          id: signin.submit
+- extendedWaitUntil:
+    visible:
+      id: jobs.tab.finish
+    timeout: 60000
+- tapOn:
+    text: Back
+- tapOn:
+    text: Back
+- tapOn:
+    id: poses.jobs
+- extendedWaitUntil:
+    visible:
+      id: jobs.tab.finish
+    timeout: 30000
+- tapOn:
+    id: jobs.tab.finish
+- assertVisible:
+    text: server-authoritative-jobs-e2e-final-20260927-1425, Ready, View pose
+- takeScreenshot: d-account-a-ready-before-hide
+- swipe:
+    direction: LEFT
+    on:
+      text: server-authoritative-jobs-e2e-final-20260927-1425, Ready, View pose
+- tapOn:
+    text: Remove
+- assertVisible:
+    text: Remove job?
+- tapOn:
+    text: Remove
+- extendedWaitUntil:
+    notVisible:
+      text: server-authoritative-jobs-e2e-final-20260927-1425, Ready, View pose
+    timeout: 30000
+- assertNotVisible:
+    text: server-authoritative-jobs-e2e-final-20260927-1425, Ready, View pose
+- takeScreenshot: d-account-a-row-hidden

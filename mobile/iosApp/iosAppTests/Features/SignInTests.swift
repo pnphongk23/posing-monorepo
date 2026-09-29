@@ -401,6 +401,8 @@ final class SignInIntentTests: XCTestCase {
         XCTAssertEqual(SignInIntent.savePose.promptCopy, "Save this pose.")
         XCTAssertEqual(SignInIntent.tryPose.promptCopy, "Try this pose.")
         XCTAssertEqual(SignInIntent.openAccount.promptCopy, "Manage your account.")
+        XCTAssertEqual(SignInIntent.addPose.promptCopy, "Add your own pose.")
+        XCTAssertEqual(SignInIntent.openJobs.promptCopy, "See your pose jobs.")
     }
 }
 

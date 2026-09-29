@@ -1,26 +1,7 @@
+import { getAdminConfig } from './poseExtractAdminServer.js';
+
 const EXTRACT_TIMEOUT_MS = 120_000;
 const MAX_EXTRACT_PROXY_RESPONSE_BYTES = 25_000_000;
-
-function getPoseExtractServerBaseUrl() {
-  const baseUrl = process.env.POSE_EXTRACT_SERVER_URL;
-  if (!baseUrl) {
-    throw new Error('Missing POSE_EXTRACT_SERVER_URL');
-  }
-
-
-  let parsedBaseUrl;
-  try {
-    parsedBaseUrl = new URL(baseUrl);
-  } catch {
-    throw new Error('Invalid POSE_EXTRACT_SERVER_URL');
-  }
-
-  if (!/^https?:$/.test(parsedBaseUrl.protocol)) {
-    throw new Error('POSE_EXTRACT_SERVER_URL must use http/https');
-  }
-
-  return parsedBaseUrl.toString().replace(/\/+$/, '');
-}
 
 function assertNotSelfProxy(baseUrl, requestUrl) {
   if (!requestUrl) return;
@@ -50,11 +31,11 @@ function safeParseJson(rawText) {
 }
 
 /**
- * Proxies multipart POST to pose-extract-server POST /api/extract-pose (no admin Bearer).
+ * Proxies multipart POST to pose-extract-server POST /api/extract-pose with admin Bearer.
  * Requires the same env as admin proxy so misconfig is caught early.
  */
 export async function callPoseExtractExtractPose(formData, options = {}) {
-  const baseUrl = getPoseExtractServerBaseUrl();
+  const { baseUrl, adminSecret } = getAdminConfig();
   const { requestUrl } = options;
 
   assertNotSelfProxy(baseUrl, requestUrl);
@@ -65,6 +46,9 @@ export async function callPoseExtractExtractPose(formData, options = {}) {
   try {
     const response = await fetch(`${baseUrl}/api/extract-pose`, {
       method: 'POST',
+      headers: {
+        Authorization: `Bearer ${adminSecret}`,
+      },
       body: formData,
       cache: 'no-store',
       signal: controller.signal,

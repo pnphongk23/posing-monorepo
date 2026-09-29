@@ -1,0 +1,5 @@
+
+Waiting for flows to complete...
+[Failed] phase-06-scenario-c-account-isolation-retry-20260927 (1m 17s) (Assertion is false: "Sign out" is visible)
+
+1/1 Flow Failed

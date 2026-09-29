@@ -1,0 +1,2 @@
+Dev admin=200; API health=200; A env mode=600; B env mode=600; syntax=OK; explicit simulator=booted
+App delete/reinstall: completed; Debug argument -AIPoseAccountEnabled true: simctl launch exit 0.

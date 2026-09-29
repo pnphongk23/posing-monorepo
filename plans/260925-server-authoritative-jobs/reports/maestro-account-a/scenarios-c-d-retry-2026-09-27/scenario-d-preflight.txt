@@ -1,0 +1,3 @@
+Dev admin=200; API health=200; A env mode=600; B env mode=600; syntax=OK; explicit simulator=booted
+Account A ID lookup exit: 1
+Debug argument launch exit: 0.

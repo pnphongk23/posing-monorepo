@@ -1,0 +1,41 @@
+Running on AIPose-Parity-iPhone13 - iOS 26.1 - 4C1D6E55-2C31-4BD7-9881-F86F21CC53C8
+ > Flow phase-06-extraction-account-a
+Launch app "posing.camera.app" with clear state... COMPLETED
+Tap on (Optional) "Skip"... WARNED
+
+
+ Warning: Element not found: Text matching regex: Skip
+Wait for animation to end... COMPLETED
+Tap on id: poses.add-pose... COMPLETED
+Assert that "Add your own pose." is visible... COMPLETED
+Tap on id: signin.emailEntry... COMPLETED
+Assert that id: signin.email is visible... COMPLETED
+Tap on id: signin.email... COMPLETED
+Input text ${EMAIL}... COMPLETED
+Press Enter key... COMPLETED
+Tap on id: signin.password... COMPLETED
+Input text ${PASSWORD}... COMPLETED
+Tap on id: signin.submit... COMPLETED
+Assert that id: addPose.photoPicker is visible... FAILED
+
+Assertion is false: id: addPose.photoPicker is visible
+
+Assertion 'id: addPose.photoPicker is visible' failed. Check the UI hierarchy in debug artifacts to verify the element state and properties.
+
+Possible causes:
+- Element selector may be incorrect - check if there are similar elements with slightly different names/properties.
+- Element may be temporarily unavailable due to loading state
+- This could be a real regression that needs to be addressed
+
+==== Debug output (logs & screenshots) ====
+
+/Users/phamnhuphong/Git/ai-pose/plans/260925-server-authoritative-jobs/reports/maestro-account-a/2026-09-27_074600
+╭────────────────────────────────────────────────────────────────────────────────────────────────╮
+│                                                                                                │
+│   Debug tests faster by easy access to test recordings, maestro logs, screenshots, and more.   │
+│                                                                                                │
+│   Run your flows on Maestro Cloud:                                                             │
+│   maestro cloud app_file flows_folder/                                                         │
+│                                                                                                │
+╰────────────────────────────────────────────────────────────────────────────────────────────────╯
+

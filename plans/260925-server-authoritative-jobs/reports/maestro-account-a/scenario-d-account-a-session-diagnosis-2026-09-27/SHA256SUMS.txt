@@ -1,0 +1,3 @@
+b20385bc5d1ec9d9ed262819c3f8e90234929d51405d4ad19ad224a3af922bb8  plans/260925-server-authoritative-jobs/reports/maestro-account-a/scenario-d-account-a-session-diagnosis-2026-09-27/diagnosis.txt
+10ab0fb4b754dc14ed1c57895dd9d8340665511f9a572b5103a4247d9d96eccb  plans/260925-server-authoritative-jobs/reports/maestro-account-a/scenario-d-account-a-session-diagnosis-2026-09-27/current-ui.png
+aac6b03e026e40cbaee6a92cf67e3b069a4bbbcfc6182d93e962fe9906ed1fdb  plans/260925-server-authoritative-jobs/reports/maestro-account-a/scenario-d-account-a-session-diagnosis-2026-09-27/report.md

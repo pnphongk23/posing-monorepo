@@ -1,0 +1,116 @@
+appId: posing.camera.app
+name: phase-06-scenario-c-account-isolation-20260927
+---
+- launchApp:
+    clearState: false
+    stopApp: false
+- waitForAnimationToEnd
+# Navigate into Account and force a fresh Account A sign-in even if iOS preserved a keychain session.
+- tapOn:
+    text: Open Settings
+- tapOn:
+    text: Open Account
+- runFlow:
+    when:
+      visible:
+        text: Sign out
+    commands:
+      - tapOn:
+          text: Sign out
+      - extendedWaitUntil:
+          visible:
+            id: signin.emailEntry
+          timeout: 15000
+- assertVisible:
+    id: signin.emailEntry
+- tapOn:
+    id: signin.emailEntry
+- tapOn:
+    id: signin.email
+- inputText: ${A_TEST_EMAIL}
+- tapOn:
+    id: signin.showPassword
+- tapOn:
+    id: signin.password
+- inputText: ${A_TEST_PASSWORD}
+- tapOn:
+    id: signin.showPassword
+- tapOn:
+    id: signin.submit
+- extendedWaitUntil:
+    visible:
+      text: Sign out
+    timeout: 60000
+- tapOn:
+    text: Back
+- tapOn:
+    text: Back
+- assertVisible:
+    id: poses.jobs
+- tapOn:
+    id: poses.jobs
+- extendedWaitUntil:
+    visible:
+      id: jobs.tab.finish
+    timeout: 30000
+- tapOn:
+    id: jobs.tab.finish
+- extendedWaitUntil:
+    visible:
+      text: server-authoritative-jobs-e2e-final-20260927-1425, Ready, View pose
+    timeout: 30000
+- assertVisible:
+    text: server-authoritative-jobs-e2e-final-20260927-1425, Ready, View pose
+- takeScreenshot: c-account-a-pose-retained
+- tapOn:
+    text: Back
+- tapOn:
+    text: Open Settings
+- tapOn:
+    text: Open Account
+- tapOn:
+    text: Sign out
+- extendedWaitUntil:
+    visible:
+      id: signin.emailEntry
+    timeout: 15000
+- tapOn:
+    id: signin.emailEntry
+- tapOn:
+    id: signin.email
+- inputText: ${B_TEST_EMAIL}
+- tapOn:
+    id: signin.showPassword
+- tapOn:
+    id: signin.password
+- inputText: ${B_TEST_PASSWORD}
+- tapOn:
+    id: signin.showPassword
+- tapOn:
+    id: signin.submit
+- extendedWaitUntil:
+    visible:
+      text: Sign out
+    timeout: 60000
+- takeScreenshot: c-account-b-signed-in
+- tapOn:
+    text: Back
+- tapOn:
+    text: Back
+- tapOn:
+    id: poses.jobs
+- extendedWaitUntil:
+    visible:
+      id: jobs.tab.finish
+    timeout: 30000
+- tapOn:
+    id: jobs.tab.finish
+- extendedWaitUntil:
+    visible:
+      text: No jobs yet
+    timeout: 30000
+- assertVisible:
+    text: No jobs yet
+- assertNotVisible:
+    text: server-authoritative-jobs-e2e-final-20260927-1425, Ready, View pose
+- takeScreenshot: c-account-b-empty-jobs

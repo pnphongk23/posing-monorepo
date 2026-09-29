@@ -4,11 +4,11 @@ import { setupTestDatabase } from "./testDb";
 import { ProviderSettingsStore } from "./providerSettingsStore";
 
 describe("ProviderSettingsStore", () => {
-  it("defaults to gemini_native on fresh database", async () => {
+  it("defaults to higgsfield_cli on fresh database", async () => {
     const sql = await setupTestDatabase();
     const store = new ProviderSettingsStore(sql);
 
-    expect(await store.getActiveProvider()).toBe("gemini_native");
+    expect(await store.getActiveProvider()).toBe("higgsfield_cli");
   });
 
   it("persists higgsfield_cli selection", async () => {

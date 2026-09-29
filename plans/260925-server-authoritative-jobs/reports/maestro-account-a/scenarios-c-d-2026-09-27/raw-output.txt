@@ -1,0 +1,4 @@
+Scenario C: one Maestro invocation; failed before login: Element not found: Open Account.
+Scenario D: one Maestro invocation; failed before login: Element not found: Back.
+Account A authenticated pose-ID discovery: failed; response details withheld.
+Credential/email sanitization scan: PASS.
