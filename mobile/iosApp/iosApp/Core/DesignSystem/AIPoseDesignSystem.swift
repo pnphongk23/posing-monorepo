@@ -35,14 +35,92 @@ extension Color {
     }
 }
 
+enum NeoChromeTokens {
+    static let borderHairline: CGFloat = 1.0
+    static let borderThin: CGFloat = 1.5
+    static let borderThick: CGFloat = 2.0
+    static let radiusSmall: CGFloat = 6.0
+    static let radiusMedium: CGFloat = 10.0
+    static let radiusLarge: CGFloat = 14.0
+    static let radiusToolbarTab: CGFloat = 20.0
+    static let shadowSmall: CGFloat = 1.5
+    static let shadowSelected: CGFloat = 2.0
+    static let shadowDefault: CGFloat = 3.0
+    static let shadowLarge: CGFloat = 5.0
+    static let pressedOffset: CGFloat = 3.0
+    static let touchMinimum: CGFloat = 44.0
+    static let compactSurfaceSide: CGFloat = 32.0
+}
+
+/// Reusable Neo-Brutalist surface styling: solid fill, solid single border, and a solid offset shadow shape behind the fill.
+/// Avoids SwiftUI `.shadow` on stroke overlays which produces doubled outlines / offset ghost borders.
+struct NeoSurfaceModifier<S: Shape>: ViewModifier {
+    var shape: S
+    var fill: Color = AIPoseColor.surface
+    var borderColor: Color = AIPoseColor.foreground
+    var borderWidth: CGFloat = NeoChromeTokens.borderThick
+    var shadowOffset: CGFloat = NeoChromeTokens.shadowDefault
+    var shadowColor: Color = AIPoseColor.foreground
+
+    func body(content: Content) -> some View {
+        content
+            .clipShape(shape)
+            .background(
+                ZStack {
+                    if shadowOffset > 0 {
+                        shape
+                            .fill(shadowColor)
+                            .offset(x: shadowOffset, y: shadowOffset)
+                    }
+                    shape
+                        .fill(fill)
+                }
+            )
+            .overlay(
+                Group {
+                    if borderWidth > 0 {
+                        shape
+                            .stroke(borderColor, lineWidth: borderWidth)
+                    }
+                }
+            )
+    }
+}
+
+extension View {
+    func neoSurface<S: Shape>(
+        shape: S,
+        fill: Color = AIPoseColor.surface,
+        borderColor: Color = AIPoseColor.foreground,
+        borderWidth: CGFloat = NeoChromeTokens.borderThick,
+        shadowOffset: CGFloat = NeoChromeTokens.shadowDefault,
+        shadowColor: Color = AIPoseColor.foreground
+    ) -> some View {
+        modifier(NeoSurfaceModifier(
+            shape: shape,
+            fill: fill,
+            borderColor: borderColor,
+            borderWidth: borderWidth,
+            shadowOffset: shadowOffset,
+            shadowColor: shadowColor
+        ))
+    }
+}
+
 struct NeoCardModifier: ViewModifier {
     var background = AIPoseColor.surface
-    var cornerRadius: CGFloat = 12
+    var cornerRadius: CGFloat = NeoChromeTokens.radiusLarge
+    var shadowOffset: CGFloat = NeoChromeTokens.shadowDefault
+
     func body(content: Content) -> some View {
-        content.padding(AIPoseSpacing.lg).background(background)
-            .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
-            .overlay(RoundedRectangle(cornerRadius: cornerRadius).stroke(AIPoseColor.foreground, lineWidth: 2))
-            .shadow(color: AIPoseColor.foreground, radius: 0, x: 4, y: 4)
+        content
+            .padding(AIPoseSpacing.lg)
+            .neoSurface(
+                shape: RoundedRectangle(cornerRadius: cornerRadius),
+                fill: background,
+                borderWidth: NeoChromeTokens.borderThick,
+                shadowOffset: shadowOffset
+            )
     }
 }
 
@@ -54,13 +132,25 @@ extension View {
 
 struct NeoButtonStyle: ButtonStyle {
     var fill = AIPoseColor.primary
+    var cornerRadius: CGFloat = NeoChromeTokens.radiusMedium
+
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label.font(.headline).foregroundStyle(AIPoseColor.foreground)
-            .frame(maxWidth: .infinity).padding(.vertical, 13).background(fill)
-            .clipShape(RoundedRectangle(cornerRadius: 12))
-            .overlay(RoundedRectangle(cornerRadius: 12).stroke(AIPoseColor.foreground, lineWidth: 2))
-            .shadow(color: AIPoseColor.foreground, radius: 0, x: configuration.isPressed ? 1 : 4, y: configuration.isPressed ? 1 : 4)
-            .offset(x: configuration.isPressed ? 3 : 0, y: configuration.isPressed ? 3 : 0)
+        let isPressed = configuration.isPressed
+        configuration.label
+            .font(.headline)
+            .foregroundStyle(AIPoseColor.foreground)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 13)
+            .neoSurface(
+                shape: RoundedRectangle(cornerRadius: cornerRadius),
+                fill: fill,
+                borderWidth: NeoChromeTokens.borderThick,
+                shadowOffset: isPressed ? 0 : NeoChromeTokens.shadowDefault
+            )
+            .offset(
+                x: isPressed ? NeoChromeTokens.pressedOffset : 0,
+                y: isPressed ? NeoChromeTokens.pressedOffset : 0
+            )
     }
 }
 
@@ -119,9 +209,9 @@ struct FeatureStateView: View {
     @State private var didAnnounce = false
 
     /// `empty-state.css`: `border-radius: var(--nb-radius-medium)` → 10pt (tokens.css).
-    private static let cornerRadius: CGFloat = 10
+    private static let cornerRadius: CGFloat = NeoChromeTokens.radiusMedium
     /// `empty-state.css`: `border: var(--nb-border-thin)` → `--nb-border-width-thin` = 1.5pt.
-    private static let borderWidth: CGFloat = 1.5
+    private static let borderWidth: CGFloat = NeoChromeTokens.borderThin
     /// `empty-state.css`: `padding: var(--nb-space-md)` → 16pt (tokens.css, not `AIPoseSpacing.md`).
     private static let contentPadding: CGFloat = 16
     /// `empty-state.css`: `gap` / `margin-bottom: var(--nb-space-sm)` → 8pt.
@@ -147,8 +237,8 @@ struct FeatureStateView: View {
                 .fixedSize(horizontal: false, vertical: true)
             if let actionTitle, let action {
                 // `NeoButtonStyle` is shared app-wide and carries no horizontal padding, so the
-                // state card's action used to hug the label exactly — glyphs sat on the 2pt border
-                // and the 4pt shadow drew a second box beside it. `.nb-btn` (`components/button.css`)
+                  // state card's action uses inline horizontal padding to match `.nb-btn`
+                  // (`components/button.css`), whose control padding is 16pt on each side.
                 // is `padding: var(--nb-space-compact) var(--nb-space-md)` — 12pt vertical, 16pt
                 // horizontal — so the inline padding belongs here at the call site, not in the style.
                 Button(action: action) {
@@ -162,11 +252,12 @@ struct FeatureStateView: View {
         }
         .padding(Self.contentPadding)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(tone.surface)
         .clipShape(RoundedRectangle(cornerRadius: Self.cornerRadius))
-        .overlay(
-            RoundedRectangle(cornerRadius: Self.cornerRadius)
-                .stroke(AIPoseColor.foreground, lineWidth: Self.borderWidth)
+        .neoSurface(
+            shape: RoundedRectangle(cornerRadius: Self.cornerRadius),
+            fill: tone.surface,
+            borderWidth: Self.borderWidth,
+            shadowOffset: 0
         )
         // `margin-bottom: var(--nb-space-sm)`.
         .padding(.bottom, Self.contentGap)

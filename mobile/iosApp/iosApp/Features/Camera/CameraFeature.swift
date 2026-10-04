@@ -1,4 +1,5 @@
 import AVFoundation
+import Combine
 import Kingfisher
 import Network
 import SwiftUI
@@ -1476,11 +1477,19 @@ final class PosePickerViewModel: ObservableObject {
 /// Close and **no Back button**.
 private struct PosePickerSheet: View {
     @ObservedObject var model: PosePickerViewModel
+    @ObservedObject private var aspectRatioCache = PoseAspectRatioCache.shared
     let onClose: () -> Void
     let onSelect: (NativePose) -> Void
+    @State private var columnByPoseID: [String: Int] = [:]
 
     @FocusState private var isSearchFocused: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private struct PickerItem: Identifiable {
+        let index: Int
+        let pose: NativePose
+        var id: String { pose.id }
+    }
 
     var body: some View {
         GeometryReader { proxy in
@@ -1691,25 +1700,61 @@ private struct PosePickerSheet: View {
     private var poseGrid: some View {
         let poses = model.filteredPoses
         if !poses.isEmpty {
-            LazyVGrid(
-                columns: [
-                    GridItem(.flexible(), spacing: PoseGridMetrics.columnSpacing),
-                    GridItem(.flexible(), spacing: PoseGridMetrics.columnSpacing),
-                ],
-                spacing: PoseGridMetrics.rowSpacing
-            ) {
-                ForEach(Array(poses.enumerated()), id: \.element.id) { index, pose in
-                    Button {
-                        onSelect(pose)
-                    } label: {
-                        PoseCard(pose: pose, aspectRatio: PoseGridMetrics.aspectRatio(forRow: index / 2))
+            let columns = itemsByColumn
+            HStack(alignment: .top, spacing: PoseGridMetrics.columnSpacing) {
+                ForEach(0..<2, id: \.self) { columnIndex in
+                    LazyVStack(alignment: .leading, spacing: PoseGridMetrics.rowSpacing) {
+                        ForEach(columns[columnIndex]) { item in
+                            Button {
+                                onSelect(item.pose)
+                            } label: {
+                                PoseCard(
+                                    pose: item.pose,
+                                    aspectRatio: aspectRatioCache.ratio(for: item.pose.id)
+                                )
+                            }
+                            .buttonStyle(GuideCardPressStyle())
+                            .accessibilityLabel("Use \(item.pose.name) pose")
+                            .accessibilitySortPriority(Double(poses.count - item.index))
+                        }
                     }
-                    .buttonStyle(GuideCardPressStyle())
-                    .accessibilityLabel("Use \(pose.name) pose")
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
                 }
+            }
+            .frame(maxWidth: .infinity)
+            .onAppear(perform: rebuildAssignments)
+            .onChange(of: poses.map(\.id)) { _ in rebuildAssignments() }
+            .onReceive(
+                aspectRatioCache.$ratios
+                    .debounce(for: .milliseconds(250), scheduler: RunLoop.main)
+                    .removeDuplicates()
+            ) { _ in
+                rebuildAssignments()
             }
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("posePicker.grid")
+        }
+    }
+
+    private var itemsByColumn: [[PickerItem]] {
+        var columns = Array(repeating: [PickerItem](), count: 2)
+        for (index, pose) in model.filteredPoses.enumerated() {
+            let column = columnByPoseID[pose.id] ?? (index % 2)
+            columns[column].append(PickerItem(index: index, pose: pose))
+        }
+        return columns
+    }
+
+    private func rebuildAssignments() {
+        let poses = model.filteredPoses
+        let columns = PoseGridMetrics.columnAssignments(
+            for: poses.map { aspectRatioCache.ratio(for: $0.id) },
+            columnWidth: PoseGridMetrics.columnWidth
+        )
+        let updated = Dictionary(uniqueKeysWithValues: zip(poses.map(\.id), columns))
+        guard updated != columnByPoseID else { return }
+        withAnimation(.easeInOut(duration: 0.2)) {
+            columnByPoseID = updated
         }
     }
 }

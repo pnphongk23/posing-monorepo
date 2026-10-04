@@ -249,6 +249,7 @@ struct GalleryScreen: View {
     /// All-gallery-empty recovery (`gallery.html` `Open Camera`). The owning root wires this to the
     /// camera entry point; the default keeps every existing call site compiling untouched.
     var onOpenCamera: () -> Void = {}
+    @Namespace private var zoomNamespace
     var body: some View {
         VStack(spacing: 0) {
             galleryHeader
@@ -267,7 +268,7 @@ struct GalleryScreen: View {
             set: { if !$0 { model.selectedIndex = nil } }
         )) {
             if let index = model.selectedIndex {
-                GalleryDetailPager(items: model.visibleItems, startIndex: index) { item in
+                GalleryDetailPager(items: model.visibleItems, startIndex: index, zoomNamespace: zoomNamespace) { item in
                     Task { await model.delete(item) }
                 } onDismiss: {
                     model.selectedIndex = nil
@@ -287,9 +288,12 @@ struct GalleryScreen: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: AIPoseSpacing.sm) {
                     ForEach(GalleryTimeFilter.allCases) { filter in
-                        NeoFilterChip(title: filter.rawValue, isSelected: model.timeFilter == filter) {
-                            model.timeFilter = filter
-                        }
+                        NeoFilterChip(
+                            title: filter.rawValue,
+                            isSelected: model.timeFilter == filter,
+                            variant: .gallery,
+                            action: { model.timeFilter = filter }
+                        )
                         .accessibilityIdentifier(filter.filterIdentifier)
                         .accessibilityLabel(filter.rawValue)
                     }
@@ -356,7 +360,7 @@ struct GalleryScreen: View {
             EmptyView()
         case nil:
             ScrollView {
-                GalleryPhotoGrid(sections: model.dateSections) { item in
+                GalleryPhotoGrid(sections: model.dateSections, zoomNamespace: zoomNamespace) { item in
                     model.select(item)
                 }
                 .padding(.horizontal, AIPoseSpacing.lg)
@@ -474,6 +478,7 @@ struct GalleryDateSectionHeader: View {
 /// SCR-002-01-GRD-002 / GRD-003: dense square 3-column grid, one header per date group.
 struct GalleryPhotoGrid: View {
     let sections: [GalleryDateSection]
+    var zoomNamespace: Namespace.ID?
     let onSelect: (GalleryItem) -> Void
 
     private var columns: [GridItem] {
@@ -490,6 +495,7 @@ struct GalleryPhotoGrid: View {
                     ForEach(section.items) { item in
                         Button { onSelect(item) } label: {
                             GalleryPhotoCell(item: item)
+                                .zoomTransitionSource(id: item.id, in: zoomNamespace, cornerRadius: GalleryGridContract.cornerRadius)
                         }
                         .buttonStyle(.plain)
                     }
@@ -556,6 +562,7 @@ struct GalleryDetailPhotoFrame: View {
 struct GalleryDetailPager: View {
     let items: [GalleryItem]
     let startIndex: Int
+    var zoomNamespace: Namespace.ID?
     let onDelete: (GalleryItem) -> Void
     let onDismiss: () -> Void
     @State private var page: Int
@@ -566,9 +573,16 @@ struct GalleryDetailPager: View {
     @State private var isSaving = false
     @State private var saveStatus: String?
 
-    init(items: [GalleryItem], startIndex: Int, onDelete: @escaping (GalleryItem) -> Void, onDismiss: @escaping () -> Void) {
+    init(
+        items: [GalleryItem],
+        startIndex: Int,
+        zoomNamespace: Namespace.ID? = nil,
+        onDelete: @escaping (GalleryItem) -> Void,
+        onDismiss: @escaping () -> Void
+    ) {
         self.items = items
         self.startIndex = startIndex
+        self.zoomNamespace = zoomNamespace
         self.onDelete = onDelete
         self.onDismiss = onDismiss
         _page = State(initialValue: startIndex)
@@ -628,6 +642,7 @@ struct GalleryDetailPager: View {
             .onChange(of: page) { _ in saveStatus = nil }
         }
         .navigationViewStyle(.stack)
+        .zoomTransition(sourceID: current.id, in: zoomNamespace)
     }
 
     /// Prototype `.topbar`: plain circular back control, centered date/time, plain options control.

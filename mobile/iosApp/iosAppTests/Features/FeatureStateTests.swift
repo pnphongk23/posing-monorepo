@@ -69,13 +69,56 @@ final class FeatureStateTests: XCTestCase {
         XCTAssertEqual(SearchResultsCopy.countLabel(for: .empty), "0 poses")
     }
 
-    /// `app.js createPoseCard` cycles `.nb-card--aspect-{tall,square,short}`; the two-column grid
-    /// lands one aspect per visual row, which is what the reference shots show.
-    func testPoseGridAspectRatiosCyclePerRow() {
-        XCTAssertEqual(PoseGridMetrics.aspectRatio(forRow: 0), 1 / 1.25, accuracy: 0.0001)
-        XCTAssertEqual(PoseGridMetrics.aspectRatio(forRow: 1), 1, accuracy: 0.0001)
-        XCTAssertEqual(PoseGridMetrics.aspectRatio(forRow: 2), 1.25, accuracy: 0.0001)
-        XCTAssertEqual(PoseGridMetrics.aspectRatio(forRow: 3), 1 / 1.25, accuracy: 0.0001)
+    func testPoseMasonryAssignsNextCardToShortestColumn() {
+        let assignments = PoseGridMetrics.columnAssignments(
+            for: [0.5, 1, 0.5, 1, 0.5],
+            columnWidth: 100,
+            itemSpacing: 0,
+            labelHeight: 0,
+            labelSpacing: 0
+        )
+
+        XCTAssertEqual(assignments, [0, 1, 1, 0, 0])
+    }
+
+    @MainActor func testPoseAspectRatioCacheKeepsRealImageRatio() {
+        let cache = PoseAspectRatioCache.shared
+        cache.resetForTesting()
+        defer { cache.resetForTesting() }
+
+        XCTAssertEqual(cache.ratio(for: "portrait"), 1, accuracy: 0.0001)
+        cache.updateRatio(width: 300, height: 400, for: "portrait")
+        XCTAssertEqual(cache.ratio(for: "portrait"), 0.75, accuracy: 0.0001)
+        cache.updateRatio(width: 0, height: 400, for: "portrait")
+        XCTAssertEqual(cache.ratio(for: "portrait"), 0.75, accuracy: 0.0001)
+    }
+
+    @MainActor func testPoseArtworkDownsampleBoundsUseUnpaddedColumnWidth() {
+        let points = PoseGridMetrics.cardArtworkPoints
+        XCTAssertEqual(points.width, PoseGridMetrics.columnWidth, accuracy: 0.5)
+        XCTAssertEqual(
+            points.height,
+            points.width / PoseGridMetrics.minimumDownsampleAspectRatio,
+            accuracy: 0.5
+        )
+    }
+
+    @MainActor func testPoseHeroCardMetricsUseFullContentWidthAndPrototypeRatio() {
+        XCTAssertEqual(
+            PoseDetailLayoutMetrics.heroCardWidth,
+            UIScreen.main.bounds.width - 2 * PoseSurfaceMetrics.horizontalPadding,
+            accuracy: 0.5
+        )
+        XCTAssertEqual(
+            PoseDetailLayoutMetrics.heroCardWidth / PoseDetailLayoutMetrics.heroCardHeight,
+            PoseDetailLayoutMetrics.heroCardAspectRatio,
+            accuracy: 0.0001
+        )
+        XCTAssertEqual(
+            PoseDetailLayoutMetrics.heroArtworkPoints.width,
+            PoseDetailLayoutMetrics.heroCardWidth - 2 * AIPoseSpacing.xl,
+            accuracy: 0.5
+        )
     }
 
     func testTryPoseOpensCameraWithoutPremium() {

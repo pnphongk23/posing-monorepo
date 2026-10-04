@@ -1,23 +1,62 @@
 import SwiftUI
 
+enum NeoFilterChipVariant {
+    case standard
+    /// `.nb-gallery-filter` from `components/grid.css`.
+    case gallery
+}
+
 struct NeoFilterChip: View {
     let title: String
     let isSelected: Bool
+    var variant: NeoFilterChipVariant = .standard
     let action: () -> Void
+
     var body: some View {
         Button(action: action) {
-            Text(title)
-                .font(.caption.weight(.bold))
-                .padding(.horizontal, AIPoseSpacing.md)
-                .padding(.vertical, AIPoseSpacing.sm)
-                .background(isSelected ? AIPoseColor.accentBlue : AIPoseColor.surface)
-                .foregroundStyle(AIPoseColor.foreground)
-                .clipShape(Capsule())
-                .overlay(Capsule().stroke(AIPoseColor.foreground, lineWidth: isSelected ? 2 : 1.5))
-                .shadow(color: AIPoseColor.foreground, radius: 0, x: isSelected ? 2 : 1.5, y: isSelected ? 2 : 1.5)
+            buttonLabel
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
+    @ViewBuilder
+    private var buttonLabel: some View {
+        switch variant {
+        case .standard:
+            styledLabel(
+                shape: Capsule(),
+                fill: isSelected ? AIPoseColor.accentBlue : AIPoseColor.surface,
+                borderWidth: isSelected ? NeoChromeTokens.borderThick : NeoChromeTokens.borderThin,
+                shadowOffset: isSelected ? NeoChromeTokens.shadowSelected : NeoChromeTokens.shadowSmall
+            )
+        case .gallery:
+            styledLabel(
+                shape: RoundedRectangle(cornerRadius: NeoChromeTokens.radiusSmall),
+                fill: isSelected ? AIPoseColor.primary : AIPoseColor.surface,
+                borderWidth: isSelected ? NeoChromeTokens.borderThick : NeoChromeTokens.borderThin,
+                shadowOffset: isSelected ? NeoChromeTokens.shadowSmall : 0
+            )
+        }
+    }
+
+    private func styledLabel<S: Shape>(
+        shape: S,
+        fill: Color,
+        borderWidth: CGFloat,
+        shadowOffset: CGFloat
+    ) -> some View {
+        Text(title)
+            .font(.caption.weight(.bold))
+            .padding(.horizontal, AIPoseSpacing.md)
+            .padding(.vertical, AIPoseSpacing.sm)
+            .foregroundStyle(AIPoseColor.foreground)
+            .neoSurface(
+                shape: shape,
+                fill: fill,
+                borderWidth: borderWidth,
+                shadowOffset: shadowOffset
+            )
     }
 }
 
@@ -31,9 +70,13 @@ struct NeoToolbarTab: View {
                 .font(.system(size: 15, weight: .bold))
                 .padding(.horizontal, AIPoseSpacing.lg)
                 .padding(.vertical, AIPoseSpacing.sm)
-                .background(isSelected ? AIPoseColor.accentBlue : .clear)
-                .clipShape(RoundedRectangle(cornerRadius: 20))
-                .overlay(RoundedRectangle(cornerRadius: 20).stroke(isSelected ? AIPoseColor.foreground : .clear, lineWidth: 1.5))
+                .neoSurface(
+                    shape: RoundedRectangle(cornerRadius: NeoChromeTokens.radiusToolbarTab),
+                    fill: isSelected ? AIPoseColor.accentBlue : .clear,
+                    borderColor: isSelected ? AIPoseColor.foreground : .clear,
+                    borderWidth: NeoChromeTokens.borderThin,
+                    shadowOffset: 0
+                )
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
@@ -43,23 +86,32 @@ struct NeoToolbarTab: View {
 /// Square neo-brutalist back control for screens that hide the system navigation bar.
 struct NeoBackButton: View {
     var accessibilityLabel: String = "Back"
-    /// Gallery detail v2 uses plain circular icon buttons; other sub-screens use the boxed control.
+    /// Gallery detail v2 uses a plain control. `pose-detail.html` uses `.nb-btn--square`, a full 44pt
+    /// surface with the regular 3pt hard shadow (the 32pt compact surface is for toolbar actions).
     var plain: Bool = false
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: "chevron.left")
-                .font(.system(size: plain ? 20 : 17, weight: .bold))
-                .foregroundStyle(AIPoseColor.foreground)
-                .frame(width: 44, height: 44)
-                .background(plain ? Color.clear : AIPoseColor.surface)
-                .clipShape(RoundedRectangle(cornerRadius: plain ? 22 : 10))
-                .overlay(
-                    RoundedRectangle(cornerRadius: plain ? 22 : 10)
-                        .stroke(plain ? Color.clear : AIPoseColor.foreground, lineWidth: 2)
-                )
-                .shadow(color: plain ? Color.clear : AIPoseColor.foreground, radius: 0, x: 3, y: 3)
+            if plain {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 20, weight: .bold))
+                    .foregroundStyle(AIPoseColor.foreground)
+                    .frame(width: NeoChromeTokens.touchMinimum, height: NeoChromeTokens.touchMinimum)
+                    .contentShape(Circle())
+            } else {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(AIPoseColor.foreground)
+                    .frame(width: NeoChromeTokens.touchMinimum, height: NeoChromeTokens.touchMinimum)
+                    .neoSurface(
+                        shape: RoundedRectangle(cornerRadius: NeoChromeTokens.radiusMedium),
+                        fill: AIPoseColor.surface,
+                        borderWidth: NeoChromeTokens.borderThick,
+                        shadowOffset: NeoChromeTokens.shadowDefault
+                    )
+                    .contentShape(Rectangle())
+            }
         }
         .buttonStyle(.plain)
         .accessibilityLabel(accessibilityLabel)
@@ -80,10 +132,12 @@ struct NeoSquareIconButton: View {
                 .font(.system(size: 15, weight: .bold))
                 .foregroundStyle(AIPoseColor.foreground)
                 .frame(width: side, height: side)
-                .background(fill)
-                .clipShape(RoundedRectangle(cornerRadius: 10))
-                .overlay(RoundedRectangle(cornerRadius: 10).stroke(AIPoseColor.foreground, lineWidth: 1.5))
-                .shadow(color: AIPoseColor.foreground, radius: 0, x: 2, y: 2)
+                .neoSurface(
+                    shape: RoundedRectangle(cornerRadius: NeoChromeTokens.radiusMedium),
+                    fill: fill,
+                    borderWidth: NeoChromeTokens.borderThin,
+                    shadowOffset: NeoChromeTokens.shadowDefault
+                )
         }
         .buttonStyle(.plain)
         .accessibilityLabel(accessibilityLabel)
@@ -147,7 +201,7 @@ struct NeoHeaderTitle: View {
 
 enum NeoSubscreenHeaderMetrics {
     /// Matches the prototype `--nb-touch-min` width of the leading/trailing header columns.
-    static let controlColumnWidth: CGFloat = 44
+    static let controlColumnWidth: CGFloat = NeoChromeTokens.touchMinimum
 }
 
 /// In-content header that replaces the system navigation bar on sub-screens.
@@ -254,9 +308,9 @@ struct NeoCompactActionButton: View {
     var fill: Color = AIPoseColor.surface
     let action: () -> Void
 
-    private static let surfaceSide: CGFloat = 32
-    private static let tapSide: CGFloat = 44
-    private static let cornerRadius: CGFloat = 10
+    private static let surfaceSide: CGFloat = NeoChromeTokens.compactSurfaceSide
+    private static let tapSide: CGFloat = NeoChromeTokens.touchMinimum
+    private static let cornerRadius: CGFloat = NeoChromeTokens.radiusMedium
     /// The prototype glyph is a 2.5px stroke on a 24 viewBox, i.e. ~1.67pt at the 16pt render size —
     /// `--nb-border-thick` weight, not a heavy icon. `.bold`/`.semibold` fill the surface in and read
     /// as a black blob at this size (verified against `screenshots/reference/poses-list.png`).
@@ -268,13 +322,12 @@ struct NeoCompactActionButton: View {
                 .font(.system(size: 16, weight: Self.glyphWeight))
                 .foregroundStyle(AIPoseColor.foreground)
                 .frame(width: Self.surfaceSide, height: Self.surfaceSide)
-                .background(fill)
-                .clipShape(RoundedRectangle(cornerRadius: Self.cornerRadius))
-                .overlay(
-                    RoundedRectangle(cornerRadius: Self.cornerRadius)
-                        .stroke(AIPoseColor.foreground, lineWidth: 2)
+                .neoSurface(
+                    shape: RoundedRectangle(cornerRadius: Self.cornerRadius),
+                    fill: fill,
+                    borderWidth: NeoChromeTokens.borderThick,
+                    shadowOffset: NeoChromeTokens.shadowSmall
                 )
-                .shadow(color: AIPoseColor.foreground, radius: 0, x: 1.5, y: 1.5)
                 // Transparent 44pt tap target around the 32pt surface (`--nb-touch-min`).
                 .frame(width: Self.tapSide, height: Self.tapSide)
                 .contentShape(Rectangle())
@@ -316,19 +369,23 @@ struct NeoDockTabBar: View {
             .padding(2)
             .frame(maxWidth: .infinity)
             .frame(height: 48)
-            .background(AIPoseColor.surface)
-            .clipShape(Capsule())
-            .overlay(Capsule().stroke(AIPoseColor.foreground, lineWidth: 2))
-            .shadow(color: AIPoseColor.foreground, radius: 0, x: 1.5, y: 1.5)
+            .neoSurface(
+                shape: Capsule(),
+                fill: AIPoseColor.surface,
+                borderWidth: NeoChromeTokens.borderThick,
+                shadowOffset: NeoChromeTokens.shadowSmall
+            )
             Button { selection = .camera } label: {
                 Image(systemName: "camera.fill")
                     .font(.body.weight(.bold))
                     .frame(width: 48, height: 48)
-                    .background(AIPoseColor.primary)
                     .foregroundStyle(AIPoseColor.foreground)
-                    .clipShape(Circle())
-                    .overlay(Circle().stroke(AIPoseColor.foreground, lineWidth: 2))
-                    .shadow(color: AIPoseColor.foreground, radius: 0, x: 1.5, y: 1.5)
+                    .neoSurface(
+                        shape: Circle(),
+                        fill: AIPoseColor.primary,
+                        borderWidth: NeoChromeTokens.borderThick,
+                        shadowOffset: NeoChromeTokens.shadowSmall
+                    )
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Open Camera")
@@ -343,12 +400,16 @@ struct NeoDockTabBar: View {
     private func dockItem(tab: AppTab, icon: String, label: String) -> some View {
         let isActive = activeTab == tab
         return Button { selection = tab } label: {
-            Image(systemName: icon)
-                .font(.body.weight(.semibold))
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(isActive ? AIPoseColor.accentBlue : .clear)
-                .clipShape(Capsule())
-                .overlay(Capsule().stroke(isActive ? AIPoseColor.foreground : .clear, lineWidth: 1.5))
+                Image(systemName: icon)
+                    .font(.body.weight(.semibold))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .neoSurface(
+                        shape: Capsule(),
+                        fill: isActive ? AIPoseColor.accentBlue : .clear,
+                        borderColor: isActive ? AIPoseColor.foreground : .clear,
+                        borderWidth: NeoChromeTokens.borderThin,
+                        shadowOffset: 0
+                    )
         }
         .buttonStyle(.plain)
         .accessibilityLabel(label)

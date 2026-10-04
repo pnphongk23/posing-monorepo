@@ -1,3 +1,4 @@
+import Combine
 import Kingfisher
 import SwiftUI
 
@@ -261,56 +262,117 @@ enum PoseSurfaceMetrics {
     /// `.nb-phone__content { padding: 0 16px }`
     static let horizontalPadding: CGFloat = 16
     /// `.nb-card--pose-grid`: `border: 2px solid #000; border-radius: 14px; box-shadow: none`
-    static let cardBorderWidth: CGFloat = 2
-    static let cardCornerRadius: CGFloat = 14
-    static let cardPadding: CGFloat = 16
+    static let cardBorderWidth: CGFloat = NeoChromeTokens.borderThick
+    static let cardCornerRadius: CGFloat = NeoChromeTokens.radiusLarge
     /// `.nb-grid-pose-item { gap: 4px }` + `.nb-grid-pose-label` (14px regular, outside the card).
     static let cardLabelSpacing: CGFloat = 4
     /// `.nb-search-chip / .nb-search-filter { border: 1.5px solid; border-radius: 10px }`
-    static let chipBorderWidth: CGFloat = 1.5
-    static let chipCornerRadius: CGFloat = 10
+    static let chipBorderWidth: CGFloat = NeoChromeTokens.borderThin
+    static let chipCornerRadius: CGFloat = NeoChromeTokens.radiusMedium
     /// `.nb-search-field { min-height: 56px; border: 2px; border-radius: 14px; box-shadow: 3px 3px 0 }`
     static let searchFieldMinHeight: CGFloat = 56
-    static let searchFieldCornerRadius: CGFloat = 14
+    static let searchFieldCornerRadius: CGFloat = NeoChromeTokens.radiusLarge
     /// `.nb-search-form { margin: 0 0 32px }`
     static let searchFormBottomMargin: CGFloat = 32
     /// `.nb-nav-bar { height: 52px }` + `#pose-search .nb-search-nav { margin-bottom: 24px }`
     static let navBarHeight: CGFloat = 52
     static let navBarBottomMargin: CGFloat = 24
     /// `.nb-touch-min`
-    static let touchMinimum: CGFloat = 44
+    static let touchMinimum: CGFloat = NeoChromeTokens.touchMinimum
 }
 
-/// Grid metrics for the 2-column pose grid (`.nb-grid--masonry`, `components/grid.css`).
+/// In-memory cache for loaded pose artwork aspect ratios (width / height).
+/// Respects real image proportions to drive client-side 2-column masonry layout without letterboxing.
+@MainActor
+final class PoseAspectRatioCache: ObservableObject {
+    static let shared = PoseAspectRatioCache()
+    private static let capacity = 512
+
+    @Published private(set) var ratios: [String: CGFloat] = [:]
+    private var insertionOrder: [String] = []
+
+    private init() {}
+
+    func ratio(for poseId: String) -> CGFloat {
+        ratios[poseId] ?? PoseGridMetrics.defaultAspectRatio
+    }
+
+    func updateRatio(width: CGFloat, height: CGFloat, for poseId: String) {
+        guard width.isFinite, height.isFinite, width > 0, height > 0 else { return }
+        let ratio = width / height
+        guard ratio.isFinite, ratio > 0 else { return }
+        if let existing = ratios[poseId], abs(existing - ratio) < 0.001 {
+            return
+        }
+        if ratios[poseId] == nil {
+            insertionOrder.append(poseId)
+        }
+        ratios[poseId] = ratio
+        while insertionOrder.count > Self.capacity {
+            ratios.removeValue(forKey: insertionOrder.removeFirst())
+        }
+    }
+
+    #if DEBUG
+    func setRatioForTesting(_ ratio: CGFloat, for poseId: String) {
+        ratios[poseId] = ratio
+    }
+    func resetForTesting() {
+        ratios.removeAll()
+        insertionOrder.removeAll()
+    }
+    #endif
+}
+
+/// Grid metrics for the 2-column staggered masonry pose grid (`.nb-grid--masonry`, `components/grid.css`).
 enum PoseGridMetrics {
     static let horizontalPadding = PoseSurfaceMetrics.horizontalPadding
     /// `.nb-grid--masonry { column-gap: 8px }`
     static let columnSpacing: CGFloat = 8
     /// `.nb-grid--masonry .nb-grid-pose-item { margin-bottom: calc(16px * 0.8) }`
-    static let rowSpacing = PoseSurfaceMetrics.cardPadding * 0.8
-    /// `app.js createPoseCard` cycles `.nb-card--aspect-{tall,square,short}`; with two columns the
-    /// prototype's balanced `column-count: 2` lands one aspect per visual row, which is what the
-    /// reference shots show (`poses-list.png` = tall/square/short rows, `search-results.png` =
-    /// a single `tall` card for the first result).
-    private static let rowAspects: [CGFloat] = [1 / 1.25, 1, 1.25]
+    static let rowSpacing: CGFloat = 12.8
+    static let defaultAspectRatio: CGFloat = 1.0
+    /// Artwork decode stays bounded to the prototype's tallest card (1.25x column height).
+    /// Layout itself keeps the true image ratio, including taller portraits.
+    static let minimumDownsampleAspectRatio: CGFloat = 0.8
+    static let labelHeightForBalancing: CGFloat = 34
 
-    static func aspectRatio(forRow row: Int) -> CGFloat {
-        rowAspects[row % rowAspects.count]
+    @MainActor static var columnWidth: CGFloat {
+        let screenWidth = UIScreen.main.bounds.width > 0 ? UIScreen.main.bounds.width : 390
+        let contentWidth = screenWidth - 2 * horizontalPadding
+        return max(1, (contentWidth - columnSpacing) / 2)
     }
 
-    /// The box a card's artwork is *actually drawn* in — the target for `AppImage.downsample(points:)`.
-    /// One grid column (screen − 2×16 content padding − 8 column gap, halved) minus the card's 16pt
-    /// artwork inset, and as tall as the tallest card aspect (`1 / 1.25`). Derived from the live screen
-    /// width so a larger phone gets a proportionally larger bitmap instead of an upscaled one.
-    ///
-    /// Asking Kingfisher for anything bigger than this (let alone the file's own size) is what made a
-    /// 12-cell screenful decode tens of megapixels on the main thread while scrolling.
+    /// Assign each item in source order to the column with the lower accumulated height.
+    /// Ratios are image width / height; invalid and not-yet-loaded values stay square.
+    static func columnAssignments(
+        for aspectRatios: [CGFloat],
+        columnWidth: CGFloat,
+        itemSpacing: CGFloat = rowSpacing,
+        labelHeight: CGFloat = labelHeightForBalancing,
+        labelSpacing: CGFloat = PoseSurfaceMetrics.cardLabelSpacing
+    ) -> [Int] {
+        guard !aspectRatios.isEmpty else { return [] }
+        let width = max(1, columnWidth.isFinite ? columnWidth : 1)
+        var heights = [CGFloat](repeating: 0, count: 2)
+        var counts = [Int](repeating: 0, count: 2)
+
+        return aspectRatios.map { ratio in
+            let column = heights[0] <= heights[1] ? 0 : 1
+            let safeRatio = ratio.isFinite && ratio > 0 ? ratio : defaultAspectRatio
+            let gap = counts[column] == 0 ? 0 : itemSpacing
+            heights[column] += width / safeRatio + labelHeight + labelSpacing + gap
+            counts[column] += 1
+            return column
+        }
+    }
+
+    /// The maximum bounding box for card artwork downsampling:
+    /// one column wide and at most 1.25 times as tall as it is wide.
     @MainActor static var cardArtworkPoints: CGSize {
-        let column = (UIScreen.main.bounds.width - 2 * horizontalPadding - columnSpacing) / 2
-        let tallest = column / rowAspects[0]
         return CGSize(
-            width: column - 2 * PoseSurfaceMetrics.cardPadding,
-            height: tallest - 2 * PoseSurfaceMetrics.cardPadding
+            width: columnWidth,
+            height: columnWidth / minimumDownsampleAspectRatio
         )
     }
 
@@ -586,21 +648,26 @@ private struct PosesHeaderIconLabel: View {
             .font(.system(size: 14, weight: .bold))
             .foregroundStyle(AIPoseColor.foreground)
             .frame(width: 32, height: 32)
-            .background(fill)
-            .clipShape(RoundedRectangle(cornerRadius: 9))
-            .overlay(RoundedRectangle(cornerRadius: 9).stroke(AIPoseColor.foreground, lineWidth: 1.5))
+            .neoSurface(
+                shape: RoundedRectangle(cornerRadius: NeoChromeTokens.radiusMedium),
+                fill: fill,
+                borderWidth: NeoChromeTokens.borderThin,
+                shadowOffset: 0
+            )
     }
 }
 
 // MARK: - Pose card
 
 /// Prototype `.nb-card--pose-grid` + `.nb-grid-pose-item` (`components/card.css`, `components/grid.css`):
-/// square-ish white surface, 2pt black border, radius 14, **no shadow**, artwork centred with 16pt
-/// padding, and the pose name rendered *outside* the card as a 14pt regular left-aligned label.
+/// white surface, 2pt black border, radius 14, **no shadow**, and the pose name rendered *outside*
+/// the image surface as a 14pt regular left-aligned label.
 /// The category is intentionally not shown (neither reference shot has it).
 struct PoseCard: View {
     let pose: NativePose
     var aspectRatio: CGFloat = 1
+    /// When set, the card surface is registered as the zoom-transition source for its pose.
+    var zoomNamespace: Namespace.ID?
 
     var body: some View {
         VStack(alignment: .leading, spacing: PoseSurfaceMetrics.cardLabelSpacing) {
@@ -619,15 +686,19 @@ struct PoseCard: View {
 
     private var cardSurface: some View {
         Color.clear
+            .frame(maxWidth: .infinity)
             .aspectRatio(aspectRatio, contentMode: .fit)
-            .overlay { artwork.padding(PoseSurfaceMetrics.cardPadding) }
-            .background(AIPoseColor.surface)
+            .overlay { artwork.frame(maxWidth: .infinity, maxHeight: .infinity) }
             .clipShape(RoundedRectangle(cornerRadius: PoseSurfaceMetrics.cardCornerRadius))
-            .overlay(
-                RoundedRectangle(cornerRadius: PoseSurfaceMetrics.cardCornerRadius)
-                    .stroke(AIPoseColor.foreground, lineWidth: PoseSurfaceMetrics.cardBorderWidth)
+            .neoSurface(
+                shape: RoundedRectangle(cornerRadius: PoseSurfaceMetrics.cardCornerRadius),
+                fill: AIPoseColor.surface,
+                borderWidth: PoseSurfaceMetrics.cardBorderWidth,
+                shadowOffset: 0
             )
             .overlay(alignment: .topTrailing) { savedBadge }
+            .animation(.easeInOut(duration: 0.2), value: aspectRatio)
+            .zoomTransitionSource(id: pose.id, in: zoomNamespace, cornerRadius: PoseSurfaceMetrics.cardCornerRadius)
     }
 
     /// Pose artwork: Kingfisher + `AppImage` downsample to the box the card actually draws.
@@ -637,6 +708,13 @@ struct PoseCard: View {
     private var artwork: some View {
         KFImage(pose.imageURL)
             .setProcessor(AppImage.downsample(points: PoseGridMetrics.cardArtworkPoints, contentMode: .fit))
+            .onSuccess { result in
+                PoseAspectRatioCache.shared.updateRatio(
+                    width: result.image.size.width,
+                    height: result.image.size.height,
+                    for: pose.id
+                )
+            }
             .placeholder {
                 Image(systemName: "figure.stand")
                     .font(.system(size: 44))
@@ -644,7 +722,8 @@ struct PoseCard: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             .resizable()
-            .scaledToFit()
+            .scaledToFill()
+            .clipped()
     }
 
     /// `saved-list.html` marks saved cards with `.nb-saved-card__badge` (24pt pink square, top-right).
@@ -654,9 +733,13 @@ struct PoseCard: View {
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(AIPoseColor.foreground)
                 .frame(width: 24, height: 24)
-                .background(AIPoseColor.primary)
                 .clipShape(RoundedRectangle(cornerRadius: 6))
-                .overlay(RoundedRectangle(cornerRadius: 6).stroke(AIPoseColor.foreground, lineWidth: 1.5))
+                .neoSurface(
+                    shape: RoundedRectangle(cornerRadius: NeoChromeTokens.radiusSmall),
+                    fill: AIPoseColor.primary,
+                    borderWidth: NeoChromeTokens.borderThin,
+                    shadowOffset: 0
+                )
                 .padding(8)
                 .accessibilityHidden(true)
         }
@@ -664,25 +747,94 @@ struct PoseCard: View {
 }
 
 /// Prototype `.nb-grid--masonry`: two fixed columns, 8pt column gap, `nb-space-md * 0.8` row gap.
+@MainActor
 struct PoseGrid: View {
     let poses: [NativePose]
     @ObservedObject var model: PosesViewModel
     var onTryPose: (NativePose) -> Void = { _ in }
+    @ObservedObject private var aspectRatioCache: PoseAspectRatioCache
+    @State private var columnByPoseID: [String: Int]
+    @Namespace private var zoomNamespace
 
-    private static let columns = [
-        GridItem(.flexible(), spacing: PoseGridMetrics.columnSpacing),
-        GridItem(.flexible(), spacing: PoseGridMetrics.columnSpacing),
-    ]
+    private struct MasonryItem: Identifiable {
+        let index: Int
+        let pose: NativePose
+        var id: String { pose.id }
+    }
+
+    init(
+        poses: [NativePose],
+        model: PosesViewModel,
+        onTryPose: @escaping (NativePose) -> Void = { _ in }
+    ) {
+        self.poses = poses
+        _model = ObservedObject(wrappedValue: model)
+        self.onTryPose = onTryPose
+        let cache = PoseAspectRatioCache.shared
+        _aspectRatioCache = ObservedObject(wrappedValue: cache)
+        _columnByPoseID = State(initialValue: Self.assignments(for: poses, using: cache))
+    }
+
+    private var itemsByColumn: [[MasonryItem]] {
+        var columns = Array(repeating: [MasonryItem](), count: 2)
+        for (index, pose) in poses.enumerated() {
+            let column = columnByPoseID[pose.id] ?? (index % 2)
+            columns[column].append(MasonryItem(index: index, pose: pose))
+        }
+        return columns
+    }
 
     var body: some View {
-        LazyVGrid(columns: Self.columns, spacing: PoseGridMetrics.rowSpacing) {
-            ForEach(Array(poses.enumerated()), id: \.element.id) { index, pose in
-                NavigationLink(destination: PoseDetailScreen(pose: pose, model: model, onTryPose: onTryPose)) {
-                    PoseCard(pose: pose, aspectRatio: PoseGridMetrics.aspectRatio(forRow: index / 2))
+        let columns = itemsByColumn
+        return HStack(alignment: .top, spacing: PoseGridMetrics.columnSpacing) {
+            ForEach(0..<2, id: \.self) { columnIndex in
+                LazyVStack(alignment: .leading, spacing: PoseGridMetrics.rowSpacing) {
+                    ForEach(columns[columnIndex]) { item in
+                        NavigationLink(
+                            destination: PoseDetailScreen(pose: item.pose, model: model, onTryPose: onTryPose)
+                                .zoomTransition(sourceID: item.pose.id, in: zoomNamespace)
+                        ) {
+                            PoseCard(
+                                pose: item.pose,
+                                aspectRatio: aspectRatioCache.ratio(for: item.pose.id),
+                                zoomNamespace: zoomNamespace
+                            )
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier(
+                            item.index == 0 ? "poses.first-card" : "poses.card.\(item.pose.id)"
+                        )
+                        .accessibilitySortPriority(Double(poses.count - item.index))
+                    }
                 }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier(index == 0 ? "poses.first-card" : "poses.card.\(pose.id)")
+                .frame(maxWidth: .infinity, alignment: .topLeading)
             }
+        }
+        .frame(maxWidth: .infinity)
+        .onAppear(perform: rebuildAssignments)
+        .onChange(of: poses.map(\.id)) { _ in rebuildAssignments() }
+        .onReceive(
+            aspectRatioCache.$ratios
+                .debounce(for: .milliseconds(250), scheduler: RunLoop.main)
+                .removeDuplicates()
+        ) { _ in
+            rebuildAssignments()
+        }
+    }
+
+    private static func assignments(for poses: [NativePose], using cache: PoseAspectRatioCache) -> [String: Int] {
+        let columns = PoseGridMetrics.columnAssignments(
+            for: poses.map { cache.ratio(for: $0.id) },
+            columnWidth: PoseGridMetrics.columnWidth
+        )
+        return Dictionary(uniqueKeysWithValues: zip(poses.map(\.id), columns))
+    }
+
+    private func rebuildAssignments() {
+        let updated = Self.assignments(for: poses, using: aspectRatioCache)
+        guard updated != columnByPoseID else { return }
+        withAnimation(.easeInOut(duration: 0.2)) {
+            columnByPoseID = updated
         }
     }
 }
@@ -691,11 +843,23 @@ enum PoseDetailLayoutMetrics {
     /// Footprint of the shared root NeoDockTabBar overlay (48pt bar + 8pt padding + breathing room).
     /// Retained as the dock-parity reference; the dock is hidden on this pushed route.
     static let sharedDockScrollInset: CGFloat = 48 + AIPoseSpacing.sm + AIPoseSpacing.lg
+    static let heroCardAspectRatio: CGFloat = 1 / 1.1
 
-    /// Artwork box of the detail hero card on a 390pt-wide phone: card = content width (390 − 2×16)
-    /// with a `1 / 1.1` aspect, inset by the card's 24pt padding → 310×346pt. The `AppImage.downsample`
-    /// target for `poseHeroCard` (a single big image, so a touch of slack costs nothing).
-    static let heroArtworkPoints = CGSize(width: 310, height: 346)
+    @MainActor static var heroCardWidth: CGFloat {
+        let screenWidth = UIScreen.main.bounds.width > 0 ? UIScreen.main.bounds.width : 390
+        return max(1, screenWidth - 2 * PoseSurfaceMetrics.horizontalPadding)
+    }
+
+    @MainActor static var heroCardHeight: CGFloat {
+        heroCardWidth / heroCardAspectRatio
+    }
+
+    @MainActor static var heroArtworkPoints: CGSize {
+        return CGSize(
+            width: max(1, heroCardWidth - 2 * AIPoseSpacing.xl),
+            height: max(1, heroCardHeight - 2 * AIPoseSpacing.xl)
+        )
+    }
 }
 
 struct PoseDetailScreen: View {
@@ -794,30 +958,44 @@ struct PoseDetailScreen: View {
         }
     }
 
-    /// Prototype `pose-detail.html` `.nb-card.nb-card--pose-detail` (card.css): white card,
-    /// `aspect-ratio: 1 / 1.1`, thick border, radius 14, `box-shadow: none` and artwork inset
-    /// by `--nb-space-lg` (24pt). Uses the live `pose.imageURL` only.
+    /// Prototype `pose-detail.html` `.nb-card.nb-card--pose-detail` (card.css): full content-width white
+    /// card, `aspect-ratio: 1 / 1.1`, thick border, radius 14, no shadow, and artwork inset by 24pt.
+    /// The clear aspect-ratio surface fixes the card dimensions independently of the image's load state.
     ///
     /// The photo is loaded with Kingfisher through `AppImage` and downsampled to the drawn box
     /// (memory + disk cache, decode off the main thread); a full-resolution decode here would stall
     /// the pushed screen for ~20-40ms on every appearance.
     private var poseHeroCard: some View {
-        KFImage(pose.imageURL)
-            .setProcessor(AppImage.downsample(points: PoseDetailLayoutMetrics.heroArtworkPoints, contentMode: .fit))
-            .placeholder {
-                AIPoseColor.primary100.frame(height: 340).overlay(Image(systemName: "figure.stand").font(.system(size: 72)))
+        let shape = RoundedRectangle(cornerRadius: Self.heroCardCornerRadius)
+        return Color.clear
+            .frame(maxWidth: .infinity)
+            .aspectRatio(PoseDetailLayoutMetrics.heroCardAspectRatio, contentMode: .fit)
+            .overlay {
+                KFImage(pose.imageURL)
+                    .setProcessor(AppImage.downsample(points: PoseDetailLayoutMetrics.heroArtworkPoints, contentMode: .fit))
+                    .placeholder {
+                        ZStack {
+                            AIPoseColor.primary100
+                            Image(systemName: "figure.stand")
+                                .font(.system(size: 72))
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
+                    .resizable()
+                    .scaledToFit()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .padding(AIPoseSpacing.xl)
             }
-            .resizable()
-            .scaledToFit()
-            .clipShape(RoundedRectangle(cornerRadius: Self.heroCardCornerRadius))
-        .padding(AIPoseSpacing.xl)
-        .aspectRatio(1 / 1.1, contentMode: .fit)
-        .background(AIPoseColor.surface)
-        .clipShape(RoundedRectangle(cornerRadius: Self.heroCardCornerRadius))
-        .overlay(RoundedRectangle(cornerRadius: Self.heroCardCornerRadius).stroke(AIPoseColor.foreground, lineWidth: 2))
+            .clipShape(shape)
+            .neoSurface(
+                shape: shape,
+                fill: AIPoseColor.surface,
+                borderWidth: NeoChromeTokens.borderThick,
+                shadowOffset: 0
+            )
     }
 
-    private static let heroCardCornerRadius: CGFloat = 14
+    private static let heroCardCornerRadius: CGFloat = NeoChromeTokens.radiusLarge
 
     private func toggleBookmark() async {
         guard AppConfig.shared.isAccountFeatureEnabled else { return }
