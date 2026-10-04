@@ -106,16 +106,18 @@ struct JobRowView: View {
         case .none:
             EmptyView()
         case .retry:
-            Button {
-                onAction(row)
-            } label: {
-                Text(row.action.rawValue)
-                    .font(.system(size: 14, weight: .bold))
-                    .padding(.horizontal, AIPoseSpacing.md)
-                    .padding(.vertical, AIPoseSpacing.xs)
+            if AppConfig.canExtractPose(isEnabled: AppConfig.shared.isExtractPoseEnabled) {
+                Button {
+                    onAction(row)
+                } label: {
+                    Text(row.action.rawValue)
+                        .font(.system(size: 14, weight: .bold))
+                        .padding(.horizontal, AIPoseSpacing.md)
+                        .padding(.vertical, AIPoseSpacing.xs)
+                }
+                .buttonStyle(NeoButtonStyle(fill: AIPoseColor.surface))
+                .accessibilityIdentifier("jobRow.retry.\(row.jobId)")
             }
-            .buttonStyle(NeoButtonStyle(fill: AIPoseColor.surface))
-            .accessibilityIdentifier("jobRow.retry.\(row.jobId)")
         case .viewPose:
             Button {
                 onAction(row)

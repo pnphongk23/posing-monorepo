@@ -55,7 +55,7 @@ targets:
       - package: Firebase
         product: FirebaseCrashlytics
       - package: Firebase
-        product: FirebaseRemoteConfig
+        product: FirebaseFirestore
       - package: RevenueCat
         product: RevenueCat
       - package: GRDB

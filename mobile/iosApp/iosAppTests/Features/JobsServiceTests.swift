@@ -62,6 +62,7 @@ final class JobsServiceTests: XCTestCase {
 
     override func setUp() {
         super.setUp()
+        AppConfig.shared.applyExtractPoseEnabled(true)
         tokenStorage = TestTokenStorage(credentials: SessionCredentials(accessToken: "test_access", refreshToken: "test_refresh"))
         sessionBoundary = SessionBoundary(tokenStorage: tokenStorage)
 
@@ -74,6 +75,7 @@ final class JobsServiceTests: XCTestCase {
     }
 
     override func tearDown() {
+        AppConfig.shared.applyExtractPoseEnabled(true)
         MockURLProtocol.requestHandler = nil
         super.tearDown()
     }
@@ -254,6 +256,29 @@ final class JobsServiceTests: XCTestCase {
             XCTFail("Unexpected error: \(error)")
         }
 
+        XCTAssertFalse(requestMade)
+    }
+
+    func testExtractKillSwitchBlocksServiceRetryWithoutRequest() async {
+        var requestMade = false
+        MockURLProtocol.requestHandler = { request in
+            requestMade = true
+            return (
+                HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
+                Data()
+            )
+        }
+
+        let service = JobsService(api: apiService, boundary: sessionBoundary)
+        AppConfig.shared.applyExtractPoseEnabled(false)
+        do {
+            try await service.retry(id: "job1")
+            XCTFail("Expected extraction-disabled error")
+        } catch JobsError.extractPoseDisabled {
+            // Expected: kill switch blocks retry before any request.
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
         XCTAssertFalse(requestMade)
     }
 

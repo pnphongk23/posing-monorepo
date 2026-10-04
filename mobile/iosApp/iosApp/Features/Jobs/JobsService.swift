@@ -7,6 +7,7 @@ enum JobsError: LocalizedError, Sendable, Equatable {
     case invalidImage
     case imageTooLarge
     case invalidMetadata
+    case extractPoseDisabled
     case notFound
     case serverError(String)
 
@@ -22,6 +23,8 @@ enum JobsError: LocalizedError, Sendable, Equatable {
             return "Photo exceeds the 10 MB limit. Choose another photo."
         case .invalidMetadata:
             return "Please check the pose name and tags."
+        case .extractPoseDisabled:
+            return "Pose extraction is currently disabled."
         case .notFound:
             return "Job not found."
         case .serverError(let message):
@@ -338,6 +341,9 @@ final class JobsService: ObservableObject, JobsServing {
     }
 
     func retry(id: String) async throws {
+        guard AppConfig.canExtractPose(isEnabled: AppConfig.shared.isExtractPoseEnabled) else {
+            throw JobsError.extractPoseDisabled
+        }
         guard await boundary.hasStoredSession() else {
             throw JobsError.signInRequired
         }

@@ -397,6 +397,12 @@ enum PosesRoute: Hashable {
     }
 }
 
+enum JobsEntryPolicy {
+    static func canOpen(extractPoseEnabled: Bool) -> Bool {
+        AppConfig.canExtractPose(isEnabled: extractPoseEnabled)
+    }
+}
+
 // MARK: - Poses
 
 struct PosesScreen: View {
@@ -454,9 +460,9 @@ struct PosesScreen: View {
         .signInPrompt($pendingSignIn) { intent in
             Task {
                 await jobsService.refresh()
-                if intent == .addPose {
+                if intent == .addPose && AppConfig.canExtractPose(isEnabled: AppConfig.shared.isExtractPoseEnabled) {
                     route = .addPose
-                } else if intent == .openJobs {
+                } else if intent == .openJobs && JobsEntryPolicy.canOpen(extractPoseEnabled: AppConfig.shared.isExtractPoseEnabled) {
                     route = .jobs(.processing)
                 }
             }
@@ -467,7 +473,10 @@ struct PosesScreen: View {
                     destination: AddPoseScreen(
                         posesModel: model,
                         onTryPose: onTryPose,
-                        onOpenJobs: { tab in route = .jobs(tab) }
+                        onOpenJobs: { tab in
+                            guard JobsEntryPolicy.canOpen(extractPoseEnabled: AppConfig.shared.isExtractPoseEnabled) else { return }
+                            route = .jobs(tab)
+                        }
                     ),
                     isActive: Binding(
                         get: { route == .addPose },
@@ -489,13 +498,19 @@ struct PosesScreen: View {
                         posesModel: model,
                         initialTab: route?.jobsTab ?? .processing,
                         onTryPose: onTryPose,
-                        onAddPose: { route = .addPose }
+                        onAddPose: {
+                            if AppConfig.canExtractPose(isEnabled: AppConfig.shared.isExtractPoseEnabled) {
+                                route = .addPose
+                            }
+                        }
                     )
                     .id(route),
                     isActive: Binding(
-                        get: { route?.isJobs == true },
+                        get: { route?.isJobs == true && JobsEntryPolicy.canOpen(extractPoseEnabled: AppConfig.shared.isExtractPoseEnabled) },
                         set: { isPresented in
-                            if !isPresented && route?.isJobs == true {
+                            if isPresented && !JobsEntryPolicy.canOpen(extractPoseEnabled: AppConfig.shared.isExtractPoseEnabled) {
+                                route = nil
+                            } else if !isPresented && route?.isJobs == true {
                                 route = nil
                                 Task { await jobsService.refresh() }
                             }
@@ -525,43 +540,49 @@ struct PosesScreen: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .accessibilityAddTraits(.isHeader)
 
-            Button {
-                if session.isSignedIn {
-                    route = .addPose
-                } else {
-                    pendingSignIn = .addPose
+            if AppConfig.canExtractPose(isEnabled: AppConfig.shared.isExtractPoseEnabled) {
+                Button {
+                    guard AppConfig.canExtractPose(isEnabled: AppConfig.shared.isExtractPoseEnabled) else { return }
+                    if session.isSignedIn {
+                        route = .addPose
+                    } else {
+                        pendingSignIn = .addPose
+                    }
+                } label: {
+                    PosesHeaderIconLabel(systemImage: "plus")
                 }
-            } label: {
-                PosesHeaderIconLabel(systemImage: "plus")
+                .buttonStyle(.plain)
+                .accessibilityLabel("Add pose")
+                .accessibilityIdentifier("poses.add-pose")
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Add pose")
-            .accessibilityIdentifier("poses.add-pose")
 
-            Button {
-                if session.isSignedIn {
-                    route = .jobs(.processing)
-                } else {
-                    pendingSignIn = .openJobs
-                }
-            } label: {
-                ZStack(alignment: .topTrailing) {
-                    PosesHeaderIconLabel(systemImage: "clock.arrow.circlepath")
-                    if session.isSignedIn && jobsService.activeCount > 0 {
-                        Text("\(jobsService.activeCount)")
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundStyle(AIPoseColor.surface)
-                            .padding(.horizontal, 4)
-                            .padding(.vertical, 2)
-                            .background(AIPoseColor.error)
-                            .clipShape(Capsule())
-                            .offset(x: 4, y: -4)
+            if JobsEntryPolicy.canOpen(extractPoseEnabled: AppConfig.shared.isExtractPoseEnabled) {
+                Button {
+                    guard JobsEntryPolicy.canOpen(extractPoseEnabled: AppConfig.shared.isExtractPoseEnabled) else { return }
+                    if session.isSignedIn {
+                        route = .jobs(.processing)
+                    } else {
+                        pendingSignIn = .openJobs
+                    }
+                } label: {
+                    ZStack(alignment: .topTrailing) {
+                        PosesHeaderIconLabel(systemImage: "clock.arrow.circlepath")
+                        if session.isSignedIn && jobsService.activeCount > 0 {
+                            Text("\(jobsService.activeCount)")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundStyle(AIPoseColor.surface)
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 2)
+                                .background(AIPoseColor.error)
+                                .clipShape(Capsule())
+                                .offset(x: 4, y: -4)
+                        }
                     }
                 }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Jobs\(session.isSignedIn && jobsService.activeCount > 0 ? ", \(jobsService.activeCount) active" : "")")
+                .accessibilityIdentifier("poses.jobs")
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Jobs\(session.isSignedIn && jobsService.activeCount > 0 ? ", \(jobsService.activeCount) active" : "")")
-            .accessibilityIdentifier("poses.jobs")
 
             Button { setShowsSearch(true) } label: {
                 PosesHeaderIconLabel(systemImage: "magnifyingglass")

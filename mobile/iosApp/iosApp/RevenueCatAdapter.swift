@@ -46,7 +46,7 @@ final class RevenueCatAdapter: NSObject, ObservableObject {
 
     func configureFromEnvironment() {
         let key = Bundle.main.object(forInfoDictionaryKey: "RevenueCatPublicSDKKey") as? String
-        guard RemoteConfigService.isValidRevenueCatKey(key) else { return }
+        guard AppConfigService.isValidRevenueCatKey(key) else { return }
         Purchases.configure(withAPIKey: key!)
         Purchases.shared.delegate = self
         isConfigured = true

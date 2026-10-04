@@ -44,7 +44,7 @@ những lưu ý khi làm việc**. Hợp đồng dữ liệu/API và domain mode
 | Mobile UI | Kotlin Multiplatform + Compose Multiplatform | Kotlin 2.0.0, Compose 1.6.11, compose-compiler 1.5.10 | target `iosX64` / `iosArm64` / `iosSimulatorArm64`; **không có Android target** |
 | Mobile UI | Voyager (navigation), Koin 4.0.0 (DI), Coil 3 (image), coroutines 1.8.0 | — | Koin **giữ 4.0.0** vì 4.1.x yêu cầu Kotlin 2.1+ (ABI klib) |
 | Mobile data | SQLDelight 2.0.2, Ktor client 2.3.12, kotlinx-serialization, kotlinx-datetime | — | DB local: `mobile/shared/src/commonMain/sqldelight/` |
-| iOS host | SwiftUI host + CocoaPods | Xcode 26.1, CocoaPods 1.16.2, iOS 15.0+ | Pods: `MijickCamera ~> 3.0.0`, `RevenueCat ~> 5.87`, Firebase (Core/Analytics/Crashlytics/RemoteConfig) |
+| iOS host | SwiftUI + XcodeGen / SwiftPM | Xcode 26.1, iOS 15.0+ | Active project dependencies: `RevenueCat 5.87.1`, `GRDB`, `Kingfisher`, Firebase (Core/Analytics/Crashlytics/Firestore); separate CocoaPods/KMP workspace remains in the repo |
 | iOS env config | XcodeGen (`project.yml`) | — | 2 schemes (`Dev`/`Prod`) × 4 configs (`Debug/Release` × `Dev/Prod`) |
 | Web/admin | Next.js + React + Tailwind | Next 16.2.3, React 19.2.4, Tailwind 4, TypeScript 6 | `web/admin-ui`; server-side API proxies tới Express |
 | API service | Node + Express + TypeScript | Node ≥ 20, Express 5.2.1, TS 6 | `web/services/pose-extract-server`; validation bằng zod 4, log pino |
@@ -177,6 +177,12 @@ pose-extract-server, mounts `/app/data` + `/app/higgsfield`).
 
 - Firebase: plist thật đặt tại `mobile/iosApp/iosApp/GoogleService-Info.plist`
   (git-ignored; chỉ có `.example` trong repo). Cùng plist dùng cho cả `Dev`/`Prod`.
+- iOS first paint reads the last successfully fetched `config/app` payload from
+  UserDefaults synchronously; compile-time defaults apply only before the first
+  successful fetch. A failed/offline fetch preserves the current payload, and a
+  successful fetched payload replaces the cache.
+- Hide the Poses Jobs entry and reject every `.jobs` route while
+  `extractPoseEnabled` is false.
 - RevenueCat: key public SDK theo từng scheme từ `Config/*-*.xcconfig`
   (`REVENUECAT_PUBLIC_SDK_KEY`); giá trị thật không commit.
 - Chi tiết: [`mobile/iosApp/FIREBASE_SETUP.md`](../../../mobile/iosApp/FIREBASE_SETUP.md),

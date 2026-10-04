@@ -41,6 +41,7 @@ final class AddPoseViewModel: ObservableObject {
     }
 
     var isFormValid: Bool {
+        guard AppConfig.canExtractPose(isEnabled: AppConfig.shared.isExtractPoseEnabled) else { return false }
         guard selectedImageData != nil else { return false }
         guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
         let tags = parsedTags
@@ -50,6 +51,10 @@ final class AddPoseViewModel: ObservableObject {
     }
 
     func submit() async -> Bool {
+        guard AppConfig.canExtractPose(isEnabled: AppConfig.shared.isExtractPoseEnabled) else {
+            submitError = "Pose extraction is currently disabled."
+            return false
+        }
         guard isFormValid, let imageData = selectedImageData, let fileName = selectedFileName else {
             return false
         }
@@ -126,6 +131,10 @@ final class AddPoseViewModel: ObservableObject {
     }
 
     func retryProcessing() async {
+        guard AppConfig.canExtractPose(isEnabled: AppConfig.shared.isExtractPoseEnabled) else {
+            processingError = JobsError.extractPoseDisabled.localizedDescription
+            return
+        }
         guard let jobId = submittedJobId else { return }
         do {
             try await jobsService.retry(id: jobId)
@@ -167,7 +176,18 @@ struct AddPoseScreen: View {
                 onBack: { dismiss() }
             )
 
-            if viewModel.submittedJobId == nil {
+            if !AppConfig.canExtractPose(isEnabled: AppConfig.shared.isExtractPoseEnabled) && viewModel.submittedJobId == nil {
+                VStack(spacing: AIPoseSpacing.md) {
+                    FeatureStateView(
+                        tone: .error,
+                        title: "Pose Extraction Disabled",
+                        message: "Pose extraction is currently unavailable."
+                    )
+                    .padding(.horizontal, AIPoseSpacing.lg)
+                    Spacer()
+                }
+                .padding(.top, AIPoseSpacing.xl)
+            } else if viewModel.submittedJobId == nil {
                 formView
             } else {
                 processingView
@@ -398,16 +418,19 @@ struct AddPoseScreen: View {
                         .accessibilityIdentifier("addPose.viewPoseButton")
                     }
 
-                    Button {
-                        let targetTab: JobsTab = (viewModel.currentJobStatus.lowercased() == "succeeded" || viewModel.currentJobStatus.lowercased() == "failed") ? .finish : .processing
-                        onOpenJobs(targetTab)
-                    } label: {
-                        Text("View jobs")
-                            .font(.system(size: 16, weight: .bold))
-                            .frame(maxWidth: .infinity, minHeight: 48)
+                    if JobsEntryPolicy.canOpen(extractPoseEnabled: AppConfig.shared.isExtractPoseEnabled) {
+                        Button {
+                            guard JobsEntryPolicy.canOpen(extractPoseEnabled: AppConfig.shared.isExtractPoseEnabled) else { return }
+                            let targetTab: JobsTab = (viewModel.currentJobStatus.lowercased() == "succeeded" || viewModel.currentJobStatus.lowercased() == "failed") ? .finish : .processing
+                            onOpenJobs(targetTab)
+                        } label: {
+                            Text("View jobs")
+                                .font(.system(size: 16, weight: .bold))
+                                .frame(maxWidth: .infinity, minHeight: 48)
+                        }
+                        .buttonStyle(NeoButtonStyle(fill: viewModel.currentJobStatus.lowercased() == "succeeded" ? AIPoseColor.surface : AIPoseColor.primary))
+                        .accessibilityIdentifier("addPose.viewJobsButton")
                     }
-                    .buttonStyle(NeoButtonStyle(fill: viewModel.currentJobStatus.lowercased() == "succeeded" ? AIPoseColor.surface : AIPoseColor.primary))
-                    .accessibilityIdentifier("addPose.viewJobsButton")
 
                     Button("Done") {
                         dismiss()
@@ -434,8 +457,9 @@ struct AddPoseScreen: View {
                     tone: .error,
                     title: "Extraction Failed",
                     message: viewModel.processingError ?? "Pose extraction could not be completed.",
-                    actionTitle: "Retry"
+                    actionTitle: AppConfig.canExtractPose(isEnabled: AppConfig.shared.isExtractPoseEnabled) ? "Retry" : nil
                 ) {
+                    guard AppConfig.canExtractPose(isEnabled: AppConfig.shared.isExtractPoseEnabled) else { return }
                     Task { await viewModel.retryProcessing() }
                 }
             }

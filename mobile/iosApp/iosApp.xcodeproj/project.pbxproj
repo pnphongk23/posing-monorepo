@@ -15,6 +15,7 @@
 		151A7D9A08B4411FA954B565 /* PaywallModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9DEBB823DA597A76F4FC272E /* PaywallModel.swift */; };
 		15DFEDA376620BD1111E213D /* JobRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA86B6EEF21FE113D10E75A1 /* JobRowView.swift */; };
 		18B79DCD36E87945770B51EE /* legacy-aipose-v1.sqlite in Resources */ = {isa = PBXBuildFile; fileRef = 48401DA7CC886FCF008F1529 /* legacy-aipose-v1.sqlite */; };
+		1A25276CCE7144BBA2E91094 /* AppConfigService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C1DBAF0DCF9CB11B0A0C57A /* AppConfigService.swift */; };
 		1AB057FAC4D067898163B0C9 /* JobsFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61571883DB4BF8DDEFEE8BD5 /* JobsFixtures.swift */; };
 		1BB0A4A720889629F197952E /* CameraService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07A3896A230B881C67544B48 /* CameraService.swift */; };
 		1C81D6F669B7BB6D2FFCCEB3 /* FirebaseCore in Frameworks */ = {isa = PBXBuildFile; productRef = 16D66C9411832E1B7D572C76 /* FirebaseCore */; };
@@ -29,7 +30,7 @@
 		33B27B4D310716CB30BEB63D /* AppImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E3F05BA7D23C56F8F95252B /* AppImage.swift */; };
 		36E5AA829FB4EC77B708348E /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = F90A59BAF38068F72C984D55 /* GRDB */; };
 		36FA149F6E729CA3FF69D709 /* SessionBoundary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 350521FDA70C1A18E6B3A61D /* SessionBoundary.swift */; };
-		379D4C6DBBA934A8EF44CDDE /* FirebaseRemoteConfig in Frameworks */ = {isa = PBXBuildFile; productRef = A1BE688F1F56E46F4CAF1BC4 /* FirebaseRemoteConfig */; };
+		379D4C6DBBA934A8EF44CDDE /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = 84FCD721953CC33D9035BCCD /* FirebaseFirestore */; };
 		3800FE2DB2CD8CB2A2D81B76 /* CameraFeature.swift in Sources */ = {isa = PBXBuildFile; fileRef = 346C81403D18D752BB15A3B5 /* CameraFeature.swift */; };
 		39FE2AF3B2B727C26D8081DA /* AppDatabase.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BF0EC7C15D38373A4A93356 /* AppDatabase.swift */; };
 		445C052442747365B7CB2124 /* FirebaseAnalytics in Frameworks */ = {isa = PBXBuildFile; productRef = 1359B5E3E79A6103CB63C864 /* FirebaseAnalytics */; };
@@ -41,7 +42,6 @@
 		55DFA81BD5F71447F00CB70F /* AppIcon.svg in Resources */ = {isa = PBXBuildFile; fileRef = 9BC94B44AEDD7B65B44E6EF4 /* AppIcon.svg */; };
 		56A46FB5D95B5B7AB587F7E2 /* Kingfisher in Frameworks */ = {isa = PBXBuildFile; productRef = F1B03872049470BF84F3E5E2 /* Kingfisher */; };
 		56B0305B5D3847FC6B326502 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE8509E5A49E4A5CAAEB3ADB /* ContentView.swift */; };
-		5B75892791A663E2D073CB5E /* RemoteConfigServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6445951590F553A1431E48F /* RemoteConfigServiceTests.swift */; };
 		5B98FB97C8ECE7DD2F2497D4 /* JobsSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EFFAC61B95377D854D3B20D /* JobsSnapshotTests.swift */; };
 		5E14AAEFC75F2D1FCC31ECFE /* CameraFeatureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 127AD2AAFA29205C2D63B787 /* CameraFeatureTests.swift */; };
 		5E2B44D1C4A9B540A480E0BA /* GalleryFeatureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21F759916DD6C60D0A6AE6E8 /* GalleryFeatureTests.swift */; };
@@ -61,8 +61,6 @@
 		7D3B733594872CA7A26DBE84 /* OAuthHandoff.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FBAA5A4D55BE2A939B40CEF /* OAuthHandoff.swift */; };
 		7F69C698F57CD038D04C90B8 /* AccountSessionModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9D716AFFCACC5FB9D732D15 /* AccountSessionModel.swift */; };
 		81175F108740A045DDB8FF9D /* PosesAdapterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AFAF36860E03C97F64302597 /* PosesAdapterTests.swift */; };
-		814C3719274137F4368B3FC2 /* RemoteConfigService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 012C20542B9E2F237F77D49C /* RemoteConfigService.swift */; };
-		8248ECED9F1A1DC7A59EBDF5 /* RuntimeConfigResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = E286C264229F73A6A9FF42D9 /* RuntimeConfigResolver.swift */; };
 		85EC64B6F6E7F3864625BB20 /* APIError.swift in Sources */ = {isa = PBXBuildFile; fileRef = 109560EA6993EA5DCD3440AF /* APIError.swift */; };
 		87DB43EFD90129A2CFB64805 /* PosesFeature.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8629798E4E2AFC175A0D19E /* PosesFeature.swift */; };
 		8C8EC5B13461D52698AF9850 /* AppleSignIn.swift in Sources */ = {isa = PBXBuildFile; fileRef = E62EEBF4311843B030F88E58 /* AppleSignIn.swift */; };
@@ -73,6 +71,7 @@
 		96ED3BAFA1DFF571E520F689 /* SignInTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45368C62926856229D2723C7 /* SignInTests.swift */; };
 		9EB5A02FEC888536D54DF563 /* AIPoseDesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2EE0355F95175C0D3D140424 /* AIPoseDesignSystem.swift */; };
 		A825AC5F0531A8569219D47A /* RevenueCat in Frameworks */ = {isa = PBXBuildFile; productRef = 1CD52D4E4E08653A055AB61A /* RevenueCat */; };
+		A88D21CED9E9A047ACAEDAF7 /* AppConfigServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B687A73096C60A29CE829E56 /* AppConfigServiceTests.swift */; };
 		A8C636E39D6C83F337E98600 /* SessionPresenceModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0BE311B84AFAC354708F8B47 /* SessionPresenceModel.swift */; };
 		AA92157B0E277FD36C849306 /* PerformanceBaselineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CDC2A66EF6C5B7A7C8FA69A8 /* PerformanceBaselineTests.swift */; };
 		AF3FFA4E4C75C074D4D5DC09 /* CameraCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6A0C48173DC401944D4A9DA /* CameraCoordinatorTests.swift */; };
@@ -118,7 +117,6 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		012C20542B9E2F237F77D49C /* RemoteConfigService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteConfigService.swift; sourceTree = "<group>"; };
 		04EB53E66ACEF51BFBFAD6D4 /* CameraViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraViewController.swift; sourceTree = "<group>"; };
 		05D11FEB7E0A1D62258645BF /* SupportDestinations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupportDestinations.swift; sourceTree = "<group>"; };
 		073D00DD4CD6FF46576E948A /* AppDatabaseSchema.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDatabaseSchema.swift; sourceTree = "<group>"; };
@@ -160,6 +158,7 @@
 		56583BC252B5F01ED9DEA19D /* iosAppTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = iosAppTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		567850A063D54AAE95B3BEC5 /* AIPoseNavigation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIPoseNavigation.swift; sourceTree = "<group>"; };
 		59169CF64611E3D726C9D47A /* Prod-Debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "Prod-Debug.xcconfig"; sourceTree = "<group>"; };
+		5C1DBAF0DCF9CB11B0A0C57A /* AppConfigService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfigService.swift; sourceTree = "<group>"; };
 		5E26C008F7E8079D880FD29E /* APIClientTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClientTests.swift; sourceTree = "<group>"; };
 		61571883DB4BF8DDEFEE8BD5 /* JobsFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JobsFixtures.swift; sourceTree = "<group>"; };
 		6535A435C54DDB708745F381 /* DatabaseRecords.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DatabaseRecords.swift; sourceTree = "<group>"; };
@@ -186,7 +185,7 @@
 		AFAF36860E03C97F64302597 /* PosesAdapterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PosesAdapterTests.swift; sourceTree = "<group>"; };
 		B148FE3930570FF57E255519 /* OAuthCallbackParserTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OAuthCallbackParserTests.swift; sourceTree = "<group>"; };
 		B200B349F72BE4E46078D085 /* AppConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfig.swift; sourceTree = "<group>"; };
-		B6445951590F553A1431E48F /* RemoteConfigServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteConfigServiceTests.swift; sourceTree = "<group>"; };
+		B687A73096C60A29CE829E56 /* AppConfigServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfigServiceTests.swift; sourceTree = "<group>"; };
 		B6A0C48173DC401944D4A9DA /* CameraCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraCoordinatorTests.swift; sourceTree = "<group>"; };
 		B719EE2E7F62C33D73EBA475 /* CameraCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraCoordinator.swift; sourceTree = "<group>"; };
 		C117AD187833E2513BD2F553 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
@@ -204,7 +203,6 @@
 		D9D716AFFCACC5FB9D732D15 /* AccountSessionModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountSessionModel.swift; sourceTree = "<group>"; };
 		DB487DB1EF69AD8D00D33F2D /* AppConfigTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfigTests.swift; sourceTree = "<group>"; };
 		E0E74103CE18DA64904CA968 /* CameraGridOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraGridOverlay.swift; sourceTree = "<group>"; };
-		E286C264229F73A6A9FF42D9 /* RuntimeConfigResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RuntimeConfigResolver.swift; sourceTree = "<group>"; };
 		E62EEBF4311843B030F88E58 /* AppleSignIn.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleSignIn.swift; sourceTree = "<group>"; };
 		E683518697C7CD04E17A0D94 /* PoseDetailFeatureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PoseDetailFeatureTests.swift; sourceTree = "<group>"; };
 		EA2BE22C3F2AC2544865BC8E /* legacy-aipose-database-v1.sqlite */ = {isa = PBXFileReference; lastKnownFileType = file; path = "legacy-aipose-database-v1.sqlite"; sourceTree = "<group>"; };
@@ -235,7 +233,7 @@
 				1C81D6F669B7BB6D2FFCCEB3 /* FirebaseCore in Frameworks */,
 				445C052442747365B7CB2124 /* FirebaseAnalytics in Frameworks */,
 				B7C4F6137AC8345E71E92063 /* FirebaseCrashlytics in Frameworks */,
-				379D4C6DBBA934A8EF44CDDE /* FirebaseRemoteConfig in Frameworks */,
+				379D4C6DBBA934A8EF44CDDE /* FirebaseFirestore in Frameworks */,
 				A825AC5F0531A8569219D47A /* RevenueCat in Frameworks */,
 				24323778ABA0C668C758086B /* GRDB in Frameworks */,
 				56A46FB5D95B5B7AB587F7E2 /* Kingfisher in Frameworks */,
@@ -275,12 +273,11 @@
 				109560EA6993EA5DCD3440AF /* APIError.swift */,
 				86C8472C23144F2FED1429A9 /* APIModels.swift */,
 				B200B349F72BE4E46078D085 /* AppConfig.swift */,
+				5C1DBAF0DCF9CB11B0A0C57A /* AppConfigService.swift */,
 				12547C83962E625CE39DF6DE /* EndpointPolicy.swift */,
 				3199C4916FBCFAB168D672B3 /* FeatureService.swift */,
 				7F99B306A6ED236AADECB14F /* KeychainTokenStorage.swift */,
 				F268FEE9D95DFE81D66C708A /* PoseAPIService.swift */,
-				012C20542B9E2F237F77D49C /* RemoteConfigService.swift */,
-				E286C264229F73A6A9FF42D9 /* RuntimeConfigResolver.swift */,
 				5437BA40F635BF15721D441C /* ServiceLocator.swift */,
 				350521FDA70C1A18E6B3A61D /* SessionBoundary.swift */,
 				85E9E22C9FF4C823A8898A3F /* SessionCredentials.swift */,
@@ -392,10 +389,10 @@
 			isa = PBXGroup;
 			children = (
 				5E26C008F7E8079D880FD29E /* APIClientTests.swift */,
+				B687A73096C60A29CE829E56 /* AppConfigServiceTests.swift */,
 				DB487DB1EF69AD8D00D33F2D /* AppConfigTests.swift */,
 				EA9CF8A10FC8E52646BE4ADD /* EndpointPolicyTests.swift */,
 				B148FE3930570FF57E255519 /* OAuthCallbackParserTests.swift */,
-				B6445951590F553A1431E48F /* RemoteConfigServiceTests.swift */,
 				3E5F21303DBA6D3D4B9DF921 /* RevenueCatAdapterTests.swift */,
 				50332EA7FC91E3A2C9A013F2 /* SessionBoundaryTests.swift */,
 				4C7621E846F870A8D430896C /* SessionScopeCoordinatorTests.swift */,
@@ -554,7 +551,7 @@
 				16D66C9411832E1B7D572C76 /* FirebaseCore */,
 				1359B5E3E79A6103CB63C864 /* FirebaseAnalytics */,
 				108F0D6F9A31550A5E7E3D81 /* FirebaseCrashlytics */,
-				A1BE688F1F56E46F4CAF1BC4 /* FirebaseRemoteConfig */,
+				84FCD721953CC33D9035BCCD /* FirebaseFirestore */,
 				1CD52D4E4E08653A055AB61A /* RevenueCat */,
 				5F5D09D8B3AA79328B33FC59 /* GRDB */,
 				F1B03872049470BF84F3E5E2 /* Kingfisher */,
@@ -666,6 +663,7 @@
 				7F69C698F57CD038D04C90B8 /* AccountSessionModel.swift in Sources */,
 				31D8698BFF08F7C0753AB329 /* AddPoseScreen.swift in Sources */,
 				01C8648C27A168928A11377E /* AppConfig.swift in Sources */,
+				1A25276CCE7144BBA2E91094 /* AppConfigService.swift in Sources */,
 				39FE2AF3B2B727C26D8081DA /* AppDatabase.swift in Sources */,
 				DB83404FF6D44ABA20CF2357 /* AppDatabaseSchema.swift in Sources */,
 				FDE52B8D57A097A60A4CF366 /* AppDelegate.swift in Sources */,
@@ -698,9 +696,7 @@
 				70F357B4617B371502C1404C /* PoseAPIService.swift in Sources */,
 				140D3458C1B7EC1E712941F8 /* PoseServiceAdapter.swift in Sources */,
 				87DB43EFD90129A2CFB64805 /* PosesFeature.swift in Sources */,
-				814C3719274137F4368B3FC2 /* RemoteConfigService.swift in Sources */,
 				66C2873F999B9E2D6F6686BC /* RevenueCatAdapter.swift in Sources */,
-				8248ECED9F1A1DC7A59EBDF5 /* RuntimeConfigResolver.swift in Sources */,
 				B7F1453801A68E15470CADCE /* ServiceLocator.swift in Sources */,
 				36FA149F6E729CA3FF69D709 /* SessionBoundary.swift in Sources */,
 				FF3E1F2A2DD1F066AAC0BC4F /* SessionCredentials.swift in Sources */,
@@ -720,6 +716,7 @@
 				291594201B0FF97BA4E9FD28 /* AccountSessionTests.swift in Sources */,
 				DA35A574B722A004EABF779E /* AddPoseFormTests.swift in Sources */,
 				9261404009F5ABEB82154659 /* AddPoseProcessingTests.swift in Sources */,
+				A88D21CED9E9A047ACAEDAF7 /* AppConfigServiceTests.swift in Sources */,
 				B5900233394FE16B6675DEEE /* AppConfigTests.swift in Sources */,
 				68C01F1892B8891425FF101C /* AppleSignInTests.swift in Sources */,
 				AF3FFA4E4C75C074D4D5DC09 /* CameraCoordinatorTests.swift in Sources */,
@@ -740,7 +737,6 @@
 				1E0244096A7F89E47C305A09 /* PoseDetailFeatureTests.swift in Sources */,
 				73919AF6C09FD6F4B94E56C1 /* PosePickerViewModelTests.swift in Sources */,
 				81175F108740A045DDB8FF9D /* PosesAdapterTests.swift in Sources */,
-				5B75892791A663E2D073CB5E /* RemoteConfigServiceTests.swift in Sources */,
 				7342797CFF2900F85521D10B /* RevenueCatAdapterTests.swift in Sources */,
 				D140B0ADEB322D73048D1243 /* SessionBoundaryTests.swift in Sources */,
 				F9F8B63AB2B71AED8220776B /* SessionScopeCoordinatorTests.swift in Sources */,
@@ -1266,10 +1262,10 @@
 			package = 83B301D7911A436218E73B09 /* XCRemoteSwiftPackageReference "GRDB.swift" */;
 			productName = GRDB;
 		};
-		A1BE688F1F56E46F4CAF1BC4 /* FirebaseRemoteConfig */ = {
+		84FCD721953CC33D9035BCCD /* FirebaseFirestore */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 7C4F1707FE80007C7DCEAE3C /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
-			productName = FirebaseRemoteConfig;
+			productName = FirebaseFirestore;
 		};
 		F1B03872049470BF84F3E5E2 /* Kingfisher */ = {
 			isa = XCSwiftPackageProductDependency;

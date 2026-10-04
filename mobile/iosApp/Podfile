@@ -14,7 +14,7 @@ target 'iosApp' do
   pod 'FirebaseCore'
   pod 'FirebaseAnalytics'
   pod 'FirebaseCrashlytics'
-  pod 'FirebaseRemoteConfig'
+  pod 'FirebaseFirestore'
 
   post_install do |installer|
     installer.pods_project.targets.each do |target|

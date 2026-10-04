@@ -37,6 +37,16 @@ private final class StubJobsService: ObservableObject, JobsServing, @unchecked S
 
 @MainActor
 final class AddPoseFormTests: XCTestCase {
+    override func setUp() {
+        super.setUp()
+        AppConfig.shared.applyExtractPoseEnabled(true)
+    }
+
+    override func tearDown() {
+        AppConfig.shared.applyExtractPoseEnabled(true)
+        super.tearDown()
+    }
+
     func testFormValidationRequiresImageNameAndTags() {
         let stub = StubJobsService()
         let model = AddPoseViewModel(jobsService: stub)
@@ -124,5 +134,28 @@ final class AddPoseFormTests: XCTestCase {
         XCTAssertFalse(signInResult)
         XCTAssertEqual(model.name, "Test Pose")
         XCTAssertEqual(model.submitError, "Sign in to add a pose.")
+    }
+
+    func testExtractKillSwitchBlocksFormAndSubmitThenAllowsWhenEnabled() async {
+        let stub = StubJobsService()
+        let model = AddPoseViewModel(jobsService: stub)
+        model.selectedImageData = Data("test_photo".utf8)
+        model.selectedFileName = "photo.jpg"
+        model.name = "Test Pose"
+        model.tagsText = "standing, balance"
+
+        AppConfig.shared.applyExtractPoseEnabled(false)
+        XCTAssertFalse(model.isFormValid)
+        let blockedResult = await model.submit()
+        XCTAssertFalse(blockedResult)
+        XCTAssertEqual(model.submitError, JobsError.extractPoseDisabled.localizedDescription)
+        XCTAssertEqual(stub.submitCallCount, 0)
+
+        AppConfig.shared.applyExtractPoseEnabled(true)
+        XCTAssertTrue(model.isFormValid)
+        let allowedResult = await model.submit()
+        XCTAssertTrue(allowedResult)
+        XCTAssertNil(model.submitError)
+        XCTAssertEqual(stub.submitCallCount, 1)
     }
 }

@@ -285,10 +285,12 @@ struct JobsScreen<Service: JobsServing & ObservableObject>: View {
                 tone: .empty,
                 title: "No jobs yet",
                 message: "Pose extraction jobs will appear here when you submit a pose.",
-                actionTitle: "Add pose"
+                actionTitle: AppConfig.canExtractPose(isEnabled: AppConfig.shared.isExtractPoseEnabled) ? "Add pose" : nil
             ) {
-                onAddPose()
-                dismiss()
+                if AppConfig.canExtractPose(isEnabled: AppConfig.shared.isExtractPoseEnabled) {
+                    onAddPose()
+                    dismiss()
+                }
             }
             .padding(.horizontal, AIPoseSpacing.lg)
             Spacer()
@@ -301,6 +303,7 @@ struct JobsScreen<Service: JobsServing & ObservableObject>: View {
         case .none:
             break
         case .retry:
+            guard AppConfig.canExtractPose(isEnabled: AppConfig.shared.isExtractPoseEnabled) else { return }
             Task {
                 do {
                     try await jobsService.retry(id: row.jobId)

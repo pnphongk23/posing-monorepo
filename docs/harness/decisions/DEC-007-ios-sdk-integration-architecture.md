@@ -39,7 +39,7 @@ and the current working-tree `Pods` directory contains `composeApp` and
 `iosApp.xcworkspace` and the scheme is `iosApp`. There is no
 Firebase or RevenueCat pod today. Native startup is in `AppDelegate.swift`.
 
-The integration must support Firebase Analytics, Crashlytics, Remote Config,
+The integration must support Firebase Analytics, Crashlytics, Firestore config,
 Crashlytics dSYM handling, and RevenueCat purchases while keeping the Compose
 surface testable and keeping credentials out of source.
 
@@ -49,7 +49,7 @@ surface testable and keeping credentials out of source.
 integration, with a thin platform bridge into Compose:
 
 **Approval scope:** This approval covers only the Firebase Core, Analytics,
-Crashlytics, and Remote Config integration for FEAT-010. The RevenueCat
+Crashlytics, and Firestore integration for FEAT-010. The RevenueCat
 architecture below remains **proposed** and is not authorized by this approval;
 it remains gated by FEAT-011 and DEC-008 approval.
 
@@ -57,9 +57,10 @@ it remains gated by FEAT-011 and DEC-008 approval.
 launch slice. This records product direction; the Decision remains `proposed`
 until the Repository Maintainer completes the Harness approval step.
 
-- Add the Firebase iOS pods required for Core, Analytics, Crashlytics, and Remote
-  Config to the existing Podfile; do not introduce a second dependency manager
-  for this feature.
+- Add the Firebase iOS SDK packages/pods required for Core, Analytics, Crashlytics, and
+  Firestore; do not introduce an unmanaged third dependency lane. Firestore `config/app`
+  is public-readable and its last successfully fetched payload is cached in UserDefaults
+  for synchronous first paint; compile-time defaults apply before the first successful fetch.
 - Call `FirebaseApp.configure()` from the native iOS app delegate after a
   resource/configuration presence check. Add `GoogleService-Info.plist` only as
   a placeholder-managed project resource; the real file is supplied out of band

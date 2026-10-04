@@ -1,7 +1,6 @@
 import UIKit
 import SwiftUI
 import FirebaseCore
-import FirebaseRemoteConfig
 import FirebaseAnalytics
 import FirebaseCrashlytics
 
@@ -52,93 +51,81 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
     }
 
     private func resolveEndpointThenShowRoot() {
-        let defaultUrl = StartupEndpoint.defaultURL
-        let key = StartupEndpoint.remoteConfigKey
         let start = Date()
 
-        // First paint must not wait for RemoteConfig. The previous version only built the window
-        // inside the `fetchAndActivate` callback, with a 5s `asyncAfter` fallback, so a slow or
-        // hanging fetch showed *nothing* (no tab bar, no poses, no gallery) for up to five seconds
-        // — the reported "first tap on Gallery/Camera takes forever" start. A RemoteConfig read
-        // that needs no network is the last-activated cache, which is available synchronously.
-        let preFetchCache = isFirebaseConfigured
-            ? StartupEndpoint.validate(raw: RemoteConfig.remoteConfig().configValue(forKey: key).stringValue)
-            : nil
-        let preFetchAccountRaw = isFirebaseConfigured
-            ? RemoteConfig.remoteConfig().configValue(forKey: RemoteConfigService.accountEnabledKey).stringValue
-            : nil
-        let initialAccountEnabled = RemoteConfigService.resolveAccountEnabled(
-            cachedRaw: preFetchAccountRaw,
-            fetchedRaw: nil
-        )
-        let initialSource = preFetchCache != nil ? "cache" : "default"
-        AppConfig.shared.applyEndpoint(
-            StartupEndpoint.resolve(defaultUrl: defaultUrl, cachedRaw: preFetchCache, fetchedRaw: nil)
-        )
-        RemoteConfigService.applyAccountEnabled(initialAccountEnabled)
+        // First paint uses the last successfully fetched config when present, without waiting
+        // for Firestore or network. Compile-time defaults apply before the first successful fetch.
+        let configStore = UserDefaultsConfigPayloadStore()
+        let initialPayload = AppConfigService.resolveInitialPayload(store: configStore)
+        AppConfigService.apply(initialPayload)
         showRootViewController()
-        logFirstPaint(startedAt: start, endpointSource: initialSource)
+        logFirstPaint(startedAt: start, endpointSource: "cache-or-default")
 
         guard isFirebaseConfigured else {
-            logEndpointResolved(source: initialSource, startedAt: start)
+            logEndpointResolved(source: "default", startedAt: start)
             return
         }
 
         let latch = StartupLatch()
-
-        // Applies fetched startup values and finishes the launch bookkeeping exactly once. The root
-        // is rebuilt only when the endpoint or account-feature value differs from the cached value.
-        let applyFetched: (String?, String?) -> Void = { [weak self] fetchedRaw, fetchedAccountRaw in
-            guard latch.admitFetch() else { return }
-            latch.seal()
-
-            let accountEnabledBeforeFetch = AppConfig.shared.isAccountFeatureEnabled
-            let fetchedAccountEnabled = RemoteConfigService.resolveAccountEnabled(
-                cachedRaw: preFetchAccountRaw,
-                fetchedRaw: fetchedAccountRaw
-            )
-            RemoteConfigService.applyAccountEnabled(fetchedAccountEnabled)
-            let accountFeatureChanged = accountEnabledBeforeFetch != AppConfig.shared.isAccountFeatureEnabled
-
-            guard let fetched = StartupEndpoint.validate(raw: fetchedRaw) else {
-                if accountFeatureChanged { self?.showRootViewController() }
-                guard latch.claimFinalization() else { return }
-                self?.logEndpointResolved(source: initialSource, startedAt: start)
-                return
-            }
-
-            let endpointChanged = fetched != AppConfig.shared.SERVER_BASE_URL
-            if endpointChanged {
-                AppConfig.shared.applyEndpoint(fetched)
-                #if DEBUG
-                NSLog("%@", "AIPOSE_PERF endpoint_swapped source=fetch")
-                #endif
-            }
-            if endpointChanged || accountFeatureChanged { self?.showRootViewController() }
-            guard latch.claimFinalization() else { return }
-            self?.logEndpointResolved(source: "fetch", startedAt: start)
-        }
 
         // Keeps the historical 5s budget for changing the base URL: after it, a late fetch can no
         // longer re-point the app under an interaction that already started.
         let timeout = DispatchWorkItem { [weak self] in
             latch.seal()
             guard latch.claimFinalization() else { return }
-            self?.logEndpointResolved(source: initialSource, startedAt: start)
+            self?.logEndpointResolved(source: "default", startedAt: start)
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 5.0, execute: timeout)
 
-        let remoteConfig = RemoteConfig.remoteConfig()
-        remoteConfig.fetchAndActivate { status, _ in
+        Task { [weak self] in
+            let result = await AppConfigService.fetchAndResolve(source: FirestoreConfigSource())
             timeout.cancel()
-            let isSuccess = status == .successFetchedFromRemote || status == .successUsingPreFetchedData
-            let fetchedRaw: String? = isSuccess
-                ? remoteConfig.configValue(forKey: key).stringValue
-                : nil
-            let fetchedAccountRaw: String? = isSuccess
-                ? remoteConfig.configValue(forKey: RemoteConfigService.accountEnabledKey).stringValue
-                : nil
-            applyFetched(fetchedRaw, fetchedAccountRaw)
+            guard result.outcome == .applied else {
+                latch.sealAndAdmitFetch()
+                guard latch.claimFinalization() else { return }
+                await MainActor.run {
+                    self?.logEndpointResolved(source: "cache-or-default", startedAt: start)
+                }
+                return
+            }
+            AppConfigService.persistIfSuccessful(result.payload, outcome: result.outcome, store: configStore)
+            let mayApplyEndpointAndAccount = latch.sealAndAdmitFetch()
+            let decision = AppConfigService.applicationDecision(
+                isEndpointWindowSealed: !mayApplyEndpointAndAccount
+            )
+
+            let fetchedPayload = result.payload
+            let endpointChanged = decision.updateEndpoint && fetchedPayload.endpointUrl != AppConfig.shared.SERVER_BASE_URL
+            let accountChanged = decision.updateAccountEnabled && fetchedPayload.isAccountEnabled != AppConfig.shared.isAccountFeatureEnabled
+            let extractChanged = fetchedPayload.isExtractPoseEnabled != AppConfig.shared.isExtractPoseEnabled
+
+            if decision.updateEndpoint {
+                AppConfig.shared.applyEndpoint(fetchedPayload.endpointUrl)
+            }
+            if decision.updateAccountEnabled {
+                AppConfig.shared.applyAccountFeatureEnabled(fetchedPayload.isAccountEnabled)
+            }
+            if decision.updateExtractPoseEnabled {
+                AppConfig.shared.applyExtractPoseEnabled(fetchedPayload.isExtractPoseEnabled)
+            }
+
+            if endpointChanged {
+                #if DEBUG
+                NSLog("%@", "AIPOSE_PERF endpoint_swapped source=fetch")
+                #endif
+            }
+
+            await MainActor.run {
+                if decision.rebuildRootForChanges && (endpointChanged || accountChanged || extractChanged) {
+                    self?.showRootViewController()
+                }
+            }
+
+            guard latch.claimFinalization() else { return }
+            let source = result.payload.endpointUrl == AppConfigService.defaultURL ? "default" : "fetch"
+            await MainActor.run {
+                self?.logEndpointResolved(source: source, startedAt: start)
+            }
         }
     }
 
@@ -194,19 +181,21 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
     }
 }
 
-/// One-shot guard for launch endpoint finalisation. The `fetchAndActivate` callback and the 5s
+/// One-shot guard for launch endpoint finalisation. The fetch callback and the 5s
 /// seal timer can complete in either order, so "apply the endpoint once" needs a lock rather than
-/// the unsynchronised `didResolve` local the previous version used.
+/// an unsynchronised local.
 private final class StartupLatch: @unchecked Sendable {
     private let lock = NSLock()
     private var isSealed = false
     private var isFinalized = false
 
-    /// True while the fetch is still allowed to change the endpoint.
-    func admitFetch() -> Bool {
+    /// Atomically seals an in-budget fetch or rejects a fetch after the deadline.
+    func sealAndAdmitFetch() -> Bool {
         lock.lock()
         defer { lock.unlock() }
-        return !isSealed && !isFinalized
+        guard !isSealed && !isFinalized else { return false }
+        isSealed = true
+        return true
     }
 
     func seal() {
@@ -222,28 +211,5 @@ private final class StartupLatch: @unchecked Sendable {
         if isFinalized { return false }
         isFinalized = true
         return true
-    }
-}
-
-private enum StartupEndpoint {
-    static let defaultURL = "https://pose-extract-server-production.up.railway.app"
-    static let remoteConfigKey = "api_baseurl"
-
-    static func validate(raw: String?) -> String? {
-        guard let raw, !raw.isEmpty else { return nil }
-        guard let url = URL(string: raw),
-              let scheme = url.scheme?.lowercased(),
-              scheme == "http" || scheme == "https",
-              url.host != nil else {
-            return nil
-        }
-        if raw.contains(" ") || raw.count > 2048 { return nil }
-        return raw
-    }
-
-    static func resolve(defaultUrl: String, cachedRaw: String?, fetchedRaw: String?) -> String {
-        if let fetched = validate(raw: fetchedRaw) { return fetched }
-        if let cached = validate(raw: cachedRaw) { return cached }
-        return defaultUrl
     }
 }

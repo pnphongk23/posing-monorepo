@@ -1,8 +1,8 @@
 import Foundation
 
-/// DEC-006 validation for Remote Config `api_baseurl`.
+/// DEC-006 validation for Firestore `api_baseurl`.
 enum EndpointPolicy {
-    static let remoteConfigKey = "api_baseurl"
+    static let apiBaseURLKey = "api_baseurl"
 
     static func validate(raw: String?) -> String? {
         guard let raw, !raw.isEmpty else { return nil }
