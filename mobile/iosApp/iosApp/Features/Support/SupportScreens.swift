@@ -366,17 +366,6 @@ struct SettingsScreen: View {
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Replay onboarding guide")
-                    Button { openWeb(SupportDestinations.supportURL) } label: {
-                        SupportSettingsRow(
-                            icon: "info.circle.fill",
-                            iconColor: AIPoseColor.accentYellow,
-                            title: "Support & feedback",
-                            description: "Send feedback or request help in your browser.",
-                            trailing: .external
-                        )
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Support and feedback, opens in browser")
                     Button { showsAboutSheet = true } label: {
                         SupportSettingsRow(
                             icon: "info.circle.fill",
