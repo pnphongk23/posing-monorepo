@@ -47,7 +47,8 @@ final class JobsScreenModelTests: XCTestCase {
         XCTAssertEqual(nativePose.id, "guide_123")
         XCTAssertEqual(nativePose.name, "Tree Pose Variation")
         XCTAssertEqual(nativePose.category, "balance") // First tag
-        XCTAssertEqual(nativePose.imageURL, URL(string: "https://api.example.com/poses/guide_123/skeleton.png"))
+        XCTAssertEqual(nativePose.imageURL, URL(string: "https://r2.example.com/original.jpg"), "thumb is the source photo")
+        XCTAssertEqual(nativePose.guideURL, URL(string: "https://api.example.com/poses/guide_123/skeleton.png"), "camera guide is the extracted line art")
         XCTAssertEqual(nativePose.instructions.count, 2)
         XCTAssertEqual(nativePose.instructions[0], "Step 1: Balance on left foot.")
         XCTAssertEqual(nativePose.instructions[1], "Step 2: Raise arms above head.")

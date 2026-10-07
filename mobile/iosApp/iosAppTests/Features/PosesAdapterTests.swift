@@ -21,8 +21,21 @@ final class PosesAdapterTests: XCTestCase {
         XCTAssertEqual(native.name, "Sunset Stand")
         XCTAssertEqual(native.category, "Easy")
         XCTAssertEqual(native.imageURL?.absoluteString, "https://api.example.com/thumb.jpg")
+        XCTAssertEqual(native.guideURL?.absoluteString, "https://api.example.com/skeleton.png")
         XCTAssertEqual(native.instructions, ["Face the light"])
         XCTAssertFalse(native.isSaved)
+    }
+
+    /// The offline catalog must hand the camera the same guide the live response did, otherwise a
+    /// cached pose would draw the source photo (its thumb) as the camera overlay.
+    func testCatalogRoundTripKeepsThumbAndGuideSeparate() throws {
+        let pose = try Self.decodePose("""
+        {"poseId":"p1","name":"Sunset Stand","skeletonUrl":"/skeleton.png","thumbnailUrl":"/original.jpg","status":"published"}
+        """)
+        let record = PoseCatalogMapping.record(from: pose, source: .community, baseURL: "https://api.example.com")
+        let native = PoseCatalogMapping.nativePose(from: record, isSaved: false, baseURL: "https://api.example.com")
+        XCTAssertEqual(native.imageURL?.absoluteString, "https://api.example.com/original.jpg")
+        XCTAssertEqual(native.guideURL?.absoluteString, "https://api.example.com/skeleton.png")
     }
 
     func testSavedFilterRoutesToSavedEndpoint() async throws {

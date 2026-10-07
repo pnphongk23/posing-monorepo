@@ -86,7 +86,8 @@ enum CommunityPoseMapper {
             category: pose.difficulty ?? pose.tags.first ?? "Community",
             imageURL: resolveURL(pose.thumbnailUrl, baseURL: baseURL),
             instructions: instructions,
-            isSaved: isSaved
+            isSaved: isSaved,
+            guideURL: resolveURL(pose.skeletonUrl, baseURL: baseURL)
         )
     }
 
@@ -117,9 +118,11 @@ enum GuidePoseMapper {
             id: guide.poseId,
             name: guide.name,
             category: guide.tags.first ?? "",
-            imageURL: CommunityPoseMapper.resolveURL(guide.skeletonUrl, baseURL: baseURL),
+            imageURL: guide.originalUrl.flatMap { CommunityPoseMapper.resolveURL($0, baseURL: baseURL) }
+                ?? CommunityPoseMapper.resolveURL(guide.skeletonUrl, baseURL: baseURL),
             instructions: instructions,
-            isSaved: false
+            isSaved: false,
+            guideURL: CommunityPoseMapper.resolveURL(guide.skeletonUrl, baseURL: baseURL)
         )
     }
 }
@@ -207,7 +210,8 @@ enum PoseCatalogMapping {
             category: record.difficulty ?? tags.first ?? "Community",
             imageURL: CommunityPoseMapper.resolveURL(record.thumbnailPath, baseURL: baseURL),
             instructions: instructions,
-            isSaved: isSaved
+            isSaved: isSaved,
+            guideURL: CommunityPoseMapper.resolveURL(record.skeletonPath, baseURL: baseURL)
         )
     }
 

@@ -3,23 +3,6 @@ import XCTest
 
 @MainActor
 final class CameraFeatureTests: XCTestCase {
-    /// `app.js:380` — `setCameraStatus(`${selectedPose.title} selected`, 'success', 2400)`. The copy
-    /// is `<name> selected`; the earlier `Matching: <name>` was a native invention, and the prototype
-    /// has no separate chip for pose selection (it reuses `#camera-status`, `app.js:349-356`).
-    func testPoseSelectionFeedbackMatchesCameraStatusCopy() {
-        let model = CameraViewModel()
-        let pose = NativePose(
-            id: "dancing",
-            name: "Dancing Pose",
-            category: "Standing",
-            imageURL: nil,
-            instructions: [],
-            isSaved: false
-        )
-        XCTAssertEqual(model.matchingFeedbackLabel(for: pose), "Dancing Pose selected")
-        XCTAssertNil(model.matchingFeedbackLabel(for: nil))
-    }
-
     func testCameraControlsEnabledWhenAuthorizedAndIdle() {
         let model = CameraViewModel()
         model.coordinator.onPermissionResult(.authorized)
@@ -163,29 +146,43 @@ final class CameraFeatureTests: XCTestCase {
         XCTAssertEqual(model.guideLineColor, .white)
     }
 
-    /// `clear-pose-row`: clears the reference and resets the pose-specific controls to their
-    /// prototype defaults (visible, 50%, Black) — the general Flash/Grid settings survive.
-    func testResetPoseGuideRestoresDefaultsAndKeepsGeneralSettings() {
+    // MARK: Pose reference placement (pinch / twist / drag)
+
+    func testGuideTransformStartsAtIdentity() {
+        let model = CameraViewModel()
+        XCTAssertEqual(model.guideTransform, GuideTransform())
+    }
+
+    func testCommitGuideGestureAccumulatesAcrossGestures() {
+        let model = CameraViewModel()
+        model.commitGuideGesture(.init(scale: 1.5, rotation: .degrees(10), translation: CGSize(width: 20, height: -5)))
+        model.commitGuideGesture(.init(scale: 2, rotation: .degrees(15), translation: CGSize(width: 5, height: 5)))
+
+        XCTAssertEqual(model.guideTransform.scale, 3, accuracy: 0.001)
+        XCTAssertEqual(model.guideTransform.rotation.degrees, 25, accuracy: 0.001)
+        XCTAssertEqual(model.guideTransform.offset, CGSize(width: 25, height: 0))
+    }
+
+    func testGuideScaleIsClamped() {
+        let model = CameraViewModel()
+        model.commitGuideGesture(.init(scale: 100, rotation: .zero, translation: .zero))
+        XCTAssertEqual(model.guideTransform.scale, GuideTransform.scaleRange.upperBound)
+        model.commitGuideGesture(.init(scale: 0.0001, rotation: .zero, translation: .zero))
+        XCTAssertEqual(model.guideTransform.scale, GuideTransform.scaleRange.lowerBound)
+    }
+
+    func testResetGuideTransformRestoresIdentityAndKeepsOtherSettings() {
         let model = CameraViewModel()
         model.coordinator.onPermissionResult(.authorized)
-        model.togglePoseGuideVisibility()
         model.setGuideOpacity(0.9)
         model.setGuideLineColor(.white)
-        model.toggleGrid()
-        model.cycleFlash()
-        // Capture rather than hardcode: the point is that the general Flash setting SURVIVES the pose
-        // reset. (The old `.auto` literal only held because the default used to be `.off`; the
-        // prototype default is `Auto` per `camera-live.html:87`, so one cycle now lands on `.on`.)
-        let flashAfterCycle = model.flashSetting
+        model.commitGuideGesture(.init(scale: 2, rotation: .degrees(30), translation: CGSize(width: 40, height: 40)))
 
-        model.resetPoseGuide()
+        model.resetGuideTransform()
 
-        XCTAssertTrue(model.isPoseGuideVisible)
-        XCTAssertEqual(model.guideOpacity, 0.5, accuracy: 0.001)
-        XCTAssertEqual(model.guideLineColor, .black)
-        XCTAssertTrue(model.isGridVisible)
-        XCTAssertEqual(model.flashSetting, flashAfterCycle, "general Flash setting survives the pose reset")
-        XCTAssertNotEqual(model.flashSetting, .auto, "resetting the pose guide must not reset Flash")
+        XCTAssertEqual(model.guideTransform, GuideTransform())
+        XCTAssertEqual(model.guideOpacity, 0.9, accuracy: 0.001)
+        XCTAssertEqual(model.guideLineColor, .white)
     }
 
     // MARK: Zoom pill (`.nb-camera-zoom-slider` stops 1x → 2x → 3x)

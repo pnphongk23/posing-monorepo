@@ -24,12 +24,10 @@ final class CameraViewModel: ObservableObject {
     @Published var isPoseGuideVisible = true
     /// `pose-line-color-black` / `pose-line-color-white`.
     @Published var guideLineColor: GuideLineColor = .black
+    /// Pinch / rotate / drag placement of the pose reference, committed when a gesture ends.
+    @Published var guideTransform = GuideTransform()
+    /// Transient capture feedback; cleared by `statusClearTask`.
     @Published var statusMessage: String?
-    /// URL of the just-captured photo. The screen loads it through Kingfisher instead of decoding a
-    /// full-resolution image on the main thread before it can present.
-    @Published var capturedPreviewURL: URL?
-    @Published var showCapturedSheet = false
-    @Published var photosExportMessage: String?
     @Published var zoomLevel: CameraZoomLevel = .one
     /// URL of the newest capture, drawn as a 48pt thumbnail in the shutter rail.
     @Published private(set) var latestThumbnailURL: URL?
@@ -43,6 +41,7 @@ final class CameraViewModel: ObservableObject {
     let coordinator: CameraCoordinator
     let imageStorage: CaptureImageStorage
     private var timeoutTask: Task<Void, Never>?
+    private var statusClearTask: Task<Void, Never>?
 
     init(
         guide: NativePose? = nil,
@@ -94,6 +93,7 @@ final class CameraViewModel: ObservableObject {
 
     func onDisappear() {
         timeoutTask?.cancel()
+        statusClearTask?.cancel()
         camera.stop()
     }
 
@@ -121,13 +121,6 @@ final class CameraViewModel: ObservableObject {
     func switchCamera() {
         guard cameraControlsEnabled else { return }
         camera.switchCamera()
-    }
-
-    /// `app.js:380` — a pose selection writes `${selectedPose.title} selected` into the single
-    /// `#camera-status` element (`app.js:349-356`), it does not get a chip of its own.
-    func matchingFeedbackLabel(for guide: NativePose?) -> String? {
-        guard let guide else { return nil }
-        return "\(guide.name) selected"
     }
 
     func openCameraTools() {
@@ -182,11 +175,12 @@ final class CameraViewModel: ObservableObject {
         guideOpacity = value
     }
 
-    /// `clear-pose-row`: removes the selected reference and resets the pose-specific controls.
-    func resetPoseGuide() {
-        isPoseGuideVisible = true
-        guideOpacity = 0.5
-        guideLineColor = .black
+    func commitGuideGesture(_ delta: GuideTransform.Delta) {
+        guideTransform = guideTransform.applying(delta)
+    }
+
+    func resetGuideTransform() {
+        guideTransform = GuideTransform()
     }
 
     func cycleZoom() {
@@ -197,23 +191,6 @@ final class CameraViewModel: ObservableObject {
     func applyZoom(_ level: CameraZoomLevel) {
         zoomLevel = level
         camera.setZoomFactor(level.factor)
-    }
-
-    func dismissCapture() {
-        coordinator.dismissResult()
-        showCapturedSheet = false
-        capturedPreviewURL = nil
-        statusMessage = coordinator.state.statusText()
-    }
-
-    func exportToPhotos() async {
-        guard case .captureSucceeded(_, let photo) = coordinator.state.phase,
-              let path = imageStorage.fullPath(for: photo.imagePath) else {
-            photosExportMessage = PhotosExporter.confirmation(saved: false)
-            return
-        }
-        let saved = await PhotosExporter.saveImage(at: URL(fileURLWithPath: path))
-        photosExportMessage = PhotosExporter.confirmation(saved: saved)
     }
 
     /// Only resolves the file URL: decoding the capture here (a 12MP file straight into a 48pt
@@ -227,6 +204,9 @@ final class CameraViewModel: ObservableObject {
         latestThumbnailURL = URL(fileURLWithPath: full)
     }
 
+    /// A finished capture is already in the app gallery (the coordinator persisted it); this also
+    /// copies it to the Photos library and returns the camera to `previewReady` so the shutter is
+    /// usable again, without any intermediate screen.
     private func observeCaptureCompletion() {
         Task { @MainActor [weak self] in
             guard let self else { return }
@@ -234,14 +214,31 @@ final class CameraViewModel: ObservableObject {
                 try? await Task.sleep(nanoseconds: 50_000_000)
             }
             timeoutTask?.cancel()
-            statusMessage = coordinator.state.statusText()
             reloadThumbnail()
-            if case .captureSucceeded = coordinator.state.phase,
-               let path = coordinator.state.thumbnailPathValue(),
-               let full = imageStorage.fullPath(for: path) {
-                capturedPreviewURL = URL(fileURLWithPath: full)
-                showCapturedSheet = true
+
+            guard case .captureSucceeded(_, let photo) = coordinator.state.phase else {
+                showStatus(coordinator.state.statusText())
+                coordinator.dismissResult()
+                return
             }
+            coordinator.dismissResult()
+            guard let path = imageStorage.fullPath(for: photo.imagePath) else {
+                showStatus(CaptureFailure.writeFailed.userMessage)
+                return
+            }
+            let savedToPhotos = await PhotosExporter.saveImage(at: URL(fileURLWithPath: path))
+            showStatus(savedToPhotos ? "Saved" : "Saved to gallery. Allow Photos access to also save to your library.")
+        }
+    }
+
+    private func showStatus(_ message: String?) {
+        statusClearTask?.cancel()
+        statusMessage = message
+        guard message != nil else { return }
+        statusClearTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 2_500_000_000)
+            guard !Task.isCancelled else { return }
+            self?.statusMessage = nil
         }
     }
 }
@@ -308,13 +305,41 @@ extension CameraFlashSetting {
     }
 }
 
-/// `pose-line-color-black` / `pose-line-color-white` (`camera-live.html`). The colour drives the
-/// stick-figure stroke of the pose reference; a photo guide has no stroke to recolour.
+/// `pose-line-color-black` / `pose-line-color-white` (`camera-live.html`). The colour is the stroke
+/// of the pose reference: the stick-figure fallback and the tinted extracted line art.
 enum GuideLineColor: String, CaseIterable {
     case black, white
 
     var label: String { rawValue.capitalized }
     var color: Color { self == .black ? AIPoseColor.border : .white }
+}
+
+/// Placement of the pose reference over the preview. Scale and rotation pivot on the reference's
+/// centre; the offset is in screen space.
+struct GuideTransform: Equatable {
+    static let scaleRange: ClosedRange<CGFloat> = 0.4...3
+
+    var scale: CGFloat = 1
+    var rotation: Angle = .zero
+    var offset: CGSize = .zero
+
+    /// One in-flight (or just-ended) gesture, relative to the committed transform.
+    struct Delta: Equatable {
+        static let identity = Delta(scale: 1, rotation: .zero, translation: .zero)
+
+        var scale: CGFloat
+        var rotation: Angle
+        var translation: CGSize
+    }
+
+    func applying(_ delta: Delta) -> GuideTransform {
+        GuideTransform(
+            scale: min(max(scale * delta.scale, Self.scaleRange.lowerBound), Self.scaleRange.upperBound),
+            rotation: rotation + delta.rotation,
+            offset: CGSize(width: offset.width + delta.translation.width,
+                           height: offset.height + delta.translation.height)
+        )
+    }
 }
 
 // MARK: - Camera screen
@@ -333,6 +358,8 @@ struct CameraScreen: View {
     /// Focus returns to the More control when the Camera Tools popup is dismissed
     /// (outside tap / Escape / VoiceOver escape).
     @FocusState private var isToolsButtonFocused: Bool
+    /// In-flight pinch / twist / drag, folded into `model.guideTransform` when the gesture ends.
+    @GestureState private var guideGestureDelta = GuideTransform.Delta.identity
 
     init(
         guide: Binding<NativePose?>,
@@ -413,17 +440,7 @@ struct CameraScreen: View {
         .onChange(of: model.cameraControlsEnabled) { enabled in
             if !enabled { model.closeCameraTools() }
         }
-        .sheet(isPresented: $model.showCapturedSheet) {
-            if let url = model.capturedPreviewURL {
-                CapturedPhotoScreen(
-                    imageURL: url,
-                    statusMessage: model.statusMessage,
-                    photosExportMessage: model.photosExportMessage,
-                    onSaveToPhotos: { await model.exportToPhotos() },
-                    onDone: { model.dismissCapture() }
-                )
-            }
-        }
+        .onChange(of: guide?.id) { _ in model.resetGuideTransform() }
     }
 
     // MARK: Viewport — full-bleed `.nb-camera-viewport--immersive`
@@ -459,10 +476,6 @@ struct CameraScreen: View {
                         onPoseGuideVisibilityToggle: { model.togglePoseGuideVisibility() },
                         onGuideOpacityChange: { model.setGuideOpacity($0) },
                         onGuideLineColorChange: { model.setGuideLineColor($0) },
-                        onClearPose: {
-                            guide = nil
-                            model.resetPoseGuide()
-                        },
                         onDismiss: { dismissCameraTools() }
                     )
                     .padding(.trailing, CameraProto.controlInset)
@@ -521,15 +534,21 @@ struct CameraScreen: View {
                 CameraFramingGrid()
             }
 
-            // `.nb-camera-status` — ONE chip for both capture status and pose-selection feedback
-            // (`app.js:349-356` `setCameraStatus`, called at `:380` with `${title} selected`).
-            // It is anchored `left: 16 / right: 16` at `bottom: 112` (`--nb-space-md` +
-            // `--nb-touch-min` + `--nb-space-sm` + `--nb-touch-min`) — i.e. just above the More +
-            // Choose-pose cluster — with the base `--nb-color-accent-green` tone. The previous
-            // implementation rendered a separate white `Matching: …` chip near the top, which the
-            // prototype has no element for.
-            if let status = model.statusMessage ?? model.matchingFeedbackLabel(for: guide),
-               !model.showCapturedSheet {
+            // Pinch / twist / drag anywhere on the preview places the pose reference; the reference
+            // itself stays non-interactive so a thin skeleton is never a hard touch target.
+            if guide != nil, model.isPoseGuideVisible, isAuthorized {
+                Color.clear
+                    .contentShape(Rectangle())
+                    .onTapGesture(count: 2) { model.resetGuideTransform() }
+                    .gesture(guidePlacementGesture)
+                    .accessibilityHidden(true)
+            }
+
+            // `.nb-camera-status` — capture feedback only (saved / failed). It is anchored
+            // `left: 16 / right: 16` at `bottom: 112` (`--nb-space-md` + `--nb-touch-min` +
+            // `--nb-space-sm` + `--nb-touch-min`) — just above the More + Choose-pose cluster. Picking
+            // a pose shows no chip: the reference itself is the feedback.
+            if let status = model.statusMessage {
                 statusBanner(status)
                     .position(x: size.width / 2,
                               y: size.height - CameraProto.statusBottomInset - 18)
@@ -609,10 +628,34 @@ struct CameraScreen: View {
         }
     }
 
+    private var guidePlacementGesture: some Gesture {
+        SimultaneousGesture(
+            SimultaneousGesture(MagnificationGesture(), RotationGesture()),
+            DragGesture()
+        )
+        .updating($guideGestureDelta) { value, state, _ in
+            state = Self.delta(from: value)
+        }
+        .onEnded { value in
+            model.commitGuideGesture(Self.delta(from: value))
+        }
+    }
+
+    private static func delta(
+        from value: SimultaneousGesture<SimultaneousGesture<MagnificationGesture, RotationGesture>, DragGesture>.Value
+    ) -> GuideTransform.Delta {
+        GuideTransform.Delta(
+            scale: value.first?.first ?? 1,
+            rotation: value.first?.second ?? .zero,
+            translation: value.second?.translation ?? .zero
+        )
+    }
+
     @ViewBuilder
     private func guideOverlay(for guide: NativePose) -> some View {
+        let placement = model.guideTransform.applying(guideGestureDelta)
         Group {
-            if let url = guide.imageURL {
+            if let url = guide.guideURL {
                 // The guide image covers most of the viewport, so it is decoded at screen size
                 // instead of at whatever the source asset happens to be.
                 KFImage(url)
@@ -620,15 +663,21 @@ struct CameraScreen: View {
                     .placeholder { guideFallback(for: guide) }
                     .onFailureView { guideFallback(for: guide) }
                     .loadDiskFileSynchronously(false)
+                    // The extracted pose is line art on a transparent background, so it is drawn as
+                    // a template and the Line colour setting becomes its stroke colour.
                     .contentConfigure { image, _ in
-                        image.resizable().scaledToFit()
+                        image.renderingMode(.template).resizable().scaledToFit()
                     }
+                    .foregroundColor(model.guideLineColor.color)
             } else {
                 guideFallback(for: guide)
             }
         }
         .opacity(model.guideOpacity)
         .scaleEffect(x: model.guideFlipped ? -1 : 1, y: 1)
+        .scaleEffect(placement.scale)
+        .rotationEffect(placement.rotation)
+        .offset(placement.offset)
         .allowsHitTesting(false)
         .accessibilityHidden(true)
     }
@@ -929,7 +978,6 @@ private struct CameraToolsPopup: View {
     let onPoseGuideVisibilityToggle: () -> Void
     let onGuideOpacityChange: (Double) -> Void
     let onGuideLineColorChange: (GuideLineColor) -> Void
-    let onClearPose: () -> Void
     let onDismiss: () -> Void
 
     @State private var naturalContentHeight: CGFloat?
@@ -1000,14 +1048,6 @@ private struct CameraToolsPopup: View {
                 )
                 opacityRow
                 lineColorRow
-                row(
-                    systemImage: nil,
-                    title: "Clear pose",
-                    value: nil,
-                    accessibilityLabel: "Clear pose",
-                    identifier: "camera.tools.clearPose",
-                    action: onClearPose
-                )
             }
         }
         .padding(CameraProto.spaceSM)
@@ -1298,52 +1338,6 @@ private struct CameraShutterSpinner: View {
                 angle = 360
             }
         }
-    }
-}
-
-// MARK: - Captured result
-
-private struct CapturedPhotoScreen: View {
-    let imageURL: URL
-    let statusMessage: String?
-    let photosExportMessage: String?
-    let onSaveToPhotos: () async -> Void
-    let onDone: () -> Void
-
-    var body: some View {
-        NavigationView {
-            VStack(spacing: 12) {
-                // The preview is shown full screen, so the decode is bounded by the screen, not by
-                // the 4032px the capture was taken at.
-                KFImage(imageURL)
-                    .setProcessor(AppImage.downsample(points: FullScreenImageTarget.drawSize, contentMode: .fit))
-                    .placeholder { Color.clear }
-                    .onFailureView { Color.clear }
-                    .loadDiskFileSynchronously(false)
-                    .contentConfigure { image, _ in
-                        image.resizable().scaledToFit()
-                    }
-                if let statusMessage {
-                    Text(statusMessage).font(.subheadline.weight(.semibold))
-                }
-                if let photosExportMessage {
-                    Text(photosExportMessage).font(.footnote).foregroundStyle(.secondary)
-                }
-                Button("Save to Photos") {
-                    Task { await onSaveToPhotos() }
-                }
-                .buttonStyle(.bordered)
-            }
-            .padding()
-            .navigationTitle("Captured")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done", action: onDone)
-                }
-            }
-        }
-        .preferredColorScheme(.light)
     }
 }
 

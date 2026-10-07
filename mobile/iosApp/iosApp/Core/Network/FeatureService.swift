@@ -13,9 +13,12 @@ struct NativePose: Identifiable, Hashable, Sendable {
     let id: String
     var name: String
     var category: String
+    /// Card / hero image: the source photo.
     var imageURL: URL?
     var instructions: [String]
     var isSaved: Bool
+    /// Extracted line art drawn as the camera guide. `nil` falls back to the stick figure.
+    var guideURL: URL? = nil
 }
 
 struct PreviewPoseService: PoseServing {
