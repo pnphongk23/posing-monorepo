@@ -2,7 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 
 import type { PoseStore } from "../db/communityStore";
-import type { PoseRecord } from "../db/communityStore";
+import { toPublicPose } from "./publicPoseProjection";
 
 const SEARCH_PAGE_LIMIT = 20;
 
@@ -13,23 +13,6 @@ const listQuerySchema = z.object({
   tag: z.string().optional(),
   q: z.string().optional(),
 });
-
-/** Public read projection. It deliberately excludes owner, original media, and job metadata. */
-function toCommunityPose(pose: PoseRecord) {
-  return {
-    poseId: pose.poseId,
-    name: pose.name,
-    skeletonUrl: pose.skeletonUrl,
-    thumbnailUrl: pose.thumbnailUrl,
-    tags: pose.tags,
-    difficulty: pose.difficulty,
-    description: pose.description,
-    bodyParts: pose.bodyParts,
-    status: "published" as const,
-    uploadedAt: pose.createdAt,
-    downloadCount: pose.downloadCount
-  };
-}
 
 export function createCommunityRoutes(communityStore: PoseStore): Router {
   const router = Router();
@@ -55,7 +38,7 @@ export function createCommunityRoutes(communityStore: PoseStore): Router {
     });
 
     res.json({
-      data: poses.map(toCommunityPose),
+      data: poses.map(toPublicPose),
       pagination: { page, limit, total },
     });
   });
@@ -71,7 +54,7 @@ export function createCommunityRoutes(communityStore: PoseStore): Router {
     await communityStore.incrementDownload(pose.poseId);
     const updated = await communityStore.getPoseById(pose.poseId);
 
-    res.json({ data: updated ? toCommunityPose(updated) : null });
+    res.json({ data: updated ? toPublicPose(updated) : null });
   });
 
   return router;

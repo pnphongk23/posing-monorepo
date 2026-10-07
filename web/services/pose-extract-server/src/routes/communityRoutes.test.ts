@@ -43,7 +43,8 @@ describe("community Pose projection routes", () => {
       poseId: published.poseId,
       status: "published",
       skeletonUrl: published.skeletonUrl,
-      thumbnailUrl: published.thumbnailUrl
+      // Card/hero image is the source photo; the extracted line art stays in skeletonUrl.
+      thumbnailUrl: published.originalUrl
     });
     expect(response.body.data[0]).not.toHaveProperty("ownerAccountId");
     expect(response.body.data[0]).not.toHaveProperty("originalUrl");

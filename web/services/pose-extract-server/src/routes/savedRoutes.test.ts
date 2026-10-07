@@ -9,7 +9,7 @@ import { createAccountAuthMiddleware } from "../middleware/accountAuth";
 import { createSavedRoutes } from "./savedRoutes";
 
 const ACCOUNT = { id: "11111111-1111-4111-8111-111111111111", displayName: "User", createdAt: "2026-01-01T00:00:00.000Z" };
-const POSE = { poseId: "22222222-2222-4222-8222-222222222222", name: "Pose", skeletonUrl: "skeleton", thumbnailUrl: "thumbnail", tags: [], difficulty: null, description: null, bodyParts: [], status: "published" as const, createdAt: "2026-01-01T00:00:00.000Z", downloadCount: 0 };
+const POSE = { poseId: "22222222-2222-4222-8222-222222222222", name: "Pose", originalUrl: "original", skeletonUrl: "skeleton", thumbnailUrl: "thumbnail", tags: [], difficulty: null, description: null, bodyParts: [], status: "published" as const, createdAt: "2026-01-01T00:00:00.000Z", downloadCount: 0 };
 
 function accountMiddleware() {
   return (_req: express.Request, _res: express.Response, next: express.NextFunction) => {
@@ -28,8 +28,9 @@ describe("protected saved routes", () => {
     const app = routeApp(store);
 
     const list = await request(app).get("/api/me/saved?page=2&limit=5").expect(200);
-    const { createdAt, ...projectionPose } = POSE;
-    expect(list.body).toEqual({ data: [{ ...projectionPose, uploadedAt: createdAt }], pagination: { page: 2, limit: 5, total: 1 } });
+    const { createdAt, originalUrl, ...projectionPose } = POSE;
+    expect(list.body).toEqual({ data: [{ ...projectionPose, thumbnailUrl: originalUrl, uploadedAt: createdAt }], pagination: { page: 2, limit: 5, total: 1 } });
+    expect(list.body.data[0]).not.toHaveProperty("originalUrl");
     expect(list.body.data[0]).not.toHaveProperty("ownerAccountId");
     await request(app).put(`/api/me/saved/${POSE.poseId}`).expect(200);
     expect(store.save).toHaveBeenCalledWith(ACCOUNT.id, POSE.poseId);
