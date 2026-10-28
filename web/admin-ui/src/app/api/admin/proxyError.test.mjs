@@ -11,7 +11,7 @@ test('mapProxyError falls back to 500 for untyped errors', async () => {
 
   assert.equal(result.status, 500);
   assert.equal(result.body.code, 'ADMIN_PROXY_ERROR');
-  assert.equal(result.body.error, 'socket hang up');
+  assert.equal(result.body.error, 'Upstream request failed');
 });
 
 test('mapProxyError keeps upstream status from error.status', async () => {
@@ -21,7 +21,7 @@ test('mapProxyError keeps upstream status from error.status', async () => {
 
   assert.equal(result.status, 401);
   assert.equal(result.body.code, 'UNAUTHORIZED');
-  assert.equal(result.body.error, 'Invalid admin secret');
+  assert.equal(result.body.error, 'Upstream request failed');
 });
 
 test('mapProxyError keeps upstream status from error.statusCode', async () => {
@@ -48,5 +48,6 @@ test('mapProxyError handles non-error inputs', async () => {
   const result = await readError(mapProxyError(undefined));
 
   assert.equal(result.status, 500);
-  assert.equal(result.body.error, 'Proxy request failed');
+  assert.equal(result.body.error, 'Upstream request failed');
+  assert.equal(result.body.code, 'ADMIN_PROXY_ERROR');
 });

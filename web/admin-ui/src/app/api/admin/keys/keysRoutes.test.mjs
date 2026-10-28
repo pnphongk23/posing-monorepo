@@ -96,6 +96,7 @@ test('thrown upstream error keeps its status instead of collapsing to 500', asyn
   const payload = await response.json();
 
   assert.equal(response.status, 401);
-  assert.equal(payload.error, 'Upstream rejected admin secret');
+  assert.equal(payload.error, 'Upstream request failed');
   assert.equal(payload.code, 'UNAUTHORIZED');
+  assert.equal(JSON.stringify(payload).includes('Upstream rejected admin secret'), false);
 });
