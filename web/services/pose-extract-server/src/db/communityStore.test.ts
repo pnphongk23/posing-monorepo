@@ -107,6 +107,93 @@ describe("PoseStore", () => {
     });
   });
 
+  it("refuses to publish while a media role is not ready", async () => {
+    const sql = await setupTestDatabase();
+    const store = new PoseStore(sql);
+    const created = await store.createPose(poseInput({ name: "Pending thumbnail" }));
+    await sql`
+      UPDATE media_assets
+      SET readiness = ${"pending"}
+      WHERE pose_id = ${created.poseId} AND role = ${"thumbnail"}
+    `;
+
+    await expect(store.updatePose(created.poseId, { status: "published", name: "Album cover" })).rejects.toMatchObject({
+      code: "POSE_MEDIA_NOT_READY",
+      statusCode: 409
+    });
+
+    const rows = (await sql`SELECT status, name FROM poses WHERE pose_id = ${created.poseId}`) as Array<{
+      status: string;
+      name: string;
+    }>;
+    expect(rows[0]).toEqual({ status: "local", name: "Pending thumbnail" });
+
+    await sql`
+      UPDATE media_assets
+      SET readiness = ${"ready"}
+      WHERE pose_id = ${created.poseId} AND role = ${"thumbnail"}
+    `;
+    expect((await store.updatePose(created.poseId, { status: "published" }))?.status).toBe("published");
+  });
+
+  it("refuses to publish when a required media role row is missing", async () => {
+    const sql = await setupTestDatabase();
+    const store = new PoseStore(sql);
+    const created = await store.createPose(poseInput({ name: "No skeleton" }));
+    await sql`DELETE FROM media_assets WHERE pose_id = ${created.poseId} AND role = ${"skeleton"}`;
+
+    await expect(store.updatePose(created.poseId, { status: "published" })).rejects.toMatchObject({
+      code: "POSE_MEDIA_NOT_READY",
+      statusCode: 409
+    });
+
+    const rows = (await sql`SELECT status FROM poses WHERE pose_id = ${created.poseId}`) as Array<{ status: string }>;
+    expect(rows[0]?.status).toBe("local");
+  });
+
+  it("never publishes a Pose whose media is still materializing", async () => {
+    const sql = await setupTestDatabase();
+    const store = new PoseStore(sql);
+    const created = await store.createPose(poseInput({ name: "Materializing" }));
+    // The worker materializes media role by role; until every role is ready the
+    // Pose must stay local no matter when the publish request lands.
+    await sql`
+      UPDATE media_assets SET readiness = ${"pending"} WHERE pose_id = ${created.poseId}
+    `;
+
+    for (const role of ["original", "skeleton"] as const) {
+      await sql`
+        UPDATE media_assets SET readiness = ${"ready"}
+        WHERE pose_id = ${created.poseId} AND role = ${role}
+      `;
+      await expect(store.updatePose(created.poseId, { status: "published" })).rejects.toMatchObject({
+        code: "POSE_MEDIA_NOT_READY"
+      });
+      const midFlight = (await sql`SELECT status FROM poses WHERE pose_id = ${created.poseId}`) as Array<{
+        status: string;
+      }>;
+      expect(midFlight[0]?.status).toBe("local");
+    }
+
+    // The worker commits the last role; the very next publish attempt wins the
+    // guarded UPDATE because readiness and the status write are one statement.
+    await sql`
+      UPDATE media_assets SET readiness = ${"ready"}
+      WHERE pose_id = ${created.poseId} AND role = ${"thumbnail"}
+    `;
+    expect((await store.updatePose(created.poseId, { status: "published" }))?.status).toBe("published");
+
+    const broken = (await sql`
+      SELECT p.pose_id
+      FROM poses p
+      LEFT JOIN media_assets media ON media.pose_id = p.pose_id AND media.readiness = 'ready'
+      WHERE p.status = 'published'
+      GROUP BY p.pose_id
+      HAVING COUNT(media.media_id) < 3
+    `) as Array<{ pose_id: string }>;
+    expect(broken).toHaveLength(0);
+  });
+
   it("increments downloads and deletes the Pose with cascading media", async () => {
     const sql = await setupTestDatabase();
     const store = new PoseStore(sql);

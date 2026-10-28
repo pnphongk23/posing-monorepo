@@ -106,3 +106,10 @@ export class JobNotRetryableError extends AppError {
   }
 }
 
+/** Publishing requires the canonical Pose to already own ready original, skeleton and thumbnail media. */
+export class PoseMediaNotReadyError extends AppError {
+  constructor(message = "Pose media is not ready") {
+    super(message, 409, "POSE_MEDIA_NOT_READY");
+  }
+}
+

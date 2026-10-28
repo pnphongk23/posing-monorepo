@@ -136,12 +136,32 @@ export default function AdminCommunityPage() {
           difficulty: null,
         }),
       });
-      await parseResponse(response);
-      setNotice('Đã extraction và tạo Pose thành công.');
+      const created = await parseResponse(response);
+      const createdPoseId = created.data?.pose?.poseId;
       setForm({ name: '', tags: '', description: '', status: 'local', ownerAccountId: DEFAULT_OWNER_ACCOUNT_ID });
       setSelectedFile(null);
       setImagePreview('');
       fetchPoses();
+
+      if (form.status === 'published' && createdPoseId) {
+        // Publish is a server-validated step: it is refused while the pose media is
+        // not ready, and that error has to reach the admin instead of a success note.
+        const publishResponse = await fetch(`${COMMUNITY_ADMIN_API}/${createdPoseId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: 'published' }),
+        });
+        try {
+          await parseResponse(publishResponse);
+        } catch (publishError) {
+          setError(`Pose đã được tạo ở trạng thái LOCAL. ${publishError.message}`);
+          return;
+        }
+        setNotice('Đã extraction, tạo Pose và publish thành công.');
+        return;
+      }
+
+      setNotice('Đã extraction và tạo Pose thành công.');
     } catch (err) {
       setError(err.message);
     } finally {
@@ -200,6 +220,10 @@ export default function AdminCommunityPage() {
       fetchPoses();
     } catch (err) {
       setEditError(err.message);
+      // The server kept the persisted status (e.g. publish refused because media
+      // is not ready), so mirror it instead of showing an unsaved value.
+      setEditingForm((prev) => (prev ? { ...prev, status: selectedPose.status || 'local' } : prev));
+      fetchPoses();
     } finally {
       setSaving(false);
     }
@@ -300,7 +324,7 @@ export default function AdminCommunityPage() {
                 onChange={(e) => setForm((p) => ({ ...p, status: e.target.value }))}
                 className="w-full px-3 py-2 rounded-xl neo-border text-[12px] font-medium"
               >
-                <option value="draft">DRAFT</option>
+                <option value="local">LOCAL</option>
                 <option value="published">PUBLISHED</option>
               </select>
 

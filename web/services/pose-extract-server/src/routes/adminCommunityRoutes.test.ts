@@ -38,7 +38,7 @@ async function createTestApp() {
       jobStore
     })
   );
-  return { app, poseStore, jobStore, createUploadUrl, uploadObject, deleteObject, uploaded };
+  return { app, sql, poseStore, jobStore, createUploadUrl, uploadObject, deleteObject, uploaded };
 }
 
 async function succeededJob(jobStore: ExtractionJobStore) {
@@ -165,6 +165,46 @@ describe("admin canonical Pose routes", () => {
       .expect(200);
 
     expect(updated.body.data).toMatchObject({ poseId, status: "published" });
+  });
+
+  it("rejects publishing a Pose whose media is not ready", async () => {
+    const { app, sql, jobStore } = await createTestApp();
+    const jobId = await succeededJob(jobStore);
+    const created = await request(app)
+      .post("/api/admin/community/poses")
+      .set("Authorization", `Bearer ${ADMIN_SECRET}`)
+      .send(createBody(jobId))
+      .expect(201);
+    const poseId = created.body.data.pose.poseId;
+    await sql`
+      UPDATE media_assets SET readiness = ${"pending"} WHERE pose_id = ${poseId} AND role = ${"original"}
+    `;
+
+    const rejected = await request(app)
+      .patch(`/api/admin/community/poses/${poseId}`)
+      .set("Authorization", `Bearer ${ADMIN_SECRET}`)
+      .send({ status: "published" })
+      .expect(409);
+
+    expect(rejected.body.error.code).toBe("POSE_MEDIA_NOT_READY");
+    expect(rejected.body.error.message).toContain("original");
+
+    const afterReject = await request(app)
+      .get(`/api/admin/community/poses/${poseId}`)
+      .set("Authorization", `Bearer ${ADMIN_SECRET}`)
+      .expect(200);
+    expect(afterReject.body.data.status).toBe("local");
+
+    await sql`
+      UPDATE media_assets SET readiness = ${"ready"} WHERE pose_id = ${poseId}
+    `;
+
+    const published = await request(app)
+      .patch(`/api/admin/community/poses/${poseId}`)
+      .set("Authorization", `Bearer ${ADMIN_SECRET}`)
+      .send({ status: "published" })
+      .expect(200);
+    expect(published.body.data).toMatchObject({ poseId, status: "published" });
   });
 
   it("returns a presigned upload payload without creating a Pose", async () => {

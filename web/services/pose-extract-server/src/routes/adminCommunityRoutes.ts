@@ -14,6 +14,7 @@ import {
   type CommunityObjectRole,
   type UploadUrlPayload
 } from "../services/r2Storage";
+import { AppError } from "../services/errors";
 import { materializePose } from "../services/poseMaterializer";
 
 const ALLOWED_MIME_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
@@ -104,7 +105,18 @@ export function createAdminCommunityRoutes(options: CreateAdminCommunityRoutesOp
       return;
     }
 
-    const updated = await communityStore.updatePose(req.params.id, parsed.data);
+    let updated: Awaited<ReturnType<PoseStore["updatePose"]>>;
+    try {
+      updated = await communityStore.updatePose(req.params.id, parsed.data);
+    } catch (error) {
+      // Publishing is refused while the Pose media is not materialized yet and the
+      // error carries its own 4xx status with a stable code.
+      if (error instanceof AppError) {
+        res.status(error.statusCode).json({ error: { code: error.code, message: error.message } });
+        return;
+      }
+      throw error;
+    }
     if (!updated) {
       res.status(404).json({ error: { code: "NOT_FOUND", message: "Pose not found" } });
       return;

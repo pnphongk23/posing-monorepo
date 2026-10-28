@@ -2,8 +2,12 @@ import { randomUUID } from "node:crypto";
 
 import type { Fragment } from "postgres";
 
+import { PoseMediaNotReadyError } from "../services/errors";
 import type { Sql, SqlOrTx } from "./connection";
 import { pgTimestamp } from "./pgTypes";
+
+const REQUIRED_MEDIA_ROLES = ["original", "skeleton", "thumbnail"] as const;
+type RequiredMediaRole = (typeof REQUIRED_MEDIA_ROLES)[number];
 
 export type PoseStatus = "local" | "published";
 export type PoseDifficulty = "beginner" | "intermediate" | "advanced";
@@ -239,6 +243,11 @@ export class PoseStore {
     `;
   }
 
+  /**
+   * Updates Pose metadata. Publishing is guarded inside the same statement, so a
+   * Pose can never be flipped to `published` while any of its media roles is
+   * missing or not yet materialized (readiness <> 'ready').
+   */
   async updatePose(poseId: string, input: UpdatePoseInput): Promise<PoseRecord | null> {
     const assignments: Fragment[] = [];
 
@@ -259,12 +268,75 @@ export class PoseStore {
       setClause = this.db`${setClause}, ${assignments[i]}`;
     }
 
-    await this.db`
-      UPDATE poses
-      SET ${setClause}
-      WHERE pose_id = ${poseId}
-    `;
+    const publishing = input.status === "published";
+    const result = publishing
+      ? await this.db`
+          UPDATE poses
+          SET ${setClause}
+          WHERE pose_id = ${poseId}
+            AND EXISTS (
+              SELECT 1
+              FROM media_assets media
+              WHERE media.pose_id = poses.pose_id
+                AND media.readiness = 'ready'
+                AND media.locator <> ''
+                AND media.role IN ('original', 'skeleton', 'thumbnail')
+              GROUP BY media.pose_id
+              HAVING COUNT(DISTINCT media.role) = 3
+            )
+        `
+      : await this.db`
+          UPDATE poses
+          SET ${setClause}
+          WHERE pose_id = ${poseId}
+        `;
+
+    if (result.count === 0 && publishing) {
+      const missing = await this.describeUnreadyMedia(poseId);
+      if (missing !== null) {
+        throw new PoseMediaNotReadyError(
+          `Pose cannot be published because its media is not ready (${missing}). ` +
+            "Publishing requires ready original, skeleton and thumbnail media."
+        );
+      }
+    }
+
     return this.getPoseById(poseId);
+  }
+
+  /**
+   * Returns a human readable summary of the media roles blocking publication, or
+   * null when the Pose itself does not exist (so the caller can answer 404).
+   */
+  private async describeUnreadyMedia(poseId: string): Promise<string | null> {
+    const poseRows = (await this.db`SELECT 1 FROM poses WHERE pose_id = ${poseId}`) as Array<{ "?column?": number }>;
+    if (poseRows.length === 0) return null;
+
+    const mediaRows = (await this.db`
+      SELECT role, readiness, locator
+      FROM media_assets
+      WHERE pose_id = ${poseId}
+    `) as Array<{ role: RequiredMediaRole; readiness: string; locator: string }>;
+
+    const byRole = new Map(mediaRows.map((row) => [row.role, row]));
+    const missing: string[] = [];
+    const unready: string[] = [];
+
+    for (const role of REQUIRED_MEDIA_ROLES) {
+      const media = byRole.get(role);
+      if (!media || media.locator === "") {
+        missing.push(role);
+      } else if (media.readiness !== "ready") {
+        unready.push(`${role} is ${media.readiness}`);
+      }
+    }
+
+    const details = [
+      missing.length > 0 ? `missing: ${missing.join(", ")}` : null,
+      unready.length > 0 ? `not ready: ${unready.join(", ")}` : null
+    ].filter((detail): detail is string => detail !== null);
+
+    return details.length > 0 ? details.join("; ") : "media state changed, retry";
   }
 
   async deletePose(poseId: string): Promise<boolean> {
