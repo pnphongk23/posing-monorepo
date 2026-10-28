@@ -24,7 +24,6 @@ relationships:
   source_paths:
     - package.json
     - mobile/iosApp/project.yml
-    - mobile/iosApp/Podfile
     - web/admin-ui
     - web/services/pose-extract-server/src
     - web/services/pose-extract-server/scripts/remove_bg_lineart.py
@@ -53,8 +52,9 @@ những lưu ý khi làm việc**. Hợp đồng dữ liệu/API và domain mode
 | Extraction worker | Node/TypeScript + Gemini REST hoặc Higgsfield CLI | — | Worker claim job, tạo provider qua factory, xử lý ảnh kết quả bằng Python lineart remover |
 | Deploy | Railway + Docker | — | `railway.toml`, Dockerfile per service |
 
-Nguồn version: `mobile/iosApp/project.yml`, `package.json` từng web workspace,
-`mobile/iosApp/Podfile.lock`.
+Nguồn version: `mobile/iosApp/project.yml` (SwiftPM `exactVersion` pins) cùng
+`mobile/iosApp/iosApp.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved`,
+`package.json` từng web workspace.
 
 ## Build từng lane
 
@@ -198,12 +198,13 @@ pose-extract-server, mounts `/app/data` + `/app/higgsfield`).
 > Swift native trong `mobile/iosApp`.
 
 1. **XcodeGen là nguồn sự thật cho iOS project** — tạo file mới (Assets, plist,
-   source) phải vào `project.yml`, regenerate, kiểm tra `Podfile.lock` không đổi
+   source) phải vào `project.yml`, regenerate, kiểm tra `Package.resolved` không đổi
    vô cớ. Có 4 config `Debug/Release` × `Dev/Prod` ánh xạ native build type.
-2. **Bắt buộc linker flag `-lsqlite3`** — thêm qua Podfile `post_install`
-   (`OTHER_LDFLAGS`); không bỏ.
-3. **Swift 6 strict concurrency bị tắt** (`SWIFT_STRICT_CONCURRENCY = minimal`)
-   trong Podfile `post_install` — đừng "sửa" ngược lại.
+2. **Dependency iOS chỉ đi qua SwiftPM** — pin `exactVersion` trong `project.yml`;
+   lane CocoaPods (`Podfile`, `Podfile.lock`, `Pods/`) đã bỏ, `pod install` sẽ chèn
+   lại Pods build phase vào project generate và làm hỏng build.
+3. **Swift 6 mode** (`SWIFT_VERSION = 6.0`) đặt trong `project.yml` settings;
+   không còn override `SWIFT_STRICT_CONCURRENCY`/`-strict-concurrency` từ Podfile.
 4. **Worker cần credential của provider được chọn** — Gemini dùng key pool;
    Higgsfield dùng CLI credentials. Thiếu credential Higgsfield làm job fail rõ mã
    lỗi theo DEC-001.

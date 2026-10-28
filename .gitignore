@@ -52,8 +52,7 @@ next-env.d.ts
 .idea/
 local.properties
 
-# iOS / CocoaPods / Xcode
-mobile/iosApp/Pods/
+# iOS / Xcode
 mobile/iosApp/*.xcworkspace/xcuserdata/
 mobile/iosApp/*.xcodeproj/xcuserdata/
 *.xcuserstate
