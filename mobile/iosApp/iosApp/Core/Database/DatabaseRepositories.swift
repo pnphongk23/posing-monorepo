@@ -36,11 +36,12 @@ struct PhotoRepository: Sendable {
         }
     }
 
-    /// Whether any surviving row still points at `imagePath`. Two rows can share a file (a re-save
-    /// of the same capture), so the file may only be removed with the last reference.
-    func references(imagePath: String) async throws -> Bool {
+    /// Every `imagePath` a surviving row points at. Compared by `PhotoImageStore.canonicalPath`, not
+    /// by string equality: the same file can be spelled as a bare capture name by today's rows and
+    /// as an absolute path by legacy ones.
+    func imagePaths() async throws -> [String] {
         try await database.pool.read { db in
-            try PhotoRecord.filter(Column("imagePath") == imagePath).fetchCount(db) > 0
+            try PhotoRecord.fetchAll(db).map(\.imagePath)
         }
     }
 }
@@ -148,6 +149,22 @@ struct PhotoImageStore: @unchecked Sendable {
         return directory.appendingPathComponent(imagePath)
     }
 
+    /// One identity per file, however a row spells the path: `capture_1.jpg` and
+    /// `/…/aipose/capture_1.jpg` resolve to the same string, and symlinked containers (`/tmp` →
+    /// `/private/tmp`) do not split it. Reference checks and the sweep both compare these keys, so a
+    /// shared file is never removed while another row still points at it.
+    func canonicalPath(for imagePath: String) -> String {
+        fileURL(for: imagePath).resolvingSymlinksInPath().standardizedFileURL.path
+    }
+
+    func canonicalPaths(for imagePaths: some Sequence<String>) -> Set<String> {
+        Set(imagePaths.map(canonicalPath(for:)))
+    }
+
+    func isReferenced(_ imagePath: String, among imagePaths: some Sequence<String>) -> Bool {
+        canonicalPaths(for: imagePaths).contains(canonicalPath(for: imagePath))
+    }
+
     /// Idempotent: a file that is already gone is not an error, so a retried delete succeeds.
     func remove(imagePath: String) {
         try? fileManager.removeItem(at: fileURL(for: imagePath))
@@ -156,12 +173,14 @@ struct PhotoImageStore: @unchecked Sendable {
     /// Reclaims files in the capture directory that no `Photo` row references any more.
     ///
     /// `minimumAge` is what makes the sweep safe while a capture is in flight: a jpeg is written
-    /// microseconds before its row is inserted, so a fresh unreferenced file may simply belong to a
-    /// capture that is still being saved. Returns the number of files removed.
+    /// before its row is inserted, so a fresh unreferenced file may simply belong to a capture that
+    /// is still being saved. The guard is a day, not an hour: a capture task can be suspended
+    /// between the write and the metadata insert (app backgrounded), and nothing in the pipeline
+    /// records ownership before the insert lands. Returns the number of files removed.
     @discardableResult
     func sweepOrphans(
         referencing imagePaths: some Sequence<String>,
-        minimumAge: TimeInterval = 60 * 60
+        minimumAge: TimeInterval = 24 * 60 * 60
     ) -> Int {
         guard let directoryURL else { return 0 }
         let keys: [URLResourceKey] = [.contentModificationDateKey, .isRegularFileKey]
@@ -171,19 +190,14 @@ struct PhotoImageStore: @unchecked Sendable {
             options: [.skipsHiddenFiles]
         ) else { return 0 }
 
-        var referenced: Set<String> = []
-        for path in imagePaths {
-            referenced.insert(path)
-            referenced.insert(fileURL(for: path).standardizedFileURL.path)
-        }
+        let referenced = canonicalPaths(for: imagePaths)
 
         let cutoff = Date().addingTimeInterval(-minimumAge)
         var removed = 0
         for entry in entries {
             let values = try? entry.resourceValues(forKeys: Set(keys))
             guard values?.isRegularFile == true else { continue }
-            guard !referenced.contains(entry.lastPathComponent) else { continue }
-            guard !referenced.contains(entry.standardizedFileURL.path) else { continue }
+            guard !referenced.contains(entry.resolvingSymlinksInPath().standardizedFileURL.path) else { continue }
             let modified = values?.contentModificationDate ?? .distantPast
             guard modified <= cutoff else { continue }
             if (try? fileManager.removeItem(at: entry)) != nil { removed += 1 }

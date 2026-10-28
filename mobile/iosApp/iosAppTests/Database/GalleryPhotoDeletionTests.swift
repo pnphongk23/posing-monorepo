@@ -160,6 +160,40 @@ final class GalleryPhotoDeletionTests: XCTestCase {
         XCTAssertTrue(fileExists(photo.imagePath))
     }
 
+    /// The same file, spelled two ways: a legacy row stores the absolute path, today's rows store the
+    /// bare capture name. String comparison would drop the file the absolute row still needs.
+    func testSharedFileSpelledAbsolutelyAndRelativelyKeepsFileUntilLastRowIsDeleted() async throws {
+        let database = try makeDatabase()
+        let store = DatabaseGalleryStore(database: database, imageStore: makeImageStore())
+        let filename = try writeCapture(named: "capture_mixed-path.jpg")
+        let absolute = captureDirectory.appendingPathComponent(filename).path
+        let legacy = try await insertPhoto(imagePath: absolute, into: database)
+        let current = try await insertPhoto(imagePath: filename, into: database)
+
+        try await store.delete(id: current)
+
+        XCTAssertTrue(fileExists(filename), "the legacy row's absolute path still points at this file")
+
+        try await store.delete(id: legacy)
+
+        XCTAssertFalse(fileExists(filename), "the last reference removes the file")
+    }
+
+    func testSweepKeepsFileReferencedOnlyThroughAbsolutePath() async throws {
+        let database = try makeDatabase()
+        let store = DatabaseGalleryStore(database: database, imageStore: makeImageStore())
+        let filename = try writeCapture(named: "capture_absolute-only.jpg")
+        _ = try await insertPhoto(
+            imagePath: captureDirectory.appendingPathComponent(filename).path,
+            into: database
+        )
+
+        let items = try await store.photos()
+
+        XCTAssertEqual(items.count, 1)
+        XCTAssertTrue(fileExists(filename), "the row's absolute path owns this file")
+    }
+
     // MARK: helpers
 
     private func makeDatabase() throws -> AppDatabase {
@@ -173,7 +207,7 @@ final class GalleryPhotoDeletionTests: XCTestCase {
 
     /// Writes a real jpeg-sized file and backdates it past the sweep's in-flight guard.
     @discardableResult
-    private func writeCapture(named filename: String, age: TimeInterval = 2 * 60 * 60) throws -> String {
+    private func writeCapture(named filename: String, age: TimeInterval = 25 * 60 * 60) throws -> String {
         let url = captureDirectory.appendingPathComponent(filename)
         try Data(repeating: 0x11, count: 64).write(to: url)
         try FileManager.default.setAttributes(

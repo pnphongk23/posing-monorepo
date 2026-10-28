@@ -103,7 +103,10 @@ struct DatabaseGalleryStore: GalleryStoring {
     /// keeps working and the file does not leak forever.
     func delete(id: Int64) async throws {
         guard let imagePath = try await repository.delete(id: id) else { return }
-        guard try await repository.references(imagePath: imagePath) == false else { return }
+        // A re-saved capture, or a legacy absolute path, can make another row point at the same file:
+        // compare resolved file identities, not the raw strings the rows store.
+        let stillReferenced = try await repository.imagePaths()
+        guard !imageStore.isReferenced(imagePath, among: stillReferenced) else { return }
         imageStore.remove(imagePath: imagePath)
     }
 
