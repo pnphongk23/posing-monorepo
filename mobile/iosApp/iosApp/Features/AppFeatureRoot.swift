@@ -42,7 +42,14 @@ struct AppFeatureRoot: View {
             RootNavigation {
                 tabRoot {
                     PosesScreen(
-                        model: PosesViewModel(service: poseService, bookmarkService: bookmarkService),
+                        // The Account can change under this screen (Settings → Account, delete
+                        // account), so the model follows the session boundary and drops the previous
+                        // Account's saved state instead of showing it to the next one.
+                        model: PosesViewModel(
+                            service: poseService,
+                            bookmarkService: bookmarkService,
+                            boundary: ServiceLocator.sessionBoundary
+                        ),
                         onTryPose: openCamera(with:),
                         onSearchVisibilityChange: { isSearchPresented = $0 }
                     )

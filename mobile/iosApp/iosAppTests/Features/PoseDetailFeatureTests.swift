@@ -436,6 +436,155 @@ final class PoseDetailFeatureTests: XCTestCase {
         return URLSession(configuration: config)
     }
 
+    // MARK: - The session owns the saved state (FEAT-013 phase 03 review)
+
+    /// The ordinary path, not a race: A saves pose P from the community list, opens Settings →
+    /// Account, signs out, signs in as B and comes back. The Poses screen keeps its `@StateObject`
+    /// model the whole time, so the model — not the catalog — is what has to forget A's save.
+    @MainActor func testAccountSwitchDropsThePreviousAccountsSave() async {
+        let pose = sampleDetailPose
+        let boundary = SessionBoundary(tokenStorage: DetailTestTokenStorage(credentials: detailCredentialsA))
+        let bookmarks = StubBookmarkService()
+        let model = PosesViewModel(
+            service: StubPoseService(result: [pose]),
+            bookmarkService: bookmarks,
+            boundary: boundary
+        )
+        model.state = .loaded([pose])
+        await waitForSessionSubscription(boundary)
+
+        let firstSave = await model.toggleSaved(for: pose)
+        XCTAssertEqual(firstSave, .saved(true))
+        XCTAssertTrue(model.savedState(for: pose), "A's confirmed save is what the UI shows")
+
+        // A signs out and B signs in from the Account screen.
+        await boundary.signOut()
+        await boundary.saveCredentials(detailCredentialsB)
+        await waitUntil("the model dropped A's save") { !model.savedState(for: pose) }
+        // The loaded community row is demoted too: `updateSavedLocally` rewrote it when A saved.
+        guard case .loaded(let rows) = model.state else { return XCTFail("Expected the community list") }
+        XCTAssertFalse(rows[0].isSaved, "A's save must not survive in the loaded community row")
+
+        // B's first tap on the same pose must save it, not unsave A's save.
+        let bTap = await model.toggleSaved(for: pose)
+        XCTAssertEqual(bTap, .saved(true))
+        XCTAssertEqual(bookmarks.saveCallCount, 2)
+        XCTAssertEqual(bookmarks.unsaveCallCount, 0, "B's tap must not send an unsave")
+        XCTAssertTrue(model.savedState(for: pose))
+    }
+
+    /// Delete account (`DELETE /api/account` → sign-out) then sign in as somebody else: the same
+    /// reset, driven through the real account model instead of a bare `signOut()`.
+    @MainActor func testDeleteAccountThenSignInDropsTheDeletedAccountsSave() async {
+        let pose = sampleDetailPose
+        let boundary = SessionBoundary(tokenStorage: DetailTestTokenStorage(credentials: detailCredentialsA))
+        let bookmarks = StubBookmarkService()
+        let model = PosesViewModel(
+            service: StubPoseService(result: [pose]),
+            bookmarkService: bookmarks,
+            boundary: boundary
+        )
+        model.state = .loaded([pose])
+        await waitForSessionSubscription(boundary)
+
+        let save = await model.toggleSaved(for: pose)
+        XCTAssertEqual(save, .saved(true))
+        XCTAssertTrue(model.savedState(for: pose))
+
+        let account = AccountSessionModel(
+            boundary: boundary,
+            readAccount: { AccountSummary(id: "account-a", displayName: "A", createdAt: nil) },
+            signInAction: SignInAction(start: {}),
+            deleteAccount: {}
+        )
+        account.start()
+        await waitUntil("signed in") { if case .signedIn = account.state { return true }; return false }
+        account.deleteAccount()
+        await waitUntil("signed out") { account.state == .signedOut }
+        await waitUntil("the model dropped the deleted Account's save") { !model.savedState(for: pose) }
+
+        await boundary.saveCredentials(detailCredentialsB)
+        let bTap = await model.toggleSaved(for: pose)
+        XCTAssertEqual(bTap, .saved(true))
+        XCTAssertEqual(bookmarks.unsaveCallCount, 0)
+    }
+
+    /// A save that was on the wire when the session changed answers for the Account that asked. It
+    /// must not be recorded as B's state.
+    @MainActor func testBookmarkCompletingAfterASessionChangeIsDiscarded() async {
+        let pose = sampleDetailPose
+        let boundary = SessionBoundary(tokenStorage: DetailTestTokenStorage(credentials: detailCredentialsA))
+        let service = GatedBookmarkService()
+        let model = PosesViewModel(service: StubPoseService(result: [pose]), bookmarkService: service, boundary: boundary)
+        model.state = .loaded([pose])
+        await waitForSessionSubscription(boundary)
+
+        let inFlight = Task { await model.toggleSaved(for: pose) }
+        await waitUntil("the save never started") { service.saveCallCount == 1 }
+        XCTAssertTrue(model.isBookmarkInFlight(pose.id))
+
+        await boundary.signOut()
+        await boundary.saveCredentials(detailCredentialsB)
+        await waitUntil("the reset released the in-flight flag") { !model.isBookmarkInFlight(pose.id) }
+
+        service.release()
+        let outcome = await awaitOutcome(inFlight, "the save never completed")
+        XCTAssertEqual(outcome, .discarded, "A's late answer is not B's state")
+        XCTAssertFalse(model.savedState(for: pose), "A's save must not be recorded for B")
+        XCTAssertNil(model.bookmarkError)
+    }
+
+    /// A Saved list that was loading under A must not paint over B's list when it lands late.
+    @MainActor func testSavedListLoadingAcrossASessionChangeIsDiscarded() async {
+        let pose = sampleDetailPose
+        let boundary = SessionBoundary(tokenStorage: DetailTestTokenStorage(credentials: detailCredentialsA))
+        let service = GatedFirstLoadPoseService(result: [pose])
+        let model = PosesViewModel(service: service, boundary: boundary)
+        model.filter = .saved
+        await waitForSessionSubscription(boundary)
+
+        let inFlight = Task { await model.load() }
+        await waitUntil("A's saved list never started loading") { service.callCount == 1 }
+
+        await boundary.signOut()
+        await boundary.saveCredentials(detailCredentialsB)
+        await waitUntil("B's list loaded") {
+            if case .loaded(let poses) = model.state { return poses.count == 1 && !poses[0].isSaved }
+            return false
+        }
+
+        // Now A's answer arrives last: the pose was saved for A.
+        service.release([NativePose(
+            id: pose.id,
+            name: pose.name,
+            category: pose.category,
+            imageURL: pose.imageURL,
+            instructions: pose.instructions,
+            isSaved: true
+        )])
+        _ = await inFlight.value
+
+        guard case .loaded(let poses) = model.state else { return XCTFail("Expected B's loaded list") }
+        XCTAssertEqual(poses.count, 1)
+        XCTAssertFalse(poses[0].isSaved, "A's late list must not mark the pose saved for B")
+        XCTAssertFalse(model.savedState(for: pose))
+    }
+
+    /// `observeSessions` registers its subscriber on the next main-actor turn, so a test that changes
+    /// the session immediately would race an unregistered observer (the same trap
+    /// `SessionScopeCoordinatorTests` documents).
+    @MainActor private func waitForSessionSubscription(
+        _ boundary: SessionBoundary,
+        timeout: TimeInterval = 5
+    ) async {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if await boundary.subscriberCountForTests() > 0 { return }
+            try? await Task.sleep(nanoseconds: 2_000_000)
+        }
+        XCTFail("the model never subscribed to the session boundary")
+    }
+
     // MARK: - Real PoseDetailScreen render harness
 
     /// Renders the real `PoseDetailScreen` offscreen at the device width, so the assertions measure
@@ -555,6 +704,44 @@ private let sampleDetailPose = NativePose(
     instructions: ["Step one"],
     isSaved: false
 )
+
+private let detailCredentialsA = SessionCredentials(accessToken: "access-a", refreshToken: "refresh-a")
+private let detailCredentialsB = SessionCredentials(accessToken: "access-b", refreshToken: "refresh-b")
+
+/// Answers the first `poses` call only when the test releases it: models a Saved list that is still
+/// loading while the session changes.
+private final class GatedFirstLoadPoseService: PoseServing, @unchecked Sendable {
+    let result: [NativePose]
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<[NativePose], Never>?
+    private var calls = 0
+
+    init(result: [NativePose]) { self.result = result }
+
+    var callCount: Int { lock.withLock { calls } }
+
+    func poses(query: String?) async throws -> [NativePose] {
+        let shouldHold: Bool = lock.withLock {
+            calls += 1
+            return calls == 1
+        }
+        guard shouldHold else { return result }
+        return await withCheckedContinuation { (pending: CheckedContinuation<[NativePose], Never>) in
+            lock.withLock { continuation = pending }
+        }
+    }
+
+    func pose(id: String) async throws -> NativePose { result[0] }
+
+    func release(_ value: [NativePose]) {
+        let pending: CheckedContinuation<[NativePose], Never>? = lock.withLock {
+            let held = continuation
+            continuation = nil
+            return held
+        }
+        pending?.resume(returning: value)
+    }
+}
 
 /// Fails every save/unsave with the error a test wants to see mapped to copy.
 private final class ErrorBookmarkService: PoseBookmarkServing, @unchecked Sendable {

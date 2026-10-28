@@ -201,6 +201,15 @@ private extension URLError {
     private let service: any PoseServing
     let bookmarkService: (any PoseBookmarkServing)?
     private let filterState: PoseFilterState?
+    /// The session boundary this model follows. One instance survives Settings → Account → sign out →
+    /// sign in as somebody else (and delete-account → sign-in), so the model itself has to drop the
+    /// previous Account's state; the catalog's own clear (`SessionScopeCoordinator`) cannot reach it.
+    ///
+    /// `nil` keeps directly constructed models (previews, unit tests that only exercise list copy)
+    /// session-agnostic — the composition root injects the real boundary, exactly like the adapter's
+    /// `hasSession` probe.
+    private let boundary: SessionBoundary?
+    private var sessionTask: Task<Void, Never>?
     private var searchTask: Task<Void, Never>?
     private var debounceNanoseconds: UInt64 = 350_000_000
 
@@ -208,19 +217,31 @@ private extension URLError {
         service: any PoseServing,
         bookmarkService: (any PoseBookmarkServing)? = nil,
         filterState: PoseFilterState? = nil,
+        boundary: SessionBoundary? = nil,
         debounceNanoseconds: UInt64 = 350_000_000
     ) {
         self.service = service
         self.bookmarkService = bookmarkService
         self.filterState = filterState
+        self.boundary = boundary
         self.debounceNanoseconds = debounceNanoseconds
+        observeSessionChanges()
     }
 
-    convenience init(bundle: PoseServiceBundle, debounceNanoseconds: UInt64 = 350_000_000) {
+    deinit {
+        sessionTask?.cancel()
+    }
+
+    convenience init(
+        bundle: PoseServiceBundle,
+        boundary: SessionBoundary? = nil,
+        debounceNanoseconds: UInt64 = 350_000_000
+    ) {
         self.init(
             service: bundle.service,
             bookmarkService: bundle.bookmarkService,
             filterState: bundle.filterState,
+            boundary: boundary,
             debounceNanoseconds: debounceNanoseconds
         )
     }
@@ -258,13 +279,69 @@ private extension URLError {
     }
 
     func load() async {
+        let generation = await sessionGeneration()
         state = .loading
         filterState?.filter = filter
         do {
             let values = try await service.poses(query: query.isEmpty ? nil : query)
+            // A session change while this request was in flight makes the answer belong to the
+            // previous Account (its Saved flags included), so it must not reach the screen.
+            guard await isCurrentSession(generation) else { return }
             state = values.isEmpty ? .empty : .loaded(values)
         } catch {
+            guard await isCurrentSession(generation) else { return }
             state = .failed(ErrorCopy.text(for: error) ?? "Unable to load poses.")
+        }
+    }
+
+    /// The boundary's own generation is the account identity: it changes on sign-in, sign-out and a
+    /// 401 clear, and it is the same number `SessionScopeCoordinator` reacts to — so a request is
+    /// accepted only if the session that asked for it is still the current one.
+    private func sessionGeneration() async -> Int? {
+        await boundary?.currentGeneration
+    }
+
+    private func isCurrentSession(_ generation: Int?) async -> Bool {
+        await sessionGeneration() == generation
+    }
+
+    /// Follows the session so account-scoped state never outlives the Account it was read for.
+    private func observeSessionChanges() {
+        guard let boundary, sessionTask == nil else { return }
+        sessionTask = boundary.observeSessions { [weak self] _ in
+            guard let self else { return }
+            await self.resetAccountScopedState()
+        }
+    }
+
+    /// Drops what the previous Account left behind: its confirmed save per pose, its in-flight
+    /// bookmarks, its "pose is gone" verdicts, and — for the routes that carry Saved flags — the
+    /// loaded list itself. The community feed holds no Account state, so it stays on screen.
+    ///
+    /// Without this, A saving pose P and then signing out / deleting the account while B signs in
+    /// would leave `savedOverrides[P] = true` standing over B's freshly loaded `false`, and B's first
+    /// tap would send an unsave.
+    private func resetAccountScopedState() async {
+        savedOverrides.removeAll()
+        bookmarkRequestsInFlight.removeAll()
+        unavailablePoseIDs.removeAll()
+        bookmarkError = nil
+
+        // A Saved (or All) list is account-scoped in its entirety, so it is dropped and re-read.
+        if filter == .saved || filter == .all {
+            state = .idle
+            // The next Account's list is fetched through the normal path (a sign-out has nothing to
+            // fetch: the Saved surface gates on the session itself).
+            guard let boundary, await boundary.hasStoredSession() else { return }
+            await load()
+            return
+        }
+
+        // The community feed itself is not account-scoped, but a confirmed save rewrote the loaded
+        // row (`updateSavedLocally`), so those rows are demoted rather than left standing as the
+        // next Account's answer.
+        if case .loaded(let poses) = state {
+            state = .loaded(poses.map { $0.isSaved ? $0.withSaved(false) : $0 })
         }
     }
 
@@ -275,6 +352,9 @@ private extension URLError {
         case unavailable
         /// Another tap for this pose is still in flight; this one was ignored on purpose.
         case inFlight
+        /// The session changed while the request was outstanding, so the answer belongs to the
+        /// previous Account. Nothing was recorded; the screen simply shows the current state.
+        case discarded
         case failed(String)
     }
 
@@ -314,14 +394,17 @@ private extension URLError {
 
         // Read the shared state, not the caller's snapshot: a screen that was opened before an earlier
         // save completed still has `isSaved == false` and would otherwise send a second save.
+        let generation = await sessionGeneration()
         let shouldSave = !savedState(for: pose)
         do {
             if shouldSave { try await service.savePose(poseId: pose.id) }
             else { try await service.unsavePose(poseId: pose.id) }
+            guard await isCurrentSession(generation) else { return .discarded }
             bookmarkError = nil
             updateSavedLocally(poseID: pose.id, saved: shouldSave)
             return .saved(shouldSave)
         } catch {
+            guard await isCurrentSession(generation) else { return .discarded }
             // Nothing was flipped up front, so "rollback" is simply the state we still hold.
             let message = SavedMutationCopy.text(for: error)
             if SavedMutationCopy.isGone(error) { unavailablePoseIDs.insert(pose.id) }
@@ -709,6 +792,7 @@ struct PosesScreen: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Open Saved poses")
+                .accessibilityIdentifier("poses.header.saved")
             }
 
             NavigationLink(destination: SettingsScreen(posesModel: model, onTryPose: onTryPose)) {
