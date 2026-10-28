@@ -19,6 +19,10 @@ private func pagedPose(_ id: String, isSaved: Bool = false) -> NativePose {
     return poses.map(\.id)
 }
 
+private func numberedPoses(_ range: ClosedRange<Int>, isSaved: Bool = false) -> [NativePose] {
+    range.map { pagedPose("p\($0)", isSaved: isSaved) }
+}
+
 private func libraryPose(_ id: String, uploadedAt: String = "2024-03-02T00:00:00Z") throws -> CommunityPose {
     try JSONDecoder().decode(CommunityPose.self, from: Data("""
     {"poseId":"\(id)","name":"Pose \(id)","skeletonUrl":"/s.png","thumbnailUrl":"/t.jpg",
@@ -33,83 +37,98 @@ private func libraryPoses(_ count: Int) throws -> [CommunityPose] {
 private let pagedCredentialsA = SessionCredentials(accessToken: "access-a", refreshToken: "refresh-a")
 private let pagedCredentialsB = SessionCredentials(accessToken: "access-b", refreshToken: "refresh-b")
 
-/// Serves canned pages per page number, records every ask and can hold one page open, so a test can
-/// assert the request sequence (the part that actually breaks in paging) instead of only the final
-/// array.
+/// An OFFSET-paging server: it serves `library[offset..<offset+limit]` and reports `total`, records
+/// every offset it was asked for and can hold one window open. Windows can be "hidden" to emulate
+/// the Saved route's local name filter, and the total can be pinned so a stale one can be tested.
 private final class PagedPoseService: PoseServing, @unchecked Sendable {
-    /// Page number → answer. A missing page answers "end of list".
-    var pages: [Int: PosePage] = [:]
-    var pageErrors: [Int: Error] = [:]
-    /// Pages whose response the test holds open until it calls `release(page:)`.
-    var heldPages: Set<Int> = []
+    var library: [NativePose] = []
+    /// What the server reports as `total`; defaults to the library count.
+    var reportedTotal: Int?
+    /// Windows whose rows the caller filters out locally (Saved + query): the rows are consumed, the
+    /// answer is empty, and the window is not the end of the list.
+    var hiddenWindows: Set<Int> = []
+    var offsetErrors: [Int: Error] = [:]
+    /// Windows the test holds open until it calls `release(offset:)`.
+    var heldOffsets: Set<Int> = []
 
     private let lock = NSLock()
     private var asks: [Int] = []
     private var holds: [Int: CheckedContinuation<Void, Never>] = [:]
     private var startWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
 
-    var requestedPages: [Int] { lock.withLock { asks } }
+    var requestedOffsets: [Int] { lock.withLock { asks } }
     var requestCount: Int { lock.withLock { asks.count } }
+    var total: Int { reportedTotal ?? library.count }
 
     func poses(query: String?) async throws -> [NativePose] {
-        try await posesPage(query: query, page: 1).poses
+        try await posesPage(query: query, offset: 0, limit: PosesViewModel.Paging.pageSize).poses
     }
 
-    func posesPage(query: String?, page: Int) async throws -> PosePage {
+    func posesPage(query: String?, offset: Int, limit: Int) async throws -> PosePage {
         let waiters: [CheckedContinuation<Void, Never>] = lock.withLock {
-            asks.append(page)
-            let matching = startWaiters.filter { $0.0 == page }.map { $0.1 }
-            startWaiters.removeAll { $0.0 == page }
+            asks.append(offset)
+            let matching = startWaiters.filter { $0.0 == offset }.map { $0.1 }
+            startWaiters.removeAll { $0.0 == offset }
             return matching
         }
         waiters.forEach { $0.resume() }
 
-        if heldPages.contains(page) {
+        if heldOffsets.contains(offset) {
             await withCheckedContinuation { (pending: CheckedContinuation<Void, Never>) in
-                lock.withLock { holds[page] = pending }
+                lock.withLock { holds[offset] = pending }
             }
         }
-        if let error = pageErrors[page] { throw error }
-        return pages[page] ?? .end
+        if let error = offsetErrors[offset] { throw error }
+
+        let start = min(max(0, offset), library.count)
+        let window = Array(library[start..<min(library.count, start + limit)])
+        return PosePage(
+            poses: hiddenWindows.contains(offset) ? [] : window,
+            hasMore: offset + window.count < total,
+            consumed: window.count
+        )
     }
 
     func pose(id: String) async throws -> NativePose {
-        for page in pages.values {
-            if let match = page.poses.first(where: { $0.id == id }) { return match }
+        guard let match = library.first(where: { $0.id == id }) else {
+            throw PoseAdapterError.poseNotFound(id)
         }
-        throw PoseAdapterError.poseNotFound(id)
+        return match
     }
 
     // MARK: test controls
 
-    func waitUntilRequested(_ page: Int, timeout: TimeInterval = 5) async {
+    func waitUntilRequested(_ offset: Int, timeout: TimeInterval = 5) async {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
-            if lock.withLock({ asks.contains(page) }) { return }
+            if lock.withLock({ asks.contains(offset) }) { return }
             try? await Task.sleep(nanoseconds: 2_000_000)
         }
-        XCTFail("page \(page) was never requested (asked for \(requestedPages))")
+        XCTFail("offset \(offset) was never requested (asked for \(requestedOffsets))")
     }
 
-    func release(page: Int) {
-        let pending: CheckedContinuation<Void, Never>? = lock.withLock { holds.removeValue(forKey: page) }
+    func release(offset: Int) {
+        let pending: CheckedContinuation<Void, Never>? = lock.withLock { holds.removeValue(forKey: offset) }
         pending?.resume()
     }
 }
 
-/// A fixed library sliced by page with the server's total — the shape the real endpoint has.
+/// A fixed library sliced by page/offset with a settable server total — the shape the real endpoints
+/// have, including the `page`/`limit` request the client has to translate an offset into.
 private final class LibraryPoseRemote: PoseRemoteFetching, @unchecked Sendable {
-    private let poses: [CommunityPose]
     private let lock = NSLock()
     private var communityAsks: [(page: Int, query: String?)] = []
     private var savedAsks: [Int] = []
 
+    var communityItems: [CommunityPose]
+    var communityTotal: Int?
+    var savedItems: [CommunityPose]
+    var savedTotal: Int?
     var failure: Error?
-    var savedItems: [CommunityPose] = []
-    var savedTotal = 0
 
-    init(poses: [CommunityPose]) {
-        self.poses = poses
+    init(community: [CommunityPose] = [], saved: [CommunityPose] = []) {
+        communityItems = community
+        savedItems = saved
     }
 
     var communityPageAsks: [Int] { lock.withLock { communityAsks.map(\.page) } }
@@ -120,14 +139,24 @@ private final class LibraryPoseRemote: PoseRemoteFetching, @unchecked Sendable {
     func fetchCommunity(page: Int, limit: Int, query: String?) async throws -> PoseRemotePage {
         lock.withLock { communityAsks.append((page, query)) }
         if let failure { throw failure }
-        let start = max(0, (page - 1) * limit)
-        let slice = start < poses.count ? Array(poses[start..<min(poses.count, start + limit)]) : []
-        return PoseRemotePage(poses: slice, total: poses.count)
+        return Self.window(communityItems, page: page, limit: limit, total: communityTotal)
     }
 
     func fetchSaved(page: Int, limit: Int) async throws -> PoseRemotePage {
         lock.withLock { savedAsks.append(page) }
-        return PoseRemotePage(poses: savedItems, total: savedTotal)
+        if let failure { throw failure }
+        return Self.window(savedItems, page: page, limit: limit, total: savedTotal)
+    }
+
+    private static func window(
+        _ items: [CommunityPose],
+        page: Int,
+        limit: Int,
+        total: Int?
+    ) -> PoseRemotePage {
+        let start = max(0, (page - 1) * limit)
+        let slice = start < items.count ? Array(items[start..<min(items.count, start + limit)]) : []
+        return PoseRemotePage(poses: slice, total: total ?? items.count)
     }
 }
 
@@ -190,256 +219,318 @@ private final class PaginationTokenStorage: TokenStoring, @unchecked Sendable {
 
 @MainActor
 final class PosesPaginationTests: XCTestCase {
-    private func page(_ ids: [Int], hasMore: Bool, prefix: String = "p") -> PosePage {
-        PosePage(poses: ids.map { pagedPose("\(prefix)\($0)") }, hasMore: hasMore)
-    }
-
-    private func ids(_ page: Int, _ count: Int) -> [String] {
-        let start = (page - 1) * count + 1
-        return (start...(start + count - 1)).map { "p\($0)" }
-    }
-
-    func testNextPageIsAppendedWithoutLosingOrRepeatingRows() async {
-        let service = PagedPoseService()
-        service.pages = [
-            1: page(Array(1...20), hasMore: true),
-            2: page(Array(21...40), hasMore: true),
-            3: page(Array(41...45), hasMore: false),
-        ]
+    private func makeModel(_ service: PagedPoseService, filter: PoseLibraryFilter = .community) -> PosesViewModel {
         let model = PosesViewModel(service: service)
+        model.filter = filter
+        return model
+    }
+
+    func testNextWindowIsAppendedWithoutLosingOrRepeatingRows() async {
+        let service = PagedPoseService()
+        service.library = numberedPoses(1...45)
+        let model = makeModel(service)
 
         await model.load()
-        XCTAssertEqual(pagedPoseIDs(model), ids(1, 20))
+        XCTAssertEqual(pagedPoseIDs(model), numberedPoses(1...20).map(\.id))
         XCTAssertTrue(model.paging.hasMore)
-        XCTAssertEqual(model.paging.nextPage, 2)
+        XCTAssertEqual(model.paging.nextOffset, 20, "the cursor counts the rows the server handed over")
 
         await model.loadMore()
-        XCTAssertEqual(pagedPoseIDs(model), ids(1, 20) + ids(2, 20))
-        XCTAssertEqual(model.paging.nextPage, 3)
+        XCTAssertEqual(pagedPoseIDs(model), numberedPoses(1...40).map(\.id))
+        XCTAssertEqual(model.paging.nextOffset, 40)
 
         await model.loadMore()
         XCTAssertEqual(pagedPoseIDs(model).count, 45)
-        XCTAssertEqual(model.paging.nextPage, 4)
-        XCTAssertFalse(model.paging.hasMore, "the last page ends the list")
+        XCTAssertEqual(model.paging.nextOffset, 45)
+        XCTAssertFalse(model.paging.hasMore, "the last window ends the list")
         XCTAssertNil(model.paging.error)
+        XCTAssertEqual(service.requestedOffsets, [0, 20, 40])
     }
 
-    func testPoseRepeatedOnTwoPagesIsShownOnce() async {
+    func testPoseRepeatedAcrossWindowsIsShownOnce() async {
         let service = PagedPoseService()
-        service.pages = [
-            1: PosePage(poses: [pagedPose("a"), pagedPose("b")], hasMore: true),
-            2: PosePage(poses: [pagedPose("b"), pagedPose("c")], hasMore: false),
-        ]
-        let model = PosesViewModel(service: service)
+        // A row inserted at the head between two windows shows up again in the second one.
+        service.library = numberedPoses(1...20) + [pagedPose("p20"), pagedPose("p21")]
+        let model = makeModel(service)
 
         await model.load()
         await model.loadMore()
 
-        XCTAssertEqual(pagedPoseIDs(model), ["a", "b", "c"], "a row that appears on two pages is drawn once")
+        let ids = pagedPoseIDs(model)
+        XCTAssertEqual(ids.count, 21, "a row two windows both return is drawn once")
+        XCTAssertEqual(ids, numberedPoses(1...21).map(\.id))
+        XCTAssertEqual(Set(ids).count, ids.count)
     }
 
-    func testLastPageStopsAskingTheNetwork() async {
+    func testLastWindowStopsAskingTheNetwork() async {
         let service = PagedPoseService()
-        service.pages = [
-            1: PosePage(poses: [pagedPose("a")], hasMore: true),
-            2: PosePage(poses: [pagedPose("b")], hasMore: false),
-        ]
-        let model = PosesViewModel(service: service)
+        service.library = numberedPoses(1...45)
+        let model = makeModel(service)
 
         await model.load()
+        await model.loadMore()
         await model.loadMore()
         let asked = service.requestCount
         await model.loadMore()
 
-        XCTAssertEqual(service.requestCount, asked, "an ended list must not request page 3")
-        XCTAssertEqual(pagedPoseIDs(model), ["a", "b"])
+        XCTAssertEqual(service.requestCount, asked, "an ended list must not request another window")
+        XCTAssertEqual(pagedPoseIDs(model).count, 45)
     }
 
-    func testFailedPageKeepsLoadedRowsAndRetryLoadsTheSamePage() async {
+    func testFailedWindowKeepsLoadedRowsAndRetryLoadsTheSameOffset() async {
         let service = PagedPoseService()
-        service.pages = [
-            1: page(Array(1...20), hasMore: true),
-            2: page(Array(21...40), hasMore: false),
-        ]
-        service.pageErrors[2] = URLError(.notConnectedToInternet)
-        let model = PosesViewModel(service: service)
+        service.library = numberedPoses(1...45)
+        service.offsetErrors[20] = URLError(.notConnectedToInternet)
+        let model = makeModel(service)
 
         await model.load()
         await model.loadMore()
 
-        XCTAssertEqual(pagedPoseIDs(model), ids(1, 20), "a failed page must not cost the loaded rows")
+        XCTAssertEqual(pagedPoseIDs(model), numberedPoses(1...20).map(\.id), "a failed window keeps the loaded rows")
         XCTAssertNotNil(model.paging.error)
-        XCTAssertTrue(model.paging.hasMore, "the page that failed is still owed")
-        XCTAssertEqual(model.paging.nextPage, 2, "the cursor stays on the failed page")
+        XCTAssertTrue(model.paging.hasMore, "the window that failed is still owed")
+        XCTAssertEqual(model.paging.nextOffset, 20, "the cursor stays on the failed window")
         XCTAssertFalse(model.paging.isLoading)
 
-        service.pageErrors[2] = nil
+        service.offsetErrors[20] = nil
         await model.loadMoreResults()
 
         XCTAssertNil(model.paging.error)
-        XCTAssertEqual(pagedPoseIDs(model).count, 40, "the retry appends the page that failed")
-        XCTAssertFalse(model.paging.hasMore)
+        XCTAssertEqual(pagedPoseIDs(model).count, 40, "the retry appends the window that failed")
+        XCTAssertEqual(service.requestedOffsets, [0, 20, 20])
     }
 
-    func testRefreshStartsAgainFromPageOne() async {
+    func testRefreshStartsAgainFromTheFirstWindow() async {
         let service = PagedPoseService()
-        service.pages = [
-            1: page(Array(1...20), hasMore: true),
-            2: page(Array(21...40), hasMore: false),
-        ]
-        let model = PosesViewModel(service: service)
+        service.library = numberedPoses(1...45)
+        let model = makeModel(service)
         await model.load()
         await model.loadMore()
         XCTAssertEqual(pagedPoseIDs(model).count, 40)
 
-        service.pages[1] = PosePage(poses: (1...20).map { pagedPose("fresh\($0)") }, hasMore: true)
+        service.library = numberedPoses(46...85)
         await model.load()
 
-        XCTAssertEqual(Array(pagedPoseIDs(model).prefix(3)), ["fresh1", "fresh2", "fresh3"])
-        XCTAssertEqual(pagedPoseIDs(model).count, 20, "a refresh replaces the list instead of appending to it")
-        XCTAssertEqual(model.paging.nextPage, 2, "the cursor restarts at page 2")
+        XCTAssertEqual(pagedPoseIDs(model), numberedPoses(46...65).map(\.id), "a refresh replaces the list")
+        XCTAssertEqual(model.paging.nextOffset, 20, "the cursor restarts after the first window")
         XCTAssertTrue(model.paging.hasMore)
+
+        await model.loadMore()
+        XCTAssertEqual(pagedPoseIDs(model).count, 40)
+        XCTAssertEqual(service.requestedOffsets, [0, 20, 0, 20])
     }
 
-    func testQueryChangeDiscardsAPageThatArrivesLate() async {
+    func testQueryChangeDiscardsAWindowThatArrivesLate() async {
         let service = PagedPoseService()
-        service.pages = [
-            1: PosePage(poses: [pagedPose("a"), pagedPose("b")], hasMore: true),
-            2: PosePage(poses: [pagedPose("stale")], hasMore: false),
-        ]
-        service.heldPages = [2]
-        let model = PosesViewModel(service: service)
+        service.library = numberedPoses(1...45)
+        service.heldOffsets = [20]
+        let model = makeModel(service)
         await model.load()
 
         let paginating = Task { await model.loadMore() }
-        await service.waitUntilRequested(2)
+        await service.waitUntilRequested(20)
 
-        // The user types: the debounced load replaces the list before page 2 answers.
         model.query = "other"
         await model.load()
 
-        service.release(page: 2)
+        service.release(offset: 20)
         await paginating.value
 
-        XCTAssertEqual(pagedPoseIDs(model), ["a", "b"], "a page fetched for the previous search must be dropped")
-        XCTAssertEqual(model.paging.nextPage, 2)
+        XCTAssertEqual(pagedPoseIDs(model).count, 20, "a window fetched for the previous search is dropped")
+        XCTAssertEqual(model.paging.nextOffset, 20)
     }
 
     func testTwoTriggersWhileLoadingSendOneRequest() async {
         let service = PagedPoseService()
-        service.pages = [
-            1: page(Array(1...20), hasMore: true),
-            2: page(Array(21...40), hasMore: false),
-        ]
-        service.heldPages = [2]
-        let model = PosesViewModel(service: service)
+        service.library = numberedPoses(1...40)
+        service.heldOffsets = [20]
+        let model = makeModel(service)
         await model.load()
 
         let first = Task { await model.loadMore() }
-        await service.waitUntilRequested(2)
+        await service.waitUntilRequested(20)
         let second = Task { await model.loadMore() }
         await Task.yield()
 
-        service.release(page: 2)
+        service.release(offset: 20)
         await first.value
         await second.value
 
-        XCTAssertEqual(service.requestedPages, [1, 2], "the second trigger joins the page already in flight")
+        XCTAssertEqual(service.requestedOffsets, [0, 20], "the second trigger joins the window in flight")
         XCTAssertEqual(pagedPoseIDs(model).count, 40)
     }
 
-    func testSessionChangeDropsAPageFromThePreviousAccount() async {
+    /// The review's P1: the Saved collection loses a row when it is unsaved, so every later row moves
+    /// up one position. A page counter would ask for offset 20 again and never show the row that
+    /// moved into position 20.
+    func testUnsavingARowMovesTheCursorSoNoRowIsSkipped() async {
+        let service = PagedPoseService()
+        service.library = numberedPoses(1...45, isSaved: true)
+        let model = makeModel(service, filter: .saved)
+        await model.load()
+        XCTAssertEqual(model.paging.nextOffset, 20)
+
+        // The DELETE lands: the server's Saved collection is now p2…p45.
+        service.library.removeFirst()
+        model.updateSavedLocally(poseID: "p1", saved: false)
+
+        XCTAssertEqual(pagedPoseIDs(model).count, 19, "the unsaved row leaves the list")
+        XCTAssertEqual(model.paging.nextOffset, 19, "the cursor follows the collection, not the visible rows")
+
+        await model.loadMore()
+
+        let ids = pagedPoseIDs(model)
+        XCTAssertEqual(service.requestedOffsets, [0, 19])
+        XCTAssertEqual(ids, numberedPoses(2...40).map(\.id), "p21 is not skipped and nothing is repeated")
+        XCTAssertEqual(Set(ids).count, ids.count)
+    }
+
+    func testUnsavingWhileAWindowIsInFlightDropsThatWindow() async {
+        let service = PagedPoseService()
+        service.library = numberedPoses(1...45, isSaved: true)
+        service.heldOffsets = [20]
+        let model = makeModel(service, filter: .saved)
+        await model.load()
+
+        let paginating = Task { await model.loadMore() }
+        await service.waitUntilRequested(20)
+
+        service.library.removeFirst()
+        model.updateSavedLocally(poseID: "p1", saved: false)
+        service.release(offset: 20)
+        await paginating.value
+
+        XCTAssertEqual(pagedPoseIDs(model), numberedPoses(2...20).map(\.id), "the window was cut for the old cursor")
+        XCTAssertEqual(model.paging.nextOffset, 19)
+        XCTAssertFalse(model.paging.isLoading)
+
+        await model.loadMore()
+
+        let ids = pagedPoseIDs(model)
+        XCTAssertEqual(service.requestedOffsets, [0, 20, 19])
+        XCTAssertEqual(ids, numberedPoses(2...40).map(\.id))
+        XCTAssertEqual(Set(ids).count, ids.count)
+    }
+
+    /// The review's P2: the community feed is public, so its cursor must survive a session change.
+    func testCommunityListCanStillLoadMoreAfterASessionChange() async {
         let boundary = SessionBoundary(tokenStorage: PaginationTokenStorage())
         let service = PagedPoseService()
-        service.pages = [
-            1: PosePage(poses: [pagedPose("a"), pagedPose("b")], hasMore: true),
-            2: PosePage(poses: [pagedPose("a-account-only")], hasMore: true),
-        ]
-        service.heldPages = [2]
+        service.library = numberedPoses(1...45)
         let model = PosesViewModel(service: service, boundary: boundary)
         await waitForSessionSubscription(boundary)
         model.filter = .community
         await model.load()
-
-        let paginating = Task { await model.loadMore() }
-        await service.waitUntilRequested(2)
+        XCTAssertEqual(model.paging.nextOffset, 20)
 
         await boundary.signOut()
         await boundary.saveCredentials(pagedCredentialsB)
 
-        service.release(page: 2)
-        await paginating.value
-
-        XCTAssertFalse(
-            pagedPoseIDs(model).contains("a-account-only"),
-            "a page requested by the previous session must never reach the next one"
-        )
-        XCTAssertEqual(model.paging.nextPage, 2, "the next Account starts its own paging")
-        XCTAssertFalse(model.paging.isLoading)
+        XCTAssertTrue(model.paging.hasMore, "a public list keeps its cursor across a session change")
+        XCTAssertEqual(model.paging.nextOffset, 20)
+        await model.loadMore()
+        XCTAssertEqual(pagedPoseIDs(model).count, 40, "load more still works after the change")
     }
 
-    func testEmptyFilteredFirstPageKeepsPagingUntilAMatchIsFound() async {
+    /// The same change does drop an account-scoped list: Saved restarts from its first window.
+    func testSavedListRestartsPagingAfterASessionChange() async {
+        let boundary = SessionBoundary(tokenStorage: PaginationTokenStorage())
         let service = PagedPoseService()
-        service.pages = [
-            1: PosePage(poses: [], hasMore: true),
-            2: PosePage(poses: [pagedPose("match")], hasMore: false),
-        ]
-        let model = PosesViewModel(service: service)
+        service.library = numberedPoses(1...45, isSaved: true)
+        let model = PosesViewModel(service: service, boundary: boundary)
+        await waitForSessionSubscription(boundary)
+        model.filter = .saved
+        await model.load()
+        await model.loadMore()
+        XCTAssertEqual(pagedPoseIDs(model).count, 40)
+
+        await boundary.signOut()
+        await boundary.saveCredentials(pagedCredentialsB)
+        await waitUntil("the next Account's saved list loaded") {
+            pagedPoseIDs(model).count == 20 && !model.paging.isLoading
+        }
+
+        XCTAssertEqual(model.paging.nextOffset, 20, "the next Account starts from its own first window")
+        XCTAssertTrue(model.paging.hasMore)
+        XCTAssertFalse(pagedPoseIDs(model).contains("p21"), "the previous Account's second window is gone")
+    }
+
+    func testEmptyFilteredFirstWindowKeepsPagingUntilAMatchIsFound() async {
+        let service = PagedPoseService()
+        service.library = numberedPoses(1...21)
+        service.hiddenWindows = [0]
+        let model = makeModel(service, filter: .saved)
 
         await model.load()
 
-        XCTAssertEqual(pagedPoseIDs(model), ["match"], "an empty page is not the end of a filtered list")
+        XCTAssertEqual(pagedPoseIDs(model), ["p21"], "an empty window is not the end of a filtered list")
         XCTAssertFalse(model.paging.hasMore)
+        XCTAssertEqual(service.requestedOffsets, [0, 20])
     }
 
     func testSpentAutoFetchBudgetOffersLoadMoreInsteadOfADeadEnd() async {
         let service = PagedPoseService()
-        service.pages = [
-            1: PosePage(poses: [], hasMore: true),
-            2: PosePage(poses: [], hasMore: true),
-            3: PosePage(poses: [], hasMore: true),
-            4: PosePage(poses: [], hasMore: true),
-            5: PosePage(poses: [pagedPose("match")], hasMore: false),
-        ]
-        let model = PosesViewModel(service: service)
+        service.library = numberedPoses(1...100)
+        service.hiddenWindows = [0, 20, 40, 60]
+        let model = makeModel(service, filter: .saved)
 
         await model.load()
 
-        XCTAssertEqual(service.requestedPages, [1, 2, 3, 4], "three automatic pages, then stop")
+        XCTAssertEqual(service.requestedOffsets, [0, 20, 40, 60], "three automatic windows, then stop")
         XCTAssertEqual(model.paging.remainingAutoFetches, 0)
         XCTAssertTrue(model.paging.hasMore)
-        if case .empty = model.state {} else { XCTFail("Expected the empty state until page 5, got \(model.state)") }
+        if case .empty = model.state {} else { XCTFail("Expected the empty state until a match, got \(model.state)") }
 
         await model.loadMoreResults()
 
-        XCTAssertEqual(service.requestedPages, [1, 2, 3, 4, 5])
-        XCTAssertEqual(pagedPoseIDs(model), ["match"])
+        XCTAssertEqual(service.requestedOffsets, [0, 20, 40, 60, 80])
+        XCTAssertEqual(pagedPoseIDs(model), numberedPoses(81...100).map(\.id))
         XCTAssertFalse(model.paging.hasMore)
         XCTAssertEqual(model.paging.remainingAutoFetches, PosesViewModel.Paging.autoFetchBudget)
     }
 
-    func testEveryPageEmptyEndsEmptyWithNoMore() async {
+    func testEveryWindowEmptyEndsEmptyWithNoMore() async {
         let service = PagedPoseService()
-        service.pages = [
-            1: PosePage(poses: [], hasMore: true),
-            2: PosePage(poses: [], hasMore: false),
-        ]
-        let model = PosesViewModel(service: service)
+        let model = makeModel(service)
 
         await model.load()
 
         if case .empty = model.state {} else { XCTFail("Expected a final empty state, got \(model.state)") }
         XCTAssertFalse(model.paging.hasMore)
         XCTAssertNil(model.paging.error)
+        XCTAssertEqual(service.requestedOffsets, [0], "an empty collection is not paged further")
+    }
+
+    /// A total that shrinks (or a server that reports none) must end the list, not loop forever.
+    func testShrunkOrZeroTotalEndsTheListWithoutRepeatingRows() async {
+        let service = PagedPoseService()
+        service.library = numberedPoses(1...45)
+        let model = makeModel(service)
+        await model.load()
+        XCTAssertTrue(model.paging.hasMore)
+
+        // Rows were unpublished while we were paging: the collection is now exactly what we hold.
+        service.library = numberedPoses(1...20)
+        await model.loadMore()
+
+        XCTAssertFalse(model.paging.hasMore)
+        XCTAssertEqual(pagedPoseIDs(model), numberedPoses(1...20).map(\.id), "no duplicate and no crash")
+        XCTAssertNil(model.paging.error)
+
+        // A total below the cursor from the first window already ends the list.
+        let zeroService = PagedPoseService()
+        zeroService.library = numberedPoses(1...45)
+        zeroService.reportedTotal = 0
+        let zeroModel = makeModel(zeroService)
+        await zeroModel.load()
+        XCTAssertFalse(zeroModel.paging.hasMore, "a zero total is an ended list, not an endless one")
+        XCTAssertEqual(pagedPoseIDs(zeroModel).count, 20)
     }
 
     func testFilterChangeStartsPagingOver() async {
         let service = PagedPoseService()
-        service.pages = [
-            1: page(Array(1...20), hasMore: true),
-            2: page(Array(21...40), hasMore: false),
-        ]
-        let model = PosesViewModel(service: service)
+        service.library = numberedPoses(1...45)
+        let model = makeModel(service)
         await model.load()
         await model.loadMore()
         XCTAssertEqual(pagedPoseIDs(model).count, 40)
@@ -447,25 +538,22 @@ final class PosesPaginationTests: XCTestCase {
         model.filter = .saved
         await model.load()
 
-        XCTAssertEqual(model.paging.nextPage, 2, "a new filter is a new list, not a continuation")
+        XCTAssertEqual(model.paging.nextOffset, 20, "a new filter is a new list, not a continuation")
         XCTAssertFalse(model.paging.isLoading)
     }
 
     func testPageTwoPoseIsUsableWithoutACatalogRow() async {
         let service = PagedPoseService()
-        let late = pagedPose("page-two", isSaved: true)
-        service.pages = [
-            1: PosePage(poses: [pagedPose("a")], hasMore: true),
-            2: PosePage(poses: [late], hasMore: false),
-        ]
-        let model = PosesViewModel(service: service)
+        service.library = [pagedPose("a")] + numberedPoses(21...40)
+        service.library.append(pagedPose("late", isSaved: true))
+        let model = makeModel(service)
 
         await model.load()
         await model.loadMore()
 
-        XCTAssertEqual(pagedPoseIDs(model), ["a", "page-two"])
+        XCTAssertEqual(pagedPoseIDs(model).last, "late")
         // The detail screen is handed the value from this list, so it needs no database row.
-        XCTAssertEqual(model.savedState(for: late), true)
+        XCTAssertEqual(model.savedState(for: pagedPose("late", isSaved: true)), true)
     }
 
     // MARK: helpers
@@ -478,144 +566,204 @@ final class PosesPaginationTests: XCTestCase {
         }
         XCTFail("the model never subscribed to the session boundary")
     }
+
+    private func waitUntil(
+        _ description: String,
+        timeout: TimeInterval = 5,
+        _ condition: () -> Bool
+    ) async {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if condition() { return }
+            try? await Task.sleep(nanoseconds: 2_000_000)
+        }
+        XCTFail("timed out waiting for \(description)")
+    }
 }
 
-// MARK: - adapter paging (server total, page-1-only catalog)
+// MARK: - adapter paging (server total, first-window-only catalog)
 
 final class PoseAdapterPaginationTests: XCTestCase {
     private static let baseURL = "https://api.example.com"
 
-    private func communityAdapter(_ remote: LibraryPoseRemote, cache: PoseCatalogCacheStore? = nil) -> PoseAPIServiceAdapter {
+    private func adapter(
+        _ remote: LibraryPoseRemote,
+        filter: PoseLibraryFilter = .community,
+        cache: PoseCatalogCacheStore? = nil
+    ) -> PoseAPIServiceAdapter {
         let filterState = PoseFilterState()
-        filterState.filter = .community
+        filterState.filter = filter
         return PoseAPIServiceAdapter(remote: remote, baseURL: Self.baseURL, filterState: filterState, cache: cache)
     }
 
-    /// `hasMore` comes from the server total, never from the number of rows the page happened to
-    /// return: an exactly-full page is not the last page.
+    private func window(_ adapter: PoseAPIServiceAdapter, offset: Int) async throws -> PosePage {
+        try await adapter.posesPage(query: nil, offset: offset, limit: 20)
+    }
+
+    /// `hasMore` comes from the server total, never from the number of rows the window happened to
+    /// return: an exactly-full window is not the last one.
     func testHasMoreFollowsTheServerTotal() async throws {
-        let empty = communityAdapter(LibraryPoseRemote(poses: []))
-        let emptyPage = try await empty.posesPage(query: nil, page: 1)
+        let emptyPage = try await window(adapter(LibraryPoseRemote()), offset: 0)
         XCTAssertEqual(emptyPage.poses.count, 0)
         XCTAssertFalse(emptyPage.hasMore)
 
-        let exactlyFull = communityAdapter(LibraryPoseRemote(poses: try libraryPoses(20)))
-        let fullPage = try await exactlyFull.posesPage(query: nil, page: 1)
-        XCTAssertEqual(fullPage.poses.count, 20)
-        XCTAssertFalse(fullPage.hasMore, "20 of 20 rows is the end even though the page is full")
+        let exactlyFull = try await window(adapter(LibraryPoseRemote(community: try libraryPoses(20))), offset: 0)
+        XCTAssertEqual(exactlyFull.poses.count, 20)
+        XCTAssertFalse(exactlyFull.hasMore, "20 of 20 rows is the end even though the window is full")
 
-        let oneMore = communityAdapter(LibraryPoseRemote(poses: try libraryPoses(21)))
-        let firstPage = try await oneMore.posesPage(query: nil, page: 1)
-        XCTAssertTrue(firstPage.hasMore)
-        let secondPage = try await oneMore.posesPage(query: nil, page: 2)
-        XCTAssertEqual(secondPage.poses.count, 1)
-        XCTAssertFalse(secondPage.hasMore, "21 of 21 rows is the end of page 2")
+        let oneMore = adapter(LibraryPoseRemote(community: try libraryPoses(21)))
+        let first = try await window(oneMore, offset: 0)
+        XCTAssertTrue(first.hasMore)
+        let second = try await window(oneMore, offset: 20)
+        XCTAssertEqual(second.poses.count, 1)
+        XCTAssertFalse(second.hasMore, "21 of 21 rows is the end of the second window")
     }
 
-    func testThreePageLibraryPagesEndToEnd() async throws {
-        let remote = LibraryPoseRemote(poses: try libraryPoses(45))
-        let adapter = communityAdapter(remote)
+    func testThreeWindowLibraryPagesEndToEnd() async throws {
+        let remote = LibraryPoseRemote(community: try libraryPoses(45))
+        let adapter = adapter(remote)
 
-        let first = try await adapter.posesPage(query: nil, page: 1)
-        let second = try await adapter.posesPage(query: nil, page: 2)
-        let third = try await adapter.posesPage(query: nil, page: 3)
+        let first = try await window(adapter, offset: 0)
+        let second = try await window(adapter, offset: 20)
+        let third = try await window(adapter, offset: 40)
 
         XCTAssertEqual([first.poses.count, second.poses.count, third.poses.count], [20, 20, 5])
         XCTAssertEqual([first.hasMore, second.hasMore, third.hasMore], [true, true, false])
+        XCTAssertEqual([first.consumed, second.consumed, third.consumed], [20, 20, 5])
         XCTAssertEqual(remote.communityPageAsks, [1, 2, 3])
         let ids = (first.poses + second.poses + third.poses).map(\.id)
-        XCTAssertEqual(ids.count, Set(ids).count, "no row is returned by two pages")
+        XCTAssertEqual(ids.count, Set(ids).count, "no row is returned by two windows")
     }
 
-    func testSecondPageWritesNothingToTheCatalog() async throws {
+    /// The Saved collection moved up one row, so the cursor is 19 — not a multiple of the 20-row
+    /// server page. The adapter reads the aligned page that covers it and drops the rows before it.
+    func testUnalignedOffsetAfterARemovalSlicesWithoutSkippingRows() async throws {
+        let remote = LibraryPoseRemote(saved: try libraryPoses(45))
+        let saved = adapter(remote, filter: .saved)
+        let first = try await saved.posesPage(query: nil, offset: 0, limit: 20)
+        XCTAssertEqual(first.poses.count, 20)
+
+        // The DELETE lands: the collection is now the previous rows 2…45.
+        remote.savedItems.removeFirst()
+        remote.savedTotal = remote.savedItems.count
+
+        let continuation = try await saved.posesPage(query: nil, offset: 19, limit: 20)
+        XCTAssertEqual(continuation.poses.map(\.id), ["lib-21"], "the row that moved into position 20 is served")
+        XCTAssertEqual(continuation.consumed, 1)
+        XCTAssertTrue(continuation.hasMore)
+
+        let after = try await saved.posesPage(query: nil, offset: 20, limit: 20)
+        let ids = first.poses.map(\.id) + continuation.poses.map(\.id) + after.poses.map(\.id)
+        XCTAssertEqual(ids, (1...41).map { "lib-\($0)" }, "contiguous: nothing skipped, nothing repeated")
+    }
+
+    func testSecondWindowWritesNothingToTheCatalog() async throws {
         let temp = try PaginationTempDatabase()
         defer { temp.cleanUp() }
         let scheduler = PaginationRefreshScheduler()
-        let remote = LibraryPoseRemote(poses: try libraryPoses(45))
+        let remote = LibraryPoseRemote(community: try libraryPoses(45))
         let cache = PoseCatalogCacheStore(repository: temp.repository, scheduler: scheduler)
-        let adapter = communityAdapter(remote, cache: cache)
+        let adapter = adapter(remote, cache: cache)
 
-        let first = try await adapter.posesPage(query: nil, page: 1)
+        let first = try await window(adapter, offset: 0)
         XCTAssertEqual(first.poses.count, 20)
         let storedAfterFirst = try await temp.repository.cached().count
         XCTAssertEqual(storedAfterFirst, 20)
         let callsAfterFirst = remote.communityCallCount
 
-        _ = try await adapter.posesPage(query: nil, page: 2)
+        _ = try await window(adapter, offset: 20)
 
         let storedAfterSecond = try await temp.repository.cached().count
-        XCTAssertEqual(storedAfterSecond, storedAfterFirst, "page 2 is network-only: it writes no catalog rows")
+        XCTAssertEqual(storedAfterSecond, storedAfterFirst, "a later window is network-only: it writes no rows")
 
-        // Still page 1 in memory: page 2 neither replaced nor extended the cached answer.
         let reread = try await adapter.poses(query: nil)
-        XCTAssertEqual(reread.count, 20)
-        XCTAssertEqual(remote.communityCallCount, callsAfterFirst + 1, "the only network call was page 2 itself")
+        XCTAssertEqual(reread.count, 20, "memory still holds the first window")
+        XCTAssertEqual(remote.communityCallCount, callsAfterFirst + 1, "the only network call was the window itself")
         XCTAssertEqual(scheduler.pendingCount, 0)
     }
 
-    func testSecondPageFailsOfflineWhileTheFirstPageStillServes() async throws {
+    func testSecondWindowFailsOfflineWhileTheFirstWindowStillServes() async throws {
         let temp = try PaginationTempDatabase()
         defer { temp.cleanUp() }
-        let remote = LibraryPoseRemote(poses: try libraryPoses(45))
+        let remote = LibraryPoseRemote(community: try libraryPoses(45))
         let cache = PoseCatalogCacheStore(repository: temp.repository, scheduler: PaginationRefreshScheduler())
-        let adapter = communityAdapter(remote, cache: cache)
-        _ = try await adapter.posesPage(query: nil, page: 1)
+        let adapter = adapter(remote, cache: cache)
+        _ = try await window(adapter, offset: 0)
 
         remote.failure = URLError(.notConnectedToInternet)
         do {
-            _ = try await adapter.posesPage(query: nil, page: 2)
-            XCTFail("a page beyond the cached one has no offline answer, so it must fail loudly")
+            _ = try await window(adapter, offset: 20)
+            XCTFail("a window past the cached one has no offline answer, so it must fail loudly")
         } catch {
             // expected: the screen keeps its rows and offers a retry
         }
 
-        let firstPage = try await adapter.posesPage(query: nil, page: 1)
-        XCTAssertEqual(firstPage.poses.count, 20, "page 1 is still answered while offline")
+        let firstWindow = try await window(adapter, offset: 0)
+        XCTAssertEqual(firstWindow.poses.count, 20, "the first window is still answered while offline")
     }
 
     func testAllSourcePagesTheCommunityFeedOnly() async throws {
-        let remote = LibraryPoseRemote(poses: try libraryPoses(45))
-        remote.savedItems = [try libraryPose("saved-1")]
-        remote.savedTotal = 1
-        let filterState = PoseFilterState()
-        filterState.filter = .all
-        let adapter = PoseAPIServiceAdapter(remote: remote, baseURL: Self.baseURL, filterState: filterState)
+        let remote = LibraryPoseRemote(
+            community: try libraryPoses(45),
+            saved: [try libraryPose("saved-1")]
+        )
+        let all = adapter(remote, filter: .all)
 
-        _ = try await adapter.posesPage(query: nil, page: 1)
+        let first = try await all.posesPage(query: nil, offset: 0, limit: 20)
+        XCTAssertEqual(first.consumed, 20, "the first window's cursor is the community feed only")
         let savedAfterFirst = remote.savedCallCount
         let communityAfterFirst = remote.communityCallCount
-        XCTAssertGreaterThan(savedAfterFirst, 0, "page 1 merges the saved collection")
+        XCTAssertGreaterThan(savedAfterFirst, 0, "the first window merges the saved collection")
 
-        let second = try await adapter.posesPage(query: nil, page: 2)
+        let second = try await all.posesPage(query: nil, offset: 20, limit: 20)
 
-        XCTAssertEqual(remote.savedCallCount, savedAfterFirst, "later pages do not re-merge the saved list")
+        XCTAssertEqual(remote.savedCallCount, savedAfterFirst, "later windows do not re-merge the saved list")
         XCTAssertEqual(remote.communityCallCount, communityAfterFirst + 1)
         XCTAssertEqual(second.poses.count, 20)
+        XCTAssertEqual(second.poses.first?.id, "lib-21", "the saved rows of window 1 do not shift the cursor")
         XCTAssertTrue(second.hasMore)
     }
 
-    func testSearchPagesKeepTheQueryAndThePage() async throws {
-        let remote = LibraryPoseRemote(poses: try libraryPoses(45))
-        let adapter = communityAdapter(remote)
+    func testSearchWindowsKeepTheQuery() async throws {
+        let remote = LibraryPoseRemote(community: try libraryPoses(45))
+        let adapter = adapter(remote)
 
-        _ = try await adapter.posesPage(query: "warrior", page: 2)
+        _ = try await adapter.posesPage(query: "warrior", offset: 20, limit: 20)
 
         XCTAssertEqual(remote.communityPageAsks, [2])
         XCTAssertEqual(remote.lastCommunityQuery, "warrior")
     }
 
-    /// A saved page can contribute zero matches for the query and still not be the last page.
-    func testSavedPageWithoutMatchesStillReportsMore() async throws {
-        let remote = LibraryPoseRemote(poses: [])
-        remote.savedItems = [try libraryPose("saved-1")]
-        remote.savedTotal = 41
-        let filterState = PoseFilterState()
-        filterState.filter = .saved
-        let adapter = PoseAPIServiceAdapter(remote: remote, baseURL: Self.baseURL, filterState: filterState)
+    /// A saved window can contribute zero matches for the query and still not be the last one.
+    func testSavedWindowWithoutMatchesStillReportsMore() async throws {
+        let remote = LibraryPoseRemote(saved: try libraryPoses(41))
+        let saved = adapter(remote, filter: .saved)
 
-        let page = try await adapter.posesPage(query: "zzzz", page: 2)
+        let page = try await saved.posesPage(query: "zzzz", offset: 20, limit: 20)
 
-        XCTAssertEqual(page.poses.count, 0, "the local name filter removes the page's rows")
+        XCTAssertEqual(page.poses.count, 0, "the local name filter removes the window's rows")
+        XCTAssertEqual(page.consumed, 20, "but the server did hand over a full window")
         XCTAssertTrue(page.hasMore, "the server total, not the local match count, decides hasMore")
+    }
+
+    /// Sol's coverage gap: a stale, zero or shrunken total must end the list instead of crashing or
+    /// asking for the same window forever.
+    func testStaleOrShrunkenTotalEndsTheList() async throws {
+        let remote = LibraryPoseRemote(community: try libraryPoses(45))
+        let adapter = adapter(remote)
+
+        let first = try await window(adapter, offset: 0)
+        XCTAssertTrue(first.hasMore)
+
+        remote.communityTotal = 10
+        let beyondTotal = try await window(adapter, offset: 20)
+        XCTAssertEqual(beyondTotal.poses.count, 20, "the rows the server did return are still usable")
+        XCTAssertFalse(beyondTotal.hasMore, "a total below the cursor ends the list")
+
+        remote.communityTotal = 0
+        let pastTheEnd = try await window(adapter, offset: 80)
+        XCTAssertEqual(pastTheEnd.poses.count, 0)
+        XCTAssertEqual(pastTheEnd.consumed, 0)
+        XCTAssertFalse(pastTheEnd.hasMore)
     }
 }

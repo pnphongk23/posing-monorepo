@@ -7,29 +7,38 @@ enum Loadable<Value> {
 protocol PoseServing: Sendable {
     func poses(query: String?) async throws -> [NativePose]
     func pose(id: String) async throws -> NativePose
-    /// One page of a pose list. A **requirement**, not just a convenience: a call through
-    /// `any PoseServing` dispatches statically to an extension-only method, which would silently
-    /// bypass the adapter's paging and always answer "no more pages".
-    func posesPage(query: String?, page: Int) async throws -> PosePage
+    /// Rows `offset ..< offset+limit` of a pose list. A **requirement**, not just a convenience: a
+    /// call through `any PoseServing` dispatches statically to an extension-only method, which would
+    /// silently bypass the adapter's paging and always answer "no more rows".
+    ///
+    /// Offset, not page number: the server pages with `OFFSET`, and a row the user removes (an
+    /// unsave in the Saved list) shifts every later row one position up. A page counter cannot
+    /// express "the list moved", so the caller owns the cursor and this call is a pure window read.
+    func posesPage(query: String?, offset: Int, limit: Int) async throws -> PosePage
 }
 
-/// One page of a pose list plus whether the server has more rows behind it.
+/// One window of a pose list plus whether the server has more rows behind it.
 ///
-/// `hasMore` is a separate answer on purpose: a page that happens to hold exactly `limit` rows is
-/// not the last page, so the count alone cannot decide it.
+/// `hasMore` is a separate answer on purpose: a window that happens to hold exactly `limit` rows is
+/// not the last window, so the count alone cannot decide it.
 struct PosePage: Sendable, Equatable {
     let poses: [NativePose]
     let hasMore: Bool
+    /// How many rows of the server's list this answer advanced past. It is **not** `poses.count`:
+    /// a local name filter can hide every row a window returned, and a merged `.all` first window
+    /// spans two collections. The next offset and `hasMore` are both computed from it.
+    let consumed: Int
 
-    static let end = PosePage(poses: [], hasMore: false)
+    static let end = PosePage(poses: [], hasMore: false, consumed: 0)
 }
 
 extension PoseServing {
-    /// Paging default: a service that only knows the first page keeps working unchanged, and any
-    /// page beyond it is reported as the end of the list instead of replaying page 1.
-    func posesPage(query: String?, page: Int) async throws -> PosePage {
-        guard page <= 1 else { return .end }
-        return PosePage(poses: try await poses(query: query), hasMore: false)
+    /// Paging default: a service that only knows the first window keeps working unchanged, and any
+    /// offset beyond it is reported as the end of the list instead of replaying the same rows.
+    func posesPage(query: String?, offset: Int, limit: Int) async throws -> PosePage {
+        guard offset <= 0 else { return .end }
+        let poses = try await poses(query: query)
+        return PosePage(poses: poses, hasMore: false, consumed: poses.count)
     }
 }
 

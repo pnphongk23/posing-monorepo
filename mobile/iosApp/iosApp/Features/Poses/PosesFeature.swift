@@ -204,20 +204,28 @@ private extension URLError {
     @Published var state: Loadable<[NativePose]> = .idle
     @Published var query = ""
     @Published var filter: PoseLibraryFilter = .community
-    /// Where the next page of the current list comes from. Kept beside `state` instead of inside it
+    /// Where the next window of the current list comes from. Kept beside `state` instead of inside it
     /// because a failed page must not cost the rows already on screen, which `Loadable.failed`
     /// cannot express.
     struct Paging: Equatable, Sendable {
-        /// Pages one `loadMore` may fetch on its own before it hands the decision back to the user.
+        /// Windows one `loadMore` may fetch on its own before it hands the decision back to the user.
         static let autoFetchBudget = 3
+        /// Rows per request. The server's own page size for both feed endpoints.
+        static let pageSize = 20
 
-        var nextPage = 2
+        /// Rows of the server's list already consumed. **Not** `rows.count`: a confirmed unsave
+        /// removes a row from the Saved collection, which shifts every later row one position up, so
+        /// the cursor has to follow the collection and not the visible list.
+        var nextOffset = 0
         var hasMore = false
         var isLoading = false
         var error: String?
-        /// Spent by automatic fetches (pages that add nothing to a filtered list). A run that runs
+        /// Spent by automatic fetches (windows that add nothing to a filtered list). A run that runs
         /// out stops and shows the "Load more results" button, so the list never dead-ends.
         var remainingAutoFetches = Paging.autoFetchBudget
+        /// Bumped when the cursor itself moves (a row the user removed). A window that was requested
+        /// for the old offset is dropped instead of advancing the cursor past a row it skipped.
+        var cursorGeneration = 0
     }
 
     @Published private(set) var paging = Paging()
@@ -320,11 +328,14 @@ private extension URLError {
         guard generation == listGeneration else { return }
         filterState?.filter = filter
         do {
-            let page = try await service.posesPage(query: normalizedQuery, page: 1)
+            let page = try await service.posesPage(query: normalizedQuery, offset: 0, limit: Paging.pageSize)
             // A session change while this request was in flight makes the answer belong to the
             // previous Account (its Saved flags included), so it must not reach the screen.
             guard await isCurrentSession(ticket), generation == listGeneration else { return }
-            paging.hasMore = page.hasMore
+            // A window that advanced past nothing cannot be followed: stop instead of asking for the
+            // same offset again (a stale total, or a server repeating a window).
+            paging.hasMore = page.hasMore && page.consumed > 0
+            paging.nextOffset = page.consumed
             state = page.poses.isEmpty ? .empty : .loaded(page.poses)
             await fillFilteredList()
         } catch {
@@ -358,6 +369,7 @@ private extension URLError {
 
     private func paginate() async {
         let generation = listGeneration
+        let cursor = paging.cursorGeneration
         paging.isLoading = true
         paging.error = nil
         // A refresh or a session change resets `paging` itself, so only the generation that started
@@ -371,25 +383,34 @@ private extension URLError {
         while paging.hasMore {
             guard paging.remainingAutoFetches > 0 else { return }
             paging.remainingAutoFetches -= 1
-            let pageNumber = paging.nextPage
+            let offset = paging.nextOffset
             do {
-                let page = try await service.posesPage(query: normalizedQuery, page: pageNumber)
-                // The stale page belongs to a list that was refreshed, re-filtered or handed to
-                // another Account; appending it would resurrect rows the user already dropped.
-                guard await isCurrentSession(ticket), generation == listGeneration else { return }
-                paging.nextPage = pageNumber + 1
-                paging.hasMore = page.hasMore
-                // A page that adds rows is progress: restore the budget so ordinary scrolling keeps
-                // loading. Only a run of pages that add nothing (an empty filtered list) can spend
+                let page = try await service.posesPage(
+                    query: normalizedQuery,
+                    offset: offset,
+                    limit: Paging.pageSize
+                )
+                // A window belongs to the list that asked for it: refreshed, re-filtered, handed to
+                // another Account, or computed for a cursor that a removal has since moved. Applying
+                // it would resurrect dropped rows or skip one.
+                guard await isCurrentSession(ticket),
+                      generation == listGeneration,
+                      cursor == paging.cursorGeneration else { return }
+                paging.nextOffset = offset + page.consumed
+                paging.hasMore = page.hasMore && page.consumed > 0
+                // A window that adds rows is progress: restore the budget so ordinary scrolling keeps
+                // loading. Only a run of windows that add nothing (an empty filtered list) can spend
                 // it all, and that is exactly when the user should decide to keep going.
                 guard append(page.poses) == 0 else {
                     paging.remainingAutoFetches = Paging.autoFetchBudget
                     return
                 }
             } catch {
-                guard await isCurrentSession(ticket), generation == listGeneration else { return }
-                // Keep the rows already loaded and the page cursor: the footer offers a retry of
-                // this same page.
+                guard await isCurrentSession(ticket),
+                      generation == listGeneration,
+                      cursor == paging.cursorGeneration else { return }
+                // Keep the rows already loaded and the cursor: the footer offers a retry of this
+                // same window.
                 paging.error = ErrorCopy.text(for: error) ?? "Unable to load more poses."
                 return
             }
@@ -451,11 +472,14 @@ private extension URLError {
     /// would leave `savedOverrides[P] = true` standing over B's freshly loaded `false`, and B's first
     /// tap would send an unsave.
     func resetForSessionChange(_ event: SessionEvent) {
-        // Paging state belongs to one Account's list: a page that is still in flight must be dropped
-        // instead of being appended to the next Account's rows, so the generation moves on before
-        // anything else happens here.
-        listGeneration &+= 1
-        paging = Paging()
+        // Only an account-scoped list loses its paging. Saved — and All, which merges the next
+        // Account's saved collection — restarts from the first window; the community feed is public,
+        // its rows survive the change, so its cursor survives too (a window still in flight is
+        // dropped by its session ticket).
+        if filter == .saved || filter == .all {
+            listGeneration &+= 1
+            paging = Paging()
+        }
         savedOverrides.removeAll()
         bookmarkRequests.removeAll()
         bookmarkRequestsInFlight = []
@@ -598,11 +622,27 @@ private extension URLError {
     /// screen opened later (or reopened mid-request) cannot show a stale answer.
     func updateSavedLocally(poseID: String, saved: Bool) {
         savedOverrides[poseID] = saved
+        if !saved, filter == .saved {
+            // An unsave removes the row from the Saved collection itself, so every row behind it
+            // moves one position up: the cursor has to move with it or the window after this one
+            // starts past a row nobody has seen. Shifting when the row was *not* on screen would at
+            // worst re-read a row (deduped by id), never skip one.
+            shiftPagingCursorForRemoval()
+        }
         guard case .loaded(var poses) = state,
               let index = poses.firstIndex(where: { $0.id == poseID }) else { return }
         poses[index].isSaved = saved
         let filtered = filter == .saved ? poses.filter(\.isSaved) : poses
         state = filtered.isEmpty ? .empty : .loaded(filtered)
+    }
+
+    /// Keeps the cursor on the row that is still next. A window already in flight was computed for
+    /// the old cursor, so it is invalidated rather than applied.
+    private func shiftPagingCursorForRemoval() {
+        guard paging.nextOffset > 0 else { return }
+        paging.nextOffset -= 1
+        paging.cursorGeneration &+= 1
+        paging.error = nil
     }
 
     /// Pose detail availability check (report §3.6, `pose-detail.html` unavailable state): a detail

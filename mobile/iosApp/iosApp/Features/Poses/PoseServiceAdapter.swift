@@ -769,14 +769,24 @@ extension PoseAPIService: PoseRemoteFetching {
 /// call returned (stale-while-revalidate). A missing value means this call was answered from cache.
 private final class PosePageLimitProbe: @unchecked Sendable {
     private let lock = NSLock()
-    private var stored: Bool?
+    private var storedHasMore: Bool?
+    private var storedConsumed: Int?
 
     var hasMore: Bool? {
-        lock.withLocked { stored }
+        lock.withLocked { storedHasMore }
+    }
+
+    /// Rows the server handed over for the first window, before any local filter or merge.
+    var consumed: Int? {
+        lock.withLocked { storedConsumed }
     }
 
     func record(_ value: Bool) {
-        lock.withLocked { stored = value }
+        lock.withLocked { storedHasMore = value }
+    }
+
+    func record(consumed: Int) {
+        lock.withLocked { storedConsumed = consumed }
     }
 }
 
@@ -831,38 +841,65 @@ struct PoseAPIServiceAdapter: PoseServing {
         let route = PoseAdapterRoute.from(rawValue: filterState.effectiveRawValue)
         let normalizedQuery = PoseCacheKey.normalizedQuery(query)
         guard let cache, await cacheIsUsable(for: route) else {
-            return try await remoteFetch(route: route, query: normalizedQuery, page: 1).poses
+            return try await remoteFetch(route: route, query: normalizedQuery, page: 1, limit: pageSize).poses
         }
         let key = PoseCacheKey(route: route, query: normalizedQuery)
         return try await cache.poses(for: key, baseURL: baseURL) {
-            try await self.remoteFetch(route: route, query: normalizedQuery, page: 1).catalogFetch
+            try await self.remoteFetch(route: route, query: normalizedQuery, page: 1, limit: pageSize).catalogFetch
         }
     }
-    /// Page-aware read. Only page 1 goes through the offline catalog; later pages are network-only
-    /// and are not persisted, so a page-1 stale-while-revalidate refresh can never prune rows the
-    /// screen has already paged in (and an offline relaunch reads exactly the cached page 1).
-    func posesPage(query: String?, page: Int) async throws -> PosePage {
+    /// Offset-aware window read. Only the first window goes through the offline catalog; later windows
+    /// are network-only and are not persisted, so a first-window stale-while-revalidate refresh can
+    /// never prune rows the screen has already paged in (and an offline relaunch reads exactly the
+    /// cached first window).
+    ///
+    /// The window is expressed as an offset because the server pages with `OFFSET`. An offset that is
+    /// not a multiple of `limit` (the Saved list moved up by a confirmed unsave) still reads the
+    /// aligned server page that *covers* it and drops the rows before it, so no row is skipped and
+    /// the caller's cursor stays exact.
+    func posesPage(query: String?, offset: Int, limit: Int) async throws -> PosePage {
         let route = PoseAdapterRoute.from(rawValue: filterState.effectiveRawValue)
         let normalizedQuery = PoseCacheKey.normalizedQuery(query)
-        guard page <= 1 else {
-            let later = try await remoteFetch(route: route, query: normalizedQuery, page: page)
-            return PosePage(poses: later.poses, hasMore: later.hasMore)
+        let window = max(1, limit)
+        guard offset > 0 else {
+            return try await firstPosesPage(route: route, query: normalizedQuery, limit: window)
         }
 
+        let page = offset / window + 1
+        let skipped = offset % window
+        let later = try await remoteFetch(route: route, query: normalizedQuery, page: page, limit: window)
+        // The rows before `offset` were already read: the caller consumes only what is left of this
+        // aligned window. A stale or shrunken total below the requested offset answers an empty
+        // window, which ends the list instead of asking for the same offset again.
+        let poses = skipped == 0 ? later.poses : Array(later.poses.dropFirst(skipped))
+        return PosePage(poses: poses, hasMore: later.hasMore, consumed: max(0, later.consumed - skipped))
+    }
+
+    private func firstPosesPage(route: PoseAdapterRoute, query: String?, limit: Int) async throws -> PosePage {
         let probe = PosePageLimitProbe()
         let load: @Sendable () async throws -> PoseCatalogFetch = {
-            let fetched = try await self.remoteFetch(route: route, query: normalizedQuery, page: 1)
+            let fetched = try await self.remoteFetch(route: route, query: query, page: 1, limit: limit)
             probe.record(fetched.hasMore)
+            probe.record(consumed: fetched.consumed)
             return fetched.catalogFetch
         }
         guard let cache, await cacheIsUsable(for: route) else {
-            return PosePage(poses: try await load().poses, hasMore: probe.hasMore ?? false)
+            let fetched = try await load()
+            return PosePage(
+                poses: fetched.poses,
+                hasMore: probe.hasMore ?? false,
+                consumed: probe.consumed ?? fetched.poses.count
+            )
         }
-        let key = PoseCacheKey(route: route, query: normalizedQuery)
+        let key = PoseCacheKey(route: route, query: query)
         let poses = try await cache.poses(for: key, baseURL: baseURL, load: load)
         // Answered from cache (memory or database): optimistic, because only the network knows the
         // real total. The next call to the network replaces it with the server's answer.
-        return PosePage(poses: poses, hasMore: probe.hasMore ?? (poses.count >= pageSize))
+        return PosePage(
+            poses: poses,
+            hasMore: probe.hasMore ?? (poses.count >= limit),
+            consumed: probe.consumed ?? poses.count
+        )
     }
 
     /// `.saved` and `.all` both carry saved rows, so they are account-scoped; only the community
@@ -872,15 +909,18 @@ struct PoseAPIServiceAdapter: PoseServing {
         return await hasSession()
     }
 
-    /// One network page, its poses and the catalog rows that mirror it.
+    /// One network window, its poses and the catalog rows that mirror it.
     private struct RemotePage {
         let poses: [NativePose]
         let hasMore: Bool
-        /// `nil` for page > 1: only page 1 mirrors into the offline catalog.
+        /// Rows the server handed over, **before** the local name filter and any merge: this is what
+        /// the cursor and `hasMore` are computed from.
+        let consumed: Int
+        /// `nil` for a window past the first: only the first one mirrors into the offline catalog.
         let fetch: PoseCatalogFetch?
 
-        /// The catalog mirror of this page. A page beyond the first mirrors nothing: the empty plan
-        /// carries no writes and replaces no bucket, so it cannot prune what page 1 stored.
+        /// The catalog mirror of this window. A window past the first mirrors nothing: the empty plan
+        /// carries no writes and replaces no bucket, so it cannot prune what the first one stored.
         var catalogFetch: PoseCatalogFetch {
             fetch ?? PoseCatalogFetch(
                 poses: poses,
@@ -890,23 +930,31 @@ struct PoseAPIServiceAdapter: PoseServing {
             )
         }
 
-        /// A page that is deliberately not persisted.
-        static func networkOnly(_ poses: [NativePose], hasMore: Bool) -> RemotePage {
-            RemotePage(poses: poses, hasMore: hasMore, fetch: nil)
+        /// A window that is deliberately not persisted.
+        static func networkOnly(_ poses: [NativePose], consumed: Int, hasMore: Bool) -> RemotePage {
+            RemotePage(poses: poses, hasMore: hasMore, consumed: consumed, fetch: nil)
         }
     }
 
-    /// Untouched network path plus the catalog rows that mirror it.
-    private func remoteFetch(route: PoseAdapterRoute, query: String?, page: Int) async throws -> RemotePage {
+    /// The network path plus the catalog rows that mirror the first window.
+    ///
+    /// `hasMore` is `consumed < total` with the server's own total, never `count == limit`: an
+    /// exactly-full window is not the last one, and a total that shrank below the window we just
+    /// read means the list ended while we were paging (not a crash, not an endless retry).
+    private func remoteFetch(route: PoseAdapterRoute, query: String?, page: Int, limit: Int) async throws -> RemotePage {
+        let consumed = (page - 1) * limit
         switch route {
         case .community:
-            let data = try await remote.fetchCommunity(page: page, limit: pageSize, query: query)
+            let data = try await remote.fetchCommunity(page: page, limit: limit, query: query)
             let poses = data.poses.map { CommunityPoseMapper.map($0, isSaved: false, baseURL: baseURL) }
-            let hasMore = Self.hasMore(page: page, limit: pageSize, total: data.total)
-            guard page == 1 else { return .networkOnly(poses, hasMore: hasMore) }
+            let hasMore = Self.hasMore(consumed: consumed + data.poses.count, total: data.total)
+            guard page == 1 else {
+                return .networkOnly(poses, consumed: data.poses.count, hasMore: hasMore)
+            }
             return RemotePage(
                 poses: poses,
                 hasMore: hasMore,
+                consumed: data.poses.count,
                 fetch: PoseCatalogFetch(
                     poses: poses,
                     writes: data.poses.map { write($0, source: .community) },
@@ -915,16 +963,19 @@ struct PoseAPIServiceAdapter: PoseServing {
                 )
             )
         case .saved:
-            let data = try await remote.fetchSaved(page: page, limit: pageSize)
+            let data = try await remote.fetchSaved(page: page, limit: limit)
             let mapped = data.poses.map { CommunityPoseMapper.map($0, isSaved: true, baseURL: baseURL) }
-            // The saved endpoint takes no search text, so a page can contribute zero matches for the
-            // query and still not be the last page.
+            // The saved endpoint takes no search text, so a window can contribute zero matches for
+            // the query and still not be the last one.
             let poses = PoseAdapterMerge.filterSavedLocally(mapped, query: query)
-            let hasMore = Self.hasMore(page: page, limit: pageSize, total: data.total)
-            guard page == 1 else { return .networkOnly(poses, hasMore: hasMore) }
+            let hasMore = Self.hasMore(consumed: consumed + data.poses.count, total: data.total)
+            guard page == 1 else {
+                return .networkOnly(poses, consumed: data.poses.count, hasMore: hasMore)
+            }
             return RemotePage(
                 poses: poses,
                 hasMore: hasMore,
+                consumed: data.poses.count,
                 fetch: PoseCatalogFetch(
                     poses: poses,
                     writes: data.poses.map { write($0, source: .saved) },
@@ -933,13 +984,16 @@ struct PoseAPIServiceAdapter: PoseServing {
                 )
             )
         case .all:
-            let communityData = try await remote.fetchCommunity(page: page, limit: pageSize, query: query)
-            let hasMore = Self.hasMore(page: page, limit: pageSize, total: communityData.total)
+            let communityData = try await remote.fetchCommunity(page: page, limit: limit, query: query)
+            let hasMore = Self.hasMore(consumed: consumed + communityData.poses.count, total: communityData.total)
             let community = communityData.poses.map { CommunityPoseMapper.map($0, isSaved: false, baseURL: baseURL) }
-            // Saved rows are merged on page 1 only. Paging both feeds would need two cursors and
-            // would let one of them skip rows, so later pages follow the community order alone.
-            guard page == 1 else { return .networkOnly(community, hasMore: hasMore) }
-            let savedData = (try? await remote.fetchSaved(page: 1, limit: pageSize)) ?? .empty
+            // Saved rows are merged on the first window only. Paging both feeds would need two
+            // cursors and would let one of them skip rows, so later windows follow the community
+            // order alone (that is also why the first window's consumed count is the community one).
+            guard page == 1 else {
+                return .networkOnly(community, consumed: communityData.poses.count, hasMore: hasMore)
+            }
+            let savedData = (try? await remote.fetchSaved(page: 1, limit: limit)) ?? .empty
             let saved = PoseAdapterMerge.filterSavedLocally(
                 savedData.poses.map { CommunityPoseMapper.map($0, isSaved: true, baseURL: baseURL) },
                 query: query
@@ -948,6 +1002,9 @@ struct PoseAPIServiceAdapter: PoseServing {
             return RemotePage(
                 poses: poses,
                 hasMore: hasMore,
+                // The merged saved rows are shown once, but the cursor follows the community feed
+                // alone (later windows are community-only), so it must not count them.
+                consumed: communityData.poses.count,
                 fetch: PoseCatalogFetch(
                     poses: poses,
                     writes: communityData.poses.map { write($0, source: .community) }
@@ -959,10 +1016,10 @@ struct PoseAPIServiceAdapter: PoseServing {
         }
     }
 
-    /// `page * limit < total` — the server's own total, never the item count of one page.
-    private static func hasMore(page: Int, limit: Int, total: Int) -> Bool {
-        guard page > 0, limit > 0 else { return false }
-        return page * limit < total
+    /// `consumed < total` — the server's own total, never the item count of one window.
+    private static func hasMore(consumed: Int, total: Int) -> Bool {
+        guard consumed > 0 else { return false }
+        return consumed < total
     }
 
     private func write(_ pose: CommunityPose, source: PoseCatalogSource) -> PoseCatalogWrite {
