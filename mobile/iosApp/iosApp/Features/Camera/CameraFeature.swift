@@ -40,6 +40,11 @@ final class CameraViewModel: ObservableObject {
     let camera: any CameraSessionControlling
     let coordinator: CameraCoordinator
     let imageStorage: CaptureImageStorage
+    /// The paid-action gate (`FEAT-011` M1). A port, so the capture path is testable without a
+    /// store, a session or a network.
+    private let premiumGate: any PremiumGateProviding
+    /// Presentation seam for the paywall, owned by the app root (one presenter, no event bus).
+    private let onPremiumRequired: (Bool) -> Void
     private var timeoutTask: Task<Void, Never>?
     private var statusClearTask: Task<Void, Never>?
 
@@ -79,8 +84,12 @@ final class CameraViewModel: ObservableObject {
         photoRepository: PhotoRepository? = nil,
         photoMetadata: CapturePhotoMetadata? = nil,
         settingsStore: any CameraSettingsStore = DeferredCameraSettingsStore(),
-        saveDebounceNanoseconds: UInt64 = 300_000_000
+        saveDebounceNanoseconds: UInt64 = 300_000_000,
+        premiumGate: any PremiumGateProviding = PremiumGateModel(),
+        onPremiumRequired: @escaping (Bool) -> Void = { _ in }
     ) {
+        self.premiumGate = premiumGate
+        self.onPremiumRequired = onPremiumRequired
         self.camera = camera
         self.settingsStore = settingsStore
         self.settingsWriter = CameraSettingsWriter(store: settingsStore)
@@ -148,7 +157,24 @@ final class CameraViewModel: ObservableObject {
         }
     }
 
+    /// The shutter.
+    ///
+    /// The paid-action gate is the **first** thing here, ahead of camera readiness and therefore
+    /// ahead of every `captureError` the coordinator can produce. An unentitled press opens the
+    /// paywall even when the camera could not have taken the photo — which is what makes the flow
+    /// verifiable on a simulator, where `isPhotoCaptureReady` is always false. Only a press the gate
+    /// allows reaches the capture path, and that path is untouched: readiness still decides between
+    /// capturing and doing nothing.
     func capture() {
+        switch premiumGate.captureOutcome(cameraReady: coordinator.state.captureEnabled) {
+        case .paywall(let signIn):
+            onPremiumRequired(signIn)
+            return
+        case .unchanged:
+            return
+        case .capture:
+            break
+        }
         guard coordinator.onCaptureRequested() else { return }
         timeoutTask?.cancel()
         timeoutTask = Task { @MainActor [weak self] in
@@ -607,13 +633,20 @@ struct CameraScreen: View {
         poseService: any PoseServing,
         onClose: @escaping () -> Void = {},
         onOpenGallery: @escaping () -> Void = {},
-        model: @autoclosure @escaping () -> CameraViewModel = CameraViewModel()
+        premiumGate: any PremiumGateProviding = PremiumGateModel(),
+        onPremiumRequired: @escaping (Bool) -> Void = { _ in },
+        model: @autoclosure @escaping () -> CameraViewModel? = nil
     ) {
         _guide = guide
         self.poseService = poseService
         self.onClose = onClose
         self.onOpenGallery = onOpenGallery
-        _model = StateObject(wrappedValue: model())
+        // An injected model already carries its own gate (tests/previews); otherwise the screen wires
+        // the one the app root owns, so the camera and the paywall read the same premium state.
+        _model = StateObject(wrappedValue: model() ?? CameraViewModel(
+            premiumGate: premiumGate,
+            onPremiumRequired: onPremiumRequired
+        ))
         _posePickerModel = StateObject(wrappedValue: PosePickerViewModel(service: poseService))
     }
 

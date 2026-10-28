@@ -286,6 +286,9 @@ struct SettingsScreen: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var showsAboutSheet = false
     @State private var showsReplayOnboarding = false
+    /// FEAT-011 placement: the user-initiated upgrade entry point (no crowns, no automatic paywall
+    /// on a free surface).
+    @State private var showsPaywall = false
     @State private var cameraAccess: CameraAccessStatus = .unknown
 
     private let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0"
@@ -319,6 +322,24 @@ struct SettingsScreen: View {
                           .accessibilityLabel("Open Saved poses")
                       }
                   }
+
+                // FEAT-011 placement: one user-initiated upgrade row, hidden while the paywall
+                // kill switch is off so the row can never open a surface the build does not sell.
+                if AppConfig.shared.isPaywallEnabled {
+                    settingsGroup(title: "Premium") {
+                        Button { showsPaywall = true } label: {
+                            SupportSettingsRow(
+                                icon: "star.fill",
+                                iconColor: AIPoseColor.accentYellow,
+                                title: "Premium",
+                                description: "Unlock photo capture with the pose guide."
+                            )
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Open Premium")
+                        .accessibilityIdentifier("settings.premium.row")
+                    }
+                }
 
                   settingsGroup(title: "Privacy") {
                     Button { openSystemSettings() } label: {
@@ -382,6 +403,9 @@ struct SettingsScreen: View {
             }
             .padding(.horizontal, AIPoseSpacing.lg)
             .padding(.vertical, AIPoseSpacing.sm)
+            // Its own host: two sheets on one view is where SwiftUI's presentation gets flaky, and
+            // About already owns the outer one.
+            .sheet(isPresented: $showsPaywall) { PaywallScreen() }
         }
         .background(AIPoseColor.background)
         .navigationTitle("Settings")
@@ -519,6 +543,7 @@ struct PaywallScreen: View {
                     .clipShape(Circle())
             }
             .accessibilityLabel("Close Premium and go back")
+            .accessibilityIdentifier("paywall.close")
         }
         .overlay(alignment: .bottom) {
             Rectangle().fill(AIPoseColor.foreground).frame(height: 2).offset(y: AIPoseSpacing.md)
@@ -571,6 +596,7 @@ struct PaywallScreen: View {
             ContinueWithGoogleButton(isAuthenticating: model.isAuthenticating) {
                 Task { await model.signIn() }
             }
+            .accessibilityIdentifier("paywall.signin")
             Button { showsEmailSignIn = true } label: {
                 Text("Sign in with email")
                     .font(.footnote.weight(.semibold))
@@ -643,6 +669,7 @@ struct PaywallScreen: View {
                 .frame(minHeight: 44)
                 .disabled(model.isBusy)
                 .accessibilityLabel(model.ctaTitle)
+                .accessibilityIdentifier("paywall.cta")
 
                 Text(PaywallPlanCatalog.summaryLine(for: plan))
                     .font(.footnote)

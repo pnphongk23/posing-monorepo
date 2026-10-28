@@ -19,6 +19,8 @@ final class SessionScopedArchitectureTests: XCTestCase {
         "PosesViewModel": "per-pose Saved state, in-flight bookmarks and the Saved/All list",
         "JobsService": "the Account's extraction jobs",
         "PaywallModel": "the Account's entitlement, plans and purchase phase",
+        "PremiumGateModel":
+            "the capture gate's provider snapshot and signed-in state, mirrored per Account",
         "AccountSessionModel": "the Account projection itself",
     ]
 

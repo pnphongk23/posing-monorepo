@@ -87,6 +87,67 @@ final class CameraFeatureTests: XCTestCase {
         XCTAssertEqual(model.flashSetting, .auto)
     }
 
+    // MARK: - Capture gate (`FEAT-011` M1)
+
+    /// The ordering requirement: the entitlement gate sits *before* camera readiness. With the paywall
+    /// on and no entitlement, a press must reach the paywall even though this camera cannot capture at
+    /// all (`captureEnabled == false`), so the press can never be answered by the readiness /
+    /// `captureError` path first — which is also what makes the flow verifiable on a simulator.
+    func testShutterOpensPaywallBeforeCameraReadiness() {
+        let gate = StubPremiumGate(.paywall(signIn: false))
+        var prompts: [Bool] = []
+        let model = CameraViewModel(premiumGate: gate, onPremiumRequired: { prompts.append($0) })
+        model.coordinator.onPermissionResult(.denied)
+        XCTAssertFalse(model.coordinator.state.captureEnabled)
+
+        model.capture()
+
+        XCTAssertEqual(prompts, [false], "exactly one paywall request")
+        XCTAssertEqual(gate.cameraReadyInputs, [false], "the gate sees the real readiness, it just decides first")
+        XCTAssertEqual(model.coordinator.state.phase, .permissionRequired, "the capture path was never entered")
+        XCTAssertNil(model.coordinator.state.lastFailure, "so no captureError was produced")
+        XCTAssertFalse(model.coordinator.state.isCaptureInFlight)
+    }
+
+    /// M2: a signed-out press opens the paywall in its sign-in state.
+    func testShutterAsksForSignInWhenTheUserIsSignedOut() {
+        let gate = StubPremiumGate(.paywall(signIn: true))
+        var prompts: [Bool] = []
+        let model = CameraViewModel(premiumGate: gate, onPremiumRequired: { prompts.append($0) })
+        model.coordinator.onPermissionResult(.authorized)
+
+        model.capture()
+
+        XCTAssertEqual(prompts, [true])
+        XCTAssertFalse(model.coordinator.state.isCaptureInFlight)
+    }
+
+    func testShutterCapturesWhenTheGateAllowsIt() {
+        let gate = StubPremiumGate(.capture)
+        var prompts = 0
+        let model = CameraViewModel(premiumGate: gate, onPremiumRequired: { _ in prompts += 1 })
+        model.coordinator.onPermissionResult(.authorized)
+
+        model.capture()
+
+        XCTAssertTrue(model.coordinator.state.isCaptureInFlight)
+        XCTAssertEqual(prompts, 0)
+    }
+
+    /// Allowed but not ready keeps today's behaviour: nothing happens, and nothing is presented.
+    func testShutterWithAnAllowedButUnreadyCameraDoesNothing() {
+        let gate = StubPremiumGate(.unchanged)
+        var prompts = 0
+        let model = CameraViewModel(premiumGate: gate, onPremiumRequired: { _ in prompts += 1 })
+        model.coordinator.onPermissionResult(.denied)
+
+        model.capture()
+
+        XCTAssertEqual(prompts, 0)
+        XCTAssertFalse(model.coordinator.state.isCaptureInFlight)
+        XCTAssertEqual(model.coordinator.state.phase, .permissionRequired)
+    }
+
     func testToggleGridIgnoredWhenControlsDisabled() {
         let model = CameraViewModel()
         model.coordinator.onPermissionResult(.denied)
@@ -554,5 +615,23 @@ final class CameraFeatureTests: XCTestCase {
 
     private func write(_ image: UIImage, named name: String) throws {
         try XCTUnwrap(image.pngData()).write(to: fixtureDirectory().appendingPathComponent(name))
+    }
+}
+
+/// Fake gate for the capture-path tests. The decision itself is proved in `PremiumGateTests` and
+/// `PremiumGateModelTests`; here only the ordering around `capture()` matters — that the gate runs
+/// first, and that an unentitled press never reaches the camera.
+@MainActor
+private final class StubPremiumGate: PremiumGateProviding {
+    private let outcome: CaptureGateOutcome
+    private(set) var cameraReadyInputs: [Bool] = []
+
+    init(_ outcome: CaptureGateOutcome) {
+        self.outcome = outcome
+    }
+
+    func captureOutcome(cameraReady: Bool) -> CaptureGateOutcome {
+        cameraReadyInputs.append(cameraReady)
+        return outcome
     }
 }

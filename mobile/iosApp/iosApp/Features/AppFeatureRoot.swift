@@ -10,6 +10,11 @@ struct AppFeatureRoot: View {
     /// Set by `PosesScreen` while its in-place Search overlay is up. Search is not a tab, so the
     /// dock must render with no active pill (`reference/search-blank.png`), unlike the Poses list.
     @State private var isSearchPresented = false
+    /// FEAT-011: the capture gate's live inputs. One instance for the app, so the camera and any
+    /// other entry point read the same entitlement (and the same session-scoped reset).
+    @StateObject private var premiumGate = PremiumGateModel()
+    /// One presenter for the paywall: the camera asks for it, the root shows it. No event bus.
+    @State private var isPaywallPresented = false
 
     init(
         poseService: any PoseServing,
@@ -27,6 +32,12 @@ struct AppFeatureRoot: View {
         screenContent
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(AIPoseColor.background.ignoresSafeArea())
+            .onAppear { premiumGate.start() }
+            // The paywall can be requested from any paid trigger; the sheet owns dismissal, and
+            // dismissing it changes nothing, so no access is granted on the way out.
+            .sheet(isPresented: $isPaywallPresented) {
+                PaywallScreen()
+            }
             .onChange(of: tab) { newTab in
                 if newTab != .camera { pendingGuide = nil }
                 if newTab != .poses { isSearchPresented = false }
@@ -71,7 +82,14 @@ struct AppFeatureRoot: View {
                     },
                     onOpenGallery: {
                         tab = .gallery
-                    }
+                    },
+                    // The shutter's paid-action gate (`PremiumGate`): the decision itself lives in
+                    // `CameraViewModel.capture()`, ahead of camera readiness. `signIn` is the gate's
+                    // answer to "must this user also sign in to buy?" (M2); the paywall derives the
+                    // visible sign-in state from the session boundary itself, which is why the sheet
+                    // does not need it.
+                    premiumGate: premiumGate,
+                    onPremiumRequired: { _ in isPaywallPresented = true }
                 )
             }
         case .gallery:
