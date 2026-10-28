@@ -216,7 +216,7 @@ struct PoseAPIBookmarkService: PoseBookmarkServing {
     }
 
     /// What a bookmark attempt actually achieved. A pose may only be shown as saved for `.saved`.
-    enum BookmarkOutcome: Equatable {
+    enum BookmarkOutcome: Equatable, Sendable {
         case saved(Bool)
         /// No bookmark service is wired (signed out or account features unavailable): nothing was sent.
         case unavailable
@@ -227,8 +227,26 @@ struct PoseAPIBookmarkService: PoseBookmarkServing {
 
     /// Copy for the last failed bookmark attempt; the screen surfaces it with the shared alert pattern.
     @Published var bookmarkError: String?
-    /// Poses with a request in flight, so a rapid second tap cannot desync the local state.
-    private var bookmarkRequestsInFlight: Set<String> = []
+    /// Poses with a request in flight, so a rapid second tap cannot desync the local state — and so a
+    /// screen that is opened mid-request can show it as busy instead of offering a second save.
+    @Published private(set) var bookmarkRequestsInFlight: Set<String> = []
+    /// Server-confirmed saved state per pose id. The single source of truth for the saved UI: it also
+    /// covers poses that are not in the loaded list (e.g. a detail screen opened from Jobs).
+    @Published private(set) var savedOverrides: [String: Bool] = [:]
+
+    func isBookmarkInFlight(_ poseID: String) -> Bool {
+        bookmarkRequestsInFlight.contains(poseID)
+    }
+
+    /// What the UI must show for this pose: a server-confirmed answer first, then the loaded list, then
+    /// the caller's own snapshot. Never a local copy made by a screen, which goes stale on navigation.
+    func savedState(for pose: NativePose) -> Bool {
+        if let confirmed = savedOverrides[pose.id] { return confirmed }
+        if case .loaded(let poses) = state, let match = poses.first(where: { $0.id == pose.id }) {
+            return match.isSaved
+        }
+        return pose.isSaved
+    }
 
     /// Saves/unsaves through the server and only then updates the local list. Without a bookmark
     /// service nothing can confirm the save, so the pose is never reported or shown as saved.
@@ -238,7 +256,9 @@ struct PoseAPIBookmarkService: PoseBookmarkServing {
         guard bookmarkRequestsInFlight.insert(pose.id).inserted else { return .inFlight }
         defer { bookmarkRequestsInFlight.remove(pose.id) }
 
-        let shouldSave = !pose.isSaved
+        // Read the shared state, not the caller's snapshot: a screen that was opened before an earlier
+        // save completed still has `isSaved == false` and would otherwise send a second save.
+        let shouldSave = !savedState(for: pose)
         do {
             if shouldSave { try await service.savePose(poseId: pose.id) }
             else { try await service.unsavePose(poseId: pose.id) }
@@ -253,9 +273,12 @@ struct PoseAPIBookmarkService: PoseBookmarkServing {
         }
     }
 
+    /// Records a server-confirmed saved state. The override is what every screen reads, so a detail
+    /// screen opened later (or reopened mid-request) cannot show a stale answer.
     func updateSavedLocally(poseID: String, saved: Bool) {
-        guard case .loaded(var poses) = state else { return }
-        guard let index = poses.firstIndex(where: { $0.id == poseID }) else { return }
+        savedOverrides[poseID] = saved
+        guard case .loaded(var poses) = state,
+              let index = poses.firstIndex(where: { $0.id == poseID }) else { return }
         poses[index].isSaved = saved
         let filtered = filter == .saved ? poses.filter(\.isSaved) : poses
         state = filtered.isEmpty ? .empty : .loaded(filtered)
@@ -973,9 +996,6 @@ struct PoseDetailScreen: View {
     var isPrivate: Bool = false
     @ObservedObject private var aspectRatioCache = PoseAspectRatioCache.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var isSaved: Bool
-    /// A save is in flight: the control is frozen so double taps cannot desync it from the server.
-    @State private var isSaving = false
     @State private var heroDidFail = false
     @State private var pendingSignIn: SignInIntent?
     /// Report §3.6 (`pose-detail.html` unavailable state): set only by the definitive
@@ -989,8 +1009,12 @@ struct PoseDetailScreen: View {
         self.model = model
         self.onTryPose = onTryPose
         self.isPrivate = isPrivate
-        _isSaved = State(initialValue: pose.isSaved)
     }
+
+    /// Saved state and in-flight state come from the shared model, so navigating away mid-request and
+    /// coming back cannot leave this screen showing a stale answer.
+    private var isSaved: Bool { model.savedState(for: pose) }
+    private var isSaving: Bool { model.isBookmarkInFlight(pose.id) }
     var body: some View {
         VStack(spacing: 0) {
             if isUnavailable {
@@ -1150,14 +1174,8 @@ struct PoseDetailScreen: View {
             pendingSignIn = .savePose
             return
         }
-        isSaving = true
-        defer { isSaving = false }
-        switch await model.toggleSaved(for: pose.withSaved(isSaved)) {
-        case .saved(let saved):
-            isSaved = saved
-        case .unavailable, .inFlight, .failed:
-            break
-        }
+        // The model owns the attempt (and its in-flight flag); this screen only reads the result.
+        await model.toggleSaved(for: pose.withSaved(isSaved))
     }
 }
 

@@ -248,7 +248,7 @@ final class PoseDetailFeatureTests: XCTestCase {
         XCTAssertFalse(inFlight[0].isSaved, "the pose must not look saved while the request is in flight")
 
         service.release()
-        let outcome = await save.value
+        guard let outcome = await awaitOutcome(save, "the save never completed") else { return }
         XCTAssertEqual(outcome, .saved(true))
         guard case .loaded(let settled) = model.state else { return XCTFail("Expected loaded") }
         XCTAssertTrue(settled[0].isSaved)
@@ -267,7 +267,7 @@ final class PoseDetailFeatureTests: XCTestCase {
         XCTAssertEqual(second, .inFlight)
 
         service.release()
-        let firstOutcome = await first.value
+        guard let firstOutcome = await awaitOutcome(first, "the save never completed") else { return }
         XCTAssertEqual(firstOutcome, .saved(true))
         XCTAssertEqual(service.saveCallCount, 1, "a double tap must not send two saves")
         XCTAssertEqual(service.unsaveCallCount, 0)
@@ -287,6 +287,56 @@ final class PoseDetailFeatureTests: XCTestCase {
             try? await Task.sleep(nanoseconds: 10_000_000)
         }
         XCTFail(message)
+    }
+
+    @MainActor func testDetailReopenedDuringAnOutstandingSaveSeesTheSharedState() async {
+        let pose = sampleDetailPose
+        let service = GatedBookmarkService()
+        let model = PosesViewModel(service: StubPoseService(result: [pose]), bookmarkService: service)
+        model.state = .loaded([pose])
+
+        let firstDetail = Task { await model.toggleSaved(for: pose) }
+        await waitUntil("the save request never started") { service.saveCallCount == 1 }
+
+        // The user leaves the detail screen and opens the pose again before the save completes. The
+        // reopened screen reads the shared model, so it must see the request rather than a stale
+        // "Save pose", and it must not offer a second save.
+        XCTAssertTrue(model.isBookmarkInFlight(pose.id), "a reopened screen must see the request in flight")
+        XCTAssertFalse(model.savedState(for: pose), "in flight is not saved")
+        XCTAssertFalse(pose.isSaved, "the reopened screen's own snapshot is still unsaved")
+
+        service.release()
+        guard let firstOutcome = await awaitOutcome(firstDetail, "the save never completed") else { return }
+        XCTAssertEqual(firstOutcome, .saved(true))
+        XCTAssertFalse(model.isBookmarkInFlight(pose.id))
+        // Confirmed without that screen ever owning a local copy of the state.
+        XCTAssertTrue(model.savedState(for: pose), "a reopened detail must see the confirmed save")
+
+        // And the next tap taken from that stale snapshot must unsave, not send a second save.
+        let next = await model.toggleSaved(for: pose)
+        XCTAssertEqual(next, .saved(false))
+        XCTAssertEqual(service.saveCallCount, 1, "a stale snapshot must not send a second save")
+        XCTAssertEqual(service.unsaveCallCount, 1)
+    }
+
+    /// Awaits a bookmark task, failing the test instead of hanging when it never finishes.
+    @MainActor private func awaitOutcome(
+        _ task: Task<PosesViewModel.BookmarkOutcome, Never>,
+        timeout: TimeInterval = 5,
+        _ message: String
+    ) async -> PosesViewModel.BookmarkOutcome? {
+        let value = await withTaskGroup(of: PosesViewModel.BookmarkOutcome?.self) { group in
+            group.addTask { await task.value }
+            group.addTask { () -> PosesViewModel.BookmarkOutcome? in
+                try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
+                return nil
+            }
+            let first = await group.next() ?? nil
+            group.cancelAll()
+            return first
+        }
+        if value == nil { XCTFail(message) }
+        return value
     }
 
     // MARK: - Real PoseDetailScreen render harness
@@ -435,6 +485,7 @@ private final class StubBookmarkService: PoseBookmarkServing, @unchecked Sendabl
 private final class GatedBookmarkService: PoseBookmarkServing, @unchecked Sendable {
     private let lock = NSLock()
     private var waiters: [CheckedContinuation<Void, Never>] = []
+    private var released = false
     private var saves = 0
     private var unsaves = 0
 
@@ -442,19 +493,28 @@ private final class GatedBookmarkService: PoseBookmarkServing, @unchecked Sendab
     var unsaveCallCount: Int { lock.withLock { unsaves } }
     var isHeld: Bool { lock.withLock { !waiters.isEmpty } }
 
-    func savePose(poseId: String) async throws {
-        lock.withLock { saves += 1 }
-        await withCheckedContinuation { continuation in
-            lock.withLock { waiters.append(continuation) }
+    func savePose(poseId: String) async throws { await register(isSave: true) }
+    func unsavePose(poseId: String) async throws { await register(isSave: false) }
+
+    /// Counting the call and registering its continuation happen in one critical section, and a
+    /// release that already happened resumes immediately — so `release()` can never slip between the
+    /// count and the registration and leave the request hanging forever.
+    private func register(isSave: Bool) async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            lock.withLock {
+                if isSave { saves += 1 } else { unsaves += 1 }
+                if released {
+                    continuation.resume()
+                } else {
+                    waiters.append(continuation)
+                }
+            }
         }
     }
 
-    func unsavePose(poseId: String) async throws {
-        lock.withLock { unsaves += 1 }
-    }
-
     func release() {
-        let pending = lock.withLock { () -> [CheckedContinuation<Void, Never>] in
+        let pending: [CheckedContinuation<Void, Never>] = lock.withLock {
+            released = true
             let held = waiters
             waiters.removeAll()
             return held
