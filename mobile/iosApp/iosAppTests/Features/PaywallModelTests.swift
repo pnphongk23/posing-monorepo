@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 import XCTest
 @testable import iosApp
 
@@ -6,10 +7,18 @@ import XCTest
 /// contract for the paywall's state machine.
 @MainActor
 private final class FakePurchaseGateway: PurchaseGateway {
-    var snapshot: PurchaseSnapshot
+    private let subject: CurrentValueSubject<PurchaseSnapshot, Never>
+    var snapshot: PurchaseSnapshot { subject.value }
+    var snapshots: AnyPublisher<PurchaseSnapshot, Never> { subject.eraseToAnyPublisher() }
+
     var nextLoad: PurchaseSnapshot
     var nextPurchase: PurchaseSnapshot
     var nextRestore: PurchaseSnapshot
+
+    var loadStarted: AsyncSignal?
+    var loadGate: SuspensionGate?
+    var purchaseStarted: AsyncSignal?
+    var purchaseGate: SuspensionGate?
 
     private(set) var loadCount = 0
     private(set) var purchasedPackageIDs: [String] = []
@@ -21,28 +30,37 @@ private final class FakePurchaseGateway: PurchaseGateway {
         nextPurchase: PurchaseSnapshot? = nil,
         nextRestore: PurchaseSnapshot? = nil
     ) {
-        self.snapshot = snapshot
+        self.subject = CurrentValueSubject(snapshot)
         self.nextLoad = nextLoad ?? snapshot
         self.nextPurchase = nextPurchase ?? snapshot
         self.nextRestore = nextRestore ?? snapshot
     }
 
+    /// A push from outside the app's own taps: a delegate update, a purchase from another surface.
+    func publish(_ snapshot: PurchaseSnapshot) {
+        subject.send(snapshot)
+    }
+
     func loadOffering() async -> PurchaseSnapshot {
         loadCount += 1
-        snapshot = nextLoad
-        return snapshot
+        loadStarted?.fire()
+        await loadGate?.wait()
+        subject.send(nextLoad)
+        return subject.value
     }
 
     func purchase(packageID: String) async -> PurchaseSnapshot {
         purchasedPackageIDs.append(packageID)
-        snapshot = nextPurchase
-        return snapshot
+        purchaseStarted?.fire()
+        await purchaseGate?.wait()
+        subject.send(nextPurchase)
+        return subject.value
     }
 
     func restore() async -> PurchaseSnapshot {
         restoreCount += 1
-        snapshot = nextRestore
-        return snapshot
+        subject.send(nextRestore)
+        return subject.value
     }
 }
 
@@ -323,6 +341,104 @@ final class PaywallModelTests: XCTestCase {
         XCTAssertEqual(model.phase, .signInRequired)
         XCTAssertTrue(model.plans.isEmpty)
         XCTAssertEqual(gateway.purchasedPackageIDs, [annual.identifier])
+    }
+
+    // MARK: - Account-dependent state (the gateway owns the entitlement)
+
+    /// A sign-out while the offering is still loading must not paint plans for a dead session.
+    func testSignOutDuringLoadOfferingDropsTheStaleResult() async {
+        let storage = InMemoryTokenStorage(credentials: session)
+        let boundary = SessionBoundary(tokenStorage: storage)
+        let gateway = FakePurchaseGateway(nextLoad: readyOffering)
+        let model = PaywallModel(
+            gateway: gateway,
+            boundary: boundary,
+            signInAction: SignInAction(start: {})
+        )
+        let started = AsyncSignal()
+        let gate = SuspensionGate()
+        gateway.loadStarted = started
+        gateway.loadGate = gate
+
+        model.start()
+        await started.wait()
+        await boundary.signOut()
+        gate.release()
+
+        await waitUntil("sign in required") { model.phase == .signInRequired }
+        XCTAssertTrue(model.plans.isEmpty, "A result that crossed sign-out must be dropped")
+        XCTAssertFalse(model.isSignedIn)
+    }
+
+    func testPurchaseResultAfterSignOutIsRejected() async {
+        let storage = InMemoryTokenStorage(credentials: session)
+        let boundary = SessionBoundary(tokenStorage: storage)
+        let gateway = FakePurchaseGateway(
+            nextLoad: readyOffering,
+            nextPurchase: PurchaseSnapshot(state: .entitled, products: [monthly, annual])
+        )
+        let model = PaywallModel(
+            gateway: gateway,
+            boundary: boundary,
+            signInAction: SignInAction(start: {})
+        )
+        model.start()
+        await waitUntil("ready") { model.phase == .ready }
+
+        let started = AsyncSignal()
+        let gate = SuspensionGate()
+        gateway.purchaseStarted = started
+        gateway.purchaseGate = gate
+
+        let purchase = Task { await model.purchase() }
+        await started.wait()
+        await boundary.signOut()
+        gate.release()
+        await purchase.value
+
+        await waitUntil("sign in required") { model.phase == .signInRequired }
+        XCTAssertNotEqual(model.phase, .entitled)
+    }
+
+    /// Access removed elsewhere (another surface, a delegate update) is mirrored, so an open
+    /// paywall never keeps showing premium.
+    func testGatewayEntitlementDropClosesAnOpenPaywall() async {
+        let gateway = FakePurchaseGateway(nextLoad: readyOffering)
+        let model = makeModel(gateway: gateway)
+        model.start()
+        await waitUntil("ready") { model.phase == .ready }
+
+        gateway.publish(PurchaseSnapshot(state: .entitled, products: [monthly, annual]))
+        await waitUntil("entitled") { model.phase == .entitled }
+
+        gateway.publish(PurchaseSnapshot(state: .notEntitled, products: [monthly, annual]))
+        await waitUntil("not entitled") { model.phase != .entitled }
+        XCTAssertNotEqual(model.phase, .entitled)
+    }
+
+    func testSignOutInvalidatesAnEntitledPaywall() async {
+        let storage = InMemoryTokenStorage(credentials: session)
+        let boundary = SessionBoundary(tokenStorage: storage)
+        let gateway = FakePurchaseGateway(
+            nextLoad: readyOffering,
+            nextPurchase: PurchaseSnapshot(state: .entitled, products: [monthly, annual])
+        )
+        let model = PaywallModel(
+            gateway: gateway,
+            boundary: boundary,
+            signInAction: SignInAction(start: {})
+        )
+        model.start()
+        await waitUntil("ready") { model.phase == .ready }
+        await model.purchase()
+        XCTAssertEqual(model.phase, .entitled)
+
+        await boundary.signOut()
+
+        await waitUntil("sign in required") { model.phase == .signInRequired }
+        XCTAssertTrue(model.plans.isEmpty)
+        XCTAssertNil(model.selectedProductID)
+        XCTAssertFalse(model.isSignedIn)
     }
 
     func testStartIsIdempotent() async {

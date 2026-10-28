@@ -1,10 +1,14 @@
 import Foundation
+import Combine
 
 /// Narrow seam over the native RevenueCat owner, so the paywall and its tests never touch
 /// StoreKit/RevenueCat directly. Mirrors the KMP `PurchaseGateway` contract.
 @MainActor
 protocol PurchaseGateway: AnyObject {
     var snapshot: PurchaseSnapshot { get }
+    /// The gateway owns the entitlement. The paywall mirrors these pushes instead of keeping a
+    /// private copy of access it may no longer be able to justify.
+    var snapshots: AnyPublisher<PurchaseSnapshot, Never> { get }
     func loadOffering() async -> PurchaseSnapshot
     func purchase(packageID: String) async -> PurchaseSnapshot
     func restore() async -> PurchaseSnapshot
@@ -83,6 +87,11 @@ final class PaywallModel: ObservableObject {
     private let boundary: SessionBoundary
     private let signInAction: SignInAction
     private var hasStarted = false
+    /// Bumped on every session change so a result that crosses a sign-out or account switch is
+    /// dropped instead of being painted into the paywall.
+    private var sessionEpoch: UInt64 = 0
+    private var snapshotCancellable: AnyCancellable?
+    private var sessionEvents: Task<Void, Never>?
 
     init(
         gateway: any PurchaseGateway = RevenueCatAdapter.shared,
@@ -92,6 +101,7 @@ final class PaywallModel: ObservableObject {
         self.gateway = gateway
         self.boundary = boundary
         self.signInAction = signInAction
+        observeGateway()
     }
 
     var selectedPlan: PurchaseProduct? {
@@ -120,6 +130,7 @@ final class PaywallModel: ObservableObject {
     func start() {
         guard !hasStarted else { return }
         hasStarted = true
+        observeSession()
         Task { [weak self] in
             guard let self else { return }
             guard await self.boundary.hasStoredSession() else {
@@ -165,8 +176,15 @@ final class PaywallModel: ObservableObject {
     }
 
     func loadPlans() async {
+        let epoch = sessionEpoch
         phase = .loadingPlans
-        apply(await gateway.loadOffering())
+        let snapshot = await gateway.loadOffering()
+        guard epoch == sessionEpoch else { return }
+        guard await boundary.hasStoredSession() else {
+            invalidateAccountState()
+            return
+        }
+        apply(snapshot)
     }
 
     func retry() async {
@@ -179,18 +197,101 @@ final class PaywallModel: ObservableObject {
 
     func purchase() async {
         guard let selectedPlan, phase != .processing else { return }
+        let epoch = sessionEpoch
         phase = .processing
-        apply(await gateway.purchase(packageID: selectedPlan.identifier))
+        let snapshot = await gateway.purchase(packageID: selectedPlan.identifier)
+        guard epoch == sessionEpoch else { return }
+        guard await boundary.hasStoredSession() else {
+            invalidateAccountState()
+            return
+        }
+        apply(snapshot)
     }
 
     func restore() async {
         guard phase != .processing else { return }
+        let epoch = sessionEpoch
         phase = .processing
-        apply(await gateway.restore())
+        let snapshot = await gateway.restore()
+        guard epoch == sessionEpoch else { return }
+        guard await boundary.hasStoredSession() else {
+            invalidateAccountState()
+            return
+        }
+        apply(snapshot)
     }
 
     func select(_ productID: String) {
         selectedProductID = productID
+    }
+
+    // MARK: - ownership of account-dependent state
+
+    private func observeGateway() {
+        snapshotCancellable = gateway.snapshots.sink { [weak self] snapshot in
+            guard let self else { return }
+            Task { await self.reconcile(with: snapshot) }
+        }
+    }
+
+    /// Sign-out and unauthorized clears invalidate the paywall's account-dependent state, including
+    /// while a sheet is already open.
+    private func observeSession() {
+        guard sessionEvents == nil else { return }
+        sessionEvents = Task { [weak self, boundary] in
+            for await event in await boundary.events() {
+                guard let self else { return }
+                await self.handleSessionEvent(event)
+            }
+        }
+    }
+
+    private func handleSessionEvent(_ event: SessionEvent) async {
+        switch event {
+        case .signedOut, .signInRequired:
+            invalidateAccountState()
+        case .signedIn:
+            break
+        }
+    }
+
+    /// The gateway can grant or drop entitlement outside a tap here (a delegate push, a purchase
+    /// from another surface, a sign-out that clears the provider). Mirror it, and never keep access
+    /// the current identity cannot justify.
+    private func reconcile(with snapshot: PurchaseSnapshot) async {
+        let epoch = sessionEpoch
+        let signedIn = await boundary.hasStoredSession()
+        guard epoch == sessionEpoch else { return }
+        isSignedIn = signedIn
+        guard signedIn else {
+            // Clear the session before reading it, so a stale "entitled" snapshot cannot survive a
+            // sign-out that simply arrived after it.
+            invalidateAccountState()
+            return
+        }
+        switch snapshot.state {
+        case .entitled:
+            adoptPlans(from: snapshot)
+            phase = .entitled
+        case .signInRequired:
+            invalidateAccountState()
+        case .notEntitled, .purchaseCancelled, .purchaseFailed, .expired, .revoked, .billingRetry:
+            if phase == .entitled { apply(snapshot) }
+        case .unconfigured, .noOffering:
+            if phase == .entitled || phase == .ready { apply(snapshot) }
+        case .loading, .purchasePending:
+            break
+        }
+    }
+
+    private func invalidateAccountState() {
+        sessionEpoch &+= 1
+        isSignedIn = false
+        plans = []
+        selectedProductID = nil
+        authError = nil
+        isAuthenticating = false
+        phase = .signInRequired
     }
 
     // MARK: - state mapping
