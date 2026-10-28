@@ -194,6 +194,73 @@ final class GalleryPhotoDeletionTests: XCTestCase {
         XCTAssertTrue(fileExists(filename), "the row's absolute path owns this file")
     }
 
+    // MARK: - in-flight captures
+
+    /// A capture that has written its jpeg but not its row yet must survive the sweep, even if the
+    /// file is already older than the orphan guard (a slow or backgrounded capture).
+    func testSweepKeepsFileThatACaptureIsStillWriting() throws {
+        let storage = CaptureImageStorage(directoryURL: captureDirectory)
+        let filename = try XCTUnwrap(storage.writeJpeg(Data(repeating: 0x33, count: 64), captureId: "in-flight"))
+        try backdate(filename, by: 25 * 60 * 60, in: captureDirectory)
+        XCTAssertTrue(fileExists(filename))
+
+        let removed = makeImageStore().sweepOrphans(referencing: [])
+
+        XCTAssertEqual(removed, 0)
+        XCTAssertTrue(fileExists(filename), "a claimed capture is never swept")
+    }
+
+    /// Once the row exists the file is ordinary: protected by reference, and the claim is released.
+    func testCommittedCaptureIsProtectedAsARegularRow() async throws {
+        let database = try makeDatabase()
+        let storage = CaptureImageStorage(directoryURL: captureDirectory)
+        let filename = try XCTUnwrap(storage.writeJpeg(Data(repeating: 0x34, count: 64), captureId: "committed"))
+        _ = try await insertPhoto(imagePath: filename, into: database)
+
+        let marker = makeImageStore().inFlightMarkerURL(for: filename)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: marker.path), "commit releases the claim")
+
+        try backdate(filename, by: 25 * 60 * 60, in: captureDirectory)
+        let items = try await DatabaseGalleryStore(database: database, imageStore: makeImageStore()).photos()
+
+        XCTAssertEqual(items.map(\.fileURL.lastPathComponent), [filename])
+        XCTAssertTrue(fileExists(filename), "the row protects the file as before")
+    }
+
+    /// A capture that was killed mid-write leaves a claim nothing will ever release. The claim is
+    /// bounded, so the sweep still reclaims the orphan — otherwise the file would leak forever.
+    func testStaleMarkerLetsSweepReclaimTheAbandonedFile() throws {
+        let storage = CaptureImageStorage(directoryURL: captureDirectory)
+        let filename = try XCTUnwrap(storage.writeJpeg(Data(repeating: 0x35, count: 64), captureId: "killed"))
+        let imageStore = makeImageStore()
+        let marker = imageStore.inFlightMarkerURL(for: filename)
+        try backdate(filename, by: 25 * 60 * 60, in: captureDirectory)
+        try FileManager.default.setAttributes(
+            [.modificationDate: Date().addingTimeInterval(-2 * 60 * 60)],
+            ofItemAtPath: marker.path
+        )
+
+        let removed = imageStore.sweepOrphans(referencing: [])
+
+        XCTAssertGreaterThan(removed, 0)
+        XCTAssertFalse(fileExists(filename), "a bounded claim lets the orphan go")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: marker.path), "the dead claim is reaped too")
+    }
+
+    /// The rollback path (verify failed, insert failed) leaves neither file nor claim.
+    func testFailedCaptureCleanupRemovesFileAndMarker() throws {
+        let storage = CaptureImageStorage(directoryURL: captureDirectory)
+        let filename = try XCTUnwrap(storage.writeJpeg(Data(repeating: 0x36, count: 64), captureId: "failed"))
+        let marker = makeImageStore().inFlightMarkerURL(for: filename)
+        XCTAssertTrue(fileExists(filename))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: marker.path))
+
+        storage.delete(filename: filename)
+
+        XCTAssertFalse(fileExists(filename))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: marker.path), "a rolled back capture keeps no claim")
+    }
+
     // MARK: helpers
 
     private func makeDatabase() throws -> AppDatabase {
@@ -210,11 +277,15 @@ final class GalleryPhotoDeletionTests: XCTestCase {
     private func writeCapture(named filename: String, age: TimeInterval = 25 * 60 * 60) throws -> String {
         let url = captureDirectory.appendingPathComponent(filename)
         try Data(repeating: 0x11, count: 64).write(to: url)
+        try backdate(url.lastPathComponent, by: age, in: captureDirectory)
+        return filename
+    }
+
+    private func backdate(_ filename: String, by age: TimeInterval, in directory: URL) throws {
         try FileManager.default.setAttributes(
             [.modificationDate: Date().addingTimeInterval(-age)],
-            ofItemAtPath: url.path
+            ofItemAtPath: directory.appendingPathComponent(filename).path
         )
-        return filename
     }
 
     private func fileExists(_ imagePath: String) -> Bool {
@@ -228,7 +299,8 @@ final class GalleryPhotoDeletionTests: XCTestCase {
         try await PhotoRepository(database: database).all().count
     }
 
-    private func insertPhoto(imagePath: String, into database: AppDatabase) async throws -> Int64 {        try await PhotoRepository(database: database).insert(
+    private func insertPhoto(imagePath: String, into database: AppDatabase) async throws -> Int64 {
+        try await PhotoRepository(database: database, imageStore: makeImageStore()).insert(
             PhotoRecord(
                 id: nil,
                 imagePath: imagePath,

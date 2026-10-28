@@ -3,6 +3,14 @@ import GRDB
 
 struct PhotoRepository: Sendable {
     let database: AppDatabase
+    /// Needed so a committed capture can drop its in-flight marker. Defaults to the app's capture
+    /// directory; tests inject a temporary one.
+    let imageStore: PhotoImageStore
+
+    init(database: AppDatabase, imageStore: PhotoImageStore = PhotoImageStore()) {
+        self.database = database
+        self.imageStore = imageStore
+    }
 
     func all() async throws -> [PhotoRecord] {
         try await database.pool.read { db in
@@ -11,11 +19,16 @@ struct PhotoRepository: Sendable {
     }
 
     func insert(_ photo: PhotoRecord) async throws -> Int64 {
-        try await database.pool.write { db in
+        let id = try await database.pool.write { db in
             var stored = photo
             try stored.insert(db)
             return stored.id ?? db.lastInsertedRowID
         }
+        // The row is committed, so the file is now protected by reference. Dropping the claim is
+        // bookkeeping only: if it never happens (crash right here), the sweep still sees a
+        // referenced file and keeps it, then reaps the stale marker.
+        imageStore.endCapture(imagePath: photo.imagePath)
+        return id
     }
 
     func toggleFavorite(id: Int64) async throws {
@@ -170,17 +183,50 @@ struct PhotoImageStore: @unchecked Sendable {
         try? fileManager.removeItem(at: fileURL(for: imagePath))
     }
 
+    // MARK: - in-flight capture ownership
+
+    /// Sidecar written next to a jpeg while it is being captured. Its existence is the claim, its
+    /// timestamp is the claim's age.
+    static let inFlightMarkerSuffix = ".pending"
+
+    /// How long a claim is believed. A capture writes its jpeg and inserts its row within seconds, so
+    /// a claim older than this belongs to a capture that died; the sweep is then allowed to reclaim
+    /// the file. Bounded on purpose: a crashed capture must not pin an orphan forever.
+    static let inFlightMarkerLifetime: TimeInterval = 60 * 60
+
+    func inFlightMarkerURL(for imagePath: String) -> URL {
+        fileURL(for: imagePath).appendingPathExtension(String(Self.inFlightMarkerSuffix.dropFirst()))
+    }
+
+    /// Claims `imagePath` before the bytes are written, so on-disk jpeg never exists unclaimed.
+    /// Best effort: a marker that cannot be written leaves the file under the age guard, which is
+    /// still the safe side of the trade (a late sweep, not a lost photo).
+    func beginCapture(imagePath: String) {
+        let marker = inFlightMarkerURL(for: imagePath)
+        try? fileManager.createDirectory(
+            at: marker.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try? Data().write(to: marker, options: .atomic)
+    }
+
+    /// Releases the claim: the capture either got its row (committed) or its file is being removed
+    /// (rolled back). Idempotent.
+    func endCapture(imagePath: String) {
+        try? fileManager.removeItem(at: inFlightMarkerURL(for: imagePath))
+    }
+
     /// Reclaims files in the capture directory that no `Photo` row references any more.
     ///
-    /// `minimumAge` is what makes the sweep safe while a capture is in flight: a jpeg is written
-    /// before its row is inserted, so a fresh unreferenced file may simply belong to a capture that
-    /// is still being saved. The guard is a day, not an hour: a capture task can be suspended
-    /// between the write and the metadata insert (app backgrounded), and nothing in the pipeline
-    /// records ownership before the insert lands. Returns the number of files removed.
+    /// A claim (`beginCapture`) makes a file live no matter its age, so a capture that is still being
+    /// written is never swept. Once the claim is older than `markerLifetime` it is treated as a crash
+    /// remnant and both the claim and its unreferenced file are removed. Files without a claim keep
+    /// the `minimumAge` guard. Returns the number of files removed.
     @discardableResult
     func sweepOrphans(
         referencing imagePaths: some Sequence<String>,
-        minimumAge: TimeInterval = 24 * 60 * 60
+        minimumAge: TimeInterval = 24 * 60 * 60,
+        markerLifetime: TimeInterval = PhotoImageStore.inFlightMarkerLifetime
     ) -> Int {
         guard let directoryURL else { return 0 }
         let keys: [URLResourceKey] = [.contentModificationDateKey, .isRegularFileKey]
@@ -191,14 +237,45 @@ struct PhotoImageStore: @unchecked Sendable {
         ) else { return 0 }
 
         let referenced = canonicalPaths(for: imagePaths)
-
-        let cutoff = Date().addingTimeInterval(-minimumAge)
+        let now = Date()
+        let cutoff = now.addingTimeInterval(-minimumAge)
         var removed = 0
-        for entry in entries {
-            let values = try? entry.resourceValues(forKeys: Set(keys))
-            guard values?.isRegularFile == true else { continue }
-            guard !referenced.contains(entry.resolvingSymlinksInPath().standardizedFileURL.path) else { continue }
-            let modified = values?.contentModificationDate ?? .distantPast
+
+        func isMarker(_ url: URL) -> Bool {
+            url.lastPathComponent.hasSuffix(Self.inFlightMarkerSuffix)
+        }
+
+        var claimed: Set<String> = []
+        for entry in entries where isMarker(entry) {
+            guard let values = try? entry.resourceValues(forKeys: Set(keys)),
+                  values.isRegularFile == true else { continue }
+            let filename = String(
+                entry.lastPathComponent.dropLast(Self.inFlightMarkerSuffix.count)
+            )
+            let key = canonicalPath(for: filename)
+            let claimedFor = now.timeIntervalSince(values.contentModificationDate ?? .distantPast)
+            if claimedFor <= markerLifetime {
+                claimed.insert(key)
+                continue
+            }
+            // Dead claim: reap it, and the file it never committed. A file that does have a row is
+            // left alone — the claim is simply stale bookkeeping.
+            try? fileManager.removeItem(at: entry)
+            removed += 1
+            let fileURL = fileURL(for: filename)
+            if !referenced.contains(key), fileManager.fileExists(atPath: fileURL.path) {
+                try? fileManager.removeItem(at: fileURL)
+                removed += 1
+            }
+        }
+
+        for entry in entries where !isMarker(entry) {
+            guard let values = try? entry.resourceValues(forKeys: Set(keys)),
+                  values.isRegularFile == true else { continue }
+            let key = entry.resolvingSymlinksInPath().standardizedFileURL.path
+            guard !referenced.contains(key) else { continue }
+            guard !claimed.contains(key) else { continue }
+            let modified = values.contentModificationDate ?? .distantPast
             guard modified <= cutoff else { continue }
             if (try? fileManager.removeItem(at: entry)) != nil { removed += 1 }
         }
