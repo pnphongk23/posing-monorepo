@@ -1,4 +1,5 @@
 import type { Sql, SqlOrTx } from "./connection";
+import { MediaManifestStore } from "./mediaManifestStore";
 import {
   ObjectDeletionOutbox,
   drainPendingObjectDeletions,
@@ -65,6 +66,7 @@ export interface SweepStaleAccountPurgesOptions {
   accountStore: AccountStore;
   outbox: ObjectDeletionOutbox;
   deleteObject: (key: string) => Promise<void>;
+  manifests?: MediaManifestStore;
   /** An intent younger than this is left alone so the request that wrote it can finish. */
   olderThanSeconds?: number;
   drainLimit?: number;
@@ -74,6 +76,7 @@ export interface SweepStaleAccountPurgesOptions {
 export interface SweepStaleAccountPurgesResult {
   purgedAccounts: string[];
   failedAccounts: string[];
+  abandonedAttempts: number;
   drain: DrainObjectDeletionsResult;
 }
 
@@ -81,9 +84,11 @@ const DEFAULT_PURGE_GRACE_SECONDS = 300;
 
 export class AccountStore {
   readonly objectDeletions: ObjectDeletionOutbox;
+  readonly mediaManifests: MediaManifestStore;
 
   constructor(private readonly db: Sql) {
     this.objectDeletions = new ObjectDeletionOutbox(db);
+    this.mediaManifests = new MediaManifestStore(db);
   }
 
   async upsert(input: { id: string; displayName: string }): Promise<AccountRecord> {
@@ -197,6 +202,10 @@ export class AccountStore {
         `;
       }
 
+      // An attempt still in flight for this account loses its manifest here: its keys become
+      // deletion tickets that wait for the upload horizon, so a running put cannot outlive them.
+      await this.mediaManifests.abandonForAccount(transaction, accountId);
+
       await transaction`DELETE FROM extraction_jobs WHERE owner_account_id = ${accountId}`;
       await transaction`DELETE FROM saved_entries WHERE account_id = ${accountId}`;
       await transaction`DELETE FROM poses WHERE owner_account_id = ${accountId}`;
@@ -244,11 +253,13 @@ export async function sweepStaleAccountPurges(
     }
   }
 
+  const abandonedAttempts = options.manifests ? await options.manifests.abandonStale() : 0;
+
   const drain = await drainPendingObjectDeletions({
     outbox: options.outbox,
     deleteObject: options.deleteObject,
     limit: options.drainLimit
   });
 
-  return { purgedAccounts, failedAccounts, drain };
+  return { purgedAccounts, failedAccounts, abandonedAttempts, drain };
 }

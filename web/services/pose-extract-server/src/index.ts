@@ -61,6 +61,7 @@ async function main(): Promise<void> {
     void sweepStaleAccountPurges({
       accountStore,
       outbox: accountStore.objectDeletions,
+      manifests: accountStore.mediaManifests,
       deleteObject,
       resolveObjectKey: (locator) => objectKeyFromLocator(locator, env.R2_PUBLIC_URL)
     }).catch((error) => {

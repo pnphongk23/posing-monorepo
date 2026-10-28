@@ -143,6 +143,36 @@ describe("AccountStore.purgeAccountData", () => {
     expect(await countsFor(sql, accountId)).toEqual(ZERO);
   });
 
+  it("queues the object keys of an attempt that is still in flight, with the upload horizon", async () => {
+    const sql = await setupTestDatabase();
+    const store = new AccountStore(sql);
+    const accountId = randomUUID();
+    await seedAccount(sql, accountId, "inflight");
+    const poseId = randomUUID();
+    const jobId = randomUUID();
+    const keys = ["original", "skeleton", "thumbnail"].map((role) => `poses/${poseId}/${role}.png`);
+    const { createdAt } = await store.mediaManifests.record({
+      poseId,
+      jobId,
+      ownerAccountId: accountId,
+      keys
+    });
+
+    await store.purgeAccountData(accountId);
+
+    expect(await store.mediaManifests.abandon(poseId)).toBe(0);
+    const tickets = (await sql`
+      SELECT key, not_before FROM pending_object_deletions WHERE key LIKE ${`poses/${poseId}/%`}
+    `) as Array<{ key: string; not_before: Date | string }>;
+    expect(tickets).toHaveLength(3);
+    const expectedNotBefore = Date.parse(createdAt) + 3600 * 1000;
+    for (const ticket of tickets) {
+      expect(Date.parse(String(ticket.not_before))).toBeGreaterThanOrEqual(expectedNotBefore - 2000);
+    }
+    expect(await countsFor(sql, accountId)).toEqual(ZERO);
+    expect(await store.hasAccountTombstone(accountId)).toBe(true);
+  });
+
   it("drops the purge intent row once the data is gone", async () => {
     const sql = await setupTestDatabase();
     const store = new AccountStore(sql);
@@ -266,7 +296,12 @@ describe("sweepStaleAccountPurges", () => {
 
     const result = await sweepStaleAccountPurges({ accountStore: store, outbox, deleteObject });
 
-    expect(result).toEqual({ purgedAccounts: [], failedAccounts: [], drain: { deleted: 0, failed: 0 } });
+    expect(result).toEqual({
+      purgedAccounts: [],
+      failedAccounts: [],
+      abandonedAttempts: 0,
+      drain: { deleted: 0, failed: 0 }
+    });
     expect(deleteObject).not.toHaveBeenCalled();
   });
 

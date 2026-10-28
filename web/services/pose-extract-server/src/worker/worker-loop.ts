@@ -3,6 +3,7 @@ import type { PoseStore } from "../db/communityStore";
 import type { ExtractionJobStore } from "../db/extractionJobStore";
 import type { ProviderSettingsStore } from "../db/providerSettingsStore";
 import type { ExtractionProviderId, PoseExtractorProvider } from "../services/poseExtractorProvider";
+import type { MediaManifestStore } from "../db/mediaManifestStore";
 import type { MediaStorage } from "../services/poseMaterializer";
 import { logger } from "../utils/logger";
 import { sanitizeError } from "../utils/sanitizeError";
@@ -41,6 +42,7 @@ export interface WorkerLoopDeps {
   db?: Sql;
   communityStore?: PoseStore;
   mediaStorage?: MediaStorage;
+  manifests?: MediaManifestStore;
   sleep?: (ms: number) => Promise<void>;
 }
 
@@ -63,7 +65,8 @@ export async function runWorkerLoop(deps: WorkerLoopDeps): Promise<void> {
         staleLockSeconds: deps.staleLockSeconds,
         db: deps.db,
         communityStore: deps.communityStore,
-        mediaStorage: deps.mediaStorage
+        mediaStorage: deps.mediaStorage,
+        manifests: deps.manifests
       });
       // Successful DB round-trip (job processed or queue empty): reset backoff.
       backoffMs = INITIAL_BACKOFF_MS;

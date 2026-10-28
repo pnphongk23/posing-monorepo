@@ -230,6 +230,26 @@ CREATE TABLE IF NOT EXISTS pending_object_deletions (
 
 ALTER TABLE pending_object_deletions ADD COLUMN IF NOT EXISTS claim_token TEXT;
 
+-- A deletion ticket is not drained before this time, so an object whose record was
+-- abandoned cannot be deleted while its upload may still be in flight.
+ALTER TABLE pending_object_deletions
+  ADD COLUMN IF NOT EXISTS not_before TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
+-- Object keys an in-progress owner job attempt may upload. Written before the first
+-- upload and removed exactly once: by the finalize transaction (the pose owns the
+-- objects) or by moving the keys into pending_object_deletions (abandon, stale sweep,
+-- account purge).
+CREATE TABLE IF NOT EXISTS pose_media_manifests (
+  pose_id TEXT PRIMARY KEY,
+  job_id TEXT NOT NULL,
+  owner_account_id TEXT NOT NULL,
+  object_keys TEXT[] NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_pose_media_manifests_created_at ON pose_media_manifests(created_at);
+CREATE INDEX IF NOT EXISTS idx_pose_media_manifests_owner ON pose_media_manifests(owner_account_id);
+
 CREATE INDEX IF NOT EXISTS idx_pending_object_deletions_claim
   ON pending_object_deletions(enqueued_at) WHERE claimed_until IS NULL;
 

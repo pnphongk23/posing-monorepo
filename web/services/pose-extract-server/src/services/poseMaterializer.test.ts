@@ -372,4 +372,34 @@ describe("materializePose", () => {
 
     expect(onCleanupFailed).not.toHaveBeenCalled();
   });
+
+  it("leaves uploaded objects alone when the caller owns the cleanup", async () => {
+    const removed: string[] = [];
+    const mediaStorage: MediaStorage = {
+      put: vi.fn(async () => undefined),
+      remove: vi.fn(async (key: string) => {
+        removed.push(key);
+      }),
+      publicUrl: (key: string) => `https://cdn.example.com/${key}`
+    };
+
+    await expect(
+      materializePose({
+        poseId: "pose-owned-cleanup",
+        ownerAccountId: "owner-owned-cleanup",
+        currentJobId: "job-owned-cleanup",
+        metadata: { name: "Owned Cleanup" },
+        source: { b64: "c291cmNl", mime: "image/png" },
+        result: { b64: "cmVzdWx0", mime: "image/png" },
+        keyPrefix: "poses",
+        mediaStorage,
+        removeUploadedOnFailure: false,
+        createPose: vi.fn(async () => {
+          throw new Error("finalize rolled back");
+        })
+      })
+    ).rejects.toThrow("finalize rolled back");
+
+    expect(removed).toEqual([]);
+  });
 });

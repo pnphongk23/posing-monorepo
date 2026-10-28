@@ -64,6 +64,7 @@ export async function uploadObject(input: {
   fileKey: string;
   body: Buffer;
   mimeType: string;
+  abortSignal?: AbortSignal;
 }): Promise<void> {
   const env = getEnv();
 
@@ -75,7 +76,8 @@ export async function uploadObject(input: {
       ContentType: input.mimeType,
       CacheControl: IMMUTABLE_CACHE_CONTROL,
       ContentDisposition: "inline"
-    })
+    }),
+    input.abortSignal ? { abortSignal: input.abortSignal } : undefined
   );
 }
 

@@ -357,40 +357,49 @@ tombstone first, so a client that still holds valid tokens cannot recreate a del
 sign-in fails and its uploads answer `410`. Restoring an account on purpose therefore means deleting
 its tombstone row **and** letting the user sign in again — never do that without a support decision.
 
-Object keys of a pose under construction are reserved in `pending_object_deletions` before the first
-upload (30-minute reservation) and the rows are removed inside the finalize transaction that makes the
-pose own them. A failed finalize, a failed cleanup, or a killed process therefore leaves the sweep a
-durable key to delete instead of an orphaned object.
+Every owner job attempt writes one row to `pose_media_manifests` **before its first upload**, naming
+the three object keys it may write. That row is the attempt's only hold, and exactly one consumer removes
+it, atomically, with its keys moving to deletion tickets when the attempt is abandoned:
 
-The reservation is a lease with these guarantees:
+| Consumer | When | Outcome |
+| --- | --- | --- |
+| Finalize transaction | the pose is created | pose + media assets own the objects, manifest row deleted in the same commit |
+| Worker failure path | any error after the manifest exists | keys become `pending_object_deletions` rows with `not_before = max(now, created_at + 1 h)` |
+| Stale sweep (every 10 min) | manifest older than 1 h | same tickets; catches crashed workers and a failed `abandon` |
+| Account purge | inside the purge transaction | same tickets, in the same commit as the row deletion and tombstone |
 
-- **Renewed before and after every upload.** A slow but healthy job keeps the keys unclaimable, because
-  a claim only takes rows whose lease has already expired.
-- **Verified inside the finalize transaction.** Finalization locks the reservation rows and requires all
-  of them to be present, unexpired, and unclaimed. If any key is gone — a sweep took it after an earlier
-  lease lapse — the transaction refuses to mark the job `succeeded`; the job is retried and its keys are
-  made claimable again (`reclaim`), so the sweep deletes whatever the pose never came to own.
-- **Losing the lease is never silent.** A lost lease fails or requeues the job with
-  `POSE_MATERIALIZE_FAILED` and leaves a cleanup record; it can never produce a succeeded job whose pose
-  points at deleted objects.
-- **The lease is renewed while an upload is pending.** A heartbeat every third of the time to live
-  keeps a legitimately slow upload from losing its claim; a heartbeat that fails marks the lease lost so
-  the job stops instead of finalizing into deleted objects.
-- **Every failure after the first upload re-records the keys.** A renewal that throws, an upload that
-  fails, a finalize that rolls back, a stale lock, or a cleanup whose deletes fail all end with the
-  keys claimable again (retried three times, then logged by job id and count). Cleanup is a shortcut,
-  never the only record.
-- **A reclaimed key can be deleted twice.** `reclaim` drops a drain's claim while that drain may already
-  be deleting the same object, so the object storage layer must treat deletion as idempotent. Cloudflare
-  R2 is S3-compatible: deleting a missing key returns success, and the drain additionally treats a 404
-  as an acknowledgement, so a duplicate delete is harmless.
-- **The sweep can only act on expired leases.** A live reservation is invisible to `drain`; a key that
-  lands after its lease was lost is re-recorded by `reclaim`, so its cleanup record is not lost.
+Guarantees (each is a single atomic statement, not a clock race):
 
-What an operator may see after a lease failure: the job requeued (or failed after 3 attempts) with
-`POSE_MATERIALIZE_FAILED`, a pose that does not exist, and up to three rows in
-`pending_object_deletions` that the next sweep drains. If rows keep reappearing, look at R2
-reachability before touching the job.
+- **A key is always covered by exactly one record:** a manifest row, a `media_assets` row, or a deletion
+  ticket. Nothing is ever "re-recorded" and no renewal exists.
+- **Finalize requires its manifest.** The transaction locks the job row first (same order as the purge),
+  then deletes the manifest row and requires exactly one row to be gone. If the attempt was already
+  consumed or swept, the transaction rolls back: no pose, job requeued with `POSE_MATERIALIZE_FAILED`.
+- **A ticket waits for the upload horizon.** No ticket derived from a manifest is drained before
+  `max(now, manifest.created_at + 1 h)`, and a put may not *start* later than 5 min after its manifest was
+  written (per-put timeout 2 min). So an in-flight upload cannot land after its delete.
+- **No inline deletes in the worker.** Deletion only happens through tickets, which is what makes a lost
+  COMMIT acknowledgement safe: the pose and its manifest consumption are committed together, so the
+  worker's late `abandon` affects 0 rows and never deletes a live pose's objects.
+- **The failure path never depends on logs.** If `abandon` itself fails, the manifest row is still in the
+  database and the stale sweep moves it after the horizon.
+
+What an operator may see after a failed attempt: the job requeued (or failed after 3 attempts) with
+`POSE_MATERIALIZE_FAILED`, no pose, and up to three tickets that drain after the horizon. A manifest row
+older than 2 h means the sweep is not running: check the API process, not the worker. Old manifests are
+also the only way to recover the keys of an attempt whose worker died.
+
+Inspection (never copy `object_keys` into tickets, logs, or chat):
+```sql
+SELECT pose_id, job_id, cardinality(object_keys) AS keys, NOW() - created_at AS age
+FROM pose_media_manifests ORDER BY created_at LIMIT 50;
+SELECT COUNT(*) FROM pending_object_deletions WHERE not_before > NOW();  -- waiting for their horizon
+SELECT COUNT(*) FROM pending_object_deletions WHERE attempts >= 3;       -- storage keeps refusing
+```
+Alerts: a manifest older than 2 h (sweep not running) and tickets with `attempts >= 3` (storage refusing
+deletes). A drain whose claim expired can overlap a later drain on the same ticket, so object deletion
+must stay idempotent: R2 is S3-compatible and answers a missing-key delete with success, and the drain
+also treats a 404 as an acknowledgement.
 
 Logs: a failed row purge logs `account_purge_failed` with the account id only, and cleanup failures log
 counts, never object keys (a key is a capability to a reusable file). A stale object key logs

@@ -2,7 +2,13 @@ import { randomUUID } from "node:crypto";
 
 import type { Sql } from "../db/connection";
 import { StaleLockError, type ExtractionJobStore } from "../db/extractionJobStore";
-import { ObjectDeletionOutbox, ObjectLeaseLostError } from "../db/objectDeletionOutbox";
+import {
+  MediaManifestLostError,
+  MediaManifestStore,
+  PUT_START_LIMIT_MS,
+  PUT_TIMEOUT_MS,
+  PutWindowClosedError
+} from "../db/mediaManifestStore";
 import type { PoseStore } from "../db/communityStore";
 import type { ProviderSettingsStore } from "../db/providerSettingsStore";
 import {
@@ -54,7 +60,8 @@ const LOGGABLE_ERROR_CLASSES = new Set([
   "RangeError",
   "PostgresError",
   "StaleLockError",
-  "ObjectLeaseLostError"
+  "MediaManifestLostError",
+  "PutWindowClosedError"
 ]);
 
 /** A fixed class/code pair, never the message: messages can carry keys or user data. */
@@ -89,9 +96,11 @@ export interface ProcessNextJobInput {
   db?: Sql;
   communityStore?: PoseStore;
   mediaStorage?: MediaStorage;
-  objectDeletions?: ObjectDeletionOutbox;
-  /** How long a reservation stays claimable without a renewal. */
-  reservationTtlSeconds?: number;
+  manifests?: MediaManifestStore;
+  /** A put may not start later than this after its manifest was written. */
+  putStartLimitMs?: number;
+  /** Clock for the upload window, injectable for tests. */
+  now?: () => number;
   lineartBackgroundRemover?: ReturnType<typeof createLineartBackgroundRemover>;
   lineartBackgroundRemoverOptions?: LineartBackgroundRemoverOptions;
 }
@@ -181,54 +190,44 @@ export async function processNextJob(input: ProcessNextJobInput): Promise<boolea
 
   const poseId = randomUUID();
   const draft = job.poseDraft;
-  const objectDeletions = input.objectDeletions ?? new ObjectDeletionOutbox(db);
-  const reservationTtlSeconds = input.reservationTtlSeconds ?? 1800;
-  let keysRecorded = false;
+  const manifests = input.manifests ?? new MediaManifestStore(db);
+  const putStartLimitMs = input.putStartLimitMs ?? PUT_START_LIMIT_MS;
+  const now = input.now ?? Date.now;
   const plannedKeys = [
     buildPoseObjectKey("poses", poseId, "original", job.sourceMimeType),
     buildPoseObjectKey("poses", poseId, "skeleton", processed.mimeType),
     buildPoseObjectKey("poses", poseId, "thumbnail", processed.mimeType)
   ];
 
-  // The reservation is a lease: it is renewed before and after every upload and by a
-  // heartbeat while an upload is pending, so a slow job keeps its claim while a sweep still
-  // collects keys the job abandoned. Renewals are serialised because uploads start together.
-  let leaseChain: Promise<void> = Promise.resolve();
-  let leaseLostWhilePending = false;
+  let manifestRecorded = false;
+  let manifestCreatedAtMs = 0;
 
-  const renewLease = (): Promise<boolean> => {
-    const renewal = leaseChain.then(() => objectDeletions.renew(plannedKeys, reservationTtlSeconds));
-    leaseChain = renewal.then(
-      () => undefined,
-      () => undefined
-    );
-    return renewal;
-  };
-
-  const assertLease = async (): Promise<void> => {
-    if (leaseLostWhilePending) {
-      throw new ObjectLeaseLostError();
-    }
-    if (!(await renewLease())) {
-      throw new ObjectLeaseLostError();
-    }
-  };
-
-  /** Re-records the keys after a failure, retried because a lost record loses an object. */
-  const reclaimRecordedKeys = async (): Promise<void> => {
-    if (!keysRecorded) return;
-    for (let attempt = 1; attempt <= 3; attempt += 1) {
-      try {
-        await objectDeletions.reclaim(plannedKeys);
-        return;
-      } catch (error) {
-        if (attempt === 3) {
-          logger.error(
-            { jobId: job.id, keyCount: plannedKeys.length, attempts: attempt, ...errorIdentity(error) },
-            "worker owner job failed: could not re-record its object keys"
-          );
-        }
+  // Uploads are gated by the attempt's manifest: no put starts outside its window, and a
+  // put that cannot start must fail before it touches storage.
+  const guardedStorage: MediaStorage = {
+    put: async (fileKey, body, mimeType, options) => {
+      if (!manifestRecorded || now() - manifestCreatedAtMs > putStartLimitMs) {
+        throw new PutWindowClosedError();
       }
+      await mediaStorage.put(fileKey, body, mimeType, {
+        ...options,
+        abortSignal: AbortSignal.timeout(PUT_TIMEOUT_MS)
+      });
+    },
+    remove: mediaStorage.remove,
+    publicUrl: mediaStorage.publicUrl
+  };
+
+  /** Any failure after the manifest exists hands its keys to the deletion tickets. */
+  const abandonAttempt = async (): Promise<void> => {
+    try {
+      await manifests.abandon(poseId);
+    } catch (error) {
+      // The manifest row is still there, so the stale sweep moves it after the horizon.
+      logger.error(
+        { jobId: job.id, ...errorIdentity(error) },
+        "worker owner job failed: could not move its media manifest to deletion tickets"
+      );
     }
   };
 
@@ -239,40 +238,30 @@ export async function processNextJob(input: ProcessNextJobInput): Promise<boolea
       return true;
     }
 
-    // The keys are durable before the first upload, so neither a failed finalize nor a failed
-    // cleanup can strand an object: the sweep deletes whatever the pose never came to own.
     try {
-      await objectDeletions.reserve(plannedKeys, reservationTtlSeconds);
-      keysRecorded = true;
+      const { createdAt } = await manifests.record({
+        poseId,
+        jobId: job.id,
+        ownerAccountId: job.ownerAccountId,
+        keys: plannedKeys
+      });
+      manifestCreatedAtMs = Date.parse(createdAt);
+      manifestRecorded = true;
     } catch (error) {
       await input.jobStore.markFailedOrRequeue(
         job.id,
         lockToken,
         WORKER_ERROR_CODES.poseMaterializeFailed,
-        "Failed to record object keys for deletion"
+        "Failed to record the media manifest for this attempt"
       );
       logger.error(
         { jobId: job.id, keyCount: plannedKeys.length, ...errorIdentity(error) },
-        "worker owner job materialization failed: object keys not recorded"
+        "worker owner job materialization failed: media manifest not recorded"
       );
       return true;
     }
 
-    const heartbeatMs = Math.max(200, Math.floor((reservationTtlSeconds * 1000) / 3));
-    const heartbeat = setInterval(() => {
-      void renewLease().then(
-        (held) => {
-          if (!held) leaseLostWhilePending = true;
-        },
-        () => {
-          leaseLostWhilePending = true;
-        }
-      );
-    }, heartbeatMs);
-    heartbeat.unref();
-
-    try {
-      await materializePose({
+    await materializePose({
       poseId,
       ownerAccountId: job.ownerAccountId,
       currentJobId: job.id,
@@ -286,64 +275,50 @@ export async function processNextJob(input: ProcessNextJobInput): Promise<boolea
       source: { b64: job.sourceImageBase64, mime: job.sourceMimeType },
       result: { b64: processed.imageBase64, mime: processed.mimeType },
       keyPrefix: "poses",
-      mediaStorage,
-      beforeUpload: assertLease,
-      afterUpload: assertLease,
-      onCleanupFailed: async (keys) => {
-        // Those keys are already recorded, so the sweep retries them without another write.
-        logger.warn(
-          { jobId: job.id, failedCount: keys.length },
-          "pose object cleanup failed; left for the deletion sweep"
-        );
-      },
+      mediaStorage: guardedStorage,
+      removeUploadedOnFailure: false,
       createPose: (createInput) =>
         db.begin(async (tx) => {
-          // Verified and locked inside the finalize transaction: a lease that lapsed or was
-          // claimed by a drain can never end with a succeeded job pointing at deleted objects.
-          if (!(await objectDeletions.acquireFinalizeLease(tx, plannedKeys))) {
-            throw new ObjectLeaseLostError();
-          }
-          const pose = await communityStore.createPose(createInput, tx);
+          // Job lock first (same order as the account purge), then the manifest row.
           await input.jobStore.markSucceededWithPose(tx, job.id, lockToken, poseId);
-          await objectDeletions.ackKeys(tx, plannedKeys);
-          return pose;
+          if (!(await manifests.consume(tx, poseId, job.id))) {
+            throw new MediaManifestLostError();
+          }
+          return communityStore.createPose(createInput, tx);
         })
     });
-      logger.info(
-        { jobId: job.id, poseId, attempts: job.attempts, providerId },
-        "worker owner job materialized and succeeded"
-      );
-    } finally {
-      clearInterval(heartbeat);
-    }
+    logger.info(
+      { jobId: job.id, poseId, attempts: job.attempts, providerId },
+      "worker owner job materialized and succeeded"
+    );
   } catch (error) {
     if (error instanceof StaleLockError) {
       logger.warn({ jobId: job.id, error }, "stale lock during pose materialization; ignoring");
-      await reclaimRecordedKeys();
+      await abandonAttempt();
       return true;
     }
-    if (error instanceof ObjectLeaseLostError) {
-      await reclaimRecordedKeys();
+    if (error instanceof MediaManifestLostError) {
+      await abandonAttempt();
       await input.jobStore.markFailedOrRequeue(
         job.id,
         lockToken,
         WORKER_ERROR_CODES.poseMaterializeFailed,
-        "Object storage lease expired before the pose was finalized"
+        "Media manifest was consumed before the pose was finalized"
       );
-      logger.warn({ jobId: job.id, keyCount: plannedKeys.length }, "worker owner job aborted: object lease lost");
+      logger.warn({ jobId: job.id }, "worker owner job aborted: media manifest lost");
       return true;
     }
     if (isUniqueViolation(error)) {
       const winner = await communityStore.getPoseByCurrentJobId(job.id);
       if (winner) {
         await safeFinalize(winner.poseId);
-        await reclaimRecordedKeys();
+        await abandonAttempt();
         return true;
       }
     }
     const msg = error instanceof Error ? error.message : "Failed to materialize pose";
-    // Anything after the reservation may have left objects behind, whatever failed.
-    await reclaimRecordedKeys();
+    // Anything after the manifest may have left objects behind, whatever failed.
+    await abandonAttempt();
     await input.jobStore.markFailedOrRequeue(
       job.id,
       lockToken,

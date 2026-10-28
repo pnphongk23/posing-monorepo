@@ -519,9 +519,11 @@ Thứ tự bắt buộc — danh tính phải được xác nhận đã xóa tr�
 4. Xóa object trên R2 theo outbox; object storage từ chối thì giữ row và retry ở
    sweep nền (mỗi 10 phút). Vì vậy object có thể còn tối đa vài phút sau `204`.
 
-Object key của pose đang được tạo được ghi vào outbox **trước** lần upload đầu tiên
-(giữ chỗ 30 phút). Nhờ vậy finalize thất bại hay cleanup thất bại đều không làm mất
-key; transaction finalize xóa các row giữ chỗ khi pose đã sở hữu object.
+Mỗi attempt của owner job ghi một manifest **trước** lần upload đầu tiên. Chỉ một trong
+bốn đường xóa nó: transaction finalize (pose sở hữu object), worker abandon, sweep quá
+hạn 1 giờ, hoặc purge account — và khi bị bỏ thì key chuyển thành deletion ticket với
+`not_before` chờ horizon. Nhờ vậy không có object nào chỉ còn tồn tại trong log hay
+memory.
 
 Purge ghi tombstone `deleted_accounts` (chỉ `account_id`, không PII) trong cùng
 transaction. Mọi lần sign-in (`upsert` account) lấy cùng một advisory lock với purge
@@ -549,7 +551,7 @@ Account khác không bị ảnh hưởng: mỗi bước đều scope theo `accou
 | BR-ACCOUNT-004 | Purge dở dang được resume bởi sweeper từ intent cũ hơn 5 phút. |
 | BR-ACCOUNT-005 | Sign-in bằng token còn hạn sau khi account đã xóa bị từ chối; tombstone không chứa PII và chỉ ghi khi purge commit. |
 | BR-ACCOUNT-006 | Log của luồng xóa không chứa object key; chỉ account id / job id và số lượng. |
-| BR-ACCOUNT-007 | Reservation object của pose đang tạo là lease: gia hạn trước/sau mỗi upload và được xác minh trong transaction finalize. Mất lease thì job không `succeeded` và key được đưa lại outbox. |
+| BR-ACCOUNT-007 | Mỗi attempt của owner job ghi manifest (`pose_media_manifests`) trước upload đầu tiên. Finalize xóa manifest trong cùng transaction với pose; mọi lỗi/biến mất đều đưa key vào `pending_object_deletions` với `not_before` chờ horizon, nên không object nào bị bỏ lại mà không có record. |
 
 **Errors:** `401 UNAUTHORIZED`, `503 AUTH_PENDING_VALIDATION` (thiếu service-role key,
 identity provider từ chối, hoặc purge row thất bại).

@@ -12,14 +12,6 @@ export interface PendingObjectDeletion {
   lastError: string | null;
 }
 
-/** The reservation covering keys under construction is gone, so no pose may own them. */
-export class ObjectLeaseLostError extends Error {
-  constructor(message = "Object deletion lease lost before finalize") {
-    super(message);
-    this.name = "ObjectLeaseLostError";
-  }
-}
-
 export interface ClaimedObjectKey {
   key: string;
   claimToken: string;
@@ -40,9 +32,6 @@ export const DEFAULT_DRAIN_LIMIT = 200;
 
 /** Claims are time-boxed so a replica that dies mid-drain cannot strand an object key. */
 const CLAIM_TTL_MINUTES = 5;
-
-/** A reservation hides keys that are still being uploaded from the sweep. */
-export const DEFAULT_RESERVATION_SECONDS = 1800;
 
 interface OutboxRow {
   key: string;
@@ -67,7 +56,9 @@ function toEntry(row: OutboxRow): PendingObjectDeletion {
 /**
  * Durable list of object-storage keys that must disappear once their owning rows are
  * gone. Keys are claimed atomically, so overlapping drains (a request drain and the
- * periodic sweep, or two replicas) never act on the same key twice.
+ * periodic sweep, or two replicas) never act on the same key twice. A ticket written by
+ * an abandoned attempt carries a `not_before` horizon so an upload still in flight
+ * cannot land after its delete.
  */
 export class ObjectDeletionOutbox {
   constructor(private readonly db: Sql) {}
@@ -84,88 +75,6 @@ export class ObjectDeletionOutbox {
   }
 
   /**
-   * Durably records keys that are not uploaded yet. The reservation keeps them out of the
-   * sweep until they either become live objects (see ackKeys) or are retried after it expires.
-   */
-  async reserve(keys: readonly string[], ttlSeconds: number = DEFAULT_RESERVATION_SECONDS): Promise<void> {
-    const uniqueKeys = [...new Set(keys.filter((key) => typeof key === "string" && key.length > 0))];
-    for (const key of uniqueKeys) {
-      await this.db`
-        INSERT INTO pending_object_deletions (key, claimed_until)
-        VALUES (${key}, NOW() + (${ttlSeconds}::int * interval '1 second'))
-        ON CONFLICT (key) DO NOTHING
-      `;
-    }
-  }
-
-  /**
-   * Extends a live reservation. Returns false when any key is no longer ours: a missing row
-   * or a row a drain already claimed. Callers must stop and reclaim instead of finalizing.
-   */
-  async renew(keys: readonly string[], ttlSeconds: number = DEFAULT_RESERVATION_SECONDS): Promise<boolean> {
-    const uniqueKeys = [...new Set(keys.filter((key) => typeof key === "string" && key.length > 0))];
-    if (uniqueKeys.length === 0) return true;
-
-    const rows = (await this.db`
-      UPDATE pending_object_deletions
-      SET claimed_until = NOW() + (${ttlSeconds}::int * interval '1 second')
-      WHERE key IN ${this.db(uniqueKeys)}
-        AND claim_token IS NULL
-        AND claimed_until IS NOT NULL
-        AND claimed_until > NOW()
-      RETURNING key
-    `) as Array<{ key: string }>;
-    return rows.length === uniqueKeys.length;
-  }
-
-  /**
-   * Takes the finalize lease inside the caller's transaction: every key must still be
-   * reserved, unexpired, and unclaimed, and the rows stay locked so a drain cannot claim
-   * them between this check and the commit that makes the pose own the objects.
-   */
-  async acquireFinalizeLease(sql: SqlOrTx, keys: readonly string[]): Promise<boolean> {
-    for (const key of keys) {
-      const rows = (await sql`
-        SELECT key
-        FROM pending_object_deletions
-        WHERE key = ${key}
-          AND claim_token IS NULL
-          AND claimed_until IS NOT NULL
-          AND claimed_until > NOW()
-        FOR UPDATE
-      `) as Array<{ key: string }>;
-      if (rows.length !== 1) return false;
-    }
-    return true;
-  }
-
-  /**
-   * Makes keys claimable again and drops any claim a drain took, so an object that landed
-   * after its reservation was lost still has a cleanup record the sweep will act on.
-   */
-  async reclaim(keys: readonly string[]): Promise<void> {
-    for (const key of [...new Set(keys.filter((entry) => typeof entry === "string" && entry.length > 0))]) {
-      await this.db`
-        INSERT INTO pending_object_deletions (key)
-        VALUES (${key})
-        ON CONFLICT (key) DO UPDATE
-          SET claim_token = NULL,
-              claimed_until = NULL
-      `;
-    }
-  }
-
-  /**
-   * Removes rows whose objects the caller now owns. Used inside the finalize transaction so
-   * the acknowledgement commits or rolls back with the pose that references the objects.
-   */
-  async ackKeys(sql: SqlOrTx, keys: readonly string[]): Promise<void> {
-    for (const key of keys) {
-      await sql`DELETE FROM pending_object_deletions WHERE key = ${key}`;
-    }
-  }
-
-  /**
    * Claims a batch with a token. A drain that lost its claim (expired and re-claimed by
    * another drain) can no longer acknowledge rows that now belong to someone else.
    */
@@ -178,7 +87,8 @@ export class ObjectDeletionOutbox {
       WHERE key IN (
         SELECT key
         FROM pending_object_deletions
-        WHERE claimed_until IS NULL OR claimed_until < NOW()
+        WHERE (claimed_until IS NULL OR claimed_until < NOW())
+          AND not_before <= NOW()
         ORDER BY enqueued_at ASC
         LIMIT ${limit}
         FOR UPDATE SKIP LOCKED

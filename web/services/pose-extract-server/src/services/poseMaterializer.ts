@@ -9,8 +9,12 @@ export interface MaterializePoseMetadata {
   difficulty?: PoseDifficulty | null;
 }
 
+export interface MediaStoragePutOptions {
+  abortSignal?: AbortSignal;
+}
+
 export interface MediaStorage {
-  put: (key: string, body: Buffer, mimeType: string) => Promise<void>;
+  put: (key: string, body: Buffer, mimeType: string, options?: MediaStoragePutOptions) => Promise<void>;
   remove: (key: string) => Promise<void>;
   publicUrl: (key: string) => string;
 }
@@ -27,10 +31,11 @@ export interface MaterializePoseOptions {
   createPose: (input: CreatePoseInput) => Promise<PoseRecord>;
   /** Receives the keys whose cleanup deletion failed, so they can be retried later. */
   onCleanupFailed?: (keys: string[]) => void | Promise<void>;
-  /** Runs before every upload, so a caller holding a lease can renew it first. */
-  beforeUpload?: (key: string) => void | Promise<void>;
-  /** Runs after every upload, so a caller can confirm its lease survived the write. */
-  afterUpload?: (key: string) => void | Promise<void>;
+  /**
+   * Whether keys this call uploaded are removed when the pose is not created. Defaults to
+   * true; the worker passes false because deletion goes through durable tickets instead.
+   */
+  removeUploadedOnFailure?: boolean;
 }
 
 export function buildPoseObjectKey(
@@ -63,8 +68,7 @@ export async function materializePose(options: MaterializePoseOptions): Promise<
     mediaStorage,
     createPose,
     onCleanupFailed,
-    beforeUpload,
-    afterUpload
+    removeUploadedOnFailure = true
   } = options;
 
   const assets = [
@@ -80,10 +84,8 @@ export async function materializePose(options: MaterializePoseOptions): Promise<
       assets.map(async (asset) => {
         const fileKey = buildPoseObjectKey(keyPrefix, poseId, asset.role, asset.mime);
         const body = Buffer.from(asset.b64, "base64");
-        if (beforeUpload) await beforeUpload(fileKey);
         await mediaStorage.put(fileKey, body, asset.mime);
         uploadedKeys.push(fileKey);
-        if (afterUpload) await afterUpload(fileKey);
         return [asset.role, mediaStorage.publicUrl(fileKey)] as const;
       })
     );
@@ -113,7 +115,7 @@ export async function materializePose(options: MaterializePoseOptions): Promise<
 
     return pose;
   } catch (error) {
-    if (uploadedKeys.length > 0) {
+    if (removeUploadedOnFailure && uploadedKeys.length > 0) {
       const results = await Promise.allSettled(uploadedKeys.map((key) => mediaStorage.remove(key)));
       const failedKeys = uploadedKeys.filter((_key, index) => results[index]?.status === "rejected");
       if (failedKeys.length > 0) {
