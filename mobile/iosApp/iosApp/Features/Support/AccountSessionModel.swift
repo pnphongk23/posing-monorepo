@@ -7,7 +7,7 @@ import Foundation
 /// sign-out, or a 401 refresh/clear), so a stale response can never repaint a previous
 /// account's identity over a signed-out or switched session.
 @MainActor
-final class AccountSessionModel: ObservableObject {
+final class AccountSessionModel: ObservableObject, SessionScoped {
     typealias AccountReader = () async throws -> AccountSummary
     typealias AccountDeleter = () async throws -> Void
 
@@ -28,8 +28,10 @@ final class AccountSessionModel: ObservableObject {
     private let readAccount: AccountReader
     private let signInAction: SignInAction
     private let deleteAccountRequest: AccountDeleter
-    private var generationID = 0
-    private var sessionTask: Task<Void, Never>?
+    private let scope: SessionScope
+    /// Local request token: a newer refresh supersedes the read before it. Session staleness is the
+    /// scope's job (a ticket), this one is only "which read is the latest".
+    private var refreshGeneration: UInt64 = 0
 
     init(
         boundary: SessionBoundary = ServiceLocator.sessionBoundary,
@@ -45,37 +47,32 @@ final class AccountSessionModel: ObservableObject {
         self.readAccount = readAccount
         self.signInAction = signInAction
         self.deleteAccountRequest = deleteAccount
+        self.scope = SessionScope.of(boundary)
+        scope.adopt(self)
     }
 
-    deinit {
-        sessionTask?.cancel()
-    }
-
-    /// Starts session observation once, then projects the stored session.
+    /// Starts the projection of the stored session. The session subscription belongs to the scope.
     func start() {
-        observeSessionOnce()
         refresh()
     }
 
     func refresh() {
-        let requestGeneration = nextGeneration()
+        let request = beginRefresh()
         Task { [weak self] in
             guard let self else { return }
+            let ticket = await self.scope.beginRequest()
             guard await self.boundary.hasStoredSession() else {
-                if self.isCurrent(requestGeneration) { self.state = .signedOut }
+                if await self.isCurrent(request, ticket) { self.state = .signedOut }
                 return
             }
-            let sessionGeneration = await self.boundary.currentGeneration
-            guard self.isCurrent(requestGeneration) else { return }
+            guard await self.isCurrent(request, ticket) else { return }
             self.state = .loading
             do {
                 let account = try await self.readAccount()
-                guard self.isCurrent(requestGeneration) else { return }
-                guard await self.boundary.currentGeneration == sessionGeneration else { return }
+                guard await self.isCurrent(request, ticket) else { return }
                 self.state = await self.boundary.hasStoredSession() ? .signedIn(account) : .signedOut
             } catch {
-                guard self.isCurrent(requestGeneration) else { return }
-                guard await self.boundary.currentGeneration == sessionGeneration else { return }
+                guard await self.isCurrent(request, ticket) else { return }
                 if let apiError = error as? PoseAPIError, apiError.isUnauthorized {
                     // 401 is never an empty/failed account: it is a signed-out session.
                     self.state = .signedOut
@@ -115,11 +112,11 @@ final class AccountSessionModel: ObservableObject {
     }
 
     func signOut() {
-        let requestGeneration = nextGeneration()
+        let request = beginRefresh()
         Task { [weak self] in
             guard let self else { return }
             await self.boundary.signOut()
-            guard self.isCurrent(requestGeneration) else { return }
+            guard self.refreshGeneration == request else { return }
             self.state = .signedOut
         }
     }
@@ -144,41 +141,34 @@ final class AccountSessionModel: ObservableObject {
         }
     }
 
-    // MARK: - session observation
+    // MARK: - session changes
 
-    private func observeSessionOnce() {
-        guard sessionTask == nil else { return }
-        // `start()` projects the stored session itself, so this observer has no `onStart` step.
-        sessionTask = boundary.observeSessions(
-            onEvent: { [weak self] event in
-                guard let self else { return }
-                self.handle(event)
-            }
-        )
-    }
-
-    private func handle(_ event: SessionEvent) {
+    /// Credentials changed: discard whatever the previous session was reading, then re-project.
+    /// Called synchronously by the scope in the same turn as the generation bump.
+    func resetForSessionChange(_ event: SessionEvent) {
         switch event {
         case .signedIn:
-            // Credentials changed: discard whatever the previous session was reading.
-            _ = nextGeneration()
+            beginRefresh()
             state = .loading
             refresh()
         case .signedOut, .signInRequired:
-            _ = nextGeneration()
+            beginRefresh()
             state = .signedOut
         }
     }
 
-    // MARK: - generation
+    // MARK: - request tokens
 
-    private func nextGeneration() -> Int {
-        generationID += 1
-        return generationID
+    @discardableResult
+    private func beginRefresh() -> UInt64 {
+        refreshGeneration &+= 1
+        return refreshGeneration
     }
 
-    private func isCurrent(_ requestGeneration: Int) -> Bool {
-        generationID == requestGeneration
+    /// Both halves must hold: this is still the latest read, and its session is still the current one.
+    private func isCurrent(_ request: UInt64, _ ticket: SessionTicket) async -> Bool {
+        guard refreshGeneration == request else { return false }
+        return await scope.isValid(ticket)
     }
 
     private static func accountMessage(for error: Error) -> String {
