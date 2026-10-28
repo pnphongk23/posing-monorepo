@@ -351,7 +351,19 @@ ON CONFLICT (account_id) DO UPDATE SET requested_at = EXCLUDED.requested_at;
 > would then purge an account that still exists upstream. `security definer` helpers are not needed —
 > the tables are plain and only the API and the sweep touch them.
 
-Logs: a failed row purge logs `account_purge_failed` with the account id only. A stale object key logs
+Deletion leaves an account-id-only tombstone (`deleted_accounts`, no personal data) in the same
+transaction as the purge. Sign-in takes the same per-account advisory lock as the purge and reads the
+tombstone first, so a client that still holds valid tokens cannot recreate a deleted account: the
+sign-in fails and its uploads answer `410`. Restoring an account on purpose therefore means deleting
+its tombstone row **and** letting the user sign in again — never do that without a support decision.
+
+Object keys of a pose under construction are reserved in `pending_object_deletions` before the first
+upload (30-minute reservation) and the rows are removed inside the finalize transaction that makes the
+pose own them. A failed finalize, a failed cleanup, or a killed process therefore leaves the sweep a
+durable key to delete instead of an orphaned object.
+
+Logs: a failed row purge logs `account_purge_failed` with the account id only, and cleanup failures log
+counts, never object keys (a key is a capability to a reusable file). A stale object key logs
 nothing until the sweep retries it; alert on `pending_object_deletions.attempts >= 3` or an intent older
 than 1 hour.
 

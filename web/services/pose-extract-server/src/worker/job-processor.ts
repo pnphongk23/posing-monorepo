@@ -16,7 +16,7 @@ import {
 } from "../services/errors";
 import { createLineartBackgroundRemover, type LineartBackgroundRemoverOptions } from "../services/lineartBackgroundRemover";
 import type { ExtractionProviderId, PoseExtractorProvider } from "../services/poseExtractorProvider";
-import { materializePose, type MediaStorage } from "../services/poseMaterializer";
+import { buildPoseObjectKey, materializePose, type MediaStorage } from "../services/poseMaterializer";
 import { sanitizeError } from "../utils/sanitizeError";
 import { logger } from "../utils/logger";
 import { WORKER_ERROR_CODES } from "./error-codes";
@@ -68,6 +68,7 @@ export interface ProcessNextJobInput {
   db?: Sql;
   communityStore?: PoseStore;
   mediaStorage?: MediaStorage;
+  objectDeletions?: ObjectDeletionOutbox;
   lineartBackgroundRemover?: ReturnType<typeof createLineartBackgroundRemover>;
   lineartBackgroundRemoverOptions?: LineartBackgroundRemoverOptions;
 }
@@ -164,6 +165,30 @@ export async function processNextJob(input: ProcessNextJobInput): Promise<boolea
 
     const poseId = randomUUID();
     const draft = job.poseDraft;
+    const objectDeletions = input.objectDeletions ?? new ObjectDeletionOutbox(db);
+    const plannedKeys = [
+      buildPoseObjectKey("poses", poseId, "original", job.sourceMimeType),
+      buildPoseObjectKey("poses", poseId, "skeleton", processed.mimeType),
+      buildPoseObjectKey("poses", poseId, "thumbnail", processed.mimeType)
+    ];
+
+    // The keys are durable before the first upload, so neither a failed finalize nor a failed
+    // cleanup can strand an object: the sweep deletes whatever the pose never came to own.
+    try {
+      await objectDeletions.reserve(plannedKeys);
+    } catch (error) {
+      await input.jobStore.markFailedOrRequeue(
+        job.id,
+        lockToken,
+        WORKER_ERROR_CODES.poseMaterializeFailed,
+        "Failed to record object keys for deletion"
+      );
+      logger.error(
+        { jobId: job.id, error: sanitizeError(error) },
+        "worker owner job materialization failed: object keys not recorded"
+      );
+      return true;
+    }
 
     await materializePose({
       poseId,
@@ -181,19 +206,17 @@ export async function processNextJob(input: ProcessNextJobInput): Promise<boolea
       keyPrefix: "poses",
       mediaStorage,
       onCleanupFailed: async (keys) => {
-        try {
-          await new ObjectDeletionOutbox(db).enqueue(keys);
-        } catch (error) {
-          logger.error(
-            { jobId: job.id, keys, error: sanitizeError(error) },
-            "failed to queue unremoved pose objects for deletion"
-          );
-        }
+        // Those keys are already recorded, so the sweep retries them without another write.
+        logger.warn(
+          { jobId: job.id, failedCount: keys.length },
+          "pose object cleanup failed; left for the deletion sweep"
+        );
       },
       createPose: (createInput) =>
         db.begin(async (tx) => {
           const pose = await communityStore.createPose(createInput, tx);
           await input.jobStore.markSucceededWithPose(tx, job.id, lockToken, poseId);
+          await objectDeletions.ackKeys(tx, plannedKeys);
           return pose;
         })
     });

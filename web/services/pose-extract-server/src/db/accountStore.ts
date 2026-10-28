@@ -26,6 +26,19 @@ function toAccount(row: AccountRow): AccountRecord {
   };
 }
 
+/** A purged account can never be recreated by a sign-in that still holds valid tokens. */
+export class AccountDeletedError extends Error {
+  constructor(message = "Account has been deleted") {
+    super(message);
+    this.name = "AccountDeletedError";
+  }
+}
+
+/** Serialises account creation against the purge of the same account. */
+function accountFenceLockKey(accountId: string): string {
+  return `account:${accountId}`;
+}
+
 /** Turns a stored media locator into the object key the storage client expects. */
 export function objectKeyFromLocator(locator: string, r2PublicUrl?: string): string {
   if (!r2PublicUrl) return locator;
@@ -74,14 +87,34 @@ export class AccountStore {
   }
 
   async upsert(input: { id: string; displayName: string }): Promise<AccountRecord> {
+    return this.db.begin(async (transaction) => {
+      // The same lock is taken first by a purge, so a sign-in that races a deletion either
+      // waits for it and then reads the tombstone, or runs before it and is purged.
+      await transaction`SELECT pg_advisory_xact_lock(hashtext(${accountFenceLockKey(input.id)}))`;
+
+      const fenced = (await transaction`
+        SELECT 1 AS present FROM deleted_accounts WHERE account_id = ${input.id}
+      `) as Array<{ present: number }>;
+      if (fenced.length > 0) {
+        throw new AccountDeletedError();
+      }
+
+      const rows = (await transaction`
+        INSERT INTO accounts (id, display_name)
+        VALUES (${input.id}, ${input.displayName})
+        ON CONFLICT (id) DO UPDATE SET display_name = EXCLUDED.display_name
+        RETURNING id, display_name, created_at
+      `) as AccountRow[];
+      if (!rows[0]) throw new Error("Failed to upsert account");
+      return toAccount(rows[0]);
+    });
+  }
+
+  async hasAccountTombstone(accountId: string): Promise<boolean> {
     const rows = (await this.db`
-      INSERT INTO accounts (id, display_name)
-      VALUES (${input.id}, ${input.displayName})
-      ON CONFLICT (id) DO UPDATE SET display_name = EXCLUDED.display_name
-      RETURNING id, display_name, created_at
-    `) as AccountRow[];
-    if (!rows[0]) throw new Error("Failed to upsert account");
-    return toAccount(rows[0]);
+      SELECT 1 AS present FROM deleted_accounts WHERE account_id = ${accountId}
+    `) as Array<{ present: number }>;
+    return rows.length > 0;
   }
 
   async getById(id: string): Promise<AccountRecord | null> {
@@ -140,6 +173,7 @@ export class AccountStore {
     const resolveObjectKey = options.resolveObjectKey ?? ((locator: string) => locator);
 
     return this.db.begin(async (transaction) => {
+      await transaction`SELECT pg_advisory_xact_lock(hashtext(${accountFenceLockKey(accountId)}))`;
       await transaction`SELECT 1 FROM accounts WHERE id = ${accountId} FOR UPDATE`;
       await transaction`SELECT id FROM extraction_jobs WHERE owner_account_id = ${accountId} FOR UPDATE`;
 
@@ -168,6 +202,11 @@ export class AccountStore {
       await transaction`DELETE FROM poses WHERE owner_account_id = ${accountId}`;
       await transaction`DELETE FROM accounts WHERE id = ${accountId}`;
       await transaction`DELETE FROM pending_account_purges WHERE account_id = ${accountId}`;
+      await transaction`
+        INSERT INTO deleted_accounts (account_id)
+        VALUES (${accountId})
+        ON CONFLICT (account_id) DO NOTHING
+      `;
 
       return objectKeys;
     });

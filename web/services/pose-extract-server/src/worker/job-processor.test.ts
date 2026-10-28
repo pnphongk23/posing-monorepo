@@ -3,7 +3,8 @@ import { randomUUID } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 
 import type { Sql } from "../db/connection";
-import { ObjectDeletionOutbox } from "../db/objectDeletionOutbox";
+import { ObjectDeletionOutbox, drainPendingObjectDeletions } from "../db/objectDeletionOutbox";
+import { logger } from "../utils/logger";
 import { setupTestDatabase } from "../db/testDb";
 import { ExtractionJobStore } from "../db/extractionJobStore";
 import { PoseStore } from "../db/communityStore";
@@ -671,7 +672,7 @@ describe("processNextJob", () => {
     expect(updatedJob?.errorCode).toBe("POSE_MATERIALIZE_FAILED");
   });
 
-  it("queues the keys whose cleanup failed so a later sweep can delete them", async () => {
+  it("keeps cleanup-failed keys durable so a later sweep can delete them", async () => {
     const { sql, jobStore, communityStore, providerSettingsStore } = await createStores();
     const remove = vi.fn(async (key: string) => {
       if (key.includes("skeleton")) {
@@ -711,10 +712,168 @@ describe("processNextJob", () => {
       lineartBackgroundRemover: createBackgroundRemoverStub()
     });
 
-    const rows = await new ObjectDeletionOutbox(sql).list();
-    expect(rows.map((row) => row.key)).toEqual([expect.stringMatching(/^poses\/[0-9a-f-]{36}\/skeleton\.png$/)]);
+    const outbox = new ObjectDeletionOutbox(sql);
+    const rows = await outbox.list();
+    expect(rows.map((row) => row.key)).toEqual([
+      expect.stringMatching(/^poses\/[0-9a-f-]{36}\/original\.png$/),
+      expect.stringMatching(/^poses\/[0-9a-f-]{36}\/skeleton\.png$/),
+      expect.stringMatching(/^poses\/[0-9a-f-]{36}\/thumbnail\.png$/)
+    ]);
+
+    // The sweep only retries these after the reservation window closed.
+    await sql`UPDATE pending_object_deletions SET claimed_until = NOW() - interval '1 second'`;
+    const drained: string[] = [];
+    await drainPendingObjectDeletions({
+      outbox,
+      deleteObject: async (key: string) => {
+        drained.push(key);
+      }
+    });
+    expect(drained).toHaveLength(3);
+    expect(await outbox.count()).toBe(0);
 
     const pose = await communityStore.getPoseByCurrentJobId(job.id);
     expect(pose).toBeNull();
+  });
+
+  it("removes the planned keys from the outbox when the pose finalizes", async () => {
+    const { sql, jobStore, communityStore, providerSettingsStore } = await createStores();
+    const { mediaStorage } = createMediaStorageMock();
+    const extractPoseImage = vi.fn().mockResolvedValue({
+      imageBase64: Buffer.from("skeleton").toString("base64"),
+      mimeType: "image/png"
+    });
+    const ownerAccountId = await createOwnerAccount(sql);
+    await jobStore.enqueue({
+      ownerAccountId,
+      poseDraft: { name: "Acked Keys", tags: [], description: null },
+      sourceImageBase64: Buffer.from("source").toString("base64"),
+      sourceMimeType: "image/png"
+    });
+
+    await processNextJob({
+      jobStore,
+      providerSettingsStore,
+      createProvider: () => mockProvider("gemini_native", extractPoseImage),
+      staleLockSeconds: 120,
+      db: sql,
+      communityStore,
+      mediaStorage,
+      lineartBackgroundRemover: createBackgroundRemoverStub()
+    });
+
+    expect(await new ObjectDeletionOutbox(sql).count()).toBe(0);
+  });
+
+  it("keeps every planned object key durable when finalize and cleanup fail together", async () => {
+    const { sql, jobStore, communityStore, providerSettingsStore } = await createStores();
+    const mediaStorage: MediaStorage = {
+      put: vi.fn(async () => undefined),
+      remove: vi.fn(async () => {
+        throw new Error("R2 delete failed");
+      }),
+      publicUrl: (key: string) => `https://cdn.example.com/${key}`
+    };
+
+    const ownerAccountId = await createOwnerAccount(sql);
+    const job = await jobStore.enqueue({
+      ownerAccountId,
+      poseDraft: { name: "Durable Keys", tags: [], description: null },
+      sourceImageBase64: Buffer.from("source").toString("base64"),
+      sourceMimeType: "image/png"
+    });
+
+    // Purge wins the race: the job row disappears before finalize, so the pose insert rolls back.
+    const extractPoseImage = vi.fn().mockImplementation(async () => {
+      await sql`UPDATE extraction_jobs SET lock_token = 'stolen-lock-token' WHERE id = ${job.id}`;
+      return {
+        imageBase64: Buffer.from("skeleton").toString("base64"),
+        mimeType: "image/png" as const
+      };
+    });
+
+    const realOutbox = new ObjectDeletionOutbox(sql);
+    const flakyOutbox = {
+      reserve: (keys: string[], ttlSeconds?: number) => realOutbox.reserve(keys, ttlSeconds),
+      enqueue: async () => {
+        throw new Error("outbox write failed");
+      }
+    } as unknown as ObjectDeletionOutbox;
+
+    await processNextJob({
+      jobStore,
+      providerSettingsStore,
+      createProvider: () => mockProvider("gemini_native", extractPoseImage),
+      staleLockSeconds: 120,
+      db: sql,
+      communityStore,
+      mediaStorage,
+      objectDeletions: flakyOutbox,
+      lineartBackgroundRemover: createBackgroundRemoverStub()
+    });
+
+    const rows = await realOutbox.list();
+    expect(rows.map((row) => row.key)).toEqual([
+      expect.stringMatching(/^poses\/[0-9a-f-]{36}\/original\.png$/),
+      expect.stringMatching(/^poses\/[0-9a-f-]{36}\/skeleton\.png$/),
+      expect.stringMatching(/^poses\/[0-9a-f-]{36}\/thumbnail\.png$/)
+    ]);
+    expect(await communityStore.getPoseByCurrentJobId(job.id)).toBeNull();
+  });
+
+  it("never logs an object key when cleanup fails", async () => {
+    const { sql, jobStore, communityStore, providerSettingsStore } = await createStores();
+    const mediaStorage: MediaStorage = {
+      put: vi.fn(async () => undefined),
+      remove: vi.fn(async () => {
+        throw new Error("R2 delete failed");
+      }),
+      publicUrl: (key: string) => `https://cdn.example.com/${key}`
+    };
+    const errors: unknown[][] = [];
+    const errorSpy = vi.spyOn(logger, "error").mockImplementation((...args: unknown[]) => {
+      errors.push(args);
+      return undefined as never;
+    });
+    const warnSpy = vi.spyOn(logger, "warn").mockImplementation((...args: unknown[]) => {
+      errors.push(args);
+      return undefined as never;
+    });
+
+    try {
+      const ownerAccountId = await createOwnerAccount(sql);
+      const job = await jobStore.enqueue({
+        ownerAccountId,
+        poseDraft: { name: "Quiet Logs", tags: [], description: null },
+        sourceImageBase64: Buffer.from("source").toString("base64"),
+        sourceMimeType: "image/png"
+      });
+      const extractPoseImage = vi.fn().mockImplementation(async () => {
+        await sql`UPDATE extraction_jobs SET lock_token = 'stolen-lock-token' WHERE id = ${job.id}`;
+        return {
+          imageBase64: Buffer.from("skeleton").toString("base64"),
+          mimeType: "image/png" as const
+        };
+      });
+
+      await processNextJob({
+        jobStore,
+        providerSettingsStore,
+        createProvider: () => mockProvider("gemini_native", extractPoseImage),
+        staleLockSeconds: 120,
+        db: sql,
+        communityStore,
+        mediaStorage,
+        lineartBackgroundRemover: createBackgroundRemoverStub()
+      });
+
+      const serialized = JSON.stringify(errors);
+      expect(serialized).not.toMatch(/poses\//);
+      expect(serialized).not.toMatch(/\.png/);
+      expect(serialized).toContain(job.id);
+    } finally {
+      errorSpy.mockRestore();
+      warnSpy.mockRestore();
+    }
   });
 });

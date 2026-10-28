@@ -211,6 +211,13 @@ CREATE TABLE IF NOT EXISTS pending_account_purges (
 CREATE INDEX IF NOT EXISTS idx_pending_account_purges_requested_at
   ON pending_account_purges(requested_at);
 
+-- Account-id-only tombstone, no personal data. Written in the same transaction as a
+-- purge, so a sign-in that still holds valid tokens cannot recreate the account.
+CREATE TABLE IF NOT EXISTS deleted_accounts (
+  account_id TEXT PRIMARY KEY,
+  deleted_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 -- Object keys that must be removed from object storage after the owning rows are
 -- gone. Claims are time-boxed so a crashed drain cannot strand a key forever.
 CREATE TABLE IF NOT EXISTS pending_object_deletions (
@@ -220,6 +227,8 @@ CREATE TABLE IF NOT EXISTS pending_object_deletions (
   claimed_until TIMESTAMPTZ,
   last_error TEXT
 );
+
+ALTER TABLE pending_object_deletions ADD COLUMN IF NOT EXISTS claim_token TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_pending_object_deletions_claim
   ON pending_object_deletions(enqueued_at) WHERE claimed_until IS NULL;

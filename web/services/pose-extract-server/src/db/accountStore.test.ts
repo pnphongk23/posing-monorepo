@@ -3,12 +3,13 @@ import { randomUUID } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  AccountDeletedError,
   AccountStore,
   sweepStaleAccountPurges,
   objectKeyFromLocator
 } from "./accountStore";
 import { PoseStore } from "./communityStore";
-import { createDatabase, type Sql } from "./connection";
+import { applySchema, createDatabase, type Sql } from "./connection";
 import { ExtractionJobStore, StaleLockError } from "./extractionJobStore";
 import { ObjectDeletionOutbox, drainPendingObjectDeletions } from "./objectDeletionOutbox";
 import { materializePose, type MediaStorage } from "../services/poseMaterializer";
@@ -156,6 +157,70 @@ describe("AccountStore.purgeAccountData", () => {
   });
 });
 
+describe("deleted account fence", () => {
+  it("refuses to recreate a purged account when a sign-in still holds valid tokens", async () => {
+    const sql = await setupTestDatabase();
+    const store = new AccountStore(sql);
+    const accountId = randomUUID();
+    await seedAccount(sql, accountId, "fenced");
+
+    await store.purgeAccountData(accountId);
+    expect(await store.hasAccountTombstone(accountId)).toBe(true);
+
+    await expect(store.upsert({ id: accountId, displayName: "Recreated" })).rejects.toBeInstanceOf(AccountDeletedError);
+
+    expect(await store.getById(accountId)).toBeNull();
+    expect(await countsFor(sql, accountId)).toEqual(ZERO);
+  });
+
+  it("refuses an owned upload for an account that was recreated after a purge", async () => {
+    const sql = await setupTestDatabase();
+    const store = new AccountStore(sql);
+    const accountId = randomUUID();
+    await seedAccount(sql, accountId, "fenced-upload");
+
+    await store.purgeAccountData(accountId);
+    await expect(store.upsert({ id: accountId, displayName: "Recreated" })).rejects.toBeInstanceOf(AccountDeletedError);
+
+    await expect(
+      new ExtractionJobStore(sql).enqueue({
+        sourceImageBase64: "c291cmNl",
+        sourceMimeType: "image/png",
+        ownerAccountId: accountId
+      })
+    ).rejects.toThrow(/Account no longer exists/);
+    expect(await countsFor(sql, accountId)).toEqual(ZERO);
+  });
+
+  it("keeps the tombstone only when the purge commits", async () => {
+    const sql = await setupTestDatabase();
+    const store = new AccountStore(sql);
+    const accountId = randomUUID();
+    await seedAccount(sql, accountId, "rollback-fence");
+
+    await expect(
+      store.purgeAccountData(accountId, {
+        onRowsLocked: async () => {
+          throw new Error("purge aborted mid-transaction");
+        }
+      })
+    ).rejects.toThrow("purge aborted mid-transaction");
+
+    expect(await store.hasAccountTombstone(accountId)).toBe(false);
+    await expect(store.upsert({ id: accountId, displayName: "Still here" })).resolves.toMatchObject({ id: accountId });
+  });
+
+  it("still lets a live account sign in and be purged afterwards", async () => {
+    const sql = await setupTestDatabase();
+    const store = new AccountStore(sql);
+    const accountId = randomUUID();
+
+    await expect(store.upsert({ id: accountId, displayName: "Live" })).resolves.toMatchObject({ id: accountId });
+    await store.purgeAccountData(accountId);
+    expect(await store.getById(accountId)).toBeNull();
+  });
+});
+
 describe("sweepStaleAccountPurges", () => {
   it("resumes a purge whose intent is older than the grace window and drains the object keys", async () => {
     const sql = await setupTestDatabase();
@@ -234,9 +299,31 @@ describe("sweepStaleAccountPurges", () => {
 describe.runIf(TEST_DATABASE_URL)("account purge against real Postgres", () => {
   async function bootstrap(accountId: string, extra?: (sql: Sql) => Promise<void>) {
     const admin = createDatabase(TEST_DATABASE_URL as string);
+    await applySchema(admin);
     await admin`INSERT INTO accounts (id, display_name) VALUES (${accountId}, ${accountId})`;
     if (extra) await extra(admin);
     return admin;
+  }
+
+  /** Removes everything a gated test created, so the shared database keeps no residue. */
+  async function cleanup(
+    sql: Sql,
+    accountId: string,
+    objectKeys: readonly string[] = [],
+    jobIds: readonly string[] = []
+  ): Promise<void> {
+    for (const key of objectKeys) {
+      await sql`DELETE FROM pending_object_deletions WHERE key = ${key}`;
+    }
+    for (const jobId of jobIds) {
+      await sql`DELETE FROM extraction_jobs WHERE id = ${jobId}`;
+    }
+    await sql`DELETE FROM extraction_jobs WHERE owner_account_id = ${accountId}`;
+    await sql`DELETE FROM saved_entries WHERE account_id = ${accountId}`;
+    await sql`DELETE FROM poses WHERE owner_account_id = ${accountId}`;
+    await sql`DELETE FROM pending_account_purges WHERE account_id = ${accountId}`;
+    await sql`DELETE FROM deleted_accounts WHERE account_id = ${accountId}`;
+    await sql`DELETE FROM accounts WHERE id = ${accountId}`;
   }
 
   it("keeps a pose finalized while the purge waited for the job row lock", async () => {
@@ -266,13 +353,27 @@ describe.runIf(TEST_DATABASE_URL)("account purge against real Postgres", () => {
         release = resolve;
       });
 
+      const communityStore = new PoseStore(workerConn);
       const workerTx = workerConn.begin(async (tx) => {
+        // Production order: the pose and its media are written first, then the job row is
+        // finalized. The purge therefore blocks on the job row only after the pose exists.
+        await communityStore.createPose(
+          {
+            poseId,
+            ownerAccountId: accountId,
+            name: "Late Pose",
+            originalUrl: locators[0]!,
+            skeletonUrl: locators[1]!,
+            thumbnailUrl: locators[2]!,
+            tags: [],
+            difficulty: null,
+            description: null,
+            bodyParts: [],
+            currentJobId: jobId
+          },
+          tx
+        );
         await workerStore.markSucceededWithPose(tx, jobId, lockToken, poseId);
-        await tx`INSERT INTO poses (pose_id, owner_account_id, name) VALUES (${poseId}, ${accountId}, 'Late Pose')`;
-        for (const [index, role] of ["original", "skeleton", "thumbnail"].entries()) {
-          await tx`INSERT INTO media_assets (media_id, pose_id, role, locator)
-            VALUES (${`${poseId}-${role}`}, ${poseId}, ${role}, ${locators[index]})`;
-        }
         committed();
         await releaseP;
       });
@@ -301,9 +402,17 @@ describe.runIf(TEST_DATABASE_URL)("account purge against real Postgres", () => {
         count: number;
       }>;
       expect(poseRows[0]?.count).toBe(0);
-      const outboxKeys = (await new ObjectDeletionOutbox(admin).list()).map((row) => row.key).sort();
+      const outboxKeys = (await new ObjectDeletionOutbox(admin).list())
+        .map((row) => row.key)
+        .filter((key) => key.startsWith(`poses/${poseId}/`))
+        .sort();
       expect(outboxKeys).toEqual([...keys].sort());
     } finally {
+      await cleanup(
+        admin,
+        accountId,
+        locators.map((locator) => objectKeyFromLocator(locator, R2_PUBLIC_URL))
+      );
       await admin.end();
       await workerConn.end();
       await purgeConn.end();
@@ -344,9 +453,26 @@ describe.runIf(TEST_DATABASE_URL)("account purge against real Postgres", () => {
       await rowsLockedP;
 
       const workerStore = new ExtractionJobStore(workerConn);
+      const workerCommunityStore = new PoseStore(workerConn);
       let workerSettled = false;
       const workerP = workerConn
         .begin(async (tx) => {
+          await workerCommunityStore.createPose(
+            {
+              poseId,
+              ownerAccountId: accountId,
+              name: "Racing Pose",
+              originalUrl: `${R2_PUBLIC_URL}/poses/${poseId}/original.png`,
+              skeletonUrl: `${R2_PUBLIC_URL}/poses/${poseId}/skeleton.png`,
+              thumbnailUrl: `${R2_PUBLIC_URL}/poses/${poseId}/thumbnail.png`,
+              tags: [],
+              difficulty: null,
+              description: null,
+              bodyParts: [],
+              currentJobId: jobId
+            },
+            tx
+          );
           await workerStore.markSucceededWithPose(tx, jobId, lockToken, poseId);
         })
         .then(() => {
@@ -370,6 +496,7 @@ describe.runIf(TEST_DATABASE_URL)("account purge against real Postgres", () => {
       }>;
       expect(poseRows[0]?.count).toBe(0);
     } finally {
+      await cleanup(admin, accountId);
       await admin.end();
       await workerConn.end();
       await purgeConn.end();
@@ -423,6 +550,7 @@ describe.runIf(TEST_DATABASE_URL)("account purge against real Postgres", () => {
 
       expect(removed).toHaveLength(3);
     } finally {
+      await cleanup(admin, accountId);
       await admin.end();
       await workerConn.end();
     }
@@ -434,6 +562,7 @@ describe.runIf(TEST_DATABASE_URL)("account purge against real Postgres", () => {
     const uploadConn = createDatabase(TEST_DATABASE_URL as string);
     const anonymousConn = createDatabase(TEST_DATABASE_URL as string);
     const purgeConn = createDatabase(TEST_DATABASE_URL as string);
+    let anonymousJobId: string | undefined;
 
     try {
       const purgeStore = new AccountStore(purgeConn);
@@ -462,13 +591,20 @@ describe.runIf(TEST_DATABASE_URL)("account purge against real Postgres", () => {
           sourceMimeType: "image/png",
           ownerAccountId: accountId
         })
-        .then((job) => ({ job }))
-        .catch((error: unknown) => ({ error }));
+        .then((job) => {
+          uploadSettled = true;
+          return { job };
+        })
+        .catch((error: unknown) => {
+          uploadSettled = true;
+          return { error };
+        });
       const anonymousStore = new ExtractionJobStore(anonymousConn);
       const anonymousJob = await anonymousStore.enqueue({
         sourceImageBase64: "c291cmNl",
         sourceMimeType: "image/png"
       });
+      anonymousJobId = anonymousJob.id;
 
       await new Promise((resolve) => setTimeout(resolve, 200));
       expect(uploadSettled).toBe(false);
@@ -487,12 +623,94 @@ describe.runIf(TEST_DATABASE_URL)("account purge against real Postgres", () => {
         SELECT id FROM extraction_jobs WHERE id = ${anonymousJob.id}
       `) as Array<{ id: string }>;
       expect(anonymousRows).toHaveLength(1);
-      void uploadSettled;
+      expect(uploadSettled).toBe(true);
     } finally {
+      await cleanup(admin, accountId, [], anonymousJobId ? [anonymousJobId] : []);
       await admin.end();
       await uploadConn.end();
       await anonymousConn.end();
       await purgeConn.end();
+    }
+  });
+
+  it("blocks a sign-in that arrives while the purge runs, then refuses it", async () => {
+    const accountId = randomUUID();
+    const admin = await bootstrap(accountId);
+    const signInConn = createDatabase(TEST_DATABASE_URL as string);
+    const purgeConn = createDatabase(TEST_DATABASE_URL as string);
+
+    try {
+      const purgeStore = new AccountStore(purgeConn);
+      let rowsLocked!: () => void;
+      const rowsLockedP = new Promise<void>((resolve) => {
+        rowsLocked = resolve;
+      });
+      let releasePurge!: () => void;
+      const releasePurgeP = new Promise<void>((resolve) => {
+        releasePurge = resolve;
+      });
+
+      const purgeP = purgeStore.purgeAccountData(accountId, {
+        onRowsLocked: async () => {
+          rowsLocked();
+          await releasePurgeP;
+        }
+      });
+      await rowsLockedP;
+
+      const signInStore = new AccountStore(signInConn);
+      let signInSettled = false;
+      const signInP = signInStore
+        .upsert({ id: accountId, displayName: "Resumed Session" })
+        .then((account) => {
+          signInSettled = true;
+          return { account };
+        })
+        .catch((error: unknown) => {
+          signInSettled = true;
+          return { error };
+        });
+
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      expect(signInSettled).toBe(false);
+
+      releasePurge();
+      await purgeP;
+
+      const outcome = (await signInP) as { error?: Error };
+      expect(outcome.error).toBeInstanceOf(AccountDeletedError);
+
+      const rows = (await admin`SELECT id FROM accounts WHERE id = ${accountId}`) as Array<{ id: string }>;
+      expect(rows).toHaveLength(0);
+    } finally {
+      await cleanup(admin, accountId);
+      await admin.end();
+      await signInConn.end();
+      await purgeConn.end();
+    }
+  });
+
+  it("keeps an account that signed in before the purge started", async () => {
+    const accountId = randomUUID();
+    const admin = createDatabase(TEST_DATABASE_URL as string);
+    const signInConn = createDatabase(TEST_DATABASE_URL as string);
+
+    try {
+      const signInStore = new AccountStore(signInConn);
+      await signInStore.upsert({ id: accountId, displayName: "Before Purge" });
+      await signInStore.upsert({ id: accountId, displayName: "Before Purge Again" });
+
+      await new AccountStore(createDatabase(TEST_DATABASE_URL as string)).purgeAccountData(accountId);
+
+      const rows = (await admin`SELECT id FROM accounts WHERE id = ${accountId}`) as Array<{ id: string }>;
+      expect(rows).toHaveLength(0);
+      await expect(signInStore.upsert({ id: accountId, displayName: "Too Late" })).rejects.toBeInstanceOf(
+        AccountDeletedError
+      );
+    } finally {
+      await cleanup(admin, accountId);
+      await admin.end();
+      await signInConn.end();
     }
   });
 
@@ -514,6 +732,7 @@ describe.runIf(TEST_DATABASE_URL)("account purge against real Postgres", () => {
       const rows = (await admin`SELECT id FROM extraction_jobs WHERE id = ${job.id}`) as Array<{ id: string }>;
       expect(rows).toHaveLength(0);
     } finally {
+      await cleanup(admin, accountId);
       await admin.end();
       await uploadConn.end();
     }

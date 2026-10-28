@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { describe, expect, it, vi } from "vitest";
 
-import { createDatabase } from "./connection";
+import { applySchema, createDatabase, type Sql } from "./connection";
 import {
   ObjectDeletionOutbox,
   drainPendingObjectDeletions,
@@ -20,6 +20,18 @@ function notFoundError(): Error {
 }
 
 describe("ObjectDeletionOutbox", () => {
+  it("reserves keys so a later drain retries them instead of losing them", async () => {
+    const sql = await setupTestDatabase();
+    const outbox = new ObjectDeletionOutbox(sql);
+
+    await outbox.reserve(["poses/a/original.png"], 60);
+    await outbox.reserve(["poses/a/original.png", "poses/a/skeleton.png"], 60);
+
+    expect(await outbox.count()).toBe(2);
+    const rows = await outbox.list();
+    expect(rows.every((row) => row.claimedUntil !== null)).toBe(true);
+  });
+
   it("enqueues keys once and ignores duplicates", async () => {
     const sql = await setupTestDatabase();
     const outbox = new ObjectDeletionOutbox(sql);
@@ -40,10 +52,10 @@ describe("ObjectDeletionOutbox", () => {
     await sql`UPDATE pending_object_deletions SET enqueued_at = NOW() - interval '2 minute' WHERE key = 'k2'`;
 
     const first = await outbox.claim(2);
-    expect([...first].sort()).toEqual(["k1", "k2"]);
+    expect(first.map((entry) => entry.key).sort()).toEqual(["k1", "k2"]);
 
     const second = await outbox.claim(2);
-    expect(second).toEqual(["k3"]);
+    expect(second.map((entry) => entry.key)).toEqual(["k3"]);
 
     const third = await outbox.claim(2);
     expect(third).toEqual([]);
@@ -53,10 +65,52 @@ describe("ObjectDeletionOutbox", () => {
     const sql = await setupTestDatabase();
     const outbox = new ObjectDeletionOutbox(sql);
     await outbox.enqueue(["stale-claim"]);
-    expect(await outbox.claim(10)).toEqual(["stale-claim"]);
+    expect((await outbox.claim(10)).map((entry) => entry.key)).toEqual(["stale-claim"]);
 
     await sql`UPDATE pending_object_deletions SET claimed_until = NOW() - interval '1 second'`;
-    expect(await outbox.claim(10)).toEqual(["stale-claim"]);
+    expect((await outbox.claim(10)).map((entry) => entry.key)).toEqual(["stale-claim"]);
+  });
+
+  it("ignores an acknowledgement from a drain whose claim already expired", async () => {
+    const sql = await setupTestDatabase();
+    const outbox = new ObjectDeletionOutbox(sql);
+    await outbox.enqueue(["contended"]);
+
+    const [staleClaim] = await outbox.claim(10);
+    await sql`UPDATE pending_object_deletions SET claimed_until = NOW() - interval '1 second'`;
+    const [freshClaim] = await outbox.claim(10);
+    expect(freshClaim?.key).toBe("contended");
+    expect(freshClaim?.claimToken).not.toBe(staleClaim?.claimToken);
+
+    await outbox.markDeleted("contended", staleClaim?.claimToken);
+    expect(await outbox.count()).toBe(1);
+
+    await outbox.markDeleted("contended", freshClaim?.claimToken);
+    expect(await outbox.count()).toBe(0);
+  });
+
+  it("hides a reserved key from drains until its reservation expires", async () => {
+    const sql = await setupTestDatabase();
+    const outbox = new ObjectDeletionOutbox(sql);
+
+    await outbox.reserve(["poses/pending/original.png"], 900);
+    expect(await outbox.claim(10)).toEqual([]);
+
+    await sql`UPDATE pending_object_deletions SET claimed_until = NOW() - interval '1 second'`;
+    expect((await outbox.claim(10)).map((entry) => entry.key)).toEqual(["poses/pending/original.png"]);
+  });
+
+  it("removes reserved keys from the finalize transaction once the pose owns them", async () => {
+    const sql = await setupTestDatabase();
+    const outbox = new ObjectDeletionOutbox(sql);
+    const keys = ["poses/live/original.png", "poses/live/skeleton.png", "poses/live/thumbnail.png"];
+    await outbox.reserve(keys, 900);
+
+    await sql.begin(async (tx) => {
+      await outbox.ackKeys(tx, keys);
+    });
+
+    expect(await outbox.count()).toBe(0);
   });
 });
 
@@ -141,8 +195,14 @@ describe.runIf(TEST_DATABASE_URL)("drain against real Postgres", () => {
   it("never processes a claimed key twice across two connections", async () => {
     const admin = createDatabase(TEST_DATABASE_URL as string);
     const second = createDatabase(TEST_DATABASE_URL as string);
+    await applySchema(admin);
+    // Every key of this run lives under its own prefix, so the assertions never depend on
+    // rows another run or another test file left in the shared database.
     const accountId = randomUUID();
     const keys = Array.from({ length: 50 }, () => `${accountId}/${randomUUID()}`);
+    const ownKeys = (sql: Sql) => sql`
+      SELECT COUNT(*)::int AS count FROM pending_object_deletions WHERE key LIKE ${`${accountId}/%`}
+    `;
 
     try {
       await new ObjectDeletionOutbox(admin).enqueue(keys);
@@ -158,8 +218,10 @@ describe.runIf(TEST_DATABASE_URL)("drain against real Postgres", () => {
 
       expect(calls).toHaveLength(50);
       expect(new Set(calls).size).toBe(50);
-      expect(await new ObjectDeletionOutbox(admin).count()).toBe(0);
+      expect(calls.every((key) => key.startsWith(`${accountId}/`))).toBe(true);
+      expect(await ownKeys(admin)).toEqual([{ count: 0 }]);
     } finally {
+      await admin`DELETE FROM pending_object_deletions WHERE key LIKE ${`${accountId}/%`}`;
       await admin.end();
       await second.end();
     }

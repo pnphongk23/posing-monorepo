@@ -519,6 +519,15 @@ Thứ tự bắt buộc — danh tính phải được xác nhận đã xóa tr�
 4. Xóa object trên R2 theo outbox; object storage từ chối thì giữ row và retry ở
    sweep nền (mỗi 10 phút). Vì vậy object có thể còn tối đa vài phút sau `204`.
 
+Object key của pose đang được tạo được ghi vào outbox **trước** lần upload đầu tiên
+(giữ chỗ 30 phút). Nhờ vậy finalize thất bại hay cleanup thất bại đều không làm mất
+key; transaction finalize xóa các row giữ chỗ khi pose đã sở hữu object.
+
+Purge ghi tombstone `deleted_accounts` (chỉ `account_id`, không PII) trong cùng
+transaction. Mọi lần sign-in (`upsert` account) lấy cùng một advisory lock với purge
+và đọc tombstone, nên sign-in còn token hợp lệ sau khi xóa bị từ chối (`401`) và
+không thể tạo lại account; upload của account đã xóa trả `410`.
+
 Dữ liệu bị xóa:
 
 | Bảng / nơi lưu | Nội dung |
@@ -538,6 +547,8 @@ Account khác không bị ảnh hưởng: mỗi bước đều scope theo `accou
 | BR-ACCOUNT-002 | Sau `204`, không còn base64 ảnh hay media key nào của account ngoài outbox chờ retry. |
 | BR-ACCOUNT-003 | Upload của account đã bị xóa trả `410 ACCOUNT_DELETED` và không tạo job. |
 | BR-ACCOUNT-004 | Purge dở dang được resume bởi sweeper từ intent cũ hơn 5 phút. |
+| BR-ACCOUNT-005 | Sign-in bằng token còn hạn sau khi account đã xóa bị từ chối; tombstone không chứa PII và chỉ ghi khi purge commit. |
+| BR-ACCOUNT-006 | Log của luồng xóa không chứa object key; chỉ account id / job id và số lượng. |
 
 **Errors:** `401 UNAUTHORIZED`, `503 AUTH_PENDING_VALIDATION` (thiếu service-role key,
 identity provider từ chối, hoặc purge row thất bại).

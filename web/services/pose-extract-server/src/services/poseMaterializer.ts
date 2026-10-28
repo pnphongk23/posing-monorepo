@@ -107,20 +107,27 @@ export async function materializePose(options: MaterializePoseOptions): Promise<
   } catch (error) {
     if (uploadedKeys.length > 0) {
       const results = await Promise.allSettled(uploadedKeys.map((key) => mediaStorage.remove(key)));
-      const failedKeys: string[] = [];
-      for (let i = 0; i < results.length; i += 1) {
-        const res = results[i];
-        const fileKey = uploadedKeys[i]!;
-        if (res?.status === "rejected") {
-          failedKeys.push(fileKey);
-          logger.error({ fileKey, error: res.reason }, "failed to remove uploaded key during cleanup");
-        }
-      }
-      if (failedKeys.length > 0 && onCleanupFailed) {
-        try {
-          await onCleanupFailed(failedKeys);
-        } catch (reportError) {
-          logger.error({ failedKeys, error: reportError }, "failed to report unremoved keys");
+      const failedKeys = uploadedKeys.filter((_key, index) => results[index]?.status === "rejected");
+      if (failedKeys.length > 0) {
+        // Object keys are not logged: they are capabilities to a reusable file.
+        logger.error(
+          { ownerAccountId, currentJobId, failedCount: failedKeys.length },
+          "failed to remove uploaded keys during cleanup"
+        );
+        if (onCleanupFailed) {
+          try {
+            await onCleanupFailed(failedKeys);
+          } catch (reportError) {
+            logger.error(
+              {
+                ownerAccountId,
+                currentJobId,
+                failedCount: failedKeys.length,
+                errorName: reportError instanceof Error ? reportError.name : "Unknown"
+              },
+              "failed to report unremoved keys"
+            );
+          }
         }
       }
     }

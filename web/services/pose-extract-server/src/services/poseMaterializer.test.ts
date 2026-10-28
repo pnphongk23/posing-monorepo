@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { CreatePoseInput, PoseRecord } from "../db/communityStore";
+import { logger } from "../utils/logger";
 import { buildPoseObjectKey, materializePose, type MediaStorage } from "./poseMaterializer";
 
 function createFakePoseRecord(input: CreatePoseInput): PoseRecord {
@@ -301,6 +302,47 @@ describe("materializePose", () => {
 
     expect(onCleanupFailed).toHaveBeenCalledTimes(1);
     expect(onCleanupFailed).toHaveBeenCalledWith(["poses/pose-cleanup-report/skeleton.png"]);
+  });
+
+  it("logs the owner, job, and failure count instead of any object key", async () => {
+    const mediaStorage: MediaStorage = {
+      put: vi.fn(async () => undefined),
+      remove: vi.fn(async (key: string) => {
+        if (key.includes("skeleton")) throw new Error("R2 delete failed");
+      }),
+      publicUrl: (key: string) => `https://cdn.example.com/${key}`
+    };
+    const logged: unknown[][] = [];
+    const errorSpy = vi.spyOn(logger, "error").mockImplementation((...args: unknown[]) => {
+      logged.push(args);
+      return undefined as never;
+    });
+
+    try {
+      await expect(
+        materializePose({
+          poseId: "pose-quiet",
+          ownerAccountId: "owner-quiet",
+          currentJobId: "job-quiet",
+          metadata: { name: "Quiet" },
+          source: { b64: "c291cmNl", mime: "image/png" },
+          result: { b64: "cmVzdWx0", mime: "image/png" },
+          keyPrefix: "poses",
+          mediaStorage,
+          createPose: vi.fn(async () => {
+            throw new Error("job already gone");
+          })
+        })
+      ).rejects.toThrow("job already gone");
+
+      const serialized = JSON.stringify(logged);
+      expect(serialized).not.toMatch(/poses\//);
+      expect(serialized).not.toMatch(/\.png/);
+      expect(serialized).toContain("owner-quiet");
+      expect(serialized).toContain("job-quiet");
+    } finally {
+      errorSpy.mockRestore();
+    }
   });
 
   it("does not call onCleanupFailed when every removal succeeds", async () => {

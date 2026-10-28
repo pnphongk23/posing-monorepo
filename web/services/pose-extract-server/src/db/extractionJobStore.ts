@@ -126,7 +126,13 @@ export class ExtractionJobStore {
     const rows = input.ownerAccountId
       ? ((await this.db`
           WITH acct AS (
-            SELECT id FROM accounts WHERE id = ${input.ownerAccountId} FOR KEY SHARE
+            SELECT id
+            FROM accounts
+            WHERE id = ${input.ownerAccountId}
+              AND NOT EXISTS (
+                SELECT 1 FROM deleted_accounts WHERE account_id = ${input.ownerAccountId}
+              )
+            FOR KEY SHARE
           )
           INSERT INTO extraction_jobs (
             id,

@@ -376,7 +376,8 @@ paths:
         running jobs and their base64 payloads), and the object-storage keys of the owned media.
 
         Other accounts are untouched. Once the account is gone, an owned extraction upload answers
-        `410 ACCOUNT_DELETED`.
+        `410 ACCOUNT_DELETED`, and a sign-in that still holds valid tokens is refused instead of
+        recreating the account.
       tags: [Account]
       security:
         - AccountSession: []
