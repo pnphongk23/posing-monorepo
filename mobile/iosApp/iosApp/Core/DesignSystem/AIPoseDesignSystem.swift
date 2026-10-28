@@ -204,6 +204,10 @@ struct FeatureStateView: View {
     let title: String
     let message: String
     var actionTitle: String? = nil
+    /// E2E handle for the action control (`gallery.empty.openCameraButton`). Passing one also stops the
+    /// card from merging its children into a single element, so the button is individually addressable;
+    /// cards without a handle keep the combined element they always had.
+    var actionIdentifier: String? = nil
     var action: (() -> Void)? = nil
 
     @State private var didAnnounce = false
@@ -248,6 +252,7 @@ struct FeatureStateView: View {
                 .buttonStyle(NeoButtonStyle(fill: AIPoseColor.surface))
                 .fixedSize(horizontal: true, vertical: false)
                 .padding(.top, 2)
+                .accessibilityIdentifier(actionIdentifier ?? "")
             }
         }
         .padding(Self.contentPadding)
@@ -261,7 +266,7 @@ struct FeatureStateView: View {
         )
         // `margin-bottom: var(--nb-space-sm)`.
         .padding(.bottom, Self.contentGap)
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: actionIdentifier == nil ? .combine : .contain)
         .onAppear(perform: announceIfNeeded)
     }
 

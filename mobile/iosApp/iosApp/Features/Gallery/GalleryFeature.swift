@@ -325,12 +325,15 @@ struct GalleryScreen: View {
                     tone: .empty,
                     title: GalleryStateCopy.emptyAllTitle,
                     message: GalleryStateCopy.emptyAllMessage,
-                    actionTitle: GalleryStateCopy.openCameraActionTitle
+                    actionTitle: GalleryStateCopy.openCameraActionTitle,
+                    actionIdentifier: "gallery.empty.openCameraButton"
                 ) {
                     onOpenCamera()
                 }
                 .padding(.horizontal, AIPoseSpacing.lg)
                 .padding(.vertical, AIPoseSpacing.lg)
+                // The card keeps its own id (the flows assert on it); the button inside carries
+                // `gallery.empty.openCameraButton`.
                 .accessibilityIdentifier("gallery.empty.openCamera")
             } else {
                 FeatureStateView(

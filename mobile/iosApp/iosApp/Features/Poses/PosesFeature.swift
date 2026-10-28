@@ -800,6 +800,7 @@ struct PosesScreen: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Open Settings")
+            .accessibilityIdentifier("poses.open-settings")
         }
         // `.nb-nav-bar { height: 52px; margin-bottom: 16px }`.
         .frame(height: 52)
@@ -1209,7 +1210,7 @@ struct PoseDetailScreen: View {
 
     private var detailContent: some View {
         VStack(spacing: 0) {
-            NeoSubscreenHeader(title: pose.name, onBack: { dismiss() })
+            NeoSubscreenHeader(title: pose.name, backIdentifier: "poseDetail.back", onBack: { dismiss() })
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     poseHeroCard
@@ -1237,6 +1238,7 @@ struct PoseDetailScreen: View {
                               Label("Use this pose", systemImage: "camera")
                           }
                           .buttonStyle(NeoButtonStyle())
+                          .accessibilityIdentifier("poseDetail.use")
                     }
                 }.padding()
             }

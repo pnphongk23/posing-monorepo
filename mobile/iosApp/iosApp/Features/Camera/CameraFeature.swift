@@ -1544,6 +1544,7 @@ private struct CameraShutterRail: View {
         .opacity(controlsEnabled || isBusy ? 1 : 0.45)
         .disabled(!controlsEnabled || isBusy)
         .accessibilityLabel("Capture photo")
+        .accessibilityIdentifier("camera.shutter")
     }
 
     private var flipButton: some View {

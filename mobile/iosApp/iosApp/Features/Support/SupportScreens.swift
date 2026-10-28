@@ -837,9 +837,14 @@ private struct AboutPosingSheet: View {
                 .buttonStyle(NeoButtonStyle(fill: AIPoseColor.surface))
                 .frame(minHeight: 44)
                   .accessibilityLabel("Close About posing")
+                  .accessibilityIdentifier("about.close")
             Spacer(minLength: 0)
         }
         .padding(AIPoseSpacing.lg)
+        // The sheet body used to reach the accessibility tree as nothing at all (QA flow could only see
+        // the Close control). `.contain` publishes the title/version/credits lines as their own elements
+        // inside a modal container.
+        .accessibilityElement(children: .contain)
         .supportSheetPresentation()
         .accessibilityAddTraits(.isModal)
     }

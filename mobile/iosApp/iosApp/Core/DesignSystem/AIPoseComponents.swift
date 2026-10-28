@@ -89,6 +89,9 @@ struct NeoBackButton: View {
     /// Gallery detail v2 uses a plain control. `pose-detail.html` uses `.nb-btn--square`, a full 44pt
     /// surface with the regular 3pt hard shadow (the 32pt compact surface is for toolbar actions).
     var plain: Bool = false
+    /// Route-specific handle for E2E, set by the owning screen (`poseDetail.back`). Empty by default so
+    /// every other back button keeps the label-only contract it already had.
+    var accessibilityIdentifier: String = ""
     let action: () -> Void
 
     var body: some View {
@@ -115,6 +118,7 @@ struct NeoBackButton: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(accessibilityLabel)
+        .accessibilityIdentifier(accessibilityIdentifier)
     }
 }
 
@@ -210,6 +214,8 @@ struct NeoSubscreenHeader<Trailing: View>: View {
     let title: String
     var subtitle: String?
     var backLabel: String
+    /// Route-specific back-button identifier (`poseDetail.back`); empty keeps label-only matching.
+    var backIdentifier: String = ""
     var plainControls: Bool
     var titleEmphasis: NeoHeaderTitleEmphasis
     var horizontalPadding: CGFloat
@@ -226,7 +232,12 @@ struct NeoSubscreenHeader<Trailing: View>: View {
                 .padding(.horizontal, NeoSubscreenHeaderMetrics.controlColumnWidth + AIPoseSpacing.sm)
             HStack(spacing: AIPoseSpacing.sm) {
                 if let onBack {
-                    NeoBackButton(accessibilityLabel: backLabel, plain: plainControls, action: onBack)
+                    NeoBackButton(
+                        accessibilityLabel: backLabel,
+                        plain: plainControls,
+                        accessibilityIdentifier: backIdentifier,
+                        action: onBack
+                    )
                 }
                 Spacer(minLength: 0)
                 trailing()
@@ -243,6 +254,7 @@ extension NeoSubscreenHeader where Trailing == EmptyView {
         title: String,
         subtitle: String? = nil,
         backLabel: String = "Back",
+        backIdentifier: String = "",
         plainControls: Bool = false,
         titleEmphasis: NeoHeaderTitleEmphasis = .navigation,
         horizontalPadding: CGFloat = AIPoseSpacing.lg,
@@ -253,6 +265,7 @@ extension NeoSubscreenHeader where Trailing == EmptyView {
             title: title,
             subtitle: subtitle,
             backLabel: backLabel,
+            backIdentifier: backIdentifier,
             plainControls: plainControls,
             titleEmphasis: titleEmphasis,
             horizontalPadding: horizontalPadding,
@@ -270,6 +283,7 @@ extension NeoSubscreenHeader {
         title: String,
         subtitle: String? = nil,
         backLabel: String = "Back",
+        backIdentifier: String = "",
         plainControls: Bool = false,
         horizontalPadding: CGFloat = AIPoseSpacing.lg,
         bottomPadding: CGFloat = AIPoseSpacing.md,
@@ -280,6 +294,7 @@ extension NeoSubscreenHeader {
             title: title,
             subtitle: subtitle,
             backLabel: backLabel,
+            backIdentifier: backIdentifier,
             plainControls: plainControls,
             titleEmphasis: .navigation,
             horizontalPadding: horizontalPadding,
@@ -389,6 +404,7 @@ struct NeoDockTabBar: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Open Camera")
+            .accessibilityIdentifier("dock.camera")
         }
         .padding(.horizontal, AIPoseSpacing.lg)
         // The fixed prototype frame has no native home-indicator inset; keep the dock 16pt
