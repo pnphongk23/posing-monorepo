@@ -73,9 +73,14 @@ used as the environment descriptor.
   `false`).
 - Debug Simulator runs can override flags with launch arguments:
   - `-AIPoseAccountEnabled true|false`
+  - `-AIPoseAccountsEnabled true|false` (same switch as `accounts_enabled_v2`; the older
+    `-AIPoseAccountEnabled` wins when both are passed)
   - `-AIPoseExtractPoseEnabled true|false`
+  - `-AIPosePaywallEnabled true|false` (same switch as `paywall_enabled`)
   - `-AIPoseAPIBaseURL <url>`
-  (Compiled out of Release builds).
+  (Compiled out of Release builds: no launch-argument lookup for these flags exists in a Release
+  binary. The two new switches only override the value resolved from Firestore; with no argument the
+  fail-closed defaults stand.)
 
 ## dSYM handling (Crashlytics)
 
