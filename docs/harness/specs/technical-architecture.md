@@ -41,10 +41,10 @@ những lưu ý khi làm việc**. Hợp đồng dữ liệu/API và domain mode
 
 | Lane | Công nghệ | Version | Ghi chú |
 | --- | --- | --- | --- |
-| Mobile UI | Kotlin Multiplatform + Compose Multiplatform | Kotlin 2.0.0, Compose 1.6.11, compose-compiler 1.5.10 | target `iosX64` / `iosArm64` / `iosSimulatorArm64`; **không có Android target** |
-| Mobile UI | Voyager (navigation), Koin 4.0.0 (DI), Coil 3 (image), coroutines 1.8.0 | — | Koin **giữ 4.0.0** vì 4.1.x yêu cầu Kotlin 2.1+ (ABI klib) |
-| Mobile data | SQLDelight 2.0.2, Ktor client 2.3.12, kotlinx-serialization, kotlinx-datetime | — | DB local: `mobile/shared/src/commonMain/sqldelight/` |
-| iOS host | SwiftUI + XcodeGen / SwiftPM | Xcode 26.1, iOS 15.0+ | Active project dependencies: `RevenueCat 5.87.1`, `GRDB`, `Kingfisher`, Firebase (Core/Analytics/Crashlytics/Firestore); separate CocoaPods/KMP workspace remains in the repo |
+| Mobile UI | SwiftUI (native iOS) | Swift 6.0, iOS 15.0+ | `mobile/iosApp`; **không có Android target** |
+| Mobile state/DI/networking | MVVM (`*Feature` view model), hand-wired service locator, URLSession | — | `mobile/iosApp/iosApp/Core/Network/ServiceLocator.swift` |
+| Mobile data | GRDB 7.6.0 (SQLite) | — | DB local + schema parity guard: `mobile/iosApp/iosApp/Core/Database/` |
+| iOS host | SwiftUI + XcodeGen / SwiftPM | Xcode 26.1, iOS 15.0+ | Active project dependencies: `RevenueCat 5.87.1`, `GRDB 7.6.0`, `Kingfisher 8.12.0`, Firebase 12.10.0 (Core/Analytics/Crashlytics/Firestore) |
 | iOS env config | XcodeGen (`project.yml`) | — | 2 schemes (`Dev`/`Prod`) × 4 configs (`Debug/Release` × `Dev/Prod`) |
 | Web/admin | Next.js + React + Tailwind | Next 16.2.3, React 19.2.4, Tailwind 4, TypeScript 6 | `web/admin-ui`; server-side API proxies tới Express |
 | API service | Node + Express + TypeScript | Node ≥ 20, Express 5.2.1, TS 6 | `web/services/pose-extract-server`; validation bằng zod 4, log pino |
@@ -53,7 +53,7 @@ những lưu ý khi làm việc**. Hợp đồng dữ liệu/API và domain mode
 | Extraction worker | Node/TypeScript + Gemini REST hoặc Higgsfield CLI | — | Worker claim job, tạo provider qua factory, xử lý ảnh kết quả bằng Python lineart remover |
 | Deploy | Railway + Docker | — | `railway.toml`, Dockerfile per service |
 
-Nguồn version: `gradle/libs.versions.toml`, `package.json` từng web workspace,
+Nguồn version: `mobile/iosApp/project.yml`, `package.json` từng web workspace,
 `mobile/iosApp/Podfile.lock`.
 
 ## Build từng lane
@@ -109,17 +109,19 @@ npm run build     # next build
 npm run dev       # next dev
 ```
 
-### Mobile (KMP + iOS)
+### Mobile (native iOS)
 
 ```sh
-./gradlew :composeApp:compileKotlinIosSimulatorArm64
-./gradlew :shared:iosSimulatorArm64Test
+(cd mobile/iosApp && xcodegen generate)   # khi project.yml/source/dependency đổi
+xcodebuild test -workspace mobile/iosApp/iosApp.xcworkspace -scheme Dev \
+  -destination 'platform=iOS Simulator,name=<available iPhone>'
+xcodebuild build -workspace mobile/iosApp/iosApp.xcworkspace -scheme Dev \
+  -destination 'generic/platform=iOS Simulator'
 ```
 
-> ⚠️ `:shared:iosSimulatorArm64Test` hiện **không compile**: `PoseApiServiceTest.kt`
-> import `kotlinx.coroutines.test.runTest` mà chưa có dependency tương ứng trong
-> `commonTest` của `:shared` (chỉ có ở `iosSimulatorArm64Test`). Biết trước để
-> không nhầm là lỗi do thay đổi của mình.
+> Gradle/Kotlin build (`./gradlew …`) đã retired 2026-09-13 cùng migration
+> KMP → native; đừng khôi phục lại `gradlew`, `gradle.properties` hay lane
+> `mobile/composeApp`.
 
 iOS app là host SwiftUI chạy scheme `Dev`/`Prod` sinh từ `project.yml` bằng
 XcodeGen. Thay đổi native (Info.plist, pods, configs) phải sửa `project.yml`
@@ -190,34 +192,31 @@ pose-extract-server, mounts `/app/data` + `/app/higgsfield`).
 
 ## Những lưu ý khi làm việc
 
-1. **Koin phải là 4.0.0** — 4.1.x cần Kotlin 2.1+ (ABI klib); đang dùng Kotlin 2.0.0.
-2. **Không `pod()` cinterop cho Firebase từ Kotlin** — Kotlin 2.0.0 không parse
-   được Xcode 26.1 SDK modulemap; Firebase chỉ bridge qua Swift
-   (`AppDelegate.swift`). Kotlin chỉ giữ contract/test seam
-   (`EndpointPolicy`, `AppStartupConfig`).
-3. **XcodeGen là nguồn sự thật cho iOS project** — tạo file mới (Assets, plist,
+> Lưu ý lịch sử (retired 2026-09-13): các ràng buộc Kotlin/KMP — Koin 4.0.0,
+> cinterop Firebase qua `pod()`, Gradle chỉ build target `ios*`, framework
+> `ComposeApp` static — chỉ còn giá trị đọc tài liệu cũ; mobile lane hiện là
+> Swift native trong `mobile/iosApp`.
+
+1. **XcodeGen là nguồn sự thật cho iOS project** — tạo file mới (Assets, plist,
    source) phải vào `project.yml`, regenerate, kiểm tra `Podfile.lock` không đổi
    vô cớ. Có 4 config `Debug/Release` × `Dev/Prod` ánh xạ native build type.
-4. **Gradle build config luôn chỉ `ios*` targets** — không có Android; mọi
-   claim "Android parity" là gap chưa giải quyết.
-5. **Bắt buộc linker flag `-lsqlite3`** — thêm qua Kotlin/Native (`linkerOpts`)
-   và Podfile `post_install` (`OTHER_LDFLAGS`); không bỏ.
-6. **Swift 6 strict concurrency bị tắt** (`SWIFT_STRICT_CONCURRENCY = minimal`)
+2. **Bắt buộc linker flag `-lsqlite3`** — thêm qua Podfile `post_install`
+   (`OTHER_LDFLAGS`); không bỏ.
+3. **Swift 6 strict concurrency bị tắt** (`SWIFT_STRICT_CONCURRENCY = minimal`)
    trong Podfile `post_install` — đừng "sửa" ngược lại.
-7. **Framework ComposeApp là static (`isStatic = true`)** cho cả 3 targets.
-8. **Worker cần credential của provider được chọn** — Gemini dùng key pool;
+4. **Worker cần credential của provider được chọn** — Gemini dùng key pool;
    Higgsfield dùng CLI credentials. Thiếu credential Higgsfield làm job fail rõ mã
    lỗi theo DEC-001.
-9. **Skeleton từ khóa chuẩn hóa** — theo
+5. **Skeleton từ khóa chuẩn hóa** — theo
    [[pose-domain-glossary]], thuật ngữ extraction
    result là `skeleton`, không dùng `render`/`result image`/`extract`.
-10. **Thủ tục khởi động (DB, R2, secret) không đổi** — bất kỳ thay đổi schema
+6. **Thủ tục khởi động (DB, R2, secret) không đổi** — bất kỳ thay đổi schema
     fetch/khởi tạo runtime phải coi là thay đổi hành vi (xem Feature workflow).
 
 ## Boundary & storage
 
-- Mobile: photo bytes trong app-private storage; `Pose` local cache trong SQLDelight
-  (`mobile/shared/src/commonMain/sqldelight/`). Không lưu trữ extraction jobs trên thiết bị (server-authoritative).
+- Mobile: photo bytes trong app-private storage; `Pose` local cache trong GRDB /
+  SQLite (`mobile/iosApp/iosApp/Core/Database/`). Không lưu trữ extraction jobs trên thiết bị (server-authoritative).
 - Server: Postgres qua `DATABASE_URL` (production/Supabase); `extraction_jobs` lưu `owner_account_id`, `pose_draft` (jsonb), `pose_id`, `hidden_at` và index `(owner_account_id, created_at)`.
 - R2: community objects; credential + admin secret chỉ ở server.
 - Extraction worker: process riêng, dùng provider factory và Python lineart
@@ -242,7 +241,9 @@ Từ repo root:
 npm run backend:test
 npm run backend:build
 npm run build
-./gradlew :composeApp:compileKotlinIosSimulatorArm64 :shared:iosSimulatorArm64Test
+(cd mobile/iosApp && xcodegen generate)
+xcodebuild test -workspace mobile/iosApp/iosApp.xcworkspace -scheme Dev \
+  -destination 'platform=iOS Simulator,name=<available iPhone>'
 ckh validate --all --workspace .
 ckh index check --workspace .
 ```

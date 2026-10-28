@@ -8,8 +8,6 @@ ai-pose/
 ├── CLAUDE.md
 ├── README.md
 ├── mobile/
-│   ├── composeApp/
-│   ├── shared/
 │   └── iosApp/
 ├── web/
 │   ├── admin-ui/

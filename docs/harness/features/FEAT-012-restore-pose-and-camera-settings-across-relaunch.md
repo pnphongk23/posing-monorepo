@@ -18,14 +18,14 @@ relationships:
     - "[[FEAT-001-capture-a-photo-on-mobile|FEAT-001]]"
     - "[[FEAT-003-browse-and-search-published-poses|FEAT-003]]"
   source_paths:
-    - mobile/shared/src/commonMain/kotlin/com/aipose/data/PreparedPoseReference.kt
-    - mobile/shared/src/commonMain/kotlin/com/aipose/data/PoseServiceLocator.kt
-    - mobile/composeApp/src/commonMain/kotlin/com/aipose/navigation/Navigation.kt
-    - mobile/composeApp/src/commonMain/kotlin/com/aipose/ui/screens/poses/PoseDetailScreen.kt
-    - mobile/composeApp/src/commonMain/kotlin/com/aipose/camera/CameraState.kt
-    - mobile/composeApp/src/commonMain/kotlin/com/aipose/camera/CameraScreen.kt
-    - mobile/composeApp/src/commonMain/kotlin/com/aipose/camera/CameraContract.kt
-    - mobile/composeApp/src/commonMain/kotlin/com/aipose/camera/CameraLayoutModel.kt
+    - mobile/iosApp/iosApp/Features/Camera/CameraFeature.swift
+    - mobile/iosApp/iosApp/Core/Camera/CameraCoordinator.swift
+    - mobile/iosApp/iosApp/Core/Camera/CameraService.swift
+    - mobile/iosApp/iosApp/Core/Camera/CameraPorts.swift
+    - mobile/iosApp/iosApp/Core/Camera/CameraTypes.swift
+    - mobile/iosApp/iosApp/Core/Database/DatabaseRepositories.swift
+    - mobile/iosApp/iosApp/Core/Database/DatabaseRecords.swift
+    - mobile/iosApp/iosApp/Core/Database/AppDatabaseSchema.swift
     - docs/harness/specs/data-contract.md
 type: feature
 id: FEAT-012

@@ -47,9 +47,7 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# Kotlin Multiplatform / Gradle
-mobile/composeApp/build/
-mobile/shared/build/
+# IDE
 *.iml
 .idea/
 local.properties

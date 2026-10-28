@@ -6,9 +6,7 @@ posing is a monorepo for an iOS pose-reference camera, a local photo/pose librar
 
 | Path | Purpose |
 | --- | --- |
-| `mobile/composeApp/` | Compose Multiplatform UI targeting iOS |
-| `mobile/shared/` | SQLDelight persistence and Ktor API client |
-| `mobile/iosApp/` | Native iOS host and camera integration |
+| `mobile/iosApp/` | Native iOS app: SwiftUI features, camera, GRDB persistence, networking |
 | `web/admin-ui/` | Next.js admin UI and server-side API proxies |
 | `web/services/pose-extract-server/` | Express extraction/community API and worker |
 | `docs/harness/` | Current product, technical, feature, and UI/UX source of truth |
@@ -31,8 +29,9 @@ npm run build
 npm run backend:test
 npm run backend:build
 
-# iOS KMP modules
-./gradlew :composeApp:compileKotlinIosSimulatorArm64 :shared:iosSimulatorArm64Test
+# iOS app (regenerate the project first when project.yml or sources change)
+(cd mobile/iosApp && xcodegen generate)
+xcodebuild test -workspace mobile/iosApp/iosApp.xcworkspace -scheme Dev -destination 'platform=iOS Simulator,name=<available iPhone>'
 
 # Documentation harness
 ckh validate --all --workspace .

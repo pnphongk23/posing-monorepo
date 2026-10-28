@@ -53,13 +53,15 @@ git diff --check
 Run gates from repo root, after approval and again immediately before archive:
 
 ```bash
-./gradlew :composeApp:allTests
-./gradlew :composeApp:compileKotlinIosSimulatorArm64
+xcodebuild test \
+  -workspace mobile/iosApp/iosApp.xcworkspace \
+  -scheme Dev \
+  -destination 'platform=iOS Simulator,name=<available iPhone>'
 git diff --check
 ```
 
-Report test count and every failure; a known failure is still a failure (e.g.
-do not waive `PosesViewModelTest.testPullToRefreshSingleFlightNoDuplicateLoad`).
+Report test count and every failure; a known failure is still a failure, never
+waive one silently.
 
 Inspect release path without changing tracked files: Workspace
 `mobile/iosApp/iosApp.xcworkspace`; Scheme `iosApp`; Configuration `Release`;
@@ -67,10 +69,9 @@ source `mobile/iosApp/project.yml`; bundle ID, team, marketing version, signing
 identities, provisioning profiles, prior archives, prior build numbers; Xcode
 and `xcrun altool --version`. Inspect and report current runtime endpoints
 unmodified: `SERVER_BASE_URL` in
-`mobile/composeApp/src/commonMain/kotlin/com/aipose/data/AppConfig.kt` and
-`baseUrl` in
-`mobile/shared/src/commonMain/kotlin/com/aipose/data/PoseServiceLocator.kt`. A
-dev/ngrok endpoint is not a blocker for the requested TestFlight build.
+`mobile/iosApp/iosApp/Core/Network/AppConfig.swift` and `baseURL` in
+`mobile/iosApp/iosApp/Core/Network/ServiceLocator.swift`. A dev/ngrok endpoint
+is not a blocker for the requested TestFlight build.
 
 ## Version and build number
 
