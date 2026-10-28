@@ -168,10 +168,81 @@ describe("toEntitlement", () => {
     expect(toEntitlement(payload, "premium", RECEIVED_AT).environment).toBe("SANDBOX");
   });
 
-  it("leaves the environment unknown when no subscription matches the product", () => {
+  it("treats an entitlement whose product has no purchase evidence as absent", () => {
     const payload = subscriberPayload({ subscriptions: {} });
 
-    expect(toEntitlement(payload, "premium", RECEIVED_AT).environment).toBeNull();
+    expect(toEntitlement(payload, "premium", RECEIVED_AT)).toMatchObject({
+      isActive: false,
+      expiresAt: null,
+      productId: null,
+      store: null,
+      environment: null
+    });
+  });
+
+  it("is inactive for an entitlement object with no product and no expiry", () => {
+    const payload = {
+      request_date_ms: RECEIVED_AT_MS,
+      subscriber: { entitlements: { premium: {} }, subscriptions: {} }
+    };
+
+    expect(toEntitlement(payload, "premium", RECEIVED_AT)).toMatchObject({
+      isActive: false,
+      expiresAt: null,
+      productId: null,
+      environment: null
+    });
+  });
+
+  it("requires purchase evidence for a lifetime entitlement", () => {
+    const withoutPurchase = {
+      request_date_ms: RECEIVED_AT_MS,
+      subscriber: {
+        entitlements: { premium: { expires_date: null, product_identifier: "com.example.premium.lifetime" } },
+        subscriptions: {},
+        non_subscriptions: {}
+      }
+    };
+    expect(toEntitlement(withoutPurchase, "premium", RECEIVED_AT)).toMatchObject({
+      isActive: false,
+      expiresAt: null,
+      productId: null
+    });
+
+    const withPurchase = {
+      request_date_ms: RECEIVED_AT_MS,
+      subscriber: {
+        entitlements: { premium: { expires_date: null, product_identifier: "com.example.premium.lifetime" } },
+        subscriptions: {},
+        non_subscriptions: {
+          "com.example.premium.lifetime": [
+            { id: "tx-1", purchase_date: iso(-60 * DAY_MS), store: "app_store", is_sandbox: false }
+          ]
+        }
+      }
+    };
+    expect(toEntitlement(withPurchase, "premium", RECEIVED_AT)).toMatchObject({
+      isActive: true,
+      expiresAt: null,
+      productId: "com.example.premium.lifetime",
+      store: "app_store",
+      environment: "PRODUCTION"
+    });
+  });
+
+  it("does not treat a dated entitlement backed only by a non-subscription purchase as active", () => {
+    const payload = {
+      request_date_ms: RECEIVED_AT_MS,
+      subscriber: {
+        entitlements: {
+          premium: { expires_date: iso(30 * DAY_MS), product_identifier: "com.example.coins" }
+        },
+        subscriptions: {},
+        non_subscriptions: { "com.example.coins": [{ id: "tx-1", purchase_date: iso(-DAY_MS), is_sandbox: false }] }
+      }
+    };
+
+    expect(toEntitlement(payload, "premium", RECEIVED_AT).isActive).toBe(false);
   });
 
   it("takes the snapshot time from the upstream response", () => {
@@ -238,15 +309,38 @@ describe("createRevenueCatClient", () => {
     });
   });
 
-  it("reads a malformed body as an inactive row stamped with the receive clock", async () => {
-    const client = createRevenueCatClient({
-      ...options,
-      fetchImpl: vi.fn(async () => new Response("not json", { status: 200 }))
+  it("throws when a 200 body cannot be parsed", async () => {
+    const client = createRevenueCatClient({ ...options, fetchImpl: vi.fn(async () => new Response("{ nope", { status: 200 })) });
+
+    await expect(client.readEntitlement("account-a")).rejects.toBeInstanceOf(RevenueCatRequestError);
+  });
+
+  it("throws when a 200 body is not a subscriber payload", async () => {
+    for (const body of ["null", "[]", "{}", JSON.stringify({ subscriber: "nope" }), JSON.stringify({ subscriber: { subscriptions: 3 } })]) {
+      const client = createRevenueCatClient({ ...options, fetchImpl: vi.fn(async () => new Response(body, { status: 200 })) });
+      await expect(client.readEntitlement("account-a")).rejects.toBeInstanceOf(RevenueCatRequestError);
+    }
+  });
+
+  it("throws when the body read aborts after the response headers", async () => {
+    const fetchImpl = vi.fn(async () => {
+      const stream = new ReadableStream({
+        start(controller) {
+          controller.error(Object.assign(new Error("aborted"), { name: "AbortError" }));
+        }
+      });
+      return new Response(stream, { status: 200, headers: { "content-type": "application/json" } });
     });
+    const client = createRevenueCatClient({ ...options, fetchImpl });
 
-    const snapshot = await client.readEntitlement("account-a");
+    await expect(client.readEntitlement("account-a")).rejects.toBeInstanceOf(RevenueCatRequestError);
+  });
 
-    expect(snapshot).toMatchObject({ isActive: false, upstreamAt: RECEIVED_AT });
+  it("throws when the body exceeds the size cap", async () => {
+    const oversized = JSON.stringify({ subscriber: { entitlements: {}, subscriptions: {} } }).padEnd(1024 * 1024 + 512, " ");
+    const client = createRevenueCatClient({ ...options, fetchImpl: vi.fn(async () => new Response(oversized, { status: 200 })) });
+
+    await expect(client.readEntitlement("account-a")).rejects.toBeInstanceOf(RevenueCatRequestError);
   });
 
   it("throws on a server error without leaking the key", async () => {
