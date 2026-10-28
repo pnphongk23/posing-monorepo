@@ -24,9 +24,15 @@ relationships:
   source_paths:
     - package.json
     - mobile/iosApp/project.yml
+    - mobile/iosApp/iosApp
+    - mobile/iosApp/iosAppTests
     - web/admin-ui
     - web/services/pose-extract-server/src
     - web/services/pose-extract-server/scripts/remove_bg_lineart.py
+    - scripts/ios-verify.sh
+    - scripts/git-hooks/pre-commit
+    - .swiftlint.yml
+    - .swiftformat
 ---
 
 # Technical Architecture
@@ -122,6 +128,134 @@ xcodebuild build -workspace mobile/iosApp/iosApp.xcworkspace -scheme Dev \
 > Gradle/Kotlin build (`./gradlew …`) đã retired 2026-09-13 cùng migration
 > KMP → native; đừng khôi phục lại `gradlew`, `gradle.properties` hay lane
 > `mobile/composeApp`.
+
+## iOS app architecture and conventions
+
+Cách giữ cho `mobile/iosApp` sửa được về lâu dài: ít luật, rẻ để chạy, không refactor lớn.
+**Quyết định đã chốt**: giữ SwiftUI + MVVM, và thêm *unidirectional state* **bên trong từng
+model**. Không TCA, không Redux, không viết lại app. Các mục dưới đây là chuẩn để review và để
+worker tự kiểm — không mở lại quyết định này trong một packet feature.
+
+### Layers
+
+```text
+View (SwiftUI)  →  Model (State + Action)  →  Service / Port  →  Store (GRDB, UserDefaults, HTTP)
+```
+
+- **View** chỉ render `model.state` và gọi `model.send(_:)`. Không business rule, không I/O,
+  không `Task` tự sửa state. View là hàm của state.
+- **Model**: một `@MainActor final class …: ObservableObject` cho mỗi feature, sở hữu đúng
+  một nested `struct State: Equatable` và một nested `enum Action`. Biến duy nhất là
+  `@Published private(set) var state`. Chỉ có **một cửa vào mutate**: `func send(_ action: Action)`.
+- **Pure transition**: toàn bộ logic nằm ở `static func transition(_ state: State, _ action: Action) -> (State, [Effect])`
+  — thuần, không `await`, không đọc singleton, không chạm UI. `send(_:)` chỉ gọi `transition`
+  rồi chạy các `Effect` (gọi service) và đưa state mới vào. Nhờ vậy test được **không cần UI,
+  không cần simulator**.
+- **Service / Port**: side effect đi qua protocol (port) do model nhận từ ngoài, ví dụ
+  `PurchaseGateway`, `TokenStoring`, `PoseService`. Model không tự `URLSession`/`StoreKit`/GRDB.
+- **Store**: GRDB (`Core/Database/`), `UserDefaults`, network. Dumb — không chứa quyết định
+  sản phẩm.
+
+Luồng chuẩn: user tap → `send(.tappedSave)` → `transition` trả state mới + `.persist(...)` →
+model chạy effect → `send(.saveSucceeded)` / `send(.saveFailed(reason))`.
+
+### One concern per file
+
+Mỗi file một việc, **mục tiêu ~400 dòng** (SwiftLint warning ở 400, không bao giờ là error):
+
+| File | Chứa | Không chứa |
+| --- | --- | --- |
+| `<Feature>Screen.swift` / `<Feature>View.swift` | SwiftUI view, layout, accessibility id | state machine, network |
+| `<Feature>Model.swift` | `State`, `Action`, `send`, `transition` | view code, URLSession |
+| `<Feature>Rules.swift` / `…Catalog.swift` / `…Formatting.swift` | helper thuần, test bằng input→output | state, I/O |
+| `<Feature>Service.swift` / `…Adapter.swift` | port + implementation thật | SwiftUI |
+
+Ngoại lệ legacy đang tồn tại (đo 2026-10-29, dòng): `Features/Camera/CameraFeature.swift`
+2169 · `Features/Poses/PosesFeature.swift` 1912 · `Poses/PoseServiceAdapter.swift` 913 ·
+`Support/SupportScreens.swift` 868 · `RevenueCatAdapter.swift` 861 · `Gallery/GalleryFeature.swift`
+768 · `Support/SignIn.swift` 658 · `Jobs/AddPoseScreen.swift` 485. **Không refactor chỉ vì file to.**
+Tách **cơ hội**: khi một feature thật sự sửa vào file đó thì tách phần đang sửa ra trước, và
+mỗi lần tách là **một commit behavior-preserving riêng** (test params/assert không đổi, xanh
+*trước* và *sau*; commit này không kèm thay đổi hành vi).
+
+### Naming
+
+- Model mới: `<Feature>Model` (`PaywallModel`, `AccountSessionModel`) — một số tên cũ là
+  `…Feature`/`…ViewModel`; giữ nguyên cho tới lần tách, đổi tên làm trong commit riêng.
+- View/screen: `<Feature>Screen` (nếu là một màn) hoặc `<Feature>View` (một phần của màn).
+- Port: đặt theo *khả năng*, không theo công nghệ (`PurchaseGateway`, `TokenStoring`).
+  Implementation thật: `<Provider><Port>` hoặc `<Provider>Adapter` (`RevenueCatAdapter`).
+- Action thì mệnh lệnh quá khứ/ý định rõ ràng, kèm payload: `.tappedSave`, `.appeared`,
+  `.searchChanged(String)`, `.loadSucceeded([Pose])`, `.loadFailed(String)`. Không `.setX`.
+- State field là danh từ mô tả dữ liệu view cần (`isLoading`, `query`, `results`, `banner`).
+- Test: soi gương đường dẫn source → `iosAppTests/Features/<Feature>ModelTests.swift`.
+
+### Session-scoped state
+
+Mọi model giữ dữ liệu **của một account** phải là `SessionScoped`: subscribe
+`SessionBoundary` generation, bỏ mọi kết quả trả về từ generation cũ, và xóa state khi sign-out.
+Cơ chế `SessionScoped` một đầu mối được thiết kế ở **P2** (chưa có trong packet này); cho tới
+lúc đó luật vẫn hiệu lực và được test thủ công theo từng model — xem
+`Core/Network/SessionBoundary.swift`, `Core/Network/SessionScopeCoordinator.swift` và
+`iosAppTests/Services/SessionScopeCoordinatorTests.swift`. Không model nào được tự phát minh
+cách reset riêng.
+
+### Test conventions
+
+- Test **state transition, không UI**: tạo model với fake port, `send(...)`, assert `state`.
+  Không snapshot, không `XCUIApplication`, không simulator cho logic.
+- **Failing test trước** cho mọi thay đổi hành vi và mọi bug fix: đỏ → code → xanh.
+- **Mutation proof** cho logic an toàn (session/account scope, xóa dữ liệu, persistence, tiền):
+  cố tình làm sai điều kiện (hoặc đảo một guard) rồi xác nhận test đỏ, sau đó revert. Một test
+  không đỏ được khi logic sai thì không phải bằng chứng — ghi lại việc này trong report.
+- Test độc lập, không phụ thuộc thứ tự; mỗi test tự dựng state và tự dọn (temp dir, in-memory DB).
+
+### Accessibility identifier convention
+
+`<screen>.<element>` — screen là camelCase của feature, element là camelCase của hành vi:
+`poseDetail.saveButton`, `camera.choosePose`, `saved.signIn`, `poses.add-pose`, `search.field`.
+Identifier là **hợp đồng với Maestro** (`mobile/iosApp/maestro/flows/*.yaml`): không dùng lại một
+id cho hai element, không đổi tên id mà không sửa flow trong cùng commit. Element lặp lại trong
+list dùng suffix khoá của row: `<screen>.row.<id>`.
+
+### Cheap gates (SwiftLint, SwiftFormat, pre-commit)
+
+- Cài bằng brew, **không** thêm gì vào app target / build phase / SwiftPM graph:
+  `brew install swiftlint swiftformat`.
+- [`swiftlint.yml`](../../../.swiftlint.yml) (repo root) bật warning cho `file_length` (400), `function_body_length`,
+  `type_body_length`, `line_length`… không rule nào là error trên cây hiện tại. Các vi phạm cũ
+  được đóng băng trong `.swiftlint.baseline.json` (**93 vi phạm / 34 file**, đo 2026-10-29) nên
+  `swiftlint lint --quiet` im lặng và exit 0; vi phạm **mới** in ra và fail. Re-baseline là hành
+  động được review, không phải cách dập lỗi mới.
+- [`.swiftformat`](../../../.swiftformat) là **allow-list** đúng những rule cây hiện tại đã thoả; dùng `--lint` thôi,
+  không bao giờ format lại code cũ trong commit feature. Danh sách rule nợ nằm ở comment cuối file.
+- [`scripts/git-hooks/pre-commit`](../../../scripts/git-hooks/pre-commit) (cài thủ công, xem dưới) chỉ chạy swiftformat `--lint` +
+  `swiftlint` trên **file .swift đã stage**, không bao giờ gọi `xcodebuild`.
+- Chạy gate:
+
+```sh
+swiftlint lint --quiet                                  # từ repo root (baseline resolve theo cwd)
+swiftformat --lint mobile/iosApp/iosApp mobile/iosApp/iosAppTests
+
+# cài hook pre-commit (không tự động)
+ln -sf ../../scripts/git-hooks/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
+```
+
+### VERIFY RULE (bắt buộc)
+
+> Worker **phải** chạy [`scripts/ios-verify.sh`](../../../scripts/ios-verify.sh) và thấy **xanh trước khi commit** bất kỳ thay đổi
+> code iOS nào. Xanh = exit 0 **và** dòng summary `failures=0` với `executed > 0`.
+
+Script lo hết phần dễ sai: chặn khi `/` còn dưới 1.5 GB, chặn khi đã có `xcodebuild` khác chạy
+(một build tại một thời điểm, toàn máy), dùng simulator test chung
+`7CC9393C-88FC-4AE6-88D3-AC68A2E266B7` (override `IOS_VERIFY_SIM`), `-derivedDataPath /tmp/dd-shared`,
+`build-for-testing` rồi `test-without-building` với scheme `Dev`, bọc `perl alarm` 1400s, in một
+dòng `executed/failures`. Chỉ nhận thêm `-only-testing:`/`-skip-testing:`. Muốn kiểm môi trường
+không build: `scripts/ios-verify.sh --check-env`.
+
+Server lane không nằm trong packet này: gate static duy nhất hiện có là
+`npm --prefix web/services/pose-extract-server run lint` (`tsc --noEmit -p tsconfig.json`);
+chưa có ESLint — follow-up riêng nếu cần, đừng thêm trong packet feature.
 
 iOS app là host SwiftUI chạy scheme `Dev`/`Prod` sinh từ `project.yml` bằng
 XcodeGen. Thay đổi native (Info.plist, pods, configs) phải sửa `project.yml`
@@ -241,10 +375,20 @@ Từ repo root:
 ```sh
 npm run backend:test
 npm run backend:build
+npm --prefix web/services/pose-extract-server run lint   # tsc --noEmit (only server static gate)
 npm run build
 (cd mobile/iosApp && xcodegen generate)
+
+# iOS: xem VERIFY RULE ở "iOS app architecture and conventions"
+scripts/ios-verify.sh                 # build-for-testing + toàn bộ unit test, in 1 dòng summary
+scripts/ios-verify.sh --check-env     # chỉ kiểm disk / build lock / simulator
+swiftlint lint --quiet
+swiftformat --lint mobile/iosApp/iosApp mobile/iosApp/iosAppTests
+
+# fallback debug thủ công (khi cần -destination khác hoặc chạy UI test)
 xcodebuild test -workspace mobile/iosApp/iosApp.xcworkspace -scheme Dev \
   -destination 'platform=iOS Simulator,name=<available iPhone>'
+
 ckh validate --all --workspace .
 ckh index check --workspace .
 ```

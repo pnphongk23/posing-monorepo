@@ -17,10 +17,10 @@
 --indent 4
 --rules anyObjectProtocol,applicationMain,assertionFailures,blankLineAfterImports,blankLinesBetweenChainedFunctions,blankLinesBetweenImports,consistentSwitchCaseSpacing,docCommentsBeforeModifiers,duplicateImports,emptyBraces,enumNamespaces,environmentEntry,extensionAccessControl,extensionAttributes,fileHeader,fileMacro,genericExtensions,headerFileName,initCoderUnavailable,leadingDelimiters,linebreakAtEndOfFile,linebreaks,modifiersOnSameLine,nestedIf,noForceTryInTests,preferForLoop,redundantBackticks,redundantBreak,redundantEnumerated,redundantEquatable,redundantExtensionACL,redundantFileprivate,redundantGet,redundantInit,redundantInternal,redundantLetError,redundantObjc,redundantOptionalBinding,redundantPattern,redundantPublic,redundantRawValues,redundantStaticSelf,redundantSwiftTestingSuite,redundantSwiftUIGroup,redundantTypedThrows,redundantVoidReturnType,semicolons,sortDeclarations,sortTypealiases,spaceAroundBrackets,spaceAroundComments,spaceAroundGenerics,spaceAroundParens,spaceInsideBraces,spaceInsideBrackets,spaceInsideComments,spaceInsideGenerics,spaceInsideParens,strongOutlets,strongifiedSelf,swiftTestingTestCaseNames,todos,trailingSpace,typeSugar,void,wrap,wrapAttributes,wrapSingleLineComments,yodaConditions
 
-# Debt — the formatting rules the current tree does NOT satisfy (verified with
-# `swiftformat --lint`; counts were: wrapIfStatementBodies 324, indent 241,
-# wrapFunctionBodies 161, redundantReturn 155, sortImports 87, redundantSelf 98,
-# unusedArguments 96, hoistPatternLet 84, hoistTry 70, blankLinesBetweenScopes 62,
-# repeatedGuard 49, spaceAroundOperators 41, wrapMultilineStatementBraces 28,
-# noForceUnwrapInTests 23, and lowercase vetos below). Promote one rule per commit:
+# Debt — the formatting rules the current tree does NOT satisfy, measured with
+# `swiftformat --lint` on 2026-10-29 (top offenders: wrapIfStatementBodies 324, indent 241,
+# wrapFunctionBodies 161, redundantReturn 155, redundantSelf 98, unusedArguments 96,
+# sortImports 87, hoistPatternLet 84, hoistTry 70, blankLinesBetweenScopes 62,
+# repeatedGuard 49, spaceAroundOperators 41). Promote one rule per commit — add it to
+# --rules above and reformat only the files that commit already touches:
 #   andOperator,blankLinesAroundMark,blankLinesAtEndOfScope,blankLinesAtStartOfScope,blankLinesBetweenScopes,braces,conditionalAssignment,consecutiveBlankLines,consecutiveSpaces,contentBuilder,docComments,elseOnSameLine,hoistAwait,hoistPatternLet,hoistTry,indent,modifierOrder,noForceUnwrapInTests,numberFormatting,opaqueGenericParameters,preferKeyPath,redundantAsync,redundantClosure,redundantEmptyView,redundantLet,redundantMemberwiseInit,redundantNilInit,redundantParens,redundantReturn,redundantSelf,redundantThrows,redundantType,redundantVariable,repeatedGuard,s,simplifyGenericConstraints,sortImports,spaceAroundBraces,spaceAroundOperators,trailingClosures,trailingCommas,unusedArguments,wrapArguments,wrapFunctionBodies,wrapIfExpressionBodies,wrapIfStatementBodies,wrapLoopBodies,wrapMultilineStatementBraces,wrapPropertyBodies
