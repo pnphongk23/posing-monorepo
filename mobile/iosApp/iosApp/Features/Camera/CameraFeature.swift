@@ -64,6 +64,11 @@ final class CameraViewModel: ObservableObject {
     /// C3-Q1 (a): the restored placement waits for the first guide after launch. Kept here instead
     /// of being written straight into `guideTransform`, because the pose-change reset would wipe it.
     private var pendingRestoredTransform: GuideTransform?
+    /// The same placement as it was stored, in degrees. `GuideTransform` holds an `Angle` (radians),
+    /// so re-deriving the JSON from it moves the degrees by one ulp (`12` → `12.000000000000002`).
+    /// While the user has not touched the placement, the row keeps this exact value, so an unrelated
+    /// edit never rewrites the placement the user left behind.
+    private var restoredTransformValue: CameraSettings.Transform?
     private var hasGuide = false
     private var lastAppliedFlash: CameraFlashSetting?
     private var lastAppliedZoom: CGFloat?
@@ -302,9 +307,23 @@ final class CameraViewModel: ObservableObject {
             flash: flashSetting,
             isPoseGuideVisible: isPoseGuideVisible,
             lineColor: guideLineColor,
-            transform: .init(guideTransform),
+            transform: persistedTransform,
             zoom: zoomLevel
         )
+    }
+
+    /// The placement the row has to keep. Two cases:
+    /// - the user has not touched the placement: hand back the exact value that came off the row,
+    ///   whether it is still waiting for its first guide (`pendingRestoredTransform`) or already
+    ///   applied. Writing `guideTransform` here would turn `12°` into `12.000000000000002°` on every
+    ///   unrelated edit (degrees → `Angle`'s radians → degrees), i.e. the row would change while the
+    ///   screen did not.
+    /// - the user has placed the reference (pinch or double-tap): `guideTransform` is the truth.
+    private var persistedTransform: CameraSettings.Transform {
+        guard !touchedSettings.contains(.transform), let restored = restoredTransformValue else {
+            return .init(guideTransform)
+        }
+        return restored
     }
 
     private func loadSettings() async {
@@ -327,6 +346,7 @@ final class CameraViewModel: ObservableObject {
         if !touchedSettings.contains(.zoom) { zoomLevel = stored.zoom }
         if !touchedSettings.contains(.transform) {
             pendingRestoredTransform = restored.map { $0.transform.placement }
+            restoredTransformValue = restored?.transform
         }
         isApplyingRestore = false
 
@@ -365,11 +385,11 @@ final class CameraViewModel: ObservableObject {
         self.hasGuide = hasGuide
         guard hasGuide else {
             pendingRestoredTransform = nil
-            setTransformProgrammatically(GuideTransform())
+            resetPlacementForPoseChange()
             return
         }
         if applyRestoredTransformIfUntouched() { return }
-        setTransformProgrammatically(GuideTransform())
+        resetPlacementForPoseChange()
     }
 
     /// `.onAppear` form of the same hook: `.onChange` never fires for the initial value, so a guide
@@ -385,16 +405,22 @@ final class CameraViewModel: ObservableObject {
         guard hasGuide, let pending = pendingRestoredTransform else { return false }
         pendingRestoredTransform = nil
         guard !touchedSettings.contains(.transform) else { return false }
-        setTransformProgrammatically(pending)
+        // The value came off the row a moment ago, so this is not a change worth writing back.
+        setTransformProgrammatically(pending, notifyPersistence: false)
         return true
     }
 
-    /// Restoring and the pose-change reset are not user edits: they must not mark the placement as
-    /// touched, otherwise a guide chosen while the load was still in flight would swallow the
-    /// restored placement (`C3-Q1` a). A real pinch or the double-tap reset does mark it.
-    private func setTransformProgrammatically(_ transform: GuideTransform) {
+    /// Resetting on a pose change is what the user sees, so once the launch restore is over the row
+    /// has to follow it — otherwise the old placement comes back on the next launch even though the
+    /// screen shows the reference reset. Before the merge it is not a user edit: a guide chosen while
+    /// the load was in flight must not swallow the restored placement (`C3-Q1` a).
+    private func resetPlacementForPoseChange() {
+        setTransformProgrammatically(GuideTransform(), notifyPersistence: initialMergeDone)
+    }
+
+    private func setTransformProgrammatically(_ transform: GuideTransform, notifyPersistence: Bool) {
         let wasApplying = isApplyingRestore
-        isApplyingRestore = true
+        isApplyingRestore = !notifyPersistence
         guideTransform = transform
         isApplyingRestore = wasApplying
     }

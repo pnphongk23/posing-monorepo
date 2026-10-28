@@ -492,6 +492,62 @@ final class CameraSettingsPersistenceTests: XCTestCase {
         XCTAssertEqual(rows, 1)
     }
 
+    /// P2-a: the restored placement is not on screen yet (no guide), but it is still the placement
+    /// the user left behind. Changing an unrelated setting must not turn it into identity on disk,
+    /// otherwise the next launch restores nothing.
+    func testAnUnrelatedEditBeforeAnyGuideKeepsTheRestoredPlacementOnDisk() async throws {
+        let database = try makeDatabase()
+        let placement = CameraSettings.Transform(scale: 1.7, rotationDegrees: 12, offsetX: 24, offsetY: -8)
+        try await GRDBCameraSettingsStore(database: database)
+            .save(makeSettings(revision: 3, transform: placement))
+
+        let camera = FakeSessionCamera()
+        let model = makeModel(camera: camera, store: GRDBCameraSettingsStore(database: database))
+        await waitUntil { model.initialMergeDone }
+        XCTAssertEqual(model.guideTransform, GuideTransform(), "the placement waits for a guide")
+
+        model.toggleGrid()
+        await model.flushSettings()
+
+        let storedRow = try await snapshotRow(database)
+        let stored = try XCTUnwrap(CameraSettings.decode(try XCTUnwrap(storedRow).settingsJSON))
+        XCTAssertTrue(stored.isGridVisible, "the untouched setting still changed")
+        XCTAssertEqual(stored.transform, placement, "the pending placement survives an unrelated edit")
+
+        // And it is still the placement the next launch applies to its first guide.
+        let relaunched = makeModel(camera: FakeSessionCamera(), store: GRDBCameraSettingsStore(database: database))
+        await waitUntil { relaunched.initialMergeDone }
+        relaunched.guideDidChange(hasGuide: true)
+        XCTAssertEqual(relaunched.guideTransform.scale, 1.7, accuracy: 0.001)
+        XCTAssertEqual(relaunched.guideTransform.offset, CGSize(width: 24, height: -8))
+    }
+
+    /// P2-b: resetting on a pose change is what the user sees, so the row has to follow it. Before
+    /// this was fixed the reset was invisible to persistence and the old placement came back on the
+    /// next launch even though the screen showed the reference reset.
+    func testSelectingAnotherGuidePersistsTheVisibleReset() async throws {
+        let database = try makeDatabase()
+        try await GRDBCameraSettingsStore(database: database).save(makeSettings(
+            revision: 2,
+            transform: .init(scale: 1.8, rotationDegrees: 20, offsetX: 30, offsetY: -10)
+        ))
+
+        let camera = FakeSessionCamera()
+        let model = makeModel(camera: camera, store: GRDBCameraSettingsStore(database: database))
+        await waitUntil { model.initialMergeDone }
+
+        model.guideDidChange(hasGuide: true)
+        XCTAssertEqual(model.guideTransform.scale, 1.8, accuracy: 0.001, "the first guide keeps the placement")
+
+        model.guideDidChange(hasGuide: true)
+        XCTAssertEqual(model.guideTransform, GuideTransform(), "a later pose change resets, as today")
+        await model.flushSettings()
+
+        let storedRow = try await snapshotRow(database)
+        let stored = try XCTUnwrap(CameraSettings.decode(try XCTUnwrap(storedRow).settingsJSON))
+        XCTAssertEqual(stored.transform, CameraSettings.Transform(), "what is on screen is what comes back")
+    }
+
     func testThrowingStoreDoesNotBreakTheCamera() async throws {
         let camera = FakeSessionCamera()
         let store = MemorySettingsStore(seed: nil)
