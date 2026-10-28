@@ -1,0 +1,15 @@
+# TC-PAY-002 capture with the paywall off does not open the paywall
+appId: ${APP_ID}
+tags: [TC-PAY-002, p0]
+---
+- runFlow:
+    file: ../subflows/launch-paywall.yaml
+    env:
+      PAYWALL: "NO"
+- runFlow: ../subflows/open-camera.yaml
+- tapOn:
+    id: "camera.shutter"
+- assertNotVisible:
+    id: "paywall.close"
+- assertVisible:
+    id: "camera.shutter"

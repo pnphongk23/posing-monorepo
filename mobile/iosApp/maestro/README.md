@@ -56,14 +56,14 @@ Still requested (flows keep a `TODO(QA-261029-ID)` text selector): `dock.gallery
 | TC-GAL-005 | P1 | manual |
 | TC-GAL-006 | P1 | manual |
 | TC-GAL-007 | P1 | manual |
-| TC-PAY-001 | P0 | pending: M02 not landed (no screen presents the paywall, capture gating not built); it will run on the simulator because the gate sits before the camera check |
-| TC-PAY-002 | P0 | manual (device) |
-| TC-PAY-003 | P1 | pending |
+| TC-PAY-001 | P0 | pending: Dev build has no RevenueCat key, so purchases are unconfigured and the gate fails open |
+| TC-PAY-002 | P0 | automated — `flows/TC-PAY-002-capture-ungated.yaml` |
+| TC-PAY-003 | P1 | pending: Dev build has no RevenueCat key, so purchases are unconfigured and the gate fails open |
 | TC-PAY-004 | P1 | pending (queued E2E, after M01 closes) |
 | TC-PAY-005 | P1 | pending (queued E2E) |
 | TC-PAY-006 | P1 | pending (queued E2E) |
 | TC-PAY-007 | P1 | manual |
-| TC-PAY-008 | P1 | manual |
+| TC-PAY-008 | P1 | pending: Dev build has no RevenueCat key, so purchases are unconfigured and the gate fails open |
 | TC-DET-001 | P0 | automated — `flows/TC-DET-001-open-detail.yaml` |
 | TC-DET-002 | P1 | manual |
 | TC-DET-003 | P1 | manual |

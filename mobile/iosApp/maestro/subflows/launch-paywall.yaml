@@ -1,0 +1,15 @@
+# Clean launch with the Debug-only paywall switch set from env PAYWALL ("YES"/"NO"); Firestore untouched.
+appId: ${APP_ID}
+---
+- launchApp:
+    clearState: true
+    clearKeychain: true
+    permissions:
+      camera: allow
+      photos: allow
+    arguments:
+      AIPosePaywallEnabled: ${PAYWALL}
+- extendedWaitUntil:
+    visible:
+      id: "poses.open-search"
+    timeout: 30000
