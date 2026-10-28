@@ -78,6 +78,12 @@ enum PurchaseFailure: String, Sendable, Equatable {
     }
 }
 
+/// The provider refused a transaction because its live identity is no longer the Account the
+/// adapter authorized. It is never a store failure: the result is dropped, not reported as a buy.
+enum ProviderIdentityError: Error, Equatable {
+    case identityChanged
+}
+
 struct PurchaseSnapshot: Sendable, Equatable {
     let state: PurchaseGatewayState
     let products: [PurchaseProduct]
@@ -125,22 +131,33 @@ struct ProviderPackage: Sendable, Equatable {
 /// The delegate payload is deliberately absent. It cannot prove which identity it belongs to
 /// (no aliases API on `CustomerInfo` in purchases-ios 5.87.1 and `originalAppUserId` can stay
 /// anonymous after linking), so it is only a refresh trigger.
+///
+/// Store-changing calls take the Account the adapter authorized and must re-validate the live
+/// provider identity themselves, immediately before touching the store: only the provider knows
+/// whether an identity change landed inside its own awaits.
 @MainActor
 protocol PurchasesProviding: AnyObject {
     var appUserID: String? { get }
+    var isAnonymous: Bool { get }
     var onCustomerInfoUpdated: (() -> Void)? { get set }
     func configure(apiKey: String)
     func logIn(_ accountID: String) async throws -> ProviderCustomer
     func logOut() async throws -> ProviderCustomer
     func customerInfo() async throws -> ProviderCustomer
     func packages() async throws -> [ProviderPackage]
-    func purchase(packageID: String) async throws -> ProviderCustomer
-    func restorePurchases() async throws -> ProviderCustomer
+    func purchase(packageID: String, authorizedAccountID: String) async throws -> ProviderCustomer
+    func restorePurchases(authorizedAccountID: String) async throws -> ProviderCustomer
 }
 
 /// Native RevenueCat owner. Fails closed when the SDK key or the entitlement id is missing or still
 /// a placeholder. The entitlement id comes from `Info.plist` (`REVENUECAT_ENTITLEMENT_ID`), and
 /// products are selected from the offering by package type — no product id lives in code.
+///
+/// Three rules hold the access model together:
+/// 1. nothing is entitled unless a linked Account is also the provider identity;
+/// 2. no store transaction runs without that same identity, re-checked after every await;
+/// 3. identity changes are serialized, invalidate access immediately and reconcile the provider, so
+///    a superseded login can never leave the SDK (or the snapshot) on a stranger's identity.
 @MainActor
 final class RevenueCatAdapter: NSObject, ObservableObject {
     static let shared = RevenueCatAdapter()
@@ -155,11 +172,13 @@ final class RevenueCatAdapter: NSObject, ObservableObject {
 
     private(set) var isConfigured = false
     /// Account currently applied to the RevenueCat customer (`FEAT-011` FR-006). Nil while no
-    /// signed-in Account is linked, which is also what makes `linkAccount` idempotent.
+    /// signed-in Account is linked — including during an identity transition.
     private(set) var linkedAccountID: String?
     /// Bumped by every identity change. A provider result is applied only while the epoch — and the
     /// identity captured with it — still hold after the await.
     private var identityEpoch: UInt64 = 0
+    /// Serializes provider identity changes so two overlapping logins cannot interleave.
+    private var identityChain: Task<Void, Never>?
     private var entitlementID: String?
     /// Products of the last successfully loaded offering. A purchase of anything else is rejected.
     private var loadedProducts: [PurchaseProduct] = []
@@ -214,57 +233,112 @@ final class RevenueCatAdapter: NSObject, ObservableObject {
     /// Binds the RevenueCat customer to the signed-in Account so a purchase follows that Account
     /// across devices and re-entry instead of the anonymous app user id (`FEAT-011` FR-006).
     func linkAccount(_ accountID: String) async {
-        guard isConfigured, !accountID.isEmpty, accountID != linkedAccountID else { return }
-        identityEpoch &+= 1
-        let token = captureIdentity()
-        let products = loadedProducts
-        do {
-            let customer = try await provider.logIn(accountID)
-            // The identity can be cleared or switched while `logIn` is in flight: fail closed.
-            guard token.epoch == identityEpoch,
-                  token.accountID == linkedAccountID,
-                  provider.appUserID == accountID else {
-                logDropped()
-                return
-            }
-            linkedAccountID = accountID
-            apply(customer, products: products)
-        } catch {
-            guard token.epoch == identityEpoch else {
-                logDropped()
-                return
-            }
-            // A failed link must not leave a stale identity claiming to be current.
-            linkedAccountID = nil
-            lastSnapshot = PurchaseSnapshot(state: .notEntitled, products: products)
-        }
+        guard isConfigured, !accountID.isEmpty else { return }
+        guard accountID != linkedAccountID || provider.appUserID != accountID else { return }
+        // Access ends before the provider call: during the transition nobody is linked.
+        invalidateForIdentityTransition(next: .loading)
+        await enqueueIdentityChange(accountID: accountID)
     }
 
     /// Clears the provider context at sign-out/account switch so the next Account (or a guest) can
     /// never reuse the previous Account's entitlement (`FEAT-011` E4). Local state is dropped before
     /// the provider call so logout never depends on network success.
     func clearAccount() async {
+        // Access ends before the provider call, whatever the network does.
+        invalidateForIdentityTransition(next: .notEntitled)
+        await enqueueIdentityChange(accountID: nil)
+    }
+
+    /// No access survives an identity transition, and no transaction can start while it runs.
+    private func invalidateForIdentityTransition(next: PurchaseGatewayState) {
         identityEpoch &+= 1
-        let epoch = identityEpoch
         linkedAccountID = nil
-        let products = loadedProducts
+        lastSnapshot = PurchaseSnapshot(state: isConfigured ? next : .unconfigured, products: loadedProducts)
+    }
+
+    /// Identity changes run one at a time: a `logIn` that started earlier must finish before the
+    /// next transition touches the provider identity.
+    private func enqueueIdentityChange(accountID: String?) async {
+        let previous = identityChain
+        let task = Task { @MainActor [weak self] in
+            _ = await previous?.value
+            await self?.performIdentityChange(accountID: accountID)
+        }
+        identityChain = task
+        await task.value
+    }
+
+    private func performIdentityChange(accountID: String?) async {
         guard isConfigured else {
-            lastSnapshot = PurchaseSnapshot(state: .unconfigured, products: products)
+            lastSnapshot = PurchaseSnapshot(state: .unconfigured, products: loadedProducts)
             return
         }
-        lastSnapshot = PurchaseSnapshot(state: .loading, products: products)
+        let epoch = identityEpoch
         do {
-            _ = try await provider.logOut()
+            if let accountID {
+                let customer = try await provider.logIn(accountID)
+                guard epoch == identityEpoch else {
+                    // Superseded: never adopt the result, and put the SDK back where we own it.
+                    lastSnapshot = PurchaseSnapshot(state: .notEntitled, products: loadedProducts)
+                    await performReconcile(reason: "identity_superseded")
+                    return
+                }
+                guard provider.appUserID == accountID, !provider.isAnonymous else {
+                    linkedAccountID = nil
+                    lastSnapshot = PurchaseSnapshot(state: .notEntitled, products: loadedProducts)
+                    await performReconcile(reason: "provider_identity_mismatch")
+                    return
+                }
+                linkedAccountID = accountID
+                apply(customer, products: loadedProducts, authorizedAccountID: accountID)
+            } else {
+                _ = try await provider.logOut()
+                guard epoch == identityEpoch else {
+                    lastSnapshot = PurchaseSnapshot(state: .notEntitled, products: loadedProducts)
+                    await performReconcile(reason: "identity_superseded")
+                    return
+                }
+                linkedAccountID = nil
+                lastSnapshot = PurchaseSnapshot(state: .notEntitled, products: loadedProducts)
+            }
         } catch {
-            // RevenueCat rejects `logOut` for an already-anonymous customer; the entitlement is gone
-            // either way, so the state below is the truthful one.
+            guard epoch == identityEpoch else {
+                lastSnapshot = PurchaseSnapshot(state: .notEntitled, products: loadedProducts)
+                await performReconcile(reason: "identity_superseded")
+                return
+            }
+            // A failed link must not leave a stale identity claiming to be current.
+            linkedAccountID = nil
+            lastSnapshot = PurchaseSnapshot(state: .notEntitled, products: loadedProducts)
         }
-        // Fail closed regardless of the provider outcome. A concurrent link owns the snapshot.
-        guard epoch == identityEpoch, linkedAccountID == nil else {
-            logDropped()
+    }
+
+    /// Queued reconciliation: a dropped or superseded provider call may still have changed the SDK
+    /// identity, so bring the SDK back to the identity this adapter actually owns.
+    private func reconcileProviderIdentity() async {
+        let previous = identityChain
+        let task = Task { @MainActor [weak self] in
+            _ = await previous?.value
+            await self?.performReconcile(reason: "identity_reconciled")
+        }
+        identityChain = task
+        await task.value
+    }
+
+    private func performReconcile(reason: String) async {
+        guard isConfigured else { return }
+        if let owned = linkedAccountID {
+            guard provider.appUserID != owned || provider.isAnonymous else { return }
+            _ = try? await provider.logIn(owned)
+            guard provider.appUserID == owned else {
+                logDropped(reason: reason)
+                return
+            }
             return
         }
-        lastSnapshot = PurchaseSnapshot(state: .notEntitled, products: products)
+        guard !provider.isAnonymous, provider.appUserID != nil else { return }
+        _ = try? await provider.logOut()
+        logDropped(reason: reason)
     }
 
     // MARK: - Entitlement
@@ -286,14 +360,28 @@ final class RevenueCatAdapter: NSObject, ObservableObject {
             return failClosed(state: .unconfigured)
         }
         let token = captureIdentity()
+        let customer: ProviderCustomer
         do {
-            let customer = try await provider.customerInfo()
-            guard identityHolds(token) else { return dropSnapshot() }
-            return apply(customer, products: loadedProducts)
+            customer = try await provider.customerInfo()
         } catch {
-            guard identityHolds(token) else { return dropSnapshot() }
+            guard identityHolds(token) else {
+                return dropSnapshot(reason: "identity_changed")
+            }
             return lastSnapshot
         }
+        guard identityHolds(token) else {
+            return dropSnapshot(reason: "identity_changed")
+        }
+        guard let accountID = ownedAccountID(for: token) else {
+            // The provider may still hold an entitled identity from an earlier launch or a
+            // superseded login. No Account owns it, so access is dropped before anything else runs,
+            // then the SDK is put back on the anonymous identity instead of being left entitled.
+            let snapshot = PurchaseSnapshot(state: .notEntitled, products: loadedProducts)
+            lastSnapshot = snapshot
+            await reconcileProviderIdentity()
+            return snapshot
+        }
+        return apply(customer, products: loadedProducts, authorizedAccountID: accountID)
     }
 
     // MARK: - Offering and store
@@ -307,10 +395,14 @@ final class RevenueCatAdapter: NSObject, ObservableObject {
         do {
             packages = try await provider.packages()
         } catch {
-            guard identityHolds(token) else { return dropSnapshot() }
+            guard identityHolds(token) else {
+                return dropSnapshot(reason: "identity_changed")
+            }
             return failClosed(state: .noOffering)
         }
-        guard identityHolds(token) else { return dropSnapshot() }
+        guard identityHolds(token) else {
+            return dropSnapshot(reason: "identity_changed")
+        }
 
         let products = PaywallPlanCatalog.ordered(
             packages.map { package in
@@ -334,26 +426,31 @@ final class RevenueCatAdapter: NSObject, ObservableObject {
         guard isConfigured else {
             return failClosed(state: .unconfigured)
         }
-        // M2: no guest purchase. The linked Account is the only identity allowed to own a
-        // transaction, and this guard is the first line of defence for that rule.
-        guard let accountID = linkedAccountID else {
+        // M2: no guest purchase, and no transaction under an identity this adapter does not own.
+        guard let token = transactionIdentity(), let accountID = token.accountID else {
             return failClosed(state: .signInRequired)
         }
         // Only a package of the last loaded offering is purchasable.
         guard loadedProducts.contains(where: { $0.identifier == packageID }) else {
             return failClosed(state: .purchaseFailed, failure: .other)
         }
-        let token = captureIdentity()
         do {
-            let customer = try await provider.purchase(packageID: packageID)
-            guard identityHolds(token), provider.appUserID == accountID else {
-                return dropSnapshot()
+            let customer = try await provider.purchase(
+                packageID: packageID,
+                authorizedAccountID: accountID
+            )
+            guard identityHolds(token) else {
+                return dropSnapshot(reason: "identity_changed")
             }
-            return apply(customer, products: loadedProducts)
+            return apply(customer, products: loadedProducts, authorizedAccountID: accountID)
         } catch {
+            if error is ProviderIdentityError {
+                await reconcileProviderIdentity()
+                return dropSnapshot(reason: "provider_identity_changed")
+            }
             let failure = PurchaseFailure(error)
-            guard identityHolds(token), provider.appUserID == accountID else {
-                return dropSnapshot()
+            guard identityHolds(token) else {
+                return dropSnapshot(reason: "identity_changed")
             }
             let state: PurchaseGatewayState = failure == .cancelled ? .purchaseCancelled : .purchaseFailed
             return failClosed(state: state, failure: failure)
@@ -364,20 +461,23 @@ final class RevenueCatAdapter: NSObject, ObservableObject {
         guard isConfigured else {
             return failClosed(state: .unconfigured)
         }
-        guard let accountID = linkedAccountID else {
+        guard let token = transactionIdentity(), let accountID = token.accountID else {
             return failClosed(state: .signInRequired)
         }
-        let token = captureIdentity()
         do {
-            let customer = try await provider.restorePurchases()
-            guard identityHolds(token), provider.appUserID == accountID else {
-                return dropSnapshot()
+            let customer = try await provider.restorePurchases(authorizedAccountID: accountID)
+            guard identityHolds(token) else {
+                return dropSnapshot(reason: "identity_changed")
             }
-            return apply(customer, products: loadedProducts)
+            return apply(customer, products: loadedProducts, authorizedAccountID: accountID)
         } catch {
+            if error is ProviderIdentityError {
+                await reconcileProviderIdentity()
+                return dropSnapshot(reason: "provider_identity_changed")
+            }
             let failure = PurchaseFailure(error)
-            guard identityHolds(token), provider.appUserID == accountID else {
-                return dropSnapshot()
+            guard identityHolds(token) else {
+                return dropSnapshot(reason: "identity_changed")
             }
             return failClosed(state: .purchaseFailed, failure: failure)
         }
@@ -405,7 +505,22 @@ final class RevenueCatAdapter: NSObject, ObservableObject {
         }
     }
 
-    private func apply(_ customer: ProviderCustomer, products: [PurchaseProduct]) -> PurchaseSnapshot {
+    /// Entitlement facts are only ever applied to the Account that owns the provider identity.
+    @discardableResult
+    private func apply(
+        _ customer: ProviderCustomer,
+        products: [PurchaseProduct],
+        authorizedAccountID: String?
+    ) -> PurchaseSnapshot {
+        guard let authorizedAccountID,
+              linkedAccountID == authorizedAccountID,
+              provider.appUserID == authorizedAccountID,
+              !provider.isAnonymous else {
+            logDropped(reason: "unlinked_identity")
+            let snapshot = PurchaseSnapshot(state: .notEntitled, products: products)
+            lastSnapshot = snapshot
+            return snapshot
+        }
         let state = Self.entitlementState(for: entitlementFacts(of: customer))
         log(state: state)
         let snapshot = PurchaseSnapshot(state: state, products: products)
@@ -445,15 +560,30 @@ final class RevenueCatAdapter: NSObject, ObservableObject {
         token == captureIdentity()
     }
 
+    /// A linked Account that is provably the provider identity, or nil.
+    private func ownedAccountID(for token: IdentityToken) -> String? {
+        guard let accountID = token.accountID,
+              token.providerUserID == accountID,
+              !provider.isAnonymous else { return nil }
+        return accountID
+    }
+
+    /// A store transaction needs the same proof, re-taken immediately before the call.
+    private func transactionIdentity() -> IdentityToken? {
+        let token = captureIdentity()
+        guard ownedAccountID(for: token) != nil else { return nil }
+        return token
+    }
+
     /// A dropped result is silent apart from its analytics event: the snapshot already in place is
     /// the only one that can be attributed to the current identity.
-    private func dropSnapshot() -> PurchaseSnapshot {
-        logDropped()
+    private func dropSnapshot(reason: String) -> PurchaseSnapshot {
+        logDropped(reason: reason)
         return lastSnapshot
     }
 
-    private func logDropped() {
-        logEvent("purchase_snapshot_dropped", ["source": "revenuecat", "outcome": "identity_changed"])
+    private func logDropped(reason: String) {
+        logEvent("purchase_snapshot_dropped", ["source": "revenuecat", "outcome": reason])
     }
 
     private func log(state: PurchaseGatewayState, failure: PurchaseFailure? = nil) {
@@ -478,6 +608,10 @@ final class RevenueCatAdapter: NSObject, ObservableObject {
 
 extension RevenueCatAdapter: PurchaseGateway {
     var snapshot: PurchaseSnapshot { lastSnapshot }
+
+    var snapshots: AnyPublisher<PurchaseSnapshot, Never> {
+        $lastSnapshot.eraseToAnyPublisher()
+    }
 }
 
 // MARK: - Live provider
@@ -490,6 +624,10 @@ final class LivePurchasesProvider: NSObject, PurchasesProviding {
 
     var appUserID: String? {
         Purchases.isConfigured ? Purchases.shared.appUserID : nil
+    }
+
+    var isAnonymous: Bool {
+        !Purchases.isConfigured || Purchases.shared.isAnonymous
     }
 
     func configure(apiKey: String) {
@@ -511,10 +649,7 @@ final class LivePurchasesProvider: NSObject, PurchasesProviding {
     }
 
     func packages() async throws -> [ProviderPackage] {
-        let offerings = try await translate { try await Purchases.shared.offerings() }
-        guard let offering = offerings.current ?? offerings.offering(identifier: RevenueCatAdapter.fallbackOfferingID) else {
-            throw ErrorCode.productNotAvailableForPurchaseError
-        }
+        let offering = try await resolvedOffering()
         return offering.availablePackages.map { package in
             ProviderPackage(
                 identifier: package.identifier,
@@ -524,12 +659,15 @@ final class LivePurchasesProvider: NSObject, PurchasesProviding {
         }
     }
 
-    func purchase(packageID: String) async throws -> ProviderCustomer {
-        let offerings = try await translate { try await Purchases.shared.offerings() }
-        let offering = offerings.current ?? offerings.offering(identifier: RevenueCatAdapter.fallbackOfferingID)
-        guard let package = offering?.availablePackages.first(where: { $0.identifier == packageID }) else {
+    func purchase(packageID: String, authorizedAccountID: String) async throws -> ProviderCustomer {
+        let offering = try await resolvedOffering()
+        // The offerings await can span a sign-out or an account switch: re-validate the live
+        // identity immediately before the store is touched, not only at the adapter's entry.
+        try validateTransactionIdentity(authorizedAccountID)
+        guard let package = offering.availablePackages.first(where: { $0.identifier == packageID }) else {
             throw ErrorCode.productNotAvailableForPurchaseError
         }
+        try validateTransactionIdentity(authorizedAccountID)
         let result = try await translate { try await Purchases.shared.purchase(package: package) }
         guard !result.userCancelled else {
             throw ErrorCode.purchaseCancelledError
@@ -537,14 +675,35 @@ final class LivePurchasesProvider: NSObject, PurchasesProviding {
         return Self.customer(result.customerInfo)
     }
 
-    func restorePurchases() async throws -> ProviderCustomer {
-        Self.customer(try await translate { try await Purchases.shared.restorePurchases() })
+    func restorePurchases(authorizedAccountID: String) async throws -> ProviderCustomer {
+        // A restore attributes the store's receipts to whoever the SDK is signed in as, so the
+        // identity has to be proven immediately before the call.
+        try validateTransactionIdentity(authorizedAccountID)
+        return Self.customer(try await translate { try await Purchases.shared.restorePurchases() })
+    }
+
+    private func resolvedOffering() async throws -> Offering {
+        let offerings = try await translate { try await Purchases.shared.offerings() }
+        guard let offering = offerings.current
+            ?? offerings.offering(identifier: RevenueCatAdapter.fallbackOfferingID) else {
+            throw ErrorCode.productNotAvailableForPurchaseError
+        }
+        return offering
+    }
+
+    private func validateTransactionIdentity(_ authorizedAccountID: String) throws {
+        guard Purchases.isConfigured,
+              !Purchases.shared.isAnonymous,
+              Purchases.shared.appUserID == authorizedAccountID else {
+            throw ProviderIdentityError.identityChanged
+        }
     }
 
     private func translate<T>(_ work: () async throws -> T) async throws -> T {
         do {
             return try await work()
         } catch {
+            if error is ProviderIdentityError { throw error }
             throw (error as NSError).asErrorCode ?? ErrorCode.unknownError
         }
     }
