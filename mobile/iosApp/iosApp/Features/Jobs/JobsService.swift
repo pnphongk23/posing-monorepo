@@ -152,7 +152,7 @@ protocol JobsServing: ObservableObject, AnyObject, Sendable {
 }
 
 @MainActor
-final class JobsService: ObservableObject, JobsServing {
+final class JobsService: ObservableObject, JobsServing, SessionScoped {
     @Published private(set) var inProgress: [JobRow] = []
     @Published private(set) var finished: [JobRow] = []
     @Published private(set) var activeCount: Int = 0
@@ -161,8 +161,10 @@ final class JobsService: ObservableObject, JobsServing {
 
     private let api: PoseAPIService
     private let boundary: SessionBoundary
+    /// One fan-out per boundary: this service is one of its adopted models, so a session change clears
+    /// the rows and a request that crossed it can no longer write.
+    private let scope: SessionScope
     private var pollingTask: Task<Void, Never>?
-    private var sessionTask: Task<Void, Never>?
 
     init(
         api: PoseAPIService = ServiceLocator.makePoseAPIService(),
@@ -170,43 +172,50 @@ final class JobsService: ObservableObject, JobsServing {
     ) {
         self.api = api
         self.boundary = boundary
-
-        self.sessionTask = boundary.observeSessions(
-            onStart: {},
-            onEvent: { [weak self] event in
-                guard let self else { return }
-                switch event {
-                case .signedOut, .signInRequired:
-                    self.stopPolling()
-                    self.inProgress = []
-                    self.finished = []
-                    self.activeCount = 0
-                    self.isOffline = false
-                    self.loadState = .idle
-                case .signedIn:
-                    Task { await self.refresh() }
-                }
-            }
-        )
+        self.scope = SessionScope.of(boundary)
+        scope.adopt(self)
     }
 
     deinit {
         pollingTask?.cancel()
-        sessionTask?.cancel()
+    }
+
+    /// The jobs belong to the Account on the server, so a session change drops every row: nothing may
+    /// answer for the previous Account. A sign-in re-reads through the normal path.
+    func resetForSessionChange(_ event: SessionEvent) {
+        switch event {
+        case .signedOut, .signInRequired:
+            stopPolling()
+            inProgress = []
+            finished = []
+            activeCount = 0
+            isOffline = false
+            loadState = .idle
+        case .signedIn:
+            Task { @MainActor [weak self] in
+                await self?.refresh()
+            }
+        }
     }
 
     func refresh() async {
+        // A refresh that was on the wire during a session change must not write the previous
+        // Account's rows over the cleared state (the hand-written observer had no such check).
+        let ticket = await scope.beginRequest()
         guard await boundary.hasStoredSession() else {
+            guard await scope.isValid(ticket) else { return }
             activeCount = 0
             inProgress = []
             finished = []
             loadState = .idle
             return
         }
+        guard await scope.isValid(ticket) else { return }
 
         loadState = .loading
         do {
             let response = try await api.listMyExtractJobs(limit: 50)
+            guard await scope.isValid(ticket) else { return }
             isOffline = false
             let allRows = response.data.map(JobRow.init(item:))
             var nextInProgress: [JobRow] = []
@@ -224,6 +233,7 @@ final class JobsService: ObservableObject, JobsServing {
             activeCount = inProgress.count
             loadState = .loaded
         } catch let error as PoseAPIError {
+            guard await scope.isValid(ticket) else { return }
             if error.isUnauthorized {
                 activeCount = 0
                 inProgress = []
@@ -233,10 +243,12 @@ final class JobsService: ObservableObject, JobsServing {
                 loadState = .failed(error.message)
             }
         } catch is URLError {
+            guard await scope.isValid(ticket) else { return }
             isOffline = true
             // Preserve cached inProgress and finished rows
             loadState = .loaded
         } catch {
+            guard await scope.isValid(ticket) else { return }
             loadState = .failed(error.localizedDescription)
         }
     }
