@@ -71,6 +71,7 @@ final class FakePurchasesProvider: PurchasesProviding {
     static let entitlementKey = "premium"
 
     var appUserID: String?
+    var isAnonymous: Bool { appUserID?.hasPrefix("$RCAnonymousID:") ?? true }
     var onCustomerInfoUpdated: (() -> Void)?
 
     var packages: [ProviderPackage]
@@ -78,6 +79,11 @@ final class FakePurchasesProvider: PurchasesProviding {
     var purchaseError: Error?
     var restoreError: Error?
     var logInError: Error?
+    /// Simulates the SDK landing on an identity other than the one that was requested.
+    var logInReturnsIdentity: String?
+    /// Mirrors the live provider, which re-validates the transaction identity after its own awaits.
+    /// Turning it off proves the adapter's own post-await re-check is load-bearing.
+    var validatesTransactionIdentity = true
     /// Accounts whose entitlement the fake reports as active. Everything else is not entitled.
     var entitledAccounts: Set<String>
 
@@ -88,11 +94,19 @@ final class FakePurchasesProvider: PurchasesProviding {
     private(set) var packagesCalls = 0
     private(set) var purchaseCalls: [String] = []
     private(set) var restoreCalls = 0
+    /// The Account each store call was authorized for.
+    private(set) var authorizedAccountIDs: [String] = []
 
     var customerInfoStarted: AsyncSignal?
     var customerInfoGate: SuspensionGate?
     var logInStarted: AsyncSignal?
     var logInGate: SuspensionGate?
+    /// Per-Account gates, so one login can resolve while another is still in flight.
+    var logInGates: [String: SuspensionGate] = [:]
+    var logOutStarted: AsyncSignal?
+    var logOutGate: SuspensionGate?
+    var packagesStarted: AsyncSignal?
+    var packagesGate: SuspensionGate?
     var purchaseStarted: AsyncSignal?
     var purchaseGate: SuspensionGate?
     var restoreStarted: AsyncSignal?
@@ -112,13 +126,16 @@ final class FakePurchasesProvider: PurchasesProviding {
         logInCalls.append(accountID)
         logInStarted?.fire()
         await logInGate?.wait()
+        await logInGates[accountID]?.wait()
         if let logInError { throw logInError }
-        appUserID = accountID
+        appUserID = logInReturnsIdentity ?? accountID
         return currentCustomer()
     }
 
     func logOut() async throws -> ProviderCustomer {
         logOutCalls += 1
+        logOutStarted?.fire()
+        await logOutGate?.wait()
         appUserID = Self.anonymousID
         return currentCustomer()
     }
@@ -135,24 +152,34 @@ final class FakePurchasesProvider: PurchasesProviding {
 
     func packages() async throws -> [ProviderPackage] {
         packagesCalls += 1
+        packagesStarted?.fire()
+        await packagesGate?.wait()
         if let packagesError { throw packagesError }
         return packages
     }
 
-    func purchase(packageID: String) async throws -> ProviderCustomer {
+    func purchase(packageID: String, authorizedAccountID: String) async throws -> ProviderCustomer {
         purchaseCalls.append(packageID)
+        authorizedAccountIDs.append(authorizedAccountID)
         purchaseStarted?.fire()
         let result = currentCustomer()
         await purchaseGate?.wait()
+        if validatesTransactionIdentity, isAnonymous || appUserID != authorizedAccountID {
+            throw ProviderIdentityError.identityChanged
+        }
         if let purchaseError { throw purchaseError }
         return result
     }
 
-    func restorePurchases() async throws -> ProviderCustomer {
+    func restorePurchases(authorizedAccountID: String) async throws -> ProviderCustomer {
         restoreCalls += 1
+        authorizedAccountIDs.append(authorizedAccountID)
         restoreStarted?.fire()
         let result = currentCustomer()
         await restoreGate?.wait()
+        if validatesTransactionIdentity, isAnonymous || appUserID != authorizedAccountID {
+            throw ProviderIdentityError.identityChanged
+        }
         if let restoreError { throw restoreError }
         return result
     }
@@ -441,9 +468,12 @@ final class RevenueCatAdapterTests: XCTestCase {
 
         let link = Task { await adapter.linkAccount("account-a") }
         await started.wait()
-        await adapter.clearAccount()
+        // Sign-out is queued behind the in-flight login, but it drops access before it waits.
+        let clear = Task { await adapter.clearAccount() }
+        await waitUntil("sign-out invalidated access") { adapter.snapshot.state == .notEntitled }
         gate.release()
         _ = await link.value
+        await clear.value
 
         XCTAssertNil(adapter.linkedAccountID, "A logIn that lands after sign-out must not link")
         XCTAssertEqual(adapter.snapshot.state, .notEntitled)
@@ -590,6 +620,313 @@ final class RevenueCatAdapterTests: XCTestCase {
         _ = await adapter.restore()
 
         XCTAssertEqual(spy.lastParameters(for: "purchase_state")?["failure"], "network")
+    }
+
+    // MARK: Transaction identity boundary
+
+    /// A linked Account whose provider identity drifted (a stale in-memory link, a superseded
+    /// login) must never authorize a transaction.
+    func testTransactionRequiresProviderIdentityToMatchLinkedAccount() async {
+        let provider = FakePurchasesProvider(packages: [annualPackage], entitledAccounts: ["account-a"])
+        let adapter = makeAdapter(provider: provider)
+        await adapter.linkAccount("account-a")
+        _ = await adapter.loadOffering()
+        let purchasesBefore = provider.purchaseCalls.count
+        let restoresBefore = provider.restoreCalls
+
+        // The SDK identity changed under the adapter (e.g. a late SDK-side login).
+        provider.appUserID = "account-b"
+
+        let purchase = await adapter.purchase(packageID: "annual")
+        let restore = await adapter.restore()
+
+        XCTAssertEqual(purchase.state, .signInRequired)
+        XCTAssertEqual(restore.state, .signInRequired)
+        XCTAssertEqual(provider.purchaseCalls.count, purchasesBefore)
+        XCTAssertEqual(provider.restoreCalls, restoresBefore)
+    }
+
+    /// The provider re-validates after its own nested awaits; when it does, the abort is dropped,
+    /// not reported as a failed purchase, and the account keeps its own identity.
+    func testPurchaseAbortedByProviderIdentityChangeIsDropped() async {
+        let provider = FakePurchasesProvider(packages: [annualPackage], entitledAccounts: ["account-a"])
+        let spy = AnalyticsSpy()
+        let adapter = makeAdapter(provider: provider, spy: spy)
+        await adapter.linkAccount("account-a")
+        _ = await adapter.loadOffering()
+
+        let started = AsyncSignal()
+        let gate = SuspensionGate()
+        provider.purchaseStarted = started
+        provider.purchaseGate = gate
+
+        let purchase = Task { await adapter.purchase(packageID: "annual") }
+        await started.wait()
+        await adapter.clearAccount()
+        gate.release()
+        _ = await purchase.value
+
+        XCTAssertEqual(adapter.snapshot.state, .notEntitled)
+        XCTAssertEqual(provider.purchaseCalls, ["annual"], "The store call happened before the change")
+        XCTAssertTrue(spy.names().contains("purchase_snapshot_dropped"))
+    }
+
+    /// Even without a provider-side check, the adapter's own post-await re-check is the guard that
+    /// refuses a transaction result that crossed a sign-out.
+    func testPostAwaitRecheckDropsPurchaseResultAfterSignOut() async {
+        let provider = FakePurchasesProvider(packages: [annualPackage], entitledAccounts: ["account-a"])
+        let spy = AnalyticsSpy()
+        let adapter = makeAdapter(provider: provider, spy: spy)
+        await adapter.linkAccount("account-a")
+        _ = await adapter.loadOffering()
+
+        provider.validatesTransactionIdentity = false
+        let started = AsyncSignal()
+        let gate = SuspensionGate()
+        provider.purchaseStarted = started
+        provider.purchaseGate = gate
+
+        let purchase = Task { await adapter.purchase(packageID: "annual") }
+        await started.wait()
+        await adapter.clearAccount()
+        gate.release()
+        _ = await purchase.value
+
+        XCTAssertEqual(adapter.snapshot.state, .notEntitled)
+        XCTAssertEqual(
+            spy.lastParameters(for: "purchase_snapshot_dropped")?["outcome"],
+            "identity_changed",
+            "The post-await re-check, not a later guard, must be the one that dropped it"
+        )
+    }
+
+    // MARK: No entitlement without an owned identity
+
+    func testRestoreAlsoRequiresProviderIdentityToMatchLinkedAccount() async {
+        let provider = FakePurchasesProvider(packages: [annualPackage], entitledAccounts: ["account-a"])
+        let adapter = makeAdapter(provider: provider)
+        await adapter.linkAccount("account-a")
+        provider.appUserID = FakePurchasesProvider.anonymousID
+
+        let snapshot = await adapter.restore()
+
+        XCTAssertEqual(snapshot.state, .signInRequired)
+        XCTAssertEqual(provider.restoreCalls, 0)
+    }
+
+    /// Repro for a persisted provider identity at startup: the SDK can still be signed in to an
+    /// entitled Account from an earlier launch while no Account is linked in this process.
+    func testRefreshWhileUnlinkedDoesNotGrantPersistedEntitlement() async {
+        let provider = FakePurchasesProvider(packages: [annualPackage], entitledAccounts: ["account-a"])
+        provider.appUserID = "account-a"
+        let spy = AnalyticsSpy()
+        let adapter = makeAdapter(provider: provider, spy: spy)
+
+        let snapshot = await adapter.refreshSnapshot()
+
+        XCTAssertEqual(snapshot.state, .notEntitled, "No Account owns this identity in this process")
+        XCTAssertEqual(adapter.snapshot.state, .notEntitled)
+        XCTAssertTrue(provider.isAnonymous, "The unowned SDK identity is reconciled back to anonymous")
+        XCTAssertEqual(provider.logOutCalls, 1)
+    }
+
+    func testDelegateRefreshWhileUnlinkedDoesNotGrantPersistedEntitlement() async {
+        let provider = FakePurchasesProvider(entitledAccounts: ["account-a"])
+        provider.appUserID = "account-a"
+        let spy = AnalyticsSpy()
+        let adapter = makeAdapter(provider: provider, spy: spy)
+
+        let settled = AsyncSignal()
+        spy.onChange = settled
+        provider.onCustomerInfoUpdated?()
+        await settled.wait()
+
+        XCTAssertEqual(adapter.snapshot.state, .notEntitled)
+        XCTAssertNotEqual(adapter.snapshot.state, .entitled)
+    }
+
+    // MARK: Identity transitions
+
+    func testLateLoginAfterSignOutIsRejectedAndProviderIsReconciled() async {
+        let provider = FakePurchasesProvider(entitledAccounts: ["account-a"])
+        let spy = AnalyticsSpy()
+        let adapter = makeAdapter(provider: provider, spy: spy)
+
+        let started = AsyncSignal()
+        let gate = SuspensionGate()
+        provider.logInStarted = started
+        provider.logInGate = gate
+
+        let link = Task { await adapter.linkAccount("account-a") }
+        await started.wait()
+        let clear = Task { await adapter.clearAccount() }
+        await waitUntil("sign-out invalidated access") { adapter.snapshot.state == .notEntitled }
+        gate.release()
+        _ = await link.value
+        await clear.value
+
+        XCTAssertNil(adapter.linkedAccountID)
+        XCTAssertEqual(adapter.snapshot.state, .notEntitled)
+        XCTAssertTrue(provider.isAnonymous, "A superseded login must not leave the SDK signed in")
+        XCTAssertEqual(provider.appUserID, FakePurchasesProvider.anonymousID)
+        XCTAssertFalse(
+            spy.events.contains { $0.parameters["outcome"] == "entitled" },
+            "The late login's entitlement must never be adopted, even transiently"
+        )
+        XCTAssertTrue(spy.names().contains("purchase_snapshot_dropped"))
+    }
+
+    /// Switching accounts ends access at once: while B's login is in flight nothing is linked and a
+    /// transaction cannot start.
+    func testAccountSwitchInvalidatesAccessImmediatelyAndBlocksTransactions() async {
+        let provider = FakePurchasesProvider(packages: [annualPackage], entitledAccounts: ["account-a"])
+        let adapter = makeAdapter(provider: provider)
+        await adapter.linkAccount("account-a")
+        _ = await adapter.loadOffering()
+        XCTAssertEqual(adapter.snapshot.state, .entitled)
+
+        let started = AsyncSignal()
+        let gate = SuspensionGate()
+        provider.logInStarted = started
+        provider.logInGate = gate
+        let purchasesBefore = provider.purchaseCalls.count
+
+        let switchTask = Task { await adapter.linkAccount("account-b") }
+        await started.wait()
+
+        XCTAssertNil(adapter.linkedAccountID, "No Account is linked during the transition")
+        XCTAssertNotEqual(adapter.snapshot.state, .entitled)
+        let blocked = await adapter.purchase(packageID: "annual")
+        XCTAssertEqual(blocked.state, .signInRequired)
+        XCTAssertEqual(provider.purchaseCalls.count, purchasesBefore)
+
+        gate.release()
+        await switchTask.value
+
+        XCTAssertEqual(adapter.linkedAccountID, "account-b")
+        XCTAssertEqual(adapter.snapshot.state, .notEntitled)
+    }
+
+    /// Two overlapping logins are serialized: while the first login is still in flight the second
+    /// switch must not reach the provider, so the earlier login cannot land after it and win.
+    func testConcurrentLoginsLeaveProviderOnTheCurrentAccount() async {
+        let provider = FakePurchasesProvider(entitledAccounts: ["account-a"])
+        let adapter = makeAdapter(provider: provider)
+
+        let started = AsyncSignal()
+        let firstGate = SuspensionGate()
+        provider.logInStarted = started
+        provider.logInGates = ["account-a": firstGate]
+
+        let firstLink = Task { await adapter.linkAccount("account-a") }
+        await started.wait()
+        let secondLink = Task { await adapter.linkAccount("account-b") }
+        await assertStaysFalse("the second login must wait for the first") {
+            provider.logInCalls.count > 1
+        }
+        firstGate.release()
+        _ = await firstLink.value
+        await secondLink.value
+
+        XCTAssertEqual(adapter.linkedAccountID, "account-b")
+        XCTAssertEqual(provider.appUserID, "account-b")
+        XCTAssertEqual(adapter.snapshot.state, .notEntitled)
+    }
+
+    /// A sign-out that is still waiting on the provider's `logOut` must not keep access in place.
+    func testSuspendedLogOutDoesNotLeaveAccess() async {
+        let provider = FakePurchasesProvider(packages: [annualPackage], entitledAccounts: ["account-a"])
+        let adapter = makeAdapter(provider: provider)
+        await adapter.linkAccount("account-a")
+        _ = await adapter.loadOffering()
+        XCTAssertEqual(adapter.snapshot.state, .entitled)
+
+        let started = AsyncSignal()
+        let gate = SuspensionGate()
+        provider.logOutStarted = started
+        provider.logOutGate = gate
+
+        let clear = Task { await adapter.clearAccount() }
+        await started.wait()
+
+        XCTAssertEqual(adapter.snapshot.state, .notEntitled, "Access ends before the provider call")
+        XCTAssertNil(adapter.linkedAccountID)
+        let blocked = await adapter.purchase(packageID: "annual")
+        XCTAssertEqual(blocked.state, .signInRequired)
+
+        gate.release()
+        await clear.value
+        XCTAssertEqual(adapter.snapshot.state, .notEntitled)
+    }
+
+    /// A sign-out during the offering fetch drops that result instead of painting plans for a
+    /// session that no longer exists.
+    func testSignOutDuringOfferingFetchDropsTheResult() async {
+        let provider = FakePurchasesProvider(packages: [annualPackage, monthlyPackage], entitledAccounts: ["account-a"])
+        let spy = AnalyticsSpy()
+        let adapter = makeAdapter(provider: provider, spy: spy)
+        await adapter.linkAccount("account-a")
+
+        let started = AsyncSignal()
+        let gate = SuspensionGate()
+        provider.packagesStarted = started
+        provider.packagesGate = gate
+
+        let load = Task { await adapter.loadOffering() }
+        await started.wait()
+        await adapter.clearAccount()
+        gate.release()
+        _ = await load.value
+
+        XCTAssertEqual(adapter.snapshot.state, .notEntitled)
+        XCTAssertEqual(
+            spy.lastParameters(for: "purchase_snapshot_dropped")?["outcome"],
+            "identity_changed"
+        )
+    }
+
+    func testLinkAccountIsIdempotent() async {
+        let provider = FakePurchasesProvider(entitledAccounts: ["account-a"])
+        let adapter = makeAdapter(provider: provider)
+
+        await adapter.linkAccount("account-a")
+        await adapter.linkAccount("account-a")
+
+        XCTAssertEqual(provider.logInCalls, ["account-a"])
+    }
+
+    @MainActor
+    private func waitUntil(
+        _ description: String,
+        timeout: TimeInterval = 3,
+        file: StaticString = #filePath,
+        line: UInt = #line,
+        _ condition: () -> Bool
+    ) async {
+        let deadline = Date().addingTimeInterval(timeout)
+        while !condition() && Date() < deadline {
+            try? await Task.sleep(nanoseconds: 5_000_000)
+        }
+        XCTAssertTrue(condition(), "Timed out waiting for \(description)", file: file, line: line)
+    }
+
+    /// Proves a *negative*: something that must not happen while another call is in flight.
+    @MainActor
+    private func assertStaysFalse(
+        _ description: String,
+        seconds: TimeInterval = 0.4,
+        file: StaticString = #filePath,
+        line: UInt = #line,
+        _ condition: () -> Bool
+    ) async {
+        let deadline = Date().addingTimeInterval(seconds)
+        while Date() < deadline {
+            if condition() {
+                XCTFail("Timed out waiting: \(description)", file: file, line: line)
+                return
+            }
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
     }
 
     // MARK: No literal ids
