@@ -1217,14 +1217,12 @@ final class LivePurchasesProviderTests: XCTestCase {
         }
         let body = source[signatureRange.upperBound...]
         guard let authorizeRange = body.range(of: "try authorize()"),
-              let storeRange = body.range(of: "Purchases.shared.purchase(package:") else {
+              let storeRange = body.range(of: "try await Purchases.shared.purchase(package:") else {
             return XCTFail("The authorization and the store call must live in the same function")
         }
-        XCTAssertLessThan(
-            authorizeRange.upperBound,
-            storeRange.lowerBound,
-            "The identity check must precede the store call"
-        )
+        guard authorizeRange.upperBound <= storeRange.lowerBound else {
+            return XCTFail("The identity check must precede the store call")
+        }
         let between = body[authorizeRange.upperBound..<storeRange.lowerBound]
         XCTAssertFalse(between.contains("await"), "No suspension may sit between the check and the store call")
         XCTAssertFalse(

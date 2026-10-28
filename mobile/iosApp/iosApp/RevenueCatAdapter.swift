@@ -799,19 +799,23 @@ final class LiveRevenueCatSDK: NSObject, RevenueCatSDK {
     }
 
     func purchase(packageIdentifier: String, authorize: () throws -> Void) async throws -> ProviderPurchaseOutcome {
-        // Everything above the store call below is synchronous on purpose: no await may sit
-        // between the authorization check and `Purchases.shared.purchase(package:)`, or a sign-out
-        // landing in that window would let the store charge under the wrong identity.
+        // Everything above the store call below is synchronous on purpose: no await may sit between
+        // the authorization check and the charge, or a sign-out landing in that window would let the
+        // store bill the wrong app user id.
         guard let offering = lastResolvedOffering,
               let package = offering.availablePackages.first(where: { $0.identifier == packageIdentifier }) else {
             throw ErrorCode.productNotAvailableForPurchaseError
         }
         try authorize()
-        let result = try await translate { try await Purchases.shared.purchase(package: package) }
-        return ProviderPurchaseOutcome(
-            customer: Self.customer(result.customerInfo),
-            userCancelled: result.userCancelled
-        )
+        do {
+            let result = try await Purchases.shared.purchase(package: package)
+            return ProviderPurchaseOutcome(
+                customer: Self.customer(result.customerInfo),
+                userCancelled: result.userCancelled
+            )
+        } catch {
+            throw (error as NSError).asErrorCode ?? ErrorCode.unknownError
+        }
     }
 
     func restorePurchases() async throws -> ProviderCustomer {

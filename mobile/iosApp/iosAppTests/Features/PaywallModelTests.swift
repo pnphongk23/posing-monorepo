@@ -505,9 +505,11 @@ final class PaywallModelTests: XCTestCase {
         let purchase = Task { await model.purchase() }
         await purchaseStarted.wait()
 
-        // The session changes under the in-flight purchase, then a new operation starts.
+        // The session changes under the in-flight purchase (sign-out, then sign-in), and a new
+        // operation starts before the stale purchase resolves.
         await boundary.signOut()
         await waitUntil("signed out") { model.phase == .signInRequired }
+        await boundary.saveCredentials(session)
 
         let restoreStarted = AsyncSignal()
         let restoreGate = SuspensionGate()
