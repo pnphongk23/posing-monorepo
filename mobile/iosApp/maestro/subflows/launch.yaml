@@ -1,8 +1,9 @@
-# Clean cold launch: fresh app container, camera and photos allowed. Order-independent flows start here.
+# Clean cold launch: fresh app container and keychain (no stale session), camera and photos allowed. Order-independent flows start here.
 appId: ${APP_ID}
 ---
 - launchApp:
     clearState: true
+    clearKeychain: true
     permissions:
       camera: allow
       photos: allow

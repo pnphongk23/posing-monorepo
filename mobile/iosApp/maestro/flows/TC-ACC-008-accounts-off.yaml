@@ -1,4 +1,4 @@
-# TC-ACC-008 accounts switch off hides the Account and Saved entries
+# TC-ACC-008 accounts switch off hides the Account entry
 appId: ${APP_ID}
 tags: [TC-ACC-008, p1]
 ---
