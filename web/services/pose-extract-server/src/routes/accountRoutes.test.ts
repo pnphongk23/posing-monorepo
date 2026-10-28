@@ -558,10 +558,38 @@ describe("DELETE /api/account Apple revocation handshake", () => {
   });
 
   /**
-   * `invalid_client` is our misconfiguration (client secret, key id, team or request shape), so the
-   * user cannot fix it by confirming again: the route must fail closed with 503, not 409.
+   * A revoked authorization (the user removed the app in Apple ID settings, TN3107) comes back as
+   * `invalid_request`, and a fresh sheet re-grants it — so it stays recoverable as a 409. Blocking it
+   * would make deletion impossible for exactly the user guideline 5.1.1(v) protects.
    */
-  it.each(["invalid_client", "invalid_request", "unauthorized_client"])(
+  it("keeps a revoked Apple authorization recoverable: invalid_request is a 409, still logged", async () => {
+    const mock = createMockStore();
+    const supabase = stubSupabase({ identities: [APPLE_IDENTITY] });
+    const warn = vi.spyOn(logger, "warn").mockImplementation((() => undefined) as never);
+
+    const response = await request(createDeleteApp({
+      store: mock.store,
+      fetchImpl: supabase.fetchImpl,
+      apple: APPLE_CONFIG,
+      appleFetchImpl: stubApple({ exchangeStatus: 400, exchangeBody: { error: "invalid_request" } }).fetchImpl
+    })).delete("/api/account")
+      .set("Authorization", `Bearer ${jwt()}`)
+      .send({ appleAuthorizationCode: APPLE_CODE });
+
+    expect(response.status).toBe(409);
+    expect(response.body.error.code).toBe("APPLE_REAUTH_REQUIRED");
+    expect(supabase.calls.filter((call) => call.method === "DELETE")).toEqual([]);
+    expect(mock.recordPurgeIntent).not.toHaveBeenCalled();
+    expect(mock.purgeAccountData).not.toHaveBeenCalled();
+    expect(warn.mock.calls[0]?.[0]).toMatchObject({ stage: "reauth", appleError: "invalid_request" });
+    warn.mockRestore();
+  });
+
+  /**
+   * These are our misconfiguration (client secret, key id, team, scope), so the user cannot fix them
+   * by confirming again: the route must fail closed with 503, not 409.
+   */
+  it.each(["invalid_client", "unauthorized_client", "unsupported_grant_type", "invalid_scope"])(
     "returns 503 for an Apple %s refusal, logs only the stage and error code, and deletes nothing",
     async (appleError) => {
       const mock = createMockStore();

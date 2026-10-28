@@ -26,13 +26,14 @@ export interface AppleSignInConfig {
 }
 
 /**
- * `reauth_required` means the user's authorization code was refused (expired or already used), which a
- * fresh code can fix. `identity_mismatch` means the code belongs to a different Apple account, so
- * revoking it would leave this account's grant alive.
+ * `reauth_required` means Apple refused the authorization code for a reason a fresh confirmation fixes
+ * (`invalid_grant`: expired/reused code; `invalid_request`: a revoked authorization, TN3107).
+ * `identity_mismatch` means the code belongs to a different Apple account, so revoking it would leave
+ * this account's grant alive.
  */
 export type AppleRevocationResult =
   | { outcome: "revoked" }
-  | { outcome: "reauth_required"; reason: "invalid_grant" }
+  | { outcome: "reauth_required"; reason: "invalid_grant" | "invalid_request" }
   | { outcome: "identity_mismatch" };
 
 /**
@@ -152,13 +153,29 @@ async function postForm(
 }
 
 /**
- * Apple's error vocabulary is a small set of `snake_case` identifiers (TN3107). Only a value that
- * looks like one is logged; anything else is reported as `unrecognized` so an upstream body can never
- * smuggle a credential into the log line.
+ * Every error code Apple documents for the token endpoints (TN3107 / Sign in with Apple REST API).
+ * A fixed allowlist, not a shape test: an upstream body must never be able to smuggle a credential
+ * such as `secret_access_token` into a log line just by being lowercase snake_case.
  */
+export const APPLE_ERROR_CODES = new Set([
+  "invalid_request",
+  "invalid_client",
+  "invalid_grant",
+  "unauthorized_client",
+  "unsupported_grant_type",
+  "invalid_scope"
+]);
+
+/**
+ * A refusal the user can fix by confirming with Apple again. `invalid_grant` is an expired or reused
+ * code; `invalid_request` covers a revoked authorization (the user removed the app in Apple ID
+ * settings — TN3107), which a fresh sheet re-grants. Anything else is our own misconfiguration.
+ */
+const REAUTH_REASONS = new Set(["invalid_grant", "invalid_request"]);
+
 function appleErrorCode(body: unknown): string {
   const error = typeof body === "object" && body !== null ? (body as { error?: unknown }).error : undefined;
-  return typeof error === "string" && /^[a-z][a-z_]{1,39}$/.test(error) ? error : "unrecognized";
+  return typeof error === "string" && APPLE_ERROR_CODES.has(error) ? error : "unrecognized";
 }
 
 async function readJson(response: Response): Promise<unknown> {
@@ -173,10 +190,11 @@ async function readJson(response: Response): Promise<unknown> {
  * Trades the fresh authorization code for Apple's refresh token, proves the code belongs to the
  * account being deleted, and only then revokes.
  *
- * Only `invalid_grant` is a user-side refusal a fresh code can fix, so it is the only 4xx reported as
- * `reauth_required`. Everything else — `invalid_client` (our client secret, key id or team is wrong),
- * `invalid_request`, `unauthorized_client`, a 5xx, a timeout, a malformed success body — throws,
- * because a new user code cannot fix it and an error is never evidence that the tokens were revoked.
+ * Only `invalid_grant` and `invalid_request` are user-side refusals a fresh code fixes, so only they
+ * are reported as `reauth_required`. Everything else — `invalid_client` (our client secret, key id or
+ * team is wrong), `unauthorized_client`, `unsupported_grant_type`, `invalid_scope`, any other 4xx, a
+ * 5xx, a timeout, a malformed success body — throws, because a new user code cannot fix it and an
+ * error is never evidence that the tokens were revoked.
  */
 export async function revokeAppleAuthorizationCode(options: AppleRevocationOptions): Promise<AppleRevocationResult> {
   const fetchImpl = options.fetchImpl ?? fetch;
@@ -202,12 +220,12 @@ export async function revokeAppleAuthorizationCode(options: AppleRevocationOptio
   }
 
   if (tokenResponse.status >= 400 && tokenResponse.status < 500) {
-    const body = await readJson(tokenResponse);
-    if (appleErrorCode(body) === "invalid_grant") {
-      return { outcome: "reauth_required", reason: "invalid_grant" };
+    const code = appleErrorCode(await readJson(tokenResponse));
+    if (REAUTH_REASONS.has(code)) {
+      return { outcome: "reauth_required", reason: code as "invalid_grant" | "invalid_request" };
     }
-    // A refusal we caused (credentials, signing, request shape) is not something the user can retry.
-    throw new AppleRevocationError("token_exchange", appleErrorCode(body));
+    // A refusal we caused (credentials, signing, scope) is not something a new user code can fix.
+    throw new AppleRevocationError("token_exchange", code);
   }
   if (!tokenResponse.ok) {
     throw new AppleRevocationError("token_exchange", `status_${tokenResponse.status}`);

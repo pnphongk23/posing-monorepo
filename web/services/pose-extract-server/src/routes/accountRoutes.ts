@@ -173,6 +173,9 @@ export function createAccountRoutes(options: AccountRoutesOptions): Router {
         return;
       }
       if (revocation.outcome === "reauth_required") {
+        // The user can fix this with a fresh Apple sheet, so it is a 409 — but the reason is worth a log
+        // line: a persistent `invalid_request` after a fresh re-auth means our configuration is wrong.
+        logger.warn({ accountId, stage: "reauth", appleError: revocation.reason }, "apple_token_revocation_failed");
         res.status(409).json(APPLE_REAUTH_REQUIRED);
         return;
       }

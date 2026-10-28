@@ -165,8 +165,13 @@ describe("revokeAppleAuthorizationCode", () => {
     expect(stub.calls).toHaveLength(1);
   });
 
-  it("reports only invalid_grant as reauth required, never as revoked", async () => {
-    const stub = stubApple({ exchange: () => jsonResponse({ error: "invalid_grant" }, 400) });
+  /**
+   * `invalid_grant` is an expired/reused code; `invalid_request` covers a revoked authorization (the
+   * user removed the app in Apple ID settings, TN3107). A fresh sheet fixes both, so both must stay
+   * recoverable — otherwise guideline 5.1.1(v) deletion is blocked forever.
+   */
+  it.each(["invalid_grant", "invalid_request"])("reports %s as reauth required, never as revoked", async (error) => {
+    const stub = stubApple({ exchange: () => jsonResponse({ error }, 400) });
     const result = await revokeAppleAuthorizationCode({
       authorizationCode: CODE,
       appleSub: APPLE_SUB,
@@ -174,15 +179,15 @@ describe("revokeAppleAuthorizationCode", () => {
       fetchImpl: stub.fetchImpl
     });
 
-    expect(result).toEqual({ outcome: "reauth_required", reason: "invalid_grant" });
+    expect(result).toEqual({ outcome: "reauth_required", reason: error });
     expect(stub.calls).toHaveLength(1);
   });
 
   /**
    * These are our fault, not the user's: a fresh authorization code cannot fix a wrong client secret,
-   * key id, team or request shape, so they must never come back as "ask the user to confirm again".
+   * key id, team or scope, so they must never come back as "ask the user to confirm again".
    */
-  it.each(["invalid_client", "invalid_request", "unauthorized_client", "something_new"])(
+  it.each(["invalid_client", "unauthorized_client", "unsupported_grant_type", "invalid_scope"])(
     "throws on an exchange %s refusal and reports Apple's error code",
     async (error) => {
       const stub = stubApple({ exchange: () => jsonResponse({ error }, 400) });
@@ -199,8 +204,19 @@ describe("revokeAppleAuthorizationCode", () => {
     }
   );
 
-  it("never logs or reports an unrecognised upstream error field", async () => {
-    const stub = stubApple({ exchange: () => jsonResponse({ error: "code=SECRET-CODE" }, 400) });
+  /**
+   * The allowlist is fixed, not a shape test: a plausible-looking snake_case value must not reach the
+   * log just because it is lowercase, or an upstream body could smuggle a credential through.
+   */
+  it.each([
+    "secret_access_token",
+    "code=SECRET-CODE",
+    "client_secret",
+    "invalid_grant ",
+    "INVALID_GRANT",
+    ""
+  ])("reports an undocumented upstream error field %j as unrecognized", async (rawError) => {
+    const stub = stubApple({ exchange: () => jsonResponse({ error: rawError }, 400) });
     const failure = await revokeAppleAuthorizationCode({
       authorizationCode: CODE,
       appleSub: APPLE_SUB,
@@ -209,7 +225,8 @@ describe("revokeAppleAuthorizationCode", () => {
     }).catch((thrown: unknown) => thrown);
 
     expect(failure).toMatchObject({ stage: "token_exchange", appleError: "unrecognized" });
-    expect(JSON.stringify(failure)).not.toContain("SECRET-CODE");
+    expect(JSON.stringify(failure)).not.toContain(rawError.trim() || "nothing-to-find");
+    expect(stub.calls).toHaveLength(1);
   });
 
   it("throws on an exchange 5xx", async () => {

@@ -638,7 +638,8 @@ Account khác không bị ảnh hưởng: mỗi bước đều scope theo `accou
 | BR-ACCOUNT-009 | Apple code chỉ được dùng khi `id_token` bind đúng `sub` của identity Apple trên account; lệch → `409 APPLE_IDENTITY_MISMATCH`, không xóa gì. |
 | BR-ACCOUNT-010 | Attempt thất bại (cancel, `invalid_grant`, mismatch, Apple 5xx, revoke fail, Supabase delete fail) không ghi intent, nên không bao giờ bị sweeper purge. |
 | BR-ACCOUNT-011 | Thiếu block `APPLE_*` mà account có identity Apple → `503`, không xóa im lặng khi chưa revoke. |
-| BR-ACCOUNT-012 | Chỉ `invalid_grant` mới là lỗi phía user → `409 APPLE_REAUTH_REQUIRED`. Mọi lỗi Apple khác (`invalid_client`, `invalid_request`, `unauthorized_client`, 4xx khác, 5xx, timeout) → `503`, không xóa gì, log chỉ `stage` và error code của Apple (không code/token/secret). |
+| BR-ACCOUNT-012 | `invalid_grant` và `invalid_request` là lỗi phía user → `409 APPLE_REAUTH_REQUIRED` (recovery = sheet Apple mới). Mọi lỗi Apple khác (`invalid_client`, `unauthorized_client`, `unsupported_grant_type`, `invalid_scope`, 4xx khác, 5xx, timeout) → `503`, không xóa gì. |
+| BR-ACCOUNT-013 | Log lỗi Apple chỉ chứa `accountId`, `stage` và error code nằm trong allowlist cố định của Apple (6 mã); mọi giá trị khác → `unrecognized`, nên upstream không thể đưa secret vào log. `invalid_request` lặp lại sau re-auth mới = lỗi cấu hình phía server, cần ops xem log. |
 
 ### Apple re-auth khi xóa account
 
@@ -648,8 +649,8 @@ Account khác không bị ảnh hưởng: mỗi bước đều scope theo `accou
 | Tình huống | Response |
 |---|---|
 | Account có identity Apple, request không có code | `409 APPLE_REAUTH_REQUIRED` — chưa có gì bị xóa |
-| Code bị Apple từ chối với `invalid_grant` (hết hạn / đã dùng) | `409 APPLE_REAUTH_REQUIRED` |
-| Apple 4xx do phía mình (`invalid_client`, `invalid_request`, `unauthorized_client`, 4xx khác) | `503`; code mới của user không sửa được lỗi cấu hình, log `apple_token_revocation_failed` với `stage` + error code của Apple |
+| Code bị Apple từ chối với `invalid_grant` (hết hạn / đã dùng) hoặc `invalid_request` (user đã revoke authorization trong Apple ID settings — TN3107) | `409 APPLE_REAUTH_REQUIRED`; sheet Apple mới cấp code mới / re-grant, nên đây là đường recovery hợp lệ. Log `apple_token_revocation_failed` với `stage=reauth` + error code |
+| Apple 4xx do phía mình (`invalid_client`, `unauthorized_client`, `unsupported_grant_type`, `invalid_scope`, 4xx khác) | `503`; code mới của user không sửa được lỗi cấu hình, log `stage=token_exchange` + error code của Apple |
 | `id_token.sub`/`aud`/`iss` không khớp account | `409 APPLE_IDENTITY_MISMATCH` |
 | Apple 5xx / timeout / network, revoke 5xx | `503`, chưa có gì bị xóa |
 | Revoke OK rồi Supabase delete lỗi | `503`; attempt sau cần re-auth mới và revoke lại (idempotent với user) |

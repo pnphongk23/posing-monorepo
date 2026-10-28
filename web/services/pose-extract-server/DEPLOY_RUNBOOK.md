@@ -297,6 +297,11 @@ Rules:
 
 - **Names only in this file and in logs.** Never print, paste, commit or log a value. The service logs `apple_token_revocation_failed` with a stage name (`token_exchange` / `revoke`) and the account id, nothing else.
 - All four or none: a partial block is treated as unset, so an Apple-signed-in account cannot be deleted at all (`503`) instead of being deleted without a revoke.
+- **Reading `apple_token_revocation_failed`:** the log line carries `accountId`, `stage` and Apple's error code only (a fixed allowlist; anything else shows as `unrecognized`).
+  - `stage=reauth`, `appleError=invalid_grant` — the user's code expired or was reused. Normal; the client shows "Couldn't confirm with Apple. Try again." and a new sheet fixes it.
+  - `stage=reauth`, `appleError=invalid_request` — a revoked authorization (user removed the app in Apple ID settings, TN3107). The retry re-grants, so this is also normal **once**. If it persists across fresh re-auths it is our configuration (client id / key / team mismatch): escalate, do not tell the user to keep retrying.
+  - `stage=token_exchange` with `invalid_client`, `unauthorized_client`, `unsupported_grant_type` or `invalid_scope` — our credentials or signing are wrong. The route answers `503` (deletion blocked, data intact) and no user retry can fix it: check `APPLE_TEAM_ID`, `APPLE_CLIENT_ID` (`posing.camera.app`), `APPLE_SIGNIN_KEY_ID` and the `.p8` in `APPLE_SIGNIN_PRIVATE_KEY`.
+  - `appleError=transport` / `status_5xx` — Apple or the network; retry later. `unrecognized` — Apple returned an error code outside its documented set; treat as a transport-class failure and inspect without pasting the body into a ticket.
 - The client secret is minted per request and expires after 5 minutes. The key only has to sign; it needs no other scope.
 - Where: Railway service variables (`c4350044-7a2f-4d48-9d37-f6ecb665ba29`, environment `production`). Absent today? Yes — this is a new operator action.
 
