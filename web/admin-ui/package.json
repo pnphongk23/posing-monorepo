@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "node --import ./test-support/registerAlias.mjs --test \"src/**/*.test.mjs\""
   },
   "dependencies": {
     "idb": "^8.0.3",

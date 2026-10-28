@@ -1,14 +1,5 @@
 import { callPoseExtractAdmin } from '@/lib/poseExtractAdminServer';
-
-function mapProxyError(error) {
-  return Response.json(
-    {
-      error: error.message || 'Proxy request failed',
-      code: 'ADMIN_PROXY_ERROR',
-    },
-    { status: 500 }
-  );
-}
+import { mapProxyError } from '../../proxyError';
 
 export async function GET() {
   try {
