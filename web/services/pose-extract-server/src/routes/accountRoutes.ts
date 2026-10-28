@@ -158,9 +158,12 @@ export function createAccountRoutes(options: AccountRoutesOptions): Router {
           fetchImpl: options.appleFetchImpl ?? fetchImpl
         });
       } catch (error) {
-        // Nothing is known about the tokens, so the account is not deleted.
+        // Nothing is known about the tokens, so the account is not deleted. The log carries the stage
+        // and Apple's error code only — never the authorization code, a token or a client secret —
+        // which is what tells a user-side refusal apart from our own misconfiguration.
         const stage = error instanceof AppleRevocationError ? error.stage : "unknown";
-        logger.warn({ accountId, stage }, "apple_token_revocation_failed");
+        const appleError = error instanceof AppleRevocationError ? error.appleError : undefined;
+        logger.warn({ accountId, stage, appleError }, "apple_token_revocation_failed");
         res.status(503).json(PENDING_VALIDATION);
         return;
       }

@@ -455,9 +455,13 @@ paths:
         "409":
           description: |
             Nothing was deleted. `APPLE_REAUTH_REQUIRED` means the account has an Apple identity and
-            no usable authorization code was sent (missing, expired, or rejected by Apple), so iOS
-            must run the Apple sheet once and retry. `APPLE_IDENTITY_MISMATCH` means the code belongs
-            to a different Apple account.
+            no usable authorization code was sent — missing, or refused by Apple with `invalid_grant`
+            (expired/already used) — so iOS must run the Apple sheet once and retry.
+            `APPLE_IDENTITY_MISMATCH` means the code belongs to a different Apple account.
+
+            A refusal we caused cannot be fixed by a fresh user code, so it is **not** a 409:
+            `invalid_client`, `invalid_request`, `unauthorized_client` and every other Apple 4xx
+            answer `503` (see below).
           content:
             application/json:
               schema:
@@ -471,9 +475,11 @@ paths:
           description: |
             Deletion did not start or did not complete (`AUTH_PENDING_VALIDATION`): the server has no
             service-role key, the Apple env block is missing for an Apple-signed-in account, the
-            identity provider refused the delete, Apple's token exchange or revoke failed, or the row
-            purge failed. Nothing is changed when the identity delete fails. A failed row purge keeps
-            the recorded intent so the background sweep resumes it.
+            identity provider refused the delete, Apple's token exchange or revoke failed (including
+            Apple's `invalid_client`/`invalid_request`/`unauthorized_client`, a 5xx or a timeout), or
+            the row purge failed. Nothing is changed when the identity delete fails. A failed row
+            purge keeps the recorded intent so the background sweep resumes it. The failure is logged
+            as `apple_token_revocation_failed` with `stage` and Apple's error code only.
           content:
             application/json:
               schema:

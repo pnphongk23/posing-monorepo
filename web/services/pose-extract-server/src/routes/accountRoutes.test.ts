@@ -8,6 +8,7 @@ import { AccountStore, objectKeyFromLocator, sweepStaleAccountPurges, type Accou
 import { ObjectDeletionOutbox } from "../db/objectDeletionOutbox";
 import { setupTestDatabase } from "../db/testDb";
 import { APPLE_REVOKE_URL, APPLE_TOKEN_EXCHANGE_URL, type AppleSignInConfig } from "../services/appleRevocation";
+import { logger } from "../utils/logger";
 
 const SUPABASE_URL = "https://project-ref.supabase.co";
 const KEY_ID = "test-key-id";
@@ -554,6 +555,70 @@ describe("DELETE /api/account Apple revocation handshake", () => {
     expect(response.body.error.code).toBe("APPLE_REAUTH_REQUIRED");
     expect(mock.purgeAccountData).not.toHaveBeenCalled();
     expect(mock.recordPurgeIntent).not.toHaveBeenCalled();
+  });
+
+  /**
+   * `invalid_client` is our misconfiguration (client secret, key id, team or request shape), so the
+   * user cannot fix it by confirming again: the route must fail closed with 503, not 409.
+   */
+  it.each(["invalid_client", "invalid_request", "unauthorized_client"])(
+    "returns 503 for an Apple %s refusal, logs only the stage and error code, and deletes nothing",
+    async (appleError) => {
+      const mock = createMockStore();
+      const supabase = stubSupabase({ identities: [APPLE_IDENTITY] });
+      const warn = vi.spyOn(logger, "warn").mockImplementation((() => undefined) as never);
+
+      const response = await request(createDeleteApp({
+        store: mock.store,
+        fetchImpl: supabase.fetchImpl,
+        apple: APPLE_CONFIG,
+        appleFetchImpl: stubApple({ exchangeStatus: 400, exchangeBody: { error: appleError } }).fetchImpl
+      })).delete("/api/account")
+        .set("Authorization", `Bearer ${jwt()}`)
+        .send({ appleAuthorizationCode: APPLE_CODE });
+
+      expect(response.status).toBe(503);
+      expect(response.body.error.code).toBe("AUTH_PENDING_VALIDATION");
+      expect(supabase.calls.filter((call) => call.method === "DELETE")).toEqual([]);
+      expect(mock.recordPurgeIntent).not.toHaveBeenCalled();
+      expect(mock.purgeAccountData).not.toHaveBeenCalled();
+
+      expect(warn).toHaveBeenCalledTimes(1);
+      const [context, message] = warn.mock.calls[0] as [Record<string, unknown>, string];
+      expect(message).toBe("apple_token_revocation_failed");
+      expect(context).toEqual({ accountId: ACCOUNT_ID, stage: "token_exchange", appleError });
+      expect(JSON.stringify(warn.mock.calls)).not.toContain(APPLE_CODE);
+      warn.mockRestore();
+    }
+  );
+
+  it("returns 503 and nothing deleted when the Apple exchange stalls past the timeout", async () => {
+    const mock = createMockStore();
+    const supabase = stubSupabase({ identities: [APPLE_IDENTITY] });
+    let aborted = false;
+    const stalling = vi.fn(
+      (_url: string | URL | Request, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => {
+            aborted = true;
+            reject(Object.assign(new Error("The operation was aborted"), { name: "AbortError" }));
+          });
+        })
+    ) as unknown as typeof fetch;
+
+    const response = await request(createDeleteApp({
+      store: mock.store,
+      fetchImpl: supabase.fetchImpl,
+      apple: APPLE_CONFIG,
+      appleFetchImpl: stalling
+    })).delete("/api/account")
+      .set("Authorization", `Bearer ${jwt()}`)
+      .send({ appleAuthorizationCode: APPLE_CODE });
+
+    expect(response.status).toBe(503);
+    expect(aborted).toBe(true);
+    expect(supabase.calls.filter((call) => call.method === "DELETE")).toEqual([]);
+    expect(mock.purgeAccountData).not.toHaveBeenCalled();
   });
 
   it("returns 503 without deleting anything when Apple's revoke fails", async () => {

@@ -26,23 +26,30 @@ export interface AppleSignInConfig {
 }
 
 /**
- * `reauth_required` means Apple refused the code (expired, already used, wrong client); the user
- * has to confirm again. `identity_mismatch` means the code belongs to a different Apple account,
- * so revoking it would leave this account's grant alive.
+ * `reauth_required` means the user's authorization code was refused (expired or already used), which a
+ * fresh code can fix. `identity_mismatch` means the code belongs to a different Apple account, so
+ * revoking it would leave this account's grant alive.
  */
 export type AppleRevocationResult =
   | { outcome: "revoked" }
-  | { outcome: "reauth_required"; reason: "invalid_grant" | "invalid_client" | "rejected" }
+  | { outcome: "reauth_required"; reason: "invalid_grant" }
   | { outcome: "identity_mismatch" };
 
-/** Transport or upstream failure: nothing is known about the tokens, so callers must not delete. */
+/**
+ * Transport or upstream failure: nothing is known about the tokens, so callers must not delete.
+ * `appleError` carries Apple's own error code (`invalid_client`, `invalid_request`, …) — a token
+ * from Apple's error vocabulary, never a code, secret or token — so ops can tell our misconfiguration
+ * apart from a user-side refusal.
+ */
 export class AppleRevocationError extends Error {
   readonly stage: "token_exchange" | "revoke";
+  readonly appleError?: string;
 
-  constructor(stage: "token_exchange" | "revoke") {
+  constructor(stage: "token_exchange" | "revoke", appleError?: string) {
     super(stage === "token_exchange" ? "Apple token exchange failed" : "Apple token revocation failed");
     this.name = "AppleRevocationError";
     this.stage = stage;
+    this.appleError = appleError;
   }
 }
 
@@ -144,11 +151,14 @@ async function postForm(
   }
 }
 
-function reauthReason(body: unknown): "invalid_grant" | "invalid_client" | "rejected" {
+/**
+ * Apple's error vocabulary is a small set of `snake_case` identifiers (TN3107). Only a value that
+ * looks like one is logged; anything else is reported as `unrecognized` so an upstream body can never
+ * smuggle a credential into the log line.
+ */
+function appleErrorCode(body: unknown): string {
   const error = typeof body === "object" && body !== null ? (body as { error?: unknown }).error : undefined;
-  if (error === "invalid_grant") return "invalid_grant";
-  if (error === "invalid_client") return "invalid_client";
-  return "rejected";
+  return typeof error === "string" && /^[a-z][a-z_]{1,39}$/.test(error) ? error : "unrecognized";
 }
 
 async function readJson(response: Response): Promise<unknown> {
@@ -161,9 +171,12 @@ async function readJson(response: Response): Promise<unknown> {
 
 /**
  * Trades the fresh authorization code for Apple's refresh token, proves the code belongs to the
- * account being deleted, and only then revokes. A 4xx is a refusal we surface as `reauth_required`;
- * anything else (5xx, network, timeout, a malformed success body) throws, because an error is never
- * evidence that the tokens were revoked.
+ * account being deleted, and only then revokes.
+ *
+ * Only `invalid_grant` is a user-side refusal a fresh code can fix, so it is the only 4xx reported as
+ * `reauth_required`. Everything else — `invalid_client` (our client secret, key id or team is wrong),
+ * `invalid_request`, `unauthorized_client`, a 5xx, a timeout, a malformed success body — throws,
+ * because a new user code cannot fix it and an error is never evidence that the tokens were revoked.
  */
 export async function revokeAppleAuthorizationCode(options: AppleRevocationOptions): Promise<AppleRevocationResult> {
   const fetchImpl = options.fetchImpl ?? fetch;
@@ -185,21 +198,26 @@ export async function revokeAppleAuthorizationCode(options: AppleRevocationOptio
       timeoutMs
     );
   } catch {
-    throw new AppleRevocationError("token_exchange");
+    throw new AppleRevocationError("token_exchange", "transport");
   }
 
   if (tokenResponse.status >= 400 && tokenResponse.status < 500) {
-    return { outcome: "reauth_required", reason: reauthReason(await readJson(tokenResponse)) };
+    const body = await readJson(tokenResponse);
+    if (appleErrorCode(body) === "invalid_grant") {
+      return { outcome: "reauth_required", reason: "invalid_grant" };
+    }
+    // A refusal we caused (credentials, signing, request shape) is not something the user can retry.
+    throw new AppleRevocationError("token_exchange", appleErrorCode(body));
   }
   if (!tokenResponse.ok) {
-    throw new AppleRevocationError("token_exchange");
+    throw new AppleRevocationError("token_exchange", `status_${tokenResponse.status}`);
   }
 
   const tokenBody = (await readJson(tokenResponse)) as { refresh_token?: unknown; id_token?: unknown } | null;
   const refreshToken = typeof tokenBody?.refresh_token === "string" ? tokenBody.refresh_token : null;
   const idToken = typeof tokenBody?.id_token === "string" ? tokenBody.id_token : null;
   if (!refreshToken || !idToken) {
-    throw new AppleRevocationError("token_exchange");
+    throw new AppleRevocationError("token_exchange", "malformed_response");
   }
 
   const claims = decodeIdTokenClaims(idToken);
@@ -226,10 +244,10 @@ export async function revokeAppleAuthorizationCode(options: AppleRevocationOptio
       timeoutMs
     );
   } catch {
-    throw new AppleRevocationError("revoke");
+    throw new AppleRevocationError("revoke", "transport");
   }
   if (!revokeResponse.ok) {
-    throw new AppleRevocationError("revoke");
+    throw new AppleRevocationError("revoke", `status_${revokeResponse.status}`);
   }
 
   return { outcome: "revoked" };

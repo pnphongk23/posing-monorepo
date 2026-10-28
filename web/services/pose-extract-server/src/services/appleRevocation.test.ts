@@ -165,8 +165,8 @@ describe("revokeAppleAuthorizationCode", () => {
     expect(stub.calls).toHaveLength(1);
   });
 
-  it.each(["invalid_grant", "invalid_client"])("reports %s as reauth required, never as revoked", async (error) => {
-    const stub = stubApple({ exchange: () => jsonResponse({ error }, 400) });
+  it("reports only invalid_grant as reauth required, never as revoked", async () => {
+    const stub = stubApple({ exchange: () => jsonResponse({ error: "invalid_grant" }, 400) });
     const result = await revokeAppleAuthorizationCode({
       authorizationCode: CODE,
       appleSub: APPLE_SUB,
@@ -174,27 +174,80 @@ describe("revokeAppleAuthorizationCode", () => {
       fetchImpl: stub.fetchImpl
     });
 
-    expect(result).toEqual({ outcome: "reauth_required", reason: error });
+    expect(result).toEqual({ outcome: "reauth_required", reason: "invalid_grant" });
     expect(stub.calls).toHaveLength(1);
   });
 
-  it("throws on an exchange 5xx and on a timeout", async () => {
-    await expect(revoke({ exchange: () => new Response("boom", { status: 503 }) })).rejects.toBeInstanceOf(
-      AppleRevocationError
-    );
-
-    const hanging = vi.fn(async () => {
-      throw Object.assign(new Error("The operation was aborted"), { name: "AbortError" });
-    }) as unknown as typeof fetch;
-    await expect(
-      revokeAppleAuthorizationCode({
+  /**
+   * These are our fault, not the user's: a fresh authorization code cannot fix a wrong client secret,
+   * key id, team or request shape, so they must never come back as "ask the user to confirm again".
+   */
+  it.each(["invalid_client", "invalid_request", "unauthorized_client", "something_new"])(
+    "throws on an exchange %s refusal and reports Apple's error code",
+    async (error) => {
+      const stub = stubApple({ exchange: () => jsonResponse({ error }, 400) });
+      const failure = await revokeAppleAuthorizationCode({
         authorizationCode: CODE,
         appleSub: APPLE_SUB,
         config,
-        fetchImpl: hanging,
-        timeoutMs: 10
-      })
-    ).rejects.toBeInstanceOf(AppleRevocationError);
+        fetchImpl: stub.fetchImpl
+      }).catch((thrown: unknown) => thrown);
+
+      expect(failure).toBeInstanceOf(AppleRevocationError);
+      expect(failure).toMatchObject({ stage: "token_exchange", appleError: error });
+      expect(stub.calls).toHaveLength(1);
+    }
+  );
+
+  it("never logs or reports an unrecognised upstream error field", async () => {
+    const stub = stubApple({ exchange: () => jsonResponse({ error: "code=SECRET-CODE" }, 400) });
+    const failure = await revokeAppleAuthorizationCode({
+      authorizationCode: CODE,
+      appleSub: APPLE_SUB,
+      config,
+      fetchImpl: stub.fetchImpl
+    }).catch((thrown: unknown) => thrown);
+
+    expect(failure).toMatchObject({ stage: "token_exchange", appleError: "unrecognized" });
+    expect(JSON.stringify(failure)).not.toContain("SECRET-CODE");
+  });
+
+  it("throws on an exchange 5xx", async () => {
+    await expect(revoke({ exchange: () => new Response("boom", { status: 503 }) })).rejects.toMatchObject({
+      name: "AppleRevocationError",
+      stage: "token_exchange",
+      appleError: "status_503"
+    });
+  });
+
+  /**
+   * A real stall: the stub honours the abort signal the client sends, so this asserts the timeout is
+   * wired (it takes at least the timeout to fail), not that a pre-broken fetch throws.
+   */
+  it("aborts a stalled exchange after the timeout and throws", async () => {
+    let aborted = false;
+    const stalling = vi.fn(
+      (_url: string | URL | Request, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => {
+            aborted = true;
+            reject(Object.assign(new Error("The operation was aborted"), { name: "AbortError" }));
+          });
+        })
+    ) as unknown as typeof fetch;
+
+    const startedAt = Date.now();
+    const failure = await revokeAppleAuthorizationCode({
+      authorizationCode: CODE,
+      appleSub: APPLE_SUB,
+      config,
+      fetchImpl: stalling,
+      timeoutMs: 25
+    }).catch((thrown: unknown) => thrown);
+
+    expect(failure).toMatchObject({ name: "AppleRevocationError", stage: "token_exchange", appleError: "transport" });
+    expect(aborted).toBe(true);
+    expect(Date.now() - startedAt).toBeGreaterThanOrEqual(20);
   });
 
   it("throws on a revoke 5xx instead of reporting the tokens as revoked", async () => {
