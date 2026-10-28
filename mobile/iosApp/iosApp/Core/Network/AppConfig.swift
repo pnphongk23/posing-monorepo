@@ -8,6 +8,9 @@ final class AppConfig: @unchecked Sendable {
     private var _serverBaseURL = "https://pose-extract-server-production.up.railway.app"
     private var _isAccountFeatureEnabled = false
     private var _isExtractPoseEnabled = true
+    /// FEAT-011 kill switch. Off by default: the paywall never gates on a build that has not been
+    /// told to, and a Firestore outage leaves capture free.
+    private var _isPaywallEnabled = false
 
     #if DEBUG
     /// Debug-only endpoint override for instrumented Simulator runs: `-AIPoseAPIBaseURL <url>` on
@@ -90,6 +93,18 @@ final class AppConfig: @unchecked Sendable {
     func applyExtractPoseEnabled(_ enabled: Bool) {
         lock.lock()
         _isExtractPoseEnabled = enabled
+        lock.unlock()
+    }
+
+    var isPaywallEnabled: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return _isPaywallEnabled
+    }
+
+    func applyPaywallEnabled(_ enabled: Bool) {
+        lock.lock()
+        _isPaywallEnabled = enabled
         lock.unlock()
     }
 

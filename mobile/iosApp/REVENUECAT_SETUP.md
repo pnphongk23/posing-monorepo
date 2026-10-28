@@ -1,9 +1,17 @@
 # RevenueCat implementation runbook
 
-The app uses the native `RevenueCat` CocoaPod (`~> 5.87`) as the sole StoreKit
-owner. `RevenueCatAdapter` reads the public SDK key from the environment-specific
-`REVENUECAT_PUBLIC_SDK_KEY` build setting through `Info.plist`; an unset,
-placeholder, or example value leaves RevenueCat unconfigured.
+The app uses the native `RevenueCat` SPM package (`5.87.1`) as the sole StoreKit
+owner. `RevenueCatAdapter` reads two build settings through `Info.plist`:
+
+- `REVENUECAT_PUBLIC_SDK_KEY` → `RevenueCatPublicSDKKey` (the public SDK key);
+- `REVENUECAT_ENTITLEMENT_ID` → `RevenueCatEntitlementID` (the entitlement that
+  grants premium capture).
+
+An unset, placeholder (`REPLACE_WITH_…`, `$(SETTING)`) or example value for
+either key leaves RevenueCat unconfigured: `isConfigured == false`, no store
+call is made, and the paywall reports `unavailable`. Both values live in the
+four `Config/*.xcconfig` files; until the user supplies them, builds stay
+unconfigured on purpose.
 
 The XcodeGen source of truth is `project.yml`. Use the `Dev` scheme for the
 `Debug-Dev`/`Release-Dev` configurations and the `Prod` scheme for
@@ -14,10 +22,28 @@ not commit real values.
 External dependencies, supplied outside this repository:
 
 - the real public SDK key for each environment;
-- App Store Connect products and localized prices for `premium_yearly` and
-  `premium_monthly`;
-- the `snap pose premium` entitlement and `default` offering in RevenueCat;
+- the entitlement id that is live in the RevenueCat dashboard; it must be copied
+  verbatim into `REVENUECAT_ENTITLEMENT_ID` for the environment being released;
+- the `default` offering (`offerings.current`) with an **annual** and a **monthly**
+  package attached (`Offering.current ?? offerings["default"]` is resolved at
+  runtime). The app selects packages by `packageType`, so it never embeds a store
+  product id: the products themselves only exist in App Store Connect and the
+  RevenueCat dashboard;
 - RevenueCat Sandbox users and real Terms/Privacy URLs.
+
+## Dashboard parity check (release gate)
+
+1. `REVENUECAT_ENTITLEMENT_ID` in the shipped `.xcconfig` equals the entitlement
+   identifier in the RevenueCat dashboard, character for character (spaces
+   included — the dashboard value is authoritative).
+2. The `default` offering has exactly one `.annual` and one `.monthly` package,
+   both attached to a real App Store product with a localized price.
+3. A sandbox purchase shows the entitlement as active; a second account on the
+   same device stays unentitled.
+4. Sign out, sign in again: the entitlement returns without tapping Restore.
+
+If any of these fail, the paywall stays truthful (`unavailable`) or unentitled
+rather than granting access — but the release is blocked.
 
 ## Legal URLs
 

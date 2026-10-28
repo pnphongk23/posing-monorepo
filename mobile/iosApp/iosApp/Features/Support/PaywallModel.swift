@@ -6,30 +6,24 @@ import Foundation
 protocol PurchaseGateway: AnyObject {
     var snapshot: PurchaseSnapshot { get }
     func loadOffering() async -> PurchaseSnapshot
-    func purchase(productId: String) async -> PurchaseSnapshot
+    func purchase(packageID: String) async -> PurchaseSnapshot
     func restore() async -> PurchaseSnapshot
 }
 
-/// DEC-008 package mapping for the paywall. Product metadata (price, period) comes from StoreKit
-/// through the gateway — only which package is the annual highlight is code-owned.
+/// DEC-008 package mapping for the paywall. Which package is the annual highlight is code-owned;
+/// price and period come from the offering through the gateway. Packages are identified by package
+/// type, never by a store product id, so the ids can change in App Store Connect alone.
 enum PaywallPlanCatalog {
-    static let annualProductID = "premium_yearly"
-    static let monthlyProductID = "premium_monthly"
-    static let productIDs = [annualProductID, monthlyProductID]
-
     static func isAnnual(_ product: PurchaseProduct) -> Bool {
-        product.identifier == annualProductID
-            || product.identifier.contains("year")
-            || product.identifier.contains("annual")
+        product.packageType == .annual
     }
 
     static func label(for product: PurchaseProduct) -> String {
-        if isAnnual(product) { return "Annual" }
-        if product.identifier.contains("month") { return "Monthly" }
-        return product.identifier
-            .replacingOccurrences(of: "premium_", with: "")
-            .replacingOccurrences(of: "_", with: " ")
-            .capitalized
+        switch product.packageType {
+        case .annual: return "Annual"
+        case .monthly: return "Monthly"
+        case .other: return "Premium"
+        }
     }
 
     static func periodLabel(for product: PurchaseProduct) -> String {
@@ -47,16 +41,14 @@ enum PaywallPlanCatalog {
         return "\(product.localizedPrice) billed today. Auto-renews \(cadence) until you cancel."
     }
 
-    /// Annual first (the highlighted package), then the comparison anchor; unknown ids are dropped
-    /// so a misconfigured offering cannot render a product this build cannot purchase.
+    /// Annual first (the highlighted package), then the comparison anchor. Other package types are
+    /// dropped so a misconfigured offering cannot render a plan this build does not sell.
     static func ordered(_ products: [PurchaseProduct]) -> [PurchaseProduct] {
         products
-            .filter { productIDs.contains($0.identifier) }
+            .filter { $0.packageType != .other }
             .sorted { lhs, rhs in
-                if isAnnual(lhs) != isAnnual(rhs) { return isAnnual(lhs) }
-                let lhsIndex = productIDs.firstIndex(of: lhs.identifier) ?? productIDs.count
-                let rhsIndex = productIDs.firstIndex(of: rhs.identifier) ?? productIDs.count
-                return lhsIndex < rhsIndex
+                if lhs.packageType != rhs.packageType { return isAnnual(lhs) }
+                return lhs.identifier < rhs.identifier
             }
     }
 }
@@ -188,7 +180,7 @@ final class PaywallModel: ObservableObject {
     func purchase() async {
         guard let selectedPlan, phase != .processing else { return }
         phase = .processing
-        apply(await gateway.purchase(productId: selectedPlan.identifier))
+        apply(await gateway.purchase(packageID: selectedPlan.identifier))
     }
 
     func restore() async {
@@ -229,6 +221,11 @@ final class PaywallModel: ObservableObject {
             phase = plans.isEmpty
                 ? .unavailable("Plans are temporarily unavailable. Retry to check again.")
                 : .ready
+        case .signInRequired:
+            // M2: the adapter refused a store call because no Account is linked. Show sign-in
+            // instead of a plan list that cannot be bought.
+            plans = []
+            phase = .signInRequired
         }
     }
 

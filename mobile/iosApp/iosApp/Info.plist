@@ -47,6 +47,8 @@
 	<string>Capture photos for pose comparison.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>posing needs access to save your captured poses to Photos.</string>
+	<key>RevenueCatEntitlementID</key>
+	<string>$(REVENUECAT_ENTITLEMENT_ID)</string>
 	<key>RevenueCatPublicSDKKey</key>
 	<string>$(REVENUECAT_PUBLIC_SDK_KEY)</string>
 	<key>UIApplicationSceneManifest</key>

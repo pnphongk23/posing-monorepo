@@ -5,15 +5,35 @@ struct AppConfigPayload: Codable, Equatable, Sendable {
     let endpointUrl: String
     let isAccountEnabled: Bool
     let isExtractPoseEnabled: Bool
+    let isPaywallEnabled: Bool
+
+    private enum CodingKeys: String, CodingKey {
+        case endpointUrl
+        case isAccountEnabled
+        case isExtractPoseEnabled
+        case isPaywallEnabled
+    }
 
     init(
         endpointUrl: String = AppConfigService.defaultURL,
         isAccountEnabled: Bool = false,
-        isExtractPoseEnabled: Bool = true
+        isExtractPoseEnabled: Bool = true,
+        isPaywallEnabled: Bool = false
     ) {
         self.endpointUrl = endpointUrl
         self.isAccountEnabled = isAccountEnabled
         self.isExtractPoseEnabled = isExtractPoseEnabled
+        self.isPaywallEnabled = isPaywallEnabled
+    }
+
+    /// A cache written before the paywall switch existed must keep its other values instead of
+    /// being discarded. The missing switch always resolves to its fail-safe default: off.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        endpointUrl = try container.decode(String.self, forKey: .endpointUrl)
+        isAccountEnabled = try container.decode(Bool.self, forKey: .isAccountEnabled)
+        isExtractPoseEnabled = try container.decode(Bool.self, forKey: .isExtractPoseEnabled)
+        isPaywallEnabled = try container.decodeIfPresent(Bool.self, forKey: .isPaywallEnabled) ?? false
     }
 }
 
@@ -21,6 +41,7 @@ struct ConfigApplicationDecision: Equatable {
     let updateEndpoint: Bool
     let updateAccountEnabled: Bool
     let updateExtractPoseEnabled: Bool
+    let updatePaywallEnabled: Bool
     let rebuildRootForChanges: Bool
 }
 
@@ -75,13 +96,15 @@ enum AppConfigService {
     static let endpointKey = "api_baseurl"
     static let accountEnabledKey = "account_enabled"
     static let extractPoseEnabledKey = "extractPoseEnabled"
+    static let paywallEnabledKey = "paywall_enabled"
 
     static func resolveInitialPayload(store: ConfigPayloadStore) -> AppConfigPayload {
         guard let cached = store.load() else { return AppConfigPayload() }
         return AppConfigPayload(
             endpointUrl: EndpointPolicy.validate(raw: cached.endpointUrl) ?? defaultURL,
             isAccountEnabled: cached.isAccountEnabled,
-            isExtractPoseEnabled: cached.isExtractPoseEnabled
+            isExtractPoseEnabled: cached.isExtractPoseEnabled,
+            isPaywallEnabled: cached.isPaywallEnabled
         )
     }
 
@@ -114,7 +137,15 @@ enum AppConfigService {
         }
     }
 
-    /// Pure resolution logic for endpoint, accountEnabled, and extractPoseEnabled.
+    /// Fail-safe switch resolution: a boolean, or a string `parseBoolean` understands. Any other
+    /// type (a number, an object, an array) is not a switch and resolves to `defaultValue`.
+    static func resolveSwitch(_ raw: Any?, defaultValue: Bool) -> Bool {
+        if let bool = raw as? Bool { return bool }
+        if let string = raw as? String { return parseBoolean(raw: string) ?? defaultValue }
+        return defaultValue
+    }
+
+    /// Pure resolution logic for endpoint, accountEnabled, extractPoseEnabled and paywallEnabled.
     static func resolvePayload(
         data: [String: Any]?,
         defaultUrl: String = defaultURL
@@ -136,10 +167,16 @@ enum AppConfigService {
         let fetchedExtractRaw = data?[extractPoseEnabledKey]
         let extractPoseEnabled = parseBoolean(raw: fetchedExtractRaw) ?? true
 
+        // 4. Paywall Enabled: defaults to false when missing/error/offline, so a Firestore outage
+        // can never lock capture behind a paywall. Only an explicit boolean (or its string form)
+        // counts as a switch; a number or an object is not an opt-in.
+        let paywallEnabled = resolveSwitch(data?[paywallEnabledKey], defaultValue: false)
+
         return AppConfigPayload(
             endpointUrl: endpoint,
             isAccountEnabled: accountEnabled,
-            isExtractPoseEnabled: extractPoseEnabled
+            isExtractPoseEnabled: extractPoseEnabled,
+            isPaywallEnabled: paywallEnabled
         )
     }
 
@@ -166,27 +203,35 @@ enum AppConfigService {
         AppConfig.shared.applyEndpoint(payload.endpointUrl)
         AppConfig.shared.applyAccountFeatureEnabled(payload.isAccountEnabled)
         AppConfig.shared.applyExtractPoseEnabled(payload.isExtractPoseEnabled)
+        AppConfig.shared.applyPaywallEnabled(payload.isPaywallEnabled)
     }
 
-    /// A late fetch may still change the extraction kill switch, while endpoint and account
-    /// updates retain the historical five-second launch budget.
+    /// A late fetch may still change the extraction and paywall kill switches, while endpoint and
+    /// account updates retain the historical five-second launch budget.
     static func applicationDecision(isEndpointWindowSealed: Bool) -> ConfigApplicationDecision {
         ConfigApplicationDecision(
             updateEndpoint: !isEndpointWindowSealed,
             updateAccountEnabled: !isEndpointWindowSealed,
             updateExtractPoseEnabled: true,
+            updatePaywallEnabled: true,
             rebuildRootForChanges: !isEndpointWindowSealed
         )
     }
 
-    /// Validates RevenueCat public SDK key from Info.plist; rejects placeholders.
-    static func isValidRevenueCatKey(_ key: String?) -> Bool {
-        guard let key, !key.isEmpty else { return false }
-        if key.contains("$(") { return false }
-        let lower = key.lowercased()
+    /// Validates a non-secret identifier read from build configuration: an empty value, an
+    /// unresolved `$(SETTING)` reference, or a committed placeholder is not a usable value.
+    static func isValidIdentifier(_ value: String?) -> Bool {
+        guard let value, !value.isEmpty else { return false }
+        if value.contains("$(") { return false }
+        let lower = value.lowercased()
         if lower.contains("placeholder") || lower.contains("example") { return false }
         if lower.hasPrefix("replace_with") { return false }
         return true
+    }
+
+    /// Validates RevenueCat public SDK key from Info.plist; rejects placeholders.
+    static func isValidRevenueCatKey(_ key: String?) -> Bool {
+        isValidIdentifier(key)
     }
 
     /// Validates Firebase plist presence without configuring Firebase.
