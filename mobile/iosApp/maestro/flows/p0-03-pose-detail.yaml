@@ -1,0 +1,11 @@
+# TC-DET-001 open a pose, see detail actions, go back
+appId: posing.camera.app
+tags: [p0, smoke]
+---
+- runFlow: ../subflows/launch.yaml
+- runFlow: ../subflows/open-first-pose.yaml
+- assertVisible: "Use this pose"
+- takeScreenshot: p0-03-detail
+- back
+- assertVisible:
+    id: "poses.open-search"

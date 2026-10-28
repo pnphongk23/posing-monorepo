@@ -1,0 +1,17 @@
+# TC-BRW-004 search with no hit shows the empty banner; back returns to catalogue
+appId: posing.camera.app
+tags: [p0, smoke]
+---
+- runFlow: ../subflows/launch.yaml
+- tapOn:
+    id: "poses.open-search"
+- tapOn:
+    id: "search.field"
+- inputText: "zzqqxx"
+- assertVisible:
+    id: "search-empty-banner"
+- takeScreenshot: p0-02-search-empty
+- tapOn:
+    id: "search.back"
+- assertVisible:
+    id: "poses.open-search"

@@ -1,0 +1,16 @@
+# TC-BRW-001 launch -> catalogue renders
+appId: posing.camera.app
+tags: [p0, smoke]
+---
+- runFlow: ../subflows/launch.yaml
+- extendedWaitUntil:
+    visible:
+      id: "poses.first-card"
+    timeout: 30000
+- assertVisible:
+    id: "poses.open-search"
+- assertVisible: "Gallery"
+- scroll
+- assertVisible:
+    id: "poses.open-search"
+- takeScreenshot: p0-01-browse

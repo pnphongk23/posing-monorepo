@@ -1,0 +1,7 @@
+# Maestro workspace config. Run from mobile/iosApp: maestro --device <udid> test maestro/flows
+flows:
+  - flows/*
+includeTags: []
+excludeTags:
+  - pending
+  - manual

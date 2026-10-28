@@ -1,0 +1,13 @@
+# TC-SET-001 settings list: privacy, legal links, about dialog open and close
+appId: posing.camera.app
+tags: [p0, smoke]
+---
+- runFlow: ../subflows/launch.yaml
+- tapOn: "Open Settings"
+- assertVisible: "Privacy"
+- assertVisible: "Replay onboarding guide"
+- tapOn: "About posing.*"
+- assertVisible: "Strike the pose. Snap the moment."
+- tapOn: "Close About posing"
+- assertVisible: "Privacy"
+- takeScreenshot: p0-07-settings

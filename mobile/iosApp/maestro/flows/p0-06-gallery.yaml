@@ -1,0 +1,14 @@
+# TC-GAL-001 gallery opens from the dock; clean install shows the empty state with a camera shortcut
+appId: posing.camera.app
+tags: [p0, smoke]
+---
+- runFlow: ../subflows/launch.yaml
+- tapOn: "Gallery"
+- assertVisible: "Gallery"
+- assertVisible:
+    id: "gallery.empty.openCamera"
+- tapOn:
+    id: "gallery.empty.openCamera"
+- extendedWaitUntil:
+    visible: "Capture photo"
+    timeout: 20000

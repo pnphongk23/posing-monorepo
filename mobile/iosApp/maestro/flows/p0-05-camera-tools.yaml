@@ -1,0 +1,15 @@
+# TC-CAM-004 grid toggle and pose picker open/close from the dock camera button
+appId: posing.camera.app
+tags: [p0, smoke]
+---
+- runFlow: ../subflows/launch.yaml
+- tapOn: "Open Camera"
+- extendedWaitUntil:
+    visible: "Capture photo"
+    timeout: 20000
+- tapOn: "Show camera grid"
+- tapOn:
+    id: "camera.choosePose"
+- assertVisible:
+    id: "posePicker.search"
+- takeScreenshot: p0-05-pose-picker

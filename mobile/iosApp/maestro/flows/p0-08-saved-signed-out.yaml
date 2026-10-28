@@ -1,0 +1,9 @@
+# TC-SAV-001 signed-out user opening Saved is asked to sign in (needs account_feature enabled on the server config)
+appId: posing.camera.app
+tags: [p0, smoke, needs-account-flag]
+---
+- runFlow: ../subflows/launch.yaml
+- tapOn: "Open Saved poses"
+- assertVisible:
+    id: "saved.signIn"
+- takeScreenshot: p0-08-saved-signed-out

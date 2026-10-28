@@ -1,0 +1,11 @@
+# Cold launch with a clean app container and camera/photos permission pre-granted.
+appId: posing.camera.app
+---
+- launchApp:
+    clearState: true
+    permissions:
+      camera: allow
+      photos: allow
+- extendedWaitUntil:
+    visible: "Poses"
+    timeout: 30000
