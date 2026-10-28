@@ -1,0 +1,14 @@
+# Same clean launch as launch.yaml with the Debug-only accounts switch forced off.
+appId: ${APP_ID}
+---
+- launchApp:
+    clearState: true
+    permissions:
+      camera: allow
+      photos: allow
+    arguments:
+      AIPoseAccountsEnabled: "NO"
+- extendedWaitUntil:
+    visible:
+      id: "poses.open-search"
+    timeout: 30000

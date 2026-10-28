@@ -1,0 +1,10 @@
+# TC-ACC-008 accounts switch off hides the Account and Saved entries
+appId: ${APP_ID}
+tags: [TC-ACC-008, p1]
+---
+- runFlow: ../subflows/launch-accounts-off.yaml
+- tapOn:
+    id: "poses.open-settings"
+- assertVisible: "Privacy"  # TODO(QA-261029-ID) settings.privacy.section
+- assertNotVisible:
+    id: "settings.account.row"

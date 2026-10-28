@@ -1,0 +1,11 @@
+# TC-ACC-001 signed-out Account shows the sign-in options
+appId: ${APP_ID}
+tags: [TC-ACC-001, p1]
+---
+- runFlow: ../subflows/launch-accounts-on.yaml
+- tapOn:
+    id: "poses.open-settings"
+- tapOn:
+    id: "settings.account.row"
+- assertVisible:
+    id: "signin.emailEntry"

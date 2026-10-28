@@ -1,0 +1,17 @@
+# TC-ACC-007 email sign-in form opens with its fields
+appId: ${APP_ID}
+tags: [TC-ACC-007, p1]
+---
+- runFlow: ../subflows/launch-accounts-on.yaml
+- tapOn:
+    id: "poses.open-settings"
+- tapOn:
+    id: "settings.account.row"
+- tapOn:
+    id: "signin.emailEntry"
+- assertVisible:
+    id: "signin.email"
+- assertVisible:
+    id: "signin.password"
+- assertVisible:
+    id: "signin.submit"

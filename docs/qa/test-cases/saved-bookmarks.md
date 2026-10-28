@@ -2,7 +2,7 @@
 
 | ID | Pri | Preconditions | Steps | Expected | Automation |
 |---|---|---|---|---|---|
-| TC-SAV-001 | P0 | account_feature on, signed out | 1. Launch. 2. Tap Saved poses (Settings row) | Sign-in prompt shown | pending: needs account_feature on in the server config (hidden when off) |
+| TC-SAV-001 | P0 | account switch on (launch arg), signed out | 1. Launch with accounts on. 2. Tap Saved in the Poses header | Sign-in prompt shown | automated: TC-SAV-001-saved-signed-out.yaml |
 | TC-SAV-002 | P1 | Signed in | Save a pose from detail, open Saved | Pose listed | pending |
 | TC-SAV-003 | P1 | Signed in, saved pose | Unsave it from detail | Removed from Saved after refresh | pending |
 | TC-SAV-004 | P1 | Signed in, empty Saved | Open Saved | Empty state with "browse community" action | pending |

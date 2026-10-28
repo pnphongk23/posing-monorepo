@@ -1,0 +1,9 @@
+# TC-SAV-001 signed-out Saved asks to sign in
+appId: ${APP_ID}
+tags: [TC-SAV-001, p0]
+---
+- runFlow: ../subflows/launch-accounts-on.yaml
+- tapOn:
+    id: "poses.header.saved"
+- assertVisible:
+    id: "saved.signIn"
