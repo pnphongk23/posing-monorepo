@@ -92,6 +92,9 @@ final class PaywallModel: ObservableObject {
     private var sessionEpoch: UInt64 = 0
     private var snapshotCancellable: AnyCancellable?
     private var sessionEvents: Task<Void, Never>?
+    /// True only while this model's own purchase/restore is running: that operation owns the busy
+    /// phase, and nothing else may park the sheet there.
+    private var isRunningOperation = false
 
     init(
         gateway: any PurchaseGateway = RevenueCatAdapter.shared,
@@ -184,6 +187,10 @@ final class PaywallModel: ObservableObject {
             invalidateAccountState()
             return
         }
+        // An offering fetch that resolved to a transient provider state crossed an identity
+        // transition: it holds no plans, so it must not overwrite the phase the gateway's own pushes
+        // establish (and it must never own the busy phase).
+        guard snapshot.state != .loading, snapshot.state != .purchasePending else { return }
         apply(snapshot)
     }
 
@@ -198,27 +205,31 @@ final class PaywallModel: ObservableObject {
     func purchase() async {
         guard let selectedPlan, phase != .processing else { return }
         let epoch = sessionEpoch
+        isRunningOperation = true
         phase = .processing
         let snapshot = await gateway.purchase(packageID: selectedPlan.identifier)
+        isRunningOperation = false
         guard epoch == sessionEpoch else { return }
         guard await boundary.hasStoredSession() else {
             invalidateAccountState()
             return
         }
-        apply(snapshot)
+        apply(snapshot, fromOperation: true)
     }
 
     func restore() async {
         guard phase != .processing else { return }
         let epoch = sessionEpoch
+        isRunningOperation = true
         phase = .processing
         let snapshot = await gateway.restore()
+        isRunningOperation = false
         guard epoch == sessionEpoch else { return }
         guard await boundary.hasStoredSession() else {
             invalidateAccountState()
             return
         }
-        apply(snapshot)
+        apply(snapshot, fromOperation: true)
     }
 
     func select(_ productID: String) {
@@ -275,17 +286,18 @@ final class PaywallModel: ObservableObject {
             phase = .entitled
         case .signInRequired:
             invalidateAccountState()
-        case .notEntitled, .purchaseCancelled, .purchaseFailed, .expired, .revoked, .billingRetry:
-            if phase == .entitled { apply(snapshot) }
-        case .unconfigured, .noOffering:
-            if phase == .entitled || phase == .ready { apply(snapshot) }
         case .loading, .purchasePending:
+            // A transient provider state is not an outcome: a settled snapshot always decides the
+            // phase, so a transition in the gateway can never park the sheet in a busy state.
             break
+        default:
+            apply(snapshot)
         }
     }
 
     private func invalidateAccountState() {
         sessionEpoch &+= 1
+        isRunningOperation = false
         isSignedIn = false
         plans = []
         selectedProductID = nil
@@ -296,7 +308,11 @@ final class PaywallModel: ObservableObject {
 
     // MARK: - state mapping
 
-    private func apply(_ snapshot: PurchaseSnapshot) {
+    private func apply(_ snapshot: PurchaseSnapshot, fromOperation: Bool = false) {
+        // Only this model's own operation may keep the sheet busy, and only its own result (or an
+        // entitlement that already landed) may replace that phase. Any other settled snapshot takes
+        // over, so a stale busy phase cannot block purchase and restore forever.
+        if isRunningOperation && !fromOperation && snapshot.state != .entitled { return }
         switch snapshot.state {
         case .unconfigured:
             plans = []
@@ -305,7 +321,7 @@ final class PaywallModel: ObservableObject {
             plans = []
             phase = .unavailable("Plans are temporarily unavailable. Retry to check again.")
         case .loading, .purchasePending:
-            phase = .processing
+            phase = fromOperation ? .processing : .loadingPlans
         case .purchaseCancelled:
             adoptPlans(from: snapshot)
             phase = .purchaseCancelled

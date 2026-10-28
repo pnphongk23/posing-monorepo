@@ -236,7 +236,7 @@ final class RevenueCatAdapter: NSObject, ObservableObject {
         guard isConfigured, !accountID.isEmpty else { return }
         guard accountID != linkedAccountID || provider.appUserID != accountID else { return }
         // Access ends before the provider call: during the transition nobody is linked.
-        invalidateForIdentityTransition(next: .loading)
+        invalidateForIdentityTransition(next: .loading, event: "account_link_requested")
         await enqueueIdentityChange(accountID: accountID)
     }
 
@@ -245,35 +245,44 @@ final class RevenueCatAdapter: NSObject, ObservableObject {
     /// the provider call so logout never depends on network success.
     func clearAccount() async {
         // Access ends before the provider call, whatever the network does.
-        invalidateForIdentityTransition(next: .notEntitled)
+        invalidateForIdentityTransition(next: .notEntitled, event: "sign_out_requested")
         await enqueueIdentityChange(accountID: nil)
     }
 
     /// No access survives an identity transition, and no transaction can start while it runs.
-    private func invalidateForIdentityTransition(next: PurchaseGatewayState) {
+    private func invalidateForIdentityTransition(next: PurchaseGatewayState, event: String) {
         identityEpoch &+= 1
         linkedAccountID = nil
         lastSnapshot = PurchaseSnapshot(state: isConfigured ? next : .unconfigured, products: loadedProducts)
+        logEvent("purchase_identity_change", ["source": "revenuecat", "outcome": event])
     }
 
     /// Identity changes run one at a time: a `logIn` that started earlier must finish before the
     /// next transition touches the provider identity.
     private func enqueueIdentityChange(accountID: String?) async {
         let previous = identityChain
+        // The epoch belongs to the request, not to the moment the queue reaches it: a request that a
+        // later sign-out or account switch already superseded must never reach the provider, or it
+        // would adopt the newer epoch and link an Account the user has left.
+        let requestEpoch = identityEpoch
         let task = Task { @MainActor [weak self] in
             _ = await previous?.value
-            await self?.performIdentityChange(accountID: accountID)
+            await self?.performIdentityChange(accountID: accountID, requestEpoch: requestEpoch)
         }
         identityChain = task
         await task.value
     }
 
-    private func performIdentityChange(accountID: String?) async {
+    private func performIdentityChange(accountID: String?, requestEpoch: UInt64) async {
         guard isConfigured else {
             lastSnapshot = PurchaseSnapshot(state: .unconfigured, products: loadedProducts)
             return
         }
-        let epoch = identityEpoch
+        guard requestEpoch == identityEpoch else {
+            logDropped(reason: "identity_superseded")
+            return
+        }
+        let epoch = requestEpoch
         do {
             if let accountID {
                 let customer = try await provider.logIn(accountID)
@@ -614,21 +623,135 @@ extension RevenueCatAdapter: PurchaseGateway {
     }
 }
 
-// MARK: - Live provider
+// MARK: - Store seam
+
+/// One offering in app-domain types, so the identity boundary above the SDK can be driven by a fake
+/// that suspends `offering()`.
+struct ProviderOffering: Sendable, Equatable {
+    let packages: [ProviderPackage]
+}
+
+struct ProviderPurchaseOutcome: Sendable, Equatable {
+    let customer: ProviderCustomer
+    let userCancelled: Bool
+}
+
+/// The SDK calls the live provider makes, in app-domain types.
+///
+/// Only `LiveRevenueCatSDK` touches `Purchases.shared`. Everything above this line is
+/// store-agnostic, so the identity re-check around a transaction is testable with a fake SDK that
+/// suspends `offering()` — the same shape the real SDK has.
+@MainActor
+protocol RevenueCatSDK: AnyObject {
+    var isConfigured: Bool { get }
+    var isAnonymous: Bool { get }
+    var appUserID: String { get }
+    var onCustomerInfoUpdated: (() -> Void)? { get set }
+    func configure(apiKey: String)
+    func logIn(_ accountID: String) async throws -> ProviderCustomer
+    func logOut() async throws -> ProviderCustomer
+    func customerInfo() async throws -> ProviderCustomer
+    func offering() async throws -> ProviderOffering
+    func purchase(packageIdentifier: String) async throws -> ProviderPurchaseOutcome
+    func restorePurchases() async throws -> ProviderCustomer
+}
+
+/// The identity boundary around the store: no transaction reaches the SDK unless the live identity
+/// is still exactly the Account the adapter authorized, re-checked after every nested await.
+@MainActor
+final class LivePurchasesProvider: PurchasesProviding {
+    private let sdk: any RevenueCatSDK
+
+    /// Production wiring: the live RevenueCat SDK.
+    convenience init() {
+        self.init(sdk: LiveRevenueCatSDK())
+    }
+
+    init(sdk: any RevenueCatSDK) {
+        self.sdk = sdk
+    }
+
+    var appUserID: String? { sdk.isConfigured ? sdk.appUserID : nil }
+
+    var isAnonymous: Bool { !sdk.isConfigured || sdk.isAnonymous }
+
+    var onCustomerInfoUpdated: (() -> Void)? {
+        get { sdk.onCustomerInfoUpdated }
+        set { sdk.onCustomerInfoUpdated = newValue }
+    }
+
+    func configure(apiKey: String) {
+        sdk.configure(apiKey: apiKey)
+    }
+
+    func logIn(_ accountID: String) async throws -> ProviderCustomer {
+        try await translate { try await sdk.logIn(accountID) }
+    }
+
+    func logOut() async throws -> ProviderCustomer {
+        try await translate { try await sdk.logOut() }
+    }
+
+    func customerInfo() async throws -> ProviderCustomer {
+        try await translate { try await sdk.customerInfo() }
+    }
+
+    func packages() async throws -> [ProviderPackage] {
+        try await translate { try await sdk.offering().packages }
+    }
+
+    func purchase(packageID: String, authorizedAccountID: String) async throws -> ProviderCustomer {
+        let offering = try await translate { try await sdk.offering() }
+        // The offering await can span a sign-out or an account switch: prove the live identity again
+        // immediately before the store is touched, not only at the adapter's entry.
+        try validateTransactionIdentity(authorizedAccountID)
+        guard offering.packages.contains(where: { $0.identifier == packageID }) else {
+            throw ErrorCode.productNotAvailableForPurchaseError
+        }
+        try validateTransactionIdentity(authorizedAccountID)
+        let outcome = try await translate { try await sdk.purchase(packageIdentifier: packageID) }
+        guard !outcome.userCancelled else {
+            throw ErrorCode.purchaseCancelledError
+        }
+        return outcome.customer
+    }
+
+    func restorePurchases(authorizedAccountID: String) async throws -> ProviderCustomer {
+        // A restore attributes the store's receipts to whoever the SDK is signed in as, so the
+        // identity has to be proven immediately before the call.
+        try validateTransactionIdentity(authorizedAccountID)
+        return try await translate { try await sdk.restorePurchases() }
+    }
+
+    private func validateTransactionIdentity(_ authorizedAccountID: String) throws {
+        guard sdk.isConfigured, !sdk.isAnonymous, sdk.appUserID == authorizedAccountID else {
+            throw ProviderIdentityError.identityChanged
+        }
+    }
+
+    private func translate<T>(_ work: () async throws -> T) async throws -> T {
+        do {
+            return try await work()
+        } catch {
+            if error is ProviderIdentityError { throw error }
+            throw (error as NSError).asErrorCode ?? ErrorCode.unknownError
+        }
+    }
+}
+
+// MARK: - Live SDK
 
 /// Forwards the seam to `Purchases.shared`. No product, entitlement or secret value lives here:
 /// ids arrive from the store metadata and from build configuration.
 @MainActor
-final class LivePurchasesProvider: NSObject, PurchasesProviding {
+final class LiveRevenueCatSDK: NSObject, RevenueCatSDK {
     var onCustomerInfoUpdated: (() -> Void)?
 
-    var appUserID: String? {
-        Purchases.isConfigured ? Purchases.shared.appUserID : nil
-    }
+    var isConfigured: Bool { Purchases.isConfigured }
 
-    var isAnonymous: Bool {
-        !Purchases.isConfigured || Purchases.shared.isAnonymous
-    }
+    var isAnonymous: Bool { !Purchases.isConfigured || Purchases.shared.isAnonymous }
+
+    var appUserID: String { Purchases.isConfigured ? Purchases.shared.appUserID : "" }
 
     func configure(apiKey: String) {
         Purchases.configure(withAPIKey: apiKey)
@@ -636,8 +759,7 @@ final class LivePurchasesProvider: NSObject, PurchasesProviding {
     }
 
     func logIn(_ accountID: String) async throws -> ProviderCustomer {
-        let result = try await translate { try await Purchases.shared.logIn(accountID) }
-        return Self.customer(result.customerInfo)
+        Self.customer(try await translate { try await Purchases.shared.logIn(accountID) }.customerInfo)
     }
 
     func logOut() async throws -> ProviderCustomer {
@@ -648,38 +770,33 @@ final class LivePurchasesProvider: NSObject, PurchasesProviding {
         Self.customer(try await translate { try await Purchases.shared.customerInfo() })
     }
 
-    func packages() async throws -> [ProviderPackage] {
+    func offering() async throws -> ProviderOffering {
         let offering = try await resolvedOffering()
-        return offering.availablePackages.map { package in
-            ProviderPackage(
-                identifier: package.identifier,
-                packageType: PurchasePackageType(storeType: package.packageType),
-                localizedPrice: package.localizedPriceString
-            )
-        }
+        return ProviderOffering(
+            packages: offering.availablePackages.map { package in
+                ProviderPackage(
+                    identifier: package.identifier,
+                    packageType: PurchasePackageType(storeType: package.packageType),
+                    localizedPrice: package.localizedPriceString
+                )
+            }
+        )
     }
 
-    func purchase(packageID: String, authorizedAccountID: String) async throws -> ProviderCustomer {
+    func purchase(packageIdentifier: String) async throws -> ProviderPurchaseOutcome {
         let offering = try await resolvedOffering()
-        // The offerings await can span a sign-out or an account switch: re-validate the live
-        // identity immediately before the store is touched, not only at the adapter's entry.
-        try validateTransactionIdentity(authorizedAccountID)
-        guard let package = offering.availablePackages.first(where: { $0.identifier == packageID }) else {
+        guard let package = offering.availablePackages.first(where: { $0.identifier == packageIdentifier }) else {
             throw ErrorCode.productNotAvailableForPurchaseError
         }
-        try validateTransactionIdentity(authorizedAccountID)
         let result = try await translate { try await Purchases.shared.purchase(package: package) }
-        guard !result.userCancelled else {
-            throw ErrorCode.purchaseCancelledError
-        }
-        return Self.customer(result.customerInfo)
+        return ProviderPurchaseOutcome(
+            customer: Self.customer(result.customerInfo),
+            userCancelled: result.userCancelled
+        )
     }
 
-    func restorePurchases(authorizedAccountID: String) async throws -> ProviderCustomer {
-        // A restore attributes the store's receipts to whoever the SDK is signed in as, so the
-        // identity has to be proven immediately before the call.
-        try validateTransactionIdentity(authorizedAccountID)
-        return Self.customer(try await translate { try await Purchases.shared.restorePurchases() })
+    func restorePurchases() async throws -> ProviderCustomer {
+        Self.customer(try await translate { try await Purchases.shared.restorePurchases() })
     }
 
     private func resolvedOffering() async throws -> Offering {
@@ -691,19 +808,10 @@ final class LivePurchasesProvider: NSObject, PurchasesProviding {
         return offering
     }
 
-    private func validateTransactionIdentity(_ authorizedAccountID: String) throws {
-        guard Purchases.isConfigured,
-              !Purchases.shared.isAnonymous,
-              Purchases.shared.appUserID == authorizedAccountID else {
-            throw ProviderIdentityError.identityChanged
-        }
-    }
-
     private func translate<T>(_ work: () async throws -> T) async throws -> T {
         do {
             return try await work()
         } catch {
-            if error is ProviderIdentityError { throw error }
             throw (error as NSError).asErrorCode ?? ErrorCode.unknownError
         }
     }
@@ -721,7 +829,7 @@ final class LivePurchasesProvider: NSObject, PurchasesProviding {
     }
 }
 
-extension LivePurchasesProvider: PurchasesDelegate {
+extension LiveRevenueCatSDK: PurchasesDelegate {
     nonisolated func purchases(_ purchases: Purchases, receivedUpdated customerInfo: CustomerInfo) {
         Task { @MainActor [weak self] in
             self?.onCustomerInfoUpdated?()
