@@ -652,7 +652,10 @@ protocol RevenueCatSDK: AnyObject {
     func logOut() async throws -> ProviderCustomer
     func customerInfo() async throws -> ProviderCustomer
     func offering() async throws -> ProviderOffering
-    func purchase(packageIdentifier: String) async throws -> ProviderPurchaseOutcome
+    /// The authorization callback runs synchronously inside the implementation, immediately before
+    /// the store call, with no suspension in between. A switched identity therefore aborts before
+    /// any transaction is created.
+    func purchase(packageIdentifier: String, authorize: () throws -> Void) async throws -> ProviderPurchaseOutcome
     func restorePurchases() async throws -> ProviderCustomer
 }
 
@@ -709,7 +712,13 @@ final class LivePurchasesProvider: PurchasesProviding {
             throw ErrorCode.productNotAvailableForPurchaseError
         }
         try validateTransactionIdentity(authorizedAccountID)
-        let outcome = try await translate { try await sdk.purchase(packageIdentifier: packageID) }
+        let outcome = try await translate {
+            try await sdk.purchase(packageIdentifier: packageID) {
+                // Runs at the transaction boundary, after every await: no identity change can slip
+                // between this check and the store call.
+                try validateTransactionIdentity(authorizedAccountID)
+            }
+        }
         guard !outcome.userCancelled else {
             throw ErrorCode.purchaseCancelledError
         }
@@ -753,6 +762,11 @@ final class LiveRevenueCatSDK: NSObject, RevenueCatSDK {
 
     var appUserID: String { Purchases.isConfigured ? Purchases.shared.appUserID : "" }
 
+    /// The offering resolved by `offering()`. A purchase looks its package up here instead of
+    /// fetching the offering again: a second fetch would put a suspension between the identity
+    /// check and the store call, and a sign-out could land in it.
+    private var lastResolvedOffering: Offering?
+
     func configure(apiKey: String) {
         Purchases.configure(withAPIKey: apiKey)
         Purchases.shared.delegate = self
@@ -771,7 +785,8 @@ final class LiveRevenueCatSDK: NSObject, RevenueCatSDK {
     }
 
     func offering() async throws -> ProviderOffering {
-        let offering = try await resolvedOffering()
+        let offering = try await fetchOffering()
+        lastResolvedOffering = offering
         return ProviderOffering(
             packages: offering.availablePackages.map { package in
                 ProviderPackage(
@@ -783,11 +798,15 @@ final class LiveRevenueCatSDK: NSObject, RevenueCatSDK {
         )
     }
 
-    func purchase(packageIdentifier: String) async throws -> ProviderPurchaseOutcome {
-        let offering = try await resolvedOffering()
-        guard let package = offering.availablePackages.first(where: { $0.identifier == packageIdentifier }) else {
+    func purchase(packageIdentifier: String, authorize: () throws -> Void) async throws -> ProviderPurchaseOutcome {
+        // Everything above the store call below is synchronous on purpose: no await may sit
+        // between the authorization check and `Purchases.shared.purchase(package:)`, or a sign-out
+        // landing in that window would let the store charge under the wrong identity.
+        guard let offering = lastResolvedOffering,
+              let package = offering.availablePackages.first(where: { $0.identifier == packageIdentifier }) else {
             throw ErrorCode.productNotAvailableForPurchaseError
         }
+        try authorize()
         let result = try await translate { try await Purchases.shared.purchase(package: package) }
         return ProviderPurchaseOutcome(
             customer: Self.customer(result.customerInfo),
@@ -799,7 +818,7 @@ final class LiveRevenueCatSDK: NSObject, RevenueCatSDK {
         Self.customer(try await translate { try await Purchases.shared.restorePurchases() })
     }
 
-    private func resolvedOffering() async throws -> Offering {
+    private func fetchOffering() async throws -> Offering {
         let offerings = try await translate { try await Purchases.shared.offerings() }
         guard let offering = offerings.current
             ?? offerings.offering(identifier: RevenueCatAdapter.fallbackOfferingID) else {

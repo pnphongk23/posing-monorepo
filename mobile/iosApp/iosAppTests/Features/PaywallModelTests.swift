@@ -19,6 +19,8 @@ private final class FakePurchaseGateway: PurchaseGateway {
     var loadGate: SuspensionGate?
     var purchaseStarted: AsyncSignal?
     var purchaseGate: SuspensionGate?
+    var restoreStarted: AsyncSignal?
+    var restoreGate: SuspensionGate?
 
     private(set) var loadCount = 0
     private(set) var purchasedPackageIDs: [String] = []
@@ -59,6 +61,8 @@ private final class FakePurchaseGateway: PurchaseGateway {
 
     func restore() async -> PurchaseSnapshot {
         restoreCount += 1
+        restoreStarted?.fire()
+        await restoreGate?.wait()
         subject.send(nextRestore)
         return subject.value
     }
@@ -478,6 +482,51 @@ final class PaywallModelTests: XCTestCase {
 
         await model.purchase()
         XCTAssertEqual(gateway.purchasedPackageIDs, [annual.identifier], "Purchase must be reachable again")
+    }
+
+    /// A purchase superseded by a sign-in plus a newer restore must not release the newer
+    /// operation's busy phase: the operation claim is a token, not a shared flag.
+    func testSupersededOperationCannotReleaseTheCurrentOperation() async {
+        let storage = InMemoryTokenStorage(credentials: session)
+        let boundary = SessionBoundary(tokenStorage: storage)
+        let gateway = FakePurchaseGateway(nextLoad: readyOffering)
+        let model = PaywallModel(
+            gateway: gateway,
+            boundary: boundary,
+            signInAction: SignInAction(start: {})
+        )
+        model.start()
+        await waitUntil("ready") { model.phase == .ready }
+
+        let purchaseStarted = AsyncSignal()
+        let purchaseGate = SuspensionGate()
+        gateway.purchaseStarted = purchaseStarted
+        gateway.purchaseGate = purchaseGate
+        let purchase = Task { await model.purchase() }
+        await purchaseStarted.wait()
+
+        // The session changes under the in-flight purchase, then a new operation starts.
+        await boundary.signOut()
+        await waitUntil("signed out") { model.phase == .signInRequired }
+
+        let restoreStarted = AsyncSignal()
+        let restoreGate = SuspensionGate()
+        gateway.restoreStarted = restoreStarted
+        gateway.restoreGate = restoreGate
+        let restore = Task { await model.restore() }
+        await restoreStarted.wait()
+        XCTAssertEqual(model.phase, .processing)
+
+        // The stale purchase resolves while the restore still owns the phase.
+        purchaseGate.release()
+        await purchase.value
+        gateway.publish(PurchaseSnapshot(state: .notEntitled, products: [monthly, annual]))
+        try? await Task.sleep(nanoseconds: 50_000_000)
+
+        XCTAssertEqual(model.phase, .processing, "The restore still owns the busy phase")
+
+        restoreGate.release()
+        await restore.value
     }
 
     func testStartIsIdempotent() async {

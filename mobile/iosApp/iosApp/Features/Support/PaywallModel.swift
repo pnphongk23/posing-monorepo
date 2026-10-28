@@ -92,9 +92,10 @@ final class PaywallModel: ObservableObject {
     private var sessionEpoch: UInt64 = 0
     private var snapshotCancellable: AnyCancellable?
     private var sessionEvents: Task<Void, Never>?
-    /// True only while this model's own purchase/restore is running: that operation owns the busy
-    /// phase, and nothing else may park the sheet there.
-    private var isRunningOperation = false
+    /// The operation that currently owns the busy phase. A token, not a flag, so a superseded
+    /// purchase resolving during a newer restore cannot release the restore's claim.
+    private var activeOperation: UInt64?
+    private var operationCounter: UInt64 = 0
 
     init(
         gateway: any PurchaseGateway = RevenueCatAdapter.shared,
@@ -205,31 +206,31 @@ final class PaywallModel: ObservableObject {
     func purchase() async {
         guard let selectedPlan, phase != .processing else { return }
         let epoch = sessionEpoch
-        isRunningOperation = true
+        let operation = beginOperation()
         phase = .processing
         let snapshot = await gateway.purchase(packageID: selectedPlan.identifier)
-        isRunningOperation = false
+        endOperation(operation)
         guard epoch == sessionEpoch else { return }
         guard await boundary.hasStoredSession() else {
             invalidateAccountState()
             return
         }
-        apply(snapshot, fromOperation: true)
+        apply(snapshot, fromOperation: operation)
     }
 
     func restore() async {
         guard phase != .processing else { return }
         let epoch = sessionEpoch
-        isRunningOperation = true
+        let operation = beginOperation()
         phase = .processing
         let snapshot = await gateway.restore()
-        isRunningOperation = false
+        endOperation(operation)
         guard epoch == sessionEpoch else { return }
         guard await boundary.hasStoredSession() else {
             invalidateAccountState()
             return
         }
-        apply(snapshot, fromOperation: true)
+        apply(snapshot, fromOperation: operation)
     }
 
     func select(_ productID: String) {
@@ -297,7 +298,7 @@ final class PaywallModel: ObservableObject {
 
     private func invalidateAccountState() {
         sessionEpoch &+= 1
-        isRunningOperation = false
+        activeOperation = nil
         isSignedIn = false
         plans = []
         selectedProductID = nil
@@ -308,11 +309,23 @@ final class PaywallModel: ObservableObject {
 
     // MARK: - state mapping
 
-    private func apply(_ snapshot: PurchaseSnapshot, fromOperation: Bool = false) {
-        // Only this model's own operation may keep the sheet busy, and only its own result (or an
-        // entitlement that already landed) may replace that phase. Any other settled snapshot takes
-        // over, so a stale busy phase cannot block purchase and restore forever.
-        if isRunningOperation && !fromOperation && snapshot.state != .entitled { return }
+    private func beginOperation() -> UInt64 {
+        operationCounter &+= 1
+        activeOperation = operationCounter
+        return operationCounter
+    }
+
+    /// Only the operation that still owns the phase may release it.
+    private func endOperation(_ token: UInt64) {
+        guard activeOperation == token else { return }
+        activeOperation = nil
+    }
+
+    private func apply(_ snapshot: PurchaseSnapshot, fromOperation: UInt64? = nil) {
+        // Only the operation that currently owns the phase may keep the sheet busy: another
+        // operation's result (a superseded purchase, say) leaves the live one alone. Once nothing
+        // is running, any settled snapshot takes over, so a stale busy phase cannot wedge the sheet.
+        if let activeOperation, fromOperation != activeOperation { return }
         switch snapshot.state {
         case .unconfigured:
             plans = []
@@ -321,7 +334,7 @@ final class PaywallModel: ObservableObject {
             plans = []
             phase = .unavailable("Plans are temporarily unavailable. Retry to check again.")
         case .loading, .purchasePending:
-            phase = fromOperation ? .processing : .loadingPlans
+            phase = fromOperation != nil ? .processing : .loadingPlans
         case .purchaseCancelled:
             adoptPlans(from: snapshot)
             phase = .purchaseCancelled

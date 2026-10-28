@@ -958,10 +958,15 @@ final class RevenueCatAdapterTests: XCTestCase {
         let linkB = Task { await adapter.linkAccount("account-b") }
         let clear = Task { await adapter.clearAccount() }
         // Both requests must be issued before A's login lands, so the sign-out really is the last
-        // identity request and B's login is the one that must be discarded.
+        // identity request and B's login is the one that must be discarded. The exact order is the
+        // premise of the repro, so it is asserted rather than assumed.
         await waitUntil("all three identity requests issued") {
             spy.events.filter { $0.name == "purchase_identity_change" }.count >= 3
         }
+        XCTAssertEqual(
+            spy.events.filter { $0.name == "purchase_identity_change" }.map { $0.parameters["outcome"] },
+            ["account_link_requested", "account_link_requested", "sign_out_requested"]
+        )
 
         // The superseded login A reconciles with one logout; the sign-out's logout is the second
         // and is held open so the intermediate state is observable.
@@ -1043,6 +1048,12 @@ final class FakeRevenueCatSDK: RevenueCatSDK {
 
     var offeringsStarted: AsyncSignal?
     var offeringsGate: SuspensionGate?
+    var purchaseStarted: AsyncSignal?
+    var purchaseGate: SuspensionGate?
+    /// Runs immediately before the authorization callback, modelling an identity change that lands
+    /// exactly at the transaction boundary.
+    var beforePurchase: (() -> Void)?
+    private(set) var authorizeCalls = 0
 
     func configure(apiKey: String) {}
 
@@ -1065,7 +1076,12 @@ final class FakeRevenueCatSDK: RevenueCatSDK {
         return ProviderOffering(packages: packages)
     }
 
-    func purchase(packageIdentifier: String) async throws -> ProviderPurchaseOutcome {
+    func purchase(packageIdentifier: String, authorize: () throws -> Void) async throws -> ProviderPurchaseOutcome {
+        beforePurchase?()
+        try authorize()
+        authorizeCalls += 1
+        purchaseStarted?.fire()
+        await purchaseGate?.wait()
         purchaseCalls.append(packageIdentifier)
         if let purchaseError { throw purchaseError }
         return ProviderPurchaseOutcome(customer: customer, userCancelled: false)
@@ -1161,6 +1177,60 @@ final class LivePurchasesProviderTests: XCTestCase {
             )
         }
         XCTAssertTrue(sdk.purchaseCalls.isEmpty)
+    }
+
+    /// The authorization callback runs inside the store call, after every await: an identity that
+    /// switched at the boundary must abort before a transaction is created.
+    func testAuthorizationAtTheStoreBoundaryAbortsBeforeTheTransaction() async {
+        let sdk = FakeRevenueCatSDK()
+        sdk.appUserID = "account-a"
+        sdk.packages = [annualPackage]
+        sdk.beforePurchase = { sdk.appUserID = "account-b" }
+        let provider = LivePurchasesProvider(sdk: sdk)
+
+        do {
+            _ = try await provider.purchase(packageID: "annual", authorizedAccountID: "account-a")
+            XCTFail("A switched identity must abort at the transaction boundary")
+        } catch {
+            XCTAssertEqual(error as? ProviderIdentityError, .identityChanged)
+        }
+        XCTAssertEqual(sdk.authorizeCalls, 0, "The transaction must not begin")
+        XCTAssertTrue(sdk.purchaseCalls.isEmpty)
+    }
+
+    /// 8658a4c put a second `offerings()` await between the identity check and the store call, so a
+    /// sign-out could land in that window and the store would charge anonymously. The store call now
+    /// looks its package up synchronously, so there is no suspension point left to land in.
+    func testStorePurchaseHasNoSuspensionAfterTheIdentityCheck() throws {
+        let source = try String(
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent() // Services
+                .deletingLastPathComponent() // iosAppTests
+                .deletingLastPathComponent() // iosApp (project dir)
+                .appendingPathComponent("iosApp/RevenueCatAdapter.swift"),
+            encoding: .utf8
+        )
+        // The implementation, not the protocol requirement: it is the only occurrence that opens a body.
+        let signature = "func purchase(packageIdentifier: String, authorize: () throws -> Void) async throws -> ProviderPurchaseOutcome {"
+        guard let signatureRange = source.range(of: signature) else {
+            return XCTFail("The store-purchase seam must take the authorization callback")
+        }
+        let body = source[signatureRange.upperBound...]
+        guard let authorizeRange = body.range(of: "try authorize()"),
+              let storeRange = body.range(of: "Purchases.shared.purchase(package:") else {
+            return XCTFail("The authorization and the store call must live in the same function")
+        }
+        XCTAssertLessThan(
+            authorizeRange.upperBound,
+            storeRange.lowerBound,
+            "The identity check must precede the store call"
+        )
+        let between = body[authorizeRange.upperBound..<storeRange.lowerBound]
+        XCTAssertFalse(between.contains("await"), "No suspension may sit between the check and the store call")
+        XCTAssertFalse(
+            between.contains("offerings()"),
+            "The offering must not be fetched again at the transaction boundary"
+        )
     }
 
     func testRestoreIsAbortedWhenTheIdentityIsNotTheAuthorizedAccount() async {
