@@ -361,6 +361,61 @@ describe("GET /api/me/entitlement", () => {
     expect(response.body.data).toMatchObject({ isActive: true, expiresAt: null, environment: "SANDBOX", stale: false });
   });
 
+  it("serves a lifetime claim whose purchase date is not ISO as inactive", async () => {
+    const sql = await setupTestDatabase();
+    const accountId = "11111111-1111-4111-8111-111111111111";
+    await seedAccount(sql, accountId);
+    const store = new EntitlementStore(sql);
+    const looseDate = {
+      request_date_ms: NOW_MS,
+      subscriber: {
+        entitlements: { [ENTITLEMENT_ID]: { expires_date: null, product_identifier: "p" } },
+        subscriptions: {},
+        non_subscriptions: { p: [{ id: "tx-1", purchase_date: "0" }] }
+      }
+    };
+    const fetchImpl = (async () => new Response(JSON.stringify(looseDate), { status: 200 })) as unknown as typeof fetch;
+    const app = testApp({ sql, accountIds: [accountId], now: () => NOW_MS, fetchImpl });
+    const token = `Bearer ${jwt(accountId)}`;
+
+    const read = await request(app).get("/api/me/entitlement").set("Authorization", token).expect(200);
+    expect(read.body.data).toMatchObject({ isActive: false, expiresAt: null, stale: false });
+    expect(await store.get(accountId)).toMatchObject({ isActive: false });
+
+    const sync = await request(app).post("/api/me/entitlement/sync").set("Authorization", token).expect(200);
+    expect(sync.body.data).toMatchObject({ isActive: false, expiresAt: null });
+    expect(await store.get(accountId)).toMatchObject({ isActive: false });
+  });
+
+  it("treats a declared content length over the cap as an unknown read", async () => {
+    const sql = await setupTestDatabase();
+    const accountId = "11111111-1111-4111-8111-111111111111";
+    await seedAccount(sql, accountId);
+    const store = new EntitlementStore(sql);
+    // Expired, so the read route has to refresh and therefore has to judge the response.
+    await store.upsert(accountId, activeSnapshot({ expiresAt: new Date(NOW_MS - HOUR_MS) }));
+    const shortBody = JSON.stringify(subscriberBody({ expiresAt: new Date(NOW_MS + 30 * DAY_MS), upstreamAt: new Date(NOW_MS) }));
+    const fetchImpl = (async () => new Response(shortBody, {
+      status: 200,
+      headers: { "content-length": String(16 * 1024 * 1024 + 1) }
+    })) as unknown as typeof fetch;
+    const app = testApp({ sql, accountIds: [accountId], now: () => NOW_MS, fetchImpl });
+    const token = `Bearer ${jwt(accountId)}`;
+
+    const read = await request(app).get("/api/me/entitlement").set("Authorization", token).expect(200);
+    expect(read.body.data).toMatchObject({ isActive: false, expiresAt: null, stale: true });
+    expect(await store.get(accountId)).toMatchObject({
+      isActive: true,
+      syncedAt: new Date(NOW_MS).toISOString()
+    });
+
+    const sync = await request(app).post("/api/me/entitlement/sync").set("Authorization", token).expect(503);
+    expect(sync.body).toEqual({
+      error: { code: "ENTITLEMENT_UNAVAILABLE", message: "Entitlement service is temporarily unavailable" }
+    });
+    expect(await store.get(accountId)).toMatchObject({ syncedAt: new Date(NOW_MS).toISOString() });
+  });
+
   it("serves stale instead of writing when a 200 body is unreadable", async () => {
     const sql = await setupTestDatabase();
     const accountId = "11111111-1111-4111-8111-111111111111";

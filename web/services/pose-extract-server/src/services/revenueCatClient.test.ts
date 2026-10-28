@@ -307,6 +307,77 @@ describe("toEntitlement", () => {
     expect(toEntitlement(payload, "premium", RECEIVED_AT)).toMatchObject({ isActive: false, expiresAt: null });
   });
 
+  it("rejects a non-ISO or impossible date on purchase evidence", () => {
+    const nonIsoDates = ["0", "2026-02-01", "2026-02-01 00:00:00", "2026-02-30T00:00:00Z", "2026-13-01T00:00:00Z", "not-a-date"];
+    for (const purchaseDate of nonIsoDates) {
+      const purchasePayload = {
+        request_date_ms: RECEIVED_AT_MS,
+        subscriber: {
+          entitlements: { premium: { expires_date: null, product_identifier: "p" } },
+          subscriptions: {},
+          non_subscriptions: { p: [{ id: "tx-1", purchase_date: purchaseDate }] }
+        }
+      };
+      expect(toEntitlement(purchasePayload, "premium", RECEIVED_AT).isActive, purchaseDate).toBe(false);
+
+      const subscriptionPayload = {
+        request_date_ms: RECEIVED_AT_MS,
+        subscriber: {
+          entitlements: { premium: { expires_date: null, product_identifier: "p" } },
+          subscriptions: { p: { purchase_date: purchaseDate, expires_date: null } },
+          non_subscriptions: {}
+        }
+      };
+      expect(toEntitlement(subscriptionPayload, "premium", RECEIVED_AT).isActive, purchaseDate).toBe(false);
+    }
+  });
+
+  it("rejects a non-ISO or impossible subscription expiry", () => {
+    for (const expiresDate of ["0", "2026-02-30T00:00:00Z", "2026-02-01", "2026-02-01 00:00:00"]) {
+      const payload = {
+        request_date_ms: RECEIVED_AT_MS,
+        subscriber: {
+          entitlements: { premium: { expires_date: expiresDate, product_identifier: "p" } },
+          subscriptions: { p: { purchase_date: iso(-30 * DAY_MS), expires_date: expiresDate } },
+          non_subscriptions: {}
+        }
+      };
+      expect(toEntitlement(payload, "premium", RECEIVED_AT).isActive, expiresDate).toBe(false);
+    }
+
+    const impossibleEntitlementExpiry = {
+      request_date_ms: RECEIVED_AT_MS,
+      subscriber: {
+        entitlements: { premium: { expires_date: "2026-02-30T00:00:00Z", product_identifier: "p" } },
+        subscriptions: { p: { purchase_date: iso(-30 * DAY_MS), expires_date: "2026-02-30T00:00:00Z" } },
+        non_subscriptions: {}
+      }
+    };
+    expect(toEntitlement(impossibleEntitlementExpiry, "premium", RECEIVED_AT).isActive).toBe(false);
+  });
+
+  it("accepts offset and fractional-second ISO datetimes", () => {
+    const offsetPayload = {
+      request_date_ms: RECEIVED_AT_MS,
+      subscriber: {
+        entitlements: { premium: { expires_date: iso(30 * DAY_MS), product_identifier: "p" } },
+        subscriptions: { p: { purchase_date: "2026-01-02T03:04:05+07:00", expires_date: iso(30 * DAY_MS) } },
+        non_subscriptions: {}
+      }
+    };
+    expect(toEntitlement(offsetPayload, "premium", RECEIVED_AT).isActive).toBe(true);
+
+    const fractionalPayload = {
+      request_date_ms: RECEIVED_AT_MS,
+      subscriber: {
+        entitlements: { premium: { expires_date: iso(30 * DAY_MS), product_identifier: "p" } },
+        subscriptions: { p: { purchase_date: "2026-01-02T03:04:05.123Z", expires_date: iso(30 * DAY_MS) } },
+        non_subscriptions: {}
+      }
+    };
+    expect(toEntitlement(fractionalPayload, "premium", RECEIVED_AT).isActive).toBe(true);
+  });
+
   it("takes the snapshot time from the upstream response", () => {
     const payload = { ...subscriberPayload(), request_date_ms: RECEIVED_AT_MS - 60_000 };
 
@@ -423,6 +494,36 @@ describe("createRevenueCatClient", () => {
       productId: "p",
       store: "app_store"
     });
+  });
+
+  it("accepts a large document just under the cap", async () => {
+    const padding = "x".repeat(15 * 1024 * 1024);
+    const body = JSON.stringify({
+      request_date_ms: RECEIVED_AT_MS,
+      padding,
+      subscriber: {
+        entitlements: { premium: { expires_date: null, product_identifier: "p" } },
+        subscriptions: {},
+        non_subscriptions: { p: [{ id: "tx-1", purchase_date: iso(-30 * DAY_MS), store: "app_store" }] }
+      }
+    });
+    expect(Buffer.byteLength(body)).toBeGreaterThan(15 * 1024 * 1024);
+    expect(Buffer.byteLength(body)).toBeLessThan(16 * 1024 * 1024);
+
+    const client = createRevenueCatClient({ ...options, fetchImpl: vi.fn(async () => new Response(body, { status: 200 })) });
+
+    expect(await client.readEntitlement("account-a")).toMatchObject({ isActive: true, productId: "p" });
+  });
+
+  it("throws when the declared content length exceeds the cap even if the body is short", async () => {
+    const body = JSON.stringify({ subscriber: { entitlements: {}, subscriptions: {} } });
+    const fetchImpl = vi.fn(async () => new Response(body, {
+      status: 200,
+      headers: { "content-length": String(16 * 1024 * 1024 + 1) }
+    }));
+    const client = createRevenueCatClient({ ...options, fetchImpl });
+
+    await expect(client.readEntitlement("account-a")).rejects.toBeInstanceOf(RevenueCatRequestError);
   });
 
   it("throws when the body exceeds the size cap", async () => {

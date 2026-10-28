@@ -103,10 +103,44 @@ function isSubscriberPayload(value: unknown): boolean {
   return true;
 }
 
+const ISO_DATETIME = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,9})?(Z|[+-]\d{2}:\d{2})$/;
+
+function daysInMonth(year: number, month: number): number {
+  return new Date(Date.UTC(year, month, 0)).getUTCDate();
+}
+
+/**
+ * Dates on a subscriber document are strict ISO-8601 datetimes. `Date.parse` alone would accept
+ * "0" (a 1999 instant) or roll 2026-02-30 over into March, so the shape and the calendar are both
+ * checked before the value is trusted.
+ */
 function asDate(value: unknown): Date | null {
   const raw = asNonEmptyString(value);
   if (!raw) {
     return null;
+  }
+  const match = ISO_DATETIME.exec(raw);
+  if (!match) {
+    return null;
+  }
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const hour = Number(match[4]);
+  const minute = Number(match[5]);
+  const second = Number(match[6]);
+  if (month < 1 || month > 12 || day < 1 || day > daysInMonth(year, month)) {
+    return null;
+  }
+  if (hour > 23 || minute > 59 || second > 59) {
+    return null;
+  }
+  if (match[7] !== "Z") {
+    const offsetHours = Number(match[7].slice(1, 3));
+    const offsetMinutes = Number(match[7].slice(4, 6));
+    if (offsetHours > 23 || offsetMinutes > 59) {
+      return null;
+    }
   }
   const ms = Date.parse(raw);
   return Number.isFinite(ms) ? new Date(ms) : null;
