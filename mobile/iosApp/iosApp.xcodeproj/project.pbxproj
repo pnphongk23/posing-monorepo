@@ -48,6 +48,7 @@
 		60726B364AB3F7A8F2631462 /* SupportDestinations.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05D11FEB7E0A1D62258645BF /* SupportDestinations.swift */; };
 		616DE68C034960C7053F8E35 /* AIPoseNavigation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 567850A063D54AAE95B3BEC5 /* AIPoseNavigation.swift */; };
 		6431F9D53B5E03561AB351B3 /* LegacyDatabaseCompatibilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31B8B5FE18422BFB70F0CC0B /* LegacyDatabaseCompatibilityTests.swift */; };
+		D1E1A7E5000000000000B101 /* GalleryPhotoDeletionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1E1A7E5000000000000A101 /* GalleryPhotoDeletionTests.swift */; };
 		66C2873F999B9E2D6F6686BC /* RevenueCatAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7AFB0BE693C47B4ECDC70499 /* RevenueCatAdapter.swift */; };
 		68C01F1892B8891425FF101C /* AppleSignInTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FFBB65B1A5B1CB61A47C46D /* AppleSignInTests.swift */; };
 		6E5D6E01C11EB04A57F1558E /* SupportScreens.swift in Sources */ = {isa = PBXBuildFile; fileRef = 69F99C45485E02CD56C6E0C2 /* SupportScreens.swift */; };
@@ -140,6 +141,7 @@
 		2EE0355F95175C0D3D140424 /* AIPoseDesignSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIPoseDesignSystem.swift; sourceTree = "<group>"; };
 		3199C4916FBCFAB168D672B3 /* FeatureService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeatureService.swift; sourceTree = "<group>"; };
 		31B8B5FE18422BFB70F0CC0B /* LegacyDatabaseCompatibilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegacyDatabaseCompatibilityTests.swift; sourceTree = "<group>"; };
+		D1E1A7E5000000000000A101 /* GalleryPhotoDeletionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalleryPhotoDeletionTests.swift; sourceTree = "<group>"; };
 		346C81403D18D752BB15A3B5 /* CameraFeature.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraFeature.swift; sourceTree = "<group>"; };
 		350521FDA70C1A18E6B3A61D /* SessionBoundary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionBoundary.swift; sourceTree = "<group>"; };
 		3E5F21303DBA6D3D4B9DF921 /* RevenueCatAdapterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RevenueCatAdapterTests.swift; sourceTree = "<group>"; };
@@ -430,6 +432,7 @@
 			isa = PBXGroup;
 			children = (
 				31B8B5FE18422BFB70F0CC0B /* LegacyDatabaseCompatibilityTests.swift */,
+				D1E1A7E5000000000000A101 /* GalleryPhotoDeletionTests.swift */,
 			);
 			path = Database;
 			sourceTree = "<group>";
@@ -731,6 +734,7 @@
 				F7F6B4CC951E4B56B3C3B206 /* JobsServiceTests.swift in Sources */,
 				5B98FB97C8ECE7DD2F2497D4 /* JobsSnapshotTests.swift in Sources */,
 				6431F9D53B5E03561AB351B3 /* LegacyDatabaseCompatibilityTests.swift in Sources */,
+				D1E1A7E5000000000000B101 /* GalleryPhotoDeletionTests.swift in Sources */,
 				C862DA62FE077F181481D5AC /* OAuthCallbackParserTests.swift in Sources */,
 				918893F6A3A4D3B860741BEC /* PaywallModelTests.swift in Sources */,
 				AA92157B0E277FD36C849306 /* PerformanceBaselineTests.swift in Sources */,

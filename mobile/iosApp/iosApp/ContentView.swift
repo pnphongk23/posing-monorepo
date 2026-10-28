@@ -74,17 +74,22 @@ actor DeferredGalleryStore: GalleryStoring {
     }
 }
 
-private struct DatabaseGalleryStore: GalleryStoring {
+struct DatabaseGalleryStore: GalleryStoring {
     let repository: PhotoRepository
-    let database: AppDatabase
+    let imageStore: PhotoImageStore
 
-    init(database: AppDatabase) {
-        self.database = database
+    init(database: AppDatabase, imageStore: PhotoImageStore = PhotoImageStore()) {
+        self.imageStore = imageStore
         repository = PhotoRepository(database: database)
     }
 
     func photos() async throws -> [GalleryItem] {
-        try await repository.all().compactMap { record in
+        let records = try await repository.all()
+        // Reclaims files left behind by a delete that was interrupted after its row committed.
+        // Cheap (one directory listing) and idempotent, so it runs on every read instead of needing
+        // a launch hook or a schema flag.
+        imageStore.sweepOrphans(referencing: records.map(\.imagePath))
+        return records.compactMap { record in
             guard let id = record.id else { return nil }
             let fileURL = GalleryMediaPath.fileURL(for: record.imagePath)
               let createdAt = GalleryDateParser.date(from: record.createdAt) ?? .distantPast
@@ -93,10 +98,13 @@ private struct DatabaseGalleryStore: GalleryStoring {
         }
     }
 
+    /// Removes the row first, then the jpeg. A file that cannot be removed right now (or a crash
+    /// between the two steps) is not an error: the next `photos()` sweep reclaims it, so the gallery
+    /// keeps working and the file does not leak forever.
     func delete(id: Int64) async throws {
-        try await database.pool.write { db in
-            try db.execute(sql: "DELETE FROM Photo WHERE id = ?", arguments: [id])
-        }
+        guard let imagePath = try await repository.delete(id: id) else { return }
+        guard try await repository.references(imagePath: imagePath) == false else { return }
+        imageStore.remove(imagePath: imagePath)
     }
 
   }

@@ -23,6 +23,26 @@ struct PhotoRepository: Sendable {
             try db.execute(sql: "UPDATE Photo SET isFavorite = CASE isFavorite WHEN 0 THEN 1 ELSE 0 END WHERE id = ?", arguments: [id])
         }
     }
+
+    /// Deletes the row and hands back the `imagePath` it referenced so the caller can reclaim the
+    /// file. Row first, on purpose: the row/file pair cannot be deleted atomically, and a leftover
+    /// file is recoverable (it gets swept) while a leftover row pointing at a missing file is a
+    /// broken tile the user sees.
+    func delete(id: Int64) async throws -> String? {
+        try await database.pool.write { db in
+            guard let record = try PhotoRecord.fetchOne(db, key: id) else { return nil }
+            try db.execute(sql: "DELETE FROM Photo WHERE id = ?", arguments: [id])
+            return record.imagePath
+        }
+    }
+
+    /// Whether any surviving row still points at `imagePath`. Two rows can share a file (a re-save
+    /// of the same capture), so the file may only be removed with the last reference.
+    func references(imagePath: String) async throws -> Bool {
+        try await database.pool.read { db in
+            try PhotoRecord.filter(Column("imagePath") == imagePath).fetchCount(db) > 0
+        }
+    }
 }
 
 /// Feed buckets for the offline pose catalog. The catalog lives in the shared `Pose` table and
@@ -91,6 +111,84 @@ struct PoseRepository: Sendable {
                 arguments: StatementArguments(ids)
             )
         }
+    }
+}
+
+/// Owns the jpeg side of a `Photo` row. Rows and files cannot be deleted atomically, so the row
+/// always goes first: the worst an interrupted delete can leave behind is a file nothing points at,
+/// which `sweepOrphans` reclaims on the next gallery read. The opposite order would leave a row
+/// whose `imagePath` no longer exists, i.e. a broken tile in the gallery.
+/// `FileManager` is not `Sendable`, but these are stateless filesystem calls on one directory;
+/// the type carries no mutable state, so sharing it across actors is safe.
+struct PhotoImageStore: @unchecked Sendable {
+    let directoryURL: URL?
+    let fileManager: FileManager
+
+    init(
+        directoryURL: URL? = PhotoImageStore.defaultDirectoryURL,
+        fileManager: FileManager = .default
+    ) {
+        self.directoryURL = directoryURL
+        self.fileManager = fileManager
+    }
+
+    /// `CaptureImageStorage` writes captures here; `Photo.imagePath` holds the bare file name.
+    static var defaultDirectoryURL: URL? {
+        FileManager.default
+            .urls(for: .applicationSupportDirectory, in: .userDomainMask)
+            .first?
+            .appendingPathComponent("aipose", isDirectory: true)
+    }
+
+    /// Absolute paths (legacy rows) are used as-is, bare file names resolve against the capture
+    /// directory — the same rule `GalleryMediaPath.fileURL` applies when reading.
+    func fileURL(for imagePath: String) -> URL {
+        if imagePath.hasPrefix("/") { return URL(fileURLWithPath: imagePath) }
+        let directory = directoryURL ?? URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+        return directory.appendingPathComponent(imagePath)
+    }
+
+    /// Idempotent: a file that is already gone is not an error, so a retried delete succeeds.
+    func remove(imagePath: String) {
+        try? fileManager.removeItem(at: fileURL(for: imagePath))
+    }
+
+    /// Reclaims files in the capture directory that no `Photo` row references any more.
+    ///
+    /// `minimumAge` is what makes the sweep safe while a capture is in flight: a jpeg is written
+    /// microseconds before its row is inserted, so a fresh unreferenced file may simply belong to a
+    /// capture that is still being saved. Returns the number of files removed.
+    @discardableResult
+    func sweepOrphans(
+        referencing imagePaths: some Sequence<String>,
+        minimumAge: TimeInterval = 60 * 60
+    ) -> Int {
+        guard let directoryURL else { return 0 }
+        let keys: [URLResourceKey] = [.contentModificationDateKey, .isRegularFileKey]
+        guard let entries = try? fileManager.contentsOfDirectory(
+            at: directoryURL,
+            includingPropertiesForKeys: keys,
+            options: [.skipsHiddenFiles]
+        ) else { return 0 }
+
+        var referenced: Set<String> = []
+        for path in imagePaths {
+            referenced.insert(path)
+            referenced.insert(fileURL(for: path).standardizedFileURL.path)
+        }
+
+        let cutoff = Date().addingTimeInterval(-minimumAge)
+        var removed = 0
+        for entry in entries {
+            let values = try? entry.resourceValues(forKeys: Set(keys))
+            guard values?.isRegularFile == true else { continue }
+            guard !referenced.contains(entry.lastPathComponent) else { continue }
+            guard !referenced.contains(entry.standardizedFileURL.path) else { continue }
+            let modified = values?.contentModificationDate ?? .distantPast
+            guard modified <= cutoff else { continue }
+            if (try? fileManager.removeItem(at: entry)) != nil { removed += 1 }
+        }
+        return removed
     }
 }
 
