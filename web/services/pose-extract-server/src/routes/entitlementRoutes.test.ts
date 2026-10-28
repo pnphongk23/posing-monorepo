@@ -67,6 +67,7 @@ function subscriberBody(input: { expiresAt: Date | null; isSandbox?: boolean; up
       },
       subscriptions: {
         "com.example.premium.monthly": {
+          purchase_date: new Date(NOW_MS - 30 * DAY_MS).toISOString(),
           expires_date: expiresDate,
           grace_period_expires_date: null,
           is_sandbox: input.isSandbox ?? false,
@@ -275,6 +276,89 @@ describe("GET /api/me/entitlement", () => {
 
     const asB = await request(app).get("/api/me/entitlement").set("Authorization", `Bearer ${jwt(accountB)}`).expect(200);
     expect(asB.body.data).toMatchObject({ isActive: false, environment: null });
+  });
+
+  it("serves an unpaid lifetime claim with no real purchase as inactive", async () => {
+    const sql = await setupTestDatabase();
+    const accountId = "11111111-1111-4111-8111-111111111111";
+    await seedAccount(sql, accountId);
+    const store = new EntitlementStore(sql);
+    const emptyPurchase = {
+      request_date_ms: NOW_MS,
+      subscriber: {
+        entitlements: { [ENTITLEMENT_ID]: { expires_date: null, product_identifier: "com.example.premium.lifetime" } },
+        subscriptions: {},
+        non_subscriptions: { "com.example.premium.lifetime": [{}] }
+      }
+    };
+    const fetchImpl = (async () => new Response(JSON.stringify(emptyPurchase), { status: 200 })) as unknown as typeof fetch;
+
+    const response = await request(testApp({ sql, accountIds: [accountId], now: () => NOW_MS, fetchImpl }))
+      .get("/api/me/entitlement")
+      .set("Authorization", `Bearer ${jwt(accountId)}`)
+      .expect(200);
+
+    expect(response.body.data).toMatchObject({
+      isActive: false,
+      expiresAt: null,
+      productId: null,
+      environment: null,
+      stale: false
+    });
+    expect(await store.get(accountId)).toMatchObject({ isActive: false, productId: null });
+  });
+
+  it("serves an empty subscription entry as inactive", async () => {
+    const sql = await setupTestDatabase();
+    const accountId = "11111111-1111-4111-8111-111111111111";
+    await seedAccount(sql, accountId);
+    const store = new EntitlementStore(sql);
+    const emptySubscription = {
+      request_date_ms: NOW_MS,
+      subscriber: {
+        entitlements: { [ENTITLEMENT_ID]: { expires_date: null, product_identifier: "p" } },
+        subscriptions: { p: {} },
+        non_subscriptions: {}
+      }
+    };
+    const fetchImpl = (async () => new Response(JSON.stringify(emptySubscription), { status: 200 })) as unknown as typeof fetch;
+
+    const response = await request(testApp({ sql, accountIds: [accountId], now: () => NOW_MS, fetchImpl }))
+      .post("/api/me/entitlement/sync")
+      .set("Authorization", `Bearer ${jwt(accountId)}`)
+      .expect(200);
+
+    expect(response.body.data).toMatchObject({ isActive: false, expiresAt: null, stale: false });
+    expect(await store.get(accountId)).toMatchObject({ isActive: false, expiresAt: null });
+  });
+
+  it("serves a large document of many consumable purchases as active", async () => {
+    const sql = await setupTestDatabase();
+    const accountId = "11111111-1111-4111-8111-111111111111";
+    await seedAccount(sql, accountId);
+    const purchases = Array.from({ length: 13_000 }, (_, index) => ({
+      id: `tx-${index}`,
+      purchase_date: new Date(NOW_MS - 30 * DAY_MS).toISOString(),
+      store: "app_store",
+      is_sandbox: true
+    }));
+    const body = JSON.stringify({
+      request_date_ms: NOW_MS,
+      subscriber: {
+        entitlements: { [ENTITLEMENT_ID]: { expires_date: null, product_identifier: "p" } },
+        subscriptions: {},
+        non_subscriptions: { p: purchases }
+      }
+    });
+    expect(Buffer.byteLength(body)).toBeGreaterThan(1_200_000);
+    const fetchImpl = (async () => new Response(body, { status: 200 })) as unknown as typeof fetch;
+
+    const response = await request(testApp({ sql, accountIds: [accountId], now: () => NOW_MS, fetchImpl }))
+      .post("/api/me/entitlement/sync")
+      .set("Authorization", `Bearer ${jwt(accountId)}`)
+      .expect(200);
+
+    expect(response.body.data).toMatchObject({ isActive: true, expiresAt: null, environment: "SANDBOX", stale: false });
   });
 
   it("serves stale instead of writing when a 200 body is unreadable", async () => {

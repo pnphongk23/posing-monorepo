@@ -3,8 +3,11 @@ import type { EntitlementEnvironment, EntitlementSnapshot } from "../db/entitlem
 /** RevenueCat REST v1. The API version is part of the path, not of our public surface. */
 export const REVENUECAT_API_BASE_URL = "https://api.revenuecat.com";
 export const REVENUECAT_REQUEST_TIMEOUT_MS = 5_000;
-/** A subscriber document is a few kilobytes; anything larger is not a response we can trust. */
-export const REVENUECAT_MAX_BODY_BYTES = 1024 * 1024;
+/**
+ * A subscriber document grows with the purchase history (each consumable is one entry), so the
+ * cap is generous; it still bounds what the process will read from one response.
+ */
+export const REVENUECAT_MAX_BODY_BYTES = 16 * 1024 * 1024;
 
 /** The upstream read failed. Callers retry later; they never fall back to a cached "active". */
 export class RevenueCatRequestError extends Error {
@@ -40,7 +43,26 @@ function asNonEmptyString(value: unknown): string | null {
   return typeof value === "string" && value.trim().length > 0 ? value : null;
 }
 
-/** The first non-subscription purchase recorded for a product, which is the evidence a lifetime purchase leaves. */
+/**
+ * Evidence rules. A purchase entry only proves a purchase when it carries a readable purchase
+ * date, and a subscription entry must also state its expiry explicitly: a date for a
+ * subscription or null for a lifetime purchase. An entry that fails these rules is ignored,
+ * which leaves the entitlement in the inactive absent-subscriber row rather than failing the
+ * whole read (the surrounding document is still well formed).
+ */
+function isPurchaseDateReadable(entry: JsonObject): boolean {
+  return asDate(entry.purchase_date) !== null;
+}
+
+function isSubscriptionEntry(entry: JsonObject | null): entry is JsonObject {
+  if (!entry || !isPurchaseDateReadable(entry)) {
+    return false;
+  }
+  const expiresAt = entry.expires_date;
+  return expiresAt === null || asDate(expiresAt) !== null;
+}
+
+/** The first non-subscription purchase recorded for a product that names when it happened. */
 function firstNonSubscriptionPurchase(value: unknown, productId: string): JsonObject | null {
   const purchases = asObject(value);
   if (!purchases) {
@@ -52,7 +74,7 @@ function firstNonSubscriptionPurchase(value: unknown, productId: string): JsonOb
   }
   for (const entry of entries) {
     const purchase = asObject(entry);
-    if (purchase) {
+    if (purchase && isPurchaseDateReadable(purchase)) {
       return purchase;
     }
   }
@@ -134,7 +156,8 @@ export function toEntitlement(payload: unknown, entitlementId: string, receivedA
 
   const productId = asNonEmptyString(entitlement.product_identifier);
   const subscriptions = asObject(subscriber.subscriptions);
-  const subscription = productId && subscriptions ? asObject(subscriptions[productId]) : null;
+  const subscriptionEntry = productId && subscriptions ? asObject(subscriptions[productId]) : null;
+  const subscription = isSubscriptionEntry(subscriptionEntry) ? subscriptionEntry : null;
   const purchase = productId && !subscription ? firstNonSubscriptionPurchase(subscriber.non_subscriptions, productId) : null;
 
   // Without a purchase of this product there is no entitlement to be active on, whatever the

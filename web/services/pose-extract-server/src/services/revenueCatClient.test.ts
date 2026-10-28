@@ -34,6 +34,7 @@ function subscriberPayload(input: SubscriberInput = {}): Record<string, unknown>
   }
   const subscriptions = input.subscriptions ?? {
     [productId]: {
+      purchase_date: iso(-30 * DAY_MS),
       expires_date: expiresDate,
       grace_period_expires_date: input.gracePeriodExpiresDate ?? null,
       is_sandbox: input.isSandbox ?? false,
@@ -153,11 +154,13 @@ describe("toEntitlement", () => {
       isSandbox: true,
       subscriptions: {
         "com.example.premium.monthly": {
+          purchase_date: iso(-30 * DAY_MS),
           expires_date: iso(30 * DAY_MS),
           is_sandbox: true,
           store: "app_store"
         },
         "com.example.other.yearly": {
+          purchase_date: iso(-30 * DAY_MS),
           expires_date: iso(30 * DAY_MS),
           is_sandbox: false,
           store: "app_store"
@@ -243,6 +246,65 @@ describe("toEntitlement", () => {
     };
 
     expect(toEntitlement(payload, "premium", RECEIVED_AT).isActive).toBe(false);
+  });
+
+  it("does not accept an empty purchase object as evidence", () => {
+    const emptyPurchase = {
+      request_date_ms: RECEIVED_AT_MS,
+      subscriber: {
+        entitlements: { premium: { expires_date: null, product_identifier: "p" } },
+        subscriptions: {},
+        non_subscriptions: { p: [{}] }
+      }
+    };
+
+    expect(toEntitlement(emptyPurchase, "premium", RECEIVED_AT)).toMatchObject({
+      isActive: false,
+      expiresAt: null,
+      productId: null,
+      store: null,
+      environment: null
+    });
+  });
+
+  it("does not accept a purchase without a parseable purchase date as evidence", () => {
+    for (const entry of [{ id: "tx-1" }, { id: "tx-1", purchase_date: "not-a-date" }, { id: "tx-1", purchase_date: 42 }]) {
+      const payload = {
+        request_date_ms: RECEIVED_AT_MS,
+        subscriber: {
+          entitlements: { premium: { expires_date: null, product_identifier: "p" } },
+          subscriptions: {},
+          non_subscriptions: { p: [entry] }
+        }
+      };
+      expect(toEntitlement(payload, "premium", RECEIVED_AT).isActive).toBe(false);
+    }
+  });
+
+  it("does not accept a subscription with an omitted expiry as lifetime evidence", () => {
+    const payload = {
+      request_date_ms: RECEIVED_AT_MS,
+      subscriber: {
+        entitlements: { premium: { expires_date: null, product_identifier: "p" } },
+        subscriptions: { p: { purchase_date: iso(-30 * DAY_MS), is_sandbox: false } },
+        non_subscriptions: {}
+      }
+    };
+
+    expect(toEntitlement(payload, "premium", RECEIVED_AT)).toMatchObject({ isActive: false, expiresAt: null });
+  });
+
+  it("does not accept a subscription with an unreadable expiry as evidence", () => {
+    const payload = {
+      request_date_ms: RECEIVED_AT_MS,
+      subscriber: {
+        entitlements: { premium: { expires_date: null, product_identifier: "p" } },
+        subscriptions: { p: { purchase_date: iso(-30 * DAY_MS), expires_date: "not-a-date" } },
+        non_subscriptions: {}
+      }
+    };
+
+    expect(toEntitlement(payload, "premium", RECEIVED_AT)).toMatchObject({ isActive: false, expiresAt: null });
   });
 
   it("takes the snapshot time from the upstream response", () => {
@@ -336,8 +398,35 @@ describe("createRevenueCatClient", () => {
     await expect(client.readEntitlement("account-a")).rejects.toBeInstanceOf(RevenueCatRequestError);
   });
 
+  it("maps a large but bounded document of many consumable purchases to active", async () => {
+    const purchases = Array.from({ length: 13_000 }, (_, index) => ({
+      id: `tx-${index}`,
+      purchase_date: iso(-30 * DAY_MS),
+      store: "app_store",
+      is_sandbox: false
+    }));
+    const body = JSON.stringify({
+      request_date_ms: RECEIVED_AT_MS,
+      subscriber: {
+        entitlements: { premium: { expires_date: null, product_identifier: "p" } },
+        subscriptions: {},
+        non_subscriptions: { p: purchases }
+      }
+    });
+    expect(Buffer.byteLength(body)).toBeGreaterThan(1_200_000);
+
+    const client = createRevenueCatClient({ ...options, fetchImpl: vi.fn(async () => new Response(body, { status: 200 })) });
+
+    expect(await client.readEntitlement("account-a")).toMatchObject({
+      isActive: true,
+      expiresAt: null,
+      productId: "p",
+      store: "app_store"
+    });
+  });
+
   it("throws when the body exceeds the size cap", async () => {
-    const oversized = JSON.stringify({ subscriber: { entitlements: {}, subscriptions: {} } }).padEnd(1024 * 1024 + 512, " ");
+    const oversized = JSON.stringify({ subscriber: { entitlements: {}, subscriptions: {} } }).padEnd(16 * 1024 * 1024 + 1024, " ");
     const client = createRevenueCatClient({ ...options, fetchImpl: vi.fn(async () => new Response(oversized, { status: 200 })) });
 
     await expect(client.readEntitlement("account-a")).rejects.toBeInstanceOf(RevenueCatRequestError);
