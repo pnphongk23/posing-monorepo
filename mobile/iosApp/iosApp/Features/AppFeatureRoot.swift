@@ -13,8 +13,10 @@ struct AppFeatureRoot: View {
     /// FEAT-011: the capture gate's live inputs. One instance for the app, so the camera and any
     /// other entry point read the same entitlement (and the same session-scoped reset).
     @StateObject private var premiumGate = PremiumGateModel()
-    /// One presenter for the paywall: the camera asks for it, the root shows it. No event bus.
-    @State private var isPaywallPresented = false
+    /// One presenter for the paywall: the camera asks for it, the root shows it. No event bus. The
+    /// state is a small pure model (`PaywallPresentation`), so "one sheet, dismissed once" is tested
+    /// without a sheet.
+    @State private var paywall = PaywallPresentation()
 
     init(
         poseService: any PoseServing,
@@ -35,9 +37,13 @@ struct AppFeatureRoot: View {
             .onAppear { premiumGate.start() }
             // The paywall can be requested from any paid trigger; the sheet owns dismissal, and
             // dismissing it changes nothing, so no access is granted on the way out.
-            .sheet(isPresented: $isPaywallPresented) {
+            .sheet(isPresented: paywallSheetBinding) {
                 PaywallScreen()
             }
+            // A purchase or a restore that lands while the sheet is open closes it exactly once. The
+            // press that opened it is never re-fired: the user is back on the camera, nothing more.
+            .onChange(of: premiumGate.entitlement) { _ in settlePaywall() }
+            .onChange(of: premiumGate.isSignedIn) { _ in settlePaywall() }
             .onChange(of: tab) { newTab in
                 if newTab != .camera { pendingGuide = nil }
                 if newTab != .poses { isSearchPresented = false }
@@ -89,7 +95,7 @@ struct AppFeatureRoot: View {
                     // visible sign-in state from the session boundary itself, which is why the sheet
                     // does not need it.
                     premiumGate: premiumGate,
-                    onPremiumRequired: { _ in isPaywallPresented = true }
+                    onPremiumRequired: { _ in paywall.send(.shutterRequested) }
                 )
             }
         case .gallery:
@@ -123,5 +129,20 @@ struct AppFeatureRoot: View {
         pendingGuide = pose
         cameraGuide.wrappedValue = pose
         tab = .camera
+    }
+
+    private var paywallSheetBinding: Binding<Bool> {
+        Binding(
+            get: { paywall.isPresented },
+            // SwiftUI writes `false` when the user dismisses (swipe or the paywall's own close).
+            set: { presented in if !presented { paywall.send(.userDismissed) } }
+        )
+    }
+
+    private func settlePaywall() {
+        paywall.send(.gateSettled(
+            entitlement: premiumGate.entitlement,
+            signedIn: premiumGate.isSignedIn
+        ))
     }
 }

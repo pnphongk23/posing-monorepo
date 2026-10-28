@@ -234,6 +234,14 @@ Splash and has no Premium header affordance trigger.
   or second entitlement.
 - **NFR-001:** Account isolation is maintained across login, logout, account
   switch, duplicate webhook delivery, and authenticated entitlement reads.
+- **NFR-002 (fail-open on capture):** The client capture gate is fail-open by
+  design when it cannot *know* the entitlement: an unconfigured build (missing or
+  placeholder RevenueCat key / entitlement id), an unfinished or failed Account
+  link, an offline or unresolved refresh, and a missing offering all let the
+  shutter capture exactly as before this feature. Only a **confirmed** "no access"
+  answer for the linked Account, or a signed-out user (sign-in prompt, no guest
+  purchase), opens the paywall. Losing a photo outranks losing a sale; purchase
+  and server-side enforcement stay fail-closed under FR-004/FR-010.
 
 ## Acceptance
 

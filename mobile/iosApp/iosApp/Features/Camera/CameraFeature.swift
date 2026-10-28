@@ -37,6 +37,19 @@ final class CameraViewModel: ObservableObject {
             && !coordinator.state.isCaptureInFlight
     }
 
+    /// Whether the shutter accepts a press.
+    ///
+    /// The gate may want the paywall on a press the camera could not have served at all (no
+    /// permission, no hardware, a simulator), so readiness can no longer be the only input — the
+    /// press has to reach the gate. For every outcome that would capture, readiness still decides,
+    /// exactly as it did before the paid gate existed.
+    var isShutterEnabled: Bool {
+        PremiumGate.shutterAcceptsPress(
+            outcome: premiumGate.captureOutcome(cameraReady: coordinator.state.captureEnabled),
+            isBusy: coordinator.state.isCaptureInFlight
+        )
+    }
+
     let camera: any CameraSessionControlling
     let coordinator: CameraCoordinator
     let imageStorage: CaptureImageStorage
@@ -116,6 +129,7 @@ final class CameraViewModel: ObservableObject {
             poseName: guide?.name ?? ""
         )
         observeSettings()
+        observePremiumGate()
         loadTask = Task { [weak self] in await self?.loadSettings() }
     }
 
@@ -284,6 +298,15 @@ final class CameraViewModel: ObservableObject {
         $guideLineColor.dropFirst().sink { [weak self] _ in self?.settingsDidChange(.lineColor) }.store(in: &cancellables)
         $guideTransform.dropFirst().sink { [weak self] _ in self?.settingsDidChange(.transform) }.store(in: &cancellables)
         $zoomLevel.dropFirst().sink { [weak self] _ in self?.settingsDidChange(.zoom) }.store(in: &cancellables)
+    }
+
+    /// Gate moves are not camera settings, but the shutter's enabled state reads them: without this
+    /// the control would stay disabled after a purchase or a restored session, and the paywall could
+    /// not be reopened after a dismissal.
+    private func observePremiumGate() {
+        premiumGate.gateUpdates
+            .sink { [weak self] _ in self?.objectWillChange.send() }
+            .store(in: &cancellables)
     }
 
     private func settingsDidChange(_ setting: PersistedSetting) {
@@ -664,7 +687,7 @@ struct CameraScreen: View {
                 CameraShutterRail(
                     thumbnailURL: model.latestThumbnailURL,
                     isBusy: model.coordinator.state.isCaptureInFlight,
-                    controlsEnabled: model.coordinator.state.captureEnabled,
+                    controlsEnabled: model.isShutterEnabled,
                     onOpenGallery: onOpenGallery,
                     onCapture: { model.capture() },
                     onSwitchCamera: { model.switchCamera() }

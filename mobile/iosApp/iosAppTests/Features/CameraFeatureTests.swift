@@ -1,3 +1,4 @@
+import Combine
 import Kingfisher
 import SwiftUI
 import UIKit
@@ -146,6 +147,68 @@ final class CameraFeatureTests: XCTestCase {
         XCTAssertEqual(prompts, 0)
         XCTAssertFalse(model.coordinator.state.isCaptureInFlight)
         XCTAssertEqual(model.coordinator.state.phase, .permissionRequired)
+    }
+
+    // MARK: - Shutter control state (P1-a)
+
+    /// The control has to be pressable for a paywall answer even when the camera is not ready — the
+    /// case where the paywall used to be unreachable at all (no permission, no hardware, simulator).
+    func testShutterIsTappableForThePaywallWhenTheCameraIsNotReady() {
+        let gate = StubPremiumGate(.paywall(signIn: false))
+        let model = CameraViewModel(premiumGate: gate)
+        model.coordinator.onPermissionResult(.denied)
+        XCTAssertFalse(model.coordinator.state.captureEnabled, "the camera really is not ready")
+
+        XCTAssertTrue(model.isShutterEnabled, "readiness must not hide the gate behind a dead button")
+
+        // And the press it accepts is the paywall, never a capture attempt.
+        var prompts: [Bool] = []
+        let prompted = CameraViewModel(premiumGate: gate, onPremiumRequired: { prompts.append($0) })
+        prompted.coordinator.onPermissionResult(.denied)
+        prompted.capture()
+        XCTAssertEqual(prompts, [false])
+        XCTAssertEqual(prompted.coordinator.state.phase, .permissionRequired)
+    }
+
+    /// For the outcomes that would capture, readiness still decides the control — unchanged.
+    func testShutterStaysDisabledWhenTheGateWouldOnlyDoNothing() {
+        let gate = StubPremiumGate(.unchanged)
+        let model = CameraViewModel(premiumGate: gate)
+        model.coordinator.onPermissionResult(.denied)
+
+        XCTAssertFalse(model.isShutterEnabled)
+    }
+
+    func testShutterIsEnabledForACapturableCamera() {
+        let gate = StubPremiumGate(.capture)
+        let model = CameraViewModel(premiumGate: gate)
+        model.coordinator.onPermissionResult(.authorized)
+
+        XCTAssertTrue(model.isShutterEnabled)
+    }
+
+    /// The press that starts a capture owns the control until it settles.
+    func testShutterIsDisabledWhileACaptureIsInFlight() {
+        let gate = StubPremiumGate(.capture)
+        let model = CameraViewModel(premiumGate: gate)
+        model.coordinator.onPermissionResult(.authorized)
+        model.capture()
+
+        XCTAssertTrue(model.coordinator.state.isCaptureInFlight)
+        XCTAssertFalse(model.isShutterEnabled)
+    }
+
+    /// The shutter's enabled state reads the gate, so a gate move has to invalidate the camera view.
+    func testGateMovesInvalidateTheCameraView() {
+        let gate = StubPremiumGate(.paywall(signIn: false))
+        let model = CameraViewModel(premiumGate: gate)
+        var invalidations = 0
+        let cancellable = model.objectWillChange.sink { _ in invalidations += 1 }
+
+        gate.settle(.capture)
+
+        XCTAssertEqual(invalidations, 1, "the control re-renders when a purchase lands")
+        withExtendedLifetime(cancellable) {}
     }
 
     func testToggleGridIgnoredWhenControlsDisabled() {
@@ -619,15 +682,25 @@ final class CameraFeatureTests: XCTestCase {
 }
 
 /// Fake gate for the capture-path tests. The decision itself is proved in `PremiumGateTests` and
-/// `PremiumGateModelTests`; here only the ordering around `capture()` matters — that the gate runs
-/// first, and that an unentitled press never reaches the camera.
+/// `PremiumGateModelTests`; here only what the camera does with that answer matters — the ordering
+/// around `capture()`, the shutter's enabled state, and the fact that an unentitled press never
+/// reaches the camera.
 @MainActor
 private final class StubPremiumGate: PremiumGateProviding {
-    private let outcome: CaptureGateOutcome
+    private let updates = PassthroughSubject<Void, Never>()
+    private(set) var outcome: CaptureGateOutcome
     private(set) var cameraReadyInputs: [Bool] = []
+
+    var gateUpdates: AnyPublisher<Void, Never> { updates.eraseToAnyPublisher() }
 
     init(_ outcome: CaptureGateOutcome) {
         self.outcome = outcome
+    }
+
+    /// A provider/session move: the camera has to re-render, exactly as the live model announces it.
+    func settle(_ outcome: CaptureGateOutcome) {
+        self.outcome = outcome
+        updates.send(())
     }
 
     func captureOutcome(cameraReady: Bool) -> CaptureGateOutcome {

@@ -13,6 +13,14 @@ call is made, and the paywall reports `unavailable`. Both values live in the
 four `Config/*.xcconfig` files; until the user supplies them, builds stay
 unconfigured on purpose.
 
+An unconfigured build also **never blocks capture**: the client gate is
+fail-open whenever it cannot confirm the entitlement (no key, no link, offline),
+so only a confirmed "no access" for the signed-in Account opens the paywall. For
+QA on a placeholder build, pass `-AIPosePaywallEnabled YES` plus
+`-AIPosePurchasesConfigured YES` (Debug only) to reach the paywall surface; that
+override states the precondition and fabricates no entitlement, offering or
+purchase.
+
 The XcodeGen source of truth is `project.yml`. Use the `Dev` scheme for the
 `Debug-Dev`/`Release-Dev` configurations and the `Prod` scheme for
 `Debug-Prod`/`Release-Prod`. The four `.xcconfig` files under `Config/` carry

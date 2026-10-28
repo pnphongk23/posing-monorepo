@@ -36,9 +36,12 @@ private final class FakeSnapshotReader: PurchaseSnapshotReading {
 
     var snapshot: PurchaseSnapshot { subject.value }
     var snapshots: AnyPublisher<PurchaseSnapshot, Never> { subject.eraseToAnyPublisher() }
+    /// `nil` models a cold start whose RevenueCat link has not finished — or has failed.
+    let linkedAccountID: String?
 
-    init(_ state: PurchaseGatewayState) {
+    init(_ state: PurchaseGatewayState, linkedAccountID: String? = "account-a") {
         subject = CurrentValueSubject(PurchaseSnapshot(state: state, products: []))
+        self.linkedAccountID = linkedAccountID
     }
 
     /// A push from the provider: a delegate update, a purchase, a link that finished.
@@ -208,6 +211,80 @@ final class PremiumGateModelTests: XCTestCase {
         await boundary.saveCredentials(accountBSession)
         await waitUntil("B signed in") { model.isSignedIn }
         XCTAssertEqual(model.captureOutcome(cameraReady: true), .capture)
+    }
+
+    // MARK: - Outages fail open (P1-b)
+
+    /// The subscriber's cold-start link failed, so RevenueCat never bound the Account and the
+    /// adapter's `.notEntitled` is not an answer about *this* user's access. Capture must proceed:
+    /// losing a photo is worse than losing a sale.
+    func testFailedColdStartLinkIsAnOutageNotANo() async {
+        let boundary = SessionBoundary(tokenStorage: GateTokenStorage(credentials: accountASession))
+        let reader = FakeSnapshotReader(.notEntitled, linkedAccountID: nil)
+        let model = makeModel(reader: reader, boundary: boundary)
+        model.start()
+        await waitUntil("the session probe finished") { model.isSignedIn }
+
+        XCTAssertEqual(model.captureOutcome(cameraReady: true), .capture)
+        XCTAssertEqual(model.captureOutcome(cameraReady: false), .unchanged, "still today's camera rule")
+    }
+
+    /// Boot / a refresh still in flight is not a "no" either.
+    func testAnUnresolvedSnapshotFailsOpen() async {
+        let boundary = SessionBoundary(tokenStorage: GateTokenStorage(credentials: accountASession))
+        let reader = FakeSnapshotReader(.loading)
+        let model = makeModel(reader: reader, boundary: boundary)
+        model.start()
+        await waitUntil("the session probe finished") { model.isSignedIn }
+
+        XCTAssertEqual(model.captureOutcome(cameraReady: true), .capture)
+    }
+
+    /// A failed price-list fetch says nothing about access.
+    func testMissingOfferingDoesNotGate() async {
+        let boundary = SessionBoundary(tokenStorage: GateTokenStorage(credentials: accountASession))
+        let reader = FakeSnapshotReader(.noOffering)
+        let model = makeModel(reader: reader, boundary: boundary)
+        model.start()
+        await waitUntil("the session probe finished") { model.isSignedIn }
+
+        XCTAssertEqual(model.captureOutcome(cameraReady: true), .capture)
+    }
+
+    /// The outage path is not a permanent free pass: once a successful fetch confirms the answer, the
+    /// gate uses it.
+    func testConfirmedAnswerGatesAfterAnOutage() async {
+        let boundary = SessionBoundary(tokenStorage: GateTokenStorage(credentials: accountASession))
+        let reader = FakeSnapshotReader(.loading)
+        let model = makeModel(reader: reader, boundary: boundary)
+        model.start()
+        await waitUntil("the session probe finished") { model.isSignedIn }
+        XCTAssertEqual(model.captureOutcome(cameraReady: true), .capture)
+
+        reader.publish(.notEntitled)
+        XCTAssertEqual(model.captureOutcome(cameraReady: true), .paywall(signIn: false))
+
+        reader.publish(.expired)
+        XCTAssertEqual(model.captureOutcome(cameraReady: true), .paywall(signIn: false))
+    }
+
+    /// The shutter's enabled state reads the gate, so the gate has to announce its moves: a purchase
+    /// that lands while the user is back on the camera must re-enable the control.
+    func testGateUpdatesAnnounceEntitlementMoves() async {
+        let boundary = SessionBoundary(tokenStorage: GateTokenStorage(credentials: accountASession))
+        let reader = FakeSnapshotReader(.notEntitled)
+        let model = makeModel(reader: reader, boundary: boundary)
+        var fired = 0
+        let cancellable = model.gateUpdates.sink { _ in fired += 1 }
+        model.start()
+        await waitUntil("the session probe finished") { model.isSignedIn }
+
+        fired = 0
+        reader.publish(.entitled)
+
+        XCTAssertEqual(fired, 1)
+        XCTAssertEqual(model.captureOutcome(cameraReady: true), .capture)
+        withExtendedLifetime(cancellable) {}
     }
 
     // MARK: - helpers

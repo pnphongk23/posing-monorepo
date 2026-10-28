@@ -71,6 +71,21 @@ final class AppConfig: @unchecked Sendable {
             in: ProcessInfo.processInfo.arguments,
             isDebugBuild: true
         )
+
+    /// Debug-only switch for Simulator QA runs: `-AIPosePurchasesConfigured YES|NO` makes the capture
+    /// gate treat the purchase context as configured, so the paywall is reachable on a build whose
+    /// RevenueCat key or `REVENUECAT_ENTITLEMENT_ID` setting is still a placeholder (G3 would otherwise
+    /// fail open).
+    ///
+    /// It is a *precondition* override, never a result: no access, offering or purchase is fabricated,
+    /// so on such a build the paywall honestly reports itself unavailable and a purchase cannot
+    /// complete. Compiled out of Release like the switches above.
+    static let debugPurchasesConfiguredOverride: Bool? =
+        DebugLaunchArgumentOverride.booleanValue(
+            for: DebugLaunchArgumentOverride.purchasesConfiguredFlag,
+            in: ProcessInfo.processInfo.arguments,
+            isDebugBuild: true
+        )
     #endif
 
     var SERVER_BASE_URL: String {
@@ -146,9 +161,9 @@ final class AppConfig: @unchecked Sendable {
 }
 
 #if DEBUG
-/// QA-only launch-argument overrides for the two Firestore switches (`paywall_enabled`,
-/// `accounts_enabled_v2`), so a Simulator run can exercise both surfaces without editing the
-/// production documents.
+/// QA-only launch-argument overrides for the Firestore switches (`paywall_enabled`,
+/// `accounts_enabled_v2`) plus the purchase-context precondition (`-AIPosePurchasesConfigured`), so a
+/// Simulator run can exercise every surface without editing the production documents.
 ///
 /// The whole reader is compiled **only** into a Debug build: Release carries neither the argument
 /// names nor the argv lookup, so there is no Release code path to disable. `booleanValue` still
@@ -161,6 +176,7 @@ final class AppConfig: @unchecked Sendable {
 enum DebugLaunchArgumentOverride {
     static let paywallEnabledFlag = "-AIPosePaywallEnabled"
     static let accountsEnabledFlag = "-AIPoseAccountsEnabled"
+    static let purchasesConfiguredFlag = "-AIPosePurchasesConfigured"
 
     static func booleanValue(
         for flag: String,

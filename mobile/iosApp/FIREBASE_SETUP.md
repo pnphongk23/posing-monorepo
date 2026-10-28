@@ -77,6 +77,10 @@ used as the environment descriptor.
     `-AIPoseAccountEnabled` wins when both are passed)
   - `-AIPoseExtractPoseEnabled true|false`
   - `-AIPosePaywallEnabled true|false` (same switch as `paywall_enabled`)
+  - `-AIPosePurchasesConfigured true|false` (QA precondition: treat the purchase
+    context as configured so the paywall is reachable on a build whose RevenueCat
+    key/entitlement id is still a placeholder. It fabricates no entitlement,
+    offering or purchase — a purchase there fails cleanly as `unavailable`.)
   - `-AIPoseAPIBaseURL <url>`
   (Compiled out of Release builds: no launch-argument lookup for these flags exists in a Release
   binary. The two new switches only override the value resolved from Firestore; with no argument the

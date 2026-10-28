@@ -63,7 +63,7 @@ final class AppConfigTests: XCTestCase {
     /// give. Since the reader is itself compiled only under `#if DEBUG`, that answer exists as a
     /// runtime path only here — the compiled-out guarantee is `testLaunchArgumentLookupIsCompiledUnderDebugOnly`.
     func testLaunchArgumentOverrideIsNilInReleaseBuilds() {
-        let arguments = ["posing", "-AIPosePaywallEnabled", "YES", "-AIPoseAccountsEnabled", "YES"]
+        let arguments = ["posing", "-AIPosePaywallEnabled", "YES", "-AIPoseAccountsEnabled", "YES", "-AIPosePurchasesConfigured", "YES"]
 
         XCTAssertNil(
             DebugLaunchArgumentOverride.booleanValue(
@@ -76,6 +76,14 @@ final class AppConfigTests: XCTestCase {
         XCTAssertNil(
             DebugLaunchArgumentOverride.booleanValue(
                 for: "-AIPoseAccountsEnabled",
+                in: arguments,
+                isDebugBuild: false
+            ),
+            "A Release build must never answer from argv"
+        )
+        XCTAssertNil(
+            DebugLaunchArgumentOverride.booleanValue(
+                for: "-AIPosePurchasesConfigured",
                 in: arguments,
                 isDebugBuild: false
             ),
@@ -140,6 +148,7 @@ final class AppConfigTests: XCTestCase {
     func testDebugWiringIsCompiledInAndSpendsNoArgumentHere() {
         XCTAssertNil(AppConfig.debugPaywallEnabledOverride)
         XCTAssertNil(AppConfig.debugAccountsEnabledOverride)
+        XCTAssertNil(AppConfig.debugPurchasesConfiguredOverride)
         XCTAssertFalse(AppConfig().isPaywallEnabled)
         XCTAssertFalse(AppConfig().isAccountFeatureEnabled)
     }
@@ -162,9 +171,14 @@ final class AppConfigTests: XCTestCase {
             "ProcessInfo.processInfo.arguments",
             "-AIPosePaywallEnabled",
             "-AIPoseAccountsEnabled",
+            "-AIPosePurchasesConfigured",
             "DebugLaunchArgumentOverride",
+            "paywallEnabledFlag",
+            "accountsEnabledFlag",
+            "purchasesConfiguredFlag",
             "debugPaywallEnabledOverride",
-            "debugAccountsEnabledOverride"
+            "debugAccountsEnabledOverride",
+            "debugPurchasesConfiguredOverride"
         ]
         let scanned = ConditionalCompilationScanner.scan(source)
         let offenders = scanned
@@ -237,6 +251,36 @@ final class AppConfigTests: XCTestCase {
             "An #elseif branch is never treated as the guarded branch of its #if"
         )
     }
+
+    /// The `-AIPosePurchasesConfigured` lookup is guarded by the same scan as the older switches, and
+    /// the flag *name* counts as a leak on its own — a Release build must not even contain it.
+    func testScannerGuardsThePurchasesConfiguredOverrideInAlternativeBranches() {
+        let flagName = "\"-AIPosePurchasesConfigured\""
+        let leakedElse = """
+        #if DEBUG
+        let compiledIn = 1
+        #else
+        let flag = \(flagName)
+        #endif
+        """
+        let leakedElseIf = """
+        #if DEBUG
+        let compiledIn = 1
+        #elseif !DEBUG
+        let flag = \(flagName)
+        #endif
+        """
+        let guarded = """
+        #if DEBUG
+        let flag = \(flagName)
+        let override = DebugLaunchArgumentOverride.booleanValue(for: flag, in: [], isDebugBuild: true)
+        #endif
+        """
+
+        XCTAssertEqual(flagsOutsideDebugOnlyBlocks(in: leakedElse, flag: "AIPosePurchasesConfigured"), ["4: let flag = \"-AIPosePurchasesConfigured\""])
+        XCTAssertEqual(flagsOutsideDebugOnlyBlocks(in: leakedElseIf, flag: "AIPosePurchasesConfigured"), ["4: let flag = \"-AIPosePurchasesConfigured\""])
+        XCTAssertEqual(flagsOutsideDebugOnlyBlocks(in: guarded, flag: "AIPosePurchasesConfigured"), [])
+    }
 }
 
 /// Conditional-compilation scan for the `#if DEBUG` guards in the app sources.
@@ -293,5 +337,12 @@ private enum ConditionalCompilationScanner {
 private func lookupsOutsideDebugOnlyBlocks(in source: String) -> [String] {
     ConditionalCompilationScanner.scan(source)
         .filter { !$0.isDebugOnly && $0.text.contains("ProcessInfo.processInfo.arguments") }
+        .map { "\($0.number): \($0.text)" }
+}
+
+/// Any mention of a DEBUG-only launch-argument name that a Release build would still compile in.
+private func flagsOutsideDebugOnlyBlocks(in source: String, flag: String) -> [String] {
+    ConditionalCompilationScanner.scan(source)
+        .filter { !$0.isDebugOnly && $0.text.contains(flag) }
         .map { "\($0.number): \($0.text)" }
 }
