@@ -5,33 +5,19 @@ import { Upload, Plus, X, RefreshCw, Pencil, Trash2, Check } from 'lucide-react'
 import NavButton from '@/components/NavButton';
 import ActionButton from '@/components/ActionButton';
 
+import {
+  COMMUNITY_ADMIN_API,
+  DEFAULT_OWNER_ACCOUNT_ID,
+  fetchCommunityPoses,
+  normalizeList,
+  parseResponse,
+  runCreatePoseSubmit,
+} from './submitPoseFlow';
+
 const STATUS_BADGE = {
   local: 'bg-accent-yellow',
   published: 'bg-accent-green',
 };
-const DEFAULT_OWNER_ACCOUNT_ID = '00000000-0000-0000-0000-000000000001';
-
-const COMMUNITY_ADMIN_API = '/api/admin/community/poses';
-
-async function parseResponse(response) {
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    const message =
-      payload.error?.message ||
-      payload.error ||
-      payload.message ||
-      `Request failed (${response.status})`;
-    throw new Error(message);
-  }
-  return payload;
-}
-
-function normalizeList(raw) {
-  return String(raw || '')
-    .split(',')
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
 
 export default function AdminCommunityPage() {
   const [submitting, setSubmitting] = useState(false);
@@ -62,16 +48,7 @@ export default function AdminCommunityPage() {
     setLoadingPoses(true);
     setListError('');
     try {
-      const res = await fetch(`${COMMUNITY_ADMIN_API}?limit=100`, {
-        cache: 'no-store',
-      });
-      const payload = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(
-          payload.error?.message || payload.error || payload.message || `Request failed (${res.status})`
-        );
-      }
-      setPoses(payload.data ?? []);
+      setPoses(await fetchCommunityPoses(fetch));
     } catch (err) {
       setListError(err.message);
     } finally {
@@ -106,68 +83,24 @@ export default function AdminCommunityPage() {
     setNotice('Đang chạy extraction...');
 
     try {
-      const extractForm = new FormData();
-      extractForm.append('image', selectedFile);
-      const extractResponse = await fetch('/api/admin/extract-pose', { method: 'POST', body: extractForm });
-      const extractPayload = await parseResponse(extractResponse);
-      const jobId = extractPayload.data?.jobId;
-      if (!jobId) throw new Error('Extraction did not return jobId.');
-
-      let job;
-      for (let attempt = 0; attempt < 60; attempt += 1) {
-        const jobResponse = await fetch(`/api/admin/extract-jobs/${jobId}`, { cache: 'no-store' });
-        const jobPayload = await parseResponse(jobResponse);
-        job = jobPayload.data;
-        if (job.status === 'succeeded' || job.status === 'failed') break;
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-      }
-      if (!job || job.status !== 'succeeded') throw new Error('Extraction did not succeed.');
-
-      const response = await fetch(COMMUNITY_ADMIN_API, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          jobId,
-          ownerAccountId: form.ownerAccountId.trim(),
-          name: form.name.trim(),
-          tags: normalizeList(form.tags),
-          description: form.description.trim() || null,
-          bodyParts: ['full-body'],
-          difficulty: null,
-        }),
+      await runCreatePoseSubmit({
+        fetchImpl: (input, init) => fetch(input, init),
+        form,
+        file: selectedFile,
+        setPoses,
+        onNotice: setNotice,
+        onError: setError,
+        onListError: setListError,
+        onCreated: () => {
+          setForm({ name: '', tags: '', description: '', status: 'local', ownerAccountId: DEFAULT_OWNER_ACCOUNT_ID });
+          setSelectedFile(null);
+          setImagePreview('');
+        },
       });
-      const created = await parseResponse(response);
-      const createdPoseId = created.data?.pose?.poseId;
-      setForm({ name: '', tags: '', description: '', status: 'local', ownerAccountId: DEFAULT_OWNER_ACCOUNT_ID });
-      setSelectedFile(null);
-      setImagePreview('');
-      fetchPoses();
-
-      if (form.status === 'published' && createdPoseId) {
-        // Publish is a server-validated step: it is refused while the pose media is
-        // not ready, and that error has to reach the admin instead of a success note.
-        const publishResponse = await fetch(`${COMMUNITY_ADMIN_API}/${createdPoseId}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ status: 'published' }),
-        });
-        try {
-          await parseResponse(publishResponse);
-        } catch (publishError) {
-          setError(`Pose đã được tạo ở trạng thái LOCAL. ${publishError.message}`);
-          return;
-        }
-        setNotice('Đã extraction, tạo Pose và publish thành công.');
-        return;
-      }
-
-      setNotice('Đã extraction và tạo Pose thành công.');
-    } catch (err) {
-      setError(err.message);
     } finally {
       setSubmitting(false);
     }
-  }, [form, selectedFile, fetchPoses]);
+  }, [form, selectedFile]);
 
   const openEdit = useCallback((pose) => {
     setSelectedPose(pose);
