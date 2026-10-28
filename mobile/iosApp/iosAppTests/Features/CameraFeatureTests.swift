@@ -149,6 +149,25 @@ final class CameraFeatureTests: XCTestCase {
         XCTAssertEqual(model.guideLineColor, .white)
     }
 
+    // MARK: Persisted defaults (FEAT-012)
+
+    /// The defaults exist twice: as the published initial values and as the fallback inside
+    /// `CameraSettings` for a missing or corrupt row. A relaunch with nothing stored must look
+    /// exactly like a first launch, so both spellings have to agree.
+    func testPublishedDefaultsMatchThePersistedDefaults() {
+        let model = CameraViewModel()
+        let defaults = CameraSettings()
+
+        XCTAssertEqual(model.guideOpacity, defaults.guideOpacity, accuracy: 0.001)
+        XCTAssertEqual(model.guideFlipped, defaults.guideFlipped)
+        XCTAssertEqual(model.isGridVisible, defaults.isGridVisible)
+        XCTAssertEqual(model.flashSetting, defaults.flash)
+        XCTAssertEqual(model.isPoseGuideVisible, defaults.isPoseGuideVisible)
+        XCTAssertEqual(model.guideLineColor, defaults.lineColor)
+        XCTAssertEqual(model.guideTransform, defaults.guideTransform)
+        XCTAssertEqual(model.zoomLevel, defaults.zoom)
+    }
+
     // MARK: Pose reference placement (pinch / twist / drag)
 
     func testGuideTransformStartsAtIdentity() {

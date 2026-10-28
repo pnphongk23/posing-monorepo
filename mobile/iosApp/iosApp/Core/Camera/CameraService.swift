@@ -132,7 +132,7 @@ private final class CameraOwnerTrampoline: @unchecked Sendable {
 }
 
 @MainActor
-final class NativeCameraController: NSObject, ObservableObject, CameraControllerPort {
+final class NativeCameraController: NSObject, ObservableObject, CameraSessionControlling {
     /// The only thread allowed to touch `CameraSessionBox`. Serial, so session configuration can
     /// never interleave with itself.
     private static let sessionQueue = DispatchQueue(label: "app.aipose.camera.session")
@@ -154,6 +154,10 @@ final class NativeCameraController: NSObject, ObservableObject, CameraController
 
     /// Immutable reference; see `CameraSessionBox` for why reading it on the main thread is safe.
     var session: AVCaptureSession { box.session }
+
+    /// `CameraSessionControlling` readiness: only a value the session itself reported counts, so a
+    /// settings apply never runs against a session that is not up.
+    var isSessionRunning: Bool { isRunning }
 
     func currentPermissionState() -> CameraPermissionState { .current() }
 

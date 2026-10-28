@@ -76,6 +76,8 @@
 		A8C636E39D6C83F337E98600 /* SessionPresenceModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0BE311B84AFAC354708F8B47 /* SessionPresenceModel.swift */; };
 		AA92157B0E277FD36C849306 /* PerformanceBaselineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CDC2A66EF6C5B7A7C8FA69A8 /* PerformanceBaselineTests.swift */; };
 		AF3FFA4E4C75C074D4D5DC09 /* CameraCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6A0C48173DC401944D4A9DA /* CameraCoordinatorTests.swift */; };
+		C5E1A11D0B7F4A2E9C3D5F01 /* CameraSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5E1A11D0B7F4A2E9C3D5F02 /* CameraSettings.swift */; };
+		C5E1A11D0B7F4A2E9C3D5F03 /* CameraSettingsPersistenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5E1A11D0B7F4A2E9C3D5F04 /* CameraSettingsPersistenceTests.swift */; };
 		B18D5F82BD558E93E1715A47 /* EndpointPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA9CF8A10FC8E52646BE4ADD /* EndpointPolicyTests.swift */; };
 		B3BAC5D35C6510DC11534F83 /* PhotosExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = C70C04976ADC916DD0D41A08 /* PhotosExporter.swift */; };
 		B5900233394FE16B6675DEEE /* AppConfigTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB487DB1EF69AD8D00D33F2D /* AppConfigTests.swift */; };
@@ -189,6 +191,8 @@
 		B200B349F72BE4E46078D085 /* AppConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfig.swift; sourceTree = "<group>"; };
 		B687A73096C60A29CE829E56 /* AppConfigServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfigServiceTests.swift; sourceTree = "<group>"; };
 		B6A0C48173DC401944D4A9DA /* CameraCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraCoordinatorTests.swift; sourceTree = "<group>"; };
+		C5E1A11D0B7F4A2E9C3D5F02 /* CameraSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraSettings.swift; sourceTree = "<group>"; };
+		C5E1A11D0B7F4A2E9C3D5F04 /* CameraSettingsPersistenceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraSettingsPersistenceTests.swift; sourceTree = "<group>"; };
 		B719EE2E7F62C33D73EBA475 /* CameraCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraCoordinator.swift; sourceTree = "<group>"; };
 		C117AD187833E2513BD2F553 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		C254D42661B28636ECF42B71 /* CameraTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraTypes.swift; sourceTree = "<group>"; };
@@ -342,6 +346,7 @@
 			isa = PBXGroup;
 			children = (
 				346C81403D18D752BB15A3B5 /* CameraFeature.swift */,
+				C5E1A11D0B7F4A2E9C3D5F02 /* CameraSettings.swift */,
 			);
 			path = Camera;
 			sourceTree = "<group>";
@@ -415,6 +420,7 @@
 			isa = PBXGroup;
 			children = (
 				B6A0C48173DC401944D4A9DA /* CameraCoordinatorTests.swift */,
+				C5E1A11D0B7F4A2E9C3D5F04 /* CameraSettingsPersistenceTests.swift */,
 				1FADCC33F02A7BB84B9C89D2 /* CaptureImageStorageTests.swift */,
 			);
 			path = Camera;
@@ -675,6 +681,7 @@
 				8C8EC5B13461D52698AF9850 /* AppleSignIn.swift in Sources */,
 				26FEE10E47B59638546BA083 /* CameraCoordinator.swift in Sources */,
 				3800FE2DB2CD8CB2A2D81B76 /* CameraFeature.swift in Sources */,
+				C5E1A11D0B7F4A2E9C3D5F01 /* CameraSettings.swift in Sources */,
 				F6972790D8A1C72BF2BE5A36 /* CameraGridOverlay.swift in Sources */,
 				ED862A86741C4BCE264CD535 /* CameraPorts.swift in Sources */,
 				4E0CF73E9CCBAF52450EB28E /* CameraPreview.swift in Sources */,
@@ -723,6 +730,7 @@
 				B5900233394FE16B6675DEEE /* AppConfigTests.swift in Sources */,
 				68C01F1892B8891425FF101C /* AppleSignInTests.swift in Sources */,
 				AF3FFA4E4C75C074D4D5DC09 /* CameraCoordinatorTests.swift in Sources */,
+				C5E1A11D0B7F4A2E9C3D5F03 /* CameraSettingsPersistenceTests.swift in Sources */,
 				5E14AAEFC75F2D1FCC31ECFE /* CameraFeatureTests.swift in Sources */,
 				789107807CC6F86349D0BFDF /* CaptureImageStorageTests.swift in Sources */,
 				CF55B6715CD91131AC93BC60 /* DeleteAccountTests.swift in Sources */,

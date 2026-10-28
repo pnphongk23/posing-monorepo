@@ -19,6 +19,39 @@ final class LegacyDatabaseCompatibilityTests: XCTestCase {
         try assertPostMigrationState(at: target)
     }
 
+    /// FEAT-012 rides on the `settings_json` column that v2 already created, so a device that is
+    /// still on a v1 file gets working camera settings after the ordinary upgrade — no new
+    /// migration, no schema change, and the legacy pose/photo rows are untouched.
+    func testV1FixtureUpgradePersistsCameraSettingsWithoutASchemaChange() async throws {
+        let fixture = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "legacy-aipose-v1", withExtension: "sqlite"))
+        let root = makeHome()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let target = root.appendingPathComponent("Documents/aipose.db")
+        try FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try FileManager.default.copyItem(at: fixture, to: target)
+        try assertPreMigrationState(at: target, expectsCameraSnapshot: false)
+
+        let database = try AppDatabase(location: AppDatabaseLocation(url: target, kind: .existingLegacy))
+        let store = GRDBCameraSettingsStore(database: database)
+        try await store.save(CameraSettings(revision: 2, guideOpacity: 0.42, flash: .on, zoom: .two))
+
+        let restored = try await store.load()
+        XCTAssertEqual(restored?.guideOpacity ?? 0, 0.42, accuracy: 0.001)
+        XCTAssertEqual(restored?.flash, .on)
+        XCTAssertEqual(restored?.zoom, .two)
+
+        try await database.pool.read { db in
+            try AppDatabaseSchema.XCTAssertSchemaParity(db)
+            let row = try XCTUnwrap(CameraSnapshotRecord.fetchOne(db, key: 1))
+            XCTAssertEqual(row.schemaVersion, Int64(CameraSettings.currentVersion))
+            XCTAssertNil(row.poseJSON, "a settings save never invents a pose")
+            let pose = try XCTUnwrap(PoseRecord.fetchOne(db, key: "pose-legacy-01"))
+            XCTAssertEqual(pose.tags, "[\"portrait\",\"legacy\"]")
+            XCTAssertEqual(try PhotoRecord.fetchCount(db), 2)
+        }
+        try assertPostMigrationState(at: target)
+    }
+
     func testAiPoseDatabaseFilenameInDatabasesDirectory() async throws {
         let fixture = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "legacy-aipose-database-v1", withExtension: "sqlite"))
         let home = makeHome()

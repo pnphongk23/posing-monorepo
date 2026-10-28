@@ -37,19 +37,49 @@ final class CameraViewModel: ObservableObject {
             && !coordinator.state.isCaptureInFlight
     }
 
-    let camera: NativeCameraController
+    let camera: any CameraSessionControlling
     let coordinator: CameraCoordinator
     let imageStorage: CaptureImageStorage
     private var timeoutTask: Task<Void, Never>?
     private var statusClearTask: Task<Void, Never>?
 
+    // MARK: Persistence (FEAT-012)
+
+    private let settingsStore: any CameraSettingsStore
+    private let settingsWriter: CameraSettingsWriter
+    private let saveDebounceNanoseconds: UInt64
+    private var loadTask: Task<Void, Never>?
+    private var saveTask: Task<Void, Never>?
+    private var cancellables: Set<AnyCancellable> = []
+    /// The settings revision the next write will carry. Always above the revision read from disk, so
+    /// a relaunch keeps counting up instead of restarting the row's history.
+    private var settingsRevision: Int64 = 0
+    private var hasUnsavedSettings = false
+    /// True once the stored snapshot (or its absence) has been merged into the published state.
+    /// Nothing is written before that, so defaults can never overwrite what is on disk.
+    private(set) var initialMergeDone = false
+    /// Settings the user already changed — a late restore must not overwrite them.
+    private var touchedSettings: Set<PersistedSetting> = []
+    private var isApplyingRestore = false
+    /// C3-Q1 (a): the restored placement waits for the first guide after launch. Kept here instead
+    /// of being written straight into `guideTransform`, because the pose-change reset would wipe it.
+    private var pendingRestoredTransform: GuideTransform?
+    private var hasGuide = false
+    private var lastAppliedFlash: CameraFlashSetting?
+    private var lastAppliedZoom: CGFloat?
+
     init(
         guide: NativePose? = nil,
-        camera: NativeCameraController = NativeCameraController(),
+        camera: any CameraSessionControlling = NativeCameraController(),
         photoRepository: PhotoRepository? = nil,
-        photoMetadata: CapturePhotoMetadata? = nil
+        photoMetadata: CapturePhotoMetadata? = nil,
+        settingsStore: any CameraSettingsStore = DeferredCameraSettingsStore(),
+        saveDebounceNanoseconds: UInt64 = 300_000_000
     ) {
         self.camera = camera
+        self.settingsStore = settingsStore
+        self.settingsWriter = CameraSettingsWriter(store: settingsStore)
+        self.saveDebounceNanoseconds = saveDebounceNanoseconds
         let storage = CaptureImageStorage()
         self.imageStorage = storage
         // The database used to be opened + migrated right here. `CameraViewModel` is built on the
@@ -71,6 +101,8 @@ final class CameraViewModel: ObservableObject {
             poseId: guide?.id,
             poseName: guide?.name ?? ""
         )
+        observeSettings()
+        loadTask = Task { [weak self] in await self?.loadSettings() }
     }
 
     func onAppear() async {
@@ -81,6 +113,7 @@ final class CameraViewModel: ObservableObject {
             // moved off the main thread from here (the controller is `@MainActor`), so the log below
             // separates how much of "camera is slow" is the session and how much is app work.
             try? await camera.start()
+            reconcileHardware()
         }
         let sessionStartMs = Int(Date().timeIntervalSince(start) * 1000)
         await coordinator.refreshLatestThumbnail()
@@ -100,9 +133,11 @@ final class CameraViewModel: ObservableObject {
     func requestPermission() {
         camera.requestPermission { [weak self] result in
             Task { @MainActor in
-                self?.coordinator.onPermissionResult(result)
+                guard let self else { return }
+                self.coordinator.onPermissionResult(result)
                 if result == .authorized {
-                    try? await self?.camera.start()
+                    try? await self.camera.start()
+                    self.reconcileHardware()
                 }
             }
         }
@@ -152,7 +187,7 @@ final class CameraViewModel: ObservableObject {
     func cycleFlash() {
         guard cameraControlsEnabled else { return }
         flashSetting = flashSetting.cameraToolsNext()
-        camera.setFlashMode(flashSetting)
+        reconcileHardware()
     }
 
     func toggleGrid() {
@@ -190,7 +225,178 @@ final class CameraViewModel: ObservableObject {
 
     func applyZoom(_ level: CameraZoomLevel) {
         zoomLevel = level
-        camera.setZoomFactor(level.factor)
+        reconcileHardware()
+    }
+
+    // MARK: - Settings persistence (FEAT-012)
+
+    /// The eight settings that survive a relaunch. `CameraSnapshot` carries them in one JSON blob;
+    /// the selected pose is deliberately not among them (D8).
+    private enum PersistedSetting: Hashable {
+        case opacity, flipped, grid, flash, guideVisibility, lineColor, transform, zoom
+    }
+
+    /// `@Published` sinks rather than setter bodies, because the guided gestures and a few tests
+    /// assign the properties directly. Two details matter here:
+    /// - `dropFirst()`: the publisher replays its current value on subscribe, and that replay is not
+    ///   a user edit — without it every setting would look "touched" before the restore lands and the
+    ///   whole restore would be skipped.
+    /// - the sink fires on `willSet`, so nothing here may read the property: it only marks what the
+    ///   user touched and schedules a write, and the write reads the state when it actually runs.
+    private func observeSettings() {
+        $guideOpacity.dropFirst().sink { [weak self] _ in self?.settingsDidChange(.opacity) }.store(in: &cancellables)
+        $guideFlipped.dropFirst().sink { [weak self] _ in self?.settingsDidChange(.flipped) }.store(in: &cancellables)
+        $isGridVisible.dropFirst().sink { [weak self] _ in self?.settingsDidChange(.grid) }.store(in: &cancellables)
+        $flashSetting.dropFirst().sink { [weak self] _ in self?.settingsDidChange(.flash) }.store(in: &cancellables)
+        $isPoseGuideVisible.dropFirst().sink { [weak self] _ in self?.settingsDidChange(.guideVisibility) }
+            .store(in: &cancellables)
+        $guideLineColor.dropFirst().sink { [weak self] _ in self?.settingsDidChange(.lineColor) }.store(in: &cancellables)
+        $guideTransform.dropFirst().sink { [weak self] _ in self?.settingsDidChange(.transform) }.store(in: &cancellables)
+        $zoomLevel.dropFirst().sink { [weak self] _ in self?.settingsDidChange(.zoom) }.store(in: &cancellables)
+    }
+
+    private func settingsDidChange(_ setting: PersistedSetting) {
+        // The restore assigns the published properties too; those are not user edits.
+        guard !isApplyingRestore else { return }
+        touchedSettings.insert(setting)
+        hasUnsavedSettings = true
+        // Held until the merge: writing the defaults now would overwrite the stored row.
+        guard initialMergeDone else { return }
+        scheduleSave()
+    }
+
+    private func scheduleSave() {
+        saveTask?.cancel()
+        let debounce = saveDebounceNanoseconds
+        saveTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: debounce)
+            guard !Task.isCancelled else { return }
+            await self?.persistSettings()
+        }
+    }
+
+    /// Writes the current state under the current revision. Idempotent: a write that carries a
+    /// revision the row already holds is dropped by the store, so the debounce firing after a flush
+    /// costs nothing.
+    private func persistSettings() async {
+        guard initialMergeDone, hasUnsavedSettings else { return }
+        // One revision per write, always above what the row already holds.
+        settingsRevision += 1
+        let revision = settingsRevision
+        hasUnsavedSettings = false
+        await settingsWriter.write(currentSettings(revision: revision))
+    }
+
+    /// Scene going to the background: write now instead of waiting for the debounce. Deliberately
+    /// does not cancel the pending debounce — the revision guard makes the extra write a no-op.
+    func flushSettings() async {
+        await persistSettings()
+    }
+
+    private func currentSettings(revision: Int64) -> CameraSettings {
+        CameraSettings(
+            revision: revision,
+            guideOpacity: guideOpacity,
+            guideFlipped: guideFlipped,
+            isGridVisible: isGridVisible,
+            flash: flashSetting,
+            isPoseGuideVisible: isPoseGuideVisible,
+            lineColor: guideLineColor,
+            transform: .init(guideTransform),
+            zoom: zoomLevel
+        )
+    }
+
+    private func loadSettings() async {
+        let restored = (try? await settingsStore.load()) ?? nil
+        merge(restored: restored)
+    }
+
+    /// Folds the stored snapshot into the published state **directly**: the guarded setters would
+    /// silently drop a restore that arrives before the camera permission resolves, which is exactly
+    /// the case at launch. A setting the user already changed wins over the stored one.
+    private func merge(restored: CameraSettings?) {
+        let stored = restored ?? CameraSettings()
+        isApplyingRestore = true
+        if !touchedSettings.contains(.opacity) { guideOpacity = stored.guideOpacity }
+        if !touchedSettings.contains(.flipped) { guideFlipped = stored.guideFlipped }
+        if !touchedSettings.contains(.grid) { isGridVisible = stored.isGridVisible }
+        if !touchedSettings.contains(.flash) { flashSetting = stored.flash }
+        if !touchedSettings.contains(.guideVisibility) { isPoseGuideVisible = stored.isPoseGuideVisible }
+        if !touchedSettings.contains(.lineColor) { guideLineColor = stored.lineColor }
+        if !touchedSettings.contains(.zoom) { zoomLevel = stored.zoom }
+        if !touchedSettings.contains(.transform) {
+            pendingRestoredTransform = restored.map { $0.transform.placement }
+        }
+        isApplyingRestore = false
+
+        // The next write has to be above the stored revision, so a relaunch keeps the row
+        // forward-only instead of restarting its history.
+        settingsRevision = max(settingsRevision, stored.revision)
+        initialMergeDone = true
+        reconcileHardware()
+        applyRestoredTransformIfUntouched()
+        // Edits made while the load was in flight were held back; they are safe to write now.
+        if hasUnsavedSettings { scheduleSave() }
+    }
+
+    /// Pushes the settings that live on the capture hardware. Idempotent and order-independent:
+    /// whichever of "snapshot restored" and "session running" finishes last performs the apply.
+    /// This is also what fixes the launch mismatch where the UI said `Auto` while the device sat at
+    /// `Off` — nothing re-applied the flash after the session came up.
+    func reconcileHardware() {
+        guard initialMergeDone,
+              coordinator.state.permission == .authorized,
+              camera.isSessionRunning else { return }
+        if lastAppliedFlash != flashSetting {
+            lastAppliedFlash = flashSetting
+            camera.setFlashMode(flashSetting)
+        }
+        if lastAppliedZoom != zoomLevel.factor {
+            lastAppliedZoom = zoomLevel.factor
+            camera.setZoomFactor(zoomLevel.factor)
+        }
+    }
+
+    /// The pose reference changed. Keeps today's reset-on-change behaviour, except for the **first**
+    /// guide after a launch that restored a placement (C3-Q1 option a) — the only place that rule
+    /// lives.
+    func guideDidChange(hasGuide: Bool) {
+        self.hasGuide = hasGuide
+        guard hasGuide else {
+            pendingRestoredTransform = nil
+            setTransformProgrammatically(GuideTransform())
+            return
+        }
+        if applyRestoredTransformIfUntouched() { return }
+        setTransformProgrammatically(GuideTransform())
+    }
+
+    /// `.onAppear` form of the same hook: `.onChange` never fires for the initial value, so a guide
+    /// that is already selected at launch gets the restored placement here. Does nothing when there
+    /// is nothing pending, so re-appearing never resets a placement the user made.
+    func guideAppeared(hasGuide: Bool) {
+        self.hasGuide = hasGuide
+        applyRestoredTransformIfUntouched()
+    }
+
+    @discardableResult
+    private func applyRestoredTransformIfUntouched() -> Bool {
+        guard hasGuide, let pending = pendingRestoredTransform else { return false }
+        pendingRestoredTransform = nil
+        guard !touchedSettings.contains(.transform) else { return false }
+        setTransformProgrammatically(pending)
+        return true
+    }
+
+    /// Restoring and the pose-change reset are not user edits: they must not mark the placement as
+    /// touched, otherwise a guide chosen while the load was still in flight would swallow the
+    /// restored placement (`C3-Q1` a). A real pinch or the double-tap reset does mark it.
+    private func setTransformProgrammatically(_ transform: GuideTransform) {
+        let wasApplying = isApplyingRestore
+        isApplyingRestore = true
+        guideTransform = transform
+        isApplyingRestore = wasApplying
     }
 
     /// Only resolves the file URL: decoding the capture here (a 12MP file straight into a 48pt
@@ -426,6 +632,7 @@ struct CameraScreen: View {
         .neoHiddenNavigationBar()
         .preferredColorScheme(.dark)
         .task { await model.onAppear() }
+        .onAppear { model.guideAppeared(hasGuide: guide != nil) }
         .onDisappear { model.onDisappear() }
         .task(id: model.showPosePicker) {
             if model.showPosePicker {
@@ -442,14 +649,16 @@ struct CameraScreen: View {
         .onChange(of: scenePhase) { phase in
             switch phase {
             case .active: model.coordinator.onForeground()
-            case .background: model.coordinator.onBackground()
+            case .background:
+                model.coordinator.onBackground()
+                Task { await model.flushSettings() }
             default: break
             }
         }
         .onChange(of: model.cameraControlsEnabled) { enabled in
             if !enabled { model.closeCameraTools() }
         }
-        .onChange(of: guide?.id) { _ in model.resetGuideTransform() }
+        .onChange(of: guide?.id) { _ in model.guideDidChange(hasGuide: guide != nil) }
     }
 
     // MARK: Viewport — full-bleed `.nb-camera-viewport--immersive`

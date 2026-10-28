@@ -15,6 +15,16 @@ protocol CameraControllerPort: AnyObject {
     var facing: CameraFacing { get }
 }
 
+/// The camera as the view model drives it: the port above plus the session lifecycle. Readiness is
+/// the return of `start()` together with `isSessionRunning`, which is the point where settings that
+/// live on the hardware (flash, zoom) can actually be applied.
+@MainActor
+protocol CameraSessionControlling: CameraControllerPort {
+    func start() async throws
+    func stop()
+    var isSessionRunning: Bool { get }
+}
+
 extension CameraControllerPort {
     func setZoomFactor(_ factor: CGFloat) {}
 }

@@ -295,9 +295,31 @@ struct CameraSnapshotRepository: Sendable {
         try await database.pool.write { db in try snapshot.save(db) }
     }
 
-    func clearPose() async throws {
+    /// Stores one settings payload in a single transaction, which is what makes two promises hold at
+    /// once:
+    /// - **`pose_json` is never touched.** The row is read and written back inside the same write, so
+    ///   the pose columns come from the row itself (D8: saving settings is not a pose clear).
+    /// - **The row is forward-only.** A payload is stored only when its `revision` is newer than the
+    ///   one already stored, so a debounced write that lands after a newer write is dropped instead
+    ///   of rolling the row back.
+    func saveSettings(_ write: CameraSnapshotSettingsWrite) async throws {
         try await database.pool.write { db in
-            try db.execute(sql: "UPDATE CameraSnapshot SET pose_json = NULL WHERE id = 1")
+            let stored = try CameraSnapshotRecord.fetchOne(db, key: 1)
+            if let stored, write.storedRevision(stored.settingsJSON) >= write.revision { return }
+            var record = stored
+                ?? CameraSnapshotRecord(schemaVersion: write.schemaVersion, settingsJSON: write.json)
+            record.schemaVersion = write.schemaVersion
+            record.settingsJSON = write.json
+            try record.save(db)
         }
     }
+}
+
+/// One settings payload for the singleton row. `storedRevision` reads the revision out of a stored
+/// JSON payload; the snapshot layer does not know the settings shape, so the camera side supplies it.
+struct CameraSnapshotSettingsWrite: Sendable {
+    let json: String
+    let schemaVersion: Int64
+    let revision: Int64
+    let storedRevision: @Sendable (String) -> Int64
 }
