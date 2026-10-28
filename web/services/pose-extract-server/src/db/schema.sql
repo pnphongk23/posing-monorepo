@@ -260,3 +260,19 @@ CREATE TABLE IF NOT EXISTS app_settings (
 );
 
 INSERT INTO app_settings (key, value) VALUES ('extraction_provider', 'higgsfield_cli') ON CONFLICT (key) DO NOTHING;
+
+-- One entitlement row per Account, mirrored from the subscription platform. The row is
+-- a cache of an upstream snapshot, never the source of truth: every write comes from a
+-- fresh upstream read, and upstream_at orders those snapshots so a delayed older read
+-- can never overwrite a newer one. ON DELETE CASCADE lets an account purge remove it.
+CREATE TABLE IF NOT EXISTS account_entitlements (
+  account_id TEXT PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
+  entitlement_id TEXT NOT NULL,
+  is_active BOOLEAN NOT NULL,
+  expires_at TIMESTAMPTZ,
+  product_id TEXT,
+  store TEXT,
+  environment TEXT CHECK (environment IN ('SANDBOX', 'PRODUCTION')),
+  upstream_at TIMESTAMPTZ NOT NULL,
+  synced_at TIMESTAMPTZ NOT NULL
+);
