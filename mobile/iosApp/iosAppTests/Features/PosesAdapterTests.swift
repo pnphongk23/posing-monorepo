@@ -1111,11 +1111,12 @@ final class PoseSessionEpochTests: XCTestCase {
     }
 }
 
+
 /// A Saved request that the test holds open, so a session change can land exactly inside the await.
 private final class GatedPoseRemote: PoseRemoteFetching, @unchecked Sendable {
     var communityItems: [CommunityPose] = []
     private let lock = NSLock()
-    private var savedContinuation: CheckedContinuation<[CommunityPose], Error>?
+    private var savedContinuation: CheckedContinuation<[CommunityPose], Never>?
     private var savedRequestStarted = false
     private var startWaiters: [CheckedContinuation<Void, Never>] = []
 
@@ -1124,34 +1125,32 @@ private final class GatedPoseRemote: PoseRemoteFetching, @unchecked Sendable {
     }
 
     func fetchSaved(page: Int, limit: Int) async throws -> [CommunityPose] {
-        await withCheckedContinuation { continuation in
-            lock.lock()
-            savedRequestStarted = true
-            let waiters = startWaiters
-            startWaiters = []
-            savedContinuation = continuation
-            lock.unlock()
-            waiters.forEach { $0.resume() }
+        await withCheckedContinuation { (continuation: CheckedContinuation<[CommunityPose], Never>) in
+            let started: [CheckedContinuation<Void, Never>] = lock.withLock {
+                savedRequestStarted = true
+                savedContinuation = continuation
+                let pending = startWaiters
+                startWaiters = []
+                return pending
+            }
+            started.forEach { $0.resume() }
         }
     }
 
     func waitForSavedRequest() async {
-        lock.lock()
-        guard !savedRequestStarted else {
-            lock.unlock()
-            return
-        }
-        await withCheckedContinuation { continuation in
-            startWaiters.append(continuation)
-            lock.unlock()
+        let alreadyStarted = lock.withLock { savedRequestStarted }
+        guard !alreadyStarted else { return }
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            lock.withLock { startWaiters.append(continuation) }
         }
     }
 
     func releaseSaved(_ items: [CommunityPose]) {
-        lock.lock()
-        let continuation = savedContinuation
-        savedContinuation = nil
-        lock.unlock()
+        let continuation: CheckedContinuation<[CommunityPose], Never>? = lock.withLock {
+            let pending = savedContinuation
+            savedContinuation = nil
+            return pending
+        }
         continuation?.resume(returning: items)
     }
 }
@@ -1164,13 +1163,14 @@ private final class GatedBookmarkService: PoseBookmarkServing, @unchecked Sendab
     private var startWaiters: [CheckedContinuation<Void, Never>] = []
 
     func savePose(poseId: String) async throws {
-        await withCheckedContinuation { pending in
-            lock.lock()
-            started = true
-            let waiters = startWaiters
-            startWaiters = []
-            continuation = pending
-            lock.unlock()
+        await withCheckedContinuation { (pending: CheckedContinuation<Void, Never>) in
+            let waiters: [CheckedContinuation<Void, Never>] = lock.withLock {
+                started = true
+                continuation = pending
+                let held = startWaiters
+                startWaiters = []
+                return held
+            }
             waiters.forEach { $0.resume() }
         }
     }
@@ -1178,22 +1178,19 @@ private final class GatedBookmarkService: PoseBookmarkServing, @unchecked Sendab
     func unsavePose(poseId: String) async throws {}
 
     func waitForSave() async {
-        lock.lock()
-        guard !started else {
-            lock.unlock()
-            return
-        }
-        await withCheckedContinuation { pending in
-            startWaiters.append(pending)
-            lock.unlock()
+        let alreadyStarted = lock.withLock { started }
+        guard !alreadyStarted else { return }
+        await withCheckedContinuation { (pending: CheckedContinuation<Void, Never>) in
+            lock.withLock { startWaiters.append(pending) }
         }
     }
 
     func releaseSave() {
-        lock.lock()
-        let pending = continuation
-        continuation = nil
-        lock.unlock()
+        let pending: CheckedContinuation<Void, Never>? = lock.withLock {
+            let held = continuation
+            continuation = nil
+            return held
+        }
         pending?.resume()
     }
 }
@@ -1236,42 +1233,38 @@ private final class PoseTestGate: @unchecked Sendable {
     private var releaseWaiters: [CheckedContinuation<Void, Never>] = []
 
     func reachAndWait() async {
-        lock.lock()
-        reached = true
-        let waiters = reachedWaiters
-        reachedWaiters = []
-        lock.unlock()
+        let waiters: [CheckedContinuation<Void, Never>] = lock.withLock {
+            reached = true
+            let pending = reachedWaiters
+            reachedWaiters = []
+            return pending
+        }
         waiters.forEach { $0.resume() }
-        await withCheckedContinuation { pending in
-            lock.lock()
-            guard !released else {
-                lock.unlock()
-                pending.resume()
-                return
+        await withCheckedContinuation { (pending: CheckedContinuation<Void, Never>) in
+            let alreadyReleased: Bool = lock.withLock {
+                guard !released else { return true }
+                releaseWaiters.append(pending)
+                return false
             }
-            releaseWaiters.append(pending)
-            lock.unlock()
+            if alreadyReleased { pending.resume() }
         }
     }
 
     func waitUntilReached() async {
-        lock.lock()
-        guard !reached else {
-            lock.unlock()
-            return
-        }
-        await withCheckedContinuation { pending in
-            reachedWaiters.append(pending)
-            lock.unlock()
+        let alreadyReached = lock.withLock { reached }
+        guard !alreadyReached else { return }
+        await withCheckedContinuation { (pending: CheckedContinuation<Void, Never>) in
+            lock.withLock { reachedWaiters.append(pending) }
         }
     }
 
     func releaseGate() {
-        lock.lock()
-        released = true
-        let waiters = releaseWaiters
-        releaseWaiters = []
-        lock.unlock()
+        let waiters: [CheckedContinuation<Void, Never>] = lock.withLock {
+            released = true
+            let pending = releaseWaiters
+            releaseWaiters = []
+            return pending
+        }
         waiters.forEach { $0.resume() }
     }
 }

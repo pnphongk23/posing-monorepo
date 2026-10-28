@@ -114,7 +114,14 @@ final class DeleteAccountTests: XCTestCase {
 
         model.deleteAccount()
         await waitUntil("signed out") { model.state == .signedOut }
-        await waitUntil("the Saved catalog is cleared") { (try? await temp.savedRowCount()) == 0 }
+        // Polled inline rather than through the closure: `temp` is a test DB holder, and capturing it
+        // in an escaping async closure is exactly the data race Swift 6 rejects.
+        var remainingSaved = try await temp.savedRowCount()
+        let savedDeadline = Date().addingTimeInterval(5)
+        while remainingSaved != 0, Date() < savedDeadline {
+            try? await Task.sleep(nanoseconds: 10_000_000)
+            remainingSaved = try await temp.savedRowCount()
+        }
         await waitUntil("the store identity is released") { provider.logOutCalls == 1 }
 
         let hasSession = await boundary.hasStoredSession()
@@ -124,8 +131,7 @@ final class DeleteAccountTests: XCTestCase {
             .signInRequired,
             "the Saved surface offers sign-in instead of another Account's rows"
         )
-        let remainingSaved = try await temp.savedRowCount()
-        XCTAssertEqual(remainingSaved, 0)
+        XCTAssertEqual(remainingSaved, 0, "the Saved catalog is cleared")
         XCTAssertEqual(provider.logOutCalls, 1, "the store identity is released exactly once")
         XCTAssertNil(purchases.linkedAccountID)
     }
