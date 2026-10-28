@@ -4,6 +4,7 @@ tags: [TC-DET-001, p0]
 ---
 - runFlow: ../subflows/launch.yaml
 - runFlow: ../subflows/open-first-pose.yaml
-- tapOn: "Back"  # TODO(QA-261029-ID) poseDetail.back
+- tapOn:
+    id: "poseDetail.back"
 - assertVisible:
     id: "poses.open-search"

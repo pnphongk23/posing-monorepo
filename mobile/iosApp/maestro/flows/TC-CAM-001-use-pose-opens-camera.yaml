@@ -4,9 +4,11 @@ tags: [TC-CAM-001, p0]
 ---
 - runFlow: ../subflows/launch.yaml
 - runFlow: ../subflows/open-first-pose.yaml
-- tapOn: "Use this pose"  # TODO(QA-261029-ID) poseDetail.use
+- tapOn:
+    id: "poseDetail.use"
 - extendedWaitUntil:
-    visible: "Capture photo"  # TODO(QA-261029-ID) camera.shutter
+    visible:
+      id: "camera.shutter"
     timeout: 20000
 - assertVisible:
     id: "camera.choosePose"

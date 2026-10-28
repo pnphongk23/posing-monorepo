@@ -12,12 +12,10 @@ Flows need network (server catalogue). Saved/Account cases stay pending until `a
 ## Selectors
 Prefer accessibility ids (`poses.first-card`, `search.field`, `gallery.empty.openCamera`, ...) and stable accessibility labels ("Open Camera", "Capture photo", "Open Settings").
 
-## Identifier requests (ledger: QA-261029-ID) for the Feature lane
-- Dock tabs (Poses / Gallery): ids `dock.poses`, `dock.gallery` (currently matched by visible text).
-- Settings rows: ids for About, Account, Saved (currently labels).
-- Pose detail primary action "Use this pose" and "Save pose": ids `poseDetail.use`, `poseDetail.save`.
-- Paywall: ids on CTA, close, sign-in prompt.
-- A capture seam on simulator (fixture image source) so TC-GAL-002 and TC-PAY-001 can be automated.
+## Identifier requests (ledger: QA-261029-ID)
+Landed in f8a49cc and used by the flows: `poseDetail.use`, `poseDetail.back`, `dock.camera`, `camera.shutter`, `gallery.empty.openCameraButton`, `poses.open-settings`, `about.close`.
+
+Still requested (flows keep a `TODO(QA-261029-ID)` text selector): `dock.gallery`, `settings.privacy.section`, `settings.replayOnboarding`, `settings.about`; paywall CTA, close and sign-in prompt; the camera guide overlay (or its toggle) so TC-CAM-001 can prove the guide is drawn; a capture seam on the simulator (fixture image) for TC-GAL-002 and TC-PAY-001.
 
 ## Traceability (case → flow → status)
 
