@@ -95,28 +95,16 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
             )
 
             let fetchedPayload = result.payload
-            let endpointChanged = decision.updateEndpoint && fetchedPayload.endpointUrl != AppConfig.shared.SERVER_BASE_URL
-            let accountChanged = decision.updateAccountEnabled && fetchedPayload.isAccountEnabled != AppConfig.shared.isAccountFeatureEnabled
-            let extractChanged = fetchedPayload.isExtractPoseEnabled != AppConfig.shared.isExtractPoseEnabled
+            let applied = AppConfigService.applyFetched(fetchedPayload, decision: decision)
 
-            if decision.updateEndpoint {
-                AppConfig.shared.applyEndpoint(fetchedPayload.endpointUrl)
-            }
-            if decision.updateAccountEnabled {
-                AppConfig.shared.applyAccountFeatureEnabled(fetchedPayload.isAccountEnabled)
-            }
-            if decision.updateExtractPoseEnabled {
-                AppConfig.shared.applyExtractPoseEnabled(fetchedPayload.isExtractPoseEnabled)
-            }
-
-            if endpointChanged {
+            if applied.endpointChanged {
                 #if DEBUG
                 NSLog("%@", "AIPOSE_PERF endpoint_swapped source=fetch")
                 #endif
             }
 
             await MainActor.run {
-                if decision.rebuildRootForChanges && (endpointChanged || accountChanged || extractChanged) {
+                if applied.rebuildRoot {
                     self?.showRootViewController()
                 }
             }

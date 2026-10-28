@@ -1,4 +1,5 @@
 import Foundation
+import CoreFoundation
 import FirebaseFirestore
 
 struct AppConfigPayload: Codable, Equatable, Sendable {
@@ -43,6 +44,16 @@ struct ConfigApplicationDecision: Equatable {
     let updateExtractPoseEnabled: Bool
     let updatePaywallEnabled: Bool
     let rebuildRootForChanges: Bool
+}
+
+/// What applying a fetched payload actually changed. The kill switches are compared, not inferred
+/// from the endpoint window, so a cached ON can be turned OFF in the same session.
+struct AppConfigApplication: Equatable {
+    let endpointChanged: Bool
+    let accountChanged: Bool
+    let extractPoseChanged: Bool
+    let paywallChanged: Bool
+    let rebuildRoot: Bool
 }
 
 enum FetchOutcome: String, Sendable {
@@ -137,9 +148,14 @@ enum AppConfigService {
         }
     }
 
-    /// Fail-safe switch resolution: a boolean, or a string `parseBoolean` understands. Any other
-    /// type (a number, an object, an array) is not a switch and resolves to `defaultValue`.
+    /// Fail-safe switch resolution: a real boolean (a bridged `CFBoolean` or Swift `Bool`), or a
+    /// string `parseBoolean` understands. A numeric `NSNumber` is not a switch: it bridges to
+    /// `Bool` in some JSON paths, so `1` would otherwise silently mean "on".
     static func resolveSwitch(_ raw: Any?, defaultValue: Bool) -> Bool {
+        if let number = raw as? NSNumber {
+            let isBoolean = CFGetTypeID(number) == CFBooleanGetTypeID()
+            return isBoolean ? number.boolValue : defaultValue
+        }
         if let bool = raw as? Bool { return bool }
         if let string = raw as? String { return parseBoolean(raw: string) ?? defaultValue }
         return defaultValue
@@ -215,6 +231,44 @@ enum AppConfigService {
             updateExtractPoseEnabled: true,
             updatePaywallEnabled: true,
             rebuildRootForChanges: !isEndpointWindowSealed
+        )
+    }
+
+    /// Applies a fetched payload to the live config and reports what changed. The extraction and
+    /// paywall kill switches are applied whenever the decision allows them — including after the
+    /// endpoint window is sealed — so a cached ON cannot outlive a fetched OFF.
+    @discardableResult
+    static func applyFetched(
+        _ payload: AppConfigPayload,
+        decision: ConfigApplicationDecision,
+        to config: AppConfig = .shared
+    ) -> AppConfigApplication {
+        let endpointChanged = decision.updateEndpoint && payload.endpointUrl != config.SERVER_BASE_URL
+        let accountChanged = decision.updateAccountEnabled
+            && payload.isAccountEnabled != config.isAccountFeatureEnabled
+        let extractPoseChanged = payload.isExtractPoseEnabled != config.isExtractPoseEnabled
+        let paywallChanged = payload.isPaywallEnabled != config.isPaywallEnabled
+
+        if decision.updateEndpoint {
+            config.applyEndpoint(payload.endpointUrl)
+        }
+        if decision.updateAccountEnabled {
+            config.applyAccountFeatureEnabled(payload.isAccountEnabled)
+        }
+        if decision.updateExtractPoseEnabled {
+            config.applyExtractPoseEnabled(payload.isExtractPoseEnabled)
+        }
+        if decision.updatePaywallEnabled {
+            config.applyPaywallEnabled(payload.isPaywallEnabled)
+        }
+
+        return AppConfigApplication(
+            endpointChanged: endpointChanged,
+            accountChanged: accountChanged,
+            extractPoseChanged: extractPoseChanged,
+            paywallChanged: paywallChanged,
+            rebuildRoot: decision.rebuildRootForChanges
+                && (endpointChanged || accountChanged || extractPoseChanged)
         )
     }
 

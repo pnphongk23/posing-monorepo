@@ -296,6 +296,85 @@ final class AppConfigServiceTests: XCTestCase {
         XCTAssertTrue(AppConfigService.applicationDecision(isEndpointWindowSealed: false).updatePaywallEnabled)
     }
 
+    // MARK: - Applying a fetched payload (the real launch path)
+
+    /// The launch path must apply the paywall switch even after the endpoint window is sealed,
+    /// otherwise a cached ON keeps the paywall on for the rest of the session.
+    func testFetchedPaywallOffTurnsACachedPaywallOffInSession() {
+        let config = AppConfig()
+        config.applyPaywallEnabled(true)
+        let decision = AppConfigService.applicationDecision(isEndpointWindowSealed: true)
+
+        let applied = AppConfigService.applyFetched(
+            AppConfigPayload(isPaywallEnabled: false),
+            decision: decision,
+            to: config
+        )
+
+        XCTAssertTrue(applied.paywallChanged)
+        XCTAssertFalse(config.isPaywallEnabled, "A cached ON must not outlive a fetched OFF")
+    }
+
+    func testFetchedPaywallOnAppliesThroughTheSamePath() {
+        let config = AppConfig()
+        XCTAssertFalse(config.isPaywallEnabled)
+
+        let applied = AppConfigService.applyFetched(
+            AppConfigPayload(isPaywallEnabled: true),
+            decision: AppConfigService.applicationDecision(isEndpointWindowSealed: true),
+            to: config
+        )
+
+        XCTAssertTrue(applied.paywallChanged)
+        XCTAssertTrue(config.isPaywallEnabled)
+        XCTAssertFalse(applied.rebuildRoot, "A kill switch flip does not need a new root view")
+    }
+
+    func testSealedFetchKeepsEndpointAndAppliesKillSwitches() {
+        let config = AppConfig()
+        config.applyEndpoint("https://kept.example.com")
+
+        let applied = AppConfigService.applyFetched(
+            AppConfigPayload(
+                endpointUrl: "https://ignored.example.com",
+                isAccountEnabled: true,
+                isExtractPoseEnabled: false,
+                isPaywallEnabled: true
+            ),
+            decision: AppConfigService.applicationDecision(isEndpointWindowSealed: true),
+            to: config
+        )
+
+        XCTAssertFalse(applied.endpointChanged)
+        XCTAssertFalse(applied.accountChanged)
+        XCTAssertEqual(config.SERVER_BASE_URL, "https://kept.example.com")
+        XCTAssertTrue(config.isPaywallEnabled)
+        XCTAssertFalse(config.isExtractPoseEnabled)
+    }
+
+    // MARK: - Numeric values are not switches
+
+    func testNumericNSNumberIsNotASwitch() {
+        // A real boolean bridged through Foundation keeps its type.
+        XCTAssertTrue(AppConfigService.resolveSwitch(NSNumber(value: true), defaultValue: false))
+        XCTAssertFalse(AppConfigService.resolveSwitch(NSNumber(value: false), defaultValue: true))
+        // A number that happens to bridge to a truthy value is not an opt-in.
+        XCTAssertFalse(AppConfigService.resolveSwitch(NSNumber(value: 1), defaultValue: false))
+        XCTAssertTrue(AppConfigService.resolveSwitch(NSNumber(value: 0), defaultValue: true))
+    }
+
+    func testBridgedNumericNSNumberCannotTurnThePaywallOn() {
+        XCTAssertFalse(
+            AppConfigService.resolvePayload(data: ["paywall_enabled": NSNumber(value: 1)]).isPaywallEnabled
+        )
+        XCTAssertFalse(
+            AppConfigService.resolvePayload(data: ["paywall_enabled": NSNumber(value: 0)]).isPaywallEnabled
+        )
+        XCTAssertTrue(
+            AppConfigService.resolvePayload(data: ["paywall_enabled": NSNumber(value: true)]).isPaywallEnabled
+        )
+    }
+
     func testEntitlementIDPlaceholdersAreRejectedLikeTheSDKKey() {
         XCTAssertFalse(AppConfigService.isValidIdentifier(nil))
         XCTAssertFalse(AppConfigService.isValidIdentifier(""))
