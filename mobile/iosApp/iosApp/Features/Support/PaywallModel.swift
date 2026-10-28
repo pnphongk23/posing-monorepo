@@ -63,7 +63,7 @@ enum PaywallPlanCatalog {
 /// FR-001 — a purchase is account-bound, so a signed-out trigger asks for sign-in first instead
 /// of starting an anonymous purchase.
 @MainActor
-final class PaywallModel: ObservableObject {
+final class PaywallModel: ObservableObject, SessionScoped {
     enum Phase: Equatable {
         case signInRequired
         case loadingPlans
@@ -86,12 +86,15 @@ final class PaywallModel: ObservableObject {
     private let gateway: any PurchaseGateway
     private let boundary: SessionBoundary
     private let signInAction: SignInAction
+    private let scope: SessionScope
     private var hasStarted = false
     /// Bumped on every session change so a result that crosses a sign-out or account switch is
     /// dropped instead of being painted into the paywall.
+    ///
+    /// This is not the session subscription: it also guards gateway pushes (a delegate update, a
+    /// purchase from another surface), which no session event announces, so it stays local to the model.
     private var sessionEpoch: UInt64 = 0
     private var snapshotCancellable: AnyCancellable?
-    private var sessionEvents: Task<Void, Never>?
     /// The operation that currently owns the busy phase. A token, not a flag, so a superseded
     /// purchase resolving during a newer restore cannot release the restore's claim.
     private var activeOperation: UInt64?
@@ -105,6 +108,7 @@ final class PaywallModel: ObservableObject {
         self.gateway = gateway
         self.boundary = boundary
         self.signInAction = signInAction
+        self.scope = SessionScope.of(boundary)
         observeGateway()
     }
 
@@ -134,7 +138,9 @@ final class PaywallModel: ObservableObject {
     func start() {
         guard !hasStarted else { return }
         hasStarted = true
-        observeSession()
+        // The paywall ignores session events before `start()`, so adoption happens here rather than in
+        // `init`; the scope owns the subscription from now on.
+        scope.adopt(self)
         Task { [weak self] in
             guard let self else { return }
             guard await self.boundary.hasStoredSession() else {
@@ -247,18 +253,8 @@ final class PaywallModel: ObservableObject {
     }
 
     /// Sign-out and unauthorized clears invalidate the paywall's account-dependent state, including
-    /// while a sheet is already open.
-    private func observeSession() {
-        guard sessionEvents == nil else { return }
-        sessionEvents = Task { [weak self, boundary] in
-            for await event in await boundary.events() {
-                guard let self else { return }
-                await self.handleSessionEvent(event)
-            }
-        }
-    }
-
-    private func handleSessionEvent(_ event: SessionEvent) async {
+    /// while a sheet is already open. Same rule the hand-written event loop applied.
+    func resetForSessionChange(_ event: SessionEvent) {
         switch event {
         case .signedOut, .signInRequired:
             invalidateAccountState()
