@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import type { AppleSignInConfig } from "../services/appleRevocation";
+
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   PORT: z.coerce.number().int().positive().default(3000),
@@ -56,6 +58,38 @@ export function getEnv(overrides?: Record<string, string | undefined>): AppEnv {
 
 export function resetEnvCache(): void {
   cachedEnv = null;
+}
+
+const appleSignInSchema = z.object({
+  APPLE_TEAM_ID: z.string().min(1).optional(),
+  APPLE_CLIENT_ID: z.string().min(1).optional(),
+  APPLE_SIGNIN_KEY_ID: z.string().min(1).optional(),
+  APPLE_SIGNIN_PRIVATE_KEY: z.string().min(1).optional()
+});
+
+/**
+ * Feature-scoped env: all four names or nothing. Names only — the values live in Railway and are
+ * never logged. Absent means an Apple-signed-in account cannot be deleted at all (the route answers
+ * 503), which is the intended fail-closed behaviour: the deletion must never skip the revoke.
+ */
+export function appleSignInFromEnv(
+  source: Record<string, string | undefined> = process.env
+): AppleSignInConfig | undefined {
+  const parsed = appleSignInSchema.safeParse(source);
+  if (!parsed.success) {
+    const errors = parsed.error.issues.map((item) => `${item.path.join(".")}: ${item.message}`);
+    throw new Error(`Invalid environment variables:\n${errors.join("\n")}`);
+  }
+  const { APPLE_TEAM_ID, APPLE_CLIENT_ID, APPLE_SIGNIN_KEY_ID, APPLE_SIGNIN_PRIVATE_KEY } = parsed.data;
+  if (!APPLE_TEAM_ID || !APPLE_CLIENT_ID || !APPLE_SIGNIN_KEY_ID || !APPLE_SIGNIN_PRIVATE_KEY) {
+    return undefined;
+  }
+  return {
+    teamId: APPLE_TEAM_ID,
+    clientId: APPLE_CLIENT_ID,
+    keyId: APPLE_SIGNIN_KEY_ID,
+    privateKey: APPLE_SIGNIN_PRIVATE_KEY
+  };
 }
 
 const authRateLimitSchema = z.object({

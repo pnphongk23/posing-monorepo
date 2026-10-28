@@ -25,11 +25,12 @@ import type { SavedStore } from "./db/savedStore";
 import type { EntitlementStore } from "./db/entitlementStore";
 import { createAccountAuthRoutes } from "./routes/accountAuthRoutes";
 import { createAccountRoutes } from "./routes/accountRoutes";
-import { authRateLimitFromEnv, revenueCatFromEnv, type RevenueCatConfig } from "./config/env";
+import { appleSignInFromEnv, authRateLimitFromEnv, revenueCatFromEnv, type RevenueCatConfig } from "./config/env";
 import { createSavedRoutes } from "./routes/savedRoutes";
 import { createEntitlementRoutes } from "./routes/entitlementRoutes";
 import { createRevenueCatWebhookRoutes } from "./routes/revenueCatWebhookRoutes";
 import { createRevenueCatClient } from "./services/revenueCatClient";
+import type { AppleSignInConfig } from "./services/appleRevocation";
 import { createMyExtractJobsRoutes } from "./routes/myExtractJobsRoutes";
 import { createGuideReadRoutes } from "./routes/guideReadRoutes";
 import { logger } from "./utils/logger";
@@ -94,6 +95,9 @@ interface CreateAppOptions {
   fetchImpl?: typeof fetch;
   fetchJwks?: typeof fetch;
   deleteObject?: typeof deleteObject;
+  /** Absent means "read the feature-scoped env": no APPLE_* block leaves Apple deletion failing closed. */
+  apple?: AppleSignInConfig;
+  appleFetchImpl?: typeof fetch;
 }
 
 export function createCommunityExtractPoseImage(options: CreateAppOptions): ExtractPoseImage | null {
@@ -149,6 +153,7 @@ export function createApp(options: CreateAppOptions): express.Express {
   const startedAtMs = options.startedAtMs ?? Date.now();
   const communityExtractPoseImage = createCommunityExtractPoseImage(options);
   const envRateLimit = authRateLimitFromEnv();
+  const appleConfig = options.apple ?? appleSignInFromEnv(process.env);
   const revenueCatConfig = resolveRevenueCatConfig(options.revenueCat);
   const revenueCatClient =
     revenueCatConfig.secretApiKey && revenueCatConfig.entitlementId
@@ -216,7 +221,9 @@ export function createApp(options: CreateAppOptions): express.Express {
         r2PublicUrl: options.r2PublicUrl,
         accountStore: options.accountStore,
         fetchImpl: options.fetchImpl,
-        deleteObject: options.deleteObject
+        deleteObject: options.deleteObject,
+        apple: appleConfig,
+        appleFetchImpl: options.appleFetchImpl
       }));
       app.get("/api/account/me", accountAuthMiddleware, (req, res) => res.json({ data: req.account }));
       if (options.savedStore) {

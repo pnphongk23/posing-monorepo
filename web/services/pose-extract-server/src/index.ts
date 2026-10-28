@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { createApp } from "./app";
-import { getEnv } from "./config/env";
+import { getEnv, appleSignInFromEnv } from "./config/env";
 import { applySchema, closeDatabase, createDatabase, type Sql } from "./db/connection";
 import { PoseStore } from "./db/communityStore";
 import { ExtractionJobStore } from "./db/extractionJobStore";
@@ -55,7 +55,8 @@ async function main(): Promise<void> {
     backendPublicUrl: env.BACKEND_PUBLIC_URL,
     pendingAuthStore: new PendingAuthStore(),
     savedStore,
-    entitlementStore
+    entitlementStore,
+    apple: appleSignInFromEnv(process.env)
   });
 
   // Resumes deletions that were confirmed upstream but never finished, and retries

@@ -282,7 +282,25 @@ The `id_token` grant is marked **experimental** in the Supabase Auth OpenAPI. Th
 
 A local `xcodebuild` pass proves the seam compiles and the unit tests hold; it does **not** prove the live handshake or the live Supabase exchange. Those stay unverified until 6b and 6c are provisioned and a real device/sandbox Apple ID completes a sign-in.
 
-### 6d. Post-deploy verification (run only after 6a-6c)
+### 6d. Apple token revocation (`APPLE_*` block)
+
+Apple requires an app that offers Sign in with Apple to revoke the user's tokens when the account is deleted (guideline 5.1.1(v)). The server does that with a Sign in with Apple key; **no Apple token is ever stored by us** — iOS sends a fresh authorization code at delete time.
+
+| Env name (value never leaves Railway) | What it is |
+| --- | --- |
+| `APPLE_TEAM_ID` | Apple Developer team identifier (the `iss` of the client-secret JWT) |
+| `APPLE_CLIENT_ID` | The app's bundle identifier / Sign in with Apple client id (the `sub` of the JWT) |
+| `APPLE_SIGNIN_KEY_ID` | Key id of the Sign in with Apple private key (the JWT header `kid`) |
+| `APPLE_SIGNIN_PRIVATE_KEY` | The `.p8` contents. Single-line values with escaped `\n` are accepted |
+
+Rules:
+
+- **Names only in this file and in logs.** Never print, paste, commit or log a value. The service logs `apple_token_revocation_failed` with a stage name (`token_exchange` / `revoke`) and the account id, nothing else.
+- All four or none: a partial block is treated as unset, so an Apple-signed-in account cannot be deleted at all (`503`) instead of being deleted without a revoke.
+- The client secret is minted per request and expires after 5 minutes. The key only has to sign; it needs no other scope.
+- Where: Railway service variables (`c4350044-7a2f-4d48-9d37-f6ecb665ba29`, environment `production`). Absent today? Yes — this is a new operator action.
+
+### 6e. Post-deploy verification (run only after 6a-6d)
 
 Substitute `<PUBLIC_HOST>`; never print secrets.
 
@@ -291,7 +309,8 @@ Substitute `<PUBLIC_HOST>`; never print secrets.
 curl -i -X DELETE https://<PUBLIC_HOST>/api/account
 
 # 2. With a real signed-in access token and no service-role key: MUST be 503 AUTH_PENDING_VALIDATION.
-#    After 6a is provisioned the same call MUST be 204 with an empty body.
+#    After 6a is provisioned the same call MUST be 204 with an empty body (email/Google account)
+#    or 409 APPLE_REAUTH_REQUIRED (account that signs in with Apple — nothing deleted yet).
 curl -i -X DELETE https://<PUBLIC_HOST>/api/account -H "Authorization: Bearer <ACCESS_TOKEN>"
 
 # 3. Apple exchange: a POST with a real identity token MUST return 200 with

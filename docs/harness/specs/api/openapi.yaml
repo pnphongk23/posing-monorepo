@@ -411,6 +411,12 @@ paths:
         transaction. Media objects are then removed; objects that storage refuses stay queued and are
         retried in the background, so an object can outlive the `204` by a few minutes.
 
+        When the account has a Sign in with Apple identity, the deletion needs one fresh Apple
+        authorization code (no Apple token is ever stored): without it the route answers
+        `409 APPLE_REAUTH_REQUIRED` before any destructive step, and the Apple grant is revoked
+        before the identity is deleted. A code minted for a different Apple account is refused with
+        `409 APPLE_IDENTITY_MISMATCH` so revoking it can never leave this account's grant alive.
+
         Deleted: the Supabase Auth user, the `accounts` row, `saved_entries`, every owned `poses` row
         with its `media_assets`, every `extraction_jobs` row of the account (including queued and
         running jobs and their base64 payloads), and the object-storage keys of the owned media.
@@ -421,6 +427,22 @@ paths:
       tags: [Account]
       security:
         - AccountSession: []
+      requestBody:
+        required: false
+        description: |
+          Only for accounts with an Apple identity. `appleAuthorizationCode` is the fresh code from
+          `ASAuthorizationAppleIDProvider`; the server trades it for Apple's refresh token and revokes
+          it. Omit the body entirely to ask whether a re-auth is needed.
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                appleAuthorizationCode:
+                  type: string
+                  description: Fresh Apple authorization code, used once and never stored
+                  example: c1a2b3c4d5
       responses:
         "204":
           description: Account and all of its server data deleted (empty body)
@@ -430,12 +452,28 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
+        "409":
+          description: |
+            Nothing was deleted. `APPLE_REAUTH_REQUIRED` means the account has an Apple identity and
+            no usable authorization code was sent (missing, expired, or rejected by Apple), so iOS
+            must run the Apple sheet once and retry. `APPLE_IDENTITY_MISMATCH` means the code belongs
+            to a different Apple account.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+              examples:
+                reauthRequired:
+                  value: { error: { code: APPLE_REAUTH_REQUIRED, message: "Confirm with Apple before deleting this account" } }
+                identityMismatch:
+                  value: { error: { code: APPLE_IDENTITY_MISMATCH, message: "The Apple credential does not match this account" } }
         "503":
           description: |
             Deletion did not start or did not complete (`AUTH_PENDING_VALIDATION`): the server has no
-            service-role key, the identity provider refused the delete, or the row purge failed.
-            Nothing is changed when the identity delete fails. A failed row purge keeps the recorded
-            intent so the background sweep resumes it.
+            service-role key, the Apple env block is missing for an Apple-signed-in account, the
+            identity provider refused the delete, Apple's token exchange or revoke failed, or the row
+            purge failed. Nothing is changed when the identity delete fails. A failed row purge keeps
+            the recorded intent so the background sweep resumes it.
           content:
             application/json:
               schema:

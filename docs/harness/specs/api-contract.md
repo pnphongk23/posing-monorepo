@@ -586,6 +586,11 @@ với body rỗng.
 
 Thứ tự bắt buộc — danh tính phải được xác nhận đã xóa trước khi dữ liệu bị xóa:
 
+0. Đọc danh tính thật từ Admin REST `GET /auth/v1/admin/users/{id}` (server là authority,
+   không suy ra từ route sign-in cuối cùng). Account có identity `provider == "apple"`
+   cần re-auth Apple trước khi có bất kỳ bước phá hủy nào — xem
+   [Apple re-auth](#apple-re-auth-khi-xóa-account). `404` ở bước này nghĩa là danh tính
+   đã bị xóa ở attempt trước: bỏ qua Apple và bỏ qua bước 1, đi thẳng tới bước 2.
 1. Xóa user bên identity provider (Supabase Auth, Admin REST `DELETE /auth/v1/admin/users/{id}`).
    `404` coi như thành công (đã xóa trước đó). Lỗi khác: `503`, **không** thay đổi gì.
 2. Ghi intent purge (`pending_account_purges`) — chỉ sau khi bước 1 xác nhận.
@@ -629,9 +634,29 @@ Account khác không bị ảnh hưởng: mỗi bước đều scope theo `accou
 | BR-ACCOUNT-005 | Sign-in bằng token còn hạn sau khi account đã xóa bị từ chối; tombstone không chứa PII và chỉ ghi khi purge commit. |
 | BR-ACCOUNT-006 | Log của luồng xóa không chứa object key; chỉ account id / job id và số lượng. |
 | BR-ACCOUNT-007 | Mỗi attempt của owner job ghi manifest (`pose_media_manifests`) trước upload đầu tiên. Finalize xóa manifest trong cùng transaction với pose; mọi lỗi/biến mất đều đưa key vào `pending_object_deletions` với `not_before` chờ horizon, nên không object nào bị bỏ lại mà không có record. |
+| BR-ACCOUNT-008 | Account có identity Apple phải revoke grant Apple (`POST /auth/revoke`) **trước** mọi bước phá hủy; lỗi Apple không bao giờ được coi là đã revoke. |
+| BR-ACCOUNT-009 | Apple code chỉ được dùng khi `id_token` bind đúng `sub` của identity Apple trên account; lệch → `409 APPLE_IDENTITY_MISMATCH`, không xóa gì. |
+| BR-ACCOUNT-010 | Attempt thất bại (cancel, `invalid_grant`, mismatch, Apple 5xx, revoke fail, Supabase delete fail) không ghi intent, nên không bao giờ bị sweeper purge. |
+| BR-ACCOUNT-011 | Thiếu block `APPLE_*` mà account có identity Apple → `503`, không xóa im lặng khi chưa revoke. |
 
-**Errors:** `401 UNAUTHORIZED`, `503 AUTH_PENDING_VALIDATION` (thiếu service-role key,
-identity provider từ chối, hoặc purge row thất bại).
+### Apple re-auth khi xóa account
+
+`DELETE /api/account` nhận body JSON **tùy chọn** `{ "appleAuthorizationCode": "…" }`
+(iOS lấy code này từ một lần `ASAuthorizationAppleIDProvider` mới, không lưu token).
+
+| Tình huống | Response |
+|---|---|
+| Account có identity Apple, request không có code | `409 APPLE_REAUTH_REQUIRED` — chưa có gì bị xóa |
+| Code bị Apple từ chối (`invalid_grant`/`invalid_client`/4xx khác) | `409 APPLE_REAUTH_REQUIRED` |
+| `id_token.sub`/`aud`/`iss` không khớp account | `409 APPLE_IDENTITY_MISMATCH` |
+| Apple 5xx / timeout / network, revoke 5xx | `503`, chưa có gì bị xóa |
+| Revoke OK rồi Supabase delete lỗi | `503`; attempt sau cần re-auth mới và revoke lại (idempotent với user) |
+| Revoke OK, Supabase delete OK, purge lỗi | `503`; retry nhận `404` ở bước 0 → chỉ purge, không gọi Apple; sweeper cũng hoàn tất |
+
+**Errors:** `401 UNAUTHORIZED`, `409 APPLE_REAUTH_REQUIRED`,
+`409 APPLE_IDENTITY_MISMATCH`, `503 AUTH_PENDING_VALIDATION` (thiếu service-role key,
+thiếu block `APPLE_*` cho account Apple, identity provider từ chối, Apple lỗi, hoặc
+purge row thất bại).
 
 ## Admin Keys
 
