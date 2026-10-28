@@ -1,4 +1,5 @@
-# Clean launch with the Debug-only paywall switch set from env PAYWALL ("YES"/"NO"); Firestore untouched.
+# Clean launch with the Debug-only paywall switch set from env PAYWALL ("YES"/"NO"), accounts on and purchases
+# treated as configured so the gate can answer; Firestore untouched.
 appId: ${APP_ID}
 ---
 - launchApp:
@@ -9,6 +10,8 @@ appId: ${APP_ID}
       photos: allow
     arguments:
       AIPosePaywallEnabled: ${PAYWALL}
+      AIPoseAccountsEnabled: "YES"
+      AIPosePurchasesConfigured: "YES"
 - extendedWaitUntil:
     visible:
       id: "poses.open-search"

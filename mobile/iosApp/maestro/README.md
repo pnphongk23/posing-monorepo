@@ -31,8 +31,8 @@ Still requested (flows keep a `TODO(QA-261029-ID)` text selector): `dock.gallery
 | TC-ACC-006 | P1 | manual |
 | TC-ACC-007 | P1 | automated — `flows/TC-ACC-007-email-form.yaml` |
 | TC-ACC-008 | P1 | automated — `flows/TC-ACC-008-accounts-off.yaml` |
-| TC-ACC-009 | P1 | pending: BUG-261029-02 not fixed |
-| TC-ACC-010 | P1 | pending: BUG-261029-03 not fixed |
+| TC-ACC-009 | P1 | automated — `flows/TC-ACC-009-apple-button-label.yaml` |
+| TC-ACC-010 | P1 | automated — `flows/TC-ACC-010-fresh-install-copy.yaml` |
 | TC-BRW-001 | P0 | automated — `flows/TC-BRW-001-launch-catalogue.yaml` |
 | TC-BRW-002 | P1 | manual |
 | TC-BRW-003 | P1 | manual |
@@ -56,14 +56,14 @@ Still requested (flows keep a `TODO(QA-261029-ID)` text selector): `dock.gallery
 | TC-GAL-005 | P1 | manual |
 | TC-GAL-006 | P1 | manual |
 | TC-GAL-007 | P1 | manual |
-| TC-PAY-001 | P0 | pending: blocked on M04 (real Dev RevenueCat key and product IDs); fail-open on unconfigured key is intended |
+| TC-PAY-001 | P0 | automated — `flows/TC-PAY-001-capture-gated.yaml` |
 | TC-PAY-002 | P0 | automated — `flows/TC-PAY-002-capture-ungated.yaml` |
-| TC-PAY-003 | P1 | pending: blocked on M04 (real Dev RevenueCat key and product IDs); fail-open on unconfigured key is intended |
+| TC-PAY-003 | P1 | automated — `flows/TC-PAY-003-paywall-signin-prompt.yaml` |
 | TC-PAY-004 | P1 | pending (queued E2E, after M01 closes) |
 | TC-PAY-005 | P1 | pending (queued E2E) |
 | TC-PAY-006 | P1 | pending (queued E2E) |
 | TC-PAY-007 | P1 | manual |
-| TC-PAY-008 | P1 | pending: blocked on M04 (real Dev RevenueCat key and product IDs); fail-open on unconfigured key is intended |
+| TC-PAY-008 | P1 | automated — `flows/TC-PAY-008-close-paywall.yaml` |
 | TC-DET-001 | P0 | automated — `flows/TC-DET-001-open-detail.yaml` |
 | TC-DET-002 | P1 | manual |
 | TC-DET-003 | P1 | manual |

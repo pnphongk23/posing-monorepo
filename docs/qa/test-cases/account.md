@@ -10,5 +10,5 @@
 | TC-ACC-006 | P1 | Sign in, relaunch | Kill and reopen | Still signed in | manual |
 | TC-ACC-007 | P1 | account switch on, signed out | 1. Launch with accounts on. 2. Open Settings > Account. 3. Tap "Sign in with email" | Email, password fields and submit button visible | automated: TC-ACC-007-email-form.yaml |
 | TC-ACC-008 | P1 | account switch off (launch arg) | 1. Launch with accounts off. 2. Open Settings | Privacy section visible, no Account row | automated: TC-ACC-008-accounts-off.yaml |
-| TC-ACC-009 | P1 | account switch on, signed out | 1. Launch with accounts on. 2. Open Settings > Account | Apple button is visible and labelled "Sign in with Apple" (BUG-261029-02: renders blank today) | pending: BUG-261029-02 not fixed |
-| TC-ACC-010 | P1 | Fresh install (never signed in), account switch on | 1. Launch with accounts on. 2. Open Settings > Account | Card copy does not imply a previous session (no "again"); wording per BUG-261029-03 | pending: BUG-261029-03 not fixed |
+| TC-ACC-009 | P1 | account switch on, signed out | 1. Launch with accounts on. 2. Open Settings > Account | Apple button is visible and labelled "Sign in with Apple"  | automated: TC-ACC-009-apple-button-label.yaml |
+| TC-ACC-010 | P1 | Fresh install (never signed in), account switch on | 1. Launch with accounts on. 2. Open Settings > Account | Card copy does not imply a previous session (no "again") | automated: TC-ACC-010-fresh-install-copy.yaml |
