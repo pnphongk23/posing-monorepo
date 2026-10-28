@@ -32,7 +32,7 @@ export default function AdminKeysPage() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [form, setForm] = useState({ name: '', apiKey: '' });
-  const [provider, setProvider] = useState('gemini_native');
+  const [provider, setProvider] = useState('higgsfield_cli');
   const [providerLoading, setProviderLoading] = useState(true);
   const [providerSaving, setProviderSaving] = useState(false);
   const [providerError, setProviderError] = useState('');
@@ -51,7 +51,7 @@ export default function AdminKeysPage() {
         cache: 'no-store',
       });
       const payload = await parseResponse(response);
-      setProvider(payload.data?.provider || 'gemini_native');
+      setProvider(payload.data?.provider || 'higgsfield_cli');
     } catch (err) {
       setProviderError(err.message);
     } finally {

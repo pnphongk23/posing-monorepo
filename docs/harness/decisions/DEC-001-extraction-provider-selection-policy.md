@@ -161,3 +161,7 @@ Note: A separate approved
 [DEC-002 under Plan 260809 pose-reference-library convergence](../plans/260809-2240-pose-reference-library-convergence/DEC-002-pose-reference-library-parity-matrix.md)
 exists for FEAT-003 parity; this repository-level DEC-001 is a distinct artifact
 allocated by Harness CLI for extraction provider policy.
+
+## Decision 2026-10-28 (user)
+
+- D5 (2026-10-28): Default provider is higgsfield_cli, aligned to code. Any text naming gemini_native as the fresh-deploy default is superseded.

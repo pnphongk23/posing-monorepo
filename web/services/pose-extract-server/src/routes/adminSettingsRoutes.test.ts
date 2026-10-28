@@ -23,7 +23,7 @@ async function createSettingsApp() {
 }
 
 describe("Admin extraction-provider settings", () => {
-  it("returns gemini_native by default", async () => {
+  it("returns higgsfield_cli by default", async () => {
     const { app } = await createSettingsApp();
 
     const response = await request(app)
@@ -31,7 +31,7 @@ describe("Admin extraction-provider settings", () => {
       .set("Authorization", `Bearer ${ADMIN_SECRET}`);
 
     expect(response.status).toBe(200);
-    expect(response.body.data.provider).toBe("gemini_native");
+    expect(response.body.data.provider).toBe("higgsfield_cli");
   });
 
   it("persists supported provider changes", async () => {

@@ -206,3 +206,7 @@ B1; in-flight jobs already claimed are not re-routed to a newly saved engine.
 - Plan: [260816-2240 Higgsfield CLI parallel extract provider](../plans/260816-2240-higgsfield-cli-parallel-extract-provider/plan.md)
 - Inventory: [[product-feature-inventory]]
 - Specs: [[technical-architecture]], [[api-catalogue]]
+
+## Decision 2026-10-28 (user)
+
+- D5: Default extraction provider is `higgsfield_cli`, matching code (`schema.sql` seed, `providerSettingsStore.ts` fallback). Acceptance C1 is amended to `higgsfield_cli`; DEC-001 aligned.
