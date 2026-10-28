@@ -30,15 +30,18 @@ private final class OverrideTokenStorage: TokenStoring, @unchecked Sendable {
 }
 
 /// What a placeholder-key build really looks like: the adapter stays `unconfigured` and never links.
+/// The answers are configurable so a test can prove the signed-out path ignores them.
 @MainActor
 private final class UnconfiguredReader: PurchaseSnapshotReading {
-    private let subject = CurrentValueSubject<PurchaseSnapshot, Never>(
-        PurchaseSnapshot(state: .unconfigured, products: [])
-    )
+    private let subject: CurrentValueSubject<PurchaseSnapshot, Never>
 
     var snapshot: PurchaseSnapshot { subject.value }
     var snapshots: AnyPublisher<PurchaseSnapshot, Never> { subject.eraseToAnyPublisher() }
     var linkedAccountID: String? { nil }
+
+    init(_ state: PurchaseGatewayState = .unconfigured) {
+        subject = CurrentValueSubject(PurchaseSnapshot(state: state, products: []))
+    }
 }
 
 /// A store that cannot sell: the paywall must say so instead of spinning or pretending.
@@ -113,21 +116,37 @@ final class PremiumGateDebugOverrideTests: XCTestCase {
 
     /// TC-PAY-001/003: signed out + paywall on → the paywall opens on its sign-in state, on a build
     /// whose RevenueCat key is a placeholder.
+    ///
+    /// Signed out is a **local** fact, so this holds whatever the provider says (or fails to say):
+    /// nothing about the answer, the link or the session confirmation may change it.
     func testForcedConfiguredPutsASignedOutUserOnTheSignInPaywall() async {
-        let boundary = SessionBoundary(tokenStorage: OverrideTokenStorage())
-        let model = makeGate(boundary: boundary, purchasesConfigured: { true })
-        model.start()
-        await waitForSubscription(boundary)
+        for providerState: PurchaseGatewayState in [.unconfigured, .loading, .entitled, .noOffering] {
+            let boundary = SessionBoundary(tokenStorage: OverrideTokenStorage())
+            let model = PremiumGateModel(
+                gateway: UnconfiguredReader(providerState),
+                boundary: boundary,
+                paywallEnabled: { true },
+                accountsAvailable: { true },
+                purchasesConfiguredOverride: { true }
+            )
+            model.start()
+            await waitForSubscription(boundary)
 
-        XCTAssertTrue(model.purchasesConfigured)
-        XCTAssertEqual(model.captureOutcome(cameraReady: false), .paywall(signIn: true))
-        XCTAssertTrue(
-            PremiumGate.shutterAcceptsPress(
-                outcome: model.captureOutcome(cameraReady: false),
-                isBusy: false
-            ),
-            "the shutter has to reach the gate even with no capture device"
-        )
+            XCTAssertTrue(model.purchasesConfigured)
+            XCTAssertFalse(model.isSignedIn)
+            XCTAssertEqual(
+                model.captureOutcome(cameraReady: false),
+                .paywall(signIn: true),
+                "signed out must reach the sign-in paywall with provider state \(providerState)"
+            )
+            XCTAssertTrue(
+                PremiumGate.shutterAcceptsPress(
+                    outcome: model.captureOutcome(cameraReady: false),
+                    isBusy: false
+                ),
+                "the shutter has to reach the gate even with no capture device"
+            )
+        }
     }
 
     /// Signed in without an entitlement → the paywall, not a capture and not a silent pass.

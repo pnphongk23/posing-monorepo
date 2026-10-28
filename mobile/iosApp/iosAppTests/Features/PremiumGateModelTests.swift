@@ -36,8 +36,9 @@ private final class FakeSnapshotReader: PurchaseSnapshotReading {
 
     var snapshot: PurchaseSnapshot { subject.value }
     var snapshots: AnyPublisher<PurchaseSnapshot, Never> { subject.eraseToAnyPublisher() }
-    /// `nil` models a cold start whose RevenueCat link has not finished — or has failed.
-    let linkedAccountID: String?
+    /// `nil` models a cold start whose RevenueCat link has not finished — or has failed. Mutable so a
+    /// test can drive the coordinator's sequence: clear to `nil`, then link the next Account.
+    var linkedAccountID: String?
 
     init(_ state: PurchaseGatewayState, linkedAccountID: String? = "account-a") {
         subject = CurrentValueSubject(PurchaseSnapshot(state: state, products: []))
@@ -129,15 +130,21 @@ final class PremiumGateModelTests: XCTestCase {
         await boundary.signOut()
         await waitUntil("the sign-out reached the gate") { !model.isSignedIn }
 
-        XCTAssertEqual(model.entitlement, .notEntitled, "the previous session's access is dropped")
+        XCTAssertEqual(model.entitlement, .loading, "access is dropped to UNKNOWN, not to a confirmed no")
         XCTAssertEqual(model.captureOutcome(cameraReady: true), .paywall(signIn: true))
         XCTAssertEqual(reader.snapshot.state, .entitled, "the provider has not pushed anything yet")
+        XCTAssertEqual(
+            reader.linkedAccountID,
+            "account-a",
+            "signed out is local: the stale link must not change the sign-in paywall"
+        )
     }
 
-    /// NFR-001: another Account on the same device is not entitled just because the last one was.
-    func testAnotherAccountDoesNotInheritThePreviousAccountsEntitlement() async {
-        let storage = GateTokenStorage(credentials: accountASession)
-        let boundary = SessionBoundary(tokenStorage: storage)
+    /// P1 (the review's bug): a subscriber switches accounts, and the provider has not pushed anything
+    /// yet — the link still names the previous Account. Reading that as a confirmed "no" paywalled the
+    /// new Account for an answer that was never about it. Unknown is not a "no": capture proceeds.
+    func testAccountSwitchBeforeTheProviderPushesFailsOpen() async {
+        let boundary = SessionBoundary(tokenStorage: GateTokenStorage(credentials: accountASession))
         let reader = FakeSnapshotReader(.entitled)
         let model = makeModel(reader: reader, boundary: boundary)
         model.start()
@@ -150,9 +157,126 @@ final class PremiumGateModelTests: XCTestCase {
         await boundary.saveCredentials(accountBSession)
         await waitUntil("B signed in") { model.isSignedIn }
 
-        // B's own link/refresh has not answered yet; the stale provider snapshot says `.entitled`.
+        // The provider still reports A's entitled snapshot and A's link; nothing about B is known.
+        XCTAssertEqual(reader.linkedAccountID, "account-a")
         XCTAssertEqual(reader.snapshot.state, .entitled)
+        XCTAssertEqual(
+            model.captureOutcome(cameraReady: true),
+            .capture,
+            "an answer that belongs to the previous session must not gate the new one"
+        )
+    }
+
+    /// The confirmation half of the fix (P1): a push that arrives *after* the session change but before
+    /// the coordinator's clear lands is still the previous Account's answer, delivered under the previous
+    /// Account's link. It must not gate the new session — a subscriber who switched accounts was being
+    /// paywalled by exactly this.
+    func testAStaleAnswerAfterTheSessionChangeDoesNotGateTheNewAccount() async {
+        let boundary = SessionBoundary(tokenStorage: GateTokenStorage(credentials: accountASession))
+        let reader = FakeSnapshotReader(.notEntitled)
+        let model = makeModel(reader: reader, boundary: boundary)
+        model.start()
+        await waitUntil("the session probe finished") { model.isSignedIn }
         XCTAssertEqual(model.captureOutcome(cameraReady: true), .paywall(signIn: false))
+        await waitForSubscription(boundary)
+
+        await boundary.signOut()
+        await waitUntil("A signed out") { !model.isSignedIn }
+        await boundary.saveCredentials(accountBSession)
+        await waitUntil("B signed in") { model.isSignedIn }
+
+        // A late refresh for A lands before `clearAccount()`: the link and the answer are both A's.
+        XCTAssertEqual(reader.linkedAccountID, "account-a")
+        reader.publish(.notEntitled)
+
+        XCTAssertEqual(
+            model.captureOutcome(cameraReady: true),
+            .capture,
+            "an answer delivered under the previous Account's link must not gate the new session"
+        )
+
+        // Once the context has been cleared, the same answer is B's own and may gate.
+        reader.linkedAccountID = nil
+        reader.publish(.notEntitled)
+        reader.linkedAccountID = "account-b"
+        reader.publish(.notEntitled)
+
+        XCTAssertEqual(model.captureOutcome(cameraReady: true), .paywall(signIn: false))
+    }
+
+    /// The state itself must be unknown after a session change, never a confirmed negative: that is the
+    /// half of the fix a mutation of the reset line has to break.
+    func testSessionChangeResetsToAnUnknownStateNotAConfirmedNo() async {
+        let boundary = SessionBoundary(tokenStorage: GateTokenStorage(credentials: accountASession))
+        let reader = FakeSnapshotReader(.notEntitled)
+        let model = makeModel(reader: reader, boundary: boundary)
+        model.start()
+        await waitUntil("the session probe finished") { model.isSignedIn }
+        XCTAssertEqual(model.captureOutcome(cameraReady: true), .paywall(signIn: false))
+        await waitForSubscription(boundary)
+
+        await boundary.signOut()
+        await waitUntil("A signed out") { !model.isSignedIn }
+        await boundary.saveCredentials(accountBSession)
+        await waitUntil("B signed in") { model.isSignedIn }
+
+        XCTAssertEqual(
+            model.entitlement,
+            .loading,
+            "a session change makes the answer unknown; a confirmed no is only ever a provider answer"
+        )
+        XCTAssertEqual(model.captureOutcome(cameraReady: true), .capture)
+    }
+
+    /// Once the provider context has been cleared and B's own answer has landed, the gate uses it: B is
+    /// not entitled → the paywall, for B's own confirmed reason.
+    func testAnotherAccountIsGatedOnlyAfterItsOwnConfirmedAnswer() async {
+        let boundary = SessionBoundary(tokenStorage: GateTokenStorage(credentials: accountASession))
+        let reader = FakeSnapshotReader(.entitled)
+        let model = makeModel(reader: reader, boundary: boundary)
+        model.start()
+        await waitUntil("the session probe finished") { model.isSignedIn }
+        await waitForSubscription(boundary)
+
+        await boundary.signOut()
+        await waitUntil("A signed out") { !model.isSignedIn }
+        await boundary.saveCredentials(accountBSession)
+        await waitUntil("B signed in") { model.isSignedIn }
+
+        // The coordinator's clearAccount() lands (the context is empty), then B is linked and answers.
+        reader.linkedAccountID = nil
+        reader.publish(.notEntitled)
+        reader.linkedAccountID = "account-b"
+        reader.publish(.notEntitled)
+
+        XCTAssertEqual(
+            model.captureOutcome(cameraReady: true),
+            .paywall(signIn: false),
+            "B's own confirmed answer may gate"
+        )
+    }
+
+    /// And when B's own answer is `.entitled`, the same sequence captures — NFR-001 in the other
+    /// direction: the gate follows the current session's answer, not the previous one's.
+    func testAnotherAccountWithItsOwnConfirmedEntitlementCaptures() async {
+        let boundary = SessionBoundary(tokenStorage: GateTokenStorage(credentials: accountASession))
+        let reader = FakeSnapshotReader(.notEntitled)
+        let model = makeModel(reader: reader, boundary: boundary)
+        model.start()
+        await waitUntil("the session probe finished") { model.isSignedIn }
+        await waitForSubscription(boundary)
+
+        await boundary.signOut()
+        await waitUntil("A signed out") { !model.isSignedIn }
+        await boundary.saveCredentials(accountBSession)
+        await waitUntil("B signed in") { model.isSignedIn }
+
+        reader.linkedAccountID = nil
+        reader.publish(.notEntitled)
+        reader.linkedAccountID = "account-b"
+        reader.publish(.entitled)
+
+        XCTAssertEqual(model.captureOutcome(cameraReady: true), .capture)
     }
 
     /// G3: a build that cannot sell (placeholder entitlement id, no SDK key) must not lock the camera.

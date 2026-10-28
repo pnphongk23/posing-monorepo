@@ -72,6 +72,9 @@ final class PremiumGateModel: ObservableObject, PremiumGateProviding, SessionSco
     private let paywallEnabled: () -> Bool
     private let accountsAvailable: () -> Bool
     private let purchasesConfiguredOverride: () -> Bool?
+    /// Set once the provider context was seen empty since the last session change, so the link that
+    /// follows can be attributed to the new session (see `purchasesLinked`). True at launch.
+    private var hasObservedEmptyLinkSinceSessionChange = true
     private var cancellable: AnyCancellable?
     private var startTask: Task<Void, Never>?
 
@@ -96,7 +99,9 @@ final class PremiumGateModel: ObservableObject, PremiumGateProviding, SessionSco
         guard cancellable == nil else { return }
         entitlement = gateway.snapshot.state
         cancellable = gateway.snapshots.sink { [weak self] snapshot in
-            self?.entitlement = snapshot.state
+            guard let self else { return }
+            self.observeProviderContext()
+            self.entitlement = snapshot.state
         }
         // Adoption is what subscribes the reset; the boundary itself is not replayed, so the current
         // session is read once here (the same convergence rule every other projection follows).
@@ -117,23 +122,51 @@ final class PremiumGateModel: ObservableObject, PremiumGateProviding, SessionSco
         purchasesConfiguredOverride() ?? (entitlement != .unconfigured)
     }
 
-    /// Whether the provider's answer belongs to this Account and may be trusted for a paywall.
+    /// Whether the provider's answer belongs to the *current* session and may be trusted for a paywall.
+    ///
+    /// A non-nil link is not enough. After a sign-out or an account switch the provider still holds the
+    /// **previous** Account until `SessionScopeCoordinator` finishes its cache cleanup and calls
+    /// `clearAccount()`, so reading that link as "confirmed" turned the old Account's still-standing
+    /// answer into a confident "no" for the new one — a subscriber who switched accounts got a paywall
+    /// for an answer that was never about them. The link only counts once the provider context has been
+    /// seen **empty** since the session change (`observeProviderContext()`), which is exactly the
+    /// coordinator's clear landing; every answer after that belongs to the new session.
     ///
     /// With the QA override forcing `configured`, a placeholder-key build never links at all, so the
     /// forced value also stands in for the link — otherwise the override would pass G3 and then fail
-    /// open at G6. The real link state is kept whenever the override is absent or `NO`.
+    /// open at G6. The real link rule is kept whenever the override is absent or `NO`.
     private var purchasesLinked: Bool {
         if purchasesConfiguredOverride() == true { return true }
-        return gateway.linkedAccountID != nil
+        return gateway.linkedAccountID != nil && hasObservedEmptyLinkSinceSessionChange
+    }
+
+    /// Records that the provider context is empty, i.e. no Account's answer can be misread as this
+    /// session's. True at launch: the first link belongs to the stored session, so it needs no reset.
+    private func observeProviderContext() {
+        if gateway.linkedAccountID == nil { hasObservedEmptyLinkSinceSessionChange = true }
+    }
+
+    /// What to hold while the answer is unknown.
+    ///
+    /// `.loading` is the honest value and the gate fails open on it. Under the QA override there is no
+    /// provider to ever resolve it, and the override's meaning is precisely "configured, and the
+    /// signed-in user holds no access" — so the unknown value is the one the override maps to that
+    /// confirmed negative, which is the only reading that keeps the paywall reachable for automation.
+    /// Neither value can grant access: they differ only in which side of the paywall they land on.
+    private var unknownEntitlement: PurchaseGatewayState {
+        purchasesConfiguredOverride() == true ? .unconfigured : .loading
     }
 
     /// The entitlement the gate decides on.
     ///
     /// `.unconfigured` normally means "this build cannot sell", which G3 already turns into a pass. A
-    /// build forced configured has no such answer to give, so the value degrades to `.notEntitled` —
-    /// the *stricter* reading. It grants nothing: it can only ask for the paywall, which on such a
-    /// build truthfully reports itself unavailable. In a Release build this is the identity, because
-    /// `purchasesConfigured` is false whenever the snapshot is `.unconfigured`.
+    /// build forced configured has no such answer to give, so the value is read as `.notEntitled`,
+    /// i.e. **"configured, and the signed-in user holds no access"** — showing a paywall requires a
+    /// *confirmed negative* answer, and that is the only meaning a forced-configured build can
+    /// defensibly give its unknown state. It grants nothing and denies nothing permanently: it can
+    /// only put the user on a paywall that truthfully reports itself unavailable, and it is a
+    /// DEBUG-only path. In a Release build this is the identity, because `purchasesConfigured` is
+    /// false whenever the snapshot is `.unconfigured`.
     private var gateEntitlement: PurchaseGatewayState {
         entitlement == .unconfigured && purchasesConfigured ? .notEntitled : entitlement
     }
@@ -145,7 +178,9 @@ final class PremiumGateModel: ObservableObject, PremiumGateProviding, SessionSco
     /// The live inputs, read at tap time: the kill switches can arrive on a late Firestore fetch and
     /// the link can land mid-session, so nothing here is cached in a decision.
     private var inputs: PremiumGateInputs {
-        PremiumGateInputs(
+        // The link can have gone empty without a push; read it before deciding, not after.
+        observeProviderContext()
+        return PremiumGateInputs(
             paywallEnabled: paywallEnabled(),
             purchasesConfigured: purchasesConfigured,
             accountsAvailable: accountsAvailable(),
@@ -169,7 +204,8 @@ final class PremiumGateModel: ObservableObject, PremiumGateProviding, SessionSco
 
     /// Account-derived state dies with the session. `signedIn` is re-armed on `.signedIn` because the
     /// boundary tells us the new session exists; the previous session's access is never inherited —
-    /// the provider's link + refresh decides that, and until it lands the gate fails closed.
+    /// the provider's link + refresh decides that, and until it lands the gate fails **open** (unknown
+    /// is not a "no" when the thing at stake is a photo the user cannot take again).
     ///
     /// `.unconfigured` is preserved on purpose: it is not "no access", it is "this build cannot
     /// sell" (placeholder entitlement id / missing SDK key). Downgrading it to `.notEntitled` on a
@@ -177,8 +213,12 @@ final class PremiumGateModel: ObservableObject, PremiumGateProviding, SessionSco
     /// exactly what rule G3 exists to prevent.
     func resetForSessionChange(_ event: SessionEvent) {
         isSignedIn = (event == .signedIn)
+        // UNKNOWN, never a confirmed "no" (P1): the next Account's answer has not arrived, and holding
+        // `.notEntitled` here is what paywalled a subscriber who switched accounts.
         if entitlement != .unconfigured {
-            entitlement = .notEntitled
+            entitlement = unknownEntitlement
         }
+        // The provider still holds the previous Account until the coordinator's clear lands.
+        hasObservedEmptyLinkSinceSessionChange = false
     }
 }

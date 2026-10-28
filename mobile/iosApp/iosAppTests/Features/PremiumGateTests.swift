@@ -78,6 +78,20 @@ final class PremiumGateTests: XCTestCase {
         XCTAssertEqual(decide(entitlement: .notEntitled, signedIn: false), .paywall(signIn: true))
         XCTAssertEqual(decide(entitlement: .signInRequired, signedIn: false), .paywall(signIn: true))
         XCTAssertEqual(decide(entitlement: .entitled, signedIn: false), .paywall(signIn: true))
+        // Signed out is a **local** fact: no provider answer, link or session confirmation is needed,
+        // and none of them may change the outcome.
+        XCTAssertEqual(
+            decide(purchasesLinked: false, entitlement: .loading, signedIn: false),
+            .paywall(signIn: true)
+        )
+        XCTAssertEqual(
+            decide(purchasesLinked: false, entitlement: .unconfigured, signedIn: false),
+            .paywall(signIn: true)
+        )
+        XCTAssertEqual(
+            decide(purchasesLinked: true, entitlement: .expired, signedIn: false),
+            .paywall(signIn: true)
+        )
     }
 
     // MARK: - G5 access
