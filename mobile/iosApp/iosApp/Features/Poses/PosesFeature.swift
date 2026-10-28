@@ -118,6 +118,12 @@ enum PoseResultsStateCopy {
     static let savedEmptyTitle = "No saved poses yet"
     static let savedEmptyMessage = "Save poses from Community to find them here."
     static let browseCommunityActionTitle = "Browse Community"
+
+    /// Saved sign-in gate. Neutral on purpose: the Saved tab is reachable without ever having
+    /// signed in, so its copy must not say "again" (BUG-261029-03). Named so the absence of that
+    /// wording is assertable.
+    static let savedSignInTitle = "Sign in to view your saved poses"
+    static let savedSignInMessage = "Your saved poses are tied to your account. Sign in to keep them synced."
 }
 
 /// Low-intensity motion for the Search discovery/results state change (SCR-003-02 "Motion and animation").
@@ -1796,8 +1802,8 @@ struct SavedPosesScreen: View {
         VStack(spacing: AIPoseSpacing.md) {
             FeatureStateView(
                 tone: .empty,
-                title: "Sign in to view your saved poses",
-                message: "Your saved poses are tied to your account. Sign in to keep them synced."
+                title: PoseResultsStateCopy.savedSignInTitle,
+                message: PoseResultsStateCopy.savedSignInMessage
             )
             .padding(.horizontal, PoseSurfaceMetrics.horizontalPadding)
             // The spinner state lives inside the presented sign-in prompt (`SignInPromptModel`),

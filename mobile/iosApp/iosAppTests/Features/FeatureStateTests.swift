@@ -261,6 +261,32 @@ final class FeatureStateTests: XCTestCase {
         XCTAssertEqual(SignInPromptStateCopy.failureActionTitle, "Try again")
     }
 
+    /// BUG-261029-03: the same surface speaks two registers, and only a session that really ended on
+    /// this install may use the "again" one.
+    func testAccountSignInCardSelectsCopyFromTheInstallHistory() {
+        let firstVisit = AccountStateCopy.signInCard(hasSignedInBefore: false)
+        XCTAssertEqual(firstVisit.title, "Not signed in")
+        XCTAssertEqual(firstVisit.message, "Sign in to save poses.")
+        XCTAssertFalse(firstVisit.message.lowercased().contains("again"))
+
+        let returning = AccountStateCopy.signInCard(hasSignedInBefore: true)
+        XCTAssertEqual(returning.title, "Signed out")
+        XCTAssertEqual(returning.message, "Sign in again to access your Saved poses.")
+    }
+
+    /// TC-SAV-001: the Saved gate is reachable without ever signing in, so its copy must stay neutral
+    /// in both registers — a signed-out user and a first-time visitor read the same card there.
+    func testSavedSignInGateCopyNeverAsksToSignInAgain() {
+        XCTAssertEqual(PoseResultsStateCopy.savedSignInTitle, "Sign in to view your saved poses")
+        XCTAssertEqual(
+            PoseResultsStateCopy.savedSignInMessage,
+            "Your saved poses are tied to your account. Sign in to keep them synced."
+        )
+        for copy in [PoseResultsStateCopy.savedSignInTitle, PoseResultsStateCopy.savedSignInMessage] {
+            XCTAssertFalse(copy.lowercased().contains("again"), "Saved gate copy must not say \"again\": \(copy)")
+        }
+    }
+
     /// §3.6: a detail route is only invalid on the definitive `poseNotFound` signal; an
     /// inconclusive failure (offline) must never demote a working detail to "unavailable".
     @MainActor func testPoseDetailAvailabilityFollowsDefinitiveCatalogSignal() async {

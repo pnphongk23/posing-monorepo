@@ -46,11 +46,27 @@ struct OnboardingScreen: View {
 // MARK: - Account
 
 /// `account.html` signed-out feedback (report §3.8): the shared success state. Pure and testable.
+///
+/// Two registers, because the prototype only ever paints this card from the sign-out handler
+/// (`docs/prototype/scripts/account.js`: `copy: 'Sign in again to access your Saved poses.'`).
+/// A fresh install that never signed in has nothing to sign in *again* to, so it gets neutral
+/// copy; the `signedOut*` wording is reserved for a session that really ended on this install.
 enum AccountStateCopy {
     static let signedOutTitle = "Signed out"
     static let signedOutMessage = "Sign in again to access your Saved poses."
+    static let neverSignedInTitle = "Not signed in"
+    static let neverSignedInMessage = "Sign in to save poses."
     static let deleteAccountConfirmationTitle = "Delete account?"
     static let deleteAccountConfirmationMessage = "This cannot be undone and your data cannot be recovered."
+
+    /// Which register the sign-in card (and its email sheet) speaks. Pure input → output so the
+    /// never-signed-in case is testable without a screen: the only input is the install's
+    /// sign-in history, never the current state alone.
+    static func signInCard(hasSignedInBefore: Bool) -> (title: String, message: String) {
+        hasSignedInBefore
+            ? (signedOutTitle, signedOutMessage)
+            : (neverSignedInTitle, neverSignedInMessage)
+    }
 }
 
 /// Account surface: read-only identity/provider for a valid session, sign-in when there
@@ -122,7 +138,7 @@ struct AccountScreen: View {
         .neoHiddenNavigationBar()
         // Email sign-in (PLAN §4): presented from the signed-out card; success arrives through the
         // existing `SessionBoundary` `.signedIn` event — no new navigation state (DESIGN §3.2).
-        .emailSignInSheet(model: emailSignIn, isPresented: $showsEmailSignIn, intentLine: AccountStateCopy.signedOutMessage)
+        .emailSignInSheet(model: emailSignIn, isPresented: $showsEmailSignIn, intentLine: signInCard.message)
         .alert(AccountStateCopy.deleteAccountConfirmationTitle, isPresented: $showsDeleteConfirmation) {
             Button("Delete account", role: .destructive) { model.deleteAccount() }
                 .disabled(model.isDeletingAccount)
@@ -149,6 +165,11 @@ struct AccountScreen: View {
     /// Named and pure so the tone is assertable: this is the only `.success` producer in the app.
     static let signedOutTone: FeatureStateTone = .success
 
+    /// The card's copy for the current install: neutral until a session really ended here.
+    private var signInCard: (title: String, message: String) {
+        AccountStateCopy.signInCard(hasSignedInBefore: model.hasSignedInBefore)
+    }
+
     /// `account.html` signed-out feedback (report §3.8): the shared success card. The sign-in
     /// control stays below it so the screen still offers the way back in; an in-flight auth error
     /// keeps its own truthful text (not a state listed by the report).
@@ -156,8 +177,8 @@ struct AccountScreen: View {
         VStack(alignment: .leading, spacing: AIPoseSpacing.md) {
             FeatureStateView(
                 tone: Self.signedOutTone,
-                title: AccountStateCopy.signedOutTitle,
-                message: AccountStateCopy.signedOutMessage
+                title: signInCard.title,
+                message: signInCard.message
             )
             if let authError = model.authError {
                 Text(authError)
@@ -170,6 +191,7 @@ struct AccountScreen: View {
             ContinueWithAppleButton(isAuthenticating: appleSignIn.isAuthenticating) {
                 Task { _ = await appleSignIn.signIn() }
             }
+            .accessibilityIdentifier(AppleSignInCopy.identifier)
             if let error = appleSignIn.error {
                 Text(error)
                     .font(.footnote.weight(.semibold))

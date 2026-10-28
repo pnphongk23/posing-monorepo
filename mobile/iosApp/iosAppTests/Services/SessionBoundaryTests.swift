@@ -30,6 +30,28 @@ private actor RefreshAttemptCounter {
     func record() { value += 1 }
 }
 
+/// In-memory `SignInHistoryRecording`, so no test writes the real `UserDefaults` flag.
+private final class FakeSignInHistory: SignInHistoryRecording, @unchecked Sendable {
+    private let lock = NSLock()
+    private var recorded: Bool
+
+    init(hasSignedInBefore: Bool = false) {
+        recorded = hasSignedInBefore
+    }
+
+    var hasSignedInBefore: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return recorded
+    }
+
+    func recordSignedIn() {
+        lock.lock()
+        recorded = true
+        lock.unlock()
+    }
+}
+
 private actor EventLog {
     private var events: [SessionEvent] = []
     func record(_ event: SessionEvent) { events.append(event) }
@@ -58,7 +80,48 @@ private final class StartGate {
 final class SessionBoundaryTests: XCTestCase {
     private func makeBoundary() -> (SessionBoundary, InMemoryTokenStorage) {
         let storage = InMemoryTokenStorage()
-        return (SessionBoundary(tokenStorage: storage), storage)
+        return (SessionBoundary(tokenStorage: storage, signInHistory: FakeSignInHistory()), storage)
+    }
+
+    // MARK: - BUG-261029-03: install-level sign-in history
+
+    /// The only writer of "this install signed in" is the boundary, at the two moments a session
+    /// actually exists.
+    func testSaveCredentialsRecordsTheInstallSignInHistory() async {
+        let history = FakeSignInHistory()
+        let boundary = SessionBoundary(tokenStorage: InMemoryTokenStorage(), signInHistory: history)
+        XCTAssertFalse(history.hasSignedInBefore)
+
+        await boundary.saveCredentials(SessionCredentials(accessToken: "a", refreshToken: "r"))
+
+        XCTAssertTrue(history.hasSignedInBefore, "A stored session is install history")
+    }
+
+    /// Upgrade path: an install that already carries credentials signed in before this flag
+    /// existed, so the first launch must not look like a first visit.
+    func testExistingCredentialsMarkTheInstallAsPreviouslySignedIn() {
+        let history = FakeSignInHistory()
+        let storage = InMemoryTokenStorage()
+        storage.saveCredentials(SessionCredentials(accessToken: "a", refreshToken: "r"))
+
+        _ = SessionBoundary(tokenStorage: storage, signInHistory: history)
+
+        XCTAssertTrue(history.hasSignedInBefore)
+    }
+
+    /// Sign-out and 401 clears are session events, not install events: forgetting them would send a
+    /// returning user back to the first-visit copy.
+    func testSignOutAndUnauthorizedClearKeepTheInstallSignInHistory() async {
+        let history = FakeSignInHistory()
+        let boundary = SessionBoundary(tokenStorage: InMemoryTokenStorage(), signInHistory: history)
+        await boundary.saveCredentials(SessionCredentials(accessToken: "a", refreshToken: "r"))
+
+        await boundary.signOut()
+        XCTAssertTrue(history.hasSignedInBefore)
+
+        await boundary.saveCredentials(SessionCredentials(accessToken: "a", refreshToken: "r"))
+        await boundary.clearForUnauthorized()
+        XCTAssertTrue(history.hasSignedInBefore)
     }
 
     func testHasStoredSessionReflectsStorage() async {

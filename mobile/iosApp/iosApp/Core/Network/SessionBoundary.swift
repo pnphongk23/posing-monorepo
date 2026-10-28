@@ -13,14 +13,23 @@ enum SessionEvent: Sendable, Equatable {
 /// sign-in / sign-out / 401-clears without polling.
 actor SessionBoundary {
     private let tokenStorage: TokenStoring
+    private let signInHistory: SignInHistoryRecording
     private var generation: Int = 0
     private var observers: [Int: AsyncStream<SessionEvent>.Continuation] = [:]
     private var nextObserverID = 0
     private var inFlightRefresh: Task<Bool, Never>?
     private var refreshAttempt = 0
 
-    init(tokenStorage: TokenStoring) {
+    init(
+        tokenStorage: TokenStoring,
+        signInHistory: SignInHistoryRecording = UserDefaultsSignInHistory.shared
+    ) {
         self.tokenStorage = tokenStorage
+        self.signInHistory = signInHistory
+        // An install that already carries credentials signed in before this flag existed (upgrade
+        // path): record it here so the Account surface never calls a real returning user a
+        // first-time visitor. Never cleared on sign-out — that is the whole point.
+        if tokenStorage.loadCredentials() != nil { signInHistory.recordSignedIn() }
     }
 
     var currentGeneration: Int { generation }
@@ -70,6 +79,7 @@ actor SessionBoundary {
     /// Establishes a backend-issued session and invalidates stale reads.
     func saveCredentials(_ credentials: SessionCredentials) {
         tokenStorage.saveCredentials(credentials)
+        signInHistory.recordSignedIn()
         generation += 1
         emit(.signedIn)
     }

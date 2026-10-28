@@ -19,6 +19,13 @@ final class AccountSessionModel: ObservableObject, SessionScoped {
     }
 
     @Published private(set) var state: State = .loading
+    /// `true` once a real session has existed on this install (see `SignInHistoryRecording`).
+    ///
+    /// Read live from the install-level store instead of being copied into a published field: the
+    /// copy depends on it, and a cached copy needs a projection hook on every transition (sign-in,
+    /// sign-out, 401, delete) or it silently goes stale. Every transition that matters republishes
+    /// `state`, which is what re-renders the card.
+    var hasSignedInBefore: Bool { signInHistory.hasSignedInBefore }
     @Published private(set) var isAuthenticating = false
     @Published private(set) var authError: String?
     @Published private(set) var isDeletingAccount = false
@@ -29,6 +36,8 @@ final class AccountSessionModel: ObservableObject, SessionScoped {
     private let signInAction: SignInAction
     private let deleteAccountRequest: AccountDeleter
     private let scope: SessionScope
+    /// Read-only here: `SessionBoundary` is the only writer of the install's sign-in history.
+    private let signInHistory: SignInHistoryRecording
     /// Local request token: a newer refresh supersedes the read before it. Session staleness is the
     /// scope's job (a ticket), this one is only "which read is the latest".
     private var refreshGeneration: UInt64 = 0
@@ -41,12 +50,14 @@ final class AccountSessionModel: ObservableObject, SessionScoped {
         signInAction: SignInAction = SignInAction(),
         deleteAccount: @escaping AccountDeleter = {
             try await ServiceLocator.makePoseAPIService().deleteAccount()
-        }
+        },
+        signInHistory: SignInHistoryRecording = UserDefaultsSignInHistory.shared
     ) {
         self.boundary = boundary
         self.readAccount = readAccount
         self.signInAction = signInAction
         self.deleteAccountRequest = deleteAccount
+        self.signInHistory = signInHistory
         self.scope = SessionScope.of(boundary)
         scope.adopt(self)
     }

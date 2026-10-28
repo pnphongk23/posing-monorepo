@@ -52,18 +52,43 @@ private func account(name: String = "Gmail") -> AccountSummary {
     AccountSummary(id: "google-sub-1", displayName: name, createdAt: "2026-09-01T00:00:00.000Z")
 }
 
+/// Records the install's sign-in history in memory. Every test builds its own, so nothing leans on
+/// `UserDefaults` or on test order.
+private final class FakeSignInHistory: SignInHistoryRecording, @unchecked Sendable {
+    private let lock = NSLock()
+    private var recorded: Bool
+
+    init(hasSignedInBefore: Bool = false) {
+        recorded = hasSignedInBefore
+    }
+
+    var hasSignedInBefore: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return recorded
+    }
+
+    func recordSignedIn() {
+        lock.lock()
+        recorded = true
+        lock.unlock()
+    }
+}
+
 @MainActor
 final class AccountSessionTests: XCTestCase {
     private func makeModel(
         storage: InMemoryTokenStorage,
+        history: FakeSignInHistory = FakeSignInHistory(),
         reader: @escaping AccountSessionModel.AccountReader,
         signIn: @escaping SignInAction.Starter = {}
     ) -> (AccountSessionModel, SessionBoundary) {
-        let boundary = SessionBoundary(tokenStorage: storage)
+        let boundary = SessionBoundary(tokenStorage: storage, signInHistory: history)
         let model = AccountSessionModel(
             boundary: boundary,
             readAccount: reader,
-            signInAction: SignInAction(start: signIn)
+            signInAction: SignInAction(start: signIn),
+            signInHistory: history
         )
         return (model, boundary)
     }
@@ -78,6 +103,94 @@ final class AccountSessionTests: XCTestCase {
         model.start()
         await waitUntil("signed out") { model.state == .signedOut }
         XCTAssertEqual(counter.value, 0, "A guest must not hit the protected account endpoint")
+    }
+
+    // MARK: - BUG-261029-03: never signed in is not "signed out"
+
+    /// A fresh install that never signed in must not be told to "sign in again": there is no earlier
+    /// session on this device to return to.
+    func testFreshInstallThatNeverSignedInGetsNeutralSignInCopy() async {
+        let (model, _) = makeModel(storage: InMemoryTokenStorage(), reader: { account() })
+
+        model.start()
+        await waitUntil("signed out") { model.state == .signedOut }
+
+        XCTAssertFalse(model.hasSignedInBefore, "Nothing was ever signed in on this install")
+        let card = AccountStateCopy.signInCard(hasSignedInBefore: model.hasSignedInBefore)
+        XCTAssertEqual(card.title, "Not signed in")
+        XCTAssertEqual(card.message, "Sign in to save poses.")
+        XCTAssertFalse(card.message.lowercased().contains("again"))
+    }
+
+    /// A session that really ended on this install keeps the prototype's sign-out wording.
+    func testSessionThatEndedOnThisInstallKeepsSignedOutCopy() async {
+        let (model, _) = makeModel(
+            storage: InMemoryTokenStorage(),
+            history: FakeSignInHistory(hasSignedInBefore: true),
+            reader: { account() }
+        )
+
+        model.start()
+        await waitUntil("signed out") { model.state == .signedOut }
+
+        XCTAssertTrue(model.hasSignedInBefore)
+        let card = AccountStateCopy.signInCard(hasSignedInBefore: model.hasSignedInBefore)
+        XCTAssertEqual(card.title, "Signed out")
+        XCTAssertEqual(card.message, "Sign in again to access your Saved poses.")
+    }
+
+    /// The realistic sequence for the bug: brand-new account signs in, then signs out. The card must
+    /// have flipped from neutral copy to the "again" variant because the sign-in really happened.
+    func testSignInThenSignOutSwitchesTheCardToTheSignedOutVariant() async {
+        let storage = InMemoryTokenStorage()
+        let history = FakeSignInHistory()
+        let boundary = SessionBoundary(tokenStorage: storage, signInHistory: history)
+        let model = AccountSessionModel(
+            boundary: boundary,
+            readAccount: { account(name: "Fresh Account") },
+            signInAction: SignInAction(start: { await boundary.saveCredentials(storedCredentials) }),
+            signInHistory: history
+        )
+
+        model.start()
+        await waitUntil("signed out") { model.state == .signedOut }
+        XCTAssertFalse(model.hasSignedInBefore)
+        XCTAssertEqual(
+            AccountStateCopy.signInCard(hasSignedInBefore: model.hasSignedInBefore).title,
+            "Not signed in"
+        )
+
+        model.signIn()
+        await waitUntil("signed in") { model.state == .signedIn(account(name: "Fresh Account")) }
+        XCTAssertTrue(model.hasSignedInBefore, "A completed sign-in is install history")
+
+        model.signOut()
+        await waitUntil("signed out again") { model.state == .signedOut }
+        XCTAssertTrue(model.hasSignedInBefore)
+        XCTAssertEqual(
+            AccountStateCopy.signInCard(hasSignedInBefore: model.hasSignedInBefore).message,
+            "Sign in again to access your Saved poses."
+        )
+    }
+
+    /// A 401 is a session that ended, never a first visit: the wording must follow the history, not
+    /// the transition that produced `.signedOut`.
+    func testUnauthorizedClearAfterASignInKeepsSignedOutCopy() async {
+        let storage = InMemoryTokenStorage(credentials: storedCredentials)
+        let history = FakeSignInHistory()
+        let boundary = SessionBoundary(tokenStorage: storage, signInHistory: history)
+        let model = AccountSessionModel(
+            boundary: boundary,
+            readAccount: { account() },
+            signInHistory: history
+        )
+
+        model.start()
+        await waitUntil("signed in") { model.state == .signedIn(account()) }
+        await boundary.clearForUnauthorized()
+
+        await waitUntil("signed out") { model.state == .signedOut }
+        XCTAssertTrue(model.hasSignedInBefore, "An expired session still happened on this install")
     }
 
     func testStoredSessionLoadsRealIdentity() async {
@@ -161,11 +274,13 @@ final class AccountSessionTests: XCTestCase {
 
     func testSignInSuccessLoadsAccountThroughSessionEvent() async {
         let storage = InMemoryTokenStorage()
-        let boundary = SessionBoundary(tokenStorage: storage)
+        let history = FakeSignInHistory()
+        let boundary = SessionBoundary(tokenStorage: storage, signInHistory: history)
         let model = AccountSessionModel(
             boundary: boundary,
             readAccount: { account(name: "Signed In") },
-            signInAction: SignInAction(start: { await boundary.saveCredentials(storedCredentials) })
+            signInAction: SignInAction(start: { await boundary.saveCredentials(storedCredentials) }),
+            signInHistory: history
         )
 
         model.start()
