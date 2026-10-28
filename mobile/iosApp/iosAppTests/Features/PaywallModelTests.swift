@@ -441,6 +441,45 @@ final class PaywallModelTests: XCTestCase {
         XCTAssertFalse(model.isSignedIn)
     }
 
+    /// Repro: a stale offering result that crossed an identity transition must not park the sheet in
+    /// a busy phase, and the new identity's settled snapshot must always be able to take over.
+    func testStaleOfferingResultDuringIdentityTransitionDoesNotWedgeThePaywall() async {
+        let storage = InMemoryTokenStorage(credentials: session)
+        let boundary = SessionBoundary(tokenStorage: storage)
+        let gateway = FakePurchaseGateway(nextLoad: readyOffering)
+        let model = PaywallModel(
+            gateway: gateway,
+            boundary: boundary,
+            signInAction: SignInAction(start: {})
+        )
+
+        let started = AsyncSignal()
+        let gate = SuspensionGate()
+        gateway.loadStarted = started
+        gateway.loadGate = gate
+        model.start()
+        await started.wait()
+
+        // The gateway enters an identity transition while the offering fetch is in flight, and the
+        // fetch returns that transient state.
+        gateway.publish(PurchaseSnapshot(state: .loading, products: []))
+        gateway.nextLoad = PurchaseSnapshot(state: .loading, products: [])
+        gate.release()
+
+        await waitUntil("not busy") { !model.isBusy }
+        XCTAssertNotEqual(model.phase, .processing, "A transient result must not own the busy phase")
+
+        // The new identity settles: the settled snapshot must clear whatever the stale fetch left.
+        gateway.publish(PurchaseSnapshot(state: .notEntitled, products: [monthly, annual]))
+        await waitUntil("ready") { model.phase == .ready }
+
+        XCTAssertFalse(model.isBusy)
+        XCTAssertEqual(model.plans.count, 2)
+
+        await model.purchase()
+        XCTAssertEqual(gateway.purchasedPackageIDs, [annual.identifier], "Purchase must be reachable again")
+    }
+
     func testStartIsIdempotent() async {
         let gateway = FakePurchaseGateway(nextLoad: readyOffering)
         let model = makeModel(gateway: gateway)

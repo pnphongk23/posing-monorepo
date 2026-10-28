@@ -105,6 +105,9 @@ final class FakePurchasesProvider: PurchasesProviding {
     var logInGates: [String: SuspensionGate] = [:]
     var logOutStarted: AsyncSignal?
     var logOutGate: SuspensionGate?
+    /// Gate only the Nth logout (1-based), so a reconcile logout can settle before the one under
+    /// test is held open.
+    var logOutGateOnCall: Int?
     var packagesStarted: AsyncSignal?
     var packagesGate: SuspensionGate?
     var purchaseStarted: AsyncSignal?
@@ -134,8 +137,10 @@ final class FakePurchasesProvider: PurchasesProviding {
 
     func logOut() async throws -> ProviderCustomer {
         logOutCalls += 1
-        logOutStarted?.fire()
-        await logOutGate?.wait()
+        if logOutGateOnCall == nil || logOutCalls == logOutGateOnCall {
+            logOutStarted?.fire()
+            await logOutGate?.wait()
+        }
         appUserID = Self.anonymousID
         return currentCustomer()
     }
@@ -929,6 +934,66 @@ final class RevenueCatAdapterTests: XCTestCase {
         }
     }
 
+    // MARK: Queued identity requests
+
+    /// Repro: a login queued behind a suspended login must not adopt the sign-out's epoch and link
+    /// an Account the user has left. Order: suspend login A, enqueue login B, enqueue sign-out,
+    /// release A, then hold the sign-out's logout open.
+    func testQueuedLoginCannotLinkAfterSignOut() async {
+        let provider = FakePurchasesProvider(
+            packages: [annualPackage],
+            entitledAccounts: ["account-a", "account-b"]
+        )
+        let spy = AnalyticsSpy()
+        let adapter = makeAdapter(provider: provider, spy: spy)
+
+        let loginAStarted = AsyncSignal()
+        let loginAGate = SuspensionGate()
+        provider.logInStarted = loginAStarted
+        provider.logInGates = ["account-a": loginAGate]
+
+        let linkA = Task { await adapter.linkAccount("account-a") }
+        await loginAStarted.wait()
+
+        let linkB = Task { await adapter.linkAccount("account-b") }
+        let clear = Task { await adapter.clearAccount() }
+        // Both requests must be issued before A's login lands, so the sign-out really is the last
+        // identity request and B's login is the one that must be discarded.
+        await waitUntil("all three identity requests issued") {
+            spy.events.filter { $0.name == "purchase_identity_change" }.count >= 3
+        }
+
+        // The superseded login A reconciles with one logout; the sign-out's logout is the second
+        // and is held open so the intermediate state is observable.
+        let signOutLogOutStarted = AsyncSignal()
+        let signOutLogOutGate = SuspensionGate()
+        provider.logOutStarted = signOutLogOutStarted
+        provider.logOutGate = signOutLogOutGate
+        provider.logOutGateOnCall = 2
+
+        loginAGate.release()
+        await signOutLogOutStarted.wait()
+
+        XCTAssertNil(adapter.linkedAccountID, "No Account may be linked while the sign-out is in flight")
+        XCTAssertEqual(adapter.snapshot.state, .notEntitled)
+        XCTAssertEqual(provider.logInCalls, ["account-a"], "The superseded login never reaches the provider")
+        let purchase = await adapter.purchase(packageID: "annual")
+        XCTAssertEqual(purchase.state, .signInRequired)
+        XCTAssertTrue(provider.purchaseCalls.isEmpty)
+        let restore = await adapter.restore()
+        XCTAssertEqual(restore.state, .signInRequired)
+        XCTAssertEqual(provider.restoreCalls, 0)
+
+        signOutLogOutGate.release()
+        _ = await linkA.value
+        await linkB.value
+        await clear.value
+
+        XCTAssertNil(adapter.linkedAccountID)
+        XCTAssertEqual(adapter.snapshot.state, .notEntitled)
+        XCTAssertTrue(provider.isAnonymous)
+    }
+
     // MARK: No literal ids
 
     func testNoProductOrEntitlementLiteralInAppSources() throws {
@@ -953,5 +1018,189 @@ final class RevenueCatAdapterTests: XCTestCase {
         }
 
         XCTAssertEqual(offenders, [], "Product and entitlement ids live in configuration, not in sources")
+    }
+}
+
+// MARK: - Store seam (identity checks around the live provider's SDK calls)
+
+@MainActor
+final class FakeRevenueCatSDK: RevenueCatSDK {
+    static let anonymousID = "$RCAnonymousID:sdk"
+
+    var appUserID = FakeRevenueCatSDK.anonymousID
+    var isConfigured = true
+    var isAnonymous: Bool { appUserID.hasPrefix("$RCAnonymousID:") }
+    var onCustomerInfoUpdated: (() -> Void)?
+
+    var packages: [ProviderPackage] = []
+    var customer = ProviderCustomer()
+    var purchaseError: Error?
+    var restoreError: Error?
+
+    private(set) var purchaseCalls: [String] = []
+    private(set) var restoreCalls = 0
+    private(set) var offeringsCalls = 0
+
+    var offeringsStarted: AsyncSignal?
+    var offeringsGate: SuspensionGate?
+
+    func configure(apiKey: String) {}
+
+    func logIn(_ accountID: String) async throws -> ProviderCustomer {
+        appUserID = accountID
+        return customer
+    }
+
+    func logOut() async throws -> ProviderCustomer {
+        appUserID = Self.anonymousID
+        return customer
+    }
+
+    func customerInfo() async throws -> ProviderCustomer { customer }
+
+    func offering() async throws -> ProviderOffering {
+        offeringsCalls += 1
+        offeringsStarted?.fire()
+        await offeringsGate?.wait()
+        return ProviderOffering(packages: packages)
+    }
+
+    func purchase(packageIdentifier: String) async throws -> ProviderPurchaseOutcome {
+        purchaseCalls.append(packageIdentifier)
+        if let purchaseError { throw purchaseError }
+        return ProviderPurchaseOutcome(customer: customer, userCancelled: false)
+    }
+
+    func restorePurchases() async throws -> ProviderCustomer {
+        restoreCalls += 1
+        if let restoreError { throw restoreError }
+        return customer
+    }
+}
+
+@MainActor
+final class LivePurchasesProviderTests: XCTestCase {
+    /// The nested `offerings()` await inside a purchase can span a sign-out: the provider must
+    /// re-prove the identity immediately before the store call.
+    func testPurchaseIsAbortedWhenIdentityChangesDuringOfferingFetch() async {
+        let sdk = FakeRevenueCatSDK()
+        sdk.appUserID = "account-a"
+        sdk.packages = [annualPackage]
+        let provider = LivePurchasesProvider(sdk: sdk)
+
+        let started = AsyncSignal()
+        let gate = SuspensionGate()
+        sdk.offeringsStarted = started
+        sdk.offeringsGate = gate
+
+        let purchase = Task { try await provider.purchase(packageID: "annual", authorizedAccountID: "account-a") }
+        await started.wait()
+        sdk.appUserID = "account-b"
+        gate.release()
+
+        do {
+            _ = try await purchase.value
+            XCTFail("A purchase must not reach the store after an identity change")
+        } catch {
+            XCTAssertEqual(error as? ProviderIdentityError, .identityChanged)
+        }
+        XCTAssertTrue(sdk.purchaseCalls.isEmpty)
+    }
+
+    func testPurchaseIsAbortedWhenTheIdentityBecomesAnonymousDuringOfferingFetch() async {
+        let sdk = FakeRevenueCatSDK()
+        sdk.appUserID = "account-a"
+        sdk.packages = [annualPackage]
+        let provider = LivePurchasesProvider(sdk: sdk)
+
+        let started = AsyncSignal()
+        let gate = SuspensionGate()
+        sdk.offeringsStarted = started
+        sdk.offeringsGate = gate
+
+        let purchase = Task { try await provider.purchase(packageID: "annual", authorizedAccountID: "account-a") }
+        await started.wait()
+        sdk.appUserID = FakeRevenueCatSDK.anonymousID
+        gate.release()
+
+        do {
+            _ = try await purchase.value
+            XCTFail("A guest identity must never transact")
+        } catch {
+            XCTAssertEqual(error as? ProviderIdentityError, .identityChanged)
+        }
+        XCTAssertTrue(sdk.purchaseCalls.isEmpty)
+    }
+
+    /// The check right after the offering await is its own guard: an identity that changed must be
+    /// reported as an identity refusal, never as "this offering has no such package".
+    func testIdentityChangeIsReportedBeforeAnyPackageMismatch() async {
+        let sdk = FakeRevenueCatSDK()
+        sdk.appUserID = "account-a"
+        sdk.packages = [monthlyPackage]
+        let provider = LivePurchasesProvider(sdk: sdk)
+
+        let started = AsyncSignal()
+        let gate = SuspensionGate()
+        sdk.offeringsStarted = started
+        sdk.offeringsGate = gate
+
+        let purchase = Task { try await provider.purchase(packageID: "annual", authorizedAccountID: "account-a") }
+        await started.wait()
+        sdk.appUserID = "account-b"
+        gate.release()
+
+        do {
+            _ = try await purchase.value
+            XCTFail("A purchase must not reach the store after an identity change")
+        } catch {
+            XCTAssertEqual(
+                error as? ProviderIdentityError,
+                .identityChanged,
+                "An unauthorized session must not learn whether the offering carries the package"
+            )
+        }
+        XCTAssertTrue(sdk.purchaseCalls.isEmpty)
+    }
+
+    func testRestoreIsAbortedWhenTheIdentityIsNotTheAuthorizedAccount() async {
+        let sdk = FakeRevenueCatSDK()
+        sdk.appUserID = FakeRevenueCatSDK.anonymousID
+        let provider = LivePurchasesProvider(sdk: sdk)
+
+        do {
+            _ = try await provider.restorePurchases(authorizedAccountID: "account-a")
+            XCTFail("A restore must not run anonymously")
+        } catch {
+            XCTAssertEqual(error as? ProviderIdentityError, .identityChanged)
+        }
+        XCTAssertEqual(sdk.restoreCalls, 0)
+    }
+
+    func testPurchaseRunsForTheAuthorizedIdentity() async throws {
+        let sdk = FakeRevenueCatSDK()
+        sdk.appUserID = "account-a"
+        sdk.packages = [annualPackage]
+        let provider = LivePurchasesProvider(sdk: sdk)
+
+        _ = try await provider.purchase(packageID: "annual", authorizedAccountID: "account-a")
+
+        XCTAssertEqual(sdk.purchaseCalls, ["annual"])
+        XCTAssertEqual(sdk.offeringsCalls, 1)
+    }
+
+    func testPurchaseRejectsAPackageOutsideTheOffering() async {
+        let sdk = FakeRevenueCatSDK()
+        sdk.appUserID = "account-a"
+        sdk.packages = [monthlyPackage]
+        let provider = LivePurchasesProvider(sdk: sdk)
+
+        do {
+            _ = try await provider.purchase(packageID: "annual", authorizedAccountID: "account-a")
+            XCTFail("A package outside the offering must not be bought")
+        } catch {
+            XCTAssertEqual(error as? ErrorCode, .productNotAvailableForPurchaseError)
+        }
+        XCTAssertTrue(sdk.purchaseCalls.isEmpty)
     }
 }
