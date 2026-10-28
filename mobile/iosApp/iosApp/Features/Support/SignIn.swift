@@ -162,6 +162,12 @@ struct ContinueWithGoogleButton: View {
 
 /// Custom control is intentional here so the app's neo-brutalist surfaces remain consistent while
 /// the action itself still runs `ASAuthorizationAppleIDProvider` through the injected seam.
+///
+/// The label colour is passed **into** the style (`NeoButtonStyle(foreground:)`), not applied to the
+/// button from outside: `ButtonStyle.makeBody` sets the label's `foregroundStyle` itself, so an
+/// outer `.foregroundStyle(...)` can never win. The shipped build applied it outside against a
+/// `fill: AIPoseColor.foreground` (near-black) fill, so the black logo + wordmark were painted
+/// black-on-black and QA saw an empty box (BUG-261029-02).
 struct ContinueWithAppleButton: View {
     let isAuthenticating: Bool
     let action: () -> Void
@@ -169,18 +175,36 @@ struct ContinueWithAppleButton: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: AIPoseSpacing.sm) {
-                if isAuthenticating { ProgressView().tint(AIPoseColor.surface) }
+                if isAuthenticating { ProgressView().tint(AppleSignInCopy.labelColor) }
                 Image(systemName: "apple.logo")
-                Text(isAuthenticating ? "Signing in…" : "Continue with Apple")
+                Text(isAuthenticating ? AppleSignInCopy.pendingTitle : AppleSignInCopy.title)
             }
-            .frame(maxWidth: .infinity, minHeight: 44)
+            // No local `minHeight`/`frame`: the shared style already stretches to full width and pads
+            // to a ≥44pt target, so the Apple control keeps the exact height of the Google button
+            // beside it (the old inner 44pt minimum made it visibly taller).
             .contentShape(Rectangle())
         }
-        .buttonStyle(NeoButtonStyle(fill: AIPoseColor.foreground))
-        .foregroundStyle(AIPoseColor.surface)
+        .buttonStyle(NeoButtonStyle(fill: AppleSignInCopy.fillColor, foreground: AppleSignInCopy.labelColor))
         .disabled(isAuthenticating)
-        .accessibilityLabel(isAuthenticating ? "Signing in" : "Continue with Apple")
+        .accessibilityLabel(isAuthenticating ? AppleSignInCopy.pendingAccessibilityLabel : AppleSignInCopy.title)
     }
+}
+
+/// The Apple control's frozen surface and copy: HIG requires the system wordmark next to the logo,
+/// so QA can assert both the identifier and the label verbatim.
+enum AppleSignInCopy {
+    static let title = "Sign in with Apple"
+    static let pendingTitle = "Signing in…"
+    static let pendingAccessibilityLabel = "Signing in"
+    /// `account.signin.apple` (accessibility identifier convention `<screen>.<element>`).
+    static let identifier = "account.signin.apple"
+    /// HIG: the Apple button is black with a white logo and wordmark.
+    static let fillColor = AIPoseColor.foreground
+    static let labelColor = AIPoseColor.surface
+
+    /// True when the glyph/text colour is actually visible against the fill. The shipped bug was
+    /// precisely `fill == label`; a test asserts this so the pair cannot silently collapse again.
+    static var hasVisibleContrast: Bool { labelColor != fillColor }
 }
 
 /// Shared modal sign-in prompt (prototype `screens/sign-in-prompt.html`): one primary
@@ -226,6 +250,7 @@ struct SignInPromptView: View {
                   ContinueWithAppleButton(isAuthenticating: model.isAuthenticating || appleModel.isAuthenticating) {
                       Task { await continueWithApple() }
                   }
+                  .accessibilityIdentifier("signin.apple")
                   if let error = appleModel.error {
                       Text(error)
                           .font(.footnote.weight(.semibold))

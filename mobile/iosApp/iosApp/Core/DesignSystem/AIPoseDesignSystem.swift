@@ -132,13 +132,17 @@ extension View {
 
 struct NeoButtonStyle: ButtonStyle {
     var fill = AIPoseColor.primary
+    /// Label colour. `makeBody` owns the label's `foregroundStyle`, so a call site that paints a
+    /// dark fill must pass its label colour here: an outer `.foregroundStyle(...)` is overridden by
+    /// this one and silently disappears into the fill (BUG-261029-02).
+    var foreground = AIPoseColor.foreground
     var cornerRadius: CGFloat = NeoChromeTokens.radiusMedium
 
     func makeBody(configuration: Configuration) -> some View {
         let isPressed = configuration.isPressed
         configuration.label
             .font(.headline)
-            .foregroundStyle(AIPoseColor.foreground)
+            .foregroundStyle(foreground)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 13)
             .neoSurface(

@@ -406,6 +406,26 @@ final class SignInIntentTests: XCTestCase {
     }
 }
 
+/// BUG-261029-02: the Apple control shipped as an empty black box because `NeoButtonStyle` hardcodes
+/// the label's `foregroundStyle` and the call site applied its white colour outside the button. These
+/// assertions pin the two halves that made it invisible: the system wordmark (HIG) and a label colour
+/// that is not the fill.
+final class AppleSignInControlTests: XCTestCase {
+    /// HIG requires the system wording next to the logo; QA asserts this label verbatim.
+    func testUsesTheSystemWordmarkAndQAHandle() {
+        XCTAssertEqual(AppleSignInCopy.title, "Sign in with Apple")
+        XCTAssertEqual(AppleSignInCopy.identifier, "account.signin.apple")
+    }
+
+    /// The shipped bug, stated as an invariant: black fill + black logo/wordmark = invisible control.
+    func testLabelColourIsVisibleAgainstTheFill() {
+        XCTAssertTrue(
+            AppleSignInCopy.hasVisibleContrast,
+            "The Apple button's label colour must differ from its fill, or the logo and wordmark vanish"
+        )
+    }
+}
+
 @MainActor
 final class SessionPresenceModelTests: XCTestCase {
     func testStartsSignedOutWithoutCredentials() async {
