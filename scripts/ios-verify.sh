@@ -20,6 +20,10 @@
 #   IOS_VERIFY_SIM   simulator UDID (default: the shared ai-pose-test device)
 #   IOS_VERIFY_TIMEOUT  wall-clock cap in seconds for a single xcodebuild invocation (1400)
 #
+# Every run (green or red) also drops the shared device's dead app containers
+# (.../com.apple.containermanagerd/Dead/*) and prints the bytes freed. That path is built from the
+# shared UDID only, so no other simulator is ever touched, and the cleanup keeps the exit code.
+#
 # Why the perl wrapper: this Mac has no `timeout` binary. `alarm` survives exec, so the
 # xcodebuild child gets the signal and is killed instead of hanging a lane forever.
 #
@@ -59,6 +63,30 @@ fail() {
   echo "ios-verify: $*" >&2
   exit 1
 }
+
+# Dead app containers: every build-for-testing/test run reinstalls the app, and CoreSimulator leaves
+# one container per install behind in `com.apple.containermanagerd/Dead`. This Mac runs close to its
+# disk floor, so each run drops them — on success **and** on failure (GL rule).
+#
+# Guarded by construction: the path is built from the shared test device UDID only (never CF871F97…,
+# never an IOS_VERIFY_SIM override), only that `Dead/` directory's *contents* are removed, and
+# nothing happens when the directory does not exist. The cleanup never changes the exit status.
+DEAD_CONTAINERS_DIR="$HOME/Library/Developer/CoreSimulator/Devices/$DEFAULT_SIM/data/Library/Caches/com.apple.containermanagerd/Dead"
+
+cleanup_dead_containers() {
+  local status=$?
+  if [ "$SIM_ID" = "$DEFAULT_SIM" ] && [ -d "$DEAD_CONTAINERS_DIR" ]; then
+    local before_kb after_kb freed_bytes
+    before_kb="$(du -sk "$DEAD_CONTAINERS_DIR" 2>/dev/null | awk 'NR == 1 {print $1}')"
+    find "$DEAD_CONTAINERS_DIR" -mindepth 1 -maxdepth 1 -exec rm -rf {} + 2>/dev/null || true
+    after_kb="$(du -sk "$DEAD_CONTAINERS_DIR" 2>/dev/null | awk 'NR == 1 {print $1}')"
+    freed_bytes=$(( (${before_kb:-0} - ${after_kb:-0}) * 1024 ))
+    echo "ios-verify: dead app containers ($DEFAULT_SIM): $freed_bytes bytes freed"
+  fi
+  exit "$status"
+}
+# Registered before any check runs, so an env failure cleans up too.
+trap cleanup_dead_containers EXIT
 
 check_disk() {
   local avail_kb

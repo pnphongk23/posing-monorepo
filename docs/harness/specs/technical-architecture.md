@@ -258,6 +258,12 @@ và **không** kèm thư mục nguồn: `iosAppTests/AppConfigTests` (đúng), k
 `iosAppTests/Services/AppConfigTests` (chọn 0 test). Script fail non-zero khi chọn/chạy 0 test —
 xanh với 0 test là false pass. Muốn kiểm môi trường không build: `scripts/ios-verify.sh --check-env`.
 
+Bước cuối của **mọi** lần chạy (xanh hay đỏ, trap `EXIT`): script xoá **nội dung**
+`$HOME/Library/Developer/CoreSimulator/Devices/7CC9393C-88FC-4AE6-88D3-AC68A2E266B7/data/Library/Caches/com.apple.containermanagerd/Dead/`
+— container app chết do mỗi lần cài lại app — rồi in một dòng số byte giải phóng. Chỉ đúng UDID
+thiết bị test chung đó (không bao giờ `CF871F97…`, không theo `IOS_VERIFY_SIM`), chỉ thư mục `Dead/`
+và chỉ khi nó tồn tại; dọn dẹp **không** đổi exit code của lần verify.
+
 Server lane không nằm trong packet này: gate static duy nhất hiện có là
 `npm --prefix web/services/pose-extract-server run lint` (`tsc --noEmit -p tsconfig.json`);
 chưa có ESLint — follow-up riêng nếu cần, đừng thêm trong packet feature.
