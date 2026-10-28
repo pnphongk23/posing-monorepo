@@ -53,8 +53,13 @@ private struct StubPoseRemote: PoseRemoteFetching {
     let community: [CommunityPose]
     let saved: [CommunityPose]
 
-    func fetchCommunity(page: Int, limit: Int, query: String?) async throws -> [CommunityPose] { community }
-    func fetchSaved(page: Int, limit: Int) async throws -> [CommunityPose] { saved }
+    func fetchCommunity(page: Int, limit: Int, query: String?) async throws -> PoseRemotePage {
+        PoseRemotePage(poses: community, total: community.count)
+    }
+
+    func fetchSaved(page: Int, limit: Int) async throws -> PoseRemotePage {
+        PoseRemotePage(poses: saved, total: saved.count)
+    }
 }
 
 private let storedCredentials = SessionCredentials(accessToken: "access", refreshToken: "refresh")

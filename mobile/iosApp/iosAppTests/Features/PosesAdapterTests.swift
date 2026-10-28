@@ -654,12 +654,12 @@ private struct NoopBookmarkService: PoseBookmarkServing {
 private struct SlowOfflinePoseRemote: PoseRemoteFetching {
     let delay: TimeInterval
 
-    func fetchCommunity(page: Int, limit: Int, query: String?) async throws -> [CommunityPose] {
+    func fetchCommunity(page: Int, limit: Int, query: String?) async throws -> PoseRemotePage {
         try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
         throw URLError(.timedOut)
     }
 
-    func fetchSaved(page: Int, limit: Int) async throws -> [CommunityPose] {
+    func fetchSaved(page: Int, limit: Int) async throws -> PoseRemotePage {
         try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
         throw URLError(.timedOut)
     }
@@ -683,23 +683,27 @@ private extension NativePose {
 private final class StubPoseRemote: PoseRemoteFetching, @unchecked Sendable {
     var communityItems: [CommunityPose] = []
     var savedItems: [CommunityPose] = []
+    var communityTotal: Int?
+    var savedTotal: Int?
     var communityError: Error?
     var savedError: Error?
     var communityCallCount = 0
     var savedCallCount = 0
     var lastCommunityQuery: String?
+    var lastCommunityPage: Int?
 
-    func fetchCommunity(page: Int, limit: Int, query: String?) async throws -> [CommunityPose] {
+    func fetchCommunity(page: Int, limit: Int, query: String?) async throws -> PoseRemotePage {
         communityCallCount += 1
         lastCommunityQuery = query
+        lastCommunityPage = page
         if let communityError { throw communityError }
-        return communityItems
+        return PoseRemotePage(poses: communityItems, total: communityTotal ?? communityItems.count)
     }
 
-    func fetchSaved(page: Int, limit: Int) async throws -> [CommunityPose] {
+    func fetchSaved(page: Int, limit: Int) async throws -> PoseRemotePage {
         savedCallCount += 1
         if let savedError { throw savedError }
-        return savedItems
+        return PoseRemotePage(poses: savedItems, total: savedTotal ?? savedItems.count)
     }
 }
 
@@ -1120,12 +1124,12 @@ private final class GatedPoseRemote: PoseRemoteFetching, @unchecked Sendable {
     private var savedRequestStarted = false
     private var startWaiters: [CheckedContinuation<Void, Never>] = []
 
-    func fetchCommunity(page: Int, limit: Int, query: String?) async throws -> [CommunityPose] {
-        communityItems
+    func fetchCommunity(page: Int, limit: Int, query: String?) async throws -> PoseRemotePage {
+        PoseRemotePage(poses: communityItems, total: communityItems.count)
     }
 
-    func fetchSaved(page: Int, limit: Int) async throws -> [CommunityPose] {
-        await withCheckedContinuation { (continuation: CheckedContinuation<[CommunityPose], Never>) in
+    func fetchSaved(page: Int, limit: Int) async throws -> PoseRemotePage {
+        let items = await withCheckedContinuation { (continuation: CheckedContinuation<[CommunityPose], Never>) in
             let started: [CheckedContinuation<Void, Never>] = lock.withLock {
                 savedRequestStarted = true
                 savedContinuation = continuation
@@ -1135,6 +1139,7 @@ private final class GatedPoseRemote: PoseRemoteFetching, @unchecked Sendable {
             }
             started.forEach { $0.resume() }
         }
+        return PoseRemotePage(poses: items, total: items.count)
     }
 
     func waitForSavedRequest() async {
@@ -1197,11 +1202,11 @@ private final class GatedBookmarkService: PoseBookmarkServing, @unchecked Sendab
 
 /// Unreachable network: the read must fail instead of being answered from a leftover cache.
 private struct UnreachablePoseRemote: PoseRemoteFetching {
-    func fetchCommunity(page: Int, limit: Int, query: String?) async throws -> [CommunityPose] {
+    func fetchCommunity(page: Int, limit: Int, query: String?) async throws -> PoseRemotePage {
         throw URLError(.notConnectedToInternet)
     }
 
-    func fetchSaved(page: Int, limit: Int) async throws -> [CommunityPose] {
+    func fetchSaved(page: Int, limit: Int) async throws -> PoseRemotePage {
         throw URLError(.notConnectedToInternet)
     }
 }

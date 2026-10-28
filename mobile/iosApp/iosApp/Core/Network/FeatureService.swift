@@ -7,6 +7,30 @@ enum Loadable<Value> {
 protocol PoseServing: Sendable {
     func poses(query: String?) async throws -> [NativePose]
     func pose(id: String) async throws -> NativePose
+    /// One page of a pose list. A **requirement**, not just a convenience: a call through
+    /// `any PoseServing` dispatches statically to an extension-only method, which would silently
+    /// bypass the adapter's paging and always answer "no more pages".
+    func posesPage(query: String?, page: Int) async throws -> PosePage
+}
+
+/// One page of a pose list plus whether the server has more rows behind it.
+///
+/// `hasMore` is a separate answer on purpose: a page that happens to hold exactly `limit` rows is
+/// not the last page, so the count alone cannot decide it.
+struct PosePage: Sendable, Equatable {
+    let poses: [NativePose]
+    let hasMore: Bool
+
+    static let end = PosePage(poses: [], hasMore: false)
+}
+
+extension PoseServing {
+    /// Paging default: a service that only knows the first page keeps working unchanged, and any
+    /// page beyond it is reported as the end of the list instead of replaying page 1.
+    func posesPage(query: String?, page: Int) async throws -> PosePage {
+        guard page <= 1 else { return .end }
+        return PosePage(poses: try await poses(query: query), hasMore: false)
+    }
 }
 
 struct NativePose: Identifiable, Hashable, Sendable {

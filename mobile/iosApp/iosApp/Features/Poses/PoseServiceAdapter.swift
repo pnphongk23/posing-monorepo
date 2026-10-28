@@ -737,18 +737,46 @@ private extension NSLock {
     }
 }
 
+/// One network page plus the server's total for the whole (filtered) collection.
+///
+/// The total is what makes `hasMore` correct: `count == limit` is a full page, not necessarily the
+/// last one, so paging on the item count alone either drops rows or offers a page that cannot exist.
+struct PoseRemotePage: Sendable {
+    let poses: [CommunityPose]
+    let total: Int
+
+    static let empty = PoseRemotePage(poses: [], total: 0)
+}
+
 protocol PoseRemoteFetching: Sendable {
-    func fetchCommunity(page: Int, limit: Int, query: String?) async throws -> [CommunityPose]
-    func fetchSaved(page: Int, limit: Int) async throws -> [CommunityPose]
+    func fetchCommunity(page: Int, limit: Int, query: String?) async throws -> PoseRemotePage
+    func fetchSaved(page: Int, limit: Int) async throws -> PoseRemotePage
 }
 
 extension PoseAPIService: PoseRemoteFetching {
-    func fetchCommunity(page: Int, limit: Int, query: String?) async throws -> [CommunityPose] {
-        try await getCommunityPoses(page: page, limit: limit, q: query).data
+    func fetchCommunity(page: Int, limit: Int, query: String?) async throws -> PoseRemotePage {
+        let result = try await getCommunityPoses(page: page, limit: limit, q: query)
+        return PoseRemotePage(poses: result.data, total: result.pagination.total)
     }
 
-    func fetchSaved(page: Int, limit: Int) async throws -> [CommunityPose] {
-        try await getSavedPoses(page: page, limit: limit).data
+    func fetchSaved(page: Int, limit: Int) async throws -> PoseRemotePage {
+        let result = try await getSavedPoses(page: page, limit: limit)
+        return PoseRemotePage(poses: result.data, total: result.pagination.total)
+    }
+}
+
+/// Carries the network's `hasMore` back out of the cache's `load` closure, which may run after the
+/// call returned (stale-while-revalidate). A missing value means this call was answered from cache.
+private final class PosePageLimitProbe: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: Bool?
+
+    var hasMore: Bool? {
+        lock.withLocked { stored }
+    }
+
+    func record(_ value: Bool) {
+        lock.withLocked { stored = value }
     }
 }
 
@@ -803,12 +831,38 @@ struct PoseAPIServiceAdapter: PoseServing {
         let route = PoseAdapterRoute.from(rawValue: filterState.effectiveRawValue)
         let normalizedQuery = PoseCacheKey.normalizedQuery(query)
         guard let cache, await cacheIsUsable(for: route) else {
-            return try await remoteFetch(route: route, query: normalizedQuery).poses
+            return try await remoteFetch(route: route, query: normalizedQuery, page: 1).poses
         }
         let key = PoseCacheKey(route: route, query: normalizedQuery)
         return try await cache.poses(for: key, baseURL: baseURL) {
-            try await self.remoteFetch(route: route, query: normalizedQuery)
+            try await self.remoteFetch(route: route, query: normalizedQuery, page: 1).catalogFetch
         }
+    }
+    /// Page-aware read. Only page 1 goes through the offline catalog; later pages are network-only
+    /// and are not persisted, so a page-1 stale-while-revalidate refresh can never prune rows the
+    /// screen has already paged in (and an offline relaunch reads exactly the cached page 1).
+    func posesPage(query: String?, page: Int) async throws -> PosePage {
+        let route = PoseAdapterRoute.from(rawValue: filterState.effectiveRawValue)
+        let normalizedQuery = PoseCacheKey.normalizedQuery(query)
+        guard page <= 1 else {
+            let later = try await remoteFetch(route: route, query: normalizedQuery, page: page)
+            return PosePage(poses: later.poses, hasMore: later.hasMore)
+        }
+
+        let probe = PosePageLimitProbe()
+        let load: @Sendable () async throws -> PoseCatalogFetch = {
+            let fetched = try await self.remoteFetch(route: route, query: normalizedQuery, page: 1)
+            probe.record(fetched.hasMore)
+            return fetched.catalogFetch
+        }
+        guard let cache, await cacheIsUsable(for: route) else {
+            return PosePage(poses: try await load().poses, hasMore: probe.hasMore ?? false)
+        }
+        let key = PoseCacheKey(route: route, query: normalizedQuery)
+        let poses = try await cache.poses(for: key, baseURL: baseURL, load: load)
+        // Answered from cache (memory or database): optimistic, because only the network knows the
+        // real total. The next call to the network replaces it with the server's answer.
+        return PosePage(poses: poses, hasMore: probe.hasMore ?? (poses.count >= pageSize))
     }
 
     /// `.saved` and `.all` both carry saved rows, so they are account-scoped; only the community
@@ -818,42 +872,97 @@ struct PoseAPIServiceAdapter: PoseServing {
         return await hasSession()
     }
 
-    /// Untouched network path plus the catalog rows that mirror it.
-    private func remoteFetch(route: PoseAdapterRoute, query: String?) async throws -> PoseCatalogFetch {
-        switch route {
-        case .community:
-            let data = try await remote.fetchCommunity(page: 1, limit: pageSize, query: query)
-            return PoseCatalogFetch(
-                poses: data.map { CommunityPoseMapper.map($0, isSaved: false, baseURL: baseURL) },
-                writes: data.map { write($0, source: .community) },
-                replacesCommunityBucket: query == nil,
+    /// One network page, its poses and the catalog rows that mirror it.
+    private struct RemotePage {
+        let poses: [NativePose]
+        let hasMore: Bool
+        /// `nil` for page > 1: only page 1 mirrors into the offline catalog.
+        let fetch: PoseCatalogFetch?
+
+        /// The catalog mirror of this page. A page beyond the first mirrors nothing: the empty plan
+        /// carries no writes and replaces no bucket, so it cannot prune what page 1 stored.
+        var catalogFetch: PoseCatalogFetch {
+            fetch ?? PoseCatalogFetch(
+                poses: poses,
+                writes: [],
+                replacesCommunityBucket: false,
                 replacesSavedBucket: false
             )
+        }
+
+        /// A page that is deliberately not persisted.
+        static func networkOnly(_ poses: [NativePose], hasMore: Bool) -> RemotePage {
+            RemotePage(poses: poses, hasMore: hasMore, fetch: nil)
+        }
+    }
+
+    /// Untouched network path plus the catalog rows that mirror it.
+    private func remoteFetch(route: PoseAdapterRoute, query: String?, page: Int) async throws -> RemotePage {
+        switch route {
+        case .community:
+            let data = try await remote.fetchCommunity(page: page, limit: pageSize, query: query)
+            let poses = data.poses.map { CommunityPoseMapper.map($0, isSaved: false, baseURL: baseURL) }
+            let hasMore = Self.hasMore(page: page, limit: pageSize, total: data.total)
+            guard page == 1 else { return .networkOnly(poses, hasMore: hasMore) }
+            return RemotePage(
+                poses: poses,
+                hasMore: hasMore,
+                fetch: PoseCatalogFetch(
+                    poses: poses,
+                    writes: data.poses.map { write($0, source: .community) },
+                    replacesCommunityBucket: query == nil,
+                    replacesSavedBucket: false
+                )
+            )
         case .saved:
-            let data = try await remote.fetchSaved(page: 1, limit: pageSize)
-            let poses = data.map { CommunityPoseMapper.map($0, isSaved: true, baseURL: baseURL) }
-            return PoseCatalogFetch(
-                poses: PoseAdapterMerge.filterSavedLocally(poses, query: query),
-                writes: data.map { write($0, source: .saved) },
-                replacesCommunityBucket: false,
-                replacesSavedBucket: true
+            let data = try await remote.fetchSaved(page: page, limit: pageSize)
+            let mapped = data.poses.map { CommunityPoseMapper.map($0, isSaved: true, baseURL: baseURL) }
+            // The saved endpoint takes no search text, so a page can contribute zero matches for the
+            // query and still not be the last page.
+            let poses = PoseAdapterMerge.filterSavedLocally(mapped, query: query)
+            let hasMore = Self.hasMore(page: page, limit: pageSize, total: data.total)
+            guard page == 1 else { return .networkOnly(poses, hasMore: hasMore) }
+            return RemotePage(
+                poses: poses,
+                hasMore: hasMore,
+                fetch: PoseCatalogFetch(
+                    poses: poses,
+                    writes: data.poses.map { write($0, source: .saved) },
+                    replacesCommunityBucket: false,
+                    replacesSavedBucket: true
+                )
             )
         case .all:
-            let communityData = try await remote.fetchCommunity(page: 1, limit: pageSize, query: query)
-            let savedData = (try? await remote.fetchSaved(page: 1, limit: pageSize)) ?? []
-            let community = communityData.map { CommunityPoseMapper.map($0, isSaved: false, baseURL: baseURL) }
+            let communityData = try await remote.fetchCommunity(page: page, limit: pageSize, query: query)
+            let hasMore = Self.hasMore(page: page, limit: pageSize, total: communityData.total)
+            let community = communityData.poses.map { CommunityPoseMapper.map($0, isSaved: false, baseURL: baseURL) }
+            // Saved rows are merged on page 1 only. Paging both feeds would need two cursors and
+            // would let one of them skip rows, so later pages follow the community order alone.
+            guard page == 1 else { return .networkOnly(community, hasMore: hasMore) }
+            let savedData = (try? await remote.fetchSaved(page: 1, limit: pageSize)) ?? .empty
             let saved = PoseAdapterMerge.filterSavedLocally(
-                savedData.map { CommunityPoseMapper.map($0, isSaved: true, baseURL: baseURL) },
+                savedData.poses.map { CommunityPoseMapper.map($0, isSaved: true, baseURL: baseURL) },
                 query: query
             )
-            return PoseCatalogFetch(
-                poses: PoseAdapterMerge.communityFirst(community: community, saved: saved),
-                writes: communityData.map { write($0, source: .community) }
-                    + savedData.map { write($0, source: .saved) },
-                replacesCommunityBucket: query == nil,
-                replacesSavedBucket: true
+            let poses = PoseAdapterMerge.communityFirst(community: community, saved: saved)
+            return RemotePage(
+                poses: poses,
+                hasMore: hasMore,
+                fetch: PoseCatalogFetch(
+                    poses: poses,
+                    writes: communityData.poses.map { write($0, source: .community) }
+                        + savedData.poses.map { write($0, source: .saved) },
+                    replacesCommunityBucket: query == nil,
+                    replacesSavedBucket: true
+                )
             )
         }
+    }
+
+    /// `page * limit < total` — the server's own total, never the item count of one page.
+    private static func hasMore(page: Int, limit: Int, total: Int) -> Bool {
+        guard page > 0, limit > 0 else { return false }
+        return page * limit < total
     }
 
     private func write(_ pose: CommunityPose, source: PoseCatalogSource) -> PoseCatalogWrite {
@@ -867,11 +976,11 @@ struct PoseAPIServiceAdapter: PoseServing {
         if let match = try await poses(query: nil).first(where: { $0.id == id }) {
             return match
         }
-        let community = try await remote.fetchCommunity(page: 1, limit: pageSize, query: nil)
+        let community = try await remote.fetchCommunity(page: 1, limit: pageSize, query: nil).poses
         if let match = community.first(where: { $0.poseId == id }) {
             return CommunityPoseMapper.map(match, isSaved: false, baseURL: baseURL)
         }
-        let saved = try await remote.fetchSaved(page: 1, limit: pageSize)
+        let saved = try await remote.fetchSaved(page: 1, limit: pageSize).poses
         if let match = saved.first(where: { $0.poseId == id }) {
             return CommunityPoseMapper.map(match, isSaved: true, baseURL: baseURL)
         }

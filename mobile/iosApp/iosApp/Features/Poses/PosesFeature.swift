@@ -204,6 +204,27 @@ private extension URLError {
     @Published var state: Loadable<[NativePose]> = .idle
     @Published var query = ""
     @Published var filter: PoseLibraryFilter = .community
+    /// Where the next page of the current list comes from. Kept beside `state` instead of inside it
+    /// because a failed page must not cost the rows already on screen, which `Loadable.failed`
+    /// cannot express.
+    struct Paging: Equatable, Sendable {
+        /// Pages one `loadMore` may fetch on its own before it hands the decision back to the user.
+        static let autoFetchBudget = 3
+
+        var nextPage = 2
+        var hasMore = false
+        var isLoading = false
+        var error: String?
+        /// Spent by automatic fetches (pages that add nothing to a filtered list). A run that runs
+        /// out stops and shows the "Load more results" button, so the list never dead-ends.
+        var remainingAutoFetches = Paging.autoFetchBudget
+    }
+
+    @Published private(set) var paging = Paging()
+    /// Bumped by every action that owns the list from scratch (load, refresh, query change, filter
+    /// change, session change). A page whose generation is behind is dropped instead of being
+    /// appended to a list it was never fetched for.
+    private var listGeneration = 0
     private let service: any PoseServing
     let bookmarkService: (any PoseBookmarkServing)?
     private let filterState: PoseFilterState?
@@ -287,19 +308,118 @@ private extension URLError {
     }
 
     func load() async {
-        let ticket = await beginSessionRequest()
+        // `.loading` is painted **before** the ticket is awaited. A session change that lands inside
+        // `beginSessionRequest` then sees a loading model and restarts the read; painted afterwards,
+        // it would see an idle model, do nothing, and the answer that arrives for the old ticket
+        // would be dropped — leaving this screen spinning forever.
         state = .loading
+        listGeneration &+= 1
+        let generation = listGeneration
+        paging = Paging()
+        let ticket = await beginSessionRequest()
+        guard generation == listGeneration else { return }
         filterState?.filter = filter
         do {
-            let values = try await service.poses(query: query.isEmpty ? nil : query)
+            let page = try await service.posesPage(query: normalizedQuery, page: 1)
             // A session change while this request was in flight makes the answer belong to the
             // previous Account (its Saved flags included), so it must not reach the screen.
-            guard await isCurrentSession(ticket) else { return }
-            state = values.isEmpty ? .empty : .loaded(values)
+            guard await isCurrentSession(ticket), generation == listGeneration else { return }
+            paging.hasMore = page.hasMore
+            state = page.poses.isEmpty ? .empty : .loaded(page.poses)
+            await fillFilteredList()
         } catch {
-            guard await isCurrentSession(ticket) else { return }
+            guard await isCurrentSession(ticket), generation == listGeneration else { return }
             state = .failed(ErrorCopy.text(for: error) ?? "Unable to load poses.")
         }
+    }
+
+    /// Appends the next page. Called by the grid when its last rows appear and by the footer's
+    /// spinner: a second call while one page is in flight is ignored, so a burst of triggers sends
+    /// exactly one request. Safe from both `.loaded` and `.empty`.
+    func loadMore() async {
+        guard !paging.isLoading, paging.hasMore, paging.remainingAutoFetches > 0 else { return }
+        await paginate()
+    }
+
+    /// The footer's "Load more results" button and its retry: the user asked for the next page
+    /// explicitly, so the auto-fetch budget is refilled rather than leaving a dead end.
+    func loadMoreResults() async {
+        guard !paging.isLoading, paging.hasMore else { return }
+        paging.remainingAutoFetches = Paging.autoFetchBudget
+        await paginate()
+    }
+
+    /// A filtered page can legitimately hold no matches, so an empty first page is not final while
+    /// the server still reports more rows.
+    private func fillFilteredList() async {
+        guard paging.hasMore, case .empty = state else { return }
+        await paginate()
+    }
+
+    private func paginate() async {
+        let generation = listGeneration
+        paging.isLoading = true
+        paging.error = nil
+        // A refresh or a session change resets `paging` itself, so only the generation that started
+        // this request may settle it.
+        defer {
+            if generation == listGeneration { paging.isLoading = false }
+        }
+        let ticket = await beginSessionRequest()
+        guard generation == listGeneration else { return }
+
+        while paging.hasMore {
+            guard paging.remainingAutoFetches > 0 else { return }
+            paging.remainingAutoFetches -= 1
+            let pageNumber = paging.nextPage
+            do {
+                let page = try await service.posesPage(query: normalizedQuery, page: pageNumber)
+                // The stale page belongs to a list that was refreshed, re-filtered or handed to
+                // another Account; appending it would resurrect rows the user already dropped.
+                guard await isCurrentSession(ticket), generation == listGeneration else { return }
+                paging.nextPage = pageNumber + 1
+                paging.hasMore = page.hasMore
+                // A page that adds rows is progress: restore the budget so ordinary scrolling keeps
+                // loading. Only a run of pages that add nothing (an empty filtered list) can spend
+                // it all, and that is exactly when the user should decide to keep going.
+                guard append(page.poses) == 0 else {
+                    paging.remainingAutoFetches = Paging.autoFetchBudget
+                    return
+                }
+            } catch {
+                guard await isCurrentSession(ticket), generation == listGeneration else { return }
+                // Keep the rows already loaded and the page cursor: the footer offers a retry of
+                // this same page.
+                paging.error = ErrorCopy.text(for: error) ?? "Unable to load more poses."
+                return
+            }
+        }
+    }
+
+    /// Appends `poses`, dropping ids the list already shows. Returns how many rows were added.
+    private func append(_ poses: [NativePose]) -> Int {
+        var merged: [NativePose]
+        switch state {
+        case .loaded(let current):
+            merged = current
+        case .empty:
+            merged = []
+        case .idle, .loading, .failed:
+            return 0
+        }
+        var seen = Set(merged.map(\.id))
+        var added = 0
+        for pose in poses where seen.insert(pose.id).inserted {
+            merged.append(pose)
+            added += 1
+        }
+        guard added > 0 else { return 0 }
+        state = .loaded(merged)
+        return added
+    }
+
+    private var normalizedQuery: String? {
+        query.isEmpty ? nil : query
     }
 
     /// Captures the ticket for a request that is about to start. `nil` (no boundary, or no scope)
@@ -331,6 +451,11 @@ private extension URLError {
     /// would leave `savedOverrides[P] = true` standing over B's freshly loaded `false`, and B's first
     /// tap would send an unsave.
     func resetForSessionChange(_ event: SessionEvent) {
+        // Paging state belongs to one Account's list: a page that is still in flight must be dropped
+        // instead of being appended to the next Account's rows, so the generation moves on before
+        // anything else happens here.
+        listGeneration &+= 1
+        paging = Paging()
         savedOverrides.removeAll()
         bookmarkRequests.removeAll()
         bookmarkRequestsInFlight = []
@@ -876,12 +1001,17 @@ struct PosesScreen: View {
             .padding(.horizontal, PoseGridMetrics.horizontalPadding)
         case .some(.empty):
             // §3.4: the empty state has no personal Create CTA — poses appear when available.
-            FeatureStateView(
-                tone: .empty,
-                title: PosesListStateCopy.emptyTitle,
-                message: PosesListStateCopy.emptyMessage
-            )
-            .padding(.horizontal, PoseGridMetrics.horizontalPadding)
+            // The footer still mounts: a server-filtered list can be empty on page 1 and hold
+            // matches on a later page.
+            VStack(spacing: 0) {
+                FeatureStateView(
+                    tone: .empty,
+                    title: PosesListStateCopy.emptyTitle,
+                    message: PosesListStateCopy.emptyMessage
+                )
+                .padding(.horizontal, PoseGridMetrics.horizontalPadding)
+                PagingFooter(model: model, bottomInset: 0)
+            }
         case .some(.error):
             FeatureStateView(
                 tone: .error,
@@ -899,12 +1029,16 @@ struct PosesScreen: View {
             if case .loaded(let poses) = model.state {
                 ScrollView {
                     // §3.4: the visible "<N> poses" catalogue count is removed with the tablist.
-                    PoseGrid(poses: poses, model: model, onTryPose: onTryPose)
+                    PoseGrid(poses: poses, model: model, onTryPose: onTryPose, onNearEnd: { requestNextPage() })
                         .padding(.horizontal, PoseGridMetrics.horizontalPadding)
-                        .padding(.bottom, PoseGridMetrics.dockClearance)
+                    PagingFooter(model: model)
                 }
             }
         }
+    }
+
+    private func requestNextPage() {
+        Task { await model.loadMore() }
     }
 }
 
@@ -1021,6 +1155,8 @@ struct PoseGrid: View {
     let poses: [NativePose]
     @ObservedObject var model: PosesViewModel
     var onTryPose: (NativePose) -> Void = { _ in }
+    /// Fired when one of the last rows is drawn, so the caller can page in the next batch.
+    var onNearEnd: (() -> Void)?
     @ObservedObject private var aspectRatioCache: PoseAspectRatioCache
     @State private var columnByPoseID: [String: Int]
     @Namespace private var zoomNamespace
@@ -1034,11 +1170,13 @@ struct PoseGrid: View {
     init(
         poses: [NativePose],
         model: PosesViewModel,
-        onTryPose: @escaping (NativePose) -> Void = { _ in }
+        onTryPose: @escaping (NativePose) -> Void = { _ in },
+        onNearEnd: (() -> Void)? = nil
     ) {
         self.poses = poses
         _model = ObservedObject(wrappedValue: model)
         self.onTryPose = onTryPose
+        self.onNearEnd = onNearEnd
         let cache = PoseAspectRatioCache.shared
         _aspectRatioCache = ObservedObject(wrappedValue: cache)
         _columnByPoseID = State(initialValue: Self.assignments(for: poses, using: cache))
@@ -1074,6 +1212,11 @@ struct PoseGrid: View {
                             item.index == 0 ? "poses.first-card" : "poses.card.\(item.pose.id)"
                         )
                         .accessibilitySortPriority(Double(poses.count - item.index))
+                        // The last rows coming into view is the scroll trigger for the next page.
+                        .onAppear {
+                            guard item.index >= poses.count - 4 else { return }
+                            onNearEnd?()
+                        }
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -1818,6 +1961,72 @@ struct SavedPosesScreen: View {
     }
 }
 
+/// Copy for the paged-list footer. Native (no prototype surface paginates), kept in one place so
+/// the footer, its accessibility labels and its tests cannot disagree.
+enum PagingFooterCopy {
+    static let loadMore = "Load more results"
+    static let retry = "Couldn't load more. Tap to retry"
+    static let loading = "Loading more poses"
+}
+
+/// Footer of a paged list. Shows one of: the auto-fetch spinner, the failed-page retry, or the
+/// explicit "Load more results" button once the automatic fetches are spent. Renders nothing at the
+/// real end of the list, so a caller can mount it unconditionally.
+struct PagingFooter: View {
+    @ObservedObject var model: PosesViewModel
+    /// Bottom clearance (dock overlay) when this footer is the last thing inside a scroll view.
+    var bottomInset: CGFloat = PoseGridMetrics.dockClearance
+
+    var body: some View {
+        VStack(spacing: AIPoseSpacing.sm) {
+            if let error = model.paging.error {
+                footerButton(title: PagingFooterCopy.retry, identifier: "poses.loadMore.retry") {
+                    Task { await model.loadMoreResults() }
+                }
+                // The failure reason (offline, timeout, 5xx) stays available without pushing the
+                // retry copy itself off the button.
+                .accessibilityHint(error)
+            } else if model.paging.hasMore {
+                if model.paging.remainingAutoFetches > 0 {
+                    ProgressView()
+                        .padding(.vertical, AIPoseSpacing.sm)
+                        .accessibilityLabel(PagingFooterCopy.loading)
+                        // Fires once per appearance, and the model ignores it while a page is in
+                        // flight, so a re-render cannot stack requests.
+                        .onAppear { Task { await model.loadMore() } }
+                } else {
+                    footerButton(title: PagingFooterCopy.loadMore, identifier: "poses.loadMore.button") {
+                        Task { await model.loadMoreResults() }
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, PoseGridMetrics.horizontalPadding)
+        .padding(.top, AIPoseSpacing.sm)
+        .padding(.bottom, bottomInset)
+    }
+
+    private func footerButton(title: String, identifier: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(AIPoseColor.foreground)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, AIPoseSpacing.md)
+                .frame(minHeight: PoseSurfaceMetrics.touchMinimum)
+                .neoSurface(
+                    shape: RoundedRectangle(cornerRadius: NeoChromeTokens.radiusMedium),
+                    fill: AIPoseColor.surface,
+                    borderWidth: NeoChromeTokens.borderThin,
+                    shadowOffset: 0
+                )
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier(identifier)
+    }
+}
+
 struct PoseResultsList: View {
     @ObservedObject var model: PosesViewModel
     var onTryPose: (NativePose) -> Void = { _ in }
@@ -1833,15 +2042,28 @@ struct PoseResultsList: View {
 
     var body: some View {
         if let tone = stateTone {
-            stateCard(tone: tone)
+            VStack(spacing: 0) {
+                stateCard(tone: tone)
+                // An empty page is not the end of the list: a search-filtered page can hold no match
+                // while the server still has rows behind it.
+                PagingFooter(model: model, bottomInset: 0)
+            }
+        } else if case .empty = model.state {
+            // `emptyPresentation == .hidden` (Search): the surface draws its own no-match banner, so
+            // only the pagination footer belongs here.
+            PagingFooter(model: model, bottomInset: 0)
         } else if case .loaded(let poses) = model.state {
             ScrollView {
-                PoseGrid(poses: poses, model: model, onTryPose: onTryPose)
+                PoseGrid(poses: poses, model: model, onTryPose: onTryPose, onNearEnd: requestNextPage)
                     .padding(.horizontal, PoseGridMetrics.horizontalPadding)
                     .padding(.top, 2)
-                    .padding(.bottom, bottomInset)
+                PagingFooter(model: model, bottomInset: bottomInset)
             }
         }
+    }
+
+    private func requestNextPage() {
+        Task { await model.loadMore() }
     }
 
     /// Shared-card tone for the current result, or `nil` when this surface draws the grid — or

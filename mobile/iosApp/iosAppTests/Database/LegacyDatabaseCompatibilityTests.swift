@@ -254,11 +254,12 @@ final class LegacyDatabaseCompatibilityTests: XCTestCase {
 
 /// Minimal community feed used by the catalog/legacy-table isolation test.
 private struct CatalogPoseRemote: PoseRemoteFetching {
-    func fetchCommunity(page: Int, limit: Int, query: String?) async throws -> [CommunityPose] {
-        try [JSONDecoder().decode(CommunityPose.self, from: Data("""
+    func fetchCommunity(page: Int, limit: Int, query: String?) async throws -> PoseRemotePage {
+        let poses = try [JSONDecoder().decode(CommunityPose.self, from: Data("""
         {"poseId":"cache-pose-1","name":"Cache Pose","skeletonUrl":"/skeleton.png","thumbnailUrl":"/thumb.jpg","status":"published"}
         """.utf8))]
+        return PoseRemotePage(poses: poses, total: poses.count)
     }
 
-    func fetchSaved(page: Int, limit: Int) async throws -> [CommunityPose] { [] }
+    func fetchSaved(page: Int, limit: Int) async throws -> PoseRemotePage { .empty }
 }

@@ -2,7 +2,12 @@ import request from "supertest";
 import { describe, expect, it } from "vitest";
 
 import { createApp } from "../app";
-import { PoseStore, type CreatePoseInput } from "../db/communityStore";
+import {
+  PoseStore,
+  type CreatePoseInput,
+  type ListPosesFilter,
+  type ListPosesResult
+} from "../db/communityStore";
 import { setupTestDatabase } from "../db/testDb";
 
 const OWNER_ID = "11111111-1111-4111-8111-111111111111";
@@ -11,6 +16,16 @@ async function createTestApp() {
   const sql = await setupTestDatabase();
   const poseStore = new PoseStore(sql);
   return { app: createApp({ version: "test", communityStore: poseStore }), poseStore };
+}
+
+/** Records what the route asked the store for, so paging can be pinned without a big fixture. */
+class RecordingPoseStore extends PoseStore {
+  readonly calls: ListPosesFilter[] = [];
+
+  override async listPoses(filter: ListPosesFilter): Promise<ListPosesResult> {
+    this.calls.push(filter);
+    return super.listPoses(filter);
+  }
 }
 
 async function seedPose(store: PoseStore, overrides: Partial<CreatePoseInput> = {}, publish = true) {
@@ -61,6 +76,20 @@ describe("community Pose projection routes", () => {
     expect(response.body.data).toHaveLength(1);
     expect(response.body.data[0].name).toBe("Warrior Flow");
     expect(response.body.pagination).toMatchObject({ page: 1, limit: 20, total: 1 });
+  });
+
+  it("honours and reports the requested page for title search", async () => {
+    // The iOS client pages search results 20 at a time, so `page` must reach the store unchanged
+    // even though the search page size is fixed (SEE the pin in communityRoutes.ts).
+    const sql = await setupTestDatabase();
+    const poseStore = new RecordingPoseStore(sql);
+    const app = createApp({ version: "test", communityStore: poseStore });
+    await seedPose(poseStore, { name: "Warrior Flow" });
+
+    const response = await request(app).get("/api/community/poses?q=a&page=2").expect(200);
+
+    expect(poseStore.calls[poseStore.calls.length - 1]).toMatchObject({ page: 2, limit: 20, q: "a" });
+    expect(response.body.pagination).toMatchObject({ page: 2, limit: 20 });
   });
 
   it("returns a published detail projection and increments downloads", async () => {
