@@ -23,12 +23,16 @@ Still requested (flows keep a `TODO(QA-261029-ID)` text selector): `dock.gallery
 
 | Case | Pri | Flow / status |
 |---|---|---|
-| TC-ACC-001 | P1 | pending (identifiers for sign-in entry via Account) |
+| TC-ACC-001 | P1 | automated — `flows/TC-ACC-001-account-signed-out.yaml` |
 | TC-ACC-002 | P1 | pending (needs test credentials) |
 | TC-ACC-003 | P1 | pending |
 | TC-ACC-004 | P1 | pending |
 | TC-ACC-005 | P1 | pending (server delete landing) |
 | TC-ACC-006 | P1 | manual |
+| TC-ACC-007 | P1 | automated — `flows/TC-ACC-007-email-form.yaml` |
+| TC-ACC-008 | P1 | automated — `flows/TC-ACC-008-accounts-off.yaml` |
+| TC-ACC-009 | P1 | pending: BUG-261029-02 not fixed |
+| TC-ACC-010 | P1 | pending: BUG-261029-03 not fixed |
 | TC-BRW-001 | P0 | automated — `flows/TC-BRW-001-launch-catalogue.yaml` |
 | TC-BRW-002 | P1 | manual |
 | TC-BRW-003 | P1 | manual |
@@ -52,7 +56,7 @@ Still requested (flows keep a `TODO(QA-261029-ID)` text selector): `dock.gallery
 | TC-GAL-005 | P1 | manual |
 | TC-GAL-006 | P1 | manual |
 | TC-GAL-007 | P1 | manual |
-| TC-PAY-001 | P0 | pending: needs a capture seam on simulator or a device |
+| TC-PAY-001 | P0 | pending: M02 not landed (no screen presents the paywall, capture gating not built); it will run on the simulator because the gate sits before the camera check |
 | TC-PAY-002 | P0 | manual (device) |
 | TC-PAY-003 | P1 | pending |
 | TC-PAY-004 | P1 | pending (queued E2E, after M01 closes) |
@@ -65,7 +69,7 @@ Still requested (flows keep a `TODO(QA-261029-ID)` text selector): `dock.gallery
 | TC-DET-003 | P1 | manual |
 | TC-DET-005 | P1 | pending (needs signed-in seam) |
 | TC-DET-006 | P1 | manual |
-| TC-SAV-001 | P0 | pending: needs account_feature on in the server config (hidden when off) |
+| TC-SAV-001 | P0 | automated — `flows/TC-SAV-001-saved-signed-out.yaml` |
 | TC-SAV-002 | P1 | pending |
 | TC-SAV-003 | P1 | pending |
 | TC-SAV-004 | P1 | pending |
@@ -77,10 +81,4 @@ Still requested (flows keep a `TODO(QA-261029-ID)` text selector): `dock.gallery
 | TC-SET-003 | P1 | manual |
 | TC-SET-004 | P2 | manual |
 
-Regenerate by hand when a case changes; `check-traceability.sh` fails if an `automated:` case and its flow disagree.
-
-Further id requests from review: camera guide overlay (or its toggle) so TC-CAM-001 can prove the guide is drawn; settings.privacy.section.
-
-## Debug flag overrides (paywall, Saved/Account)
-
-Debug builds also answer to `-AIPosePaywallEnabled YES|NO` (overrides `paywall_enabled`) and `-AIPoseAccountsEnabled YES|NO` (overrides `accounts_enabled_v2`); both accept `YES`/`NO`/`true`/`false` in any case, fall back to the resolved Firestore payload when the argument is absent, and are compiled out of Release, so a flow passes them in `launchApp.arguments` next to `-AIPoseAccountEnabled` (which keeps precedence over `-AIPoseAccountsEnabled` when both are set) instead of editing the server config. They override the AppConfig value only: a surface that does not read the switch yet stays unchanged.
+Regenerate when a case changes; `check-traceability.sh` fails if an `automated:` case and its flow disagree.
