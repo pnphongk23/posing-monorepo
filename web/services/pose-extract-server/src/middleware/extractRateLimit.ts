@@ -9,6 +9,7 @@ interface ExtractRateLimitOptions {
   nowProvider?: () => number;
   keyProvider?: (req: Request) => string;
   onSweep?: (activeCounters: number) => void;
+  message?: string;
 }
 
 interface CounterEntry {
@@ -27,6 +28,7 @@ export function createExtractRateLimitMiddleware(options: ExtractRateLimitOption
   const nowProvider = options.nowProvider ?? Date.now;
   const keyProvider = options.keyProvider ?? ((req: Request) => req.ip || "unknown");
   const onSweep = options.onSweep;
+  const message = options.message ?? "Too many extract requests";
   const counters = new Map<string, CounterEntry>();
   let seenRequests = 0;
 
@@ -57,7 +59,7 @@ export function createExtractRateLimitMiddleware(options: ExtractRateLimitOption
 
     current.count += 1;
     if (current.count > maxRequests) {
-      next(new RateLimitedError("Too many extract requests"));
+      next(new RateLimitedError(message));
       return;
     }
 

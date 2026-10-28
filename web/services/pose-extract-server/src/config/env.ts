@@ -63,7 +63,6 @@ const authRateLimitSchema = z.object({
   AUTH_RATE_LIMIT_MAX: z.coerce.number().int().positive().optional(),
   AUTH_RATE_LIMIT_IP_MAX: z.coerce.number().int().positive().optional()
 });
-
 export function authRateLimitFromEnv(source: Record<string, string | undefined> = process.env): { windowMs?: number; maxPerEmail?: number; maxPerIp?: number } {
   const parsed = authRateLimitSchema.safeParse(source);
   if (!parsed.success) {
@@ -74,5 +73,38 @@ export function authRateLimitFromEnv(source: Record<string, string | undefined> 
     windowMs: parsed.data.AUTH_RATE_LIMIT_WINDOW_MS,
     maxPerEmail: parsed.data.AUTH_RATE_LIMIT_MAX,
     maxPerIp: parsed.data.AUTH_RATE_LIMIT_IP_MAX
+  };
+}
+
+/** A short webhook token is a guessable webhook token, so the schema refuses it at boot. */
+export const REVENUECAT_WEBHOOK_AUTH_MIN_LENGTH = 32;
+
+const revenueCatSchema = z.object({
+  REVENUECAT_WEBHOOK_AUTH: z.string().min(REVENUECAT_WEBHOOK_AUTH_MIN_LENGTH).optional(),
+  REVENUECAT_SECRET_API_KEY: z.string().min(1).optional(),
+  REVENUECAT_ENTITLEMENT_ID: z.string().min(1).optional()
+});
+
+export interface RevenueCatConfig {
+  webhookAuth?: string;
+  secretApiKey?: string;
+  entitlementId?: string;
+}
+
+/**
+ * Feature-scoped env: absent keys leave the entitlement surface mounted as a 503 stub and
+ * leave the webhook unmounted, so an unprovisioned deploy fails closed instead of booting
+ * with a half-configured subscription integration.
+ */
+export function revenueCatFromEnv(source: Record<string, string | undefined> = process.env): RevenueCatConfig {
+  const parsed = revenueCatSchema.safeParse(source);
+  if (!parsed.success) {
+    const errors = parsed.error.issues.map((item) => `${item.path.join(".")}: ${item.message}`);
+    throw new Error(`Invalid environment variables:\n${errors.join("\n")}`);
+  }
+  return {
+    webhookAuth: parsed.data.REVENUECAT_WEBHOOK_AUTH,
+    secretApiKey: parsed.data.REVENUECAT_SECRET_API_KEY,
+    entitlementId: parsed.data.REVENUECAT_ENTITLEMENT_ID
   };
 }

@@ -22,10 +22,14 @@ import type { KeyStore } from "./services/keyStore";
 import type { PoseStore } from "./db/communityStore";
 import type { AccountStore } from "./db/accountStore";
 import type { SavedStore } from "./db/savedStore";
+import type { EntitlementStore } from "./db/entitlementStore";
 import { createAccountAuthRoutes } from "./routes/accountAuthRoutes";
 import { createAccountRoutes } from "./routes/accountRoutes";
-import { authRateLimitFromEnv } from "./config/env";
+import { authRateLimitFromEnv, revenueCatFromEnv, type RevenueCatConfig } from "./config/env";
 import { createSavedRoutes } from "./routes/savedRoutes";
+import { createEntitlementRoutes } from "./routes/entitlementRoutes";
+import { createRevenueCatWebhookRoutes } from "./routes/revenueCatWebhookRoutes";
+import { createRevenueCatClient } from "./services/revenueCatClient";
 import { createMyExtractJobsRoutes } from "./routes/myExtractJobsRoutes";
 import { createGuideReadRoutes } from "./routes/guideReadRoutes";
 import { logger } from "./utils/logger";
@@ -74,6 +78,16 @@ interface CreateAppOptions {
   backendPublicUrl?: string;
   pendingAuthStore?: PendingAuthStore;
   savedStore?: SavedStore;
+  entitlementStore?: EntitlementStore;
+  /** Absent means "read the feature-scoped env"; present (even empty) is authoritative. */
+  revenueCat?: {
+    secretApiKey?: string;
+    entitlementId?: string;
+    webhookAuth?: string;
+    fetchImpl?: typeof fetch;
+    now?: () => number;
+    timeoutMs?: number;
+  };
   authRateLimitWindowMs?: number;
   authRateLimitMaxPerEmail?: number;
   authRateLimitMaxPerIp?: number;
@@ -113,11 +127,39 @@ export function createCommunityExtractPoseImage(options: CreateAppOptions): Extr
   };
 }
 
-  export function createApp(options: CreateAppOptions): express.Express {
+  interface RevenueCatRuntimeConfig extends RevenueCatConfig {
+  fetchImpl?: typeof fetch;
+  now?: () => number;
+  timeoutMs?: number;
+}
+
+/**
+ * Feature-scoped config: explicit options win, otherwise the REVENUECAT_* env names decide
+ * whether the entitlement routes serve live data or the 503 stub, and whether the webhook exists.
+ */
+function resolveRevenueCatConfig(overrides: RevenueCatRuntimeConfig | undefined): RevenueCatRuntimeConfig {
+  if (overrides) {
+    return overrides;
+  }
+  return revenueCatFromEnv(process.env);
+}
+
+export function createApp(options: CreateAppOptions): express.Express {
   const app = express();
   const startedAtMs = options.startedAtMs ?? Date.now();
   const communityExtractPoseImage = createCommunityExtractPoseImage(options);
   const envRateLimit = authRateLimitFromEnv();
+  const revenueCatConfig = resolveRevenueCatConfig(options.revenueCat);
+  const revenueCatClient =
+    revenueCatConfig.secretApiKey && revenueCatConfig.entitlementId
+      ? createRevenueCatClient({
+          apiKey: revenueCatConfig.secretApiKey,
+          entitlementId: revenueCatConfig.entitlementId,
+          fetchImpl: revenueCatConfig.fetchImpl ?? options.fetchImpl,
+          now: revenueCatConfig.now,
+          timeoutMs: revenueCatConfig.timeoutMs
+        })
+      : undefined;
 
   // Railway sits behind at least one reverse proxy hop.
   app.set("trust proxy", 1);
@@ -180,7 +222,30 @@ export function createCommunityExtractPoseImage(options: CreateAppOptions): Extr
       if (options.savedStore) {
         app.use("/api/me/saved", accountAuthMiddleware, createSavedRoutes(options.savedStore));
       }
+      app.use(
+        "/api/me/entitlement",
+        accountAuthMiddleware,
+        createEntitlementRoutes({
+          store: options.entitlementStore,
+          client: revenueCatClient,
+          entitlementId: revenueCatConfig.entitlementId,
+          now: revenueCatConfig.now
+        })
+      );
     }
+
+  // The webhook only exists when it can authenticate callers and re-read the truth.
+  if (options.accountStore && options.entitlementStore && revenueCatClient && revenueCatConfig.webhookAuth) {
+    app.use(
+      "/api/webhooks/revenuecat",
+      createRevenueCatWebhookRoutes({
+        accountStore: options.accountStore,
+        entitlementStore: options.entitlementStore,
+        client: revenueCatClient,
+        webhookAuth: revenueCatConfig.webhookAuth
+      })
+    );
+  }
 
   if (options.adminSecret && options.keyStore) {
     app.use(

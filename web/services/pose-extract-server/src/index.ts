@@ -7,6 +7,7 @@ import { ExtractionJobStore } from "./db/extractionJobStore";
 import { ProviderSettingsStore } from "./db/providerSettingsStore";
 import { AccountStore, objectKeyFromLocator, sweepStaleAccountPurges } from "./db/accountStore";
 import { SavedStore } from "./db/savedStore";
+import { EntitlementStore } from "./db/entitlementStore";
 import { PendingAuthStore } from "./services/pendingAuthStore";
 import { GeminiService } from "./services/geminiService";
 import { KeyPoolManager } from "./services/keyPoolManager";
@@ -29,6 +30,7 @@ async function main(): Promise<void> {
   const providerSettingsStore = new ProviderSettingsStore(sql);
   const accountStore = new AccountStore(sql);
   const savedStore = new SavedStore(sql);
+  const entitlementStore = new EntitlementStore(sql);
   const keyPoolManager = new KeyPoolManager(keyStore);
   const geminiService = new GeminiService();
   const appVersion = process.env.APP_VERSION ?? process.env.npm_package_version ?? "1.0.0";
@@ -52,7 +54,8 @@ async function main(): Promise<void> {
     r2PublicUrl: env.R2_PUBLIC_URL,
     backendPublicUrl: env.BACKEND_PUBLIC_URL,
     pendingAuthStore: new PendingAuthStore(),
-    savedStore
+    savedStore,
+    entitlementStore
   });
 
   // Resumes deletions that were confirmed upstream but never finished, and retries
