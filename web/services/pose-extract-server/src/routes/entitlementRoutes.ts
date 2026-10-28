@@ -52,11 +52,12 @@ function unavailable(res: Response): void {
  */
 export function toEntitlementView(
   row: EntitlementRecord | null,
-  entitlementId: string | null,
+  entitlementId: string,
   nowMs: number,
   stale: boolean
 ): EntitlementView {
-  if (!row) {
+  // A row cached under a different entitlement never describes the configured one.
+  if (!row || row.entitlementId !== entitlementId) {
     return {
       entitlementId,
       isActive: false,
@@ -98,9 +99,12 @@ export function toEntitlementView(
   };
 }
 
-/** A missing, aging, or already-expired row has to be re-read upstream before it is served. */
-function needsRefresh(row: EntitlementRecord | null, nowMs: number): boolean {
-  if (!row) {
+/**
+ * A missing, aging, already-expired, or differently-configured row has to be re-read upstream
+ * before it is served.
+ */
+function needsRefresh(row: EntitlementRecord | null, nowMs: number, entitlementId: string): boolean {
+  if (!row || row.entitlementId !== entitlementId) {
     return true;
   }
   const syncedMs = Date.parse(row.syncedAt);
@@ -151,7 +155,7 @@ export function createEntitlementRoutes(options: EntitlementRoutesOptions): Rout
     let row = await options.store!.get(accountId);
     let stale = false;
 
-    if (needsRefresh(row, nowMs)) {
+    if (needsRefresh(row, nowMs, options.entitlementId!)) {
       try {
         const snapshot = await options.client!.readEntitlement(accountId);
         row = (await writeSnapshot(accountId, snapshot)) ?? (await options.store!.get(accountId));

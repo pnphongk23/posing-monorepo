@@ -7,7 +7,7 @@ import type { AccountStore } from "../db/accountStore";
 import type { EntitlementSnapshot } from "../db/entitlementStore";
 import { EntitlementStore } from "../db/entitlementStore";
 import { setupTestDatabase } from "../db/testDb";
-import type { RevenueCatClient } from "../services/revenueCatClient";
+import { createRevenueCatClient, type RevenueCatClient } from "../services/revenueCatClient";
 import { accountCandidates, createRevenueCatWebhookRoutes } from "./revenueCatWebhookRoutes";
 
 import billingIssue from "./__fixtures__/revenuecat/billing_issue.json";
@@ -313,6 +313,24 @@ describe("RevenueCat webhook handling", () => {
 
     expect(response.body).toEqual({ processed: 1 });
     expect(client.readEntitlement).toHaveBeenCalledWith(ACCOUNT_A);
+  });
+
+  it("answers 503 and changes no row when a 200 body cannot be read", async () => {
+    const sql = await setupTestDatabase();
+    await seedAccounts(sql, [ACCOUNT_A]);
+    const store = new EntitlementStore(sql);
+    await store.upsert(ACCOUNT_A, snapshotFor(ACCOUNT_A));
+    const client = createRevenueCatClient({
+      apiKey: "rc-secret-key-for-tests",
+      entitlementId: "premium",
+      now: () => NOW_MS,
+      fetchImpl: (async () => new Response("{ not json", { status: 200 })) as unknown as typeof fetch
+    });
+    const app = webhookApp({ sql, accountIds: [ACCOUNT_A], client, store });
+
+    await post(app, forAccount(renewal, ACCOUNT_A)).expect(503);
+
+    expect(await store.get(ACCOUNT_A)).toMatchObject({ isActive: true, syncedAt: new Date(NOW_MS).toISOString() });
   });
 
   it("answers 503 and changes no row when the platform read fails", async () => {

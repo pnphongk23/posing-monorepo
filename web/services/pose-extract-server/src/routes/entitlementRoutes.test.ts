@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createApp } from "../app";
 import type { AccountStore } from "../db/accountStore";
 import type { EntitlementSnapshot } from "../db/entitlementStore";
+import { createRevenueCatClient } from "../services/revenueCatClient";
 import { EntitlementStore } from "../db/entitlementStore";
 import { setupTestDatabase } from "../db/testDb";
 
@@ -276,6 +277,66 @@ describe("GET /api/me/entitlement", () => {
     expect(asB.body.data).toMatchObject({ isActive: false, environment: null });
   });
 
+  it("serves stale instead of writing when a 200 body is unreadable", async () => {
+    const sql = await setupTestDatabase();
+    const accountId = "11111111-1111-4111-8111-111111111111";
+    await seedAccount(sql, accountId);
+    const store = new EntitlementStore(sql);
+    await store.upsert(accountId, activeSnapshot({ expiresAt: new Date(NOW_MS - HOUR_MS) }));
+    const app = testApp({
+      sql,
+      accountIds: [accountId],
+      now: () => NOW_MS,
+      fetchImpl: (async () => new Response("{ not json", { status: 200 })) as unknown as typeof fetch
+    });
+
+    const response = await request(app)
+      .get("/api/me/entitlement")
+      .set("Authorization", `Bearer ${jwt(accountId)}`)
+      .expect(200);
+
+    expect(response.body.data).toMatchObject({ isActive: false, expiresAt: null, stale: true });
+    expect(await store.get(accountId)).toMatchObject({ isActive: true });
+  });
+
+  it("never serves an active row cached under another entitlement id", async () => {
+    const sql = await setupTestDatabase();
+    const accountId = "11111111-1111-4111-8111-111111111111";
+    await seedAccount(sql, accountId);
+    const store = new EntitlementStore(sql);
+    await store.upsert(accountId, activeSnapshot({ entitlementId: "legacy-entitlement" }));
+    const failing = upstreamFetch(() => ({ status: 500 }));
+
+    const staleResponse = await request(testApp({ sql, accountIds: [accountId], now: () => NOW_MS, fetchImpl: failing }))
+      .get("/api/me/entitlement")
+      .set("Authorization", `Bearer ${jwt(accountId)}`)
+      .expect(200);
+
+    expect(failing).toHaveBeenCalledTimes(1);
+    expect(staleResponse.body.data).toMatchObject({
+      entitlementId: ENTITLEMENT_ID,
+      isActive: false,
+      expiresAt: null,
+      syncedAt: null,
+      stale: true
+    });
+
+    const refreshed = upstreamFetch(() => ({
+      body: subscriberBody({ expiresAt: new Date(NOW_MS + 15 * DAY_MS), upstreamAt: new Date(NOW_MS) })
+    }));
+    const refreshedResponse = await request(testApp({ sql, accountIds: [accountId], now: () => NOW_MS, fetchImpl: refreshed }))
+      .get("/api/me/entitlement")
+      .set("Authorization", `Bearer ${jwt(accountId)}`)
+      .expect(200);
+
+    expect(refreshedResponse.body.data).toMatchObject({
+      entitlementId: ENTITLEMENT_ID,
+      isActive: true,
+      expiresAt: new Date(NOW_MS + 15 * DAY_MS).toISOString(),
+      stale: false
+    });
+  });
+
   it("answers 503 when the feature is not configured", async () => {
     const sql = await setupTestDatabase();
     const accountId = "11111111-1111-4111-8111-111111111111";
@@ -334,6 +395,32 @@ describe("POST /api/me/entitlement/sync", () => {
     });
   });
 
+  it("forces an upstream read for a genuinely fresh active row and stores the result", async () => {
+    const sql = await setupTestDatabase();
+    const accountId = "11111111-1111-4111-8111-111111111111";
+    await seedAccount(sql, accountId);
+    const store = new EntitlementStore(sql);
+    const fresh = activeSnapshot();
+    await store.upsert(accountId, fresh);
+    const fetchImpl = upstreamFetch(() => ({
+      body: subscriberBody({ expiresAt: new Date(NOW_MS + 90 * DAY_MS), upstreamAt: new Date(NOW_MS) })
+    }));
+
+    const response = await request(testApp({ sql, accountIds: [accountId], now: () => NOW_MS, fetchImpl }))
+      .post("/api/me/entitlement/sync")
+      .set("Authorization", `Bearer ${jwt(accountId)}`)
+      .expect(200);
+
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(response.body.data).toMatchObject({
+      isActive: true,
+      expiresAt: new Date(NOW_MS + 90 * DAY_MS).toISOString()
+    });
+    expect(await store.get(accountId)).toMatchObject({
+      expiresAt: new Date(NOW_MS + 90 * DAY_MS).toISOString()
+    });
+  });
+
   it("ignores an account id in the body, query or headers", async () => {
     const sql = await setupTestDatabase();
     const accountA = "11111111-1111-4111-8111-111111111111";
@@ -363,6 +450,27 @@ describe("POST /api/me/entitlement/sync", () => {
     expect(await store.get(accountB)).toMatchObject({
       expiresAt: new Date(NOW_MS + 10 * DAY_MS).toISOString()
     });
+  });
+
+  it("answers 503 when a 200 body is unreadable and leaves the row untouched", async () => {
+    const sql = await setupTestDatabase();
+    const accountId = "11111111-1111-4111-8111-111111111111";
+    await seedAccount(sql, accountId);
+    const store = new EntitlementStore(sql);
+    await store.upsert(accountId, activeSnapshot());
+    const app = testApp({
+      sql,
+      accountIds: [accountId],
+      now: () => NOW_MS,
+      fetchImpl: (async () => new Response("[]", { status: 200 })) as unknown as typeof fetch
+    });
+
+    await request(app)
+      .post("/api/me/entitlement/sync")
+      .set("Authorization", `Bearer ${jwt(accountId)}`)
+      .expect(503);
+
+    expect(await store.get(accountId)).toMatchObject({ isActive: true });
   });
 
   it("answers 503 when the upstream read fails and leaves the row untouched", async () => {
@@ -400,6 +508,46 @@ describe("POST /api/me/entitlement/sync", () => {
       .set("Authorization", token)
       .expect(429)
       .expect({ error: { code: "RATE_LIMITED", message: "Too many entitlement sync requests" } });
+  });
+
+  it("rewrites a row cached under another entitlement id", async () => {
+    const sql = await setupTestDatabase();
+    const accountId = "11111111-1111-4111-8111-111111111111";
+    await seedAccount(sql, accountId);
+    const store = new EntitlementStore(sql);
+    await store.upsert(accountId, activeSnapshot({ entitlementId: "legacy-entitlement" }));
+    const fetchImpl = upstreamFetch(() => ({
+      body: subscriberBody({ expiresAt: new Date(NOW_MS + 20 * DAY_MS), upstreamAt: new Date(NOW_MS) })
+    }));
+
+    await request(testApp({ sql, accountIds: [accountId], now: () => NOW_MS, fetchImpl }))
+      .post("/api/me/entitlement/sync")
+      .set("Authorization", `Bearer ${jwt(accountId)}`)
+      .expect(200);
+
+    expect(await store.get(accountId)).toMatchObject({ entitlementId: ENTITLEMENT_ID, isActive: true });
+  });
+
+  it("limits each account separately even when the requests share one IP", async () => {
+    const sql = await setupTestDatabase();
+    const accountA = "11111111-1111-4111-8111-111111111111";
+    const accountB = "22222222-2222-4222-8222-222222222222";
+    await seedAccount(sql, accountA);
+    await seedAccount(sql, accountB);
+    const fetchImpl = upstreamFetch(() => ({
+      body: subscriberBody({ expiresAt: new Date(NOW_MS + 20 * DAY_MS), upstreamAt: new Date(NOW_MS) })
+    }));
+    const app = testApp({ sql, accountIds: [accountA, accountB], now: () => NOW_MS, fetchImpl });
+    const tokenA = `Bearer ${jwt(accountA)}`;
+    const tokenB = `Bearer ${jwt(accountB)}`;
+
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      await request(app).post("/api/me/entitlement/sync").set("Authorization", tokenA).expect(200);
+    }
+
+    // Same IP, other account: its own budget, so the limiter is keyed by account and not by IP.
+    await request(app).post("/api/me/entitlement/sync").set("Authorization", tokenB).expect(200);
+    await request(app).post("/api/me/entitlement/sync").set("Authorization", tokenA).expect(429);
   });
 
   it("requires a session", async () => {
