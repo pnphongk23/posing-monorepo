@@ -4,9 +4,9 @@ tags: [TC-SET-001, p0]
 ---
 - runFlow: ../subflows/launch.yaml
 - tapOn: "Open Settings"  # TODO(QA-261029-ID) poses.open-settings
-- assertVisible: "Privacy"
+- assertVisible: "Privacy"  # TODO(QA-261029-ID) settings.privacy.section
 - assertVisible: "Replay onboarding guide"  # TODO(QA-261029-ID) settings.replayOnboarding
 - tapOn: "About posing.*"  # TODO(QA-261029-ID) settings.about
 - assertVisible: "Close About posing"  # TODO(QA-261029-ID) about.close (sheet body text is not in the accessibility tree)
 - tapOn: "Close About posing"  # TODO(QA-261029-ID) about.close
-- assertVisible: "Privacy"
+- assertVisible: "Privacy"  # TODO(QA-261029-ID) settings.privacy.section

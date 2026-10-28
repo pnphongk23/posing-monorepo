@@ -78,3 +78,5 @@ Prefer accessibility ids (`poses.first-card`, `search.field`, `gallery.empty.ope
 | TC-SET-004 | P2 | manual |
 
 Regenerate by hand when a case changes; `check-traceability.sh` fails if an `automated:` case and its flow disagree.
+
+Further id requests from review: camera guide overlay (or its toggle) so TC-CAM-001 can prove the guide is drawn; settings.privacy.section.
