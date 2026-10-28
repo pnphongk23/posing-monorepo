@@ -137,13 +137,14 @@ final class AppConfigServiceTests: XCTestCase {
         XCTAssertTrue(AppConfigService.resolvePayload(data: ["extractPoseEnabled": "garbage"]).isExtractPoseEnabled)
     }
 
-    func testSealedFetchOnlyUpdatesExtractPoseFlag() {
+    func testSealedFetchStillUpdatesThePaywallSwitch() {
         XCTAssertEqual(
             AppConfigService.applicationDecision(isEndpointWindowSealed: true),
             ConfigApplicationDecision(
                 updateEndpoint: false,
                 updateAccountEnabled: false,
                 updateExtractPoseEnabled: true,
+                updatePaywallEnabled: true,
                 rebuildRootForChanges: false
             )
         )
@@ -156,6 +157,7 @@ final class AppConfigServiceTests: XCTestCase {
                 updateEndpoint: true,
                 updateAccountEnabled: true,
                 updateExtractPoseEnabled: true,
+                updatePaywallEnabled: true,
                 rebuildRootForChanges: true
             )
         )
@@ -222,16 +224,86 @@ final class AppConfigServiceTests: XCTestCase {
         let payload = AppConfigPayload(
             endpointUrl: "https://applied.endpoint.org",
             isAccountEnabled: true,
-            isExtractPoseEnabled: false
+            isExtractPoseEnabled: false,
+            isPaywallEnabled: true
         )
         AppConfigService.apply(payload)
 
         XCTAssertEqual(AppConfig.shared.SERVER_BASE_URL, "https://applied.endpoint.org")
         XCTAssertTrue(AppConfig.shared.isAccountFeatureEnabled)
         XCTAssertFalse(AppConfig.shared.isExtractPoseEnabled)
+        XCTAssertTrue(AppConfig.shared.isPaywallEnabled)
 
         // Reset to clean state
         AppConfigService.apply(AppConfigPayload())
+        XCTAssertFalse(AppConfig.shared.isPaywallEnabled)
+    }
+
+    // MARK: - paywall_enabled (FEAT-011 M1)
+
+    func testPaywallEnabledDefaultsToOffWhenTheKeyIsMissing() {
+        XCTAssertFalse(AppConfigService.resolvePayload(data: nil).isPaywallEnabled)
+        XCTAssertFalse(AppConfigService.resolvePayload(data: [:]).isPaywallEnabled)
+        XCTAssertFalse(AppConfigPayload().isPaywallEnabled, "The build default must never gate capture")
+    }
+
+    func testPaywallEnabledReadsBooleansAndRejectsWrongTypes() {
+        XCTAssertTrue(AppConfigService.resolvePayload(data: ["paywall_enabled": true]).isPaywallEnabled)
+        XCTAssertTrue(AppConfigService.resolvePayload(data: ["paywall_enabled": "true"]).isPaywallEnabled)
+        XCTAssertFalse(AppConfigService.resolvePayload(data: ["paywall_enabled": false]).isPaywallEnabled)
+        // A number or a nested object is not a switch: fail safe to off.
+        XCTAssertFalse(AppConfigService.resolvePayload(data: ["paywall_enabled": 1]).isPaywallEnabled)
+        XCTAssertFalse(
+            AppConfigService.resolvePayload(data: ["paywall_enabled": ["enabled": true]]).isPaywallEnabled
+        )
+        XCTAssertFalse(AppConfigService.resolvePayload(data: ["paywall_enabled": "garbage"]).isPaywallEnabled)
+    }
+
+    func testPaywallEnabledSurvivesTheCacheAndIsRestoredOffline() {
+        let (_, store) = makeStore()
+        let fetched = AppConfigPayload(
+            endpointUrl: "https://cached.example.com",
+            isAccountEnabled: true,
+            isExtractPoseEnabled: false,
+            isPaywallEnabled: true
+        )
+
+        XCTAssertTrue(AppConfigService.persistIfSuccessful(fetched, outcome: .applied, store: store))
+        let restored = AppConfigService.resolveInitialPayload(store: store)
+
+        XCTAssertEqual(restored, fetched)
+        XCTAssertTrue(restored.isPaywallEnabled)
+    }
+
+    /// A cache written before the paywall switch existed keeps its old values and adds the switch
+    /// as off, so an upgrade can never turn the paywall on by accident.
+    func testLegacyCacheWithoutThePaywallKeyDecodesWithTheSwitchOff() throws {
+        let (defaults, _) = makeStore()
+        let legacy = #"{"endpointUrl":"https://legacy.example.com","isAccountEnabled":true,"isExtractPoseEnabled":false}"#
+        defaults.set(Data(legacy.utf8), forKey: "app_config_payload")
+        let store = UserDefaultsConfigPayloadStore(defaults: defaults)
+
+        let payload = AppConfigService.resolveInitialPayload(store: store)
+
+        XCTAssertEqual(payload.endpointUrl, "https://legacy.example.com")
+        XCTAssertTrue(payload.isAccountEnabled)
+        XCTAssertFalse(payload.isExtractPoseEnabled)
+        XCTAssertFalse(payload.isPaywallEnabled)
+    }
+
+    func testLateFetchUpdatesThePaywallSwitch() {
+        XCTAssertTrue(AppConfigService.applicationDecision(isEndpointWindowSealed: true).updatePaywallEnabled)
+        XCTAssertTrue(AppConfigService.applicationDecision(isEndpointWindowSealed: false).updatePaywallEnabled)
+    }
+
+    func testEntitlementIDPlaceholdersAreRejectedLikeTheSDKKey() {
+        XCTAssertFalse(AppConfigService.isValidIdentifier(nil))
+        XCTAssertFalse(AppConfigService.isValidIdentifier(""))
+        XCTAssertFalse(AppConfigService.isValidIdentifier("REPLACE_WITH_ENTITLEMENT_ID"))
+        XCTAssertFalse(AppConfigService.isValidIdentifier("$(REVENUECAT_ENTITLEMENT_ID)"))
+        XCTAssertFalse(AppConfigService.isValidIdentifier("example_entitlement"))
+        XCTAssertFalse(AppConfigService.isValidIdentifier("placeholder"))
+        XCTAssertTrue(AppConfigService.isValidIdentifier("premium"))
     }
 
     func testRejectsPlaceholderRevenueCatKey() {

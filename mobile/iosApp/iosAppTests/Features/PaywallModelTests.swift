@@ -12,11 +12,11 @@ private final class FakePurchaseGateway: PurchaseGateway {
     var nextRestore: PurchaseSnapshot
 
     private(set) var loadCount = 0
-    private(set) var purchasedProductIDs: [String] = []
+    private(set) var purchasedPackageIDs: [String] = []
     private(set) var restoreCount = 0
 
     init(
-        snapshot: PurchaseSnapshot = PurchaseSnapshot(state: .notEntitled, products: [], errorCode: nil),
+        snapshot: PurchaseSnapshot = PurchaseSnapshot(state: .notEntitled, products: []),
         nextLoad: PurchaseSnapshot? = nil,
         nextPurchase: PurchaseSnapshot? = nil,
         nextRestore: PurchaseSnapshot? = nil
@@ -33,8 +33,8 @@ private final class FakePurchaseGateway: PurchaseGateway {
         return snapshot
     }
 
-    func purchase(productId: String) async -> PurchaseSnapshot {
-        purchasedProductIDs.append(productId)
+    func purchase(packageID: String) async -> PurchaseSnapshot {
+        purchasedPackageIDs.append(packageID)
         snapshot = nextPurchase
         return snapshot
     }
@@ -76,16 +76,18 @@ private final class InMemoryTokenStorage: TokenStoring, @unchecked Sendable {
 private let session = SessionCredentials(accessToken: "access", refreshToken: "refresh")
 
 private let annual = PurchaseProduct(
-    identifier: PaywallPlanCatalog.annualProductID,
+    identifier: "annual",
+    packageType: .annual,
     localizedPrice: "$39.99",
     period: "year"
 )
 private let monthly = PurchaseProduct(
-    identifier: PaywallPlanCatalog.monthlyProductID,
+    identifier: "monthly",
+    packageType: .monthly,
     localizedPrice: "$5.99",
     period: "month"
 )
-private let readyOffering = PurchaseSnapshot(state: .notEntitled, products: [monthly, annual], errorCode: nil)
+private let readyOffering = PurchaseSnapshot(state: .notEntitled, products: [monthly, annual])
 
 @MainActor
 final class PaywallModelTests: XCTestCase {
@@ -108,7 +110,7 @@ final class PaywallModelTests: XCTestCase {
         model.start()
         await waitUntil("sign in required") { model.phase == .signInRequired }
         XCTAssertEqual(gateway.loadCount, 0, "No offering load before the Account-bound purchase can start")
-        XCTAssertTrue(gateway.purchasedProductIDs.isEmpty)
+        XCTAssertTrue(gateway.purchasedPackageIDs.isEmpty)
     }
 
     func testSignedInLoadsOfferingAndHighlightsAnnual() async {
@@ -118,8 +120,8 @@ final class PaywallModelTests: XCTestCase {
         model.start()
         await waitUntil("ready") { model.phase == .ready }
         XCTAssertEqual(gateway.loadCount, 1)
-        XCTAssertEqual(model.plans.map(\.identifier), [PaywallPlanCatalog.annualProductID, PaywallPlanCatalog.monthlyProductID])
-        XCTAssertEqual(model.selectedProductID, PaywallPlanCatalog.annualProductID, "Annual is the highlighted default")
+        XCTAssertEqual(model.plans.map(\.identifier), [annual.identifier, monthly.identifier])
+        XCTAssertEqual(model.selectedProductID, annual.identifier, "Annual is the highlighted default")
         XCTAssertEqual(model.ctaTitle, "Continue with Annual")
     }
 
@@ -129,7 +131,7 @@ final class PaywallModelTests: XCTestCase {
         model.start()
         await waitUntil("ready") { model.phase == .ready }
 
-        model.select(PaywallPlanCatalog.monthlyProductID)
+        model.select(monthly.identifier)
         XCTAssertEqual(model.ctaTitle, "Continue with Monthly")
         XCTAssertEqual(
             PaywallPlanCatalog.summaryLine(for: monthly),
@@ -140,14 +142,14 @@ final class PaywallModelTests: XCTestCase {
     func testPurchaseConfirmsEntitlement() async {
         let gateway = FakePurchaseGateway(
             nextLoad: readyOffering,
-            nextPurchase: PurchaseSnapshot(state: .entitled, products: [monthly, annual], errorCode: nil)
+            nextPurchase: PurchaseSnapshot(state: .entitled, products: [monthly, annual])
         )
         let model = makeModel(gateway: gateway)
         model.start()
         await waitUntil("ready") { model.phase == .ready }
 
         await model.purchase()
-        XCTAssertEqual(gateway.purchasedProductIDs, [PaywallPlanCatalog.annualProductID])
+        XCTAssertEqual(gateway.purchasedPackageIDs, [annual.identifier])
         XCTAssertEqual(model.phase, .entitled)
         XCTAssertEqual(model.statusMessage, "Premium access confirmed.")
     }
@@ -155,7 +157,7 @@ final class PaywallModelTests: XCTestCase {
     func testCancelledPurchaseNeverReportsAccess() async {
         let gateway = FakePurchaseGateway(
             nextLoad: readyOffering,
-            nextPurchase: PurchaseSnapshot(state: .purchaseCancelled, products: [monthly, annual], errorCode: nil)
+            nextPurchase: PurchaseSnapshot(state: .purchaseCancelled, products: [monthly, annual])
         )
         let model = makeModel(gateway: gateway)
         model.start()
@@ -169,7 +171,7 @@ final class PaywallModelTests: XCTestCase {
     func testFailedPurchaseIsRetryableAndKeepsPlans() async {
         let gateway = FakePurchaseGateway(
             nextLoad: readyOffering,
-            nextPurchase: PurchaseSnapshot(state: .purchaseFailed, products: [monthly, annual], errorCode: nil)
+            nextPurchase: PurchaseSnapshot(state: .purchaseFailed, products: [monthly, annual])
         )
         let model = makeModel(gateway: gateway)
         model.start()
@@ -182,7 +184,7 @@ final class PaywallModelTests: XCTestCase {
     }
 
     func testUnconfiguredSdkIsTruthfulAndRetryable() async {
-        let gateway = FakePurchaseGateway(nextLoad: PurchaseSnapshot(state: .unconfigured, products: [], errorCode: nil))
+        let gateway = FakePurchaseGateway(nextLoad: PurchaseSnapshot(state: .unconfigured, products: []))
         let model = makeModel(gateway: gateway)
         model.start()
         await waitUntil("unavailable") { model.phase == .unavailable("Premium is temporarily unavailable. Please try again later.") }
@@ -195,14 +197,14 @@ final class PaywallModelTests: XCTestCase {
     }
 
     func testNoOfferingIsReportedSeparatelyFromUnconfigured() async {
-        let gateway = FakePurchaseGateway(snapshot: PurchaseSnapshot(state: .noOffering, products: [], errorCode: nil))
+        let gateway = FakePurchaseGateway(snapshot: PurchaseSnapshot(state: .noOffering, products: []))
         let model = makeModel(gateway: gateway)
         model.start()
         await waitUntil("no offering") { model.phase == .unavailable("Plans are temporarily unavailable. Retry to check again.") }
     }
 
     func testEmptyOfferingDoesNotRenderAnEmptyPlanList() async {
-        let gateway = FakePurchaseGateway(nextLoad: PurchaseSnapshot(state: .notEntitled, products: [], errorCode: nil))
+        let gateway = FakePurchaseGateway(nextLoad: PurchaseSnapshot(state: .notEntitled, products: []))
         let model = makeModel(gateway: gateway)
         model.start()
         await waitUntil("unavailable") { model.phase == .unavailable("Plans are temporarily unavailable. Retry to check again.") }
@@ -211,7 +213,7 @@ final class PaywallModelTests: XCTestCase {
     func testRestoreUsesGatewayAndCanGrantAccess() async {
         let gateway = FakePurchaseGateway(
             nextLoad: readyOffering,
-            nextRestore: PurchaseSnapshot(state: .entitled, products: [monthly, annual], errorCode: nil)
+            nextRestore: PurchaseSnapshot(state: .entitled, products: [monthly, annual])
         )
         let model = makeModel(gateway: gateway)
         model.start()
@@ -223,7 +225,7 @@ final class PaywallModelTests: XCTestCase {
     }
 
     func testExpiredEntitlementCanBuyAgain() async {
-        let gateway = FakePurchaseGateway(nextLoad: PurchaseSnapshot(state: .expired, products: [monthly, annual], errorCode: nil))
+        let gateway = FakePurchaseGateway(nextLoad: PurchaseSnapshot(state: .expired, products: [monthly, annual]))
         let model = makeModel(gateway: gateway)
         model.start()
         await waitUntil("ready") { model.phase == .ready }
@@ -305,6 +307,24 @@ final class PaywallModelTests: XCTestCase {
         XCTAssertEqual(gateway.loadCount, 0)
     }
 
+    /// M2 defence in depth: the adapter refuses a store call without a linked Account, and the
+    /// paywall must send the user back to sign-in instead of showing plans it cannot sell.
+    func testSignInRequiredSnapshotRoutsBackToSignIn() async {
+        let gateway = FakePurchaseGateway(
+            nextLoad: readyOffering,
+            nextPurchase: PurchaseSnapshot(state: .signInRequired, products: [annual, monthly])
+        )
+        let model = makeModel(gateway: gateway)
+        model.start()
+        await waitUntil("ready") { model.phase == .ready }
+
+        await model.purchase()
+
+        XCTAssertEqual(model.phase, .signInRequired)
+        XCTAssertTrue(model.plans.isEmpty)
+        XCTAssertEqual(gateway.purchasedPackageIDs, [annual.identifier])
+    }
+
     func testStartIsIdempotent() async {
         let gateway = FakePurchaseGateway(nextLoad: readyOffering)
         let model = makeModel(gateway: gateway)
@@ -332,10 +352,28 @@ final class PaywallModelTests: XCTestCase {
 }
 
 final class PaywallPlanCatalogTests: XCTestCase {
-    func testAnnualIsOrderedFirstAndUnknownProductsAreDropped() {
-        let unknown = PurchaseProduct(identifier: "premium_weekly", localizedPrice: "$1.99", period: "week")
-        let ordered = PaywallPlanCatalog.ordered([monthly, unknown, annual])
-        XCTAssertEqual(ordered.map(\.identifier), [PaywallPlanCatalog.annualProductID, PaywallPlanCatalog.monthlyProductID])
+    func testAnnualIsOrderedFirstAndOtherPackageTypesAreDropped() {
+        let weekly = PurchaseProduct(identifier: "weekly", packageType: .other, localizedPrice: "$1.99", period: "week")
+        let lifetime = PurchaseProduct(identifier: "lifetime", packageType: .other, localizedPrice: "$99.99", period: nil)
+        let ordered = PaywallPlanCatalog.ordered([monthly, weekly, lifetime, annual])
+        XCTAssertEqual(ordered.map(\.identifier), [annual.identifier, monthly.identifier])
+    }
+
+    /// A single-package offering still renders: monthly alone is a plan, not a crash and not a
+    /// silently missing highlight.
+    func testMonthlyOnlyOfferingKeepsOneSelectablePlan() {
+        let ordered = PaywallPlanCatalog.ordered([monthly])
+        XCTAssertEqual(ordered.map(\.identifier), [monthly.identifier])
+        XCTAssertFalse(PaywallPlanCatalog.isAnnual(monthly))
+        XCTAssertEqual(PaywallPlanCatalog.label(for: monthly), "Monthly")
+    }
+
+    /// Labels come from the package type, so a renamed store product cannot rename the plan.
+    func testLabelsAreKeyedOnPackageTypeNotOnIdentifier() {
+        let renamed = PurchaseProduct(identifier: "acme_tier_1", packageType: .annual, localizedPrice: "$1.00", period: nil)
+        XCTAssertEqual(PaywallPlanCatalog.label(for: renamed), "Annual")
+        XCTAssertEqual(PaywallPlanCatalog.periodLabel(for: renamed), "year")
+        XCTAssertTrue(PaywallPlanCatalog.isAnnual(renamed))
     }
 
     func testLabelsPeriodsAndTerms() {
@@ -351,7 +389,7 @@ final class PaywallPlanCatalogTests: XCTestCase {
 
     /// StoreKit metadata wins: the prototype's hardcoded prices must not survive anywhere.
     func testSummaryUsesStoreKitPriceNotAHardcodedOne() {
-        let localized = PurchaseProduct(identifier: PaywallPlanCatalog.annualProductID, localizedPrice: "₫999.000", period: "year")
+        let localized = PurchaseProduct(identifier: annual.identifier, packageType: .annual, localizedPrice: "₫999.000", period: "year")
         XCTAssertEqual(
             PaywallPlanCatalog.summaryLine(for: localized),
             "₫999.000 billed today. Auto-renews yearly until you cancel."
