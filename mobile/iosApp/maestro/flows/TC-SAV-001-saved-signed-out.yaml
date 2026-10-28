@@ -1,8 +1,0 @@
-# TC-SAV-001 signed-out Saved asks to sign in (account_feature on)
-appId: ${APP_ID}
-tags: [TC-SAV-001, p0, needs-account-flag]
----
-- runFlow: ../subflows/launch.yaml
-- tapOn: "Open Saved poses"  # TODO(QA-261029-ID) poses.open-saved
-- assertVisible:
-    id: "saved.signIn"

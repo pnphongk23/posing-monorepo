@@ -7,6 +7,6 @@ appId: ${APP_ID}
     timeout: 30000
 - tapOn:
     id: "poses.first-card"
-- extendedWaitUntil:
-    visible: "Use this pose"  # TODO(QA-261029-ID) poseDetail.use
+- scrollUntilVisible:
+    element: "Use this pose"  # TODO(QA-261029-ID) poseDetail.use
     timeout: 15000

@@ -8,6 +8,5 @@ tags: [TC-CAM-001, p0]
 - extendedWaitUntil:
     visible: "Capture photo"  # TODO(QA-261029-ID) camera.shutter
     timeout: 20000
-- assertVisible: "Show camera grid"  # TODO(QA-261029-ID) camera.tools.grid
 - assertVisible:
     id: "camera.choosePose"

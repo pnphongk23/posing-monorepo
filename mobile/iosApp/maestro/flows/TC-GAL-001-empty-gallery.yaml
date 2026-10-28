@@ -7,7 +7,8 @@ tags: [TC-GAL-001, p0]
 - assertVisible:
     id: "gallery.empty.openCamera"
 - tapOn:
-    id: "gallery.empty.openCamera"
+    text: "Open Camera"  # TODO(QA-261029-ID) the id sits on the whole empty card; the button needs its own id
+    index: 0
 - extendedWaitUntil:
     visible: "Capture photo"  # TODO(QA-261029-ID) camera.shutter
     timeout: 20000

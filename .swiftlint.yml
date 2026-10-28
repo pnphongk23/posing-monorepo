@@ -1,0 +1,113 @@
+# SwiftLint — style gate for the native iOS lane (mobile/iosApp).
+#
+# Install (brew binary only, nothing joins the app target or the SwiftPM graph):
+#   brew install swiftlint swiftformat
+# Run from the repo root:
+#   swiftlint lint --quiet
+#   swiftlint lint --quiet --write-baseline .swiftlint.baseline.json   # only when intentionally re-baselining
+#
+# Thresholds are WARNINGS on purpose: the tree still carries legacy giants
+# (CameraFeature.swift, PosesFeature.swift, RevenueCatAdapter.swift). Those are split
+# opportunistically, one behavior-preserving commit at a time — a red gate would block
+# exactly the work that fixes them. See docs/harness/specs/technical-architecture.md
+# § "iOS app architecture and conventions".
+
+included:
+  - mobile/iosApp/iosApp
+  - mobile/iosApp/iosAppTests
+
+excluded:
+  - mobile/iosApp/build
+  - mobile/iosApp/iosApp.xcodeproj
+  - "**/.build"
+
+# Violations that already existed when the gate was adopted in ARCH-261029. Regenerate
+# intentionally, never to make a new violation disappear.
+baseline: .swiftlint.baseline.json
+
+# Never fail the build on size/style: the ~400-line target is enforced by review and by
+# opportunistic extraction (see the doc), not by a red exit code. SwiftLint 0.65 reads a 0
+# threshold literally ("allowed 0"), so the error ceilings are set far above anything the
+# tree can reach instead of being "disabled".
+file_length:
+  warning: 400
+  error: 100000
+  ignore_comment_only_lines: true
+
+function_body_length:
+  warning: 120
+  error: 100000
+
+type_body_length:
+  warning: 350
+  error: 100000
+
+function_parameter_count:
+  warning: 6
+  error: 1000
+
+cyclomatic_complexity:
+  warning: 20
+  error: 10000
+
+# Legacy code returns ad-hoc tuples; the convention is a named struct (see the doc).
+large_tuple:
+  warning: 2
+  error: 100
+
+line_length:
+  warning: 200
+  error: 100000
+  ignores_comments: true
+  ignores_urls: true
+  ignores_function_declarations: true
+  ignores_interpolated_strings: true
+
+# Legacy naming that predates this gate; banning them now would only create noise on
+# files that are scheduled for extraction anyway.
+identifier_name:
+  min_length:
+    warning: 2
+    error: 0
+  max_length:
+    warning: 60
+    error: 1000
+  excluded:
+    - id
+    - x
+    - y
+    - db
+    - up
+    - to
+    # Compile-time constant spelling for the build-config lookup (AppConfig.swift).
+    - SERVER_BASE_URL
+
+type_name:
+  min_length:
+    warning: 3
+    error: 0
+  max_length:
+    warning: 60
+    error: 1000
+
+disabled_rules:
+  - todo                       # follow-ups are tracked in docs/harness, not in-source markers
+  - trailing_comma              # swiftformat owns comma style; two tools must not disagree
+  - opening_brace               # swiftformat owns brace placement
+  - sorted_imports              # swiftformat owns import ordering
+  - explicit_acl                # the app is a single module; internal is the default
+  - explicit_top_level_acl
+  - nesting                    # legacy models nest enums/structs deeply; extraction will unwind it
+
+opt_in_rules:
+  - empty_count
+  - first_where
+  - redundant_nil_coalescing
+  - toggle_bool
+  - unneeded_parentheses_in_closure_argument
+  - weak_delegate
+
+analyzer_rules:
+  - unused_declaration
+
+reporter: "xcode"

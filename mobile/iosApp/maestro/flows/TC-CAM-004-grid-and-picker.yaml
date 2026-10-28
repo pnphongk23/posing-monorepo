@@ -4,7 +4,10 @@ tags: [TC-CAM-004, p0]
 ---
 - runFlow: ../subflows/launch.yaml
 - runFlow: ../subflows/open-camera.yaml
-- tapOn: "Show camera grid"  # TODO(QA-261029-ID) camera.tools.grid
+- tapOn:
+    id: "camera.tools"
+- tapOn:
+    id: "camera.tools.grid"
 - tapOn:
     id: "camera.choosePose"
 - assertVisible:

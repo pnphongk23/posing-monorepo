@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+#
+# Fast pre-commit gate for the native iOS lane: format + lint the STAGED .swift files only.
+# It never runs xcodebuild — builds and tests belong to scripts/ios-verify.sh, run by hand
+# before you commit what the build actually proved.
+#
+# Install (deliberately not installed automatically):
+#   ln -sf ../../scripts/git-hooks/pre-commit .git/hooks/pre-commit
+#   chmod +x .git/hooks/pre-commit
+# Remove with: rm .git/hooks/pre-commit
+#
+# Bypass for an emergency (documented, not for routine use): git commit --no-verify
+set -euo pipefail
+
+ROOT="$(git rev-parse --show-toplevel)"
+cd "$ROOT"
+
+STAGED_SWIFT=()
+while IFS= read -r -d '' file; do
+  STAGED_SWIFT+=("$file")
+done < <(git diff --cached --name-only --diff-filter=ACMR -z -- '*.swift')
+
+if [[ ${#STAGED_SWIFT[@]} -eq 0 ]]; then
+  exit 0
+fi
+
+echo "pre-commit: checking ${#STAGED_SWIFT[@]} staged Swift file(s)"
+
+if command -v swiftformat >/dev/null; then
+  if ! swiftformat --quiet --lint "${STAGED_SWIFT[@]}"; then
+    echo "pre-commit: swiftformat rejected the staged files above." >&2
+    echo "pre-commit: run 'swiftformat <file>' on YOUR files only — never reformat unrelated code in the same commit." >&2
+    exit 1
+  fi
+else
+  echo "pre-commit: swiftformat not installed (brew install swiftformat) — skipping format check" >&2
+fi
+
+if command -v swiftlint >/dev/null; then
+  # --quiet keeps the hook silent on a clean tree; the baseline absorbs legacy violations, so
+  # anything printed here was introduced by this commit.
+  if ! swiftlint lint --quiet "${STAGED_SWIFT[@]}"; then
+    echo "pre-commit: swiftlint rejected the staged files above (see .swiftlint.yml)." >&2
+    echo "pre-commit: fix the violation; do not re-baseline to silence new code." >&2
+    exit 1
+  fi
+else
+  echo "pre-commit: swiftlint not installed (brew install swiftlint) — skipping lint check" >&2
+fi
+
+echo "pre-commit: ok (format + lint only — run scripts/ios-verify.sh before you claim green)"

@@ -7,6 +7,6 @@ tags: [TC-SET-001, p0]
 - assertVisible: "Privacy"
 - assertVisible: "Replay onboarding guide"  # TODO(QA-261029-ID) settings.replayOnboarding
 - tapOn: "About posing.*"  # TODO(QA-261029-ID) settings.about
-- assertVisible: "Strike the pose. Snap the moment."
+- assertVisible: "Close About posing"  # TODO(QA-261029-ID) about.close (sheet body text is not in the accessibility tree)
 - tapOn: "Close About posing"  # TODO(QA-261029-ID) about.close
 - assertVisible: "Privacy"
