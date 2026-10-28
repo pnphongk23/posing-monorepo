@@ -7,7 +7,9 @@ final class AppConfig: @unchecked Sendable {
     private let lock = NSLock()
     private var _serverBaseURL = "https://pose-extract-server-production.up.railway.app"
     private var _isAccountFeatureEnabled = false
-    private var _isExtractPoseEnabled = true
+    /// D6 = A: extraction fails closed. First paint, a Firestore outage and a fresh install all
+    /// read `false`; only a fetched explicit `true` turns it on.
+    private var _isExtractPoseEnabled = false
     /// FEAT-011 kill switch. Off by default: the paywall never gates on a build that has not been
     /// told to, and a Firestore outage leaves capture free.
     private var _isPaywallEnabled = false

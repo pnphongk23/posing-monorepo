@@ -16,8 +16,11 @@ final class AppConfigTests: XCTestCase {
         XCTAssertTrue(config.isAccountFeatureEnabled)
     }
 
-    func testExtractPoseFeatureFlagDefaultsToEnabled() {
-        XCTAssertTrue(AppConfig().isExtractPoseEnabled)
+    /// Extraction fails closed (D6 = A): a fresh install, a Firestore outage and a first paint
+    /// before any payload all keep the Jobs/extraction surfaces hidden until an explicit `true`.
+    func testExtractPoseFeatureFlagDefaultsToDisabled() {
+        XCTAssertFalse(AppConfig().isExtractPoseEnabled)
+        XCTAssertFalse(JobsEntryPolicy.canOpen(extractPoseEnabled: AppConfig().isExtractPoseEnabled))
     }
 
     func testExtractPoseFeatureFlagCanBeAppliedInBothDirections() {

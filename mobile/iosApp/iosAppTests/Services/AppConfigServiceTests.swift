@@ -57,13 +57,13 @@ final class AppConfigServiceTests: XCTestCase {
         let payload = AppConfigService.resolvePayload(data: nil)
         XCTAssertEqual(payload.endpointUrl, AppConfigService.defaultURL)
         XCTAssertFalse(payload.isAccountEnabled)
-        XCTAssertTrue(payload.isExtractPoseEnabled)
+        XCTAssertFalse(payload.isExtractPoseEnabled, "extraction fails closed (D6 = A)")
     }
 
     func testResolveWithValidFirestoreData() {
         let data: [String: Any] = [
             "api_baseurl": "https://custom.api.endpoint",
-            "account_enabled": true,
+            "accounts_enabled_v2": true,
             "extractPoseEnabled": false
         ]
         let payload = AppConfigService.resolvePayload(data: data)
@@ -75,13 +75,13 @@ final class AppConfigServiceTests: XCTestCase {
     func testResolveWithInvalidEndpointFallsBackToDefault() {
         let invalidData: [String: Any] = [
           "api_baseurl": "not-a-valid-url",
-          "account_enabled": "true",
+          "accounts_enabled_v2": "true",
           "extractPoseEnabled": "garbage"
         ]
         let payload = AppConfigService.resolvePayload(data: invalidData)
         XCTAssertEqual(payload.endpointUrl, AppConfigService.defaultURL)
         XCTAssertTrue(payload.isAccountEnabled)
-        XCTAssertTrue(payload.isExtractPoseEnabled)
+        XCTAssertFalse(payload.isExtractPoseEnabled, "an unparseable switch is not an opt-in")
     }
 
     func testParseBooleanRecognizesVariousTypesAndValues() {
@@ -104,7 +104,7 @@ final class AppConfigServiceTests: XCTestCase {
     func testAccountEnabledResolutionOrder() {
         // A fetched true value is enabled.
         let p1 = AppConfigService.resolvePayload(
-            data: ["account_enabled": "true"]
+            data: ["accounts_enabled_v2": "true"]
         )
         XCTAssertTrue(p1.isAccountEnabled)
 
@@ -116,25 +116,24 @@ final class AppConfigServiceTests: XCTestCase {
 
         // Missing / unparseable in both defaults to false
         let p3 = AppConfigService.resolvePayload(
-            data: ["account_enabled": "unparseable"]
+            data: ["accounts_enabled_v2": "unparseable"]
         )
         XCTAssertFalse(p3.isAccountEnabled)
     }
 
     func testExtractPoseEnabledResolutionOrder() {
-        // Missing in fetched and cached defaults to true
-        let p1 = AppConfigService.resolvePayload(data: nil)
-        XCTAssertTrue(p1.isExtractPoseEnabled)
+        // Missing in the fetched document (and therefore a cache miss too) is off.
+        XCTAssertFalse(AppConfigService.resolvePayload(data: nil).isExtractPoseEnabled)
+        XCTAssertFalse(AppConfigService.resolvePayload(data: [:]).isExtractPoseEnabled)
 
-        // Explicit false in fetched overrides cached true
-        let p2 = AppConfigService.resolvePayload(
-            data: ["extractPoseEnabled": false]
-        )
-        XCTAssertFalse(p2.isExtractPoseEnabled)
-
+        XCTAssertFalse(AppConfigService.resolvePayload(data: ["extractPoseEnabled": false]).isExtractPoseEnabled)
         XCTAssertFalse(AppConfigService.resolvePayload(data: ["extractPoseEnabled": "false"]).isExtractPoseEnabled)
         XCTAssertFalse(AppConfigService.resolvePayload(data: ["extractPoseEnabled": NSNumber(value: 0)]).isExtractPoseEnabled)
-        XCTAssertTrue(AppConfigService.resolvePayload(data: ["extractPoseEnabled": "garbage"]).isExtractPoseEnabled)
+        XCTAssertFalse(AppConfigService.resolvePayload(data: ["extractPoseEnabled": "garbage"]).isExtractPoseEnabled)
+
+        // Only an explicit opt-in turns extraction on.
+        XCTAssertTrue(AppConfigService.resolvePayload(data: ["extractPoseEnabled": true]).isExtractPoseEnabled)
+        XCTAssertTrue(AppConfigService.resolvePayload(data: ["extractPoseEnabled": "true"]).isExtractPoseEnabled)
     }
 
     func testSealedFetchStillUpdatesThePaywallSwitch() {
@@ -166,7 +165,7 @@ final class AppConfigServiceTests: XCTestCase {
     func testConfigSourceFetchSuccessApplied() async {
         let source = StubConfigSource(result: .success([
             "api_baseurl": "https://fetched.source.io",
-            "account_enabled": true,
+            "accounts_enabled_v2": true,
             "extractPoseEnabled": false
         ]))
 
@@ -184,7 +183,7 @@ final class AppConfigServiceTests: XCTestCase {
         XCTAssertEqual(outcome, .emptyOrInvalid)
         XCTAssertEqual(payload.endpointUrl, AppConfigService.defaultURL)
         XCTAssertFalse(payload.isAccountEnabled)
-        XCTAssertTrue(payload.isExtractPoseEnabled)
+        XCTAssertFalse(payload.isExtractPoseEnabled)
     }
 
     func testConfigSourceFetchErrorFallsBackToDefaults() async {
@@ -195,7 +194,7 @@ final class AppConfigServiceTests: XCTestCase {
         XCTAssertEqual(outcome, .error)
         XCTAssertEqual(payload.endpointUrl, AppConfigService.defaultURL)
         XCTAssertFalse(payload.isAccountEnabled)
-        XCTAssertTrue(payload.isExtractPoseEnabled)
+        XCTAssertFalse(payload.isExtractPoseEnabled)
     }
 
     func testConfigSourceTimeoutFallsBackToDefaults() async {
@@ -206,12 +205,12 @@ final class AppConfigServiceTests: XCTestCase {
         XCTAssertEqual(outcome, .error)
         XCTAssertEqual(payload.endpointUrl, AppConfigService.defaultURL)
         XCTAssertFalse(payload.isAccountEnabled)
-        XCTAssertTrue(payload.isExtractPoseEnabled)
+        XCTAssertFalse(payload.isExtractPoseEnabled)
     }
 
     func testMissingEndpointUsesDefaultWhileOtherFieldsResolve() {
         let payload = AppConfigService.resolvePayload(data: [
-            "account_enabled": false,
+            "accounts_enabled_v2": false,
             "extractPoseEnabled": true
         ])
 
@@ -399,5 +398,110 @@ final class AppConfigServiceTests: XCTestCase {
     func testFirebasePlistInvalidWhenMissing() {
         XCTAssertFalse(AppConfigService.isFirebasePlistValid(at: nil))
         XCTAssertFalse(AppConfigService.isFirebasePlistValid(at: URL(fileURLWithPath: "/tmp/missing.plist")))
+    }
+
+    // MARK: - accounts_enabled_v2: the build-scoped account switch (FEAT-013 phase 03)
+
+    /// Only the v2 key counts. The legacy key is what the shipped v1.0 build still reads, so flipping
+    /// it (or an operator editing the wrong row) must not switch this build's account surface on.
+    func testAccountSwitchIsReadFromTheV2KeyOnly() {
+        XCTAssertTrue(AppConfigService.resolvePayload(data: ["accounts_enabled_v2": true]).isAccountEnabled)
+        XCTAssertTrue(AppConfigService.resolvePayload(data: ["accounts_enabled_v2": "true"]).isAccountEnabled)
+        XCTAssertFalse(
+            AppConfigService.resolvePayload(data: ["account_enabled": true]).isAccountEnabled,
+            "the legacy key must not enable accounts in this build"
+        )
+        XCTAssertTrue(
+            AppConfigService.resolvePayload(
+                data: ["account_enabled": false, "accounts_enabled_v2": true]
+            ).isAccountEnabled
+        )
+        XCTAssertFalse(
+            AppConfigService.resolvePayload(data: ["accounts_enabled_v2": "garbage"]).isAccountEnabled
+        )
+    }
+
+    // MARK: - Extraction fails closed (D6 = A)
+
+    /// Offline, a throwing source, an empty document and a timeout all keep extraction off, and the
+    /// Jobs entry stays hidden for every one of them.
+    func testEveryFailedLaunchPathResolvesExtractionOff() async {
+        struct SourceFailure: Error {}
+        let emptyDocument = await AppConfigService.fetchAndResolve(
+            source: StubConfigSource(result: .success(nil))
+        )
+        let throwing = await AppConfigService.fetchAndResolve(
+            source: StubConfigSource(result: .failure(SourceFailure()))
+        )
+        let offline = await AppConfigService.fetchAndResolve(
+            source: StubConfigSource(result: .failure(URLError(.notConnectedToInternet)))
+        )
+        let timedOut = await AppConfigService.fetchAndResolve(
+            source: StubConfigSource(result: .failure(URLError(.timedOut)))
+        )
+
+        for result in [emptyDocument, throwing, offline, timedOut] {
+            XCTAssertFalse(result.payload.isExtractPoseEnabled, "no launch path may resolve extraction to on")
+            XCTAssertFalse(JobsEntryPolicy.canOpen(extractPoseEnabled: result.payload.isExtractPoseEnabled))
+        }
+    }
+
+    /// First paint happens before any fetch. A fresh payload and a fresh `AppConfig` are both off,
+    /// which is also what an install without a usable Firebase plist keeps for the whole launch.
+    func testFirstPaintStartsWithExtractionOff() {
+        XCTAssertFalse(AppConfigPayload().isExtractPoseEnabled)
+        XCTAssertFalse(AppConfig().isExtractPoseEnabled)
+        XCTAssertFalse(AppConfigService.isFirebasePlistValid(at: nil))
+
+        let (_, emptyStore) = makeStore()
+        let firstPaint = AppConfigService.resolveInitialPayload(store: emptyStore)
+        XCTAssertFalse(firstPaint.isExtractPoseEnabled)
+        XCTAssertFalse(JobsEntryPolicy.canOpen(extractPoseEnabled: firstPaint.isExtractPoseEnabled))
+    }
+
+    /// A cache written by an older build stored `true` as its *default*, so it is discarded as an
+    /// opt-in while the endpoint and account values it also holds are kept.
+    func testV1CacheDoesNotCarryItsDefaultExtractionOnIntoThisBuild() {
+        let (defaults, _) = makeStore()
+        let legacy = #"{"endpointUrl":"https://legacy.example.com","isAccountEnabled":true,"isExtractPoseEnabled":true,"isPaywallEnabled":false}"#
+        defaults.set(Data(legacy.utf8), forKey: "app_config_payload")
+        let store = UserDefaultsConfigPayloadStore(defaults: defaults)
+
+        let payload = AppConfigService.resolveInitialPayload(store: store)
+
+        XCTAssertFalse(payload.isExtractPoseEnabled, "a v1 `true` was the old default, not an operator's opt-in")
+        XCTAssertEqual(payload.endpointUrl, "https://legacy.example.com")
+        XCTAssertTrue(payload.isAccountEnabled)
+        XCTAssertFalse(JobsEntryPolicy.canOpen(extractPoseEnabled: payload.isExtractPoseEnabled))
+    }
+
+    /// This build's own cache keeps an explicit ON across a relaunch, which is what makes an
+    /// offline launch after a successful fetch behave like the fetched payload.
+    func testV2CacheKeepsAnExplicitExtractionOn() {
+        let (_, store) = makeStore()
+        let fetched = AppConfigPayload(endpointUrl: "https://cached.example.com", isExtractPoseEnabled: true)
+        XCTAssertEqual(fetched.schemaVersion, AppConfigPayload.currentSchemaVersion)
+        XCTAssertTrue(AppConfigService.persistIfSuccessful(fetched, outcome: .applied, store: store))
+
+        let restored = AppConfigService.resolveInitialPayload(store: store)
+        XCTAssertTrue(restored.isExtractPoseEnabled)
+        XCTAssertEqual(restored.endpointUrl, "https://cached.example.com")
+    }
+
+    /// A cached ON must not outlive a fetched OFF in the same launch.
+    func testCachedExtractionOnIsTurnedOffByALateFetch() {
+        let config = AppConfig()
+        config.applyExtractPoseEnabled(true)
+        let decision = AppConfigService.applicationDecision(isEndpointWindowSealed: true)
+
+        let applied = AppConfigService.applyFetched(
+            AppConfigPayload(endpointUrl: AppConfigService.defaultURL, isExtractPoseEnabled: false),
+            decision: decision,
+            to: config
+        )
+
+        XCTAssertTrue(applied.extractPoseChanged)
+        XCTAssertFalse(config.isExtractPoseEnabled)
+        XCTAssertFalse(JobsEntryPolicy.canOpen(extractPoseEnabled: config.isExtractPoseEnabled))
     }
 }

@@ -863,6 +863,419 @@ final class PoseAccountScopeTests: XCTestCase {
     }
 }
 
+/// Session-epoch hardening (`FEAT-013`/`FEAT-014` phase 03).
+///
+/// The real case is the ordinary one: a Saved read is in flight when the user signs out, deletes the
+/// account, or signs in as someone else. The clear must win, so the late answer is neither committed
+/// to the catalog nor left where the next Account's read would pick it up.
+final class PoseSessionEpochTests: XCTestCase {
+    private static let baseURL = "https://api.example.com"
+
+    /// 1. A cold Saved miss (no cache at all) that is still waiting on the network when the session
+    /// changes. Its response arrives afterwards and must commit nothing.
+    func testColdSavedMissAcrossASwitchCommitsNothing() async throws {
+        let temp = try TempPoseDatabase()
+        defer { temp.cleanUp() }
+        let remote = GatedPoseRemote()
+        remote.communityItems = [try stubPose("shared-1", name: "Shared", uploadedAt: "2024-03-02T00:00:00Z")]
+        let cache = PoseCatalogCacheStore(repository: temp.repository, scheduler: ManualPoseRefreshScheduler())
+
+        // Account A sees the community feed, so a switch has something to demote rather than delete.
+        let communityAdapter = PoseAPIServiceAdapter(
+            remote: remote,
+            baseURL: Self.baseURL,
+            filterState: PoseFilterState(),
+            cache: cache
+        )
+        _ = try await communityAdapter.poses(query: nil)
+
+        let savedFilter = savedFilterState()
+        let savedAdapter = PoseAPIServiceAdapter(
+            remote: remote,
+            baseURL: Self.baseURL,
+            filterState: savedFilter,
+            cache: cache
+        )
+        let inFlight = Task { try await savedAdapter.poses(query: nil) }
+        await remote.waitForSavedRequest()
+
+        // The user switches Account while A's Saved read is still on the wire.
+        await cache.clearSavedState()
+        remote.releaseSaved([
+            try stubPose("shared-1", name: "Shared", uploadedAt: "2024-03-02T00:00:00Z"),
+            try stubPose("mine-1", name: "Mine", uploadedAt: "2024-03-01T00:00:00Z"),
+        ])
+        _ = try? await inFlight.value
+
+        let savedAfterSwitch = try await savedRowCount(in: temp)
+        XCTAssertEqual(savedAfterSwitch, 0, "the late answer must not repopulate Saved rows")
+
+        // Account B reading offline: nothing cached answers, so the read fails like a cold start...
+        let offline = UnreachablePoseRemote()
+        let offlineSaved = PoseAPIServiceAdapter(
+            remote: offline,
+            baseURL: Self.baseURL,
+            filterState: savedFilter,
+            cache: cache,
+            hasSession: { true }
+        )
+        do {
+            _ = try await offlineSaved.poses(query: nil)
+            XCTFail("B must not be answered from A's late response")
+        } catch {
+            XCTAssertEqual((error as? URLError)?.code, .notConnectedToInternet)
+        }
+
+        // ...and the All route shows the community row with A's saved flag cleared.
+        let allFilter = PoseFilterState()
+        allFilter.setFilterRawValueForTesting("All")
+        let offlineAll = PoseAPIServiceAdapter(
+            remote: offline,
+            baseURL: Self.baseURL,
+            filterState: allFilter,
+            cache: cache,
+            hasSession: { true }
+        )
+        let allPoses = try await offlineAll.poses(query: nil)
+        XCTAssertEqual(allPoses.map(\.id), ["shared-1"])
+        XCTAssertFalse(allPoses[0].isSaved, "A's save must not leak into B's All list")
+    }
+
+    /// 2. Stale-while-revalidate: the revalidation was queued under A's session and returns after the
+    /// switch. It must not re-seed the rows the clear just removed.
+    func testStaleSavedRevalidationAcrossASwitchCommitsNothing() async throws {
+        let temp = try TempPoseDatabase()
+        defer { temp.cleanUp() }
+        let remote = StubPoseRemote()
+        remote.savedItems = [
+            try savedPose("shared-1", name: "Shared"),
+            try savedPose("mine-1", name: "Mine"),
+        ]
+        let clock = PoseTestClock()
+        let scheduler = ManualPoseRefreshScheduler()
+        let cache = PoseCatalogCacheStore(
+            repository: temp.repository,
+            freshnessWindow: 300,
+            scheduler: scheduler,
+            now: { clock.now }
+        )
+        let savedFilter = savedFilterState()
+        let adapter = PoseAPIServiceAdapter(
+            remote: remote,
+            baseURL: Self.baseURL,
+            filterState: savedFilter,
+            cache: cache
+        )
+
+        _ = try await adapter.poses(query: nil)
+        let seededSaved = try await savedRowCount(in: temp)
+        XCTAssertEqual(seededSaved, 2)
+
+        // Same session, stale entry: answered from memory with a refresh queued behind it.
+        clock.advance(400)
+        _ = try await adapter.poses(query: nil)
+        XCTAssertEqual(scheduler.pendingCount, 1, "the stale read queues its revalidation")
+
+        await cache.clearSavedState()
+        await scheduler.runAll()
+
+        XCTAssertEqual(remote.savedCallCount, 2, "the queued revalidation did run")
+        let savedAfterRevalidation = try await savedRowCount(in: temp)
+        XCTAssertEqual(savedAfterRevalidation, 0, "its answer belongs to the dropped session")
+
+        let offlineSaved = PoseAPIServiceAdapter(
+            remote: UnreachablePoseRemote(),
+            baseURL: Self.baseURL,
+            filterState: savedFilter,
+            cache: cache,
+            hasSession: { true }
+        )
+        do {
+            _ = try await offlineSaved.poses(query: nil)
+            XCTFail("nothing may answer the next Account's Saved read")
+        } catch {}
+    }
+
+    /// 3. The clear lands after the fetch returned but before the rows were committed.
+    func testClearInsideThePersistWindowCommitsNothing() async throws {
+        let temp = try TempPoseDatabase()
+        defer { temp.cleanUp() }
+        let remote = StubPoseRemote()
+        remote.savedItems = [
+            try savedPose("shared-1", name: "Shared"),
+            try savedPose("mine-1", name: "Mine"),
+        ]
+        let cache = PoseCatalogCacheStore(repository: temp.repository, scheduler: ManualPoseRefreshScheduler())
+        let gate = PoseTestGate()
+        cache.setBeforeAccountScopedWriteForTesting { await gate.reachAndWait() }
+
+        let adapter = PoseAPIServiceAdapter(
+            remote: remote,
+            baseURL: Self.baseURL,
+            filterState: savedFilterState(),
+            cache: cache
+        )
+        let read = Task { try await adapter.poses(query: nil) }
+        await gate.waitUntilReached()
+
+        await cache.clearSavedState()
+        gate.releaseGate()
+        _ = try? await read.value
+
+        let savedAfterClear = try await savedRowCount(in: temp)
+        XCTAssertEqual(savedAfterClear, 0, "a write paused before its commit must not land")
+    }
+
+    /// 4. A save request in flight across the switch: its 200 marks nothing as saved afterwards.
+    func testBookmarkCompletionAcrossASwitchMarksNothingSaved() async throws {
+        let temp = try TempPoseDatabase()
+        defer { temp.cleanUp() }
+        let remote = StubPoseRemote()
+        remote.communityItems = [try stubPose("shared-1", name: "Shared", uploadedAt: "2024-03-02T00:00:00Z")]
+        let cache = PoseCatalogCacheStore(repository: temp.repository, scheduler: ManualPoseRefreshScheduler())
+        let adapter = PoseAPIServiceAdapter(
+            remote: remote,
+            baseURL: Self.baseURL,
+            filterState: PoseFilterState(),
+            cache: cache
+        )
+        _ = try await adapter.poses(query: nil)
+
+        let base = GatedBookmarkService()
+        let bookmarks = PoseCachingBookmarkService(base: base, cache: cache)
+        let save = Task { try await bookmarks.savePose(poseId: "shared-1") }
+        await base.waitForSave()
+
+        await cache.clearSavedState()
+        base.releaseSave()
+        _ = try? await save.value
+
+        let stored = try await temp.repository.cached()
+        XCTAssertEqual(stored.first?.poseId, "shared-1")
+        XCTAssertEqual(
+            stored.first?.status,
+            PoseCatalogMapping.unsavedStatus,
+            "A's completed save must not mark the row saved for B"
+        )
+    }
+
+    /// Positive control: with no switch the same two flows persist normally, so the epoch check is
+    /// not simply blocking every account-scoped write.
+    func testWithoutASwitchTheSameFlowsStillCommit() async throws {
+        let temp = try TempPoseDatabase()
+        defer { temp.cleanUp() }
+        let remote = StubPoseRemote()
+        remote.communityItems = [try stubPose("shared-1", name: "Shared", uploadedAt: "2024-03-02T00:00:00Z")]
+        remote.savedItems = [try savedPose("mine-1", name: "Mine")]
+        let cache = PoseCatalogCacheStore(repository: temp.repository, scheduler: ManualPoseRefreshScheduler())
+        let savedFilter = savedFilterState()
+        let adapter = PoseAPIServiceAdapter(
+            remote: remote,
+            baseURL: Self.baseURL,
+            filterState: savedFilter,
+            cache: cache
+        )
+
+        _ = try await adapter.poses(query: nil)
+        let committedSaved = try await savedRowCount(in: temp)
+        XCTAssertEqual(committedSaved, 1, "a cold miss with no switch commits")
+
+        let bookmarks = PoseCachingBookmarkService(base: NoopBookmarkService(), cache: cache)
+        try await bookmarks.savePose(poseId: "mine-1")
+        let afterSave = try await savedRowCount(in: temp)
+        XCTAssertEqual(afterSave, 1)
+        let stored = try await temp.repository.cached()
+        XCTAssertEqual(stored.first?.status, PoseCatalogMapping.savedStatus)
+
+        try await bookmarks.unsavePose(poseId: "mine-1")
+        let afterUnsave = try await savedRowCount(in: temp)
+        XCTAssertEqual(afterUnsave, 0, "an unsave with no switch commits too")
+    }
+
+    // MARK: - helpers
+
+    private func savedFilterState() -> PoseFilterState {
+        let filterState = PoseFilterState()
+        filterState.filter = .saved
+        return filterState
+    }
+
+    private func savedRowCount(in temp: TempPoseDatabase) async throws -> Int {
+        try await temp.repository.cached().filter { $0.status == PoseCatalogMapping.savedStatus }.count
+    }
+
+    private func savedPose(_ id: String, name: String) throws -> CommunityPose {
+        try JSONDecoder().decode(CommunityPose.self, from: Data("""
+        {"poseId":"\(id)","name":"\(name)","skeletonUrl":"/s.png","thumbnailUrl":"/t.jpg","status":"published"}
+        """.utf8))
+    }
+}
+
+/// A Saved request that the test holds open, so a session change can land exactly inside the await.
+private final class GatedPoseRemote: PoseRemoteFetching, @unchecked Sendable {
+    var communityItems: [CommunityPose] = []
+    private let lock = NSLock()
+    private var savedContinuation: CheckedContinuation<[CommunityPose], Error>?
+    private var savedRequestStarted = false
+    private var startWaiters: [CheckedContinuation<Void, Never>] = []
+
+    func fetchCommunity(page: Int, limit: Int, query: String?) async throws -> [CommunityPose] {
+        communityItems
+    }
+
+    func fetchSaved(page: Int, limit: Int) async throws -> [CommunityPose] {
+        await withCheckedContinuation { continuation in
+            lock.lock()
+            savedRequestStarted = true
+            let waiters = startWaiters
+            startWaiters = []
+            savedContinuation = continuation
+            lock.unlock()
+            waiters.forEach { $0.resume() }
+        }
+    }
+
+    func waitForSavedRequest() async {
+        lock.lock()
+        guard !savedRequestStarted else {
+            lock.unlock()
+            return
+        }
+        await withCheckedContinuation { continuation in
+            startWaiters.append(continuation)
+            lock.unlock()
+        }
+    }
+
+    func releaseSaved(_ items: [CommunityPose]) {
+        lock.lock()
+        let continuation = savedContinuation
+        savedContinuation = nil
+        lock.unlock()
+        continuation?.resume(returning: items)
+    }
+}
+
+/// A save request the test holds open (the bookmark service is what awaits the network).
+private final class GatedBookmarkService: PoseBookmarkServing, @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<Void, Never>?
+    private var started = false
+    private var startWaiters: [CheckedContinuation<Void, Never>] = []
+
+    func savePose(poseId: String) async throws {
+        await withCheckedContinuation { pending in
+            lock.lock()
+            started = true
+            let waiters = startWaiters
+            startWaiters = []
+            continuation = pending
+            lock.unlock()
+            waiters.forEach { $0.resume() }
+        }
+    }
+
+    func unsavePose(poseId: String) async throws {}
+
+    func waitForSave() async {
+        lock.lock()
+        guard !started else {
+            lock.unlock()
+            return
+        }
+        await withCheckedContinuation { pending in
+            startWaiters.append(pending)
+            lock.unlock()
+        }
+    }
+
+    func releaseSave() {
+        lock.lock()
+        let pending = continuation
+        continuation = nil
+        lock.unlock()
+        pending?.resume()
+    }
+}
+
+/// Unreachable network: the read must fail instead of being answered from a leftover cache.
+private struct UnreachablePoseRemote: PoseRemoteFetching {
+    func fetchCommunity(page: Int, limit: Int, query: String?) async throws -> [CommunityPose] {
+        throw URLError(.notConnectedToInternet)
+    }
+
+    func fetchSaved(page: Int, limit: Int) async throws -> [CommunityPose] {
+        throw URLError(.notConnectedToInternet)
+    }
+}
+
+/// A hand-driven clock, so a test can make a memory entry stale without sleeping.
+private final class PoseTestClock: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored = Date(timeIntervalSince1970: 1_700_000_000)
+
+    var now: Date {
+        lock.lock()
+        defer { lock.unlock() }
+        return stored
+    }
+
+    func advance(_ seconds: TimeInterval) {
+        lock.lock()
+        stored = stored.addingTimeInterval(seconds)
+        lock.unlock()
+    }
+}
+
+/// Holds the account-scoped write between "the fetch returned" and "the rows committed".
+private final class PoseTestGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var reached = false
+    private var released = false
+    private var reachedWaiters: [CheckedContinuation<Void, Never>] = []
+    private var releaseWaiters: [CheckedContinuation<Void, Never>] = []
+
+    func reachAndWait() async {
+        lock.lock()
+        reached = true
+        let waiters = reachedWaiters
+        reachedWaiters = []
+        lock.unlock()
+        waiters.forEach { $0.resume() }
+        await withCheckedContinuation { pending in
+            lock.lock()
+            guard !released else {
+                lock.unlock()
+                pending.resume()
+                return
+            }
+            releaseWaiters.append(pending)
+            lock.unlock()
+        }
+    }
+
+    func waitUntilReached() async {
+        lock.lock()
+        guard !reached else {
+            lock.unlock()
+            return
+        }
+        await withCheckedContinuation { pending in
+            reachedWaiters.append(pending)
+            lock.unlock()
+        }
+    }
+
+    func releaseGate() {
+        lock.lock()
+        released = true
+        let waiters = releaseWaiters
+        releaseWaiters = []
+        lock.unlock()
+        waiters.forEach { $0.resume() }
+    }
+}
+
 /// Mutable session flag for the adapter's `hasSession` probe.
 private final class SessionFlag: @unchecked Sendable {
     private let lock = NSLock()

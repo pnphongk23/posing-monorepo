@@ -194,6 +194,32 @@ final class SessionScopeCoordinatorTests: XCTestCase {
         XCTAssertNotNil(token, "the session itself is untouched")
     }
 
+    /// The coordinator's clear is what makes a *late* answer stale: it advances the cache's session
+    /// epoch, and every account-scoped write that captured the previous one commits nothing
+    /// (proven in `PoseSessionEpochTests`). A sign-out, a sign-in and a 401 clear all take this path.
+    func testSessionChangeAdvancesTheEpochThatGuardsInFlightWrites() async throws {
+        let temp = try TempPoseDatabase()
+        defer { temp.cleanUp() }
+        let cache = PoseCatalogCacheStore(repository: temp.repository)
+        let boundary = SessionBoundary(tokenStorage: InMemoryTokenStorage(credentials: storedCredentials))
+        let coordinator = SessionScopeCoordinator(
+            boundary: boundary,
+            cache: cache,
+            purchases: RevenueCatAdapter(provider: FakePurchasesProvider(), entitlementID: nil),
+            readAccount: { AccountSummary(id: "account-a", displayName: "A", createdAt: nil) }
+        )
+        coordinator.start()
+        await waitUntilSubscribed(boundary)
+
+        let inFlightEpoch = cache.beginAccountScopedOperation()
+        await boundary.signOut()
+        await waitUntil("the epoch advanced") { cache.beginAccountScopedOperation() != inFlightEpoch }
+
+        XCTAssertNotEqual(cache.beginAccountScopedOperation(), inFlightEpoch)
+        let token = await boundary.loadAccessToken()
+        XCTAssertNil(token)
+    }
+
     // MARK: - helpers
 
     private func settle() async {

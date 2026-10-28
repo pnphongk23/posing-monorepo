@@ -27,6 +27,9 @@ final class JobsSnapshotTests: XCTestCase {
 
     override func setUp() {
         super.setUp()
+        // The extraction switch now fails closed (D6 = A), so a form fixture that is expected to be
+        // valid has to opt in explicitly, exactly like `AddPoseFormTests` does.
+        AppConfig.shared.applyExtractPoseEnabled(true)
         try? FileManager.default.createDirectory(at: outputDirectory, withIntermediateDirectories: true)
     }
 

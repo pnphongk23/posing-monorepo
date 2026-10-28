@@ -1,3 +1,4 @@
+import Foundation
 import Network
 import SwiftUI
 import UIKit
@@ -339,6 +340,102 @@ final class PoseDetailFeatureTests: XCTestCase {
         return value
     }
 
+    // MARK: - Saved mutation copy (`FEAT-014` phase 03)
+
+    /// The three failures a tap can produce and the user can act on.
+    func testSavedMutationCopyMapsTheActionableFailures() {
+        XCTAssertEqual(
+            SavedMutationCopy.text(for: PoseAPIError(code: "401", message: "Server error: 401")),
+            "Please sign in again."
+        )
+        XCTAssertEqual(
+            SavedMutationCopy.text(for: PoseAPIError(code: "NOT_FOUND", message: "Pose not found")),
+            "This pose is no longer available."
+        )
+        XCTAssertEqual(
+            SavedMutationCopy.text(for: URLError(.notConnectedToInternet)),
+            "You're offline. Try again when connected."
+        )
+        // Anything else keeps the generic copy instead of inventing a cause.
+        XCTAssertEqual(
+            SavedMutationCopy.text(for: PoseAPIError(code: "500", message: "Internal error")),
+            "Internal error"
+        )
+        XCTAssertEqual(SavedMutationCopy.text(for: NSError(domain: "test", code: 1)), SavedMutationCopy.fallback)
+        XCTAssertFalse(SavedMutationCopy.isGone(URLError(.notConnectedToInternet)))
+        XCTAssertTrue(SavedMutationCopy.isGone(PoseAPIError(code: "404", message: "Server error: 404")))
+    }
+
+    /// A save cannot be confirmed without a connection, so it stays unsaved and says why — no queue
+    /// (FR-009).
+    @MainActor func testToggleSavedOfflineKeepsThePoseUnsavedAndSaysSo() async {
+        let pose = sampleDetailPose
+        let model = PosesViewModel(service: StubPoseService(result: [pose]), bookmarkService: StubBookmarkService(shouldFail: true))
+        model.state = .loaded([pose])
+
+        let outcome = await model.toggleSaved(for: pose)
+
+        XCTAssertEqual(outcome, .failed("You're offline. Try again when connected."))
+        XCTAssertEqual(model.bookmarkError, "You're offline. Try again when connected.")
+        guard case .loaded(let poses) = model.state else { return XCTFail("Expected loaded") }
+        XCTAssertFalse(poses[0].isSaved)
+        XCTAssertTrue(model.canSave(pose), "offline is retryable, so the control stays available")
+    }
+
+    /// A pose that no longer exists cannot be saved by trying again.
+    @MainActor func testToggleSaved404SaysThePoseIsGoneAndDisablesTheControl() async {
+        let pose = sampleDetailPose
+        let service = ErrorBookmarkService(error: PoseAPIError(code: "NOT_FOUND", message: "Pose not found"))
+        let model = PosesViewModel(service: StubPoseService(result: [pose]), bookmarkService: service)
+        model.state = .loaded([pose])
+
+        let outcome = await model.toggleSaved(for: pose)
+
+        XCTAssertEqual(outcome, .failed("This pose is no longer available."))
+        XCTAssertEqual(model.bookmarkError, "This pose is no longer available.")
+        XCTAssertFalse(model.canSave(pose), "the save control is inert once the pose is gone")
+        XCTAssertFalse(model.savedState(for: pose))
+    }
+
+    /// A 401 is an expired session, not a save: the copy asks the user to sign in again and the
+    /// session boundary drops the credentials so the surface stops pretending to be signed in.
+    @MainActor func testToggleSaved401AsksToSignInAgainAndClearsTheSession() async throws {
+        let storage = DetailTestTokenStorage(credentials: SessionCredentials(accessToken: "access", refreshToken: "refresh"))
+        let boundary = SessionBoundary(tokenStorage: storage)
+        let client = APIClient(
+            baseURL: "https://test.server",
+            session: makeDetailMockSession(),
+            boundary: boundary
+        )
+        DetailMockURLProtocol.requestHandler = { request in
+            // Both the save and its refresh attempt are unauthorized: the app must clear the session.
+            let body = #"{"error":{"code":"UNAUTHORIZED","message":"Unauthorized"}}"#
+            return (HTTPURLResponse(url: request.url!, statusCode: 401, httpVersion: nil, headerFields: nil)!, Data(body.utf8))
+        }
+        defer { DetailMockURLProtocol.requestHandler = nil }
+
+        let pose = sampleDetailPose
+        let model = PosesViewModel(
+            service: StubPoseService(result: [pose]),
+            bookmarkService: PoseAPIBookmarkService(api: PoseAPIService(client: client))
+        )
+        model.state = .loaded([pose])
+
+        let outcome = await model.toggleSaved(for: pose)
+
+        XCTAssertEqual(outcome, .failed("Please sign in again."))
+        XCTAssertEqual(model.bookmarkError, "Please sign in again.")
+        let hasSession = await boundary.hasStoredSession()
+        XCTAssertFalse(hasSession, "a 401 that cannot be refreshed ends the local session")
+        XCTAssertFalse(model.savedState(for: pose))
+    }
+
+    private func makeDetailMockSession() -> URLSession {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [DetailMockURLProtocol.self]
+        return URLSession(configuration: config)
+    }
+
     // MARK: - Real PoseDetailScreen render harness
 
     /// Renders the real `PoseDetailScreen` offscreen at the device width, so the assertions measure
@@ -458,6 +555,47 @@ private let sampleDetailPose = NativePose(
     instructions: ["Step one"],
     isSaved: false
 )
+
+/// Fails every save/unsave with the error a test wants to see mapped to copy.
+private final class ErrorBookmarkService: PoseBookmarkServing, @unchecked Sendable {
+    let error: Error
+
+    init(error: Error) { self.error = error }
+
+    func savePose(poseId: String) async throws { throw error }
+    func unsavePose(poseId: String) async throws { throw error }
+}
+
+private final class DetailTestTokenStorage: TokenStoring, @unchecked Sendable {
+    private var credentials: SessionCredentials?
+
+    init(credentials: SessionCredentials?) { self.credentials = credentials }
+    func saveCredentials(_ credentials: SessionCredentials) { self.credentials = credentials }
+    func loadCredentials() -> SessionCredentials? { credentials }
+    func clearCredentials() { credentials = nil }
+}
+
+/// Serves the saved routes from a canned response, so a 401 goes through the real `APIClient` path
+/// (including its refresh attempt and the resulting session clear).
+private final class DetailMockURLProtocol: URLProtocol {
+    nonisolated(unsafe) static var requestHandler: ((URLRequest) -> (HTTPURLResponse, Data))?
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        guard let handler = Self.requestHandler else {
+            client?.urlProtocol(self, didFailWithError: URLError(.badURL))
+            return
+        }
+        let (response, data) = handler(request)
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: data)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
+}
 
 private final class StubBookmarkService: PoseBookmarkServing, @unchecked Sendable {
     private let lock = NSLock()

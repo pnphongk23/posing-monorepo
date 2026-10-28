@@ -1,4 +1,5 @@
 import Foundation
+import GRDB
 
 enum PoseAdapterError: LocalizedError {
     case poseNotFound(String)
@@ -278,6 +279,96 @@ enum PoseCatalogDatabase {
     }
 }
 
+/// What one account-scoped write must do: the rows to store and the ids to drop.
+///
+/// Pure on purpose: the merge rules are the interesting part, and the caller runs the result inside
+/// a single GRDB write transaction so the session-epoch check and the rows it guards commit (or are
+/// skipped) together.
+enum PoseCatalogWritePlan {
+    static func merge(
+        fetch: PoseCatalogFetch,
+        existing: [PoseRecord]
+    ) -> (upserts: [PoseRecord], deletions: [String]) {
+        let existingByID = Dictionary(existing.map { ($0.poseId, $0) }, uniquingKeysWith: { first, _ in first })
+        let fetchedIDs = Set(fetch.writes.map(\.record.poseId))
+
+        var upserts: [PoseRecord] = []
+        var deletions: [String] = []
+
+        for write in fetch.writes {
+            var record = write.record
+            if let current = existingByID[record.poseId] {
+                if record.createdAt.isEmpty { record.createdAt = current.createdAt }
+                if record.updatedAt.isEmpty { record.updatedAt = current.updatedAt }
+                switch write.source {
+                case .community:
+                    if current.status == PoseCatalogMapping.savedStatus {
+                        record.status = PoseCatalogMapping.savedStatus
+                    }
+                case .saved:
+                    record.ownerAccountId = current.ownerAccountId == PoseCatalogBucket.community.rawValue
+                        ? PoseCatalogBucket.community.rawValue
+                        : PoseCatalogBucket.saved.rawValue
+                    record.status = PoseCatalogMapping.savedStatus
+                }
+            }
+            upserts.append(record)
+        }
+
+        for row in existing where !fetchedIDs.contains(row.poseId) {
+            var updated = row
+            var removed = false
+            if fetch.replacesCommunityBucket, row.ownerAccountId == PoseCatalogBucket.community.rawValue {
+                if row.status == PoseCatalogMapping.savedStatus {
+                    updated.ownerAccountId = PoseCatalogBucket.saved.rawValue
+                } else {
+                    removed = true
+                }
+            }
+            if fetch.replacesSavedBucket, updated.status == PoseCatalogMapping.savedStatus {
+                updated.status = PoseCatalogMapping.unsavedStatus
+                if updated.ownerAccountId == PoseCatalogBucket.saved.rawValue { removed = true }
+            }
+            if removed {
+                deletions.append(row.poseId)
+            } else {
+                upserts.append(updated)
+            }
+        }
+
+        return (upserts, deletions)
+    }
+
+    /// Clear: saved-only rows go, rows that also came from the community feed keep their feed entry
+    /// with the saved flag demoted.
+    static func reset(existing: [PoseRecord]) -> (upserts: [PoseRecord], deletions: [String]) {
+        var upserts: [PoseRecord] = []
+        var deletions: [String] = []
+        for row in existing where row.status == PoseCatalogMapping.savedStatus {
+            if row.ownerAccountId == PoseCatalogBucket.saved.rawValue {
+                deletions.append(row.poseId)
+            } else {
+                var updated = row
+                updated.status = PoseCatalogMapping.unsavedStatus
+                upserts.append(updated)
+            }
+        }
+        return (upserts, deletions)
+    }
+
+    /// Executes a plan in one statement at a time. Shared by the cache's own writes so the epoch
+    /// check, the upserts and the deletions stay inside one transaction.
+    static func apply(_ plan: (upserts: [PoseRecord], deletions: [String]), in db: Database) throws {
+        for record in plan.upserts { try record.save(db) }
+        guard !plan.deletions.isEmpty else { return }
+        let placeholders = Array(repeating: "?", count: plan.deletions.count).joined(separator: ",")
+        try db.execute(
+            sql: "DELETE FROM Pose WHERE poseId IN (\(placeholders))",
+            arguments: StatementArguments(plan.deletions)
+        )
+    }
+}
+
 /// Cache-first pose source: memory → database → network (awaited only on a cold miss).
 ///
 /// 1. **memory** — same route + query inside a session: no I/O while the entry is fresh;
@@ -298,6 +389,19 @@ final class PoseCatalogCacheStore: @unchecked Sendable {
     /// Bumped when a bookmark change touches a key, so a slower revalidation cannot resurrect
     /// pre-change data (e.g. re-marking an unsaved pose as saved).
     private var generations: [PoseCacheKey: UInt64] = [:]
+    /// Bumped by every account-scoped reset (`clearSavedState`).
+    ///
+    /// A Saved load that is still in flight when the session changes would otherwise write the
+    /// previous Account's rows back *after* the clear, so every account-scoped write re-checks this
+    /// value **inside** its GRDB write transaction. That is what makes it correct without a lock
+    /// around the network: GRDB serializes writers, so a stale write either committed before the
+    /// clear (which then removes its rows) or runs after it and is skipped.
+    private var sessionEpoch: UInt64 = 0
+    #if DEBUG
+    /// Test seam: runs immediately before an account-scoped write is queued, so a test can land a
+    /// session change in the window between "fetch returned" and "rows committed".
+    private var beforeAccountScopedWrite: (@Sendable () async -> Void)?
+    #endif
     private let repositoryProvider: @Sendable () -> PoseRepository?
     private let freshnessWindow: TimeInterval
     private let now: @Sendable () -> Date
@@ -346,45 +450,97 @@ final class PoseCatalogCacheStore: @unchecked Sendable {
         baseURL: String,
         load: @escaping @Sendable () async throws -> PoseCatalogFetch
     ) async throws -> [NativePose] {
+        // Captured before anything is awaited: the epoch belongs to the moment this answer was
+        // requested, so a revalidation queued here can never commit after the session that asked
+        // for it has been dropped.
+        let epoch = beginAccountScopedOperation()
+
         if let hit = memoryEntry(for: key) {
             if !isStale(hit) { return hit.poses }
-            scheduleRefresh(for: key, baseURL: baseURL, load: load)
+            scheduleRefresh(for: key, baseURL: baseURL, epoch: epoch, load: load)
             return hit.poses
         }
 
         if let offline = await databasePoses(for: key, baseURL: baseURL) {
             store(memoryEntry: Entry(poses: offline, refreshedAt: .distantPast), for: key)
-            scheduleRefresh(for: key, baseURL: baseURL, load: load)
+            scheduleRefresh(for: key, baseURL: baseURL, epoch: epoch, load: load)
             return offline
         }
 
         let fetch = try await load()
-        await persist(fetch)
-        store(memoryEntry: Entry(poses: fetch.poses, refreshedAt: now()), for: key)
+        // The answer is returned either way (the request already happened), but a stale session's
+        // rows are neither committed nor kept where the next Account would read them.
+        if await persist(fetch, epoch: epoch) {
+            store(memoryEntry: Entry(poses: fetch.poses, refreshedAt: now()), for: key)
+        }
         return fetch.poses
+    }
+
+    // MARK: session epoch
+
+    /// The epoch a new account-scoped operation starts under. Callers that begin a network request
+    /// capture this **before** awaiting it (see `PoseCachingBookmarkService`).
+    func beginAccountScopedOperation() -> UInt64 {
+        lock.withLocked { sessionEpoch }
+    }
+
+    #if DEBUG
+    func setBeforeAccountScopedWriteForTesting(_ hook: (@Sendable () async -> Void)?) {
+        lock.withLocked { beforeAccountScopedWrite = hook }
+    }
+
+    private func accountScopedWriteHook() -> (@Sendable () async -> Void)? {
+        lock.withLocked { beforeAccountScopedWrite }
+    }
+    #endif
+
+    private func isSessionEpochCurrent(_ epoch: UInt64) -> Bool {
+        lock.withLocked { sessionEpoch == epoch }
+    }
+
+    private func bumpSessionEpoch() {
+        lock.withLocked { sessionEpoch &+= 1 }
+    }
+
+    /// Community-only writes carry nothing that belongs to an Account, so a session change does not
+    /// invalidate them and the epoch check is skipped.
+    private func isAccountScoped(_ fetch: PoseCatalogFetch) -> Bool {
+        fetch.replacesSavedBucket || fetch.writes.contains { $0.source == .saved }
     }
 
     /// Save/unsave: the database row changes and every saved-sensitive memory entry is dropped, so
     /// the next read rebuilds from the database (single source of truth) instead of showing a stale
     /// bookmark flag.
-    func handleBookmarkChange(poseId: String, isSaved: Bool) async {
+    ///
+    /// `epoch` is the one captured **before** the bookmark request was sent, so a save that was in
+    /// flight across an account switch cannot mark the previous Account's row as saved for the next
+    /// one.
+    func handleBookmarkChange(poseId: String, isSaved: Bool, epoch: UInt64? = nil) async {
         invalidateSavedSensitiveEntries()
 
-        guard let repository = repositoryProvider(),
-              let record = try? await repository.pose(id: poseId),
-              PoseCatalogBucket(rawValue: record.ownerAccountId) != nil else { return }
+        guard let repository = repositoryProvider() else { return }
+        let capturedEpoch = epoch ?? beginAccountScopedOperation()
+        do {
+            try await repository.database.pool.write { db in
+                guard self.isSessionEpochCurrent(capturedEpoch) else { return }
+                guard let record = try PoseRecord.fetchOne(db, key: poseId),
+                      PoseCatalogBucket(rawValue: record.ownerAccountId) != nil else { return }
 
-        if isSaved {
-            var updated = record
-            updated.status = PoseCatalogMapping.savedStatus
-            try? await repository.upsert([updated])
-        } else if record.ownerAccountId == PoseCatalogBucket.saved.rawValue {
-            // Saved-only row: no feed references it any more.
-            try? await repository.delete(ids: [poseId])
-        } else {
-            var updated = record
-            updated.status = PoseCatalogMapping.unsavedStatus
-            try? await repository.upsert([updated])
+                if isSaved {
+                    var updated = record
+                    updated.status = PoseCatalogMapping.savedStatus
+                    try updated.save(db)
+                } else if record.ownerAccountId == PoseCatalogBucket.saved.rawValue {
+                    // Saved-only row: no feed references it any more.
+                    try db.execute(sql: "DELETE FROM Pose WHERE poseId = ?", arguments: [poseId])
+                } else {
+                    var updated = record
+                    updated.status = PoseCatalogMapping.unsavedStatus
+                    try updated.save(db)
+                }
+            }
+        } catch {
+            // Best effort: the catalog is a cache, so a failed write is healed by the next read.
         }
     }
 
@@ -466,58 +622,29 @@ final class PoseCatalogCacheStore: @unchecked Sendable {
     /// - a saved page keeps a row in the community bucket when it was already there;
     /// - a replaced bucket prunes rows the fresh page no longer contains, demoting still-saved rows
     ///   to the `saved` bucket instead of deleting them.
-    private func persist(_ fetch: PoseCatalogFetch) async {
-        guard let repository = repositoryProvider() else { return }
-        let existing = (try? await repository.cached()) ?? []
-        let existingByID = Dictionary(existing.map { ($0.poseId, $0) }, uniquingKeysWith: { first, _ in first })
-        let fetchedIDs = Set(fetch.writes.map(\.record.poseId))
+    ///
+    /// The read, the merge and the commit happen inside one GRDB write transaction, together with
+    /// the session-epoch check: a fetch that crossed an account switch commits nothing.
+    private func persist(_ fetch: PoseCatalogFetch, epoch: UInt64) async -> Bool {
+        guard let repository = repositoryProvider() else { return false }
+        let accountScoped = isAccountScoped(fetch)
 
-        var upserts: [PoseRecord] = []
-        var deletions: [String] = []
+        #if DEBUG
+        if let hook = accountScopedWriteHook() { await hook() }
+        #endif
 
-        for write in fetch.writes {
-            var record = write.record
-            if let current = existingByID[record.poseId] {
-                if record.createdAt.isEmpty { record.createdAt = current.createdAt }
-                if record.updatedAt.isEmpty { record.updatedAt = current.updatedAt }
-                switch write.source {
-                case .community:
-                    if current.status == PoseCatalogMapping.savedStatus {
-                        record.status = PoseCatalogMapping.savedStatus
-                    }
-                case .saved:
-                    record.ownerAccountId = current.ownerAccountId == PoseCatalogBucket.community.rawValue
-                        ? PoseCatalogBucket.community.rawValue
-                        : PoseCatalogBucket.saved.rawValue
-                    record.status = PoseCatalogMapping.savedStatus
-                }
+        do {
+            return try await repository.database.pool.write { db -> Bool in
+                // GRDB serializes writers, so this either commits before the reset (which then
+                // removes its rows) or is skipped here — never commits on the far side of it.
+                guard !accountScoped || self.isSessionEpochCurrent(epoch) else { return false }
+                let existing = try PoseCatalogCacheStore.cachedRows(in: db)
+                try PoseCatalogWritePlan.apply(PoseCatalogWritePlan.merge(fetch: fetch, existing: existing), in: db)
+                return true
             }
-            upserts.append(record)
+        } catch {
+            return false
         }
-
-        for row in existing where !fetchedIDs.contains(row.poseId) {
-            var updated = row
-            var removed = false
-            if fetch.replacesCommunityBucket, row.ownerAccountId == PoseCatalogBucket.community.rawValue {
-                if row.status == PoseCatalogMapping.savedStatus {
-                    updated.ownerAccountId = PoseCatalogBucket.saved.rawValue
-                } else {
-                    removed = true
-                }
-            }
-            if fetch.replacesSavedBucket, updated.status == PoseCatalogMapping.savedStatus {
-                updated.status = PoseCatalogMapping.unsavedStatus
-                if updated.ownerAccountId == PoseCatalogBucket.saved.rawValue { removed = true }
-            }
-            if removed {
-                deletions.append(row.poseId)
-            } else {
-                upserts.append(updated)
-            }
-        }
-
-        try? await repository.upsert(upserts)
-        try? await repository.delete(ids: deletions)
     }
 
     /// Drops every account-scoped row from the catalog.
@@ -526,24 +653,31 @@ final class PoseCatalogCacheStore: @unchecked Sendable {
     /// to one Account, so keeping it would let Account A's rows answer Account B's or a guest's
     /// read (`FEAT-014` FR-005). Saved-only rows are deleted; rows that also came from the
     /// community feed keep their community bucket with the saved flag demoted.
+    ///
+    /// The epoch is bumped **before** this clear is queued, so every account-scoped write that is
+    /// still in flight fails its check instead of repopulating the rows this call is removing.
     func clearSavedState() async {
         invalidateSavedSensitiveEntries()
-        guard let repository = repositoryProvider(),
-              let rows = try? await repository.cached() else { return }
-
-        var upserts: [PoseRecord] = []
-        var deletions: [String] = []
-        for row in rows where row.status == PoseCatalogMapping.savedStatus {
-            if row.ownerAccountId == PoseCatalogBucket.saved.rawValue {
-                deletions.append(row.poseId)
-            } else {
-                var updated = row
-                updated.status = PoseCatalogMapping.unsavedStatus
-                upserts.append(updated)
+        bumpSessionEpoch()
+        guard let repository = repositoryProvider() else { return }
+        do {
+            try await repository.database.pool.write { db in
+                let existing = try PoseCatalogCacheStore.cachedRows(in: db)
+                try PoseCatalogWritePlan.apply(PoseCatalogWritePlan.reset(existing: existing), in: db)
             }
+        } catch {
+            // Best effort: a failed clear is healed by the next session change.
         }
-        try? await repository.upsert(upserts)
-        try? await repository.delete(ids: deletions)
+    }
+
+    /// Rows the pose cache owns (`PoseCatalogBucket` marker present). Read inside the same write
+    /// transaction as the rows it is merged with, so the plan cannot be built from a stale snapshot.
+    static func cachedRows(in db: Database) throws -> [PoseRecord] {
+        try PoseRecord.fetchAll(
+            db,
+            sql: "SELECT * FROM Pose WHERE ownerAccountId IN (?, ?)",
+            arguments: [PoseCatalogBucket.community.rawValue, PoseCatalogBucket.saved.rawValue]
+        )
     }
 
     // MARK: stale-while-revalidate
@@ -551,6 +685,7 @@ final class PoseCatalogCacheStore: @unchecked Sendable {
     private func scheduleRefresh(
         for key: PoseCacheKey,
         baseURL: String,
+        epoch: UInt64,
         load: @escaping @Sendable () async throws -> PoseCatalogFetch
     ) {
         let generation = generation(of: key)
@@ -561,7 +696,7 @@ final class PoseCatalogCacheStore: @unchecked Sendable {
             let fetch = try? await load()
             defer { self.lock.withLocked { _ = self.inFlight.remove(key) } }
             guard let fetch, self.generation(of: key) == generation else { return }
-            await self.persist(fetch)
+            guard await self.persist(fetch, epoch: epoch) else { return }
             self.store(memoryEntry: Entry(poses: fetch.poses, refreshedAt: self.now()), for: key)
         }
     }
@@ -579,13 +714,17 @@ struct PoseCachingBookmarkService: PoseBookmarkServing {
     }
 
     func savePose(poseId: String) async throws {
+        // Captured before the request is sent: a save whose response lands after a session change
+        // belongs to the previous Account and must not be written into the catalog.
+        let epoch = cache?.beginAccountScopedOperation()
         try await base.savePose(poseId: poseId)
-        await cache?.handleBookmarkChange(poseId: poseId, isSaved: true)
+        await cache?.handleBookmarkChange(poseId: poseId, isSaved: true, epoch: epoch)
     }
 
     func unsavePose(poseId: String) async throws {
+        let epoch = cache?.beginAccountScopedOperation()
         try await base.unsavePose(poseId: poseId)
-        await cache?.handleBookmarkChange(poseId: poseId, isSaved: false)
+        await cache?.handleBookmarkChange(poseId: poseId, isSaved: false, epoch: epoch)
     }
 }
 

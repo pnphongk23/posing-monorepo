@@ -306,6 +306,7 @@ struct SettingsScreen: View {
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel("Open Account")
+                        .accessibilityIdentifier("settings.account.row")
                           NavigationLink(destination: SavedPosesScreen(model: posesModel, onTryPose: onTryPose)) {
                               SupportSettingsRow(
                                 icon: "bookmark.fill",

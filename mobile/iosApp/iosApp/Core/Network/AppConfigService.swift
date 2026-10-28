@@ -3,38 +3,50 @@ import CoreFoundation
 import FirebaseFirestore
 
 struct AppConfigPayload: Codable, Equatable, Sendable {
+    /// Bumped when a cached field's *meaning* changes, not when a field is added.
+    ///
+    /// v1 caches were written when `extractPoseEnabled` still defaulted to **on**, so a stored `true`
+    /// is the old default rather than an operator's opt-in. Reading it back as `true` would let an
+    /// upgraded install skip the fail-closed launch path this build depends on (D6 = A).
+    static let currentSchemaVersion = 2
+
     let endpointUrl: String
     let isAccountEnabled: Bool
     let isExtractPoseEnabled: Bool
     let isPaywallEnabled: Bool
+    let schemaVersion: Int
 
     private enum CodingKeys: String, CodingKey {
         case endpointUrl
         case isAccountEnabled
         case isExtractPoseEnabled
         case isPaywallEnabled
+        case schemaVersion
     }
 
     init(
         endpointUrl: String = AppConfigService.defaultURL,
         isAccountEnabled: Bool = false,
-        isExtractPoseEnabled: Bool = true,
-        isPaywallEnabled: Bool = false
+        isExtractPoseEnabled: Bool = false,
+        isPaywallEnabled: Bool = false,
+        schemaVersion: Int = AppConfigPayload.currentSchemaVersion
     ) {
         self.endpointUrl = endpointUrl
         self.isAccountEnabled = isAccountEnabled
         self.isExtractPoseEnabled = isExtractPoseEnabled
         self.isPaywallEnabled = isPaywallEnabled
+        self.schemaVersion = schemaVersion
     }
 
-    /// A cache written before the paywall switch existed must keep its other values instead of
-    /// being discarded. The missing switch always resolves to its fail-safe default: off.
+    /// A cache written before the paywall switch (or the version tag) existed must keep its other
+    /// values instead of being discarded. A missing switch resolves to its fail-safe default: off.
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         endpointUrl = try container.decode(String.self, forKey: .endpointUrl)
         isAccountEnabled = try container.decode(Bool.self, forKey: .isAccountEnabled)
         isExtractPoseEnabled = try container.decode(Bool.self, forKey: .isExtractPoseEnabled)
         isPaywallEnabled = try container.decodeIfPresent(Bool.self, forKey: .isPaywallEnabled) ?? false
+        schemaVersion = try container.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? 1
     }
 }
 
@@ -105,16 +117,26 @@ struct FirestoreConfigSource: ConfigSource {
 enum AppConfigService {
     static let defaultURL = "https://pose-extract-server-production.up.railway.app"
     static let endpointKey = "api_baseurl"
+    /// Build-scoped account switch. This build reads v2 only, so the live v1.0 build — which keeps
+    /// reading the legacy key below — cannot be exposed to an account surface whose deletion path
+    /// predates Sign in with Apple token revocation.
+    static let accountsEnabledV2Key = "accounts_enabled_v2"
+    /// Legacy key. This build deliberately ignores it; the v1.0 build still reads it (and it stays
+    /// `false`).
     static let accountEnabledKey = "account_enabled"
     static let extractPoseEnabledKey = "extractPoseEnabled"
     static let paywallEnabledKey = "paywall_enabled"
 
+    /// First paint before any fetch. Endpoint and account values come from the cache; a v1 cache's
+    /// extraction value is dropped, because it was written under the old default-on rule.
     static func resolveInitialPayload(store: ConfigPayloadStore) -> AppConfigPayload {
         guard let cached = store.load() else { return AppConfigPayload() }
         return AppConfigPayload(
             endpointUrl: EndpointPolicy.validate(raw: cached.endpointUrl) ?? defaultURL,
             isAccountEnabled: cached.isAccountEnabled,
-            isExtractPoseEnabled: cached.isExtractPoseEnabled,
+            isExtractPoseEnabled: cached.schemaVersion >= AppConfigPayload.currentSchemaVersion
+                ? cached.isExtractPoseEnabled
+                : false,
             isPaywallEnabled: cached.isPaywallEnabled
         )
     }
@@ -174,14 +196,16 @@ enum AppConfigService {
             fetchedRaw: fetchedEndpointRaw
         )
 
-        // 2. Account Enabled: defaults to false when unavailable (preserves existing behavior)
-        let fetchedAccountRaw = data?[accountEnabledKey]
+        // 2. Account Enabled: build-scoped key, defaults to false when unavailable. The legacy key
+        // is ignored on purpose (see `accountsEnabledV2Key`).
+        let fetchedAccountRaw = data?[accountsEnabledV2Key]
         let accountEnabled = parseBoolean(raw: fetchedAccountRaw)
             ?? false
 
-        // 3. Extract Pose Enabled: defaults to true when missing/error/offline
-        let fetchedExtractRaw = data?[extractPoseEnabledKey]
-        let extractPoseEnabled = parseBoolean(raw: fetchedExtractRaw) ?? true
+        // 3. Extract Pose Enabled: fails **closed** (D6 = A). Only an explicit boolean (or its
+        // string form) turns extraction on, so a missing key, a fetch error and an offline launch
+        // all resolve to `false` and cannot send photos to an API the privacy labels omit.
+        let extractPoseEnabled = resolveSwitch(data?[extractPoseEnabledKey], defaultValue: false)
 
         // 4. Paywall Enabled: defaults to false when missing/error/offline, so a Firestore outage
         // can never lock capture behind a paywall. Only an explicit boolean (or its string form)

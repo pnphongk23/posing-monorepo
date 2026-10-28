@@ -1,4 +1,5 @@
 import Combine
+import Foundation
 import Kingfisher
 import SwiftUI
 
@@ -141,6 +142,58 @@ struct PoseAPIBookmarkService: PoseBookmarkServing {
     func unsavePose(poseId: String) async throws { try await api.unsavePose(poseId: poseId) }
 }
 
+/// What a failed save/unsave tells the user (`FEAT-014` saved mutations).
+///
+/// The three cases below are the ones a tap can actually produce and that a user can act on: a lost
+/// session, a pose that no longer exists, and no connection. Anything else keeps the generic copy,
+/// so the screen never invents a cause.
+enum SavedMutationCopy {
+    static let signInRequired = "Please sign in again."
+    static let poseUnavailable = "This pose is no longer available."
+    static let offline = "You're offline. Try again when connected."
+    static let fallback = "Unable to update this pose."
+
+    /// Codes the saved routes answer for a pose the viewer can no longer save (`savedRoutes.ts`
+    /// answers `NOT_FOUND`, `APIClient` falls back to the numeric status when there is no envelope).
+    private static let notFoundCodes: Set<String> = ["404", "NOT_FOUND", "POSE_NOT_FOUND"]
+
+    static func text(for error: Error) -> String {
+        if let apiError = error as? PoseAPIError {
+            if apiError.isUnauthorized { return signInRequired }
+            if notFoundCodes.contains(apiError.code) { return poseUnavailable }
+        }
+        if let clientError = error as? APIClientError, case .httpStatus(let status) = clientError {
+            if status == 401 { return signInRequired }
+            if status == 404 { return poseUnavailable }
+        }
+        if let urlError = error as? URLError, urlError.isOffline { return offline }
+        return ErrorCopy.text(for: error) ?? fallback
+    }
+
+    /// The pose is gone server-side, so offering the same tap again cannot help.
+    static func isGone(_ error: Error) -> Bool {
+        if let apiError = error as? PoseAPIError { return notFoundCodes.contains(apiError.code) }
+        if let clientError = error as? APIClientError, case .httpStatus(let status) = clientError {
+            return status == 404
+        }
+        return false
+    }
+}
+
+private extension URLError {
+    /// No connection / connection dropped mid-request. A timeout is deliberately *not* here: the
+    /// request may still have been applied server-side, so it keeps the generic copy.
+    var isOffline: Bool {
+        switch code {
+        case .notConnectedToInternet, .networkConnectionLost, .cannotFindHost, .cannotConnectToHost,
+             .dataNotAllowed, .internationalRoamingOff:
+            return true
+        default:
+            return false
+        }
+    }
+}
+
 @MainActor final class PosesViewModel: ObservableObject {
     @Published var state: Loadable<[NativePose]> = .idle
     @Published var query = ""
@@ -227,6 +280,9 @@ struct PoseAPIBookmarkService: PoseBookmarkServing {
 
     /// Copy for the last failed bookmark attempt; the screen surfaces it with the shared alert pattern.
     @Published var bookmarkError: String?
+    /// Poses the server answered `404` for. The pose is gone, so the control stops offering a retry
+    /// that cannot succeed instead of failing the same way on every tap.
+    @Published private(set) var unavailablePoseIDs: Set<String> = []
     /// Poses with a request in flight, so a rapid second tap cannot desync the local state — and so a
     /// screen that is opened mid-request can show it as busy instead of offering a second save.
     @Published private(set) var bookmarkRequestsInFlight: Set<String> = []
@@ -267,10 +323,16 @@ struct PoseAPIBookmarkService: PoseBookmarkServing {
             return .saved(shouldSave)
         } catch {
             // Nothing was flipped up front, so "rollback" is simply the state we still hold.
-            let message = ErrorCopy.text(for: error) ?? "Unable to update this pose."
+            let message = SavedMutationCopy.text(for: error)
+            if SavedMutationCopy.isGone(error) { unavailablePoseIDs.insert(pose.id) }
             bookmarkError = message
             return .failed(message)
         }
+    }
+
+    /// A pose the server reported as gone is no longer offered a save control.
+    func canSave(_ pose: NativePose) -> Bool {
+        !unavailablePoseIDs.contains(pose.id)
     }
 
     /// Records a server-confirmed saved state. The override is what every screen reads, so a detail
@@ -1015,6 +1077,12 @@ struct PoseDetailScreen: View {
     /// coming back cannot leave this screen showing a stale answer.
     private var isSaved: Bool { model.savedState(for: pose) }
     private var isSaving: Bool { model.isBookmarkInFlight(pose.id) }
+    /// Why the save control is inert, in the user's terms — never a generic "unavailable".
+    private var bookmarkUnavailableHint: String {
+        if model.bookmarkService == nil { return "Saving is unavailable right now" }
+        if !model.canSave(pose) { return SavedMutationCopy.poseUnavailable }
+        return ""
+    }
     var body: some View {
         VStack(spacing: 0) {
             if isUnavailable {
@@ -1073,9 +1141,11 @@ struct PoseDetailScreen: View {
                             }
                             .buttonStyle(NeoButtonStyle(fill: isSaved ? AIPoseColor.accentYellow : AIPoseColor.surface))
                             // No bookmark service: nothing could confirm the save, so the control is
-                            // inert rather than silently lying about the pose's saved state.
-                            .disabled(isSaving || model.bookmarkService == nil)
-                            .accessibilityHint(model.bookmarkService == nil ? "Saving is unavailable right now" : "")
+                            // inert rather than silently lying about the pose's saved state. A pose the
+                            // server answered 404 for is inert for the same reason: a retry cannot work.
+                            .disabled(isSaving || model.bookmarkService == nil || !model.canSave(pose))
+                            .accessibilityIdentifier("poseDetail.saveButton")
+                            .accessibilityHint(bookmarkUnavailableHint)
                         }
                           Button {
                               routeTryPoseToCamera(pose, onTryPose: onTryPose)
