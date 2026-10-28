@@ -1043,12 +1043,32 @@ describe.runIf(process.env.TEST_DATABASE_URL)("finalize gate against real Postgr
     await worker`INSERT INTO accounts (id, display_name) VALUES (${accountId}, ${PREFIX})`;
     const jobStore = new ExtractionJobStore(worker);
     const communityStore = new PoseStore(worker);
+    // An older queued job of another account: claimNext picks the oldest queued row, so the
+    // regression only proves anything if this attempt is chosen and the decoy is left alone.
+    const decoyAccountId = randomUUID();
+    await worker`INSERT INTO accounts (id, display_name) VALUES (${decoyAccountId}, ${`${PREFIX}-decoy`})`;
+    const decoyJob = await jobStore.enqueue({
+      ownerAccountId: decoyAccountId,
+      sourceImageBase64: Buffer.from("source").toString("base64"),
+      sourceMimeType: "image/png"
+    });
     const job = await jobStore.enqueue({
       ownerAccountId: accountId,
       poseDraft: { name: "Gate", tags: [], description: null },
       sourceImageBase64: Buffer.from("source").toString("base64"),
       sourceMimeType: "image/png"
     });
+    // claimNext takes the oldest queued job of the whole database, so this attempt is placed
+    // ahead of every other queued job. Assertions below also prove this job was the one claimed.
+    await worker`
+      UPDATE extraction_jobs
+      SET created_at = (
+        SELECT COALESCE(MIN(created_at), NOW()) - interval '1 minute'
+        FROM extraction_jobs
+        WHERE id <> ${job.id}
+      )
+      WHERE id = ${job.id}
+    `;
     const objects = new Set<string>();
     const mediaStorage: MediaStorage = {
       put: vi.fn(async (key: string) => {
@@ -1057,7 +1077,7 @@ describe.runIf(process.env.TEST_DATABASE_URL)("finalize gate against real Postgr
       remove: vi.fn(async () => undefined),
       publicUrl: (key: string) => `https://cdn.example.com/${key}`
     };
-    return { worker, sweep, accountId, jobStore, communityStore, job, objects, mediaStorage };
+    return { worker, sweep, accountId, decoyAccountId, decoyJob, jobStore, communityStore, job, objects, mediaStorage };
   }
 
   async function ownTickets(h: Awaited<ReturnType<typeof harness>>) {
@@ -1078,6 +1098,13 @@ describe.runIf(process.env.TEST_DATABASE_URL)("finalize gate against real Postgr
     await h.worker`DELETE FROM media_assets WHERE pose_id IN (SELECT pose_id FROM poses WHERE owner_account_id = ${h.accountId})`;
     await h.worker`DELETE FROM poses WHERE owner_account_id = ${h.accountId}`;
     await h.worker`DELETE FROM extraction_jobs WHERE owner_account_id = ${h.accountId}`;
+    await h.worker`DELETE FROM pending_object_deletions WHERE key IN (
+      SELECT unnest(object_keys) FROM pose_media_manifests WHERE owner_account_id = ${h.decoyAccountId}
+    )`;
+    await h.worker`DELETE FROM pose_media_manifests WHERE owner_account_id = ${h.decoyAccountId}`;
+    await h.worker`DELETE FROM extraction_jobs WHERE owner_account_id = ${h.decoyAccountId}`;
+    await h.worker`DELETE FROM deleted_accounts WHERE account_id = ${h.decoyAccountId}`;
+    await h.worker`DELETE FROM accounts WHERE id = ${h.decoyAccountId}`;
     await h.worker`DELETE FROM deleted_accounts WHERE account_id = ${h.accountId}`;
     await h.worker`DELETE FROM accounts WHERE id = ${h.accountId}`;
     await h.worker.end();
@@ -1134,8 +1161,11 @@ describe.runIf(process.env.TEST_DATABASE_URL)("finalize gate against real Postgr
       release();
       await expect(running).resolves.toBe(true);
 
+      const processed = await h.jobStore.getById(h.job.id);
+      expect(processed?.attempts).toBe(1);
+      expect(processed?.status).toBe("queued");
+      expect((await h.jobStore.getById(h.decoyJob.id))?.status).toBe("queued");
       expect(await h.communityStore.getPoseByCurrentJobId(h.job.id)).toBeNull();
-      expect((await h.jobStore.getById(h.job.id))?.status).toBe("queued");
       expect(h.objects.size).toBe(3);
       expect(await ownTickets(h)).toHaveLength(3);
     } finally {
@@ -1195,7 +1225,10 @@ describe.runIf(process.env.TEST_DATABASE_URL)("finalize gate against real Postgr
       release();
       await expect(running).resolves.toBe(true);
 
-      expect((await h.jobStore.getById(h.job.id))?.status).toBe("succeeded");
+      const processed = await h.jobStore.getById(h.job.id);
+      expect(processed?.attempts).toBe(1);
+      expect(processed?.status).toBe("succeeded");
+      expect((await h.jobStore.getById(h.decoyJob.id))?.status).toBe("queued");
       expect(h.objects.size).toBe(3);
       expect(await ownTickets(h)).toHaveLength(0);
     } finally {

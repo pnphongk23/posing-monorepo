@@ -397,7 +397,11 @@ SELECT COUNT(*) FROM pending_object_deletions WHERE not_before > NOW();  -- wait
 SELECT COUNT(*) FROM pending_object_deletions WHERE attempts >= 3;       -- storage keeps refusing
 ```
 Alerts: a manifest older than 2 h (sweep not running) and tickets with `attempts >= 3` (storage refusing
-deletes). A drain whose claim expired can overlap a later drain on the same ticket, so object deletion
+deletes).
+
+**Deploy this as one release.** Never run a pre-manifest build (`59f27fa..192cac9`, the lease-based
+drainer) against the same database as this build: that drainer ignores `not_before`, so it would delete
+objects whose upload horizon has not passed yet. A drain whose claim expired can overlap a later drain on the same ticket, so object deletion
 must stay idempotent: R2 is S3-compatible and answers a missing-key delete with success, and the drain
 also treats a 404 as an acknowledgement.
 
