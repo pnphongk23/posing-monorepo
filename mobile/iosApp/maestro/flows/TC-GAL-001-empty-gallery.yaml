@@ -1,0 +1,13 @@
+# TC-GAL-001 empty gallery offers a camera shortcut
+appId: ${APP_ID}
+tags: [TC-GAL-001, p0]
+---
+- runFlow: ../subflows/launch.yaml
+- tapOn: "Gallery"  # TODO(QA-261029-ID) dock.gallery
+- assertVisible:
+    id: "gallery.empty.openCamera"
+- tapOn:
+    id: "gallery.empty.openCamera"
+- extendedWaitUntil:
+    visible: "Capture photo"  # TODO(QA-261029-ID) camera.shutter
+    timeout: 20000

@@ -1,0 +1,12 @@
+# TC-SET-001 settings rows; About opens and closes
+appId: ${APP_ID}
+tags: [TC-SET-001, p0]
+---
+- runFlow: ../subflows/launch.yaml
+- tapOn: "Open Settings"  # TODO(QA-261029-ID) poses.open-settings
+- assertVisible: "Privacy"
+- assertVisible: "Replay onboarding guide"  # TODO(QA-261029-ID) settings.replayOnboarding
+- tapOn: "About posing.*"  # TODO(QA-261029-ID) settings.about
+- assertVisible: "Strike the pose. Snap the moment."
+- tapOn: "Close About posing"  # TODO(QA-261029-ID) about.close
+- assertVisible: "Privacy"

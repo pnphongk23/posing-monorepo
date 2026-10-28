@@ -1,0 +1,9 @@
+# TC-DET-001 open a pose, see detail, go back
+appId: ${APP_ID}
+tags: [TC-DET-001, p0]
+---
+- runFlow: ../subflows/launch.yaml
+- runFlow: ../subflows/open-first-pose.yaml
+- back
+- assertVisible:
+    id: "poses.open-search"

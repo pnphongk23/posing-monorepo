@@ -2,7 +2,7 @@
 
 | ID | Pri | Preconditions | Steps | Expected | Automation |
 |---|---|---|---|---|---|
-| TC-GAL-001 | P0 | Clean install | Open Gallery | Empty state with "open camera" shortcut; shortcut opens camera | maestro:p0-06-gallery |
+| TC-GAL-001 | P0 | Clean install | 1. Launch. 2. Tap Gallery. 3. Tap the camera shortcut | Empty-state shortcut visible; tapping it opens the camera | automated: TC-GAL-001-empty-gallery.yaml |
 | TC-GAL-002 | P0 | Device camera, entitled or paywall off | Capture a photo | Photo appears at top of Gallery with timestamp | manual (device) |
 | TC-GAL-003 | P1 | Photos in gallery | Open a photo, swipe between photos | Pager shows "Photo n of N" | manual |
 | TC-GAL-004 | P1 | Photo open | Tap Share | Share sheet opens with the image | manual |

@@ -2,7 +2,7 @@
 
 | ID | Pri | Preconditions | Steps | Expected | Automation |
 |---|---|---|---|---|---|
-| TC-PAY-001 | P0 | paywall_enabled, signed out | Capture in camera | Paywall (sign-in required to buy), photo not saved | pending (needs camera device) — maestro:p0-09-capture-gated drafted, tagged pending |
+| TC-PAY-001 | P0 | paywall_enabled, signed out | Capture in camera | Paywall (sign-in required to buy), photo not saved | pending: needs a capture seam on simulator or a device |
 | TC-PAY-002 | P0 | paywall_enabled off | Capture | Photo saved, no paywall | manual (device) |
 | TC-PAY-003 | P1 | Paywall shown, signed out | View paywall | "Sign in with email" prompt, plans not purchasable | pending |
 | TC-PAY-004 | P1 | Signed in, StoreKit test config | Pick plan, confirm test purchase | Entitled; capture succeeds | pending (queued E2E, after M01 closes) |

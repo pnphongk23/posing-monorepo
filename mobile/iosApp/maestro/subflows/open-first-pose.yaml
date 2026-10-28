@@ -1,5 +1,5 @@
-# Wait for the catalogue to load and open the first card. Needs network (server catalogue).
-appId: posing.camera.app
+# Wait for the server catalogue, open the first card.
+appId: ${APP_ID}
 ---
 - extendedWaitUntil:
     visible:
@@ -7,4 +7,6 @@ appId: posing.camera.app
     timeout: 30000
 - tapOn:
     id: "poses.first-card"
-- assertVisible: "Use this pose"
+- extendedWaitUntil:
+    visible: "Use this pose"  # TODO(QA-261029-ID) poseDetail.use
+    timeout: 15000

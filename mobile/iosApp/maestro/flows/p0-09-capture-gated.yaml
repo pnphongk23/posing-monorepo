@@ -1,9 +1,0 @@
-# TC-PAY-001 paywall_enabled + signed out + capture -> paywall appears (no free tier). Needs a camera:
-# the simulator has none, so this runs on a physical device or after the Feature lane adds a capture seam.
-appId: posing.camera.app
-tags: [pending, needs-paywall-flag, needs-camera]
----
-- runFlow: ../subflows/launch.yaml
-- tapOn: "Open Camera"
-- tapOn: "Capture photo"
-- assertVisible: "Premium studio"

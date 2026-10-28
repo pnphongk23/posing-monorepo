@@ -1,5 +1,5 @@
-# Cold launch with a clean app container and camera/photos permission pre-granted.
-appId: posing.camera.app
+# Clean cold launch: fresh app container, camera and photos allowed. Order-independent flows start here.
+appId: ${APP_ID}
 ---
 - launchApp:
     clearState: true
@@ -7,5 +7,6 @@ appId: posing.camera.app
       camera: allow
       photos: allow
 - extendedWaitUntil:
-    visible: "Poses"
+    visible:
+      id: "poses.open-search"
     timeout: 30000

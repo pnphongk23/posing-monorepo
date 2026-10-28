@@ -1,6 +1,6 @@
-# TC-BRW-001 launch -> catalogue renders
-appId: posing.camera.app
-tags: [p0, smoke]
+# TC-BRW-001 launch shows the catalogue
+appId: ${APP_ID}
+tags: [TC-BRW-001, p0]
 ---
 - runFlow: ../subflows/launch.yaml
 - extendedWaitUntil:
@@ -9,8 +9,7 @@ tags: [p0, smoke]
     timeout: 30000
 - assertVisible:
     id: "poses.open-search"
-- assertVisible: "Gallery"
+- assertVisible: "Gallery"  # TODO(QA-261029-ID) dock.gallery
 - scroll
 - assertVisible:
     id: "poses.open-search"
-- takeScreenshot: p0-01-browse

@@ -1,6 +1,6 @@
 # QA test cases — native iOS app
 
-One file per feature area. Columns: ID, priority (P0 release blocker / P1 common / P2 edge), preconditions, steps, expected, automation (`maestro:<flow>` under `mobile/iosApp/maestro/flows/`, `manual`, or `pending` = feature not landed or no seam yet).
+Columns: ID, priority, preconditions, steps, expected, automation. Automation is `automated: <flow file>` (one flow per case under `mobile/iosApp/maestro/flows/`, file name starts with the case ID), `manual`, or `pending: <reason>`. `mobile/iosApp/maestro/check-traceability.sh` enforces the mapping.
 
 Scope is realistic user flows and common edge cases. Rare timing races are out of scope (unit tests own them).
 

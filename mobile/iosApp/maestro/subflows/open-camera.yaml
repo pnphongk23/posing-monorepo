@@ -1,0 +1,7 @@
+# Open the camera from the dock and wait for the shutter.
+appId: ${APP_ID}
+---
+- tapOn: "Open Camera"  # TODO(QA-261029-ID) dock.camera
+- extendedWaitUntil:
+    visible: "Capture photo"  # TODO(QA-261029-ID) camera.shutter
+    timeout: 20000

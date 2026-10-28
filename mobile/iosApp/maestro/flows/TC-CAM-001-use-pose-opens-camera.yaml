@@ -1,0 +1,13 @@
+# TC-CAM-001 Use this pose opens the camera with the guide controls
+appId: ${APP_ID}
+tags: [TC-CAM-001, p0]
+---
+- runFlow: ../subflows/launch.yaml
+- runFlow: ../subflows/open-first-pose.yaml
+- tapOn: "Use this pose"  # TODO(QA-261029-ID) poseDetail.use
+- extendedWaitUntil:
+    visible: "Capture photo"  # TODO(QA-261029-ID) camera.shutter
+    timeout: 20000
+- assertVisible: "Show camera grid"  # TODO(QA-261029-ID) camera.tools.grid
+- assertVisible:
+    id: "camera.choosePose"

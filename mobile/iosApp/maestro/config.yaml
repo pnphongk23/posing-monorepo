@@ -1,7 +1,3 @@
-# Maestro workspace config. Run from mobile/iosApp: maestro --device <udid> test maestro/flows
+# Run via maestro/run.sh (passes -e APP_ID). Flows are order-independent: each starts with subflows/launch.yaml.
 flows:
   - flows/*
-includeTags: []
-excludeTags:
-  - pending
-  - manual
