@@ -1,5 +1,4 @@
 PODS:
-  - composeApp (1.0)
   - FirebaseABTesting (12.10.0):
     - FirebaseCore (~> 12.10.0)
   - FirebaseAnalytics (12.10.0):
@@ -125,7 +124,6 @@ PODS:
   - RevenueCat (5.87.1)
 
 DEPENDENCIES:
-  - composeApp (from `../composeApp`)
   - FirebaseAnalytics
   - FirebaseCore
   - FirebaseCrashlytics
@@ -156,12 +154,7 @@ SPEC REPOS:
     - PromisesSwift
     - RevenueCat
 
-EXTERNAL SOURCES:
-  composeApp:
-    :path: "../composeApp"
-
 SPEC CHECKSUMS:
-  composeApp: 169c8c3435facb0cccada91e641d99fc396f7c90
   FirebaseABTesting: fae111fe5476bd9e249968d0c85cd036385404ba
   FirebaseAnalytics: ef2970f65f3a2807e8f47a49cf3b8719d53e9fce
   FirebaseCore: f4428e22415ea3b3eca652c2098413dabf2a23a9
@@ -183,6 +176,6 @@ SPEC CHECKSUMS:
   PromisesSwift: 9d77319bbe72ebf6d872900551f7eeba9bce2851
   RevenueCat: 7d45133f048270481facf0f7b02530e503a01620
 
-PODFILE CHECKSUM: aea212bed878b78f281dbd857d57c0035fadb5e5
+PODFILE CHECKSUM: 4968f2bf5d3fa7882d2c6072e5a738d755f5dc5e
 
 COCOAPODS: 1.16.2
