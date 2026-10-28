@@ -563,6 +563,19 @@ describe.runIf(TEST_DATABASE_URL)("reservation lease against real Postgres", () 
       expect(claimable).toEqual([]);
       expect(swept).toEqual([]);
 
+      // The locked reservation row must refuse a concurrent lock attempt outright.
+      let lockErrorCode: string | null = null;
+      try {
+        await sweepConn`
+          SELECT key FROM pending_object_deletions
+          WHERE key = ${mediaStorageKeys[0]!}
+          FOR UPDATE NOWAIT
+        `;
+      } catch (error) {
+        lockErrorCode = (error as { code?: string }).code ?? "unknown";
+      }
+      expect(lockErrorCode).toBe("55P03");
+
       releaseJobRow();
       await jobLockTx;
       await expect(running).resolves.toBe(true);

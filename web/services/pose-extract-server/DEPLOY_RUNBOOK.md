@@ -373,6 +373,17 @@ The reservation is a lease with these guarantees:
 - **Losing the lease is never silent.** A lost lease fails or requeues the job with
   `POSE_MATERIALIZE_FAILED` and leaves a cleanup record; it can never produce a succeeded job whose pose
   points at deleted objects.
+- **The lease is renewed while an upload is pending.** A heartbeat every third of the time to live
+  keeps a legitimately slow upload from losing its claim; a heartbeat that fails marks the lease lost so
+  the job stops instead of finalizing into deleted objects.
+- **Every failure after the first upload re-records the keys.** A renewal that throws, an upload that
+  fails, a finalize that rolls back, a stale lock, or a cleanup whose deletes fail all end with the
+  keys claimable again (retried three times, then logged by job id and count). Cleanup is a shortcut,
+  never the only record.
+- **A reclaimed key can be deleted twice.** `reclaim` drops a drain's claim while that drain may already
+  be deleting the same object, so the object storage layer must treat deletion as idempotent. Cloudflare
+  R2 is S3-compatible: deleting a missing key returns success, and the drain additionally treats a 404
+  as an acknowledgement, so a duplicate delete is harmless.
 - **The sweep can only act on expired leases.** A live reservation is invisible to `drain`; a key that
   lands after its lease was lost is re-recorded by `reclaim`, so its cleanup record is not lost.
 
