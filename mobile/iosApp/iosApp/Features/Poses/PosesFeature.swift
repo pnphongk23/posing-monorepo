@@ -215,14 +215,41 @@ struct PoseAPIBookmarkService: PoseBookmarkServing {
         }
     }
 
-    func toggleSaved(for pose: NativePose) async {
-        guard let bookmarkService else { return }
+    /// What a bookmark attempt actually achieved. A pose may only be shown as saved for `.saved`.
+    enum BookmarkOutcome: Equatable {
+        case saved(Bool)
+        /// No bookmark service is wired (signed out or account features unavailable): nothing was sent.
+        case unavailable
+        /// Another tap for this pose is still in flight; this one was ignored on purpose.
+        case inFlight
+        case failed(String)
+    }
+
+    /// Copy for the last failed bookmark attempt; the screen surfaces it with the shared alert pattern.
+    @Published var bookmarkError: String?
+    /// Poses with a request in flight, so a rapid second tap cannot desync the local state.
+    private var bookmarkRequestsInFlight: Set<String> = []
+
+    /// Saves/unsaves through the server and only then updates the local list. Without a bookmark
+    /// service nothing can confirm the save, so the pose is never reported or shown as saved.
+    @discardableResult
+    func toggleSaved(for pose: NativePose) async -> BookmarkOutcome {
+        guard let service = bookmarkService else { return .unavailable }
+        guard bookmarkRequestsInFlight.insert(pose.id).inserted else { return .inFlight }
+        defer { bookmarkRequestsInFlight.remove(pose.id) }
+
+        let shouldSave = !pose.isSaved
         do {
-            if pose.isSaved { try await bookmarkService.unsavePose(poseId: pose.id) }
-            else { try await bookmarkService.savePose(poseId: pose.id) }
-            await load()
+            if shouldSave { try await service.savePose(poseId: pose.id) }
+            else { try await service.unsavePose(poseId: pose.id) }
+            bookmarkError = nil
+            updateSavedLocally(poseID: pose.id, saved: shouldSave)
+            return .saved(shouldSave)
         } catch {
-            state = .failed(ErrorCopy.text(for: error) ?? "Unable to update this pose.")
+            // Nothing was flipped up front, so "rollback" is simply the state we still hold.
+            let message = ErrorCopy.text(for: error) ?? "Unable to update this pose."
+            bookmarkError = message
+            return .failed(message)
         }
     }
 
@@ -947,6 +974,8 @@ struct PoseDetailScreen: View {
     @ObservedObject private var aspectRatioCache = PoseAspectRatioCache.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isSaved: Bool
+    /// A save is in flight: the control is frozen so double taps cannot desync it from the server.
+    @State private var isSaving = false
     @State private var heroDidFail = false
     @State private var pendingSignIn: SignInIntent?
     /// Report §3.6 (`pose-detail.html` unavailable state): set only by the definitive
@@ -981,6 +1010,18 @@ struct PoseDetailScreen: View {
             guard intent == .savePose else { return }
             Task { await toggleBookmark() }
         }
+        // Shared failure surface for an action that did not stick (same pattern as Jobs actions).
+        .alert(
+            "Couldn't update this pose",
+            isPresented: Binding(
+                get: { model.bookmarkError != nil },
+                set: { if !$0 { model.bookmarkError = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) { model.bookmarkError = nil }
+        } message: {
+            Text(model.bookmarkError ?? "")
+        }
         .task {
             // §3.6: a detail route is only valid while the pose is still confirmed as published.
             // Private poses skip confirmPublished (D13)
@@ -1005,7 +1046,12 @@ struct PoseDetailScreen: View {
                         if !isPrivate && AppConfig.shared.isAccountFeatureEnabled {
                             Button { Task { await toggleBookmark() } } label: {
                                 Label(isSaved ? "Saved" : "Save pose", systemImage: isSaved ? "bookmark.fill" : "bookmark")
-                            }.buttonStyle(NeoButtonStyle(fill: isSaved ? AIPoseColor.accentYellow : AIPoseColor.surface))
+                            }
+                            .buttonStyle(NeoButtonStyle(fill: isSaved ? AIPoseColor.accentYellow : AIPoseColor.surface))
+                            // No bookmark service: nothing could confirm the save, so the control is
+                            // inert rather than silently lying about the pose's saved state.
+                            .disabled(isSaving || model.bookmarkService == nil)
+                            .accessibilityHint(model.bookmarkService == nil ? "Saving is unavailable right now" : "")
                         }
                           Button {
                               routeTryPoseToCamera(pose, onTryPose: onTryPose)
@@ -1096,19 +1142,21 @@ struct PoseDetailScreen: View {
 
     private static let heroCardCornerRadius: CGFloat = NeoChromeTokens.radiusLarge
 
+    /// Saving needs an account: a pose is only shown as saved once the server confirmed it, so this
+    /// never flips local state up front and never invents a save for a missing bookmark service.
     private func toggleBookmark() async {
-        guard AppConfig.shared.isAccountFeatureEnabled else { return }
-        let next = !isSaved
+        guard AppConfig.shared.isAccountFeatureEnabled, !isSaving else { return }
         guard await boundary.hasStoredSession() else {
             pendingSignIn = .savePose
             return
         }
-        if model.bookmarkService != nil {
-            await model.toggleSaved(for: pose.withSaved(isSaved))
-            isSaved = next
-        } else {
-            isSaved = next
-            model.updateSavedLocally(poseID: pose.id, saved: next)
+        isSaving = true
+        defer { isSaving = false }
+        switch await model.toggleSaved(for: pose.withSaved(isSaved)) {
+        case .saved(let saved):
+            isSaved = saved
+        case .unavailable, .inFlight, .failed:
+            break
         }
     }
 }

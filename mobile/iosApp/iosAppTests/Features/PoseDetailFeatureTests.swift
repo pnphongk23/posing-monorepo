@@ -199,6 +199,96 @@ final class PoseDetailFeatureTests: XCTestCase {
         )
     }
 
+    // MARK: - Bookmarking must follow the server, never the tap
+
+    @MainActor func testToggleSavedWithoutBookmarkServiceNeverShowsThePoseAsSaved() async {
+        // Signed out / account wiring unavailable: no request can be sent, so nothing may be shown
+        // as saved and the local list must be untouched.
+        let pose = sampleDetailPose
+        let model = PosesViewModel(service: StubPoseService(result: [pose]))
+        model.state = .loaded([pose])
+
+        let outcome = await model.toggleSaved(for: pose)
+
+        XCTAssertEqual(outcome, .unavailable)
+        guard case .loaded(let poses) = model.state else { return XCTFail("Expected loaded") }
+        XCTAssertFalse(poses[0].isSaved, "a pose must never appear saved unless the server confirmed it")
+        XCTAssertNil(model.bookmarkError)
+    }
+
+    @MainActor func testToggleSavedServerFailureLeavesThePoseUnsavedAndSurfacesTheError() async {
+        let pose = sampleDetailPose
+        let service = StubBookmarkService(shouldFail: true)
+        let model = PosesViewModel(service: StubPoseService(result: [pose]), bookmarkService: service)
+        model.state = .loaded([pose])
+
+        let outcome = await model.toggleSaved(for: pose)
+
+        guard case .failed(let message) = outcome else { return XCTFail("Expected .failed, got \(outcome)") }
+        XCTAssertFalse(message.isEmpty)
+        XCTAssertEqual(model.bookmarkError, message, "the failure must reach the shared error surface")
+        guard case .loaded(let poses) = model.state else {
+            return XCTFail("a failed save must not replace the list with an error state")
+        }
+        XCTAssertFalse(poses[0].isSaved, "a failed save must roll back to unsaved")
+        XCTAssertEqual(service.saveCallCount, 1)
+    }
+
+    @MainActor func testToggleSavedFlipsOnlyAfterTheServerConfirms() async {
+        let pose = sampleDetailPose
+        let service = GatedBookmarkService()
+        let model = PosesViewModel(service: StubPoseService(result: [pose]), bookmarkService: service)
+        model.state = .loaded([pose])
+
+        let save = Task { await model.toggleSaved(for: pose) }
+        await waitUntil("the save request never started") { service.saveCallCount == 1 }
+
+        // In flight: still not saved, exactly like the server has not said yes yet.
+        guard case .loaded(let inFlight) = model.state else { return XCTFail("Expected loaded") }
+        XCTAssertFalse(inFlight[0].isSaved, "the pose must not look saved while the request is in flight")
+
+        service.release()
+        let outcome = await save.value
+        XCTAssertEqual(outcome, .saved(true))
+        guard case .loaded(let settled) = model.state else { return XCTFail("Expected loaded") }
+        XCTAssertTrue(settled[0].isSaved)
+    }
+
+    @MainActor func testRapidDoubleTapSendsOneRequestAndEndsConsistent() async {
+        let pose = sampleDetailPose
+        let service = GatedBookmarkService()
+        let model = PosesViewModel(service: StubPoseService(result: [pose]), bookmarkService: service)
+        model.state = .loaded([pose])
+
+        let first = Task { await model.toggleSaved(for: pose) }
+        await waitUntil("the save request never started") { service.saveCallCount == 1 }
+        // Second tap while the first is still in flight: ignored, not queued.
+        let second = await model.toggleSaved(for: pose)
+        XCTAssertEqual(second, .inFlight)
+
+        service.release()
+        let firstOutcome = await first.value
+        XCTAssertEqual(firstOutcome, .saved(true))
+        XCTAssertEqual(service.saveCallCount, 1, "a double tap must not send two saves")
+        XCTAssertEqual(service.unsaveCallCount, 0)
+        guard case .loaded(let poses) = model.state else { return XCTFail("Expected loaded") }
+        XCTAssertTrue(poses[0].isSaved, "the pose must end up saved once, not flip-flopped")
+    }
+
+    /// Pumps the main run loop until `condition` holds, failing the test when it never does.
+    @MainActor private func waitUntil(
+        _ message: String,
+        timeout: TimeInterval = 5,
+        _ condition: () -> Bool
+    ) async {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if condition() { return }
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTFail(message)
+    }
+
     // MARK: - Real PoseDetailScreen render harness
 
     /// Renders the real `PoseDetailScreen` offscreen at the device width, so the assertions measure
@@ -318,6 +408,60 @@ private let sampleDetailPose = NativePose(
     instructions: ["Step one"],
     isSaved: false
 )
+
+private final class StubBookmarkService: PoseBookmarkServing, @unchecked Sendable {
+    private let lock = NSLock()
+    private let shouldFail: Bool
+    private var saves = 0
+    private var unsaves = 0
+
+    init(shouldFail: Bool = false) { self.shouldFail = shouldFail }
+
+    var saveCallCount: Int { lock.withLock { saves } }
+    var unsaveCallCount: Int { lock.withLock { unsaves } }
+
+    func savePose(poseId: String) async throws {
+        lock.withLock { saves += 1 }
+        if shouldFail { throw URLError(.notConnectedToInternet) }
+    }
+
+    func unsavePose(poseId: String) async throws {
+        lock.withLock { unsaves += 1 }
+        if shouldFail { throw URLError(.notConnectedToInternet) }
+    }
+}
+
+/// A save that does not answer until the test releases it: models a slow server.
+private final class GatedBookmarkService: PoseBookmarkServing, @unchecked Sendable {
+    private let lock = NSLock()
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+    private var saves = 0
+    private var unsaves = 0
+
+    var saveCallCount: Int { lock.withLock { saves } }
+    var unsaveCallCount: Int { lock.withLock { unsaves } }
+    var isHeld: Bool { lock.withLock { !waiters.isEmpty } }
+
+    func savePose(poseId: String) async throws {
+        lock.withLock { saves += 1 }
+        await withCheckedContinuation { continuation in
+            lock.withLock { waiters.append(continuation) }
+        }
+    }
+
+    func unsavePose(poseId: String) async throws {
+        lock.withLock { unsaves += 1 }
+    }
+
+    func release() {
+        let pending = lock.withLock { () -> [CheckedContinuation<Void, Never>] in
+            let held = waiters
+            waiters.removeAll()
+            return held
+        }
+        for continuation in pending { continuation.resume() }
+    }
+}
 
 private struct StubPoseService: PoseServing {
     let result: [NativePose]
