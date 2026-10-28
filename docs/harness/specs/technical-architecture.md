@@ -245,6 +245,9 @@ ln -sf ../../scripts/git-hooks/pre-commit .git/hooks/pre-commit && chmod +x .git
 
 > Worker **phải** chạy [`scripts/ios-verify.sh`](../../../scripts/ios-verify.sh) và thấy **xanh trước khi commit** bất kỳ thay đổi
 > code iOS nào. Xanh = exit 0 **và** dòng summary `failures=0` với `executed > 0`.
+>
+> Commit bằng pathspec tường minh — `git commit -m "..." -- <path>…` — **không bao giờ** `git commit`
+trần: nhiều lane cùng làm trên một working tree, và index dùng chung sẽ nuốt file đã stage của lane khác.
 
 Script lo hết phần dễ sai: chặn khi `/` còn dưới 1.5 GB, chặn khi đã có `xcodebuild` khác chạy
 (một build tại một thời điểm, toàn máy), dùng simulator test chung
