@@ -145,33 +145,34 @@ final class AppConfig: @unchecked Sendable {
     }
 }
 
+#if DEBUG
 /// QA-only launch-argument overrides for the two Firestore switches (`paywall_enabled`,
 /// `accounts_enabled_v2`), so a Simulator run can exercise both surfaces without editing the
 /// production documents.
 ///
-/// The reader is a pure function with `isDebugBuild` as an **input**, not as a compile-time fact: a
-/// unit test can then assert the Release answer (`nil`) without a Release build, and the only
-/// production wiring — the `ProcessInfo` lookup — is compiled under `#if DEBUG` (see `AppConfig`).
+/// The whole reader is compiled **only** into a Debug build: Release carries neither the argument
+/// names nor the argv lookup, so there is no Release code path to disable. `booleanValue` still
+/// takes `isDebugBuild` as an **input** so a test can pin the `nil` answer it would give, and the
+/// Release guarantee itself is proven by the source scan in `AppConfigTests`.
+///
+/// `nil` means "no override": a missing flag, a flag without a value and an unparsable value all
+/// keep the resolved payload in charge. Values go through the same boolean parser the Firestore
+/// payload uses, so `YES`/`NO`/`true`/`false` (any case) are accepted.
 enum DebugLaunchArgumentOverride {
-    #if DEBUG
-    /// Argument names. Kept inside `#if DEBUG` so a Release binary carries neither the names nor the
-    /// wiring that reads them.
     static let paywallEnabledFlag = "-AIPosePaywallEnabled"
     static let accountsEnabledFlag = "-AIPoseAccountsEnabled"
-    #endif
 
-    /// `nil` means "no override": a Release build, a missing flag, a flag without a value and an
-    /// unparsable value all keep the resolved payload in charge. Values go through the same boolean
-    /// parser the Firestore payload uses, so `YES`/`NO`/`true`/`false` (any case) are accepted.
     static func booleanValue(
         for flag: String,
         in arguments: [String],
         isDebugBuild: Bool
     ) -> Bool? {
-        // Release builds never look at argv — by construction, and this guard is what a test pins.
+        // A Release build never looks at argv; this guard is the runtime half of that promise and
+        // `#if DEBUG` above is the compile-time half.
         guard isDebugBuild else { return nil }
         guard let index = arguments.firstIndex(of: flag),
               arguments.indices.contains(index + 1) else { return nil }
         return AppConfigService.parseBoolean(raw: arguments[index + 1])
     }
 }
+#endif

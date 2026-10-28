@@ -8,9 +8,13 @@
 #
 # Usage:
 #   scripts/ios-verify.sh                      # build-for-testing + full unit test run
-#   scripts/ios-verify.sh -only-testing:iosAppTests/Features/CameraFeatureTests
-#   scripts/ios-verify.sh -only-testing:iosAppTests/Features/PosesAdapterTests/PosesAdapterTests/testSave
+#   scripts/ios-verify.sh -only-testing:iosAppTests/AppConfigTests
+#   scripts/ios-verify.sh -only-testing:iosAppTests/AppConfigTests/testLaunchArgumentOverrideIsNilInReleaseBuilds
 #   scripts/ios-verify.sh --check-env          # no build: disk, lock, simulator presence only
+#
+# Selectors are bundle-relative and must NOT repeat the source folder: `iosAppTests/AppConfigTests`
+# selects that class, while `iosAppTests/Services/AppConfigTests` selects nothing. A run that selects
+# or executes 0 tests fails non-zero — a green run with 0 tests is a false pass.
 #
 # Environment:
 #   IOS_VERIFY_SIM   simulator UDID (default: the shared ai-pose-test device)
@@ -158,6 +162,17 @@ fi
 if grep -qE "TEST (EXECUTE )?SUCCEEDED" "$TEST_LOG"; then TEST_RESULT="TEST SUCCEEDED"; else TEST_RESULT="TEST FAILED"; fi
 
 echo "ios-verify: $TEST_RESULT · executed=$EXECUTED · failures=$FAILURES · simulator=$SIM_ID · log=$TEST_LOG"
+
+# A green xcodebuild with 0 selected tests means the selector matched nothing: exit 0 there would
+# report an unbuilt, unrun change as verified. Fail on the selection itself, before the generic
+# success/failure paths, so the message names the fix instead of just the status.
+if [[ "$EXECUTED" == "0" ]]; then
+  echo "--- last 20 lines of $TEST_LOG ---" >&2
+  tail -20 "$TEST_LOG" >&2
+  fail "0 tests selected or executed — a green run with 0 tests is a false pass." \
+    "Selectors passed: ${TEST_ARGS[*]:-<none>}. They are bundle-relative without the source folder:" \
+    "'iosAppTests/AppConfigTests', not 'iosAppTests/Services/AppConfigTests'."
+fi
 
 if [[ "$TEST_STATUS" -ne 0 ]]; then
   echo "--- last 40 lines of $TEST_LOG ---" >&2

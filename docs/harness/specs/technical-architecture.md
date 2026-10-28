@@ -253,8 +253,10 @@ Script lo hết phần dễ sai: chặn khi `/` còn dưới 1.5 GB, chặn khi 
 (một build tại một thời điểm, toàn máy), dùng simulator test chung
 `7CC9393C-88FC-4AE6-88D3-AC68A2E266B7` (override `IOS_VERIFY_SIM`), `-derivedDataPath /tmp/dd-shared`,
 `build-for-testing` rồi `test-without-building` với scheme `Dev`, bọc `perl alarm` 1400s, in một
-dòng `executed/failures`. Chỉ nhận thêm `-only-testing:`/`-skip-testing:`. Muốn kiểm môi trường
-không build: `scripts/ios-verify.sh --check-env`.
+dòng `executed/failures`. Chỉ nhận thêm `-only-testing:`/`-skip-testing:`. Selector là bundle-relative
+và **không** kèm thư mục nguồn: `iosAppTests/AppConfigTests` (đúng), không phải
+`iosAppTests/Services/AppConfigTests` (chọn 0 test). Script fail non-zero khi chọn/chạy 0 test —
+xanh với 0 test là false pass. Muốn kiểm môi trường không build: `scripts/ios-verify.sh --check-env`.
 
 Server lane không nằm trong packet này: gate static duy nhất hiện có là
 `npm --prefix web/services/pose-extract-server run lint` (`tsc --noEmit -p tsconfig.json`);
