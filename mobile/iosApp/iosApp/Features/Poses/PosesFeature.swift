@@ -194,7 +194,7 @@ private extension URLError {
     }
 }
 
-@MainActor final class PosesViewModel: ObservableObject {
+@MainActor final class PosesViewModel: ObservableObject, SessionScoped {
     @Published var state: Loadable<[NativePose]> = .idle
     @Published var query = ""
     @Published var filter: PoseLibraryFilter = .community
@@ -209,7 +209,10 @@ private extension URLError {
     /// session-agnostic — the composition root injects the real boundary, exactly like the adapter's
     /// `hasSession` probe.
     private let boundary: SessionBoundary?
-    private var sessionTask: Task<Void, Never>?
+    /// The one fan-out for this boundary. Every model behind it shares a single `observeSessions`
+    /// subscription, and each request carries a ticket from it so a stale answer is dropped instead of
+    /// being painted into the next Account's screen.
+    private let scope: SessionScope?
     private var searchTask: Task<Void, Never>?
     private var debounceNanoseconds: UInt64 = 350_000_000
 
@@ -224,12 +227,11 @@ private extension URLError {
         self.bookmarkService = bookmarkService
         self.filterState = filterState
         self.boundary = boundary
+        self.scope = boundary.map { SessionScope.of($0) }
         self.debounceNanoseconds = debounceNanoseconds
-        observeSessionChanges()
-    }
-
-    deinit {
-        sessionTask?.cancel()
+        // Held weakly by the scope, so a throwaway instance (this model is rebuilt inside `body`)
+        // neither leaks nor starts its own observer.
+        scope?.adopt(self)
     }
 
     convenience init(
@@ -279,61 +281,84 @@ private extension URLError {
     }
 
     func load() async {
-        let generation = await sessionGeneration()
+        let ticket = await beginSessionRequest()
         state = .loading
         filterState?.filter = filter
         do {
             let values = try await service.poses(query: query.isEmpty ? nil : query)
             // A session change while this request was in flight makes the answer belong to the
             // previous Account (its Saved flags included), so it must not reach the screen.
-            guard await isCurrentSession(generation) else { return }
+            guard await isCurrentSession(ticket) else { return }
             state = values.isEmpty ? .empty : .loaded(values)
         } catch {
-            guard await isCurrentSession(generation) else { return }
+            guard await isCurrentSession(ticket) else { return }
             state = .failed(ErrorCopy.text(for: error) ?? "Unable to load poses.")
         }
     }
 
-    /// The boundary's own generation is the account identity: it changes on sign-in, sign-out and a
-    /// 401 clear, and it is the same number `SessionScopeCoordinator` reacts to — so a request is
-    /// accepted only if the session that asked for it is still the current one.
-    private func sessionGeneration() async -> Int? {
-        await boundary?.currentGeneration
+    /// Captures the ticket for a request that is about to start. `nil` (no boundary, or no scope)
+    /// keeps directly constructed models session-agnostic.
+    private func beginSessionRequest() async -> SessionTicket? {
+        guard let scope else { return nil }
+        return await scope.beginRequest()
     }
 
-    private func isCurrentSession(_ generation: Int?) async -> Bool {
-        await sessionGeneration() == generation
+    /// A completion is accepted only while the session that asked for it is still the current one.
+    private func isCurrentSession(_ ticket: SessionTicket?) async -> Bool {
+        guard let scope, let ticket else { return true }
+        return await scope.isValid(ticket)
     }
 
-    /// Follows the session so account-scoped state never outlives the Account it was read for.
-    private func observeSessionChanges() {
-        guard let boundary, sessionTask == nil else { return }
-        sessionTask = boundary.observeSessions { [weak self] _ in
-            guard let self else { return }
-            await self.resetAccountScopedState()
-        }
+    /// Cheap synchronous variant for the task a reset kicks: its ticket came from the fan-out itself,
+    /// so it is superseded only by a *later* reset.
+    private func isScopeCurrent(_ ticket: SessionTicket?) -> Bool {
+        guard let scope, let ticket else { return true }
+        return scope.isCurrent(ticket)
     }
 
     /// Drops what the previous Account left behind: its confirmed save per pose, its in-flight
     /// bookmarks, its "pose is gone" verdicts, and — for the routes that carry Saved flags — the
-    /// loaded list itself. The community feed holds no Account state, so it stays on screen.
+    /// loaded list itself. Synchronous: the scope bumps its generation and resets every model in one
+    /// turn, so no screen can draw A's answer after another screen already switched to B.
     ///
     /// Without this, A saving pose P and then signing out / deleting the account while B signs in
     /// would leave `savedOverrides[P] = true` standing over B's freshly loaded `false`, and B's first
     /// tap would send an unsave.
-    private func resetAccountScopedState() async {
+    func resetForSessionChange(_ event: SessionEvent) {
         savedOverrides.removeAll()
-        bookmarkRequestsInFlight.removeAll()
+        bookmarkRequests.removeAll()
+        bookmarkRequestsInFlight = []
         unavailablePoseIDs.removeAll()
         bookmarkError = nil
+        // A request that was in flight under the previous session is discarded by its own ticket, so
+        // nothing would ever settle `.loading` — remember it and restart below.
+        let wasLoading: Bool
+        if case .loading = state { wasLoading = true } else { wasLoading = false }
+        let ticket = scope?.ticket
 
         // A Saved (or All) list is account-scoped in its entirety, so it is dropped and re-read.
         if filter == .saved || filter == .all {
             state = .idle
             // The next Account's list is fetched through the normal path (a sign-out has nothing to
             // fetch: the Saved surface gates on the session itself).
-            guard let boundary, await boundary.hasStoredSession() else { return }
-            await load()
+            Task { @MainActor [weak self] in
+                guard let self, self.isScopeCurrent(ticket) else { return }
+                guard await self.boundary?.hasStoredSession() == true else { return }
+                guard self.isScopeCurrent(ticket) else { return }
+                await self.load()
+            }
+            return
+        }
+
+        if wasLoading {
+            // The in-flight answer belongs to the previous session, so this state would stay
+            // `.loading` forever. The community feed holds no Account state, so it is re-read even
+            // when the change left the app signed out.
+            state = .idle
+            Task { @MainActor [weak self] in
+                guard let self, self.isScopeCurrent(ticket) else { return }
+                await self.load()
+            }
             return
         }
 
@@ -365,13 +390,17 @@ private extension URLError {
     @Published private(set) var unavailablePoseIDs: Set<String> = []
     /// Poses with a request in flight, so a rapid second tap cannot desync the local state — and so a
     /// screen that is opened mid-request can show it as busy instead of offering a second save.
+    ///
+    /// Derived from `bookmarkRequests`, which claims per request: A's late completion can only
+    /// release A's own claim, never B's claim for the same pose.
     @Published private(set) var bookmarkRequestsInFlight: Set<String> = []
+    private var bookmarkRequests = InFlight<String>()
     /// Server-confirmed saved state per pose id. The single source of truth for the saved UI: it also
     /// covers poses that are not in the loaded list (e.g. a detail screen opened from Jobs).
     @Published private(set) var savedOverrides: [String: Bool] = [:]
 
     func isBookmarkInFlight(_ poseID: String) -> Bool {
-        bookmarkRequestsInFlight.contains(poseID)
+        bookmarkRequests.contains(poseID)
     }
 
     /// What the UI must show for this pose: a server-confirmed answer first, then the loaded list, then
@@ -389,28 +418,44 @@ private extension URLError {
     @discardableResult
     func toggleSaved(for pose: NativePose) async -> BookmarkOutcome {
         guard let service = bookmarkService else { return .unavailable }
-        guard bookmarkRequestsInFlight.insert(pose.id).inserted else { return .inFlight }
-        defer { bookmarkRequestsInFlight.remove(pose.id) }
+        // Settle the session before claiming: a reset clears the in-flight claims, so a claim taken
+        // before the fan-out belongs to the previous session and would be wiped under this request.
+        let ticket = await beginSessionRequest()
+        guard let request = beginBookmarkRequest(pose.id) else { return .inFlight }
+        defer { endBookmarkRequest(pose.id, request) }
 
         // Read the shared state, not the caller's snapshot: a screen that was opened before an earlier
         // save completed still has `isSaved == false` and would otherwise send a second save.
-        let generation = await sessionGeneration()
         let shouldSave = !savedState(for: pose)
         do {
             if shouldSave { try await service.savePose(poseId: pose.id) }
             else { try await service.unsavePose(poseId: pose.id) }
-            guard await isCurrentSession(generation) else { return .discarded }
+            guard await isCurrentSession(ticket) else { return .discarded }
             bookmarkError = nil
             updateSavedLocally(poseID: pose.id, saved: shouldSave)
             return .saved(shouldSave)
         } catch {
-            guard await isCurrentSession(generation) else { return .discarded }
+            guard await isCurrentSession(ticket) else { return .discarded }
             // Nothing was flipped up front, so "rollback" is simply the state we still hold.
             let message = SavedMutationCopy.text(for: error)
             if SavedMutationCopy.isGone(error) { unavailablePoseIDs.insert(pose.id) }
             bookmarkError = message
             return .failed(message)
         }
+    }
+
+    /// Claims the pose for one request. The token is what lets a finished request release only its
+    /// own claim: resetting the set on a session change must not turn A's late `defer` into a release
+    /// of B's claim for the same pose.
+    private func beginBookmarkRequest(_ poseID: String) -> UInt64? {
+        let token = bookmarkRequests.begin(poseID)
+        bookmarkRequestsInFlight = bookmarkRequests.keys
+        return token
+    }
+
+    private func endBookmarkRequest(_ poseID: String, _ token: UInt64) {
+        bookmarkRequests.end(poseID, token)
+        bookmarkRequestsInFlight = bookmarkRequests.keys
     }
 
     /// A pose the server reported as gone is no longer offered a save control.
