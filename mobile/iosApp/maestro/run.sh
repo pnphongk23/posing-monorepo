@@ -11,7 +11,8 @@ if [ -z "${SHOTS_DIR:-}" ]; then
   exec maestro --device "$udid" test -e APP_ID=posing.camera.app "${@:-flows}"
 fi
 mkdir -p "$SHOTS_DIR"; rc=0
-for f in ${@:-flows/*.yaml}; do
+[ $# -gt 0 ] || set -- flows/*.yaml
+for f in "$@"; do
   run "$f" && xcrun simctl io "$udid" screenshot "$SHOTS_DIR/$(basename "$f" .yaml).png" >/dev/null 2>&1 || rc=1
 done
 exit $rc

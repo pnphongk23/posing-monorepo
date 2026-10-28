@@ -2,6 +2,8 @@
 
 Bundle id `posing.camera.app` (passed once as `APP_ID` by `run.sh`). Flows are P0 smoke; cases and IDs live in [docs/qa/test-cases](../../../docs/qa/test-cases/README.md).
 
+Flow files must be named `<CASE-ID>-<slug>.yaml` with first line `# <CASE-ID> <title>`; the check enforces both.
+
 ## Run
 1. Pick a simulator that is yours for the run (the lane uses `ai-pose-test`, coordinate the slot with the Feature lane). Never use a personal device-named sim.
 2. Install the Dev build right before the run: `xcrun simctl install <UDID> <derived-data>/Build/Products/Debug-Dev-iphonesimulator/posing.app` (build: `xcodebuild -workspace mobile/iosApp/iosApp.xcworkspace -scheme Dev -destination 'id=<UDID>' -derivedDataPath /tmp/dd-shared build`; one build at a time, keep >1.5 GB disk free).
@@ -78,3 +80,7 @@ Still requested (flows keep a `TODO(QA-261029-ID)` text selector): `dock.gallery
 Regenerate by hand when a case changes; `check-traceability.sh` fails if an `automated:` case and its flow disagree.
 
 Further id requests from review: camera guide overlay (or its toggle) so TC-CAM-001 can prove the guide is drawn; settings.privacy.section.
+
+## Debug flag overrides (paywall, Saved/Account)
+
+Debug builds also answer to `-AIPosePaywallEnabled YES|NO` (overrides `paywall_enabled`) and `-AIPoseAccountsEnabled YES|NO` (overrides `accounts_enabled_v2`); both accept `YES`/`NO`/`true`/`false` in any case, fall back to the resolved Firestore payload when the argument is absent, and are compiled out of Release, so a flow passes them in `launchApp.arguments` next to `-AIPoseAccountEnabled` (which keeps precedence over `-AIPoseAccountsEnabled` when both are set) instead of editing the server config. They override the AppConfig value only: a surface that does not read the switch yet stays unchanged.
