@@ -75,6 +75,8 @@ POSE_EXTRACT_ADMIN_SECRET=change-me
 
 The Express service has additional database, R2, provider, and worker configuration. Use `web/services/pose-extract-server/src/config/env.ts` as the executable configuration contract and never commit real secrets.
 
+The admin UI itself is gated by browser HTTP Basic Auth in `src/proxy.js` (the Next.js 16 `proxy` convention that replaced `middleware`), covering every page, server action and `/api/*` route. Set `ADMIN_UI_BASIC_USER` and `ADMIN_UI_BASIC_PASSWORD` on the Railway admin UI service; if either is missing or empty the app answers 401 for every request. Local development can bypass the gate with `ADMIN_UI_BASIC_AUTH_DISABLED=1`, which production ignores.
+
 ## Current limitations
 
 - Mobile is iOS-only; no Android target is configured.

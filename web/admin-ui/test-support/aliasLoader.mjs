@@ -29,7 +29,15 @@ function resolveLocalFile(basePath) {
 const isRelative = (specifier) => specifier.startsWith('./') || specifier.startsWith('../');
 const hasExtension = (specifier) => path.extname(specifier) !== '';
 
+// The `next` package ships no exports map, so plain Node cannot resolve the
+// extensionless `next/server` specifier that Next's bundler understands.
+const nextServerPath = path.resolve(import.meta.dirname, '..', 'node_modules', 'next', 'server.js');
+
 export async function resolve(specifier, context, nextResolve) {
+  if (specifier === 'next/server' && existsSync(nextServerPath)) {
+    return nextResolve(pathToFileURL(nextServerPath).href, context);
+  }
+
   if (specifier.startsWith('@/')) {
     const target = resolveLocalFile(path.join(srcDir, specifier.slice(2)));
     return nextResolve(pathToFileURL(target).href, context);
