@@ -244,6 +244,46 @@ components:
           type: string
           format: date-time
 
+    Entitlement:
+      type: object
+      description: "Cache của RevenueCat REST cho một Account. isActive luôn được tính lại fail-closed khi đọc."
+      required: [entitlementId, isActive, expiresAt, productId, store, environment, syncedAt, stale]
+      properties:
+        entitlementId:
+          type: string
+          nullable: true
+        isActive:
+          type: boolean
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: "effectiveExpiry = max(expires_date, grace_period_expires_date); null cho lifetime hoặc khi inactive"
+        productId:
+          type: string
+          nullable: true
+        store:
+          type: string
+          nullable: true
+        environment:
+          type: string
+          enum: [SANDBOX, PRODUCTION]
+          nullable: true
+        syncedAt:
+          type: string
+          format: date-time
+          nullable: true
+        stale:
+          type: boolean
+          description: "true khi lần đọc lại upstream thất bại và row đang được phục vụ từ cache"
+
+    EntitlementResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: "#/components/schemas/Entitlement"
+
     SavedEntry:
       type: object
       required: [id, accountId, poseId, savedAt]
@@ -2034,6 +2074,115 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
 
+  /api/me/entitlement:
+    get:
+      operationId: getMyEntitlement
+      summary: Read the signed-in account's subscription entitlement
+      description: "Row là cache của RevenueCat REST. Row thiếu, cũ hơn 24 giờ hoặc đã hết hạn thì đọc lại upstream. isActive luôn được tính fail-closed từ is_active và expires_at, không tin cờ đã lưu. REST lỗi thì trả row đã lưu với stale=true."
+      tags: [Entitlement]
+      security:
+        - AccountSession: []
+      responses:
+        "200":
+          description: Entitlement của chính account đang đăng nhập
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EntitlementResponse"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "503":
+          description: "REVENUECAT_SECRET_API_KEY hoặc REVENUECAT_ENTITLEMENT_ID chưa cấu hình"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+
+  /api/me/entitlement/sync:
+    post:
+      operationId: syncMyEntitlement
+      summary: Force a RevenueCat re-read and store the result
+      description: "Account id chỉ lấy từ session; query/header/body bị bỏ qua. Rate limit 10 request/phút/account. REST lỗi thì 503 và không row nào bị thay đổi."
+      tags: [Entitlement]
+      security:
+        - AccountSession: []
+      responses:
+        "200":
+          description: Entitlement sau khi đọc lại upstream
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EntitlementResponse"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "429":
+          description: Quá 10 request/phút cho account này
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "503":
+          description: "Chưa cấu hình, hoặc RevenueCat REST lỗi"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+
+  /api/webhooks/revenuecat:
+    post:
+      operationId: receiveRevenueCatWebhook
+      summary: RevenueCat webhook trigger
+      description: "Chỉ mount khi REVENUECAT_WEBHOOK_AUTH và REVENUECAT_SECRET_API_KEY được set. Auth là timingSafeEqual với 'Bearer $REVENUECAT_WEBHOOK_AUTH'. Payload chỉ chọn Account cần đọc lại RevenueCat REST; event SANDBOX được xử lý. Không candidate hợp lệ hoặc loại event không hỗ trợ thì 200 ignored."
+      tags: [Entitlement]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: "Event object, có hoặc không có wrapper { event, api_version }."
+              additionalProperties: true
+      responses:
+        "200":
+          description: "Đã xử lý ({ processed }) hoặc bỏ qua ({ ignored: true })"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  processed:
+                    type: integer
+                    minimum: 0
+                  ignored:
+                    type: boolean
+        "400":
+          description: Payload sai shape
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "401":
+          description: Token sai hoặc thiếu
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "503":
+          description: RevenueCat REST lỗi — RevenueCat sẽ retry, không row nào bị thay đổi
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+
 tags:
   - name: Health
     description: Service health
@@ -2047,6 +2196,9 @@ tags:
     description: Public visibility (FEAT-006)
   - name: Saved
     description: Signed-in saved collection (FEAT-008)
+  - name: Entitlement
+    description: "Subscription entitlement cache, reconcile endpoint và RevenueCat webhook (FEAT-011). Không có đường guest/anonymous."
+
   - name: Admin Keys
     description: Provider key operations (FEAT-007)
   - name: Admin Community

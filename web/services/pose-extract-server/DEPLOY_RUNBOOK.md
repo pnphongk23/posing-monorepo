@@ -412,6 +412,63 @@ than 1 hour.
 
 ---
 
+## 7. Subscription entitlements (RevenueCat)
+
+**Status: OPTIONAL BY DESIGN — unprovisioned is safe.** Three variables gate the feature; with any
+required one missing the read/reconcile routes answer `503 ENTITLEMENT_UNAVAILABLE` and the webhook
+is not mounted at all (the path is `404`). Nothing else in the service changes, so deploying before
+the values exist cannot break login, extraction or saved poses.
+
+| Variable | Where | What it is for |
+| --- | --- | --- |
+| `REVENUECAT_SECRET_API_KEY` | Railway service variables **and** the operator's local `.env` | Server-side REST v1 read of a subscriber. Never the public SDK key. |
+| `REVENUECAT_ENTITLEMENT_ID` | Railway service variables **and** the operator's local `.env` | The entitlement id that is live in the RevenueCat dashboard. |
+| `REVENUECAT_WEBHOOK_AUTH` | Railway service variables | Bearer token RevenueCat sends; the service compares it with `timingSafeEqual`. At least 32 characters. |
+
+Rules: names only in this file — never the values, never in a response, never in a log line.
+`.env.example` lists the names with no values. The REST read happens on every write, so the webhook
+body is only a trigger: no state is ever taken from the payload.
+
+### 7a. Dashboard webhook setup
+
+1. RevenueCat → **Project settings → Integrations → Webhooks** → add
+   `https://<PUBLIC_HOST>/api/webhooks/revenuecat`.
+2. Authorization header value: `Bearer ` followed by `REVENUECAT_WEBHOOK_AUTH` (the exact string, including
+   the `Bearer ` prefix; the service compares the whole header).
+3. Enable at least `INITIAL_PURCHASE`, `RENEWAL`, `EXPIRATION`, `BILLING_ISSUE`, `CANCELLATION`,
+   `UNCANCELLATION`, `PRODUCT_CHANGE`, `SUBSCRIPTION_EXTENDED`, `TRANSFER`, `TEMPORARY_ENTITLEMENT_GRANT`.
+   Unsupported event types are acknowledged with `200 {"ignored": true}` rather than retried.
+4. Leave **sandbox** events on: App Review buys in sandbox against the production server and those
+   events must be processed.
+
+### 7b. Post-provision verification (never print secrets)
+
+```bash
+# 1. Webhook is mounted but unauthenticated: MUST be 401, not 404 and not 500.
+curl -i -X POST https://<PUBLIC_HOST>/api/webhooks/revenuecat -H 'Content-Type: application/json' -d '{}'
+
+# 2. Entitlement read for a signed-in account: 200 with { data: { isActive, stale } },
+#    or 503 ENTITLEMENT_UNAVAILABLE while the two read variables are still unset.
+curl -i https://<PUBLIC_HOST>/api/me/entitlement -H "Authorization: Bearer <ACCESS_TOKEN>"
+
+# 3. Reconcile after a sandbox purchase; repeat within a minute to see 429 after the tenth call.
+curl -i -X POST https://<PUBLIC_HOST>/api/me/entitlement/sync -H "Authorization: Bearer <ACCESS_TOKEN>"
+```
+
+Read-only inspection (account id only; the table holds no personal data):
+
+```sql
+SELECT account_id, entitlement_id, is_active, expires_at, environment, upstream_at, synced_at, NOW() - synced_at AS age
+FROM account_entitlements ORDER BY synced_at DESC LIMIT 50;
+```
+
+Alerts: `environment = 'SANDBOX'` rows on a production database are expected for App Review, but a
+production purchase that stays `is_active = false` with a fresh `synced_at` means the dashboard
+entitlement id and `REVENUECAT_ENTITLEMENT_ID` disagree. Account deletion removes the row through
+`ON DELETE CASCADE`; no entitlement-specific cleanup exists or is needed.
+
+---
+
 ## Related
 
 - Account deletion / Apple sign-in prerequisites: section 6 above.

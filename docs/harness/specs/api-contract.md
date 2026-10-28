@@ -63,6 +63,7 @@ trạng thái job cho từng `Account`. Client không gọi endpoint lưu riêng
 | FEAT-006 | [Publish](#publish) | `/api/guides/:id/publish`, `/unpublish` |
 | FEAT-007 | [Admin Keys](#admin-keys), [Admin Community](#admin-community), [Admin Jobs](#admin-jobs) | `/api/admin/*` |
 | FEAT-008 | [Saved](#saved) | `/api/me/saved` |
+| FEAT-011 | [Entitlement](#entitlement), [RevenueCat Webhook](#revenuecat-webhook) | `GET /api/me/entitlement`, `POST /api/me/entitlement/sync`, `POST /api/webhooks/revenuecat` |
 | — | [Account](#account) | `DELETE /api/account` |
 
 Try Pose không có HTTP: chuẩn bị local từ detail published. Capture/gallery không
@@ -497,6 +498,82 @@ Lưu một published pose. Idempotent nếu đã lưu. Signed-in Account.
 ### DELETE /api/me/saved/:poseId
 
 Unsave. Không đụng pose. Signed-in Account. `204`. Idempotent. `401`.
+
+## Entitlement
+
+Một row `account_entitlements` cho mỗi signed-in `Account`. Row là **cache** của snapshot
+RevenueCat REST, không phải nguồn sự thật: webhook chỉ là trigger, mọi lần ghi đều đọc lại
+`GET /v1/subscribers/{app_user_id}`. Không có đường guest/anonymous: account id **chỉ** lấy từ
+session đã xác thực, không đọc query, header hay body. Không có free quota.
+
+**Ordering:** mọi write đi qua một câu upsert có điều kiện
+`WHERE account_entitlements.upstream_at <= EXCLUDED.upstream_at`, với `upstream_at` lấy từ
+`request_date_ms` của response (fallback: đồng hồ server lúc **nhận** response). Snapshot đến
+muộn không bao giờ ghi đè snapshot mới hơn.
+
+**Fail-closed:** `isActive = is_active AND (expires_at IS NULL OR expires_at > now)`. Không có
+row, hoặc row đọc không được → `false`. Khi REST lỗi, row đã lưu vẫn được trả nhưng
+`stale: true`. Grace period dùng `effectiveExpiry = max(expires_date, grace_period_expires_date)`.
+
+**Env (bắt buộc để route chạy thật):** `REVENUECAT_SECRET_API_KEY`, `REVENUECAT_ENTITLEMENT_ID`.
+Thiếu một trong hai → route trả `503` `ENTITLEMENT_UNAVAILABLE` (shape ổn định cho client) và
+webhook không được mount.
+
+### GET /api/me/entitlement
+
+Entitlement của chính Account đang đăng nhập. Signed-in Account.
+
+Row thiếu, cũ hơn 24 giờ, hoặc `is_active` nhưng đã hết hạn → đọc lại RevenueCat rồi upsert.
+REST lỗi → trả row đã lưu với `stale: true` (hoặc `isActive: false` nếu không có row).
+
+`200`:
+
+```json
+{ "data": { "entitlementId": "premium", "isActive": true, "expiresAt": "2026-03-01T00:00:00.000Z",
+            "productId": "com.example.premium.monthly", "store": "app_store",
+            "environment": "PRODUCTION", "syncedAt": "2026-02-01T00:00:00.000Z", "stale": false } }
+```
+
+Khi `isActive: false`: `expiresAt`, `productId`, `store`, `environment` đều `null`.
+`environment` là `SANDBOX` hoặc `PRODUCTION`, lấy từ `is_sandbox` của subscription có
+`product_identifier` bằng product của entitlement; `null` khi không xác định được.
+
+**Errors:** `401`, `503` (`ENTITLEMENT_UNAVAILABLE`).
+
+### POST /api/me/entitlement/sync
+
+Buộc đọc RevenueCat ngay và upsert, rồi trả cùng shape với `GET`. iOS gọi sau `logIn`,
+sau purchase và sau restore (alias khi `logIn` không phát webhook). Signed-in Account.
+Rate limit: 10 request/phút/Account.
+
+**Errors:** `401`, `429` (`RATE_LIMITED`), `503` (`ENTITLEMENT_UNAVAILABLE` — env thiếu hoặc
+RevenueCat REST lỗi; không có row nào bị thay đổi).
+
+## RevenueCat Webhook
+
+### POST /api/webhooks/revenuecat
+
+Nhận event RevenueCat và **chỉ** dùng nó để chọn Account cần đọc lại. Không tin payload về
+trạng thái entitlement.
+
+- **Auth:** header `Authorization` phải bằng `Bearer $REVENUECAT_WEBHOOK_AUTH`, so sánh
+  `timingSafeEqual` sau khi kiểm tra độ dài. Sai/thiếu → `401`, không chi tiết.
+- **Mount:** chỉ khi `REVENUECAT_WEBHOOK_AUTH` và `REVENUECAT_SECRET_API_KEY` đều được set.
+  Ngược lại path là `404`.
+- **Body:** event object, có hoặc không có wrapper `{ "event": ..., "api_version": "1.0" }`.
+  `TRANSFER` mang `transferred_from` / `transferred_to` và không có `app_user_id`; các loại
+  khác mang `app_user_id`, tùy chọn `original_app_user_id`, `aliases`.
+- **Candidates:** `app_user_id` ∪ `original_app_user_id` ∪ `aliases` ∪ `transferred_from` ∪
+  `transferred_to`, bỏ mọi `$RCAnonymousID:` và mọi id không có `Account`.
+- **SANDBOX** event được xử lý như production (App Review mua sandbox trên server production).
+
+| Status | Khi nào |
+|---|---|
+| `200 { "processed": n }` | Đã đọc lại và upsert cho n Account |
+| `200 { "ignored": true }` | Không có candidate hợp lệ, hoặc loại event không hỗ trợ (vd `TEST`) — để RevenueCat không retry vô hạn |
+| `400` | Payload sai shape |
+| `401` | Token sai/thiếu |
+| `503` | RevenueCat REST lỗi; không row nào bị thay đổi, RevenueCat sẽ retry |
 
 ## Account
 
