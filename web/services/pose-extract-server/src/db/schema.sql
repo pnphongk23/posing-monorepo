@@ -201,6 +201,29 @@ ALTER TABLE extraction_jobs ALTER COLUMN source_image_base64 DROP NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_extraction_jobs_owner_created
   ON extraction_jobs(owner_account_id, created_at DESC, id DESC) WHERE hidden_at IS NULL;
 
+-- Account purge intents. A row exists only after the identity provider confirmed the
+-- user is gone. A stale row is resumed by the purge sweeper.
+CREATE TABLE IF NOT EXISTS pending_account_purges (
+  account_id TEXT PRIMARY KEY,
+  requested_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_pending_account_purges_requested_at
+  ON pending_account_purges(requested_at);
+
+-- Object keys that must be removed from object storage after the owning rows are
+-- gone. Claims are time-boxed so a crashed drain cannot strand a key forever.
+CREATE TABLE IF NOT EXISTS pending_object_deletions (
+  key TEXT PRIMARY KEY,
+  enqueued_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  attempts INTEGER NOT NULL DEFAULT 0,
+  claimed_until TIMESTAMPTZ,
+  last_error TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_pending_object_deletions_claim
+  ON pending_object_deletions(enqueued_at) WHERE claimed_until IS NULL;
+
 CREATE TABLE IF NOT EXISTS app_settings (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL,

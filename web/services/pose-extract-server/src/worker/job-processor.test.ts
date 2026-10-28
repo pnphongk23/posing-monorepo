@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 
 import { describe, expect, it, vi } from "vitest";
 
+import type { Sql } from "../db/connection";
+import { ObjectDeletionOutbox } from "../db/objectDeletionOutbox";
 import { setupTestDatabase } from "../db/testDb";
 import { ExtractionJobStore } from "../db/extractionJobStore";
 import { PoseStore } from "../db/communityStore";
@@ -35,6 +37,12 @@ async function createStores() {
     communityStore: new PoseStore(sql),
     providerSettingsStore: new ProviderSettingsStore(sql)
   };
+}
+
+async function createOwnerAccount(sql: Sql): Promise<string> {
+  const ownerAccountId = randomUUID();
+  await sql`INSERT INTO accounts (id, display_name) VALUES (${ownerAccountId}, ${"Owner"})`;
+  return ownerAccountId;
 }
 
 function mockProvider(id: ExtractionProviderId, extractPoseImage: PoseExtractorProvider["extractPoseImage"]): PoseExtractorProvider {
@@ -269,7 +277,7 @@ describe("processNextJob", () => {
       mimeType: "image/png"
     });
 
-    const ownerAccountId = randomUUID();
+    const ownerAccountId = await createOwnerAccount(sql);
     const job = await jobStore.enqueue({
       ownerAccountId,
       poseDraft: {
@@ -324,7 +332,7 @@ describe("processNextJob", () => {
       mimeType: "image/png"
     });
 
-    const ownerAccountId = randomUUID();
+    const ownerAccountId = await createOwnerAccount(sql);
     const job = await jobStore.enqueue({
       ownerAccountId,
       poseDraft: { name: "Warrior I", tags: ["standing"], description: null },
@@ -393,7 +401,7 @@ describe("processNextJob", () => {
       }
     });
 
-    const ownerAccountId = randomUUID();
+    const ownerAccountId = await createOwnerAccount(sql);
     const job = await jobStore.enqueue({
       ownerAccountId,
       poseDraft: { name: "Failed Upload", tags: [], description: null },
@@ -460,7 +468,7 @@ describe("processNextJob", () => {
     const { sql, jobStore, communityStore, providerSettingsStore } = await createStores();
     const { mediaStorage, removed } = createMediaStorageMock();
 
-    const ownerAccountId = randomUUID();
+    const ownerAccountId = await createOwnerAccount(sql);
     const job = await jobStore.enqueue({
       ownerAccountId,
       poseDraft: { name: "Stale Lock Test", tags: [], description: null },
@@ -510,7 +518,7 @@ describe("processNextJob", () => {
       mimeType: "image/png"
     });
 
-    const ownerAccountId = randomUUID();
+    const ownerAccountId = await createOwnerAccount(sql);
     const job = await jobStore.enqueue({
       ownerAccountId,
       poseDraft: { name: "Collision Winner", tags: [], description: null },
@@ -565,7 +573,7 @@ describe("processNextJob", () => {
       mimeType: "image/png"
     });
 
-    const ownerAccountId = randomUUID();
+    const ownerAccountId = await createOwnerAccount(sql);
     const job = await jobStore.enqueue({
       ownerAccountId,
       poseDraft: { name: "Already Succeeded", tags: [], description: null },
@@ -635,7 +643,7 @@ describe("processNextJob", () => {
       publicUrl: (key: string) => `https://cdn.example.com/${key}`
     };
 
-    const ownerAccountId = randomUUID();
+    const ownerAccountId = await createOwnerAccount(sql);
     const job = await jobStore.enqueue({
       ownerAccountId,
       poseDraft: { name: "Double Fail", tags: [], description: null },
@@ -661,5 +669,52 @@ describe("processNextJob", () => {
     const updatedJob = await jobStore.getById(job.id);
     expect(updatedJob?.status).toBe("queued");
     expect(updatedJob?.errorCode).toBe("POSE_MATERIALIZE_FAILED");
+  });
+
+  it("queues the keys whose cleanup failed so a later sweep can delete them", async () => {
+    const { sql, jobStore, communityStore, providerSettingsStore } = await createStores();
+    const remove = vi.fn(async (key: string) => {
+      if (key.includes("skeleton")) {
+        throw new Error("R2 delete failed");
+      }
+    });
+    const mediaStorage: MediaStorage = {
+      put: vi.fn(async () => undefined),
+      remove,
+      publicUrl: (key: string) => `https://cdn.example.com/${key}`
+    };
+
+    const ownerAccountId = await createOwnerAccount(sql);
+    const job = await jobStore.enqueue({
+      ownerAccountId,
+      poseDraft: { name: "Lost Finalize", tags: [], description: null },
+      sourceImageBase64: Buffer.from("source").toString("base64"),
+      sourceMimeType: "image/png"
+    });
+
+    const extractPoseImage = vi.fn().mockImplementation(async () => {
+      await sql`UPDATE extraction_jobs SET lock_token = 'stolen-lock-token' WHERE id = ${job.id}`;
+      return {
+        imageBase64: Buffer.from("skeleton").toString("base64"),
+        mimeType: "image/png" as const
+      };
+    });
+
+    await processNextJob({
+      jobStore,
+      providerSettingsStore,
+      createProvider: () => mockProvider("gemini_native", extractPoseImage),
+      staleLockSeconds: 120,
+      db: sql,
+      communityStore,
+      mediaStorage,
+      lineartBackgroundRemover: createBackgroundRemoverStub()
+    });
+
+    const rows = await new ObjectDeletionOutbox(sql).list();
+    expect(rows.map((row) => row.key)).toEqual([expect.stringMatching(/^poses\/[0-9a-f-]{36}\/skeleton\.png$/)]);
+
+    const pose = await communityStore.getPoseByCurrentJobId(job.id);
+    expect(pose).toBeNull();
   });
 });

@@ -300,6 +300,61 @@ curl -i -X DELETE https://<PUBLIC_HOST>/api/account -H "Authorization: Bearer <A
 
 Expected statuses are asserted by `src/routes/accountRoutes.test.ts` and `src/routes/accountAuthRoutes.test.ts`; the curl calls above confirm the deployment, not the code.
 
+### 6e. Deletion completeness — orphan rows and the object-deletion outbox
+
+`DELETE /api/account` deletes the Supabase user first, then every row the account owns in one database
+transaction, then its R2 objects. Two tables make the tail of that work observable and resumable:
+
+- `pending_account_purges(account_id, requested_at)` — written **only after** Supabase confirmed the
+  user is gone (a `404` counts as gone). A row older than 5 minutes means the request died between the
+  identity delete and the row purge. The server sweep resumes it every 10 minutes and deletes the row
+  when the purge commits. A cancelled or rejected Apple/Supabase step never writes this row.
+- `pending_object_deletions(key, enqueued_at, attempts, claimed_until, last_error)` — object keys that
+  still have to be removed. Success and a 404 from R2 delete the row; any other failure increments
+  `attempts`, stores `last_error`, and leaves the key for the next sweep. Claims are time-boxed to 5
+  minutes, so a replica that dies mid-drain cannot strand a key.
+
+Read-only inspection:
+
+```sql
+SELECT account_id, requested_at, NOW() - requested_at AS age
+FROM pending_account_purges
+ORDER BY requested_at;
+
+SELECT key, attempts, last_error, enqueued_at, claimed_until
+FROM pending_object_deletions
+ORDER BY enqueued_at
+LIMIT 50;
+
+-- What is left for one account (replace :account with the account uuid).
+SELECT 'poses' AS table_name, COUNT(*)::int AS rows FROM poses WHERE owner_account_id = :'account'
+UNION ALL SELECT 'saved_entries', COUNT(*)::int FROM saved_entries WHERE account_id = :'account'
+UNION ALL SELECT 'extraction_jobs', COUNT(*)::int FROM extraction_jobs WHERE owner_account_id = :'account'
+UNION ALL SELECT 'accounts', COUNT(*)::int FROM accounts WHERE id = :'account';
+```
+
+Resuming a stuck purge:
+
+1. Preferred: the user signs in again and re-issues `DELETE /api/account` while the access token is
+   still valid (≤ 1 h after issue). The Supabase delete then answers `404`, which counts as success.
+2. If the user cannot sign in, queue the intent by hand **only when the Supabase user is confirmed
+   gone** and wait one sweep (≤ 10 minutes), then confirm the intent row and the account's rows are
+   gone:
+
+```sql
+INSERT INTO pending_account_purges (account_id, requested_at)
+VALUES (:'account', NOW() - interval '6 minutes')
+ON CONFLICT (account_id) DO UPDATE SET requested_at = EXCLUDED.requested_at;
+```
+
+> Never insert an intent for a live user, and never delete rows by hand while a purge runs: the sweep
+> would then purge an account that still exists upstream. `security definer` helpers are not needed —
+> the tables are plain and only the API and the sweep touch them.
+
+Logs: a failed row purge logs `account_purge_failed` with the account id only. A stale object key logs
+nothing until the sweep retries it; alert on `pending_object_deletions.attempts >= 3` or an intent older
+than 1 hour.
+
 ---
 
 ## Related

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import type { Sql } from "../db/connection";
 import { StaleLockError, type ExtractionJobStore } from "../db/extractionJobStore";
+import { ObjectDeletionOutbox } from "../db/objectDeletionOutbox";
 import type { PoseStore } from "../db/communityStore";
 import type { ProviderSettingsStore } from "../db/providerSettingsStore";
 import {
@@ -179,6 +180,16 @@ export async function processNextJob(input: ProcessNextJobInput): Promise<boolea
       result: { b64: processed.imageBase64, mime: processed.mimeType },
       keyPrefix: "poses",
       mediaStorage,
+      onCleanupFailed: async (keys) => {
+        try {
+          await new ObjectDeletionOutbox(db).enqueue(keys);
+        } catch (error) {
+          logger.error(
+            { jobId: job.id, keys, error: sanitizeError(error) },
+            "failed to queue unremoved pose objects for deletion"
+          );
+        }
+      },
       createPose: (createInput) =>
         db.begin(async (tx) => {
           const pose = await communityStore.createPose(createInput, tx);

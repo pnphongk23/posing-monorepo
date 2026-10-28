@@ -25,6 +25,8 @@ export interface MaterializePoseOptions {
   keyPrefix: "community" | "poses";
   mediaStorage: MediaStorage;
   createPose: (input: CreatePoseInput) => Promise<PoseRecord>;
+  /** Receives the keys whose cleanup deletion failed, so they can be retried later. */
+  onCleanupFailed?: (keys: string[]) => void | Promise<void>;
 }
 
 export function buildPoseObjectKey(
@@ -40,8 +42,10 @@ export function buildPoseObjectKey(
 
 /**
  * Materializes a Pose by uploading its 3 media assets (original, skeleton, thumbnail)
- * and invoking createPose. If any upload or createPose fails, all uploaded keys are
- * cleaned up via Promise.allSettled before the original error is rethrown.
+ * and invoking createPose. Uploads are awaited until every one of them settles, so a key
+ * that lands late is never missed by cleanup. If anything fails, the uploaded keys are
+ * removed and the original error is rethrown. Keys whose removal also fails are reported
+ * through onCleanupFailed.
  */
 export async function materializePose(options: MaterializePoseOptions): Promise<PoseRecord> {
   const {
@@ -53,7 +57,8 @@ export async function materializePose(options: MaterializePoseOptions): Promise<
     result,
     keyPrefix,
     mediaStorage,
-    createPose
+    createPose,
+    onCleanupFailed
   } = options;
 
   const assets = [
@@ -65,16 +70,23 @@ export async function materializePose(options: MaterializePoseOptions): Promise<
   const uploadedKeys: string[] = [];
 
   try {
+    const uploads = await Promise.allSettled(
+      assets.map(async (asset) => {
+        const fileKey = buildPoseObjectKey(keyPrefix, poseId, asset.role, asset.mime);
+        const body = Buffer.from(asset.b64, "base64");
+        await mediaStorage.put(fileKey, body, asset.mime);
+        uploadedKeys.push(fileKey);
+        return [asset.role, mediaStorage.publicUrl(fileKey)] as const;
+      })
+    );
+
+    const uploadFailure = uploads.find((upload) => upload.status === "rejected");
+    if (uploadFailure) {
+      throw uploadFailure.reason;
+    }
+
     const locators = Object.fromEntries(
-      await Promise.all(
-        assets.map(async (asset) => {
-          const fileKey = buildPoseObjectKey(keyPrefix, poseId, asset.role, asset.mime);
-          const body = Buffer.from(asset.b64, "base64");
-          await mediaStorage.put(fileKey, body, asset.mime);
-          uploadedKeys.push(fileKey);
-          return [asset.role, mediaStorage.publicUrl(fileKey)] as const;
-        })
-      )
+      uploads.map((upload) => (upload as PromiseFulfilledResult<readonly [string, string]>).value)
     ) as Record<"original" | "skeleton" | "thumbnail", string>;
 
     const pose = await createPose({
@@ -95,10 +107,20 @@ export async function materializePose(options: MaterializePoseOptions): Promise<
   } catch (error) {
     if (uploadedKeys.length > 0) {
       const results = await Promise.allSettled(uploadedKeys.map((key) => mediaStorage.remove(key)));
+      const failedKeys: string[] = [];
       for (let i = 0; i < results.length; i += 1) {
         const res = results[i];
+        const fileKey = uploadedKeys[i]!;
         if (res?.status === "rejected") {
-          logger.error({ fileKey: uploadedKeys[i], error: res.reason }, "failed to remove uploaded key during cleanup");
+          failedKeys.push(fileKey);
+          logger.error({ fileKey, error: res.reason }, "failed to remove uploaded key during cleanup");
+        }
+      }
+      if (failedKeys.length > 0 && onCleanupFailed) {
+        try {
+          await onCleanupFailed(failedKeys);
+        } catch (reportError) {
+          logger.error({ failedKeys, error: reportError }, "failed to report unremoved keys");
         }
       }
     }

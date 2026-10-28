@@ -63,6 +63,7 @@ trạng thái job cho từng `Account`. Client không gọi endpoint lưu riêng
 | FEAT-006 | [Publish](#publish) | `/api/guides/:id/publish`, `/unpublish` |
 | FEAT-007 | [Admin Keys](#admin-keys), [Admin Community](#admin-community), [Admin Jobs](#admin-jobs) | `/api/admin/*` |
 | FEAT-008 | [Saved](#saved) | `/api/me/saved` |
+| — | [Account](#account) | `DELETE /api/account` |
 
 Try Pose không có HTTP: chuẩn bị local từ detail published. Capture/gallery không
 có HTTP. Admin Web không định nghĩa API riêng: proxy inject Bearer, contract nằm
@@ -77,6 +78,7 @@ có HTTP. Admin Web không định nghĩa API riêng: proxy inject Bearer, contr
 - Extraction & Jobs: `/api/extract-pose`, `/api/extract-jobs/:jobId`, `/api/me/extract-jobs`, `/api/me/extract-jobs/:id/retry`
 - Pose (model hợp nhất thành `Pose`): `/api/guides`
 - Signed-in collection: `/api/me/saved`
+- Account lifecycle: `/api/account`
 - Admin: `/api/admin/keys`, `/api/admin/community/poses`, `/api/admin/jobs`
 - Health: `/api/health`
 
@@ -101,7 +103,7 @@ có HTTP. Admin Web không định nghĩa API riêng: proxy inject Bearer, contr
 | Actor | Cơ chế | Routes |
 |---|---|---|
 | Visitor | Không auth | `GET /api/community/poses`, `GET /api/community/poses/:id`, `GET /api/health` |
-| Signed-in `Account` | Session của Account | `POST /api/extract-pose`, `GET /api/extract-jobs/:jobId` (owner-checked), `GET /api/me/extract-jobs`, `POST /api/me/extract-jobs/:id/retry`, `DELETE /api/me/extract-jobs/:id`, `/api/me/saved`, `/api/guides` (owner) |
+| Signed-in `Account` | Session của Account | `POST /api/extract-pose`, `GET /api/extract-jobs/:jobId` (owner-checked), `GET /api/me/extract-jobs`, `POST /api/me/extract-jobs/:id/retry`, `DELETE /api/me/extract-jobs/:id`, `/api/me/saved`, `/api/guides` (owner), `DELETE /api/account` |
 | Admin operator | `Authorization: Bearer <ADMIN_SECRET>` | `/api/admin/*`; Admin cũng có thể gọi `POST /api/extract-pose` (kèm `ownerAccountId` tường minh), `/api/guides` và publish |
 
 **authenticated actor vs owner:** `ownerAccountId` là **bắt buộc** trên mọi
@@ -267,7 +269,7 @@ caller không chọn provider.
 | BR-EXTRACT-006 | Ảnh không hợp lệ / quá lớn hoặc thiếu metadata bắt buộc thì không enqueue job. |
 | BR-EXTRACT-007 | Worker dùng engine toàn cục tại thời điểm `claimNext`. Khi extraction `succeeded`, worker tạo `Pose` + 3 `MediaAsset` tự động và gán `poseId`. |
 
-**Pre-queue errors:** `UNAUTHORIZED` 401, `INVALID_IMAGE` 400, `INVALID_METADATA` 400, `IMAGE_TOO_LARGE` 413, `RATE_LIMITED` 429.
+**Pre-queue errors:** `UNAUTHORIZED` 401, `INVALID_IMAGE` 400, `INVALID_METADATA` 400, `IMAGE_TOO_LARGE` 413, `RATE_LIMITED` 429, `ACCOUNT_DELETED` 410 (caller's account was deleted while the upload was in flight; nothing is stored).
 
 ### GET /api/extract-jobs/:jobId
 
@@ -495,6 +497,50 @@ Lưu một published pose. Idempotent nếu đã lưu. Signed-in Account.
 ### DELETE /api/me/saved/:poseId
 
 Unsave. Không đụng pose. Signed-in Account. `204`. Idempotent. `401`.
+
+## Account
+
+Vòng đời tài khoản của signed-in `Account`.
+
+### DELETE /api/account
+
+Xóa tài khoản và toàn bộ dữ liệu server của tài khoản đó. Signed-in Account. `204`
+với body rỗng.
+
+Thứ tự bắt buộc — danh tính phải được xác nhận đã xóa trước khi dữ liệu bị xóa:
+
+1. Xóa user bên identity provider (Supabase Auth, Admin REST `DELETE /auth/v1/admin/users/{id}`).
+   `404` coi như thành công (đã xóa trước đó). Lỗi khác: `503`, **không** thay đổi gì.
+2. Ghi intent purge (`pending_account_purges`) — chỉ sau khi bước 1 xác nhận.
+3. Một transaction: khóa row `accounts`, khóa mọi `extraction_jobs` của account, gom
+   object key của media thuộc các pose của account vào outbox (`pending_object_deletions`),
+   rồi xóa `extraction_jobs`, `saved_entries`, `poses` (media xóa theo cascade),
+   `accounts` và intent.
+4. Xóa object trên R2 theo outbox; object storage từ chối thì giữ row và retry ở
+   sweep nền (mỗi 10 phút). Vì vậy object có thể còn tối đa vài phút sau `204`.
+
+Dữ liệu bị xóa:
+
+| Bảng / nơi lưu | Nội dung |
+|---|---|
+| Identity provider | user Supabase Auth của account |
+| `accounts` | row account |
+| `saved_entries` | mọi saved entry của account |
+| `poses` + `media_assets` | mọi pose thuộc account và 3 media role của từng pose |
+| `extraction_jobs` | mọi job của account, kể cả `queued`/`processing` và payload base64 |
+| Object storage (R2) | object của media thuộc các pose của account |
+
+Account khác không bị ảnh hưởng: mỗi bước đều scope theo `accountId` của caller.
+
+| ID | Rule |
+|---|---|
+| BR-ACCOUNT-001 | Không xóa dữ liệu local khi identity provider chưa xác nhận xóa (kể cả cancel, token lỗi, 5xx). |
+| BR-ACCOUNT-002 | Sau `204`, không còn base64 ảnh hay media key nào của account ngoài outbox chờ retry. |
+| BR-ACCOUNT-003 | Upload của account đã bị xóa trả `410 ACCOUNT_DELETED` và không tạo job. |
+| BR-ACCOUNT-004 | Purge dở dang được resume bởi sweeper từ intent cũ hơn 5 phút. |
+
+**Errors:** `401 UNAUTHORIZED`, `503 AUTH_PENDING_VALIDATION` (thiếu service-role key,
+identity provider từ chối, hoặc purge row thất bại).
 
 ## Admin Keys
 

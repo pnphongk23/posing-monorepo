@@ -1,7 +1,7 @@
 import { Router, type Request, type RequestHandler } from "express";
 import multer from "multer";
 
-import type { ExtractionJobStore, PoseDraft } from "../db/extractionJobStore";
+import { AccountGoneError, type ExtractionJobStore, type PoseDraft } from "../db/extractionJobStore";
 import { createExtractRateLimitMiddleware } from "../middleware/extractRateLimit";
 import { ImageTooLargeError, InvalidImageError, InvalidMetadataError, UnauthorizedError } from "../services/errors";
 
@@ -227,6 +227,15 @@ export function createExtractPoseRoutes(options: CreateExtractPoseRoutesOptions)
           }
         });
       } catch (err) {
+        if (err instanceof AccountGoneError) {
+          res.status(410).json({
+            error: {
+              code: "ACCOUNT_DELETED",
+              message: "Account has been deleted"
+            }
+          });
+          return;
+        }
         next(err);
       }
     }

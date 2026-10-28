@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { PoseStore } from "./communityStore";
-import { ExtractionJobStore, StaleLockError, type PoseDraft } from "./extractionJobStore";
+import { AccountGoneError, ExtractionJobStore, StaleLockError, type PoseDraft } from "./extractionJobStore";
 import { setupTestDatabase } from "./testDb";
 
 const OWNER_A = "11111111-1111-4111-8111-111111111111";
@@ -13,9 +13,15 @@ const SAMPLE_DRAFT: PoseDraft = {
   description: "A one-legged balancing pose"
 };
 
+async function setupDatabaseWithOwners() {
+  const sql = await setupTestDatabase();
+  await sql`INSERT INTO accounts (id, display_name) VALUES (${OWNER_A}, ${"Owner A"}), (${OWNER_B}, ${"Owner B"}) ON CONFLICT (id) DO NOTHING`;
+  return sql;
+}
+
 describe("ExtractionJobStore", () => {
   it("enqueues jobs with ownerAccountId, poseDraft, and defaults", async () => {
-    const sql = await setupTestDatabase();
+    const sql = await setupDatabaseWithOwners();
     const store = new ExtractionJobStore(sql);
 
     const job = await store.enqueue({
@@ -38,7 +44,7 @@ describe("ExtractionJobStore", () => {
   });
 
   it("enforces owner isolation on getByIdForOwner", async () => {
-    const sql = await setupTestDatabase();
+    const sql = await setupDatabaseWithOwners();
     const store = new ExtractionJobStore(sql);
 
     const jobA = await store.enqueue({
@@ -62,7 +68,7 @@ describe("ExtractionJobStore", () => {
   });
 
   it("excludes hidden jobs from getByIdForOwner", async () => {
-    const sql = await setupTestDatabase();
+    const sql = await setupDatabaseWithOwners();
     const store = new ExtractionJobStore(sql);
 
     const job = await store.enqueue({
@@ -83,7 +89,7 @@ describe("ExtractionJobStore", () => {
   });
 
   it("paginates across 25 jobs with keyset cursor and respects limits", async () => {
-    const sql = await setupTestDatabase();
+    const sql = await setupDatabaseWithOwners();
     const store = new ExtractionJobStore(sql);
 
     // Insert 25 jobs with distinct timestamps
@@ -128,7 +134,7 @@ describe("ExtractionJobStore", () => {
   });
 
   it("filters listByOwner by state ('active' vs 'finished')", async () => {
-    const sql = await setupTestDatabase();
+    const sql = await setupDatabaseWithOwners();
     const store = new ExtractionJobStore(sql);
 
     await sql`
@@ -153,7 +159,7 @@ describe("ExtractionJobStore", () => {
   });
 
   it("excludes hidden jobs from listByOwner and joins thumbnailUrl", async () => {
-    const sql = await setupTestDatabase();
+    const sql = await setupDatabaseWithOwners();
     const store = new ExtractionJobStore(sql);
     const poseStore = new PoseStore(sql);
 
@@ -203,7 +209,7 @@ describe("ExtractionJobStore", () => {
 
   describe("retryFailed", () => {
     it("requeues a failed job and resets attempts and errors", async () => {
-      const sql = await setupTestDatabase();
+      const sql = await setupDatabaseWithOwners();
       const store = new ExtractionJobStore(sql);
 
       await sql`
@@ -226,7 +232,7 @@ describe("ExtractionJobStore", () => {
     });
 
     it("returns not_retryable for queued, processing, or succeeded statuses", async () => {
-      const sql = await setupTestDatabase();
+      const sql = await setupDatabaseWithOwners();
       const store = new ExtractionJobStore(sql);
 
       await sql`
@@ -242,7 +248,7 @@ describe("ExtractionJobStore", () => {
     });
 
     it("returns not_found for foreign-owned, non-existent, or hidden failed jobs", async () => {
-      const sql = await setupTestDatabase();
+      const sql = await setupDatabaseWithOwners();
       const store = new ExtractionJobStore(sql);
 
       await sql`
@@ -259,7 +265,7 @@ describe("ExtractionJobStore", () => {
 
   describe("hide", () => {
     it("is idempotent and preserves initial hidden_at timestamp", async () => {
-      const sql = await setupTestDatabase();
+      const sql = await setupDatabaseWithOwners();
       const store = new ExtractionJobStore(sql);
 
       const job = await store.enqueue({
@@ -282,7 +288,7 @@ describe("ExtractionJobStore", () => {
     });
 
     it("nulls source_image_base64 only when status is failed", async () => {
-      const sql = await setupTestDatabase();
+      const sql = await setupDatabaseWithOwners();
       const store = new ExtractionJobStore(sql);
 
       await sql`
@@ -301,7 +307,7 @@ describe("ExtractionJobStore", () => {
     });
 
     it("returns false for foreign-owned or non-existent jobs", async () => {
-      const sql = await setupTestDatabase();
+      const sql = await setupDatabaseWithOwners();
       const store = new ExtractionJobStore(sql);
 
       await sql`
@@ -316,7 +322,7 @@ describe("ExtractionJobStore", () => {
 
   describe("markSucceededWithPose", () => {
     it("sets status='succeeded', pose_id, and nulls both base64 fields", async () => {
-      const sql = await setupTestDatabase();
+      const sql = await setupDatabaseWithOwners();
       const store = new ExtractionJobStore(sql);
 
       await sql`
@@ -341,7 +347,7 @@ describe("ExtractionJobStore", () => {
     });
 
     it("throws StaleLockError and leaves row unchanged on stale lock token", async () => {
-      const sql = await setupTestDatabase();
+      const sql = await setupDatabaseWithOwners();
       const store = new ExtractionJobStore(sql);
 
       await sql`
@@ -364,6 +370,52 @@ describe("ExtractionJobStore", () => {
       expect(unchanged?.sourceImageBase64).toBe("original-src");
       expect(unchanged?.resultImageBase64).toBe("original-res");
       expect(unchanged?.lockToken).toBe("correct-token");
+    });
+  });
+
+  describe("account admission", () => {
+    it("refuses an owned job when the account row is gone", async () => {
+      const sql = await setupTestDatabase();
+      const store = new ExtractionJobStore(sql);
+
+      await expect(
+        store.enqueue({
+          sourceImageBase64: "c291cmNl",
+          sourceMimeType: "image/jpeg",
+          ownerAccountId: OWNER_A,
+          poseDraft: SAMPLE_DRAFT
+        })
+      ).rejects.toBeInstanceOf(AccountGoneError);
+
+      const rows = (await sql`SELECT COUNT(*)::int AS count FROM extraction_jobs`) as Array<{ count: number }>;
+      expect(rows[0]?.count).toBe(0);
+    });
+
+    it("refuses an owned job whose account was purged in the same database", async () => {
+      const sql = await setupDatabaseWithOwners();
+      const store = new ExtractionJobStore(sql);
+      await sql`DELETE FROM accounts WHERE id = ${OWNER_A}`;
+
+      await expect(
+        store.enqueue({
+          sourceImageBase64: "c291cmNl",
+          sourceMimeType: "image/jpeg",
+          ownerAccountId: OWNER_A
+        })
+      ).rejects.toBeInstanceOf(AccountGoneError);
+    });
+
+    it("keeps anonymous jobs free of any account check", async () => {
+      const sql = await setupTestDatabase();
+      const store = new ExtractionJobStore(sql);
+
+      const job = await store.enqueue({
+        sourceImageBase64: "c291cmNl",
+        sourceMimeType: "image/jpeg"
+      });
+
+      expect(job.ownerAccountId).toBeNull();
+      expect(job.status).toBe("queued");
     });
   });
 });

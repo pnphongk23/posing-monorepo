@@ -47,6 +47,14 @@ export interface ListByOwnerResult {
   nextCursor: string | null;
 }
 
+/** The signed-in owner has no account row any more, so the upload must not be stored. */
+export class AccountGoneError extends Error {
+  constructor(message = "Account no longer exists") {
+    super(message);
+    this.name = "AccountGoneError";
+  }
+}
+
 export class StaleLockError extends Error {
   constructor(message = "Stale lock token on extraction job") {
     super(message);
@@ -111,30 +119,62 @@ export class ExtractionJobStore {
   }): Promise<ExtractionJob> {
     const id = randomUUID();
     const poseDraftJson = input.poseDraft ? JSON.stringify(input.poseDraft) : null;
-    const rows = (await this.db`
-      INSERT INTO extraction_jobs (
-        id,
-        status,
-        source_image_base64,
-        source_mime_type,
-        max_attempts,
-        owner_account_id,
-        pose_draft
-      )
-      VALUES (
-        ${id},
-        'queued',
-        ${input.sourceImageBase64},
-        ${input.sourceMimeType},
-        ${input.maxAttempts ?? 3},
-        ${input.ownerAccountId ?? null},
-        ${poseDraftJson}
-      )
-      RETURNING *
-    `) as ExtractionJobRow[];
+    const maxAttempts = input.maxAttempts ?? 3;
+
+    // An owned upload is only admitted while the account row exists. The shared lock on
+    // that row makes the insert wait for a running purge and then find nothing.
+    const rows = input.ownerAccountId
+      ? ((await this.db`
+          WITH acct AS (
+            SELECT id FROM accounts WHERE id = ${input.ownerAccountId} FOR KEY SHARE
+          )
+          INSERT INTO extraction_jobs (
+            id,
+            status,
+            source_image_base64,
+            source_mime_type,
+            max_attempts,
+            owner_account_id,
+            pose_draft
+          )
+          SELECT
+            ${id},
+            'queued',
+            ${input.sourceImageBase64},
+            ${input.sourceMimeType},
+            ${maxAttempts},
+            acct.id,
+            ${poseDraftJson}
+          FROM acct
+          RETURNING *
+        `) as ExtractionJobRow[])
+      : ((await this.db`
+          INSERT INTO extraction_jobs (
+            id,
+            status,
+            source_image_base64,
+            source_mime_type,
+            max_attempts,
+            owner_account_id,
+            pose_draft
+          )
+          VALUES (
+            ${id},
+            'queued',
+            ${input.sourceImageBase64},
+            ${input.sourceMimeType},
+            ${maxAttempts},
+            NULL,
+            ${poseDraftJson}
+          )
+          RETURNING *
+        `) as ExtractionJobRow[]);
 
     const job = rows[0];
-    if (!job) throw new Error("Failed to enqueue extraction job");
+    if (!job) {
+      if (input.ownerAccountId) throw new AccountGoneError();
+      throw new Error("Failed to enqueue extraction job");
+    }
     return this.toJob(job);
   }
 

@@ -71,6 +71,8 @@ async function createExtractApp(options: CreateExtractAppOptions = {}) {
   if (options.includeAccounts) {
     await accountStore.upsert({ id: "account-a", displayName: "User A", createdAt: "2026-01-01T00:00:00.000Z" });
     await accountStore.upsert({ id: "account-b", displayName: "User B", createdAt: "2026-01-01T00:00:00.000Z" });
+    // Owned uploads are admitted against the account projection, not the auth store.
+    await sql`INSERT INTO accounts (id, display_name) VALUES (${"account-a"}, ${"User A"}), (${"account-b"}, ${"User B"})`;
   }
 
   const app = createApp({

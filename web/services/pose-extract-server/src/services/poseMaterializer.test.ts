@@ -225,4 +225,109 @@ describe("materializePose", () => {
       })
     ).rejects.toThrow("Original DB failure");
   });
+
+  it("waits for every upload to settle before cleanup, so a late sibling key is not orphaned", async () => {
+    const removedKeys: string[] = [];
+    const resolvers: Array<() => void> = [];
+
+    const mediaStorage: MediaStorage = {
+      put: vi.fn(async (key: string) => {
+        if (key.includes("thumbnail")) {
+          throw new Error("R2 upload timeout");
+        }
+        await new Promise<void>((resolve) => {
+          resolvers.push(resolve);
+        });
+      }),
+      remove: vi.fn(async (key: string) => {
+        removedKeys.push(key);
+      }),
+      publicUrl: (key: string) => `https://cdn.example.com/${key}`
+    };
+
+    const promise = materializePose({
+      poseId: "pose-race",
+      ownerAccountId: "owner-race",
+      currentJobId: "job-race",
+      metadata: { name: "Race Pose" },
+      source: { b64: "c291cmNl", mime: "image/png" },
+      result: { b64: "cmVzdWx0", mime: "image/png" },
+      keyPrefix: "poses",
+      mediaStorage,
+      createPose: vi.fn(async (input: CreatePoseInput) => createFakePoseRecord(input))
+    });
+
+    // The rejecting upload settles immediately; the two others stay in flight.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(resolvers).toHaveLength(2);
+
+    resolvers[0]?.();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(removedKeys).toHaveLength(0);
+
+    resolvers[1]?.();
+    await expect(promise).rejects.toThrow("R2 upload timeout");
+
+    expect(removedKeys.sort()).toEqual(["poses/pose-race/original.png", "poses/pose-race/skeleton.png"]);
+  });
+
+  it("reports exactly the keys whose cleanup failed", async () => {
+    const mediaStorage: MediaStorage = {
+      put: vi.fn(async () => undefined),
+      remove: vi.fn(async (key: string) => {
+        if (key.includes("skeleton")) throw new Error("R2 delete failed");
+      }),
+      publicUrl: (key: string) => `https://cdn.example.com/${key}`
+    };
+
+    const onCleanupFailed = vi.fn(async () => undefined);
+
+    await expect(
+      materializePose({
+        poseId: "pose-cleanup-report",
+        ownerAccountId: "owner-cleanup-report",
+        currentJobId: "job-cleanup-report",
+        metadata: { name: "Cleanup Report" },
+        source: { b64: "c291cmNl", mime: "image/png" },
+        result: { b64: "cmVzdWx0", mime: "image/png" },
+        keyPrefix: "poses",
+        mediaStorage,
+        onCleanupFailed,
+        createPose: vi.fn(async () => {
+          throw new Error("job already gone");
+        })
+      })
+    ).rejects.toThrow("job already gone");
+
+    expect(onCleanupFailed).toHaveBeenCalledTimes(1);
+    expect(onCleanupFailed).toHaveBeenCalledWith(["poses/pose-cleanup-report/skeleton.png"]);
+  });
+
+  it("does not call onCleanupFailed when every removal succeeds", async () => {
+    const mediaStorage: MediaStorage = {
+      put: vi.fn(async () => undefined),
+      remove: vi.fn(async () => undefined),
+      publicUrl: (key: string) => `https://cdn.example.com/${key}`
+    };
+    const onCleanupFailed = vi.fn(async () => undefined);
+
+    await expect(
+      materializePose({
+        poseId: "pose-cleanup-ok",
+        ownerAccountId: "owner-cleanup-ok",
+        currentJobId: "job-cleanup-ok",
+        metadata: { name: "Cleanup Ok" },
+        source: { b64: "c291cmNl", mime: "image/png" },
+        result: { b64: "cmVzdWx0", mime: "image/png" },
+        keyPrefix: "poses",
+        mediaStorage,
+        onCleanupFailed,
+        createPose: vi.fn(async () => {
+          throw new Error("create failed");
+        })
+      })
+    ).rejects.toThrow("create failed");
+
+    expect(onCleanupFailed).not.toHaveBeenCalled();
+  });
 });

@@ -1,5 +1,5 @@
 import { Router } from "express";
-import type { AccountStore } from "../db/accountStore";
+import { objectKeyFromLocator, type AccountStore } from "../db/accountStore";
 import { deleteObject as defaultDeleteObject } from "../services/r2Storage";
 import { logger } from "../utils/logger";
 
@@ -10,6 +10,8 @@ const PENDING_VALIDATION = {
   }
 };
 
+const OBJECT_DRAIN_LIMIT = 200;
+
 type DeleteObject = (fileKey: string) => Promise<void>;
 
 export interface AccountRoutesOptions {
@@ -19,20 +21,6 @@ export interface AccountRoutesOptions {
   accountStore: AccountStore;
   fetchImpl?: typeof fetch;
   deleteObject?: DeleteObject;
-}
-
-function objectKey(locator: string, r2PublicUrl?: string): string {
-  if (!r2PublicUrl) return locator;
-  try {
-    const locatorUrl = new URL(locator);
-    const publicUrl = new URL(r2PublicUrl);
-    if (locatorUrl.origin !== publicUrl.origin) return locator;
-    const prefix = r2PublicUrl.replace(/\/$/, "");
-    if (!locator.startsWith(prefix)) return locator;
-    return locator.slice(prefix.length).replace(/^\/+/, "");
-  } catch {
-    return locator;
-  }
 }
 
 export function createAccountRoutes(options: AccountRoutesOptions): Router {
@@ -53,6 +41,9 @@ export function createAccountRoutes(options: AccountRoutesOptions): Router {
       return;
     }
 
+    // The identity must be confirmed gone before any local deletion is recorded or runs.
+    // A cancelled, rejected, or failed upstream call leaves the account fully intact.
+    let identityDeleted = false;
     try {
       const response = await fetchImpl(`${supabaseUrl}/auth/v1/admin/users/${encodeURIComponent(accountId)}`, {
         method: "DELETE",
@@ -61,26 +52,42 @@ export function createAccountRoutes(options: AccountRoutesOptions): Router {
           Authorization: `Bearer ${options.serviceRoleKey}`
         }
       });
-      if (response.status !== 404 && !response.ok) {
-        res.status(503).json(PENDING_VALIDATION);
-        return;
-      }
-
-      const locators = await options.accountStore.getOwnedMediaLocators(accountId);
-      for (const locator of locators) {
-        const key = objectKey(locator, options.r2PublicUrl);
-        try {
-          await deleteObject(key);
-        } catch {
-          logger.warn({ key }, "Failed to delete account media object");
-        }
-      }
-
-      await options.accountStore.purgeAccountData(accountId);
-      res.status(204).send();
+      identityDeleted = response.status === 404 || response.ok;
     } catch {
-      res.status(503).json(PENDING_VALIDATION);
+      identityDeleted = false;
     }
+
+    if (!identityDeleted) {
+      res.status(503).json(PENDING_VALIDATION);
+      return;
+    }
+
+    try {
+      await options.accountStore.recordPurgeIntent(accountId);
+    } catch {
+      logger.error({ accountId }, "account_purge_failed");
+      res.status(503).json(PENDING_VALIDATION);
+      return;
+    }
+
+    let objectKeys: string[] = [];
+    try {
+      objectKeys = await options.accountStore.purgeAccountData(accountId, {
+        resolveObjectKey: (locator) => objectKeyFromLocator(locator, options.r2PublicUrl)
+      });
+    } catch {
+      logger.error({ accountId }, "account_purge_failed");
+      res.status(503).json(PENDING_VALIDATION);
+      return;
+    }
+
+    try {
+      await options.accountStore.drainObjectDeletions(deleteObject, OBJECT_DRAIN_LIMIT);
+    } catch {
+      logger.warn({ accountId, pendingKeys: objectKeys.length }, "Failed to drain pending object deletions");
+    }
+
+    res.status(204).send();
   });
 
   return router;

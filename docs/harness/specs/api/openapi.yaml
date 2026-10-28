@@ -361,6 +361,48 @@ components:
           format: date-time
 
 paths:
+  /api/account:
+    delete:
+      operationId: deleteAccount
+      summary: Delete the signed-in account and all of its server data
+      description: |
+        Permanently deletes the caller's account. The identity provider is asked first; only after it
+        confirms the user is gone (a `404` counts as gone) are the local rows deleted, in one database
+        transaction. Media objects are then removed; objects that storage refuses stay queued and are
+        retried in the background, so an object can outlive the `204` by a few minutes.
+
+        Deleted: the Supabase Auth user, the `accounts` row, `saved_entries`, every owned `poses` row
+        with its `media_assets`, every `extraction_jobs` row of the account (including queued and
+        running jobs and their base64 payloads), and the object-storage keys of the owned media.
+
+        Other accounts are untouched. Once the account is gone, an owned extraction upload answers
+        `410 ACCOUNT_DELETED`.
+      tags: [Account]
+      security:
+        - AccountSession: []
+      responses:
+        "204":
+          description: Account and all of its server data deleted (empty body)
+        "401":
+          description: Missing, expired, or already-deleted account session (`UNAUTHORIZED`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "503":
+          description: |
+            Deletion did not start or did not complete (`AUTH_PENDING_VALIDATION`): the server has no
+            service-role key, the identity provider refused the delete, or the row purge failed.
+            Nothing is changed when the identity delete fails. A failed row purge keeps the recorded
+            intent so the background sweep resumes it.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+              examples:
+                pending:
+                  value: { error: { code: AUTH_PENDING_VALIDATION, message: "Account deletion is pending runtime validation" } }
+
   /api/health:
     get:
       operationId: getHealth
@@ -461,6 +503,17 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
+        "410":
+          description: |
+            The signed-in account was deleted while the upload was in flight (`ACCOUNT_DELETED`).
+            Nothing is stored for the account.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+              examples:
+                account_deleted:
+                  value: { error: { code: ACCOUNT_DELETED, message: "Account has been deleted" } }
         "413":
           description: Image too large (> 10 MB, `IMAGE_TOO_LARGE`)
           content:

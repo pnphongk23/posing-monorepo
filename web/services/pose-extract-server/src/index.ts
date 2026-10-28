@@ -5,16 +5,18 @@ import { applySchema, closeDatabase, createDatabase, type Sql } from "./db/conne
 import { PoseStore } from "./db/communityStore";
 import { ExtractionJobStore } from "./db/extractionJobStore";
 import { ProviderSettingsStore } from "./db/providerSettingsStore";
-import { AccountStore } from "./db/accountStore";
+import { AccountStore, objectKeyFromLocator, sweepStaleAccountPurges } from "./db/accountStore";
 import { SavedStore } from "./db/savedStore";
 import { PendingAuthStore } from "./services/pendingAuthStore";
 import { GeminiService } from "./services/geminiService";
 import { KeyPoolManager } from "./services/keyPoolManager";
 import { KeyStore } from "./services/keyStore";
+import { deleteObject } from "./services/r2Storage";
 import { logger } from "./utils/logger";
 import { sanitizeError } from "./utils/sanitizeError";
 
 const SHUTDOWN_TIMEOUT_MS = 10_000;
+const PURGE_SWEEP_INTERVAL_MS = 10 * 60 * 1000;
 
 async function main(): Promise<void> {
   const env = getEnv();
@@ -52,6 +54,21 @@ async function main(): Promise<void> {
     pendingAuthStore: new PendingAuthStore(),
     savedStore
   });
+
+  // Resumes deletions that were confirmed upstream but never finished, and retries
+  // object keys that storage refused earlier.
+  const purgeSweepTimer = setInterval(() => {
+    void sweepStaleAccountPurges({
+      accountStore,
+      outbox: accountStore.objectDeletions,
+      deleteObject,
+      resolveObjectKey: (locator) => objectKeyFromLocator(locator, env.R2_PUBLIC_URL)
+    }).catch((error) => {
+      const info = sanitizeError(error);
+      logger.error({ name: info.name, code: info.code, message: info.message }, "account purge sweep failed");
+    });
+  }, PURGE_SWEEP_INTERVAL_MS);
+  purgeSweepTimer.unref();
 
   let shuttingDown = false;
 
