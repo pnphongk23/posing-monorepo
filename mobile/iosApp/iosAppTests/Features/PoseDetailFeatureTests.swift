@@ -1,3 +1,4 @@
+import Network
 import SwiftUI
 import UIKit
 import XCTest
@@ -56,10 +57,16 @@ final class PoseDetailFeatureTests: XCTestCase {
 
         let screen = HeroHarness(pose: pose)
         defer { screen.tearDown() }
-        // Bounded wait for the failure callback to land (the placeholder is what is on screen), then
-        // one discarded capture so the window's own appearance animation cannot masquerade as motion.
-        screen.spin(seconds: 1.0)
-        let first = screen.captureSettled()
+        // Wait for the failure placeholder to be on screen (the stand-in glyph is the observable),
+        // rather than sleeping for a guessed duration.
+        XCTAssertTrue(
+            screen.awaitCondition { bitmap in
+                guard let card = bitmap.cardBorderRect() else { return false }
+                return bitmap.darkPixelCount(in: card.insetBy(dx: 6, dy: 6)) > 200
+            },
+            "the hero never settled on its failed-load placeholder"
+        )
+        let first = screen.capture()
 
         XCTAssertNil(
             PoseAspectRatioCache.shared.ratios[poseID],
@@ -74,10 +81,10 @@ final class PoseDetailFeatureTests: XCTestCase {
         // No photo pixels anywhere: the load never produced artwork.
         XCTAssertEqual(first.greenPixelCount(), 0, "a failed load must not paint a photo")
 
-        // Placeholder is drawn at the fallback card size. The tint is sampled from the render itself
-        // and then flood-measured, so the assertion does not depend on any colour-space conversion.
+        // Placeholder is drawn at the fallback card size: measured from the card's own border, so the
+        // assertion does not depend on any colour space or on the fill's animation state.
         let card = try XCTUnwrap(
-            first.paintedCardRect(),
+            first.cardBorderRect(),
             "placeholder must paint the hero card"
         )
         XCTAssertEqual(card.width, PoseDetailLayoutMetrics.heroCardWidth, accuracy: 8)
@@ -110,8 +117,85 @@ final class PoseDetailFeatureTests: XCTestCase {
         }
         // ...and the stand-in glyph is what is drawn, not an empty card.
         XCTAssertGreaterThan(
-            first.darkPixelCount(in: card), 200,
+            first.darkPixelCount(in: card.insetBy(dx: 6, dy: 6)), 200,
             "the failed-load placeholder must draw its stand-in glyph"
+        )
+    }
+
+    /// A load that never completes must paint the shimmer at the fallback card size, edge to edge.
+    /// Geometry is measured from the card's own border, so the sweeping gradient (and whether the
+    /// animation is running at all) cannot affect it — `@Environment(\.accessibilityReduceMotion)` is
+    /// a read-only environment key, so a test cannot pin Reduce Motion from here. What separates the
+    /// loading placeholder from the failure one is the stand-in glyph: loading has none.
+    @MainActor func testDetailHeroShimmerFillsTheFallbackCardWhileLoading() throws {
+        AppImage.configure()
+        PoseAspectRatioCache.shared.resetForTesting()
+        defer { PoseAspectRatioCache.shared.resetForTesting() }
+        let poseID = "hero-pending-\(UUID().uuidString)"
+        // A real socket that accepts and never answers: the client stalls in the TLS handshake, so the
+        // load is genuinely pending rather than merely slow. HTTPS because the app keeps default ATS.
+        let server = try HangingHTTPServer()
+        defer { server.stop() }
+        let pending = try XCTUnwrap(URL(string: "https://127.0.0.1:\(server.port)/pose.png"))
+        let pose = NativePose(
+            id: poseID,
+            name: "Pending Photo Pose",
+            category: "Standing",
+            imageURL: pending,
+            instructions: ["Step one"],
+            isSaved: false
+        )
+
+        let screen = HeroHarness(pose: pose)
+        defer { screen.tearDown() }
+
+        XCTAssertTrue(
+            screen.awaitCondition { bitmap in
+                guard let card = bitmap.cardBorderRect() else { return false }
+                return bitmap.isPlaceholderTint(
+                    x: Int(card.minX) + 3,
+                    y: Int(card.midY)
+                )
+            },
+            "the loading placeholder never painted the hero card"
+        )
+        let image = screen.capture()
+
+        // Still loading: no photo, and no photo ratio invented from nothing.
+        XCTAssertNil(PoseAspectRatioCache.shared.ratios[poseID], "a pending load must not publish a ratio")
+        XCTAssertEqual(image.greenPixelCount(), 0, "a pending load must not paint a photo")
+
+        // The shimmer fills the prototype card, edge to edge.
+        let card = try XCTUnwrap(image.cardBorderRect(), "the shimmer must paint the hero card")
+        XCTAssertEqual(card.width, PoseDetailLayoutMetrics.heroCardWidth, accuracy: 8)
+        XCTAssertEqual(
+            card.height,
+            PoseDetailLayoutMetrics.heroCardWidth / PoseDetailLayoutMetrics.heroCardAspectRatio,
+            accuracy: 8
+        )
+
+        // The shimmer reaches the card's edges: the card surface is pure white, so a shimmer that was
+        // inset (or sized smaller than the card) would leave white gutters just inside the border.
+        for (x, y, edge) in [
+            (Int(card.minX) + 3, Int(card.midY), "left"),
+            (Int(card.maxX) - 3, Int(card.midY), "right"),
+            (Int(card.midX), Int(card.minY) + 3, "top"),
+            (Int(card.midX), Int(card.maxY) - 3, "bottom"),
+        ] {
+            XCTAssertTrue(
+                image.isPlaceholderTint(x: x, y: y),
+                "the loading shimmer does not reach the card's \(edge) edge"
+            )
+        }
+        XCTAssertTrue(
+            image.isPlaceholderTint(x: Int(card.midX), y: Int(card.midY)),
+            "the loading shimmer must cover the card"
+        )
+
+        // It is the loading placeholder, not the failure one: no stand-in glyph.
+        XCTAssertLessThan(
+            image.darkPixelCount(in: card.insetBy(dx: 6, dy: 6)), 20,
+            "the loading placeholder must not draw the failure glyph"
         )
     }
 
@@ -139,13 +223,25 @@ final class PoseDetailFeatureTests: XCTestCase {
         )
         let screen = HeroHarness(pose: pose)
         defer { screen.tearDown() }
-        // KFImage resolves from the cache asynchronously; wait for the hero's own callback.
+        // KFImage resolves from the cache asynchronously; wait for the hero's own callback, then for
+        // the photo to be painted. Reduce Motion is on for this harness, so the ratio change is not
+        // animated and the frame measured below is final.
         XCTAssertNotNil(
             screen.awaitHeroRatio(of: poseID),
             "the hero never reported the loaded photo ratio"
         )
-        // Let the card's ratio change finish animating before measuring it.
-        let image = screen.captureSettled()
+        // The card resizes once to the photo's box; wait for that final geometry instead of sleeping
+        // for it. A timeout here fails the test rather than measuring a half-grown card.
+        let expectedHeight = PoseDetailLayoutMetrics.heroCardWidth / photoRatio
+        XCTAssertTrue(
+            screen.awaitCondition { bitmap in
+                guard let painted = bitmap.greenBounds() else { return false }
+                return abs(painted.height - expectedHeight) <= 3
+                    && abs(painted.width - PoseDetailLayoutMetrics.heroCardWidth) <= 6
+            },
+            "the hero card never settled on the photo's own box"
+        )
+        let image = screen.capture()
 
         // (a) the cache now holds the photo's ratio, and the card height follows it.
         let cached = try XCTUnwrap(PoseAspectRatioCache.shared.ratios[poseID])
@@ -252,6 +348,43 @@ private enum SolidPhotoFixture {
     }
 }
 
+/// Accepts TCP connections and never writes a byte, so an HTTPS request to it stays pending for as
+/// long as the test needs. Used to render the hero's loading state deterministically.
+@MainActor
+private final class HangingHTTPServer {
+    private var listener: NWListener?
+    private var connections: [NWConnection] = []
+    private(set) var port: UInt16 = 0
+
+    init() throws {
+        let parameters = NWParameters.tcp
+        parameters.allowLocalEndpointReuse = true
+        let listener = try NWListener(using: parameters, on: .any)
+        self.listener = listener
+        listener.newConnectionHandler = { [weak self] connection in
+            connection.start(queue: .global())
+            Task { @MainActor in self?.connections.append(connection) }
+        }
+        let ready = DispatchSemaphore(value: 0)
+        listener.stateUpdateHandler = { state in
+            if case .ready = state { ready.signal() }
+        }
+        listener.start(queue: .global())
+        guard ready.wait(timeout: .now() + 5) == .success, let assigned = listener.port else {
+            listener.cancel()
+            throw XCTSkip("could not start the hanging HTTPS listener")
+        }
+        port = assigned.rawValue
+    }
+
+    func stop() {
+        for connection in connections { connection.cancel() }
+        connections.removeAll()
+        listener?.cancel()
+        listener = nil
+    }
+}
+
 /// Hosts the production `PoseDetailScreen` in a real window at device width, so what the test
 /// measures is what SwiftUI lays out and paints (including its async image callbacks).
 @MainActor
@@ -276,7 +409,9 @@ private final class HeroHarness {
             PoseDetailScreen(pose: pose, model: model, onTryPose: { _ in })
         ))
         window.rootViewController = host
-        window.isHidden = false
+        // Make this the active window: a harness window that is not key can be handed stale frames
+        // by `drawHierarchy`, which made a test's result depend on whichever harness ran before it.
+        window.makeKeyAndVisible()
         host.view.frame = CGRect(origin: .zero, size: size)
         host.view.setNeedsLayout()
         host.view.layoutIfNeeded()
@@ -300,17 +435,15 @@ private final class HeroHarness {
         return nil
     }
 
-    /// Captures until two consecutive frames are identical (bounded), so measurements never land on
-    /// a frame that is still animating in.
-    func captureSettled(maxFrames: Int = 60) -> RenderedBitmap {
-        var previous = capture()
-        for _ in 0..<maxFrames {
-            spin(seconds: 0.1)
-            let next = capture()
-            if next == previous { return next }
-            previous = next
+    /// Waits for an observable condition on the rendered screen. Returns `false` when the timeout
+    /// expires, so the caller fails loudly instead of measuring whatever frame happened to be up.
+    func awaitCondition(timeout: TimeInterval = 10, _ predicate: (RenderedBitmap) -> Bool) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if predicate(capture()) { return true }
+            spin(seconds: 0.05)
         }
-        return previous
+        return predicate(capture())
     }
 
     func capture() -> RenderedBitmap {
@@ -326,8 +459,10 @@ private final class HeroHarness {
     }
 
     func tearDown() {
-        window.isHidden = true
+        host.view.removeFromSuperview()
         window.rootViewController = nil
+        window.resignKey()
+        window.isHidden = true
     }
 }
 
@@ -387,55 +522,65 @@ private struct RenderedBitmap: Equatable {
         return count
     }
 
-    /// The hero card's rectangle: the longest contiguous run of rows that are solidly painted inside
-    /// the widest painted column band. Measured from the render itself, so it does not depend on the
-    /// card's tint (shimmer gradient included), the colour space, or where SwiftUI placed the card.
-    func paintedCardRect() -> CGRect? {
+    /// The hero card's rectangle, measured from its own thick black border. The border is opaque and
+    /// static whatever the fill is doing, so this is independent of gradients, colour spaces and the
+    /// shimmer's motion. The card is the widest gap between two full-width dark row bands.
+    func cardBorderRect() -> CGRect? {
         guard let page = color(x: 2, y: 2) else { return nil }
-        func isPainted(_ x: Int, _ y: Int) -> Bool {
+        func isDark(_ x: Int, _ y: Int) -> Bool {
             guard let pixel = color(x: x, y: y), pixel.a > 200 else { return false }
-            return abs(pixel.r - page.r) > 10 || abs(pixel.g - page.g) > 10 || abs(pixel.b - page.b) > 10
+            return pixel.r < 60 && pixel.g < 60 && pixel.b < 60
         }
-        func longestRun(_ indices: [Int]) -> (first: Int, last: Int)? {
-            var best: (first: Int, last: Int)?
-            var runStart: Int?
-            var previous: Int?
+        func bands(_ indices: [Int]) -> [(first: Int, last: Int)] {
+            var result: [(first: Int, last: Int)] = []
             for index in indices {
-                if let previous, index == previous + 1 {
-                    // still in the run
+                if let last = result.last, index == last.last + 1 {
+                    result[result.count - 1].last = index
                 } else {
-                    if let start = runStart, let last = previous,
-                       last - start > (best.map { $0.last - $0.first } ?? -1) {
-                        best = (start, last)
-                    }
-                    runStart = index
+                    result.append((index, index))
                 }
-                previous = index
             }
-            if let start = runStart, let last = previous,
-               last - start > (best.map { $0.last - $0.first } ?? -1) {
-                best = (start, last)
-            }
-            return best
+            return result
         }
 
-        let paintedColumns = (0..<width).filter { x in
+        let rowBands = bands((0..<height).filter { y in
             var count = 0
-            for y in 0..<height where isPainted(x, y) { count += 1 }
-            return count > height / 6
+            for x in 0..<width where isDark(x, y) { count += 1 }
+            return count > width * 3 / 4
+        })
+        guard rowBands.count >= 2 else { return nil }
+        // The card is the tallest span between two dark bands (header chrome bands are close together).
+        var best: (top: Int, bottom: Int)?
+        for (upper, lower) in zip(rowBands, rowBands.dropFirst()) {
+            let span = lower.first - upper.last
+            if span > (best.map { $0.bottom - $0.top } ?? 0) {
+                best = (upper.last, lower.first)
+            }
         }
-        guard let columns = longestRun(paintedColumns), columns.last - columns.first > width / 2 else {
-            return nil
-        }
-        let cardWidth = columns.last - columns.first + 1
+        guard let rows = best else { return nil }
 
-        let solidRows = (0..<height).filter { y in
+        let columnBands = bands((0..<width).filter { x in
             var count = 0
-            for x in columns.first...columns.last where isPainted(x, y) { count += 1 }
-            return count > cardWidth / 2
-        }
-        guard let rows = longestRun(solidRows), rows.last - rows.first > 50 else { return nil }
-        return CGRect(x: columns.first, y: rows.first, width: cardWidth, height: rows.last - rows.first + 1)
+            for y in 0..<height where isDark(x, y) { count += 1 }
+            return count > height / 8
+        })
+        guard let leftBand = columnBands.first, let rightBand = columnBands.last,
+              rightBand.last - leftBand.first > width / 2 else { return nil }
+        _ = page
+        return CGRect(
+            x: leftBand.first,
+            y: rows.top,
+            width: rightBand.last - leftBand.first + 1,
+            height: rows.bottom - rows.top + 1
+        )
+    }
+
+    /// `true` when the pixel carries the placeholder tint rather than the card's white surface or the
+    /// cream page. Both the shimmer's base fill and its sweep band are tinted; white is not, which is
+    /// what makes an undersized shimmer detectable.
+    func isPlaceholderTint(x: Int, y: Int) -> Bool {
+        guard let pixel = color(x: x, y: y), pixel.a > 200 else { return false }
+        return pixel.g <= 248 || pixel.b <= 248
     }
 
     /// Per-channel spread along one row: 0 for a flat fill, large when a gradient band crosses it.
@@ -453,7 +598,8 @@ private struct RenderedBitmap: Equatable {
         return (maxR - minR, maxG - minG, maxB - minB)
     }
 
-    /// Count of clearly darker-than-fill pixels inside `rect` (the placeholder glyph).
+    /// Count of clearly darker-than-fill pixels inside `rect`. Pass the card inset by a few points so
+    /// the card's own border cannot be mistaken for the placeholder glyph.
     func darkPixelCount(in rect: CGRect) -> Int {
         var count = 0
         let x0 = Swift.max(0, Int(rect.minX)), x1 = Swift.min(width, Int(rect.maxX))

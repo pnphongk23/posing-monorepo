@@ -923,24 +923,19 @@ private struct PoseHeroShimmer: View {
     }
 }
 
-/// The shimmer keeps sweeping only while a load is in flight; a failed load settles on the same
-/// stand-in glyph the grid uses instead of sweeping forever.
-private struct PoseHeroPlaceholder: View {
-    let didFail: Bool
-
+/// The failed-load state: the same stand-in glyph the grid uses. It is drawn as a card overlay rather
+/// than from `KFImage`'s placeholder closure, because `KFImage` keeps the placeholder it was built
+/// with — a load that fails after the first layout would otherwise leave the shimmer sweeping forever.
+private struct PoseHeroFailureFill: View {
     var body: some View {
-        if didFail {
-            ZStack {
-                AIPoseColor.primary100
-                Image(systemName: "figure.stand")
-                    .font(.system(size: 72))
-                    .foregroundStyle(AIPoseColor.subtext)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .accessibilityLabel("Pose photo unavailable")
-        } else {
-            PoseHeroShimmer()
+        ZStack {
+            AIPoseColor.primary100
+            Image(systemName: "figure.stand")
+                .font(.system(size: 72))
+                .foregroundStyle(AIPoseColor.subtext)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityLabel("Pose photo unavailable")
     }
 }
 
@@ -1074,10 +1069,15 @@ struct PoseDetailScreen: View {
                         )
                     }
                     .onFailure { _ in heroDidFail = true }
-                    .placeholder { PoseHeroPlaceholder(didFail: heroDidFail) }
+                    .placeholder { PoseHeroShimmer() }
                     .resizable()
                     .scaledToFill()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            // Card-level, so it is painted whenever the screen re-renders (including a failure that
+            // lands after the first layout) and covers the shimmer it replaces.
+            .overlay {
+                if heroDidFail { PoseHeroFailureFill() }
             }
             .clipShape(shape)
             .neoSurface(
