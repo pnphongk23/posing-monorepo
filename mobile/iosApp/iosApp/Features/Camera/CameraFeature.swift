@@ -342,6 +342,15 @@ struct GuideTransform: Equatable {
     }
 }
 
+extension NativePose {
+    /// The asset the camera draws as the pose reference: the extracted line art only.
+    ///
+    /// `imageURL` is the source photo (card / hero art). Drawing it over a live preview would put a
+    /// photo on the camera, so a pose whose extraction never landed falls back to the stick figure
+    /// (`guideFallback`) instead of reaching for `imageURL`.
+    var cameraGuideURL: URL? { guideURL }
+}
+
 // MARK: - Camera screen
 
 struct CameraScreen: View {
@@ -655,7 +664,7 @@ struct CameraScreen: View {
     private func guideOverlay(for guide: NativePose) -> some View {
         let placement = model.guideTransform.applying(guideGestureDelta)
         Group {
-            if let url = guide.guideURL {
+            if let url = guide.cameraGuideURL {
                 // The guide image covers most of the viewport, so it is decoded at screen size
                 // instead of at whatever the source asset happens to be.
                 KFImage(url)

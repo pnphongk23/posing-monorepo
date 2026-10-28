@@ -1,3 +1,6 @@
+import Kingfisher
+import SwiftUI
+import UIKit
 import XCTest
 @testable import iosApp
 
@@ -185,7 +188,126 @@ final class CameraFeatureTests: XCTestCase {
         XCTAssertEqual(model.guideLineColor, .white)
     }
 
-    // MARK: Zoom pill (`.nb-camera-zoom-slider` stops 1x → 2x → 3x)
+    /// `NativePose.imageURL` is the source photo; the camera must never draw it.
+    func testCameraGuideUsesTheExtractedLineArtNotTheSourcePhoto() {
+        let photo = URL(string: "https://api.example.com/poses/p1/original.jpg")!
+        let lineArt = URL(string: "https://api.example.com/poses/p1/skeleton.png")!
+        let pose = NativePose(id: "p1", name: "Warrior", category: "Standing", imageURL: photo,
+                              instructions: [], isSaved: false, guideURL: lineArt)
+
+        XCTAssertEqual(pose.cameraGuideURL, lineArt)
+        XCTAssertNotEqual(pose.cameraGuideURL, pose.imageURL)
+    }
+
+    /// An extraction that never landed (legacy local pose, failed job) has no line art. The guide
+    /// then draws the stick-figure fallback — it must not quietly substitute the source photo.
+    func testCameraGuideFallsBackToStickFigureWhenLineArtIsMissing() {
+        let pose = NativePose(id: "legacy", name: "Legacy", category: "Standing",
+                              imageURL: URL(string: "https://api.example.com/poses/legacy/original.jpg"),
+                              instructions: [], isSaved: false)
+
+        XCTAssertNil(pose.cameraGuideURL)
+    }
+
+    /// The guide is drawn with `.renderingMode(.template)` so the Line colour setting recolours the
+    /// strokes. A template render keeps only the alpha channel, so an opaque background would turn
+    /// the reference into a solid block over the preview. This renders the production chain
+    /// (`AppImage.downsample` → `.template` → Line colour) off transparent line art and inspects the
+    /// bitmap: transparent background, tinted strokes.
+    func testTintedGuideKeepsTransparentBackgroundAndLineColour() throws {
+        let lineArt = try XCTUnwrap(UIImage(contentsOfFile: try lineArtFixtureURL().path))
+        let processor = AppImage.downsample(points: CGSize(width: 120, height: 180), scale: 1, contentMode: .fit)
+        let processed = try XCTUnwrap(processor.process(item: .image(lineArt),
+                                                        options: KingfisherParsedOptionsInfo([.scaleFactor(1)])))
+
+        let tinted = Image(uiImage: processed)
+            .renderingMode(.template)
+            .resizable()
+            .scaledToFit()
+            .foregroundColor(.white)
+        let rendered = try XCTUnwrap(render(tinted.frame(width: 120, height: 180),
+                                           size: CGSize(width: 120, height: 180)))
+
+        let pixels = try XCTUnwrap(rgbaBytes(of: rendered))
+        XCTAssertEqual(alpha(pixels, x: 4, y: 4), 0, "the guide background must stay transparent, not a block")
+        XCTAssertEqual(alpha(pixels, x: 116, y: 176), 0, "the guide background must stay transparent, not a block")
+        XCTAssertGreaterThan(strokes(pixels).whiteCount, 100, "the line art's strokes are drawn")
+    }
+
+    // MARK: Runtime evidence — the shipped guide view chain (no camera, no touch in the simulator)
+
+    /// Renders the real `CameraScreen` with an authorized model and a local line-art asset (loaded
+    /// through Kingfisher, same processor as production). Asserts on the bitmap that the reference is
+    /// the extracted line art — not the source photo, and not a solid tinted block — and that the
+    /// committed pinch / rotate / drag transform moves those pixels. Writes the PNGs to the
+    /// temporary directory so they can be inspected as evidence.
+    func testCameraGuideScreenshotDrawsLineArtAndAppliesPlacement() async throws {
+        let lineArt = try lineArtFixtureURL()
+        let photo = try photoFixtureURL()
+        let pose = NativePose(
+            id: "guide-qa",
+            name: "Guide QA",
+            category: "Standing",
+            imageURL: photo,
+            instructions: [],
+            isSaved: false,
+            guideURL: lineArt
+        )
+        // Warm the exact cache key `guideOverlay` uses, so the hosted screen draws on first layout.
+        let processor = AppImage.downsample(points: FullScreenImageTarget.drawSize, contentMode: .fit)
+        _ = try? await KingfisherManager.shared.retrieveImage(with: lineArt, options: [.processor(processor)])
+
+        let plain = try XCTUnwrap(renderCamera(guide: pose, placement: GuideTransform()))
+        try write(plain, named: "camera-guide-line-art.png")
+        let placed = try XCTUnwrap(renderCamera(
+            guide: pose,
+            placement: GuideTransform(scale: 1.3, rotation: .degrees(12), offset: CGSize(width: 40, height: 60))
+        ))
+        try write(placed, named: "camera-guide-transformed.png")
+
+        let plainPixels = strokes(try XCTUnwrap(rgbaBytes(of: plain)))
+        XCTAssertGreaterThan(plainPixels.whiteCount, 2_000, "the line art is drawn over the preview")
+        XCTAssertEqual(plainPixels.redCount, 0, "the source photo must never be the reference")
+        XCTAssertLessThan(plainPixels.whiteCount, 30_000, "a transparent asset must not tint into a solid block")
+
+        let placedPixels = strokes(try XCTUnwrap(rgbaBytes(of: placed)))
+        XCTAssertGreaterThan(placedPixels.whiteCount, 2_000, "the placed reference is still drawn")
+        // Buffers are bottom-up: a downward drag lowers the centroid, a rightward drag raises x. The
+        // fixed chrome inside the band (the 1x pill, the More control) dilutes the centroid, so the
+        // thresholds only assert the direction of the committed pinch / twist / drag.
+        XCTAssertGreaterThan(placedPixels.centroid.x - plainPixels.centroid.x, 8, "drag moves the reference")
+        XCTAssertLessThan(placedPixels.centroid.y - plainPixels.centroid.y, -8, "drag moves the reference")
+    }
+
+    // MARK: Guide gesture math (pinch / twist / drag)
+
+    /// The in-flight preview applies the same `Delta` the release commits, so letting go cannot jump
+    /// the reference.
+    func testGuideGesturePreviewMatchesCommittedTransform() {
+        let model = CameraViewModel()
+        let delta = GuideTransform.Delta(scale: 1.4, rotation: .degrees(12),
+                                         translation: CGSize(width: 18, height: -9))
+
+        let previewed = model.guideTransform.applying(delta)
+        model.commitGuideGesture(delta)
+
+        XCTAssertEqual(model.guideTransform, previewed)
+    }
+
+    /// Pinch, twist and drag fold into independent fields; a twist never scales or moves the guide and
+    /// a drag never rotates it.
+    func testGuideGesturesDoNotCrossCouple() {
+        let rotated = GuideTransform().applying(.init(scale: 1, rotation: .degrees(45), translation: .zero))
+        XCTAssertEqual(rotated.scale, 1)
+        XCTAssertEqual(rotated.offset, .zero)
+
+        let dragged = GuideTransform().applying(.init(scale: 1, rotation: .zero,
+                                                      translation: CGSize(width: 30, height: 12)))
+        XCTAssertEqual(dragged.scale, 1)
+        XCTAssertEqual(dragged.rotation, .zero)
+    }
+
+    /// Zoom pill (`.nb-camera-zoom-slider` stops 1x → 2x → 3x)
 
     func testZoomStartsAtOneXForTheAccessibilityLabel() {
         let model = CameraViewModel()
@@ -254,5 +376,164 @@ final class CameraFeatureTests: XCTestCase {
             XCTAssertGreaterThanOrEqual(pose.lines.count, 5, "\(pose) should have a torso and limbs")
             XCTAssertGreaterThan(pose.head.radius, 0)
         }
+    }
+
+    // MARK: - Render + bitmap helpers (the simulator has no camera and no touch input)
+
+    private struct StrokePixels {
+        var whiteCount = 0
+        var redCount = 0
+        /// Average pixel position of the Line-colour strokes. Buffer coordinates are bottom-up.
+        var centroid = CGPoint.zero
+    }
+
+    private func renderCamera(guide pose: NativePose, placement: GuideTransform) -> UIImage? {
+        var guide: NativePose? = pose
+        let model = CameraViewModel()
+        model.coordinator.onPermissionResult(.authorized)
+        model.setGuideLineColor(.white)
+        model.setGuideOpacity(1)
+        model.commitGuideGesture(.init(scale: placement.scale,
+                                       rotation: placement.rotation,
+                                       translation: placement.offset))
+        let screen = CameraScreen(
+            guide: Binding(get: { guide }, set: { guide = $0 }),
+            poseService: PreviewPoseService(),
+            model: model
+        )
+        return render(screen, size: CGSize(width: 390, height: 760))
+    }
+
+    private func render<Content: View>(_ view: Content, size: CGSize) -> UIImage? {
+        let host = UIHostingController(rootView: view)
+        host.view.frame = CGRect(origin: .zero, size: size)
+        // The hosting view ships with an opaque system background; clear it so the bitmap keeps the
+        // asset's own alpha (the whole point of the tint check).
+        host.view.backgroundColor = .clear
+        host.view.isOpaque = false
+        host.view.layoutIfNeeded()
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = 1
+        format.opaque = false
+        return UIGraphicsImageRenderer(size: size, format: format).image { _ in
+            host.view.drawHierarchy(in: CGRect(origin: .zero, size: size), afterScreenUpdates: true)
+        }
+    }
+
+    private func rgbaBytes(of image: UIImage) -> (bytes: [UInt8], width: Int, height: Int)? {
+        guard let cg = image.cgImage else { return nil }
+        let width = cg.width
+        let height = cg.height
+        let count = width * height * 4
+        let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: count)
+        buffer.initialize(repeating: 0, count: count)
+        defer { buffer.deallocate() }
+        guard let context = CGContext(data: buffer, width: width, height: height, bitsPerComponent: 8,
+                                     bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                                     bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        context.draw(cg, in: CGRect(x: 0, y: 0, width: width, height: height))
+        return (Array(UnsafeBufferPointer(start: buffer, count: count)), width, height)
+    }
+
+    private func alpha(_ pixels: (bytes: [UInt8], width: Int, height: Int), x: Int, y: Int) -> Int {
+        let index = (y * pixels.width + x) * 4
+        guard index >= 0, index + 3 < pixels.bytes.count else { return -1 }
+        return Int(pixels.bytes[index + 3])
+    }
+
+    /// Counts Line-colour strokes and photo-red pixels inside the pose-reference band: the columns
+    /// between the left/right control rails and the rows between the top controls and the shutter
+    /// rail, so app chrome (and its cream rail) cannot be mistaken for the reference.
+    private func strokes(_ pixels: (bytes: [UInt8], width: Int, height: Int)) -> StrokePixels {
+        let width = pixels.width
+        let height = pixels.height
+        let minCol = Int(Double(width) * 0.2)
+        let maxCol = Int(Double(width) * 0.8)
+        // 8%..78% of the image height, top-down, expressed in bottom-up bitmap rows.
+        let minRow = Int(Double(height) * 0.22)
+        let maxRow = Int(Double(height) * 0.92)
+        var result = StrokePixels()
+        var sumX = 0.0
+        var sumY = 0.0
+        guard minCol < maxCol, minRow < maxRow else { return result }
+        for row in minRow..<maxRow {
+            for col in minCol..<maxCol {
+                let index = (row * width + col) * 4
+                let r = Int(pixels.bytes[index])
+                let g = Int(pixels.bytes[index + 1])
+                let b = Int(pixels.bytes[index + 2])
+                let a = Int(pixels.bytes[index + 3])
+                guard a > 200 else { continue }
+                if r > 200, g > 200, b > 200 {
+                    result.whiteCount += 1
+                    sumX += Double(col)
+                    sumY += Double(row)
+                }
+                if r > 180, g < 90, b < 90 {
+                    result.redCount += 1
+                }
+            }
+        }
+        if result.whiteCount > 0 {
+            result.centroid = CGPoint(x: sumX / Double(result.whiteCount),
+                                      y: sumY / Double(result.whiteCount))
+        }
+        return result
+    }
+
+    private func fixtureDirectory() -> URL {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent("aipose-camera-guide-tests", isDirectory: true)
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        return directory
+    }
+
+    /// Transparent line art with the extractor's contract: thin dark strokes, fully transparent
+    /// background. Drawn as a template it must tint — never flatten into a filled block.
+    private func lineArtFixtureURL() throws -> URL {
+        let url = fixtureDirectory().appendingPathComponent("line-art.png")
+        if FileManager.default.fileExists(atPath: url.path) { return url }
+        let size = CGSize(width: 600, height: 900)
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = 1
+        format.opaque = false
+        let image = UIGraphicsImageRenderer(size: size, format: format).image { context in
+            let cg = context.cgContext
+            cg.setStrokeColor(UIColor.black.cgColor)
+            cg.setLineWidth(14)
+            cg.setLineCap(.round)
+            cg.strokeEllipse(in: CGRect(x: 255, y: 60, width: 90, height: 90))
+            cg.move(to: CGPoint(x: 300, y: 150))
+            cg.addLine(to: CGPoint(x: 300, y: 500))
+            cg.move(to: CGPoint(x: 150, y: 260))
+            cg.addLine(to: CGPoint(x: 450, y: 260))
+            cg.move(to: CGPoint(x: 300, y: 500))
+            cg.addLine(to: CGPoint(x: 180, y: 820))
+            cg.move(to: CGPoint(x: 300, y: 500))
+            cg.addLine(to: CGPoint(x: 420, y: 820))
+            cg.strokePath()
+        }
+        try XCTUnwrap(image.pngData()).write(to: url)
+        return url
+    }
+
+    /// The source photo the camera must never draw as its reference: a saturated solid rectangle.
+    private func photoFixtureURL() throws -> URL {
+        let url = fixtureDirectory().appendingPathComponent("source-photo.png")
+        if FileManager.default.fileExists(atPath: url.path) { return url }
+        let size = CGSize(width: 400, height: 600)
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = 1
+        format.opaque = true
+        let image = UIGraphicsImageRenderer(size: size, format: format).image { context in
+            context.cgContext.setFillColor(UIColor.red.cgColor)
+            context.cgContext.fill(CGRect(origin: .zero, size: size))
+        }
+        try XCTUnwrap(image.pngData()).write(to: url)
+        return url
+    }
+
+    private func write(_ image: UIImage, named name: String) throws {
+        try XCTUnwrap(image.pngData()).write(to: fixtureDirectory().appendingPathComponent(name))
     }
 }
