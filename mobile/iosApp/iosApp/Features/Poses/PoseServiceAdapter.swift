@@ -868,10 +868,14 @@ struct PoseAPIServiceAdapter: PoseServing {
         let page = offset / window + 1
         let skipped = offset % window
         let later = try await remoteFetch(route: route, query: normalizedQuery, page: page, limit: window)
-        // The rows before `offset` were already read: the caller consumes only what is left of this
-        // aligned window. A stale or shrunken total below the requested offset answers an empty
-        // window, which ends the list instead of asking for the same offset again.
-        let poses = skipped == 0 ? later.poses : Array(later.poses.dropFirst(skipped))
+        // The rows before `offset` were already read, so they are dropped from the **raw** server rows
+        // first and the local name filter runs on what is left. Slicing after the filter would drop
+        // the matches that happen to sit in the skipped part of the window — the rows the cursor
+        // claims were already shown — and the cursor would then move past them for good. A stale or
+        // shrunken total below the offset answers an empty window, which ends the list instead of
+        // asking for the same offset again.
+        let raw = skipped == 0 ? later.rawPoses : Array(later.rawPoses.dropFirst(skipped))
+        let poses = Self.filterLocally(raw, route: route, query: normalizedQuery)
         return PosePage(poses: poses, hasMore: later.hasMore, consumed: max(0, later.consumed - skipped))
     }
 
@@ -912,6 +916,9 @@ struct PoseAPIServiceAdapter: PoseServing {
     /// One network window, its poses and the catalog rows that mirror it.
     private struct RemotePage {
         let poses: [NativePose]
+        /// The same rows **before** the local Saved name filter. An unaligned window has to drop the
+        /// rows it already showed from this array, not from the filtered one.
+        let rawPoses: [NativePose]
         let hasMore: Bool
         /// Rows the server handed over, **before** the local name filter and any merge: this is what
         /// the cursor and `hasMore` are computed from.
@@ -931,8 +938,13 @@ struct PoseAPIServiceAdapter: PoseServing {
         }
 
         /// A window that is deliberately not persisted.
-        static func networkOnly(_ poses: [NativePose], consumed: Int, hasMore: Bool) -> RemotePage {
-            RemotePage(poses: poses, hasMore: hasMore, consumed: consumed, fetch: nil)
+        static func networkOnly(
+            _ poses: [NativePose],
+            raw: [NativePose],
+            consumed: Int,
+            hasMore: Bool
+        ) -> RemotePage {
+            RemotePage(poses: poses, rawPoses: raw, hasMore: hasMore, consumed: consumed, fetch: nil)
         }
     }
 
@@ -949,10 +961,11 @@ struct PoseAPIServiceAdapter: PoseServing {
             let poses = data.poses.map { CommunityPoseMapper.map($0, isSaved: false, baseURL: baseURL) }
             let hasMore = Self.hasMore(consumed: consumed + data.poses.count, total: data.total)
             guard page == 1 else {
-                return .networkOnly(poses, consumed: data.poses.count, hasMore: hasMore)
+                return .networkOnly(poses, raw: poses, consumed: data.poses.count, hasMore: hasMore)
             }
             return RemotePage(
                 poses: poses,
+                rawPoses: poses,
                 hasMore: hasMore,
                 consumed: data.poses.count,
                 fetch: PoseCatalogFetch(
@@ -967,13 +980,14 @@ struct PoseAPIServiceAdapter: PoseServing {
             let mapped = data.poses.map { CommunityPoseMapper.map($0, isSaved: true, baseURL: baseURL) }
             // The saved endpoint takes no search text, so a window can contribute zero matches for
             // the query and still not be the last one.
-            let poses = PoseAdapterMerge.filterSavedLocally(mapped, query: query)
+            let poses = Self.filterLocally(mapped, route: route, query: query)
             let hasMore = Self.hasMore(consumed: consumed + data.poses.count, total: data.total)
             guard page == 1 else {
-                return .networkOnly(poses, consumed: data.poses.count, hasMore: hasMore)
+                return .networkOnly(poses, raw: mapped, consumed: data.poses.count, hasMore: hasMore)
             }
             return RemotePage(
                 poses: poses,
+                rawPoses: mapped,
                 hasMore: hasMore,
                 consumed: data.poses.count,
                 fetch: PoseCatalogFetch(
@@ -991,16 +1005,18 @@ struct PoseAPIServiceAdapter: PoseServing {
             // cursors and would let one of them skip rows, so later windows follow the community
             // order alone (that is also why the first window's consumed count is the community one).
             guard page == 1 else {
-                return .networkOnly(community, consumed: communityData.poses.count, hasMore: hasMore)
+                return .networkOnly(community, raw: community, consumed: communityData.poses.count, hasMore: hasMore)
             }
             let savedData = (try? await remote.fetchSaved(page: 1, limit: limit)) ?? .empty
-            let saved = PoseAdapterMerge.filterSavedLocally(
+            let saved = Self.filterLocally(
                 savedData.poses.map { CommunityPoseMapper.map($0, isSaved: true, baseURL: baseURL) },
+                route: .saved,
                 query: query
             )
             let poses = PoseAdapterMerge.communityFirst(community: community, saved: saved)
             return RemotePage(
                 poses: poses,
+                rawPoses: poses,
                 hasMore: hasMore,
                 // The merged saved rows are shown once, but the cursor follows the community feed
                 // alone (later windows are community-only), so it must not count them.
@@ -1014,6 +1030,16 @@ struct PoseAPIServiceAdapter: PoseServing {
                 )
             )
         }
+    }
+
+    /// The only local filter in the paging pipeline: the Saved endpoint takes no search text, so its
+    /// query is applied here. Every other route is filtered by the server.
+    private static func filterLocally(
+        _ poses: [NativePose],
+        route: PoseAdapterRoute,
+        query: String?
+    ) -> [NativePose] {
+        route == .saved ? PoseAdapterMerge.filterSavedLocally(poses, query: query) : poses
     }
 
     /// `consumed < total` — the server's own total, never the item count of one window.

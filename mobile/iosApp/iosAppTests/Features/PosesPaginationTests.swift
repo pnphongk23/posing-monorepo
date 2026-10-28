@@ -34,6 +34,12 @@ private func libraryPoses(_ count: Int) throws -> [CommunityPose] {
     try (1...count).map { try libraryPose("lib-\($0)") }
 }
 
+private func namedLibraryPose(_ id: String, name: String) throws -> CommunityPose {
+    try JSONDecoder().decode(CommunityPose.self, from: Data("""
+    {"poseId":"\(id)","name":"\(name)","skeletonUrl":"/s.png","thumbnailUrl":"/t.jpg","status":"published"}
+    """.utf8))
+}
+
 private let pagedCredentialsA = SessionCredentials(accessToken: "access-a", refreshToken: "refresh-a")
 private let pagedCredentialsB = SessionCredentials(accessToken: "access-b", refreshToken: "refresh-b")
 
@@ -744,6 +750,47 @@ final class PoseAdapterPaginationTests: XCTestCase {
         XCTAssertEqual(page.poses.count, 0, "the local name filter removes the window's rows")
         XCTAssertEqual(page.consumed, 20, "but the server did hand over a full window")
         XCTAssertTrue(page.hasMore, "the server total, not the local match count, decides hasMore")
+    }
+
+    /// Sol's scenario end to end: a query that only matches rows sitting in the skipped part of an
+    /// unaligned window, plus the unsave that made the window unaligned. Slicing after the local name
+    /// filter drops those matches while the cursor moves past them, so they are lost for good.
+    @MainActor func testSavedQueryAfterAnUnsavKeepsTheMatchesInTheSkippedPart() async throws {
+        var items: [CommunityPose] = []
+        // Matches sit at server positions 20, 21 and 31 (1-based): the first two straddle the
+        // skipped part of the unaligned window, the third lands in the window after it.
+        let targetNames = [19: "Target Twenty", 20: "Target Twenty One", 30: "Target Thirty"]
+        for index in 0..<45 {
+            items.append(try namedLibraryPose("p\(index)", name: targetNames[index] ?? "Other \(index)"))
+        }
+        let remote = LibraryPoseRemote(saved: items)
+        let model = PosesViewModel(service: adapter(remote, filter: .saved))
+        model.filter = .saved
+        model.query = "target"
+
+        await model.load()
+        XCTAssertEqual(pagedPoseIDs(model), ["p19"], "only the row at server position 20 matches the query")
+        XCTAssertEqual(model.paging.nextOffset, 20, "the server still handed over a full window")
+
+        // The user unsaves the row that matched: the Saved collection drops it and every later row
+        // moves one position up, so the cursor becomes 19 and the next match sits at position 20.
+        remote.savedItems.remove(at: 19)
+        remote.savedTotal = remote.savedItems.count
+        model.updateSavedLocally(poseID: "p19", saved: false)
+        XCTAssertEqual(model.paging.nextOffset, 19)
+
+        await model.loadMore()
+
+        XCTAssertEqual(
+            pagedPoseIDs(model),
+            ["p20"],
+            "the match that moved into the skipped part of the window is served, not dropped"
+        )
+        XCTAssertEqual(remote.savedCallCount, 2)
+
+        await model.loadMore()
+        XCTAssertEqual(pagedPoseIDs(model), ["p20", "p30"], "the next window's match is appended too")
+        XCTAssertEqual(Set(pagedPoseIDs(model)).count, 2, "no row is repeated")
     }
 
     /// Sol's coverage gap: a stale, zero or shrunken total must end the list instead of crashing or
