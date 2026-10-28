@@ -27,6 +27,10 @@ export interface MaterializePoseOptions {
   createPose: (input: CreatePoseInput) => Promise<PoseRecord>;
   /** Receives the keys whose cleanup deletion failed, so they can be retried later. */
   onCleanupFailed?: (keys: string[]) => void | Promise<void>;
+  /** Runs before every upload, so a caller holding a lease can renew it first. */
+  beforeUpload?: (key: string) => void | Promise<void>;
+  /** Runs after every upload, so a caller can confirm its lease survived the write. */
+  afterUpload?: (key: string) => void | Promise<void>;
 }
 
 export function buildPoseObjectKey(
@@ -58,7 +62,9 @@ export async function materializePose(options: MaterializePoseOptions): Promise<
     keyPrefix,
     mediaStorage,
     createPose,
-    onCleanupFailed
+    onCleanupFailed,
+    beforeUpload,
+    afterUpload
   } = options;
 
   const assets = [
@@ -74,8 +80,10 @@ export async function materializePose(options: MaterializePoseOptions): Promise<
       assets.map(async (asset) => {
         const fileKey = buildPoseObjectKey(keyPrefix, poseId, asset.role, asset.mime);
         const body = Buffer.from(asset.b64, "base64");
+        if (beforeUpload) await beforeUpload(fileKey);
         await mediaStorage.put(fileKey, body, asset.mime);
         uploadedKeys.push(fileKey);
+        if (afterUpload) await afterUpload(fileKey);
         return [asset.role, mediaStorage.publicUrl(fileKey)] as const;
       })
     );

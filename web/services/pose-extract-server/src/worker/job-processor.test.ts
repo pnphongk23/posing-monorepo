@@ -793,12 +793,18 @@ describe("processNextJob", () => {
     });
 
     const realOutbox = new ObjectDeletionOutbox(sql);
-    const flakyOutbox = {
-      reserve: (keys: string[], ttlSeconds?: number) => realOutbox.reserve(keys, ttlSeconds),
-      enqueue: async () => {
-        throw new Error("outbox write failed");
+    // Every write that would happen after the reservation fails; the reservation itself holds.
+    const flakyOutbox = new Proxy(realOutbox, {
+      get(target, property) {
+        if (property === "enqueue") {
+          return async () => {
+            throw new Error("outbox write failed");
+          };
+        }
+        const value = Reflect.get(target, property);
+        return typeof value === "function" ? value.bind(target) : value;
       }
-    } as unknown as ObjectDeletionOutbox;
+    }) as ObjectDeletionOutbox;
 
     await processNextJob({
       jobStore,
@@ -875,5 +881,291 @@ describe("processNextJob", () => {
       errorSpy.mockRestore();
       warnSpy.mockRestore();
     }
+  });
+
+  async function startOwnerJobWithPausedUploads() {
+    const stores = await createStores();
+    const ownerAccountId = await createOwnerAccount(stores.sql);
+    const job = await stores.jobStore.enqueue({
+      ownerAccountId,
+      poseDraft: { name: "Leased Pose", tags: [], description: null },
+      sourceImageBase64: Buffer.from("source").toString("base64"),
+      sourceMimeType: "image/png"
+    });
+
+    const pendingUploads: Array<{ key: string; release: () => void }> = [];
+    const uploaded: string[] = [];
+    const removed: string[] = [];
+    const mediaStorage: MediaStorage = {
+      put: vi.fn(async (key: string) => {
+        await new Promise<void>((resolve) => {
+          pendingUploads.push({ key, release: resolve });
+        });
+        uploaded.push(key);
+      }),
+      remove: vi.fn(async (key: string) => {
+        removed.push(key);
+      }),
+      publicUrl: (key: string) => `https://cdn.example.com/${key}`
+    };
+
+    const extractPoseImage = vi.fn().mockResolvedValue({
+      imageBase64: Buffer.from("skeleton").toString("base64"),
+      mimeType: "image/png"
+    });
+
+    const running = processNextJob({
+      jobStore: stores.jobStore,
+      providerSettingsStore: stores.providerSettingsStore,
+      createProvider: () => mockProvider("gemini_native", extractPoseImage),
+      staleLockSeconds: 120,
+      db: stores.sql,
+      communityStore: stores.communityStore,
+      mediaStorage,
+      lineartBackgroundRemover: createBackgroundRemoverStub()
+    });
+
+    // Wait until every planned upload is in flight.
+    for (let waited = 0; pendingUploads.length < 3; waited += 1) {
+      if (waited > 200) throw new Error("uploads did not start");
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+
+    return { ...stores, job, ownerAccountId, running, pendingUploads, uploaded, removed };
+  }
+
+  it("requeues the job and keeps its objects deletable when the reservation lapses before finalize", async () => {
+    const harness = await startOwnerJobWithPausedUploads();
+    const outbox = new ObjectDeletionOutbox(harness.sql);
+
+    // The lease lapses and the sweep takes every key while the uploads are still in flight.
+    await harness.sql`UPDATE pending_object_deletions SET claimed_until = NOW() - interval '1 second'`;
+    const swept: string[] = [];
+    await drainPendingObjectDeletions({
+      outbox,
+      deleteObject: async (key: string) => {
+        swept.push(key);
+      }
+    });
+    expect(swept).toHaveLength(3);
+    expect(await outbox.count()).toBe(0);
+
+    for (const upload of harness.pendingUploads) upload.release();
+    await expect(harness.running).resolves.toBe(true);
+
+    const job = await harness.jobStore.getById(harness.job.id);
+    expect(job?.status).toBe("queued");
+    expect(job?.errorCode).toBe("POSE_MATERIALIZE_FAILED");
+    expect(await harness.communityStore.getPoseByCurrentJobId(harness.job.id)).toBeNull();
+
+    const reclaimed = (await outbox.list()).map((row) => row.key).sort();
+    expect(reclaimed).toEqual([...harness.uploaded].sort());
+
+    const retried: string[] = [];
+    await drainPendingObjectDeletions({
+      outbox,
+      deleteObject: async (key: string) => {
+        retried.push(key);
+      }
+    });
+    expect(retried.sort()).toEqual([...harness.uploaded].sort());
+    expect(await outbox.count()).toBe(0);
+  });
+
+  it("keeps a cleanup record when an upload lands after the sweep already acknowledged its key", async () => {
+    const harness = await startOwnerJobWithPausedUploads();
+    const outbox = new ObjectDeletionOutbox(harness.sql);
+
+    // The sweep acks one key before its object exists, then the upload lands.
+    const target = harness.pendingUploads[0]!;
+    await harness.sql`UPDATE pending_object_deletions SET claimed_until = NOW() - interval '1 second' WHERE key = ${target.key}`;
+    await drainPendingObjectDeletions({ outbox, deleteObject: async () => undefined });
+    expect(await outbox.count()).toBe(2);
+
+    target.release();
+    for (const upload of harness.pendingUploads.slice(1)) upload.release();
+    await expect(harness.running).resolves.toBe(true);
+
+    const job = await harness.jobStore.getById(harness.job.id);
+    expect(job?.status).toBe("queued");
+    expect(job?.errorCode).toBe("POSE_MATERIALIZE_FAILED");
+
+    const rows = await outbox.list();
+    expect(rows.map((row) => row.key).sort()).toEqual([...harness.uploaded].sort());
+
+    const retried: string[] = [];
+    await drainPendingObjectDeletions({
+      outbox,
+      deleteObject: async (key: string) => {
+        retried.push(key);
+      }
+    });
+    expect(retried).toContain(target.key);
+    expect(await outbox.count()).toBe(0);
+  });
+
+  it("logs no object key or upstream message when the reservation cannot be written", async () => {
+    const { sql, jobStore, communityStore, providerSettingsStore } = await createStores();
+    const ownerAccountId = await createOwnerAccount(sql);
+    const job = await jobStore.enqueue({
+      ownerAccountId,
+      poseDraft: { name: "Reserve Fails", tags: [], description: null },
+      sourceImageBase64: Buffer.from("source").toString("base64"),
+      sourceMimeType: "image/png"
+    });
+
+    const failingOutbox = {
+      reserve: async () => {
+        throw new Error("insert failed on poses/secret-key/original.png for user@example.com");
+      }
+    } as unknown as ObjectDeletionOutbox;
+    const logged: unknown[][] = [];
+    const errorSpy = vi.spyOn(logger, "error").mockImplementation((...args: unknown[]) => {
+      logged.push(args);
+      return undefined as never;
+    });
+
+    try {
+      await processNextJob({
+        jobStore,
+        providerSettingsStore,
+        createProvider: () =>
+          mockProvider("gemini_native", async () => ({
+            imageBase64: Buffer.from("skeleton").toString("base64"),
+            mimeType: "image/png" as const
+          })),
+        staleLockSeconds: 120,
+        db: sql,
+        communityStore,
+        mediaStorage: createMediaStorageMock().mediaStorage,
+        objectDeletions: failingOutbox,
+        lineartBackgroundRemover: createBackgroundRemoverStub()
+      });
+
+      const serialized = JSON.stringify(logged, (_key, value: unknown) =>
+        value instanceof Error ? `${value.name}: ${value.message}` : value
+      );
+      expect(serialized).not.toContain("poses/secret-key");
+      expect(serialized).not.toContain("user@example.com");
+      expect(serialized).toContain(job.id);
+      expect(serialized).toContain("keyCount");
+
+      const updated = await jobStore.getById(job.id);
+      expect(updated?.status).toBe("queued");
+      expect(updated?.errorCode).toBe("POSE_MATERIALIZE_FAILED");
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it("refuses finalize when the lease was claimed after the last renewal", async () => {
+    const { sql, jobStore, communityStore, providerSettingsStore } = await createStores();
+    const uploaded: string[] = [];
+    const mediaStorage: MediaStorage = {
+      put: vi.fn(async (key: string) => {
+        uploaded.push(key);
+      }),
+      remove: vi.fn(async () => undefined),
+      publicUrl: (key: string) => `https://cdn.example.com/${key}`
+    };
+    const ownerAccountId = await createOwnerAccount(sql);
+    const job = await jobStore.enqueue({
+      ownerAccountId,
+      poseDraft: { name: "Lapsed Window", tags: [], description: null },
+      sourceImageBase64: Buffer.from("source").toString("base64"),
+      sourceMimeType: "image/png"
+    });
+
+    // Simulates the lease lapsing in the window between the last renewal and the finalize
+    // transaction: the sixth renewal (after the third upload) lets a drain take the rows and
+    // then reports success, exactly like a stale lease token would.
+    const realOutbox = new ObjectDeletionOutbox(sql);
+    let renewals = 0;
+    const lapsedOutbox = new Proxy(realOutbox, {
+      get(target, property) {
+        if (property === "renew") {
+          return async (keys: readonly string[], ttlSeconds?: number) => {
+            renewals += 1;
+            if (renewals < 6) return target.renew(keys, ttlSeconds);
+            await sql`UPDATE pending_object_deletions SET claimed_until = NOW() - interval '1 second'`;
+            await target.claim(10);
+            return true;
+          };
+        }
+        const value = Reflect.get(target, property);
+        return typeof value === "function" ? value.bind(target) : value;
+      }
+    }) as ObjectDeletionOutbox;
+
+    await processNextJob({
+      jobStore,
+      providerSettingsStore,
+      createProvider: () =>
+        mockProvider("gemini_native", async () => ({
+          imageBase64: Buffer.from("skeleton").toString("base64"),
+          mimeType: "image/png" as const
+        })),
+      staleLockSeconds: 120,
+      db: sql,
+      communityStore,
+      mediaStorage,
+      objectDeletions: lapsedOutbox,
+      lineartBackgroundRemover: createBackgroundRemoverStub()
+    });
+
+    expect(renewals).toBe(6);
+    const updated = await jobStore.getById(job.id);
+    expect(updated?.status).toBe("queued");
+    expect(updated?.errorCode).toBe("POSE_MATERIALIZE_FAILED");
+    expect(await communityStore.getPoseByCurrentJobId(job.id)).toBeNull();
+    expect(await realOutbox.count()).toBe(3);
+  });
+
+  it("renews the lease before and after every upload", async () => {
+    const { sql, jobStore, communityStore, providerSettingsStore } = await createStores();
+    const { mediaStorage } = createMediaStorageMock();
+    const ownerAccountId = await createOwnerAccount(sql);
+    const job = await jobStore.enqueue({
+      ownerAccountId,
+      poseDraft: { name: "Renewed", tags: [], description: null },
+      sourceImageBase64: Buffer.from("source").toString("base64"),
+      sourceMimeType: "image/png"
+    });
+
+    const realOutbox = new ObjectDeletionOutbox(sql);
+    let renewals = 0;
+    const countingOutbox = new Proxy(realOutbox, {
+      get(target, property) {
+        if (property === "renew") {
+          return async (keys: readonly string[], ttlSeconds?: number) => {
+            renewals += 1;
+            return target.renew(keys, ttlSeconds);
+          };
+        }
+        const value = Reflect.get(target, property);
+        return typeof value === "function" ? value.bind(target) : value;
+      }
+    }) as ObjectDeletionOutbox;
+
+    await processNextJob({
+      jobStore,
+      providerSettingsStore,
+      createProvider: () =>
+        mockProvider("gemini_native", async () => ({
+          imageBase64: Buffer.from("skeleton").toString("base64"),
+          mimeType: "image/png" as const
+        })),
+      staleLockSeconds: 120,
+      db: sql,
+      communityStore,
+      mediaStorage,
+      objectDeletions: countingOutbox,
+      lineartBackgroundRemover: createBackgroundRemoverStub()
+    });
+
+    expect(renewals).toBe(6);
+    const updated = await jobStore.getById(job.id);
+    expect(updated?.status).toBe("succeeded");
+    expect(await realOutbox.count()).toBe(0);
   });
 });

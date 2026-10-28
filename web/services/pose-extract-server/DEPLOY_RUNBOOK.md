@@ -362,6 +362,25 @@ upload (30-minute reservation) and the rows are removed inside the finalize tran
 pose own them. A failed finalize, a failed cleanup, or a killed process therefore leaves the sweep a
 durable key to delete instead of an orphaned object.
 
+The reservation is a lease with these guarantees:
+
+- **Renewed before and after every upload.** A slow but healthy job keeps the keys unclaimable, because
+  a claim only takes rows whose lease has already expired.
+- **Verified inside the finalize transaction.** Finalization locks the reservation rows and requires all
+  of them to be present, unexpired, and unclaimed. If any key is gone — a sweep took it after an earlier
+  lease lapse — the transaction refuses to mark the job `succeeded`; the job is retried and its keys are
+  made claimable again (`reclaim`), so the sweep deletes whatever the pose never came to own.
+- **Losing the lease is never silent.** A lost lease fails or requeues the job with
+  `POSE_MATERIALIZE_FAILED` and leaves a cleanup record; it can never produce a succeeded job whose pose
+  points at deleted objects.
+- **The sweep can only act on expired leases.** A live reservation is invisible to `drain`; a key that
+  lands after its lease was lost is re-recorded by `reclaim`, so its cleanup record is not lost.
+
+What an operator may see after a lease failure: the job requeued (or failed after 3 attempts) with
+`POSE_MATERIALIZE_FAILED`, a pose that does not exist, and up to three rows in
+`pending_object_deletions` that the next sweep drains. If rows keep reappearing, look at R2
+reachability before touching the job.
+
 Logs: a failed row purge logs `account_purge_failed` with the account id only, and cleanup failures log
 counts, never object keys (a key is a capability to a reusable file). A stale object key logs
 nothing until the sweep retries it; alert on `pending_object_deletions.attempts >= 3` or an intent older

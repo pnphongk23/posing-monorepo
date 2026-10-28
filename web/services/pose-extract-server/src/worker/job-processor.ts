@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import type { Sql } from "../db/connection";
 import { StaleLockError, type ExtractionJobStore } from "../db/extractionJobStore";
-import { ObjectDeletionOutbox } from "../db/objectDeletionOutbox";
+import { ObjectDeletionOutbox, ObjectLeaseLostError } from "../db/objectDeletionOutbox";
 import type { PoseStore } from "../db/communityStore";
 import type { ProviderSettingsStore } from "../db/providerSettingsStore";
 import {
@@ -46,6 +46,17 @@ function mapProviderError(error: unknown): { code: string; message: string } {
 
   const message = error instanceof Error ? error.message : "Unknown worker error";
   return { code: WORKER_ERROR_CODES.providerError, message };
+}
+
+/** A fixed class/code pair, never the message: messages can carry keys or user data. */
+function errorIdentity(error: unknown): { errorClass: string; errorCode: string | null } {
+  if (!error || typeof error !== "object") {
+    return { errorClass: "UnknownError", errorCode: null };
+  }
+  const candidate = error as { name?: unknown; code?: unknown };
+  const errorClass = typeof candidate.name === "string" && candidate.name ? candidate.name : "Error";
+  const errorCode = typeof candidate.code === "string" && /^[A-Za-z0-9_]{1,16}$/.test(candidate.code) ? candidate.code : null;
+  return { errorClass, errorCode };
 }
 
 function isUniqueViolation(error: unknown): boolean {
@@ -156,21 +167,61 @@ export async function processNextJob(input: ProcessNextJobInput): Promise<boolea
     }
   };
 
+  const poseId = randomUUID();
+  const draft = job.poseDraft;
+  const objectDeletions = input.objectDeletions ?? new ObjectDeletionOutbox(db);
+  const plannedKeys = [
+    buildPoseObjectKey("poses", poseId, "original", job.sourceMimeType),
+    buildPoseObjectKey("poses", poseId, "skeleton", processed.mimeType),
+    buildPoseObjectKey("poses", poseId, "thumbnail", processed.mimeType)
+  ];
+
+  // The reservation is a lease: it is renewed before and after every upload, so a slow job
+  // keeps its claim while a sweep can still collect keys the job abandoned. Renewals are
+  // serialised because the three uploads start together.
+  let leaseChain: Promise<void> = Promise.resolve();
+  const renewLease = (): Promise<boolean> => {
+    const renewal = leaseChain.then(() => objectDeletions.renew(plannedKeys));
+    leaseChain = renewal.then(
+      () => undefined,
+      () => undefined
+    );
+    return renewal;
+  };
+
+  const assertLease = async (): Promise<void> => {
+    if (!(await renewLease())) {
+      throw new ObjectLeaseLostError();
+    }
+  };
+
+  const failWithReclaimedKeys = async (reason: string): Promise<void> => {
+    try {
+      await objectDeletions.reclaim(plannedKeys);
+    } catch (error) {
+      logger.error(
+        { jobId: job.id, keyCount: plannedKeys.length, ...errorIdentity(error) },
+        "worker owner job failed: could not reclaim its object keys"
+      );
+    }
+    await input.jobStore.markFailedOrRequeue(
+      job.id,
+      lockToken,
+      WORKER_ERROR_CODES.poseMaterializeFailed,
+      reason
+    );
+    logger.warn(
+      { jobId: job.id, keyCount: plannedKeys.length, reason },
+      "worker owner job aborted: object lease lost"
+    );
+  };
+
   try {
     const existing = await communityStore.getPoseByCurrentJobId(job.id);
     if (existing) {
       await safeFinalize(existing.poseId);
       return true;
     }
-
-    const poseId = randomUUID();
-    const draft = job.poseDraft;
-    const objectDeletions = input.objectDeletions ?? new ObjectDeletionOutbox(db);
-    const plannedKeys = [
-      buildPoseObjectKey("poses", poseId, "original", job.sourceMimeType),
-      buildPoseObjectKey("poses", poseId, "skeleton", processed.mimeType),
-      buildPoseObjectKey("poses", poseId, "thumbnail", processed.mimeType)
-    ];
 
     // The keys are durable before the first upload, so neither a failed finalize nor a failed
     // cleanup can strand an object: the sweep deletes whatever the pose never came to own.
@@ -184,7 +235,7 @@ export async function processNextJob(input: ProcessNextJobInput): Promise<boolea
         "Failed to record object keys for deletion"
       );
       logger.error(
-        { jobId: job.id, error: sanitizeError(error) },
+        { jobId: job.id, keyCount: plannedKeys.length, ...errorIdentity(error) },
         "worker owner job materialization failed: object keys not recorded"
       );
       return true;
@@ -205,6 +256,8 @@ export async function processNextJob(input: ProcessNextJobInput): Promise<boolea
       result: { b64: processed.imageBase64, mime: processed.mimeType },
       keyPrefix: "poses",
       mediaStorage,
+      beforeUpload: assertLease,
+      afterUpload: assertLease,
       onCleanupFailed: async (keys) => {
         // Those keys are already recorded, so the sweep retries them without another write.
         logger.warn(
@@ -214,6 +267,11 @@ export async function processNextJob(input: ProcessNextJobInput): Promise<boolea
       },
       createPose: (createInput) =>
         db.begin(async (tx) => {
+          // Verified and locked inside the finalize transaction: a lease that lapsed or was
+          // claimed by a drain can never end with a succeeded job pointing at deleted objects.
+          if (!(await objectDeletions.acquireFinalizeLease(tx, plannedKeys))) {
+            throw new ObjectLeaseLostError();
+          }
           const pose = await communityStore.createPose(createInput, tx);
           await input.jobStore.markSucceededWithPose(tx, job.id, lockToken, poseId);
           await objectDeletions.ackKeys(tx, plannedKeys);
@@ -227,6 +285,10 @@ export async function processNextJob(input: ProcessNextJobInput): Promise<boolea
   } catch (error) {
     if (error instanceof StaleLockError) {
       logger.warn({ jobId: job.id, error }, "stale lock during pose materialization; ignoring");
+      return true;
+    }
+    if (error instanceof ObjectLeaseLostError) {
+      await failWithReclaimedKeys("Object storage lease expired before the pose was finalized");
       return true;
     }
     if (isUniqueViolation(error)) {

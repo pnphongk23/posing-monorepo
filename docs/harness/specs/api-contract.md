@@ -549,6 +549,7 @@ Account khác không bị ảnh hưởng: mỗi bước đều scope theo `accou
 | BR-ACCOUNT-004 | Purge dở dang được resume bởi sweeper từ intent cũ hơn 5 phút. |
 | BR-ACCOUNT-005 | Sign-in bằng token còn hạn sau khi account đã xóa bị từ chối; tombstone không chứa PII và chỉ ghi khi purge commit. |
 | BR-ACCOUNT-006 | Log của luồng xóa không chứa object key; chỉ account id / job id và số lượng. |
+| BR-ACCOUNT-007 | Reservation object của pose đang tạo là lease: gia hạn trước/sau mỗi upload và được xác minh trong transaction finalize. Mất lease thì job không `succeeded` và key được đưa lại outbox. |
 
 **Errors:** `401 UNAUTHORIZED`, `503 AUTH_PENDING_VALIDATION` (thiếu service-role key,
 identity provider từ chối, hoặc purge row thất bại).
