@@ -64,6 +64,7 @@ components:
           format: uuid
           description: Stable UUID of the auto-created Pose when status is succeeded
         result:
+          description: Null once the owner job is materialized (poseId set); legacy owner-less admin jobs may still return the inline result
           oneOf:
             - type: "null"
             - type: object
@@ -527,9 +528,7 @@ paths:
                       jobId: 550e8400-e29b-41d4-a716-446655440000
                       status: succeeded
                       poseId: 550e8400-e29b-41d4-a716-446655440001
-                      result:
-                        imageBase64: "..."
-                        mimeType: "image/png"
+                      result: null
                       error: null
                 failed_provider_auth:
                   value:

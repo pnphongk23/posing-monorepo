@@ -275,7 +275,7 @@ caller không chọn provider.
 - **Owner-checked:** Trả về `404 NOT_FOUND` nếu job không tồn tại hoặc không thuộc về `ownerAccountId` của caller (tránh leak thông tin giữa các tài khoản).
 - OperationId `getExtractJob`.
 - **Response:** `200 OK`:
-  - `result` chỉ khi `status === "succeeded"`.
+  - `result` chỉ khi `status === "succeeded"` và job chưa materialize (`poseId === null`). Job đã materialize (owner job có `poseId`) trả `result: null`; client dùng `poseId`.
   - `poseId` (UUID) được trả về khi `status === "succeeded"` (trỏ tới `Pose` đã tự động tạo).
   - `error` (object `{ code, message }`) chỉ khi `status === "failed"`.
 
@@ -286,7 +286,7 @@ caller không chọn provider.
     "jobId": "<uuid>",
     "status": "queued | processing | succeeded | failed",
     "poseId": "<uuid-or-null>",
-    "result": { "imageBase64": "...", "mimeType": "image/png" },
+    "result": null,
     "error": { "code": "PROVIDER_ERROR", "message": "..." },
     "updatedAt": "2026-08-17T12:00:00.000Z"
   }

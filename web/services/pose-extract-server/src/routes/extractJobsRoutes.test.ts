@@ -120,7 +120,7 @@ describe("extractJobsRoutes", () => {
       id: "job-admin",
       status: "succeeded",
       ownerAccountId: null,
-      poseId: "pose-admin",
+      poseId: null,
       resultImageBase64: "cmVzdWx0",
       resultMimeType: "image/png"
     });
@@ -136,7 +136,7 @@ describe("extractJobsRoutes", () => {
       data: {
         jobId: "job-admin",
         status: "succeeded",
-        poseId: "pose-admin",
+        poseId: null,
         result: { imageBase64: "cmVzdWx0", mimeType: "image/png" },
         error: null,
         updatedAt: adminJob.updatedAt
@@ -227,10 +227,7 @@ describe("extractJobsRoutes", () => {
     expect(getById).toHaveBeenCalledWith("job-a");
   });
 
-  // Current route returns { imageBase64: null, mimeType: null } for a materialized job.
-  // The public contract requires result: null once poseId is set, so this test is marked
-  // as a known failure until the route is corrected.
-  it.fails("returns result null with poseId set for a materialized job", async () => {
+  it("returns result null with poseId set for a materialized job", async () => {
     const materialized = makeJob({ id: "job-materialized", status: "succeeded", poseId: "pose-789" });
     const { store } = createJobStore([materialized]);
     const app = buildApp({ jobStore: store });
@@ -248,6 +245,26 @@ describe("extractJobsRoutes", () => {
       error: null,
       updatedAt: materialized.updatedAt
     });
+  });
+
+  it("keeps the inline result for an owner-less legacy admin job", async () => {
+    const legacyJob = makeJob({
+      id: "job-legacy",
+      status: "succeeded",
+      ownerAccountId: null,
+      resultImageBase64: "bGVnYWN5",
+      resultMimeType: "image/png"
+    });
+    const { store } = createJobStore([legacyJob]);
+    const app = buildApp({ jobStore: store });
+
+    const res = await request(app)
+      .get("/api/extract-jobs/job-legacy")
+      .set("Authorization", `Bearer ${ADMIN_SECRET}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.poseId).toBeNull();
+    expect(res.body.data.result).toEqual({ imageBase64: "bGVnYWN5", mimeType: "image/png" });
   });
 
   it("returns failure details for an owner's failed job", async () => {

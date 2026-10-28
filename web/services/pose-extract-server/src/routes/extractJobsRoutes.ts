@@ -42,7 +42,7 @@ export function createExtractJobsRoutes(options: CreateExtractJobsRoutesOptions)
           status: job.status,
           poseId: job.poseId,
           result:
-            job.status === "succeeded"
+            job.status === "succeeded" && job.poseId === null
               ? { imageBase64: job.resultImageBase64, mimeType: job.resultMimeType }
               : null,
           error: job.status === "failed" ? { code: job.errorCode, message: job.errorMessage } : null,
