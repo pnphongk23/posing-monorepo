@@ -152,7 +152,10 @@ else
   FAILURES="unknown"
 fi
 
-if grep -q "TEST SUCCEEDED" "$TEST_LOG"; then TEST_RESULT="TEST SUCCEEDED"; else TEST_RESULT="TEST FAILED"; fi
+# Xcode 16+ prints "** TEST EXECUTE SUCCEEDED **"; older builds printed "** TEST SUCCEEDED **".
+# Matching only the latter reported every green run as TEST FAILED (executed>0, failures=0) and
+# exited 1, which is why the success marker is matched in both spellings.
+if grep -qE "TEST (EXECUTE )?SUCCEEDED" "$TEST_LOG"; then TEST_RESULT="TEST SUCCEEDED"; else TEST_RESULT="TEST FAILED"; fi
 
 echo "ios-verify: $TEST_RESULT · executed=$EXECUTED · failures=$FAILURES · simulator=$SIM_ID · log=$TEST_LOG"
 
