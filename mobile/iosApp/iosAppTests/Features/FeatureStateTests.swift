@@ -103,7 +103,7 @@ final class FeatureStateTests: XCTestCase {
         )
     }
 
-    @MainActor func testPoseHeroCardMetricsUseFullContentWidthAndPrototypeRatio() {
+    @MainActor func testPoseHeroCardMetricsUseFullContentWidthAndFillArtwork() {
         XCTAssertEqual(
             PoseDetailLayoutMetrics.heroCardWidth,
             UIScreen.main.bounds.width - 2 * PoseSurfaceMetrics.horizontalPadding,
@@ -114,10 +114,49 @@ final class FeatureStateTests: XCTestCase {
             PoseDetailLayoutMetrics.heroCardAspectRatio,
             accuracy: 0.0001
         )
+        // The photo owns the whole card: decoded at card width, bounded only by the tallest
+        // ratio the card can draw.
         XCTAssertEqual(
             PoseDetailLayoutMetrics.heroArtworkPoints.width,
-            PoseDetailLayoutMetrics.heroCardWidth - 2 * AIPoseSpacing.xl,
+            PoseDetailLayoutMetrics.heroCardWidth,
             accuracy: 0.5
+        )
+        XCTAssertEqual(
+            PoseDetailLayoutMetrics.heroArtworkPoints.height,
+            PoseDetailLayoutMetrics.heroArtworkPoints.width / PoseDetailLayoutMetrics.minimumDownsampleAspectRatio,
+            accuracy: 0.5
+        )
+    }
+
+    @MainActor func testPoseHeroAspectRatioFollowsCachedPhotoRatio() {
+        // Unloaded photo: prototype card, so the shimmer and the first frame agree.
+        XCTAssertEqual(
+            PoseDetailLayoutMetrics.heroAspectRatio(cachedPhotoRatio: nil),
+            PoseDetailLayoutMetrics.heroCardAspectRatio,
+            accuracy: 0.0001
+        )
+        // Degenerate cache entries never collapse the card.
+        XCTAssertEqual(
+            PoseDetailLayoutMetrics.heroAspectRatio(cachedPhotoRatio: 0),
+            PoseDetailLayoutMetrics.heroCardAspectRatio,
+            accuracy: 0.0001
+        )
+        XCTAssertEqual(
+            PoseDetailLayoutMetrics.heroAspectRatio(cachedPhotoRatio: .nan),
+            PoseDetailLayoutMetrics.heroCardAspectRatio,
+            accuracy: 0.0001
+        )
+        // Known photo: the card is exactly the photo's box — no letterbox, no inset.
+        let portrait: CGFloat = 3.0 / 4.0
+        let ratio = PoseDetailLayoutMetrics.heroAspectRatio(cachedPhotoRatio: portrait)
+        XCTAssertEqual(ratio, portrait, accuracy: 0.0001)
+        let cardHeight = PoseDetailLayoutMetrics.heroCardWidth / ratio
+        XCTAssertEqual(cardHeight, PoseDetailLayoutMetrics.heroCardWidth * 4.0 / 3.0, accuracy: 0.5)
+        // The decode box must cover the drawn box for every ratio the card can draw.
+        XCTAssertGreaterThanOrEqual(
+            PoseDetailLayoutMetrics.heroArtworkPoints.height,
+            cardHeight,
+            "hero artwork decode box must cover the drawn card height"
         )
     }
 

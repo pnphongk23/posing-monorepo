@@ -23,6 +23,34 @@ final class PoseDetailFeatureTests: XCTestCase {
         guard case .loaded(let poses) = model.state else { return XCTFail("Expected loaded") }
         XCTAssertTrue(poses[0].isSaved)
     }
+
+    @MainActor func testDetailHeroCardTakesCachedPhotoRatioWithNoLetterbox() {
+        let pose = sampleDetailPose
+        let cache = PoseAspectRatioCache.shared
+        cache.resetForTesting()
+        defer { cache.resetForTesting() }
+
+        // Cold open (deep link / Jobs / saved list before any decode): prototype card, and the
+        // shimmer is drawn at exactly that size.
+        XCTAssertEqual(
+            PoseDetailLayoutMetrics.heroAspectRatio(cachedPhotoRatio: cache.ratios[pose.id]),
+            PoseDetailLayoutMetrics.heroCardAspectRatio,
+            accuracy: 0.0001
+        )
+
+        // The decode the hero already performs settles the card on the photo's own box: the drawn
+        // card ratio equals the photo ratio, so no edge of the card is padding.
+        cache.updateRatio(width: 1200, height: 1600, for: pose.id)
+        let photoRatio = CGFloat(1200) / CGFloat(1600)
+        let heroRatio = PoseDetailLayoutMetrics.heroAspectRatio(cachedPhotoRatio: cache.ratios[pose.id])
+        XCTAssertEqual(heroRatio, photoRatio, accuracy: 0.0001)
+        XCTAssertEqual(cache.ratio(for: pose.id), photoRatio, accuracy: 0.0001)
+        XCTAssertEqual(
+            PoseDetailLayoutMetrics.heroCardWidth / heroRatio,
+            PoseDetailLayoutMetrics.heroCardWidth * 1600 / 1200,
+            accuracy: 0.5
+        )
+    }
 }
 
 private let sampleDetailPose = NativePose(

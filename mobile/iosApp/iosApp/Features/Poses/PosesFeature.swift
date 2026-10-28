@@ -875,11 +875,72 @@ enum PoseDetailLayoutMetrics {
         heroCardWidth / heroCardAspectRatio
     }
 
+    /// Tallest photo ratio the hero decodes at card width. Twice as tall as wide covers every
+    /// normal portrait; only panorama-tall photos are capped (and upscale slightly) so one pose
+    /// cannot force a multi-megapixel decode.
+    static let minimumDownsampleAspectRatio: CGFloat = 0.5
+
+    /// The photo fills the card, so it is decoded at the card's width and bounded in height by the
+    /// tallest ratio the card can draw.
     @MainActor static var heroArtworkPoints: CGSize {
-        return CGSize(
-            width: max(1, heroCardWidth - 2 * AIPoseSpacing.xl),
-            height: max(1, heroCardHeight - 2 * AIPoseSpacing.xl)
-        )
+        CGSize(width: heroCardWidth, height: heroCardWidth / minimumDownsampleAspectRatio)
+    }
+
+    /// Card ratio for the hero: the photo's own ratio when known, otherwise the prototype card.
+    /// One place for this rule so the card and its tests cannot disagree.
+    static func heroAspectRatio(cachedPhotoRatio: CGFloat?) -> CGFloat {
+        guard let ratio = cachedPhotoRatio, ratio.isFinite, ratio > 0 else {
+            return heroCardAspectRatio
+        }
+        return ratio
+    }
+}
+
+/// Loading state for the detail hero: a soft sweep over the card, still when Reduce Motion is on.
+private struct PoseHeroShimmer: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var sweep = false
+
+    var body: some View {
+        GeometryReader { proxy in
+            ZStack {
+                AIPoseColor.primary100
+                if !reduceMotion {
+                    LinearGradient(colors: [.clear, .white.opacity(0.55), .clear],
+                                   startPoint: .leading, endPoint: .trailing)
+                        .frame(width: proxy.size.width * 0.6)
+                        .offset(x: sweep ? proxy.size.width : -proxy.size.width)
+                }
+            }
+            .frame(width: proxy.size.width, height: proxy.size.height)
+            .clipped()
+        }
+        .onAppear {
+            guard !reduceMotion else { return }
+            withAnimation(.linear(duration: 1.2).repeatForever(autoreverses: false)) { sweep = true }
+        }
+        .accessibilityLabel("Loading pose photo")
+    }
+}
+
+/// The shimmer keeps sweeping only while a load is in flight; a failed load settles on the same
+/// stand-in glyph the grid uses instead of sweeping forever.
+private struct PoseHeroPlaceholder: View {
+    let didFail: Bool
+
+    var body: some View {
+        if didFail {
+            ZStack {
+                AIPoseColor.primary100
+                Image(systemName: "figure.stand")
+                    .font(.system(size: 72))
+                    .foregroundStyle(AIPoseColor.subtext)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .accessibilityLabel("Pose photo unavailable")
+        } else {
+            PoseHeroShimmer()
+        }
     }
 }
 
@@ -888,7 +949,10 @@ struct PoseDetailScreen: View {
     @ObservedObject var model: PosesViewModel
     var onTryPose: (NativePose) -> Void
     var isPrivate: Bool = false
+    @ObservedObject private var aspectRatioCache = PoseAspectRatioCache.shared
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isSaved: Bool
+    @State private var heroDidFail = false
     @State private var pendingSignIn: SignInIntent?
     /// Report §3.6 (`pose-detail.html` unavailable state): set only by the definitive
     /// `poseNotFound` signal from `PosesViewModel.confirmPublished` — a stale/deleted pose renders
@@ -979,33 +1043,41 @@ struct PoseDetailScreen: View {
         }
     }
 
-    /// Prototype `pose-detail.html` `.nb-card.nb-card--pose-detail` (card.css): full content-width white
-    /// card, `aspect-ratio: 1 / 1.1`, thick border, radius 14, no shadow, and artwork inset by 24pt.
-    /// The clear aspect-ratio surface fixes the card dimensions independently of the image's load state.
+    /// Hero card: the photo fills the bordered card edge to edge and the card takes the photo's own
+    /// aspect ratio, so there is no letterbox inside it. The ratio comes from the grid's cache (the
+    /// card the user tapped already decoded the same photo); until it is known, the prototype's
+    /// `1 / 1.1` is used, with a shimmer placeholder at that size, and the card resizes once the
+    /// photo loads.
     ///
-    /// The photo is loaded with Kingfisher through `AppImage` and downsampled to the drawn box
+    /// Client-only on purpose: a detail route opened without the cache (Jobs, saved list on a cold
+    /// start) settles its ratio from the decode it was going to do anyway, so the resize and the
+    /// photo's fade-in land in the same animated step — no server width/height field is worth a
+    /// contract change for that.
+    ///
+    /// The photo is loaded with Kingfisher through `AppImage` and downsampled to the drawn width
     /// (memory + disk cache, decode off the main thread); a full-resolution decode here would stall
     /// the pushed screen for ~20-40ms on every appearance.
     private var poseHeroCard: some View {
         let shape = RoundedRectangle(cornerRadius: Self.heroCardCornerRadius)
         return Color.clear
             .frame(maxWidth: .infinity)
-            .aspectRatio(PoseDetailLayoutMetrics.heroCardAspectRatio, contentMode: .fit)
+            .aspectRatio(heroAspectRatio, contentMode: .fit)
             .overlay {
                 KFImage(pose.imageURL)
                     .setProcessor(AppImage.downsample(points: PoseDetailLayoutMetrics.heroArtworkPoints, contentMode: .fit))
-                    .placeholder {
-                        ZStack {
-                            AIPoseColor.primary100
-                            Image(systemName: "figure.stand")
-                                .font(.system(size: 72))
-                        }
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .onSuccess { result in
+                        heroDidFail = false
+                        aspectRatioCache.updateRatio(
+                            width: result.image.size.width,
+                            height: result.image.size.height,
+                            for: pose.id
+                        )
                     }
+                    .onFailure { _ in heroDidFail = true }
+                    .placeholder { PoseHeroPlaceholder(didFail: heroDidFail) }
                     .resizable()
-                    .scaledToFit()
+                    .scaledToFill()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .padding(AIPoseSpacing.xl)
             }
             .clipShape(shape)
             .neoSurface(
@@ -1014,6 +1086,12 @@ struct PoseDetailScreen: View {
                 borderWidth: NeoChromeTokens.borderThick,
                 shadowOffset: 0
             )
+            // Reduce Motion: the one resize still happens, it just snaps instead of easing.
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: heroAspectRatio)
+    }
+
+    private var heroAspectRatio: CGFloat {
+        PoseDetailLayoutMetrics.heroAspectRatio(cachedPhotoRatio: aspectRatioCache.ratios[pose.id])
     }
 
     private static let heroCardCornerRadius: CGFloat = NeoChromeTokens.radiusLarge
