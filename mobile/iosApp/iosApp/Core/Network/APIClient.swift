@@ -146,16 +146,35 @@ struct APIClient: Sendable {
 
     /// Account deletion succeeds only on 204. Credential ownership stays with the caller so a
     /// failed delete cannot accidentally sign out the user.
-    func deleteAccount() async throws {
-        _ = try await performRequest(
-            path: "/api/account",
-            method: "DELETE",
-            query: [],
-            body: nil,
-            contentType: nil,
-            acceptedStatus: [204],
-            allowRefresh: false
-        )
+    ///
+    /// For an account that signs in with Apple the server answers `409 APPLE_REAUTH_REQUIRED` first;
+    /// the retry then carries the fresh authorization code, which the server trades for — and
+    /// revokes — the Apple grant. We never store an Apple token.
+    func deleteAccount(appleAuthorizationCode: String? = nil) async throws {
+        let body: Data?
+        if let appleAuthorizationCode {
+            body = try JSONEncoder().encode(AppleAccountDeletionRequest(appleAuthorizationCode: appleAuthorizationCode))
+        } else {
+            body = nil
+        }
+        do {
+            _ = try await performRequest(
+                path: "/api/account",
+                method: "DELETE",
+                query: [],
+                body: body,
+                contentType: body == nil ? nil : "application/json",
+                acceptedStatus: [204],
+                allowRefresh: false
+            )
+        } catch let error as PoseAPIError {
+            // A 409 here is a required second step, not a failure: surface it as its own type so the
+            // account model cannot mistake it for an error the user has to read.
+            if let challenge = AccountDeletionError(apiError: error) {
+                throw challenge
+            }
+            throw error
+        }
     }
 
     func exchangeSession(code: String) async throws {

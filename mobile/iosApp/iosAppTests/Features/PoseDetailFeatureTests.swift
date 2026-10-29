@@ -495,7 +495,7 @@ final class PoseDetailFeatureTests: XCTestCase {
             boundary: boundary,
             readAccount: { AccountSummary(id: "account-a", displayName: "A", createdAt: nil) },
             signInAction: SignInAction(start: {}),
-            deleteAccount: {}
+            deleteAccount: { _ in }
         )
         account.start()
         await waitUntil("signed in") { if case .signedIn = account.state { return true }; return false }

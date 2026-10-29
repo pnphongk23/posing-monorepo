@@ -6,7 +6,7 @@ import XCTest
 final class DeleteAccountTests: XCTestCase {
     func test204ClearsCredentialsAndReachesSignedOut() async {
         let storage = DeleteTestTokenStorage(credentials: deleteTestCredentials)
-        let model = makeModel(storage: storage, deleteAccount: {})
+        let model = makeModel(storage: storage, deleteAccount: { _ in })
         model.start()
         await waitUntil("signed in") { if case .signedIn = model.state { return true }; return false }
 
@@ -20,7 +20,7 @@ final class DeleteAccountTests: XCTestCase {
 
     func test401KeepsCredentialsSignedInAndSurfacesSignInAgain() async {
         let storage = DeleteTestTokenStorage(credentials: deleteTestCredentials)
-        let model = makeModel(storage: storage) {
+        let model = makeModel(storage: storage) { _ in
             throw PoseAPIError(code: "401", message: "Unauthorized")
         }
         model.start()
@@ -47,7 +47,7 @@ final class DeleteAccountTests: XCTestCase {
             session: makeDeleteMockSession(),
             boundary: SessionBoundary(tokenStorage: storage)
         )
-        let model = makeModel(storage: storage) {
+        let model = makeModel(storage: storage) { _ in
             do {
                 try await client.deleteAccount()
                 XCTFail("Expected account deletion to fail")
@@ -68,10 +68,153 @@ final class DeleteAccountTests: XCTestCase {
         XCTAssertEqual(model.deleteAccountError, "Account deletion is temporarily unavailable. Try again later.")
     }
 
+    func test409RunsTheAppleSheetOnceAndDeletesWithTheCode() async {
+        let storage = DeleteTestTokenStorage(credentials: deleteTestCredentials)
+        let calls = DeleteTestCodeLog()
+        let apple = DeleteTestCounter()
+        let model = makeModel(
+            storage: storage,
+            deleteAccount: { code in
+                calls.append(code)
+                if code == nil { throw AccountDeletionError.appleReauthRequired }
+            },
+            appleReauthorize: {
+                apple.increment()
+                return "apple-code-123"
+            }
+        )
+        model.start()
+        await waitUntil("signed in") { if case .signedIn = model.state { return true }; return false }
+
+        model.deleteAccount()
+        await waitUntil("signed out") { model.state == .signedOut }
+
+        XCTAssertEqual(apple.value, 1, "the Apple sheet runs exactly once")
+        XCTAssertEqual(calls.values, [nil, "apple-code-123"], "the retry carries the fresh code")
+        XCTAssertNil(storage.loadCredentials())
+        XCTAssertNil(model.deleteAccountError)
+    }
+
+    /// A cancelled sheet sends no second request, so the server was never asked to delete anything.
+    func testCancelledAppleSheetSendsOneRequestAndSaysNothingWasDeleted() async {
+        let storage = DeleteTestTokenStorage(credentials: deleteTestCredentials)
+        let calls = DeleteTestCodeLog()
+        let model = makeModel(
+            storage: storage,
+            deleteAccount: { code in
+                calls.append(code)
+                throw AccountDeletionError.appleReauthRequired
+            },
+            appleReauthorize: { throw CancellationError() }
+        )
+        model.start()
+        await waitUntil("signed in") { if case .signedIn = model.state { return true }; return false }
+
+        model.deleteAccount()
+        await waitUntil("delete failure") { model.deleteAccountError != nil }
+
+        XCTAssertEqual(calls.values, [nil], "exactly one request in total")
+        XCTAssertEqual(model.deleteAccountError, "Deletion cancelled. Your account was not deleted.")
+        XCTAssertNotNil(storage.loadCredentials())
+        XCTAssertEqual(model.state, .signedIn(deleteTestAccount))
+        XCTAssertFalse(model.isDeletingAccount)
+    }
+
+    /// The handshake allows one Apple confirmation. A second 409 is terminal for this attempt.
+    func testSecond409IssuesNoThirdRequestAndSaysCouldNotConfirm() async {
+        let storage = DeleteTestTokenStorage(credentials: deleteTestCredentials)
+        let calls = DeleteTestCodeLog()
+        let apple = DeleteTestCounter()
+        let model = makeModel(
+            storage: storage,
+            deleteAccount: { code in
+                calls.append(code)
+                throw AccountDeletionError.appleReauthRequired
+            },
+            appleReauthorize: {
+                apple.increment()
+                return "apple-code-123"
+            }
+        )
+        model.start()
+        await waitUntil("signed in") { if case .signedIn = model.state { return true }; return false }
+
+        model.deleteAccount()
+        await waitUntil("delete failure") { model.deleteAccountError != nil }
+
+        XCTAssertEqual(calls.values, [nil, "apple-code-123"], "no third request")
+        XCTAssertEqual(apple.value, 1, "no second Apple sheet")
+        XCTAssertEqual(model.deleteAccountError, "Couldn't confirm with Apple. Try again.")
+        XCTAssertNotNil(storage.loadCredentials())
+    }
+
+    func testAppleIdentityMismatchSurfacesItsOwnCopyAndKeepsTheSession() async {
+        let storage = DeleteTestTokenStorage(credentials: deleteTestCredentials)
+        let calls = DeleteTestCodeLog()
+        let model = makeModel(
+            storage: storage,
+            deleteAccount: { code in
+                calls.append(code)
+                throw AccountDeletionError.appleIdentityMismatch
+            }
+        )
+        model.start()
+        await waitUntil("signed in") { if case .signedIn = model.state { return true }; return false }
+
+        model.deleteAccount()
+        await waitUntil("delete failure") { model.deleteAccountError != nil }
+
+        XCTAssertEqual(calls.values, [nil])
+        XCTAssertEqual(model.deleteAccountError, "That Apple ID doesn't match this account. Try again.")
+        XCTAssertNotNil(storage.loadCredentials())
+    }
+
+    /// A google/email account is deleted by the first request; the Apple sheet never opens.
+    func testNonAppleAccountDeletesOnTheFirstRequestWithoutApple() async {
+        let storage = DeleteTestTokenStorage(credentials: deleteTestCredentials)
+        let calls = DeleteTestCodeLog()
+        let apple = DeleteTestCounter()
+        let model = makeModel(
+            storage: storage,
+            deleteAccount: { code in calls.append(code) },
+            appleReauthorize: {
+                apple.increment()
+                return "apple-code-123"
+            }
+        )
+        model.start()
+        await waitUntil("signed in") { if case .signedIn = model.state { return true }; return false }
+
+        model.deleteAccount()
+        await waitUntil("signed out") { model.state == .signedOut }
+
+        XCTAssertEqual(calls.values, [nil], "one request, no code")
+        XCTAssertEqual(apple.value, 0, "no Apple call for a non-Apple account")
+        XCTAssertNil(storage.loadCredentials())
+    }
+
+    func testAppleSheetFailureKeepsTheAccountAndSaysRetry() async {
+        let storage = DeleteTestTokenStorage(credentials: deleteTestCredentials)
+        let model = makeModel(
+            storage: storage,
+            deleteAccount: { _ in throw AccountDeletionError.appleReauthRequired },
+            appleReauthorize: { throw AppleReauthorizationError(message: "Apple did not return an authorization code.") }
+        )
+        model.start()
+        await waitUntil("signed in") { if case .signedIn = model.state { return true }; return false }
+
+        model.deleteAccount()
+        await waitUntil("delete failure") { model.deleteAccountError != nil }
+
+        XCTAssertEqual(model.deleteAccountError, "Couldn't confirm with Apple. Try again.")
+        XCTAssertNotNil(storage.loadCredentials())
+        XCTAssertEqual(model.state, .signedIn(deleteTestAccount))
+    }
+
     func testDoubleConfirmIssuesExactlyOneRequest() async {
         let storage = DeleteTestTokenStorage(credentials: deleteTestCredentials)
         let calls = DeleteTestCounter()
-        let model = makeModel(storage: storage) {
+        let model = makeModel(storage: storage) { _ in
             calls.increment()
             try await Task.sleep(nanoseconds: 50_000_000)
         }
@@ -106,7 +249,7 @@ final class DeleteAccountTests: XCTestCase {
         coordinator.start()
         await waitUntil("the store identity is linked") { purchases.linkedAccountID == deleteTestAccount.id }
 
-        let model = makeModel(storage: storage, boundary: boundary, deleteAccount: {})
+        let model = makeModel(storage: storage, boundary: boundary, deleteAccount: { _ in })
         model.start()
         await waitUntil("signed in") { if case .signedIn = model.state { return true }; return false }
         let seeded = try await temp.savedRowCount()
@@ -157,7 +300,7 @@ final class DeleteAccountTests: XCTestCase {
         coordinator.start()
         await waitUntil("the store identity is linked") { purchases.linkedAccountID == deleteTestAccount.id }
 
-        let model = makeModel(storage: storage, boundary: boundary) {
+        let model = makeModel(storage: storage, boundary: boundary) { _ in
             throw PoseAPIError(code: "503", message: "Account deletion is pending runtime validation")
         }
         model.start()
@@ -187,13 +330,15 @@ final class DeleteAccountTests: XCTestCase {
     private func makeModel(
         storage: DeleteTestTokenStorage,
         boundary sharedBoundary: SessionBoundary? = nil,
-        deleteAccount: @escaping AccountSessionModel.AccountDeleter
+        deleteAccount: @escaping AccountSessionModel.AccountDeleter,
+        appleReauthorize: @escaping AccountSessionModel.AppleReauthorizer = { "unused-apple-code" }
     ) -> AccountSessionModel {
         AccountSessionModel(
             boundary: sharedBoundary ?? SessionBoundary(tokenStorage: storage),
             readAccount: { deleteTestAccount },
             signInAction: SignInAction(start: {}),
-            deleteAccount: deleteAccount
+            deleteAccount: deleteAccount,
+            appleReauthorize: appleReauthorize
         )
     }
 
@@ -272,6 +417,16 @@ private final class DeleteTestTokenStorage: TokenStoring, @unchecked Sendable {
     func saveCredentials(_ credentials: SessionCredentials) { self.credentials = credentials }
     func loadCredentials() -> SessionCredentials? { credentials }
     func clearCredentials() { credentials = nil }
+}
+
+/// Records the authorization code of every delete request, in order, so the handshake is observable.
+private final class DeleteTestCodeLog: @unchecked Sendable {
+    private let lock = NSLock()
+    private var recorded: [String?] = []
+
+    func append(_ code: String?) { lock.lock(); recorded.append(code); lock.unlock() }
+
+    var values: [String?] { lock.lock(); defer { lock.unlock() }; return recorded }
 }
 
 private final class DeleteTestCounter: @unchecked Sendable {

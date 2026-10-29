@@ -96,8 +96,10 @@ struct PoseAPIService: Sendable {
         return try client.decode(AccountSummaryResponse.self, from: data).data
     }
 
-    func deleteAccount() async throws {
-        try await client.deleteAccount()
+    /// `appleAuthorizationCode` is non-nil only on the retry that follows the server's
+    /// `409 APPLE_REAUTH_REQUIRED`: the server trades it for the Apple grant and revokes it.
+    func deleteAccount(appleAuthorizationCode: String? = nil) async throws {
+        try await client.deleteAccount(appleAuthorizationCode: appleAuthorizationCode)
     }
 
     func getSavedPoses(page: Int = 1, limit: Int = 20) async throws -> PaginatedResult<CommunityPose> {

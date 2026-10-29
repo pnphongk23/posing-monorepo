@@ -9,7 +9,10 @@ import Foundation
 @MainActor
 final class AccountSessionModel: ObservableObject, SessionScoped {
     typealias AccountReader = () async throws -> AccountSummary
-    typealias AccountDeleter = () async throws -> Void
+    /// The Apple authorization code, non-nil only on the retry that follows the server's 409.
+    typealias AccountDeleter = (String?) async throws -> Void
+    /// Runs the Apple sheet and returns a fresh authorization code, or throws `CancellationError`.
+    typealias AppleReauthorizer = () async throws -> String
 
     enum State: Equatable {
         case loading
@@ -35,6 +38,7 @@ final class AccountSessionModel: ObservableObject, SessionScoped {
     private let readAccount: AccountReader
     private let signInAction: SignInAction
     private let deleteAccountRequest: AccountDeleter
+    private let reauthorizeWithApple: AppleReauthorizer
     private let scope: SessionScope
     /// Read-only here: `SessionBoundary` is the only writer of the install's sign-in history.
     private let signInHistory: SignInHistoryRecording
@@ -49,7 +53,10 @@ final class AccountSessionModel: ObservableObject, SessionScoped {
         },
         signInAction: SignInAction = SignInAction(),
         deleteAccount: @escaping AccountDeleter = {
-            try await ServiceLocator.makePoseAPIService().deleteAccount()
+            try await ServiceLocator.makePoseAPIService().deleteAccount(appleAuthorizationCode: $0)
+        },
+        appleReauthorize: @escaping AppleReauthorizer = {
+            try await AppleReauthorizationAction().authorizationCode()
         },
         signInHistory: SignInHistoryRecording = UserDefaultsSignInHistory.shared
     ) {
@@ -57,6 +64,7 @@ final class AccountSessionModel: ObservableObject, SessionScoped {
         self.readAccount = readAccount
         self.signInAction = signInAction
         self.deleteAccountRequest = deleteAccount
+        self.reauthorizeWithApple = appleReauthorize
         self.signInHistory = signInHistory
         self.scope = SessionScope.of(boundary)
         scope.adopt(self)
@@ -134,6 +142,11 @@ final class AccountSessionModel: ObservableObject, SessionScoped {
 
     /// Deletes remotely first. Only the API client's accepted 204 path reaches `signOut()`, which
     /// emits the existing session event for app-scope cache and RevenueCat cleanup.
+    ///
+    /// An account that signs in with Apple is a two-step handshake: the server refuses to touch
+    /// anything until it has a fresh Apple authorization code (guideline 5.1.1(v) revocation). We
+    /// ask Apple exactly once; a second refusal is reported as a failure, and a cancelled sheet
+    /// sends no second request at all, so the account is provably untouched.
     func deleteAccount() {
         guard !isDeletingAccount else { return }
         isDeletingAccount = true
@@ -141,15 +154,48 @@ final class AccountSessionModel: ObservableObject, SessionScoped {
         Task { [weak self] in
             guard let self else { return }
             do {
-                try await self.deleteAccountRequest()
-                await self.boundary.signOut()
-                self.isDeletingAccount = false
-                self.state = .signedOut
+                try await self.deleteAccountRequest(nil)
+                await self.finishDeletion()
+            } catch AccountDeletionError.appleReauthRequired {
+                await self.confirmWithAppleThenDelete()
             } catch {
-                self.isDeletingAccount = false
-                self.deleteAccountError = Self.deleteAccountMessage(for: error)
+                self.finishFailedDeletion(error)
             }
         }
+    }
+
+    private func confirmWithAppleThenDelete() async {
+        let code: String
+        do {
+            code = try await reauthorizeWithApple()
+        } catch is CancellationError {
+            // Nothing was sent after the sheet closed, so the account was never touched.
+            isDeletingAccount = false
+            deleteAccountError = AccountStateCopy.deleteAccountCancelledMessage
+            return
+        } catch {
+            isDeletingAccount = false
+            deleteAccountError = AccountStateCopy.deleteAccountAppleConfirmationFailedMessage
+            return
+        }
+
+        do {
+            try await deleteAccountRequest(code)
+            await finishDeletion()
+        } catch {
+            finishFailedDeletion(error)
+        }
+    }
+
+    private func finishDeletion() async {
+        await boundary.signOut()
+        isDeletingAccount = false
+        state = .signedOut
+    }
+
+    private func finishFailedDeletion(_ error: Error) {
+        isDeletingAccount = false
+        deleteAccountError = Self.deleteAccountMessage(for: error)
     }
 
     // MARK: - session changes
@@ -192,6 +238,18 @@ final class AccountSessionModel: ObservableObject, SessionScoped {
             if ["503", "AUTH_PENDING_VALIDATION"].contains(apiError.code) {
                 return "Account deletion is temporarily unavailable. Try again later."
             }
+        }
+        switch error as? AccountDeletionError {
+        case .appleIdentityMismatch:
+            return AccountStateCopy.deleteAccountAppleIdentityMismatchMessage
+        case .appleReauthRequired:
+            // The handshake sends the code once; a second refusal is terminal for this attempt.
+            return AccountStateCopy.deleteAccountAppleConfirmationFailedMessage
+        case nil:
+            break
+        }
+        if error is AppleReauthorizationError {
+            return AccountStateCopy.deleteAccountAppleConfirmationFailedMessage
         }
         return ErrorCopy.text(for: error) ?? "Account deletion could not be completed."
     }

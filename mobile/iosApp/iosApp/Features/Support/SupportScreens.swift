@@ -58,6 +58,12 @@ enum AccountStateCopy {
     static let neverSignedInMessage = "Sign in to save poses."
     static let deleteAccountConfirmationTitle = "Delete account?"
     static let deleteAccountConfirmationMessage = "This cannot be undone and your data cannot be recovered."
+    /// The Apple sheet was closed: nothing was sent after it, so the account is still there.
+    static let deleteAccountCancelledMessage = "Deletion cancelled. Your account was not deleted."
+    /// Apple refused the code twice, or the sheet failed. One retry is all the handshake allows.
+    static let deleteAccountAppleConfirmationFailedMessage = "Couldn't confirm with Apple. Try again."
+    /// The code came from a different Apple ID than the one this account signs in with.
+    static let deleteAccountAppleIdentityMismatchMessage = "That Apple ID doesn't match this account. Try again."
 
     /// Which register the sign-in card (and its email sheet) speaks. Pure input → output so the
     /// never-signed-in case is testable without a screen: the only input is the install's

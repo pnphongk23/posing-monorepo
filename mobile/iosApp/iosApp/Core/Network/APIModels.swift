@@ -262,3 +262,9 @@ struct AppleSignInResponse: Codable, Sendable {
     let refreshToken: String
     let account: AccountSummary
 }
+
+/// The optional `DELETE /api/account` body. Only sent for an account that signs in with Apple, and
+/// only after the server asked for it with `409 APPLE_REAUTH_REQUIRED`.
+struct AppleAccountDeletionRequest: Codable, Sendable {
+    let appleAuthorizationCode: String
+}

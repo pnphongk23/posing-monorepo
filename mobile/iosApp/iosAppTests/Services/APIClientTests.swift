@@ -161,6 +161,62 @@ final class APIClientTests: XCTestCase {
         XCTAssertEqual(storage.loadCredentials()?.refreshToken, "apple-refresh")
     }
 
+    func testDeleteAccountSendsTheAppleAuthorizationCodeAsAJSONBody() async throws {
+        var capturedRequest: URLRequest?
+        MockURLProtocol.requestHandler = { request in
+            capturedRequest = request
+            return (HTTPURLResponse(url: request.url!, statusCode: 204, httpVersion: nil, headerFields: nil)!, Data())
+        }
+        let client = APIClient(baseURL: "https://test.server", session: makeMockSession(), boundary: SessionBoundary(tokenStorage: InMemoryTokenStorage()))
+
+        try await client.deleteAccount(appleAuthorizationCode: "apple-code-123")
+
+        let request = try XCTUnwrap(capturedRequest)
+        XCTAssertEqual(request.httpMethod, "DELETE")
+        XCTAssertEqual(request.url?.path, "/api/account")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Content-Type"), "application/json")
+        let json = try XCTUnwrap(try JSONSerialization.jsonObject(with: try XCTUnwrap(request.bodyData)) as? [String: String])
+        XCTAssertEqual(json, ["appleAuthorizationCode": "apple-code-123"])
+    }
+
+    func testDeleteAccountWithoutACodeSendsNoBody() async throws {
+        var capturedRequest: URLRequest?
+        MockURLProtocol.requestHandler = { request in
+            capturedRequest = request
+            return (HTTPURLResponse(url: request.url!, statusCode: 204, httpVersion: nil, headerFields: nil)!, Data())
+        }
+        let client = APIClient(baseURL: "https://test.server", session: makeMockSession(), boundary: SessionBoundary(tokenStorage: InMemoryTokenStorage()))
+
+        try await client.deleteAccount()
+
+        let request = try XCTUnwrap(capturedRequest)
+        XCTAssertNil(request.httpBody)
+        XCTAssertNil(request.bodyData)
+        XCTAssertNil(request.value(forHTTPHeaderField: "Content-Type"))
+    }
+
+    func testDeleteAccountMapsThe409HandshakeToTypedErrors() async {
+        let client = APIClient(baseURL: "https://test.server", session: makeMockSession(), boundary: SessionBoundary(tokenStorage: InMemoryTokenStorage()))
+
+        for (code, expected) in [
+            ("APPLE_REAUTH_REQUIRED", AccountDeletionError.appleReauthRequired),
+            ("APPLE_IDENTITY_MISMATCH", AccountDeletionError.appleIdentityMismatch),
+        ] {
+            MockURLProtocol.requestHandler = { request in
+                let body = #"{"error":{"code":"\#(code)","message":"needs Apple"}}"#
+                return (HTTPURLResponse(url: request.url!, statusCode: 409, httpVersion: nil, headerFields: nil)!, Data(body.utf8))
+            }
+            do {
+                try await client.deleteAccount()
+                XCTFail("Expected a 409 challenge for \(code)")
+            } catch let error as AccountDeletionError {
+                XCTAssertEqual(error, expected)
+            } catch {
+                XCTFail("Unexpected error for \(code): \(error)")
+            }
+        }
+    }
+
     func testDeleteAccountAccepts204AndRejectsAnythingElse() async throws {
         MockURLProtocol.requestHandler = { request in
             (HTTPURLResponse(url: request.url!, statusCode: 204, httpVersion: nil, headerFields: nil)!, Data())
