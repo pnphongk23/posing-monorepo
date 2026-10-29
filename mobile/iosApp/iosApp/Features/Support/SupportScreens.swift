@@ -108,7 +108,9 @@ struct AccountScreen: View {
             // its content with the platform's own button chrome, which turns that surface into a
             // heavy black box. `NeoSubscreenHeader` is what every other sub-screen already uses.
             NeoSubscreenHeader(title: "Account", onBack: { dismiss() }) {
-                if case .signedIn = model.state {
+                // No sign-out while a deletion is in flight: switching accounts mid-deletion would let a
+                // reply land on the next session. See `AccountSessionModel.isSignOutAvailable`.
+                if model.isSignOutAvailable {
                     NeoCompactActionButton(
                         systemImage: "rectangle.portrait.and.arrow.right",
                         accessibilityLabel: "Sign out",

@@ -34,6 +34,14 @@ final class AccountSessionModel: ObservableObject, SessionScoped {
     @Published private(set) var isDeletingAccount = false
     @Published private(set) var deleteAccountError: String?
 
+    /// Sign-out is the account-switching affordance on this screen. It is unavailable while a deletion
+    /// is in flight: switching identity mid-deletion is how a reply lands on the next account (its
+    /// local data wiped, or — worse — its identity deleted by A's Apple confirmation).
+    var isSignOutAvailable: Bool {
+        guard case .signedIn = state else { return false }
+        return !isDeletingAccount
+    }
+
     private let boundary: SessionBoundary
     private let readAccount: AccountReader
     private let signInAction: SignInAction
@@ -131,6 +139,8 @@ final class AccountSessionModel: ObservableObject, SessionScoped {
     }
 
     func signOut() {
+        // The deletion owns the session until it settles; see `isSignOutAvailable`.
+        guard !isDeletingAccount else { return }
         let request = beginRefresh()
         Task { [weak self] in
             guard let self else { return }
@@ -147,55 +157,81 @@ final class AccountSessionModel: ObservableObject, SessionScoped {
     /// anything until it has a fresh Apple authorization code (guideline 5.1.1(v) revocation). We
     /// ask Apple exactly once; a second refusal is reported as a failure, and a cancelled sheet
     /// sends no second request at all, so the account is provably untouched.
+    ///
+    /// The whole attempt is bound to one `SessionTicket`: if the session moves under it (the user
+    /// signs out, or another account signs in during the Apple sheet) the reply is dropped instead of
+    /// signing out — and wiping the local data of — whoever is signed in now.
     func deleteAccount() {
         guard !isDeletingAccount else { return }
         isDeletingAccount = true
         deleteAccountError = nil
         Task { [weak self] in
             guard let self else { return }
+            let ticket = await self.scope.beginRequest()
             do {
                 try await self.deleteAccountRequest(nil)
-                await self.finishDeletion()
+                await self.finishDeletion(ticket)
             } catch AccountDeletionError.appleReauthRequired {
-                await self.confirmWithAppleThenDelete()
+                await self.confirmWithAppleThenDelete(ticket)
             } catch {
-                self.finishFailedDeletion(error)
+                await self.finishFailedDeletion(error, ticket: ticket)
             }
         }
     }
 
-    private func confirmWithAppleThenDelete() async {
+    private func confirmWithAppleThenDelete(_ ticket: SessionTicket) async {
+        guard await scope.isValid(ticket) else { return abandonDeletion() }
+
         let code: String
         do {
             code = try await reauthorizeWithApple()
         } catch is CancellationError {
             // Nothing was sent after the sheet closed, so the account was never touched.
+            guard await scope.isValid(ticket) else { return abandonDeletion() }
             isDeletingAccount = false
             deleteAccountError = AccountStateCopy.deleteAccountCancelledMessage
             return
         } catch {
+            guard await scope.isValid(ticket) else { return abandonDeletion() }
             isDeletingAccount = false
             deleteAccountError = AccountStateCopy.deleteAccountAppleConfirmationFailedMessage
             return
         }
 
+        // The sheet is the one long gap in this flow and it can hand the device to another account:
+        // the confirmation must never be sent on a session that is no longer the one that started it.
+        guard await scope.isValid(ticket) else { return abandonDeletion() }
+
         do {
             try await deleteAccountRequest(code)
-            await finishDeletion()
+            await finishDeletion(ticket)
         } catch {
-            finishFailedDeletion(error)
+            await finishFailedDeletion(error, ticket: ticket)
         }
     }
 
-    private func finishDeletion() async {
+    private func finishDeletion(_ ticket: SessionTicket) async {
+        // Local cleanup and `boundary.signOut()` are destructive to whoever is signed in *now*, so they
+        // are only allowed while this attempt still belongs to the current session.
+        guard await scope.isValid(ticket) else { return abandonDeletion() }
         await boundary.signOut()
         isDeletingAccount = false
         state = .signedOut
     }
 
-    private func finishFailedDeletion(_ error: Error) {
+    private func finishFailedDeletion(_ error: Error, ticket: SessionTicket? = nil) async {
+        if let ticket {
+            guard await scope.isValid(ticket) else { return abandonDeletion() }
+        }
         isDeletingAccount = false
         deleteAccountError = Self.deleteAccountMessage(for: error)
+    }
+
+    /// The session moved under the deletion, so the attempt is dropped without a trace: no sign-out, no
+    /// local reset, and no error on the screen of the person who is signed in now.
+    private func abandonDeletion() {
+        isDeletingAccount = false
+        deleteAccountError = nil
     }
 
     // MARK: - session changes
