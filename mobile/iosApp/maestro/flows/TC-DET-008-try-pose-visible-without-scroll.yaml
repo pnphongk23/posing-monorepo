@@ -1,0 +1,17 @@
+# TC-DET-008 Use this pose is on screen as soon as the detail opens, no scrolling
+appId: ${APP_ID}
+tags: [TC-DET-008, p0]
+---
+- runFlow: ../subflows/launch.yaml
+- extendedWaitUntil:
+    visible:
+      id: "poses.first-card"
+    timeout: 30000
+- tapOn:
+    id: "poses.first-card"
+- extendedWaitUntil:
+    visible:
+      id: "poseDetail.back"
+    timeout: 10000
+- assertVisible:
+    id: "poseDetail.use"

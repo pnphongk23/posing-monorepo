@@ -17,7 +17,7 @@ Prefer accessibility ids (`poses.first-card`, `search.field`, `gallery.empty.ope
 ## Identifier requests (ledger: QA-261029-ID)
 Landed in f8a49cc and used by the flows: `poseDetail.use`, `poseDetail.back`, `dock.camera`, `camera.shutter`, `gallery.empty.openCameraButton`, `poses.open-settings`, `about.close`.
 
-Still requested (flows keep a `TODO(QA-261029-ID)` text selector): `dock.gallery`, `settings.privacy.section`, `settings.replayOnboarding`, `settings.about`; paywall CTA, close and sign-in prompt; the camera guide overlay (or its toggle) so TC-CAM-001 can prove the guide is drawn; a capture seam on the simulator (fixture image) for TC-GAL-002 and TC-PAY-001.
+Still requested (flows keep a `TODO(QA-261029-ID)` text selector): `camera.close`, `camera.poseGuide` (TC-CAM-007), `poseDetail.title` (same-pose identity in TC-DET-007); `dock.gallery`, `settings.privacy.section`, `settings.replayOnboarding`, `settings.about`; paywall CTA, close and sign-in prompt; the camera guide overlay (or its toggle) so TC-CAM-001 can prove the guide is drawn; a capture seam on the simulator (fixture image) for TC-GAL-002 and TC-PAY-001.
 
 ## Traceability (case → flow → status)
 
@@ -47,8 +47,10 @@ Still requested (flows keep a `TODO(QA-261029-ID)` text selector): `dock.gallery
 | TC-CAM-004 | P0 | automated — `flows/TC-CAM-004-grid-and-picker.yaml` |
 | TC-CAM-005 | P1 | manual |
 | TC-CAM-006 | P1 | manual |
-| TC-CAM-007 | P1 | manual |
+| TC-CAM-007 | P1 | pending: guide overlay has no id (`camera.poseGuide`) |
 | TC-CAM-008 | P2 | manual |
+| TC-CAM-009 | P0 | automated — `flows/TC-CAM-009-camera-from-home-closes-to-home.yaml` |
+| TC-CAM-010 | P1 | manual |
 | TC-GAL-001 | P0 | automated — `flows/TC-GAL-001-empty-gallery.yaml` |
 | TC-GAL-002 | P0 | manual (device) |
 | TC-GAL-003 | P1 | manual |
@@ -69,6 +71,9 @@ Still requested (flows keep a `TODO(QA-261029-ID)` text selector): `dock.gallery
 | TC-DET-003 | P1 | manual |
 | TC-DET-005 | P1 | pending (needs signed-in seam) |
 | TC-DET-006 | P1 | manual |
+| TC-DET-007 | P0 | automated — `flows/TC-DET-007-camera-back-returns-to-detail.yaml` |
+| TC-DET-008 | P0 | automated — `flows/TC-DET-008-try-pose-visible-without-scroll.yaml` |
+| TC-DET-009 | P1 | manual |
 | TC-SAV-001 | P0 | automated — `flows/TC-SAV-001-saved-signed-out.yaml` |
 | TC-SAV-002 | P1 | pending |
 | TC-SAV-003 | P1 | pending |

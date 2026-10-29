@@ -1,0 +1,22 @@
+# TC-DET-007 Use this pose then closing the camera returns to the same pose detail
+appId: ${APP_ID}
+tags: [TC-DET-007, p0]
+---
+- runFlow: ../subflows/launch.yaml
+- runFlow: ../subflows/open-first-pose.yaml
+- tapOn:
+    id: "poseDetail.use"
+- extendedWaitUntil:
+    visible:
+      id: "camera.shutter"
+    timeout: 20000
+# TODO(QA-261029-ID): camera close button has no id (label "Close camera")
+- tapOn: "Close camera"
+- extendedWaitUntil:
+    visible:
+      id: "poseDetail.use"
+    timeout: 10000
+- assertVisible:
+    id: "poseDetail.back"
+- assertNotVisible:
+    id: "poses.open-search"
