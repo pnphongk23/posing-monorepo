@@ -824,6 +824,13 @@ struct PosesScreen: View {
     /// Lets `AppFeatureRoot` hide the dock's active pill while the Search overlay is up: Search is
     /// not a tab, and `reference/search-blank.png` shows both dock items plain grey.
     var onSearchVisibilityChange: (Bool) -> Void = { _ in }
+    /// BUG-261029-05: the camera is a tab, so closing it rebuilt this screen from its root and the
+    /// pose detail the user came from was gone. The app root hands the detail back here, and the
+    /// rebuilt stack pushes it once.
+    var resumePose: NativePose?
+    /// Fired when the handed-back detail was taken. One-shot: a later visit to this tab must not
+    /// silently re-open the pose.
+    var onResumeHandled: () -> Void = {}
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
     /// The Search workspace is presented **in place** instead of being pushed on the stack.
@@ -837,6 +844,8 @@ struct PosesScreen: View {
     @State private var showsSearch = false
     @State private var pendingSignIn: SignInIntent?
     @State private var route: PosesRoute?
+    /// The pose detail being restored after a camera visit; `nil` whenever nothing has to be re-pushed.
+    @State private var resumedPose: NativePose?
 
     var body: some View {
         ZStack {
@@ -861,6 +870,13 @@ struct PosesScreen: View {
             session.start()
             if case .idle = model.state { await model.load() }
             await jobsService.refresh()
+        }
+        // Seed the restore target once this rebuilt root is on screen: the push itself is the hidden
+        // `NavigationLink` below, the same mechanism the Add pose / Jobs routes already use here.
+        .onAppear {
+            guard resumedPose == nil, let resumePose else { return }
+            resumedPose = resumePose
+            onResumeHandled()
         }
         .onChange(of: model.filter) { _ in Task { await model.load() } }
         .onChange(of: scenePhase) { newPhase in
@@ -931,6 +947,23 @@ struct PosesScreen: View {
                     EmptyView()
                 }
                 .hidden()
+
+                // The detail the camera was closed on top of. Popping it clears the state, so this
+                // link disappears with it and nothing else in this session re-pushes the pose.
+                if let resumedPose {
+                    NavigationLink(
+                        destination: PoseDetailScreen(pose: resumedPose, model: model, onTryPose: onTryPose),
+                        isActive: Binding(
+                            get: { self.resumedPose != nil },
+                            set: { isPresented in
+                                if !isPresented { self.resumedPose = nil }
+                            }
+                        )
+                    ) {
+                        EmptyView()
+                    }
+                    .hidden()
+                }
             }
         )
     }
@@ -1453,29 +1486,55 @@ struct PoseDetailScreen: View {
                     ForEach(Array(pose.instructions.enumerated()), id: \.offset) { index, step in
                         Label("\(index + 1). \(step)", systemImage: "sparkles")
                     }
-                    HStack(spacing: AIPoseSpacing.md) {
-                        if !isPrivate && AppConfig.shared.isAccountFeatureEnabled {
-                            Button { Task { await toggleBookmark() } } label: {
-                                Label(isSaved ? "Saved" : "Save pose", systemImage: isSaved ? "bookmark.fill" : "bookmark")
-                            }
-                            .buttonStyle(NeoButtonStyle(fill: isSaved ? AIPoseColor.accentYellow : AIPoseColor.surface))
-                            // No bookmark service: nothing could confirm the save, so the control is
-                            // inert rather than silently lying about the pose's saved state. A pose the
-                            // server answered 404 for is inert for the same reason: a retry cannot work.
-                            .disabled(isSaving || model.bookmarkService == nil || !model.canSave(pose))
-                            .accessibilityIdentifier("poseDetail.saveButton")
-                            .accessibilityHint(bookmarkUnavailableHint)
+                    if !isPrivate && AppConfig.shared.isAccountFeatureEnabled {
+                        Button { Task { await toggleBookmark() } } label: {
+                            Label(isSaved ? "Saved" : "Save pose", systemImage: isSaved ? "bookmark.fill" : "bookmark")
                         }
-                          Button {
-                              routeTryPoseToCamera(pose, onTryPose: onTryPose)
-                          } label: {
-                              Label("Use this pose", systemImage: "camera")
-                          }
-                          .buttonStyle(NeoButtonStyle())
-                          .accessibilityIdentifier("poseDetail.use")
+                        .buttonStyle(NeoButtonStyle(fill: isSaved ? AIPoseColor.accentYellow : AIPoseColor.surface))
+                        // No bookmark service: nothing could confirm the save, so the control is
+                        // inert rather than silently lying about the pose's saved state. A pose the
+                        // server answered 404 for is inert for the same reason: a retry cannot work.
+                        .disabled(isSaving || model.bookmarkService == nil || !model.canSave(pose))
+                        .accessibilityIdentifier("poseDetail.saveButton")
+                        .accessibilityHint(bookmarkUnavailableHint)
                     }
                 }.padding()
             }
+            // BUG-261029-06: the CTA is pinned below the content instead of living at the end of it.
+            .safeAreaInset(edge: .bottom, spacing: 0) { usePoseBar }
+        }
+    }
+
+    /// The always-visible primary action (`poseDetail.use`).
+    ///
+    /// `.safeAreaInset` is what makes this correct on every device instead of a fixed height pinned
+    /// over the content: the bar is placed above the home indicator (safe-area aware), and the
+    /// `ScrollView` is inset by exactly the bar's height, so no instruction and no Save control can
+    /// end up hidden behind it. The label wraps and the bar grows with Dynamic Type, and the content
+    /// inset follows it automatically — so the CTA stays on screen at accessibility sizes too.
+    private var usePoseBar: some View {
+        Button {
+            routeTryPoseToCamera(pose, onTryPose: onTryPose)
+        } label: {
+            Label("Use this pose", systemImage: "camera")
+                .lineLimit(2)
+                .minimumScaleFactor(0.8)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .buttonStyle(NeoButtonStyle())
+        // Stable E2E handle: the Maestro flows and the detail tests target this id.
+        .accessibilityIdentifier("poseDetail.use")
+        .padding(.horizontal, PoseSurfaceMetrics.horizontalPadding)
+        .padding(.top, AIPoseSpacing.md)
+        .padding(.bottom, AIPoseSpacing.sm)
+        .frame(maxWidth: .infinity)
+        // Continues under the home indicator instead of leaving a strip of screen behind it.
+        .background(AIPoseColor.background.ignoresSafeArea(edges: .bottom))
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(AIPoseColor.border)
+                .frame(height: NeoChromeTokens.borderThin)
         }
     }
 

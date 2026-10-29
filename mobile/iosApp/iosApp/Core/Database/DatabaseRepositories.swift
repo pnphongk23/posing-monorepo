@@ -313,6 +313,36 @@ struct CameraSnapshotRepository: Sendable {
             try record.save(db)
         }
     }
+
+    /// Stores (or clears) the remembered pose in one transaction, mirroring `saveSettings`:
+    /// - **`settings_json` is never touched.** An existing row is read and written back inside the
+    ///   same write, so the settings (and their revision) come from the row itself — remembering a
+    ///   pose is not a settings edit and must not roll one back.
+    /// - **The singleton row can be created here.** A pose remembered before any settings were stored
+    ///   writes the caller's default settings payload, so the row never holds a pose with no settings.
+    func savePose(_ write: CameraSnapshotPoseWrite) async throws {
+        try await database.pool.write { db in
+            if var record = try CameraSnapshotRecord.fetchOne(db, key: 1) {
+                record.poseJSON = write.poseJSON
+                try record.save(db)
+            } else if let poseJSON = write.poseJSON {
+                try CameraSnapshotRecord(
+                    schemaVersion: write.schemaVersion,
+                    settingsJSON: write.defaultSettingsJSON,
+                    poseJSON: poseJSON
+                ).save(db)
+            }
+        }
+    }
+}
+
+/// One remembered-pose payload for the singleton row. `defaultSettingsJSON` is only used when the
+/// write has to create the row; the snapshot layer does not know the settings shape, so the camera
+/// side supplies it.
+struct CameraSnapshotPoseWrite: Sendable {
+    let poseJSON: String?
+    let schemaVersion: Int64
+    let defaultSettingsJSON: String
 }
 
 /// One settings payload for the singleton row. `storedRevision` reads the revision out of a stored

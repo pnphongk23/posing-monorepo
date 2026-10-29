@@ -28,6 +28,49 @@ final class PoseDetailFeatureTests: XCTestCase {
         XCTAssertTrue(poses[0].isSaved)
     }
 
+    /// BUG-261029-06: "Use this pose" is pinned to the bottom of the screen.
+    ///
+    /// Rendered at the real screen height with content taller than it (twelve instructions at the
+    /// smallest supported phone width): a CTA that lived at the end of the scroll content would not be
+    /// painted at all in an un-scrolled frame. Measured from the control's own fill colour, so the
+    /// assertion is "the button is on screen", not "some pixels changed".
+    @MainActor func testThePrimaryCTAIsPinnedOnScreenWithoutScrolling() throws {
+        AppImage.configure()
+        PoseAspectRatioCache.shared.resetForTesting()
+        defer { PoseAspectRatioCache.shared.resetForTesting() }
+        let pose = NativePose(
+            id: "long-pose-\(UUID().uuidString)",
+            name: "Long Instruction Pose",
+            category: "Standing",
+            imageURL: nil,
+            instructions: (1...12).map { "Step \($0): hold the line, then breathe out slowly" },
+            isSaved: false
+        )
+
+        let screen = HeroHarness(pose: pose, height: UIScreen.main.bounds.height)
+        defer { screen.tearDown() }
+        XCTAssertTrue(
+            screen.awaitCondition { bitmap in !bitmap.rowsPainted(withButtonFill: 0xE89CAE).isEmpty },
+            "the primary CTA was never painted: it is not on screen without scrolling"
+        )
+        let image = screen.capture()
+
+        let ctaRows = image.rowsPainted(withButtonFill: 0xE89CAE)
+        let first = try XCTUnwrap(ctaRows.first, "the CTA is not painted at all")
+        let last = try XCTUnwrap(ctaRows.last, "the CTA is not painted at all")
+        XCTAssertGreaterThan(
+            first, image.height * 3 / 4,
+            "the CTA must be pinned at the bottom, not flow with the scroll content"
+        )
+        XCTAssertLessThan(last, image.height, "the CTA must stay inside the screen")
+        // Bottom bar, not a floating button in the middle: it spans the content width.
+        let widest = ctaRows.map { image.buttonFillWidth(inRow: $0, hex: 0xE89CAE) }.max() ?? 0
+        XCTAssertGreaterThan(
+            CGFloat(widest), CGFloat(image.width) * 0.7,
+            "the pinned CTA is the full-width primary action"
+        )
+    }
+
     @MainActor func testDetailHeroPhotoFillsItsCardAtThePhotoRatio() throws {
         AppImage.configure()
         PoseAspectRatioCache.shared.resetForTesting()
@@ -922,10 +965,11 @@ private final class HeroHarness {
     private let host: UIHostingController<AnyView>
     private let size: CGSize
 
-    init(pose: NativePose) {
-        // Tall enough that the whole screen fits without scrolling: a ScrollView that can bounce
-        // would make the captured layout depend on timing instead of on the hero card.
-        size = CGSize(width: UIScreen.main.bounds.width, height: 2000)
+    init(pose: NativePose, height: CGFloat = UIScreen.main.bounds.height) {
+        // Hosted at the real device size: the screen under test is the phone the user holds, and the
+        // pinned CTA bar only exists in its real place there. A window taller than the screen made the
+        // bar land far below the hero and, with it, changed what the frames below measure.
+        size = CGSize(width: UIScreen.main.bounds.width, height: height)
         if let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first {
             window = UIWindow(windowScene: scene)
         } else {
@@ -1031,8 +1075,12 @@ private struct RenderedBitmap: Equatable {
 
     func color(x: Int, y: Int) -> (r: Int, g: Int, b: Int, a: Int)? {
         guard x >= 0, x < width, y >= 0, y < height else { return nil }
-        // CoreGraphics drew the image bottom-up.
-        let row = height - 1 - y
+        // The image was drawn into a bottom-up context, so buffer row 0 *is* the top row of the
+        // screen (drawing a UIImage's CGImage into this context flips it back). Addressing the row
+        // directly is what makes "top-down, like the screen" true; the previous `height - 1 - y` read
+        // every scanline from the bottom, which only went unnoticed while every assertion in this file
+        // was symmetric.
+        let row = y
         let index = (row * width + x) * 4
         guard index >= 0, index + 3 < bytes.count else { return nil }
         return (Int(bytes[index]), Int(bytes[index + 1]), Int(bytes[index + 2]), Int(bytes[index + 3]))
@@ -1051,9 +1099,44 @@ private struct RenderedBitmap: Equatable {
         return count
     }
 
+    /// Rows that paint a control's own fill colour at least once. Used to locate a painted control
+    /// (the pinned CTA) without depending on what is around it; the tolerance absorbs the colour
+    /// conversion the renderer applies to the design-system hex.
+    func rowsPainted(withButtonFill hex: Int) -> [Int] {
+        let target = (r: (hex >> 16) & 0xFF, g: (hex >> 8) & 0xFF, b: hex & 0xFF)
+        var rows: [Int] = []
+        for y in 0..<height {
+            for x in 0..<width {
+                guard let pixel = color(x: x, y: y), pixel.a > 200 else { continue }
+                if abs(pixel.r - target.r) <= 6, abs(pixel.g - target.g) <= 6, abs(pixel.b - target.b) <= 6 {
+                    rows.append(y)
+                    break
+                }
+            }
+        }
+        return rows
+    }
+
+    /// How many pixels in one row carry the given fill: the pinned CTA is a full-width bar, a floating
+    /// pill is not.
+    func buttonFillWidth(inRow y: Int, hex: Int) -> Int {
+        let target = (r: (hex >> 16) & 0xFF, g: (hex >> 8) & 0xFF, b: hex & 0xFF)
+        var count = 0
+        for x in 0..<width {
+            guard let pixel = color(x: x, y: y), pixel.a > 200 else { continue }
+            if abs(pixel.r - target.r) <= 6, abs(pixel.g - target.g) <= 6, abs(pixel.b - target.b) <= 6 {
+                count += 1
+            }
+        }
+        return count
+    }
+
     /// The hero card's rectangle, measured from its own thick black border. The border is opaque and
     /// static whatever the fill is doing, so this is independent of gradients, colour spaces and the
-    /// shimmer's motion. The card is the widest gap between two full-width dark row bands.
+    /// shimmer's motion. The card is the **first** tall gap between two full-width dark row bands:
+    /// the header chrome bands sit close together, and anything pinned below the content (the
+    /// `poseDetail.use` bar, BUG-261029-06) is painted after the card and must not be able to change
+    /// what this measures.
     func cardBorderRect() -> CGRect? {
         guard let page = color(x: 2, y: 2) else { return nil }
         func isDark(_ x: Int, _ y: Int) -> Bool {
@@ -1078,16 +1161,13 @@ private struct RenderedBitmap: Equatable {
             return count > width * 3 / 4
         })
         guard rowBands.count >= 2 else { return nil }
-        // The card is the tallest span between two dark bands (header chrome bands are close together).
-        var best: (top: Int, bottom: Int)?
-        for (upper, lower) in zip(rowBands, rowBands.dropFirst()) {
-            let span = lower.first - upper.last
-            if span > (best.map { $0.bottom - $0.top } ?? 0) {
-                best = (upper.last, lower.first)
-            }
-        }
-        guard let rows = best else { return nil }
-
+        // The first span tall enough to be the hero card. A third of the screen width is far below any
+        // card height and far above the header's own bands, so no chrome can be mistaken for it.
+        let minimumCardSpan = width / 3
+        guard let rows = zip(rowBands, rowBands.dropFirst())
+            .map({ (top: $0.last, bottom: $1.first) })
+            .first(where: { $0.bottom - $0.top > minimumCardSpan })
+        else { return nil }
         let columnBands = bands((0..<width).filter { x in
             var count = 0
             for y in 0..<height where isDark(x, y) { count += 1 }

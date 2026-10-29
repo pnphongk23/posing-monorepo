@@ -17,6 +17,15 @@ struct AppFeatureRoot: View {
     /// state is a small pure model (`PaywallPresentation`), so "one sheet, dismissed once" is tested
     /// without a sheet.
     @State private var paywall = PaywallPresentation()
+    /// BUG-261029-04: the pose the camera falls back to when the entry point chose none. Session-scoped,
+    /// so an Account switch drops the previous Account's reference instead of opening the next
+    /// Account's camera on someone else's pose.
+    @StateObject private var lastPose = CameraLastPoseModel()
+    /// BUG-261029-05: where the camera was opened from, so its Close control can land back on the pose
+    /// detail instead of the catalogue.
+    @State private var cameraEntry: CameraEntry = .home
+    /// The detail the Poses tab has to re-push the moment its stack is rebuilt (one-shot).
+    @State private var posesResume = PosesResumeSlot()
 
     init(
         poseService: any PoseServing,
@@ -45,7 +54,13 @@ struct AppFeatureRoot: View {
             .onChange(of: premiumGate.entitlement) { _ in settlePaywall() }
             .onChange(of: premiumGate.isSignedIn) { _ in settlePaywall() }
             .onChange(of: tab) { newTab in
-                if newTab != .camera { pendingGuide = nil }
+                if newTab != .camera {
+                    pendingGuide = nil
+                    // Leaving the camera by any route other than its Close control (the gallery
+                    // thumbnail, the dock) drops the return target: only Close replays it, and it has
+                    // already recorded it before switching tabs.
+                    cameraEntry = .home
+                }
                 if newTab != .poses { isSearchPresented = false }
             }
     }
@@ -68,7 +83,9 @@ struct AppFeatureRoot: View {
                             boundary: ServiceLocator.sessionBoundary
                         ),
                         onTryPose: openCamera(with:),
-                        onSearchVisibilityChange: { isSearchPresented = $0 }
+                        onSearchVisibilityChange: { isSearchPresented = $0 },
+                        resumePose: posesResume.poseToRestore,
+                        onResumeHandled: { posesResume.consume() }
                     )
                 }
             }
@@ -76,16 +93,24 @@ struct AppFeatureRoot: View {
             RootNavigation {
                 CameraScreen(
                     guide: Binding(
-                        get: { pendingGuide ?? cameraGuide.wrappedValue },
+                        // An explicitly chosen pose always wins; the remembered one is only the
+                        // fallback for an entry point that chose nothing (BUG-261029-04).
+                        get: {
+                            CameraGuidePolicy.openingGuide(
+                                explicit: pendingGuide ?? cameraGuide.wrappedValue,
+                                remembered: lastPose.remembered
+                            )
+                        },
                         set: { newGuide in
                             pendingGuide = newGuide
                             cameraGuide.wrappedValue = newGuide
+                            // A pose chosen inside the camera is a pose the user used, so it becomes
+                            // the one the dock entry opens with next time.
+                            if let newGuide { lastPose.remember(newGuide) }
                         }
                     ),
                     poseService: poseService,
-                    onClose: {
-                        tab = .poses
-                    },
+                    onClose: closeCamera,
                     onOpenGallery: {
                         tab = .gallery
                     },
@@ -97,6 +122,9 @@ struct AppFeatureRoot: View {
                     premiumGate: premiumGate,
                     onPremiumRequired: { _ in paywall.send(.shutterRequested) }
                 )
+                // Reads the remembered pose while the screen comes up, so a dock entry opened before
+                // the first read still ends up drawing the guide (or none, on a first launch).
+                .task { await lastPose.loadIfNeeded() }
             }
         case .gallery:
             RootNavigation {
@@ -125,10 +153,23 @@ struct AppFeatureRoot: View {
         .ignoresSafeArea([.container, .keyboard], edges: .bottom)
     }
 
+    /// "Use this pose" from a pose detail: the explicit pose wins over the remembered one, it becomes
+    /// the remembered one, and closing the camera has to land back on that same detail.
     private func openCamera(with pose: NativePose) {
         pendingGuide = pose
         cameraGuide.wrappedValue = pose
+        lastPose.remember(pose)
+        cameraEntry = .poseDetail(pose)
         tab = .camera
+    }
+
+    /// The camera's Close control. The entry point decides the destination: a pose-detail entry is
+    /// re-pushed on the Poses stack, a Home entry shows the catalogue (BUG-261029-05).
+    private func closeCamera() {
+        posesResume.cameraClosed(after: cameraEntry)
+        cameraEntry = .home
+        pendingGuide = nil
+        tab = .poses
     }
 
     private var paywallSheetBinding: Binding<Bool> {
