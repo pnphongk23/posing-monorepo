@@ -1484,7 +1484,15 @@ struct PoseDetailScreen: View {
 
     private var detailContent: some View {
         VStack(spacing: 0) {
-            NeoSubscreenHeader(title: pose.name, backIdentifier: "poseDetail.back", onBack: { dismiss() })
+            NeoSubscreenHeader(
+                title: pose.name,
+                backIdentifier: "poseDetail.back",
+                // E2E handle: the header title is on screen without scrolling, and its value is the pose
+                // id, so a flow can compare the pose it left with the pose it came back to.
+                titleIdentifier: "poseDetail.title",
+                titleValue: pose.id,
+                onBack: { dismiss() }
+            )
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     poseHeroCard

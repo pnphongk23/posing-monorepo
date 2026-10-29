@@ -828,6 +828,13 @@ struct CameraScreen: View {
                         y: size.height * CameraProto.poseReferenceTopInset
                             + size.height * (1 - CameraProto.poseReferenceTopInset - CameraProto.poseReferenceBottomInset) / 2
                     )
+                    // E2E handle (`QA-261029-ID`): the only way a flow can prove a guide is drawn and
+                    // say *which* pose it is. Built only when a visible guide exists, so a missing id
+                    // is "no pose guide on screen" (no pose, or the guide toggle is off).
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("Pose guide")
+                    .accessibilityValue(guide.id)
+                    .accessibilityIdentifier("camera.poseGuide")
             }
 
             if model.isGridVisible {
@@ -887,6 +894,7 @@ struct CameraScreen: View {
             CameraActionControl(
                 systemImage: "xmark",
                 accessibilityLabel: "Close camera",
+                identifier: "camera.close",
                 action: onClose
             )
             Spacer(minLength: 0)
@@ -981,6 +989,9 @@ struct CameraScreen: View {
         .allowsHitTesting(false)
         .accessibilityHidden(true)
     }
+
+    // The guide's drawing stays hidden from accessibility; `camera.poseGuide` is set on the wrapper
+    // that is only built while a visible guide exists.
 
     /// Same stand-in the `AsyncImage` placeholder used before the guide asset loads. The stroke
     /// follows the tools popup Line colour (`--nb-camera-pose-line-color`).

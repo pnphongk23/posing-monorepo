@@ -183,6 +183,12 @@ struct NeoHeaderTitle: View {
     let title: String
     var subtitle: String?
     var emphasis: NeoHeaderTitleEmphasis = .navigation
+    /// Route-specific handle for E2E (`poseDetail.title`). Empty by default so every other title keeps
+    /// the label-only contract it already had.
+    var identifier: String = ""
+    /// Machine-readable identity of what the title names (`poseDetail.title` carries the pose id, so a
+    /// flow can compare the pose it left with the pose it came back to).
+    var value: String?
 
     var body: some View {
         VStack(spacing: 4) {
@@ -200,6 +206,8 @@ struct NeoHeaderTitle: View {
         }
         .frame(maxWidth: .infinity)
         .accessibilityElement(children: .combine)
+        .accessibilityIdentifier(identifier)
+        .accessibilityValue(value ?? "")
     }
 }
 
@@ -216,6 +224,10 @@ struct NeoSubscreenHeader<Trailing: View>: View {
     var backLabel: String
     /// Route-specific back-button identifier (`poseDetail.back`); empty keeps label-only matching.
     var backIdentifier: String = ""
+    /// Route-specific title identifier (`poseDetail.title`); empty keeps label-only matching.
+    var titleIdentifier: String = ""
+    /// Machine-readable identity the title names (`poseDetail.title` carries the pose id).
+    var titleValue: String?
     var plainControls: Bool
     var titleEmphasis: NeoHeaderTitleEmphasis
     var horizontalPadding: CGFloat
@@ -228,8 +240,14 @@ struct NeoSubscreenHeader<Trailing: View>: View {
             // The prototype `.nb-nav-bar` is a flex row whose `.nb-nav-bar__left/right` columns are a
             // fixed `--nb-touch-min` (44pt), so the title is constrained between them and can never
             // run under the controls. Mirror that here while keeping the title optically centered.
-            NeoHeaderTitle(title: title, subtitle: subtitle, emphasis: titleEmphasis)
-                .padding(.horizontal, NeoSubscreenHeaderMetrics.controlColumnWidth + AIPoseSpacing.sm)
+            NeoHeaderTitle(
+                title: title,
+                subtitle: subtitle,
+                emphasis: titleEmphasis,
+                identifier: titleIdentifier,
+                value: titleValue
+            )
+            .padding(.horizontal, NeoSubscreenHeaderMetrics.controlColumnWidth + AIPoseSpacing.sm)
             HStack(spacing: AIPoseSpacing.sm) {
                 if let onBack {
                     NeoBackButton(
@@ -255,6 +273,8 @@ extension NeoSubscreenHeader where Trailing == EmptyView {
         subtitle: String? = nil,
         backLabel: String = "Back",
         backIdentifier: String = "",
+        titleIdentifier: String = "",
+        titleValue: String? = nil,
         plainControls: Bool = false,
         titleEmphasis: NeoHeaderTitleEmphasis = .navigation,
         horizontalPadding: CGFloat = AIPoseSpacing.lg,
@@ -266,6 +286,8 @@ extension NeoSubscreenHeader where Trailing == EmptyView {
             subtitle: subtitle,
             backLabel: backLabel,
             backIdentifier: backIdentifier,
+            titleIdentifier: titleIdentifier,
+            titleValue: titleValue,
             plainControls: plainControls,
             titleEmphasis: titleEmphasis,
             horizontalPadding: horizontalPadding,
@@ -284,6 +306,8 @@ extension NeoSubscreenHeader {
         subtitle: String? = nil,
         backLabel: String = "Back",
         backIdentifier: String = "",
+        titleIdentifier: String = "",
+        titleValue: String? = nil,
         plainControls: Bool = false,
         horizontalPadding: CGFloat = AIPoseSpacing.lg,
         bottomPadding: CGFloat = AIPoseSpacing.md,
@@ -295,6 +319,8 @@ extension NeoSubscreenHeader {
             subtitle: subtitle,
             backLabel: backLabel,
             backIdentifier: backIdentifier,
+            titleIdentifier: titleIdentifier,
+            titleValue: titleValue,
             plainControls: plainControls,
             titleEmphasis: .navigation,
             horizontalPadding: horizontalPadding,
