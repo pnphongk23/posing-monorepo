@@ -106,7 +106,8 @@ struct AppFeatureRoot: View {
                             cameraGuide.wrappedValue = newGuide
                             // A pose chosen inside the camera is a pose the user used, so it becomes
                             // the one the dock entry opens with next time.
-                            if let newGuide { lastPose.remember(newGuide) }
+                            // The picker only lists catalogue poses, so a pick is never private.
+                            if let newGuide { lastPose.remember(newGuide, isPrivate: false) }
                         }
                     ),
                     poseService: poseService,
@@ -122,9 +123,14 @@ struct AppFeatureRoot: View {
                     premiumGate: premiumGate,
                     onPremiumRequired: { _ in paywall.send(.shutterRequested) }
                 )
-                // Reads the remembered pose while the screen comes up, so a dock entry opened before
-                // the first read still ends up drawing the guide (or none, on a first launch).
-                .task { await lastPose.loadIfNeeded() }
+                // Reads the remembered pose while the screen comes up, and revalidates it on every
+                // Home entry (deleted / unsaved since it was used): a dock entry opened before the
+                // first read still ends up drawing the guide, or none on a first launch.
+                .task {
+                    await lastPose.cameraOpened(
+                        explicitPoseChosen: (pendingGuide ?? cameraGuide.wrappedValue) != nil
+                    )
+                }
             }
         case .gallery:
             RootNavigation {
@@ -159,7 +165,7 @@ struct AppFeatureRoot: View {
     private func openCamera(with request: CameraPoseRequest) {
         pendingGuide = request.pose
         cameraGuide.wrappedValue = request.pose
-        lastPose.remember(request.pose)
+        lastPose.remember(request.pose, isPrivate: request.isPrivate)
         cameraEntry = .poseDetail(request)
         tab = .camera
     }

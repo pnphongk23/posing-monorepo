@@ -74,22 +74,27 @@ struct CameraLastPose: Equatable, Sendable {
     var name: String
     var category: String
     var guideURL: String?
+    /// The pose was opened from a private lane (Jobs / Add pose). A private pose never belongs to the
+    /// public catalogue, so it cannot be validated by catalogue membership — only by its own art.
+    var isPrivate = false
 
-    init(poseId: String, name: String, category: String, guideURL: String? = nil) {
+    init(poseId: String, name: String, category: String, guideURL: String? = nil, isPrivate: Bool = false) {
         self.poseId = poseId
         self.name = name
         self.category = category
         self.guideURL = guideURL
+        self.isPrivate = isPrivate
     }
 
-    init(pose: NativePose) {
+    init(pose: NativePose, isPrivate: Bool = false) {
         self.init(
             poseId: pose.id,
             name: pose.name,
             category: pose.category,
             // `imageURL` is the source photo and is never the camera reference, so only the extracted
             // line art is remembered (`NativePose.cameraGuideURL`).
-            guideURL: pose.cameraGuideURL?.absoluteString
+            guideURL: pose.cameraGuideURL?.absoluteString,
+            isPrivate: isPrivate
         )
     }
 
@@ -123,7 +128,7 @@ struct CameraLastPose: Equatable, Sendable {
 
 extension CameraLastPose: Codable {
     enum CodingKeys: String, CodingKey {
-        case poseId, name, category, guideURL
+        case poseId, name, category, guideURL, isPrivate
     }
 
     init(from decoder: Decoder) throws {
@@ -132,6 +137,9 @@ extension CameraLastPose: Codable {
         name = (try? container.decodeIfPresent(String.self, forKey: .name)) ?? nil ?? ""
         category = (try? container.decodeIfPresent(String.self, forKey: .category)) ?? nil ?? ""
         guideURL = (try? container.decodeIfPresent(String.self, forKey: .guideURL)) ?? nil
+        // A row written before this flag existed is a catalogue pose: back then a private pose could
+        // not reach the camera's memory at all, so the safe reading is "public".
+        isPrivate = (try? container.decodeIfPresent(Bool.self, forKey: .isPrivate)) ?? nil ?? false
     }
 
     /// `nil` when the payload is not a JSON object this type understands. Sorted keys keep the stored
@@ -197,12 +205,24 @@ struct CatalogueCameraLastPoseResolver: CameraLastPoseResolving {
         // A row that cannot draw a guide and cannot name a capture is not a pose at all.
         guard let pose = reference.pose else { return false }
 
+        // A private pose (Jobs / Add pose) is never a catalogue member — the Jobs surface keeps its
+        // poses in its own rows, not in `Pose` — so asking the catalogue about it would always miss and
+        // wrongly drop a pose the user still has. Its extracted art is its own local source.
+        if reference.isPrivate {
+            return outlineIsAvailable(pose)
+        }
+
         if let repository = repositoryProvider(),
            let known = try? await repository.count(), known > 0 {
             let record = (try? await repository.pose(id: pose.id)) ?? nil
             return record != nil
         }
 
+        return outlineIsAvailable(pose)
+    }
+
+    /// The extracted line art this pose would be drawn from, if it is still local.
+    private func outlineIsAvailable(_ pose: NativePose) -> Bool {
         guard let outline = pose.cameraGuideURL else { return false }
         return isOutlineAvailable(outline)
     }
@@ -334,38 +354,44 @@ final class CameraLastPoseModel: ObservableObject, SessionScoped {
         scope.adopt(self)
     }
 
-    /// The camera opened. Reads the stored reference once per process (and once more after a session
-    /// change, which clears it); a failed read is simply "nothing remembered".
-    func loadIfNeeded() async {
-        guard !didLoad else { return }
-        didLoad = true
+    /// The camera opened, and whether the entry point already chose a pose for it.
+    ///
+    /// The stored row is read once per process; whatever the camera would then draw is **revalidated
+    /// on every Home entry**, because the pose behind it can be deleted or unsaved between two opens
+    /// (use a saved pose, close the camera, unsave it, open the camera again). A pose that no longer
+    /// resolves is dropped here, memory and row, instead of surviving until a relaunch.
+    ///
+    /// An explicitly chosen pose is never revalidated: the screen the user pressed "Use this pose" on
+    /// is the proof that it exists, and re-checking it mid-session could only remove a guide the user
+    /// is looking at.
+    func cameraOpened(explicitPoseChosen: Bool) async {
         let generation = self.generation
-        let loaded = (try? await store.load()) ?? nil
-        guard generation == self.generation else { return }
-        // A pose the user already took in this process is fresher than the row this read returned: the
-        // first camera open of a run writes the pose and reads the row in the same turn, and the read
-        // loses that race. Without this guard the guide then vanished on the *next* camera open.
-        guard remembered == nil else { return }
-        guard let loaded else { return }
 
-        // The stored reference is not proof that the pose still exists: it may have been deleted,
-        // unpublished or unsaved since. Anything that moved while the resolver ran wins over its
-        // answer, so the session check is repeated after the await.
-        let resolvable = await Self.resolveOffMain(loaded, using: resolver)
-        guard generation == self.generation, remembered == nil else { return }
-        guard resolvable else {
-            // No pose, no error — and the stale reference goes, so a later open does not keep
-            // re-checking a pose that is gone.
-            save(nil)
-            return
+        if !didLoad {
+            didLoad = true
+            let loaded = (try? await store.load()) ?? nil
+            guard generation == self.generation else { return }
+            // A pose the user already took in this process is fresher than the row this read returned:
+            // the first camera open of a run writes the pose and reads the row in the same turn, and
+            // the read loses that race. Without this guard the guide vanished on the *next* open.
+            if remembered == nil { remembered = loaded }
         }
-        remembered = loaded
+
+        guard !explicitPoseChosen, let candidate = remembered else { return }
+        let resolvable = await Self.resolveOffMain(candidate, using: resolver)
+        // A session change or a newer pose wins over this answer.
+        guard generation == self.generation, remembered == candidate else { return }
+        guard !resolvable else { return }
+        // No pose, no error — and the reference goes, so the next open does not pay for the check again.
+        remembered = nil
+        save(nil)
     }
 
     /// The user took this pose into the camera — the detail's CTA, or the camera's own pose picker —
-    /// so it is the pose the next dock entry opens with.
-    func remember(_ pose: NativePose) {
-        let reference = CameraLastPose(pose: pose)
+    /// so it is the pose the next dock entry opens with. `isPrivate` travels with it: a private pose is
+    /// validated by its own art, never by the public catalogue.
+    func remember(_ pose: NativePose, isPrivate: Bool = false) {
+        let reference = CameraLastPose(pose: pose, isPrivate: isPrivate)
         // Only write when the value actually moved: the camera's binding funnels the pose it is
         // already drawing back through here.
         guard reference != remembered else { return }

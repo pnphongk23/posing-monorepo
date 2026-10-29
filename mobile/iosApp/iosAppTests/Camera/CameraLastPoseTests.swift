@@ -184,7 +184,7 @@ final class CameraLastPoseTests: XCTestCase {
     func testOpeningTheCameraReadsTheStoredPose() async {
         let model = makeModel(store: InMemoryCameraLastPoseStore(seed: CameraLastPose(pose: samplePose())))
 
-        await model.loadIfNeeded()
+        await model.cameraOpened(explicitPoseChosen: false)
 
         XCTAssertEqual(model.remembered?.poseId, "pose-1")
         XCTAssertEqual(CameraGuidePolicy.openingGuide(explicit: nil, remembered: model.remembered)?.name,
@@ -194,7 +194,7 @@ final class CameraLastPoseTests: XCTestCase {
     func testThePoseTheUserTookBecomesTheRememberedOne() async {
         let store = InMemoryCameraLastPoseStore()
         let model = makeModel(store: store)
-        await model.loadIfNeeded()
+        await model.cameraOpened(explicitPoseChosen: false)
         XCTAssertNil(model.remembered)
 
         model.remember(samplePose(id: "pose-42", name: "Twist"))
@@ -226,7 +226,7 @@ final class CameraLastPoseTests: XCTestCase {
     func testAPoseTakenWhileTheStoredReadIsInFlightIsNotOverwritten() async throws {
         let store = BlockingLastPoseStore()
         let model = makeModel(store: store)
-        let load = Task { await model.loadIfNeeded() }
+        let load = Task { await model.cameraOpened(explicitPoseChosen: false) }
         await store.waitUntilLoadStarted()
 
         model.remember(samplePose(id: "pose-taken", name: "Taken Pose"))
@@ -239,7 +239,7 @@ final class CameraLastPoseTests: XCTestCase {
     func testTheStoredReadFillsInWhenNothingWasTaken() async throws {
         let store = BlockingLastPoseStore()
         let model = makeModel(store: store)
-        let load = Task { await model.loadIfNeeded() }
+        let load = Task { await model.cameraOpened(explicitPoseChosen: false) }
         await store.waitUntilLoadStarted()
 
         await store.completeLoad(CameraLastPose(pose: samplePose(id: "pose-stored")))
@@ -251,7 +251,7 @@ final class CameraLastPoseTests: XCTestCase {
     func testASessionChangeDropsThePoseAndItsRow() async {
         let store = InMemoryCameraLastPoseStore(seed: CameraLastPose(pose: samplePose()))
         let model = makeModel(store: store)
-        await model.loadIfNeeded()
+        await model.cameraOpened(explicitPoseChosen: false)
         XCTAssertEqual(model.remembered?.poseId, "pose-1")
 
         model.resetForSessionChange(.signedOut)
@@ -267,7 +267,7 @@ final class CameraLastPoseTests: XCTestCase {
     func testAReadInFlightAcrossASessionChangeDoesNotResurrectThePose() async throws {
         let store = BlockingLastPoseStore()
         let model = makeModel(store: store)
-        let load = Task { await model.loadIfNeeded() }
+        let load = Task { await model.cameraOpened(explicitPoseChosen: false) }
         await store.waitUntilLoadStarted()
 
         model.resetForSessionChange(.signedIn)
@@ -284,7 +284,7 @@ final class CameraLastPoseTests: XCTestCase {
         let model = makeModel(store: store)
         model.resetForSessionChange(.signedOut)
 
-        await model.loadIfNeeded()
+        await model.cameraOpened(explicitPoseChosen: false)
 
         XCTAssertNil(model.remembered)
     }
@@ -296,7 +296,7 @@ final class CameraLastPoseTests: XCTestCase {
         let model = makeModel(store: InMemoryCameraLastPoseStore(seed: CameraLastPose(pose: samplePose())),
                               resolver: resolver)
 
-        await model.loadIfNeeded()
+        await model.cameraOpened(explicitPoseChosen: false)
 
         XCTAssertEqual(model.remembered?.poseId, "pose-1")
         let checked = await resolver.checked
@@ -309,7 +309,7 @@ final class CameraLastPoseTests: XCTestCase {
         let store = InMemoryCameraLastPoseStore(seed: CameraLastPose(pose: samplePose()))
         let model = makeModel(store: store, resolver: StubLastPoseResolver(resolvable: false))
 
-        await model.loadIfNeeded()
+        await model.cameraOpened(explicitPoseChosen: false)
 
         XCTAssertNil(model.remembered, "a pose that no longer exists must not be drawn")
         await waitUntil { await store.saves.contains { $0 == nil } }
@@ -396,6 +396,153 @@ final class CameraLastPoseTests: XCTestCase {
         let resolvable = await resolver.isResolvable(CameraLastPose(poseId: "", name: "", category: ""))
 
         XCTAssertFalse(resolvable)
+    }
+
+    // MARK: - Reopening the camera revalidates (BUG-261029-04 review, round 2)
+
+    /// The reported scenario: use pose A, close the camera, A becomes unresolvable (unsaved), open the
+    /// camera from Home again — the guide and the stored reference must be gone, not wait for a relaunch.
+    func testReopeningTheCameraDropsAPoseThatWentAway() async {
+        let resolver = StubLastPoseResolver(resolvable: true)
+        let store = InMemoryCameraLastPoseStore(seed: CameraLastPose(pose: samplePose()))
+        let model = makeModel(store: store, resolver: resolver)
+        await model.cameraOpened(explicitPoseChosen: false)
+        XCTAssertEqual(model.remembered?.poseId, "pose-1")
+
+        // The pose is unsaved / deleted while the camera is closed.
+        await resolver.setResolvable(false)
+        await model.cameraOpened(explicitPoseChosen: false)
+
+        XCTAssertNil(model.remembered, "the stale guide must not survive a second open")
+        await waitUntil { await store.saves.contains { $0 == nil } }
+        let stored = (try? await store.load()) ?? nil
+        XCTAssertNil(stored, "and the persisted reference goes with it")
+    }
+
+    /// The same scenario against the real resolver and a real catalogue: a *saved* pose that is unsaved
+    /// keeps no row when the catalogue is pruned, so the next open resolves to nothing even though its
+    /// outline is still cached (the cached art must not outvote what the catalogue knows).
+    func testASavedPoseThatWasUnsavedIsDroppedOnTheNextOpen() async throws {
+        let database = try makeDatabase()
+        let repository = PoseRepository(database: database)
+        try await repository.save(makePoseRecord(id: "pose-1"))
+        try await repository.save(makePoseRecord(id: "pose-2"))
+        let resolver = CatalogueCameraLastPoseResolver(
+            repositoryProvider: { repository },
+            isOutlineAvailable: { _ in true }
+        )
+        let store = InMemoryCameraLastPoseStore(seed: CameraLastPose(pose: samplePose(id: "pose-1")))
+        let model = makeModel(store: store, resolver: resolver)
+
+        await model.cameraOpened(explicitPoseChosen: false)
+        XCTAssertEqual(model.remembered?.poseId, "pose-1", "the pose is still in the catalogue")
+
+        // Unsave: the catalogue prunes its row (the pose is saved-only), its art stays cached.
+        try await repository.delete(ids: ["pose-1"])
+        await model.cameraOpened(explicitPoseChosen: false)
+
+        XCTAssertNil(model.remembered)
+        await waitUntil { await store.saves.contains { $0 == nil } }
+        let stored = (try? await store.load()) ?? nil
+        XCTAssertNil(stored, "and the persisted reference goes with it")
+    }
+
+    /// A pose the user just chose on a detail screen is not re-checked mid-session: the screen they
+    /// pressed the CTA on is the proof, and a stale local cache must not remove the guide they are
+    /// looking at.
+    func testAnExplicitlyChosenPoseIsNotRevalidated() async {
+        let resolver = StubLastPoseResolver(resolvable: false)
+        let model = makeModel(store: InMemoryCameraLastPoseStore(), resolver: resolver)
+        model.remember(samplePose(id: "pose-fresh"))
+
+        await model.cameraOpened(explicitPoseChosen: true)
+
+        XCTAssertEqual(model.remembered?.poseId, "pose-fresh")
+        let checked = await resolver.checked
+        XCTAssertTrue(checked.isEmpty, "an explicit choice is not second-guessed")
+    }
+
+    // MARK: - A private pose has its own source (BUG-261029-04 review, round 2)
+
+    /// A private pose (Jobs / Add pose) never enters the public catalogue, so a catalogue lookup would
+    /// always miss it. It is validated by its own extracted art instead — otherwise a pose the user
+    /// still has would be dropped on the first open after a relaunch.
+    func testAPrivatePoseIsValidatedByItsArtNotByCatalogueMembership() async throws {
+        let database = try makeDatabase()
+        let repository = PoseRepository(database: database)
+        // A catalogue that knows other poses but not this one.
+        try await repository.save(makePoseRecord(id: "pose-public"))
+        let outlines = OutlineChecks()
+        let resolver = CatalogueCameraLastPoseResolver(
+            repositoryProvider: { repository },
+            isOutlineAvailable: { url in
+                Task { await outlines.record(url) }
+                return true
+            }
+        )
+
+        let privateReference = CameraLastPose(pose: samplePose(id: "pose-private"), isPrivate: true)
+        let resolvable = await resolver.isResolvable(privateReference)
+        let sameIdAsPublic = await resolver.isResolvable(
+            CameraLastPose(pose: samplePose(id: "pose-private"), isPrivate: false)
+        )
+        await waitUntil { await outlines.urls.count == 1 }
+
+        XCTAssertTrue(resolvable, "a private pose is looked up in its own lane, not the catalogue")
+        let checked = await outlines.urls
+        XCTAssertEqual(checked.map(\.lastPathComponent), ["pose-1.png"])
+        XCTAssertFalse(sameIdAsPublic, "the same id as a public pose is still a catalogue miss")
+    }
+
+    func testAPrivatePoseWithNoArtLeftIsDropped() async throws {
+        let database = try makeDatabase()
+        let repository = PoseRepository(database: database)
+        try await repository.save(makePoseRecord(id: "pose-public"))
+        let resolver = CatalogueCameraLastPoseResolver(
+            repositoryProvider: { repository },
+            isOutlineAvailable: { _ in false }
+        )
+
+        let resolvable = await resolver.isResolvable(
+            CameraLastPose(pose: samplePose(id: "pose-private"), isPrivate: true)
+        )
+
+        XCTAssertFalse(resolvable, "nothing local left to draw: open as on a first launch")
+    }
+
+    /// The full path for a private pose: use it from a private detail, relaunch, open the camera from
+    /// Home — the cached art is enough, and the provenance survives the round trip through the row.
+    func testAPrivatePoseSurvivesARelaunchThroughTheCatalogueItIsNotIn() async throws {
+        let database = try makeDatabase()
+        let repository = PoseRepository(database: database)
+        try await repository.save(makePoseRecord(id: "pose-public"))
+        let resolver = CatalogueCameraLastPoseResolver(
+            repositoryProvider: { repository },
+            isOutlineAvailable: { _ in true }
+        )
+        let store = InMemoryCameraLastPoseStore()
+        let model = makeModel(store: store, resolver: resolver)
+
+        model.remember(samplePose(id: "pose-private", name: "My Pose"), isPrivate: true)
+        await waitUntil { await store.saves.count == 1 }
+        let storedRow = (try? await store.load()) ?? nil
+        let persisted = try XCTUnwrap(storedRow)
+        XCTAssertTrue(persisted.isPrivate, "provenance is part of the stored reference")
+
+        // A relaunch is a fresh model over the same row.
+        let relaunched = makeModel(store: store, resolver: resolver)
+        await relaunched.cameraOpened(explicitPoseChosen: false)
+
+        XCTAssertEqual(relaunched.remembered?.poseId, "pose-private")
+    }
+
+    func testProvenanceRoundTripsAndOldRowsReadAsPublic() throws {
+        let privateReference = CameraLastPose(pose: samplePose(), isPrivate: true)
+        XCTAssertEqual(try XCTUnwrap(CameraLastPose.decode(try privateReference.encodedJSON())).isPrivate, true)
+
+        // A row written before the flag existed.
+        let legacy = try XCTUnwrap(CameraLastPose.decode(#"{"poseId":"pose-1","name":"Warrior"}"#))
+        XCTAssertFalse(legacy.isPrivate)
     }
 
     // MARK: - Back target (routing)
@@ -568,14 +715,19 @@ final class CameraLastPoseTests: XCTestCase {
 
 // MARK: - Doubles
 
-/// Resolver double: the model tests only need the answer. The real resolver is exercised against a
-/// real `Pose` table next to them.
+/// Resolver double: the model tests only need the answer — and the ability to flip it, so "the pose
+/// went away between two camera opens" is a state change instead of a different fixture. The real
+/// resolver is exercised against a real `Pose` table next to them.
 private actor StubLastPoseResolver: CameraLastPoseResolving {
-    private let resolvable: Bool
+    private var resolvable: Bool
     private(set) var checked: [String] = []
 
     init(resolvable: Bool = true) {
         self.resolvable = resolvable
+    }
+
+    func setResolvable(_ value: Bool) {
+        resolvable = value
     }
 
     func isResolvable(_ reference: CameraLastPose) async -> Bool {
