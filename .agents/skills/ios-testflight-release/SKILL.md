@@ -1,44 +1,44 @@
 ---
 name: ios-testflight-release
-description: Archive, export, validate, upload, and verify this project's iOS build in TestFlight/App Store Connect via xcodebuild and altool, incl. the project's custom keychain fast-path auth, bounded auth preflight, and one-upload policy. Use whenever the user asks to release, upload, push, archive, export, validate, or check processing for the ai-pose iOS app.
+description: Archive, export, validate, upload, and verify this project's iOS build in TestFlight/App Store Connect. Use whenever the user asks to release, upload, archive, export, validate, or check processing for the ai-pose iOS app.
 ---
 
 # iOS TestFlight Release
 
-CLI release path for `ai-pose`. TestFlight distribution only, never an App Store
-public release. Does not fix product code, change signing/bundle IDs,
-commit/push/tag, assign testers, publish metadata, alter phased release, submit
-for review, or deploy the backend.
+TestFlight distribution only. Do not submit to the public App Store, assign
+testers, publish metadata, push, tag, create a release branch, or deploy the
+backend. Do not alter production Firestore settings. Never print credentials,
+API tokens, issuer values, or private-key contents.
 
-## Proven build-3 example (reference)
+## Current project facts
 
-Real successful TestFlight upload for sanity-checking your own output (never
-reuse as a value):
+- Workspace: `mobile/iosApp/iosApp.xcworkspace`.
+- Schemes: `Dev` and `Prod`. Production/TestFlight uses scheme `Prod`,
+  configuration `Release-Prod` (`mobile/iosApp/Config/Prod-Release.xcconfig`).
+  Never archive Dev for release.
+- Bundle ID: `posing.camera.app`; team: `WZL67P53F2`.
+- Marketing version is `CFBundleShortVersionString` in
+  `mobile/iosApp/iosApp/Info.plist`; current source version is `1.1`.
+  `CFBundleVersion` is also in that plist and is currently `14`; prior release
+  used a temporary plist/override to ship build `4`. Discover the next unique
+  build from App Store Connect before archiving; never assume the source build
+  number equals the next available number.
+- Latest accepted build: `1.1 (4)`, processing state `VALID`,
+  `usesNonExemptEncryption=false`. The previous latest build was `1.0 (15)`;
+  older notes claiming build 3 are stale. The `1.0` train is closed. For a new
+  train, choose a marketing version greater than `1.1`; to add a build to an
+  open train, use a new unique build number.
+- Apple’s Paid Applications Agreement (PLA) must be accepted before export
+  with cloud signing. If Apple reports an agreement error, stop until the
+  agreement is accepted and the change has propagated.
 
-- iOS marketing `1.0`, build `3`, bundle `posing.camera.app` (keychain item names below are local and unchanged)
-- `UPLOAD SUCCEEDED`; Delivery UUID: `1a7eb5d5-2b1b-46d8-b922-18c3b1a61749`
-- Transfer: `10,012,231 bytes in 0.043s`
-- IPA SHA-256: `f456318e1e20ee31e757acc598905bde835c8b31cd563441060eff74a2013c79`
-- TestFlight only; no App Store release, no tester assignment.
+## Before release
 
-A successful upload proves App Store delivery accepted the IPA, not that
-processing completed; query delivery/status before claiming a processing state.
-
-## Authority and lane safety
-
-1. Confirm explicit release authorization and whether a Paseo release lane is
-   active. If a release Lính is the executor, keep the coordinator read-only and
-   send corrections only to that Lính. No second release worker, no
-   self-operating against lane policy.
-2. Wait for the Shared Element/mobile lane to report literal `APPROVED`; confirm
-   the independent Code Vương go-ahead and a stable, quiescent worktree.
-3. Never archive/export/upload or edit mobile/project files while that lane
-   runs. Do not reset, clean, checkout, stash, commit, push, tag, or create
-   another agent.
-4. If a required test fails, stop `RELEASE_BLOCKED_TEST_FAILURE`. Do not waive or
-   repair an unrelated product failure inside the release task.
-
-## Read-only preflight
+Confirm explicit user authorization, stable worktree, and that no mobile/QA
+worker is using Xcode or the simulator. Do not use parallel release workers.
+Do not reset, clean, checkout, or stash. Inspect and report pre-existing
+changes; do not commit them. If a change can affect the archive, stop for
+resolution.
 
 Record baseline:
 
@@ -50,187 +50,171 @@ git diff --stat
 git diff --check
 ```
 
-Run gates from repo root, after approval and again immediately before archive:
+Run the project’s full Dev test gate before archive:
 
 ```bash
-xcodebuild test \
-  -workspace mobile/iosApp/iosApp.xcworkspace \
-  -scheme Dev \
-  -destination 'platform=iOS Simulator,name=<available iPhone>'
-git diff --check
+scripts/ios-verify.sh
 ```
 
-Report test count and every failure; a known failure is still a failure, never
-waive one silently.
+The script requires simulator `7CC9393C-88FC-4AE6-88D3-AC68A2E266B7`, uses
+`/tmp/dd-shared`, and requires at least 1.5 GB free. Keep one `xcodebuild` at a
+time. A test failure blocks release; report executed tests and failures. Also
+check free disk before archiving and hold if below 2 GB.
 
-Inspect release path without changing tracked files: Workspace
-`mobile/iosApp/iosApp.xcworkspace`; Scheme `iosApp`; Configuration `Release`;
-source `mobile/iosApp/project.yml`; bundle ID, team, marketing version, signing
-identities, provisioning profiles, prior archives, prior build numbers; Xcode
-and `xcrun altool --version`. Inspect and report current runtime endpoints
-unmodified: `SERVER_BASE_URL` in
-`mobile/iosApp/iosApp/Core/Network/AppConfig.swift` and `baseURL` in
-`mobile/iosApp/iosApp/Core/Network/ServiceLocator.swift`. A dev/ngrok endpoint
-is not a blocker for the requested TestFlight build.
+Inspect the production Release configuration and report tester-visible
+behavior before upload: `SERVER_BASE_URL` and `ServiceLocator` base URL, remote
+feature-flag defaults, account/paywall state, purchase configuration, and
+whether release-only debug launch arguments are absent. Do not change
+production config or deploy server changes. Probe production routes only with
+unauthenticated GET requests. Compare app calls with the deployed server and
+call out routes or parameters that are missing; never mutate production.
 
-## Version and build number
+## Discover build numbers and verify processing
 
-Discover the highest uploaded build; keep marketing version unchanged. The
-latest known accepted upload is `1.0 (3)`, so the next candidate is `4` unless
-App Store Connect reports a higher build. Use the next unique integer via
-xcodebuild override and temp plist. This project historically hardcodes
-`CFBundleVersion=1`; when `CURRENT_PROJECT_VERSION` is inert, use an ignored
-temp plist under `/tmp` (never edit the tracked plist):
+Use the App Store Connect API to find builds, sorted by `-uploadedDate`, and
+inspect `processingState` and `usesNonExemptEncryption`. Do not rely on stale
+notes or guess a build number. API credentials are stored locally at
+`~/.config/camerapose/asc-issuer-id` and
+`~/.appstoreconnect/private_keys/AuthKey_S2MHQL347V.p8`. Key ID
+`S2MHQL347V` has cloud-signing access; `79JD9TZQWM` does not. Read the issuer
+from the file inline and never display it. Do not use `altool --list-providers`
+as an API-key preflight; that command does not support API-key authentication.
+
+The following read-only example creates a short-lived ES256 JWT and prints only
+the requested build fields. Set `APP_ID`, `BUILD`, and `MARKETING` to the
+numeric ASC app ID, build number, and marketing version. It requires Python's
+`cryptography` package. It does not print or write the issuer, private key, or
+JWT.
+
+```bash
+APP_ID='numeric-app-id' BUILD='4' MARKETING='1.1' python3 - <<'PY'
+import base64, json, os, time, urllib.parse, urllib.request
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import ec, utils
+
+key_id = 'S2MHQL347V'
+issuer = open(os.path.expanduser('~/.config/camerapose/asc-issuer-id')).read().strip()
+key_path = os.path.expanduser(f'~/.appstoreconnect/private_keys/AuthKey_{key_id}.p8')
+private_key = serialization.load_pem_private_key(open(key_path, 'rb').read(), password=None)
+def b64(data): return base64.urlsafe_b64encode(data).rstrip(b'=').decode()
+now = int(time.time())
+header = b64(json.dumps({'alg':'ES256','kid':key_id,'typ':'JWT'}, separators=(',',':')).encode())
+claims = b64(json.dumps({'iss':issuer,'iat':now,'exp':now+900,'aud':'appstoreconnect-v1'}, separators=(',',':')).encode())
+message = f'{header}.{claims}'.encode()
+der = private_key.sign(message, ec.ECDSA(hashes.SHA256()))
+r, s = utils.decode_dss_signature(der)
+token = f'{header}.{claims}.{b64(r.to_bytes(32,"big") + s.to_bytes(32,"big"))}'
+query = urllib.parse.urlencode({
+    'filter[app]': os.environ['APP_ID'],
+    'filter[version]': os.environ['BUILD'],
+    'filter[preReleaseVersion.version]': os.environ['MARKETING'],
+    'sort': '-uploadedDate',
+    'fields[builds]': 'version,processingState,usesNonExemptEncryption,uploadedDate',
+    'limit': '50',
+})
+request = urllib.request.Request(
+    'https://api.appstoreconnect.apple.com/v1/builds?' + query,
+    headers={'Authorization': 'Bearer ' + token})
+with urllib.request.urlopen(request, timeout=30) as response:
+    payload = json.load(response)
+print(json.dumps([{
+    'id': b['id'], 'version': b['attributes'].get('version'),
+    'processingState': b['attributes'].get('processingState'),
+    'usesNonExemptEncryption': b['attributes'].get('usesNonExemptEncryption'),
+    'uploadedDate': b['attributes'].get('uploadedDate'),
+} for b in payload.get('data', [])], indent=2))
+PY
+```
+
+Keep JWT lifetime at 20 minutes or less. For build-number discovery, omit the
+version filters, request enough results, and sort by `-uploadedDate`.
+
+`altool --validate-app` and `--build-status` may connect and then time out.
+Treat that as inconclusive; do not loop or infer the state. Check the ASC API
+query above (or App Store Connect) and report the state actually observed.
+
+## Archive and export
+
+Create a temporary work directory under `/tmp/aipose-release`. Use
+`-derivedDataPath /tmp/dd-shared`; reuse resolved packages with
+`-clonedSourcePackagesDirPath /tmp/dd-shared/SourcePackages` and
+`-disableAutomaticPackageResolution` when needed. Keep temporary plist and
+ExportOptions outside the repository. Preserve marketing version and set a
+unique build via a temporary Info.plist or build override, then verify the
+archive plist before export.
 
 ```bash
 xcodebuild archive \
   -workspace mobile/iosApp/iosApp.xcworkspace \
-  -scheme iosApp \
-  -configuration Release \
+  -scheme Prod \
+  -configuration Release-Prod \
+  -destination 'generic/platform=iOS' \
+  -derivedDataPath /tmp/dd-shared \
   -archivePath /tmp/aipose-release/iosApp-<marketing>-<build>.xcarchive \
-  CURRENT_PROJECT_VERSION=<build> \
-  INFOPLIST_FILE=/tmp/aipose-release/Info.plist \
-  -destination 'generic/platform=iOS'
+  CURRENT_PROJECT_VERSION=<build>
 ```
 
-Do not reuse a build number. Errors `-19232`/`-19241` with `previousBundleVersion`
-mean ASC already has that build; query delivery status instead of re-uploading.
+If `CURRENT_PROJECT_VERSION` does not take effect, use a temporary copy of
+Info.plist and `INFOPLIST_FILE=/tmp/aipose-release/Info.plist`. Do not edit
+tracked files to set a release build number. Before export, inspect the
+archived Release binary with `strings`; these debug launch argument names must
+be absent: `-AIPosePaywallEnabled`, `-AIPoseAccountsEnabled`,
+`-AIPosePurchasesConfigured`. Stop if any is present.
 
-## Fast authenticated altool path (DEFAULT for this project)
-
-Use the bundled wrapper from the repository root:
-
-```bash
-ALTOOL_FAST=.agents/skills/ios-testflight-release/scripts/altool-fast.sh
-"$ALTOOL_FAST" providers
-```
-
-The wrapper reads the dedicated custom-keychain path from
-`~/.config/camerapose/altool-keychain-path`, unlocks that project keychain,
-captures service `camerapose-appstore` for account
-`tolaphamnhuphong@gmail.com` directly into a child-only exported environment
-variable, invokes altool with `@env:ALTOOL_APP_PASSWORD`, and unsets it on exit.
-It never prints or writes the credential. The custom keychain's intentionally
-permissive local policy was explicitly authorized for this project only.
-
-Do **not** use `-p @keychain:camerapose-appstore` on this machine. Duplicate or
-ACL-incompatible login-keychain entries previously blocked altool inside
-`SecItemCopyMatching` before any network request. Do not ask for the password
-again while the custom-keychain item remains present and authenticates.
-
-`providers` is the mandatory bounded credential preflight and must finish before
-archive/upload. It times out after 30 seconds. Failure means
-`BLOCKED_CREDENTIALS`; do not start an upload. The wrapper also supports:
+Use ExportOptions with method `app-store-connect`, team `WZL67P53F2`, automatic
+signing, and `uploadSymbols=false` unless symbol upload is available. Export
+with the API key that has cloud-signing access:
 
 ```bash
-"$ALTOOL_FAST" validate /tmp/aipose-release/export/iosApp.ipa
-"$ALTOOL_FAST" upload   /tmp/aipose-release/export/iosApp.ipa
-"$ALTOOL_FAST" status   <delivery-uuid>
-```
-
-Bounds are 120 seconds for validation/status and 300 seconds for upload. A timed
-out upload is ambiguous: never retry until App Store status is checked.
-
-For manual diagnosis, redact secrets and inspect only process metadata:
-
-```bash
-ps -o pid,etime,state,%cpu,%mem,command -p <pid>
-lsof -nP -a -p <pid> -i
-wc -c /tmp/aipose-release/altool.log
-sample <pid> 1 1 | grep -m1 -E 'SecItemCopyMatching|CFNetwork|NSURLSession'
-```
-
-No sockets + zero output + `SecItemCopyMatching` proves a local credential hang,
-not Apple upload latency. Once proven, stopping that pre-network process and
-starting one upload with the verified wrapper is not a duplicate network upload.
-
-## Failure mode: local keychain hang (not Apple latency)
-
-9-20 minute `altool` hangs here are NOT Apple latency. Signs: ~0% CPU, no
-network socket, zero log bytes, stack in `SecItemCopyMatching`. Duplicate or
-ACL-incompatible `@keychain` items cause this locally. Do not wait 15-20 min.
-On no-output + no-network + `SecItemCopyMatching`, classify as a local
-keychain/credential hang, stop after gathering that evidence, fix auth (dedupe
-items / use the custom path above), then make ONE fresh upload, never a
-duplicate retry.
-
-## Archive and export
-
-CLI only. Archive must be generic iOS Release, no simulator slices, contain
-dSYMs, no dev-only secrets/config. ExportOptions outside the repo (e.g.
-`/tmp/aipose-release/ExportOptions.plist`) with the installed Xcode's accepted
-method, normally `app-store-connect`, discovered team ID, and
-`uploadSymbols=false` when symbol credentials are unavailable.
-
-```bash
+ISSUER="$(cat ~/.config/camerapose/asc-issuer-id)"
 xcodebuild -exportArchive \
   -archivePath /tmp/aipose-release/iosApp-<marketing>-<build>.xcarchive \
   -exportPath /tmp/aipose-release/export \
-  -exportOptionsPlist /tmp/aipose-release/ExportOptions.plist
+  -exportOptionsPlist /tmp/aipose-release/ExportOptions.plist \
+  -allowProvisioningUpdates \
+  -authenticationKeyPath ~/.appstoreconnect/private_keys/AuthKey_S2MHQL347V.p8 \
+  -authenticationKeyID S2MHQL347V \
+  -authenticationKeyIssuerID "$ISSUER"
 ```
 
-Inspect IPA bundle ID, marketing/build, distribution signature, embedded store
-profile, `get-task-allow=false`, `beta-reports-active=true`, architecture,
-SHA-256. Preserve archive, IPA, sanitized logs, ExportOptions, dSYMs unless the
-user chooses cleanup.
+Do not echo or log `ISSUER`. PLA/agreement or cloud-signing errors block
+export; resolve the stated prerequisite before another authorized attempt.
+Inspect the IPA: bundle ID, marketing/build, Apple distribution signature,
+App Store profile, `get-task-allow=false`, `beta-reports-active=true`, arm64,
+dSYMs, and SHA-256. Keep the SHA-256 in the release report.
 
-## Remote validation and one-upload policy
+## Validate and upload once
 
-Require local IPA inspection first (bundle ID, version/build, signing/profile,
-architecture, hashes) before any remote call. Remote `altool --validate-app` may
-hang; run only with proven `@env` auth and a bounded timeout. If it hangs before
-network, stop and follow the one-upload policy; no blind validate retries.
-
-After auth preflight and gates: archive the current dirty approved worktree
-with the unique next build, export the `app-store-connect` IPA, run bounded
-remote validation, and upload EXACTLY once using the wrapper. Remote validation
-is useful but must not be retried blindly if Apple returns no response; local
-IPA/signing inspection remains mandatory.
+After local inspection, run one bounded API-key validation (up to 120 seconds)
+and upload exactly once (up to 300 seconds):
 
 ```bash
-ALTOOL_FAST=.agents/skills/ios-testflight-release/scripts/altool-fast.sh
-"$ALTOOL_FAST" validate /tmp/aipose-release/export/iosApp.ipa
-"$ALTOOL_FAST" upload   /tmp/aipose-release/export/iosApp.ipa
-"$ALTOOL_FAST" status   <delivery-uuid>
+xcrun altool --validate-app -f /tmp/aipose-release/export/iosApp.ipa -t ios \
+  --api-key S2MHQL347V --api-issuer "$ISSUER"
+xcrun altool --upload-app -f /tmp/aipose-release/export/iosApp.ipa -t ios \
+  --api-key S2MHQL347V --api-issuer "$ISSUER"
 ```
 
-If upload is ambiguous (timeout/no Delivery UUID), do not retry. Query the
-Delivery UUID if one exists; otherwise inspect App Store Connect/build-number
-evidence before any newly authorized attempt.
+Capture the Delivery UUID. A timed-out upload is ambiguous: query its status
+before any retry. Never retry a duplicate build rejection (`-19232` or
+`-19241`) blindly. If ASC says the train is closed or requires a higher
+marketing version, stop and report it. Do not switch keys or create signing
+assets by another method without explicit authorization.
 
-Capture Delivery UUID, then query bounded statuses (`uploaded`, `processing`,
-`valid`, `internal testing`). No release, tester assignment, metadata
-publishing, phased release, commit/push/tag/PR, or backend deploy.
+Use the ASC API query above as the authoritative processing check. If altool
+status times out after connecting, do not retry repeatedly; report the timeout
+and confirm through the API/App Store Connect. Report `VALID`, `PROCESSING`,
+or other state only when observed.
 
-## Credential recovery
-
-Do not recreate or modify credential items during a normal release. If either
-`~/.config/camerapose/altool-keychain-path` or its `camerapose-appstore` item is
-genuinely absent, expired, or revoked, stop `BLOCKED_CREDENTIALS` and request
-fresh explicit authorization. Never fall back to plaintext argv, login-keychain
-`@keychain:` lookup, or a silent credential-context switch.
-
-## Verify acceptance and processing
-
-Capture sanitized `VERIFY SUCCEEDED`, `UPLOAD SUCCEEDED`, and Delivery UUID. A
-successful upload proves delivery accepted the IPA, not that processing
-completed. With a delivery ID, query via `--build-status --delivery-id ...`
-and record e.g. `BETA_INTERNAL_TESTING`, `PROCESSING`, or `FAILED`. Without a
-delivery ID or API-capable query, report the exact boundary: upload accepted /
-request ID known, later processing not verified.
+After upload and status are verified, remove the archive and export under
+`/tmp/aipose-release` if requested by the release task, while retaining the IPA
+SHA-256. Check free disk afterward. Never delete unrelated simulator data;
+when instructed, clean dead containers only for the approved simulator.
 
 ## Final report
 
-Include: executor/lane + status; approval & quiescence evidence; HEAD, branch,
-porcelain count, staged changes, diff stat; exact gate commands/results, test
-count; current runtime endpoint values (inspected, unmodified);
-workspace/scheme/configuration, bundle ID, team, version/build; sanitized
-archive/export/validate/upload/status commands/results; archive/IPA paths,
-SHA-256, signing/profile/dSYM checks; Delivery UUID, App Store acceptance,
-processing state/boundary; the proven build-3 example as reference; credential
-source type only (never value); files changed (ideally none), temp files,
-cleanup, deviations; and confirmation of no source/stage/commit/push/release/
-tester changes.
-
-If an app-specific password was pasted into chat or another insecure channel,
-recommend revoking it and creating a replacement after the release.
+Report commit, marketing/build, test count and failures, IPA SHA-256, key ID
+only, Delivery UUID, validate/upload result, observed ASC processing state,
+tester-visible defaults, server compatibility gaps, scheme-diff verdict, and
+free disk after cleanup. State any timeout or uncertainty plainly. Never
+include credentials, issuer value, JWT, or private-key contents.
