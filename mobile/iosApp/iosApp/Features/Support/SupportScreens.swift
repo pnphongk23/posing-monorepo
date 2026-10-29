@@ -80,7 +80,7 @@ enum AccountStateCopy {
 /// invents identity values (see FEAT-014).
 struct AccountScreen: View {
     let posesModel: PosesViewModel
-    var onTryPose: (NativePose) -> Void = { _ in }
+    var onTryPose: (CameraPoseRequest) -> Void = { _ in }
     @StateObject private var model: AccountSessionModel
     @Environment(\.dismiss) private var dismiss
     @State private var showsEmailSignIn = false
@@ -93,7 +93,7 @@ struct AccountScreen: View {
 
     init(
         posesModel: PosesViewModel,
-        onTryPose: @escaping (NativePose) -> Void = { _ in },
+        onTryPose: @escaping (CameraPoseRequest) -> Void = { _ in },
         model: @autoclosure @escaping () -> AccountSessionModel = AccountSessionModel()
     ) {
         self.posesModel = posesModel
@@ -311,7 +311,7 @@ struct AccountScreen: View {
 
 struct SettingsScreen: View {
     let posesModel: PosesViewModel
-    var onTryPose: (NativePose) -> Void = { _ in }
+    var onTryPose: (CameraPoseRequest) -> Void = { _ in }
     @Environment(\.openURL) private var openURL
     @Environment(\.scenePhase) private var scenePhase
     @State private var showsAboutSheet = false

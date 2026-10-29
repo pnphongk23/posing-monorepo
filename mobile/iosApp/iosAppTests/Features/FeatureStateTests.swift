@@ -162,7 +162,7 @@ final class FeatureStateTests: XCTestCase {
 
     func testTryPoseOpensCameraWithoutPremium() {
         var openedPoseID: String?
-        routeTryPoseToCamera(samplePose) { pose in openedPoseID = pose.id }
+        routeTryPoseToCamera(samplePose, isPrivate: false) { request in openedPoseID = request.pose.id }
         XCTAssertEqual(openedPoseID, samplePose.id)
     }
 

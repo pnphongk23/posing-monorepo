@@ -84,7 +84,7 @@ struct AppFeatureRoot: View {
                         ),
                         onTryPose: openCamera(with:),
                         onSearchVisibilityChange: { isSearchPresented = $0 },
-                        resumePose: posesResume.poseToRestore,
+                        resumePose: posesResume.targetToRestore,
                         onResumeHandled: { posesResume.consume() }
                     )
                 }
@@ -154,12 +154,13 @@ struct AppFeatureRoot: View {
     }
 
     /// "Use this pose" from a pose detail: the explicit pose wins over the remembered one, it becomes
-    /// the remembered one, and closing the camera has to land back on that same detail.
-    private func openCamera(with pose: NativePose) {
-        pendingGuide = pose
-        cameraGuide.wrappedValue = pose
-        lastPose.remember(pose)
-        cameraEntry = .poseDetail(pose)
+    /// the remembered one, and closing the camera has to land back on that same detail — in the same
+    /// lane, so a private (Jobs / Add pose) detail is restored as private.
+    private func openCamera(with request: CameraPoseRequest) {
+        pendingGuide = request.pose
+        cameraGuide.wrappedValue = request.pose
+        lastPose.remember(request.pose)
+        cameraEntry = .poseDetail(request)
         tab = .camera
     }
 

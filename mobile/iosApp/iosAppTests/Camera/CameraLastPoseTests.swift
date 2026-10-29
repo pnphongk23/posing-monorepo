@@ -289,15 +289,125 @@ final class CameraLastPoseTests: XCTestCase {
         XCTAssertNil(model.remembered)
     }
 
+    // MARK: - The remembered pose has to still exist (deleted / unsaved / unpublished)
+
+    func testARememberedPoseThatStillExistsIsDrawn() async {
+        let resolver = StubLastPoseResolver(resolvable: true)
+        let model = makeModel(store: InMemoryCameraLastPoseStore(seed: CameraLastPose(pose: samplePose())),
+                              resolver: resolver)
+
+        await model.loadIfNeeded()
+
+        XCTAssertEqual(model.remembered?.poseId, "pose-1")
+        let checked = await resolver.checked
+        XCTAssertEqual(checked, ["pose-1"], "the stored reference is what gets resolved")
+    }
+
+    /// The reported scenario: use pose A, A is deleted / unpublished, reopen the camera from Home —
+    /// even after a relaunch. No guide, no error, and the stale reference is dropped.
+    func testADeletedPoseOpensTheCameraWithoutAPoseAndClearsTheReference() async {
+        let store = InMemoryCameraLastPoseStore(seed: CameraLastPose(pose: samplePose()))
+        let model = makeModel(store: store, resolver: StubLastPoseResolver(resolvable: false))
+
+        await model.loadIfNeeded()
+
+        XCTAssertNil(model.remembered, "a pose that no longer exists must not be drawn")
+        await waitUntil { await store.saves.contains { $0 == nil } }
+        let stored = (try? await store.load()) ?? nil
+        XCTAssertNil(stored, "the stale reference goes, so the next open does not re-check it")
+    }
+
+    func testTheCatalogueKeepsAPoseItStillHolds() async throws {
+        let database = try makeDatabase()
+        let repository = PoseRepository(database: database)
+        try await repository.save(makePoseRecord(id: "pose-1"))
+        let resolver = CatalogueCameraLastPoseResolver(
+            repositoryProvider: { repository },
+            isOutlineAvailable: { _ in false }
+        )
+
+        let resolvable = await resolver.isResolvable(CameraLastPose(pose: samplePose(id: "pose-1")))
+
+        XCTAssertTrue(resolvable)
+    }
+
+    /// Deleted or unpublished since: the catalogue cache prunes the row, so a missing row in a
+    /// catalogue that still knows other poses is the local signal that this pose is gone — and it
+    /// beats the cached outline, which is exactly what was drawn before the pose was deleted.
+    func testADeletedPoseIsNotResolvable() async throws {
+        let database = try makeDatabase()
+        let repository = PoseRepository(database: database)
+        try await repository.save(makePoseRecord(id: "pose-1"))
+        try await repository.save(makePoseRecord(id: "pose-2"))
+        try await repository.delete(ids: ["pose-1"])
+        let resolver = CatalogueCameraLastPoseResolver(
+            repositoryProvider: { repository },
+            isOutlineAvailable: { _ in true }
+        )
+
+        let deleted = await resolver.isResolvable(CameraLastPose(pose: samplePose(id: "pose-1")))
+        let stillListed = await resolver.isResolvable(CameraLastPose(pose: samplePose(id: "pose-2")))
+
+        XCTAssertFalse(deleted, "a row the catalogue no longer lists means deleted/unpublished")
+        XCTAssertTrue(stillListed, "the pose the user still has keeps its guide")
+    }
+
+    /// Offline-safe: with nothing cached to compare against (a first launch, or a catalogue cleared by
+    /// a session change), the outline that was drawn last time is local evidence enough.
+    func testAnEmptyCatalogueFallsBackToTheCachedOutline() async throws {
+        let database = try makeDatabase()
+        let repository = PoseRepository(database: database)
+        let checked = OutlineChecks()
+        let resolver = CatalogueCameraLastPoseResolver(
+            repositoryProvider: { repository },
+            isOutlineAvailable: { url in
+                Task { await checked.record(url) }
+                return true
+            }
+        )
+
+        let resolvable = await resolver.isResolvable(CameraLastPose(pose: samplePose()))
+        await waitUntil { await checked.urls.count == 1 }
+
+        XCTAssertTrue(resolvable)
+        let urls = await checked.urls
+        XCTAssertEqual(urls.map(\.absoluteString), ["https://cdn.example.com/guides/pose-1.png"])
+    }
+
+    func testAnEmptyCatalogueWithNoOutlineIsNotResolvable() async throws {
+        let database = try makeDatabase()
+        let repository = PoseRepository(database: database)
+        let resolver = CatalogueCameraLastPoseResolver(
+            repositoryProvider: { repository },
+            isOutlineAvailable: { _ in false }
+        )
+
+        let resolvable = await resolver.isResolvable(CameraLastPose(pose: samplePose()))
+
+        XCTAssertFalse(resolvable, "nothing local to draw and nothing cached: open as on a first launch")
+    }
+
+    func testACorruptReferenceIsNeverResolvable() async {
+        let resolver = CatalogueCameraLastPoseResolver(
+            repositoryProvider: { nil },
+            isOutlineAvailable: { _ in true }
+        )
+
+        let resolvable = await resolver.isResolvable(CameraLastPose(poseId: "", name: "", category: ""))
+
+        XCTAssertFalse(resolvable)
+    }
+
     // MARK: - Back target (routing)
 
     func testClosingTheCameraFromAPoseDetailRestoresThatDetail() throws {
         var slot = PosesResumeSlot()
         let pose = samplePose()
 
-        slot.cameraClosed(after: .poseDetail(pose))
+        slot.cameraClosed(after: .poseDetail(CameraPoseRequest(pose: pose)))
 
-        XCTAssertEqual(try XCTUnwrap(slot.poseToRestore).id, pose.id)
+        XCTAssertEqual(try XCTUnwrap(slot.targetToRestore).pose.id, pose.id)
+        XCTAssertFalse(try XCTUnwrap(slot.targetToRestore).isPrivate)
     }
 
     func testClosingTheCameraOpenedFromHomeShowsTheCatalogue() {
@@ -305,25 +415,51 @@ final class CameraLastPoseTests: XCTestCase {
 
         slot.cameraClosed(after: .home)
 
-        XCTAssertNil(slot.poseToRestore)
+        XCTAssertNil(slot.targetToRestore)
     }
 
     func testAHomeEntryClearsADetailTargetLeftFromAnEarlierVisit() {
         var slot = PosesResumeSlot()
-        slot.cameraClosed(after: .poseDetail(samplePose()))
+        slot.cameraClosed(after: .poseDetail(CameraPoseRequest(pose: samplePose())))
 
         slot.cameraClosed(after: .home)
 
-        XCTAssertNil(slot.poseToRestore, "the second visit goes back to Home, not to the old detail")
+        XCTAssertNil(slot.targetToRestore, "the second visit goes back to Home, not to the old detail")
     }
 
     func testTheRestoredDetailIsConsumedOnce() {
         var slot = PosesResumeSlot()
-        slot.cameraClosed(after: .poseDetail(samplePose()))
+        slot.cameraClosed(after: .poseDetail(CameraPoseRequest(pose: samplePose())))
 
         slot.consume()
 
-        XCTAssertNil(slot.poseToRestore, "re-entering the tab later must not re-open the pose")
+        XCTAssertNil(slot.targetToRestore, "re-entering the tab later must not re-open the pose")
+    }
+
+    /// A private pose (Jobs / Add pose) only exists behind the account's own endpoints. Restoring it
+    /// as a public detail would send it to the public catalogue, which answers 404 and shows "Pose
+    /// unavailable" for the pose the user just used.
+    func testAPrivateDetailIsRestoredPrivate() throws {
+        var slot = PosesResumeSlot()
+        let privatePose = samplePose(id: "pose-private", name: "My Extracted Pose")
+
+        slot.cameraClosed(after: .poseDetail(CameraPoseRequest(pose: privatePose, isPrivate: true)))
+
+        let restored = try XCTUnwrap(slot.targetToRestore)
+        XCTAssertEqual(restored.pose.id, privatePose.id)
+        XCTAssertTrue(restored.isPrivate, "the restored detail keeps skipping the public confirm")
+    }
+
+    func testTheUseThisPoseRouteCarriesTheLane() {
+        var request: CameraPoseRequest?
+        let pose = samplePose()
+
+        routeTryPoseToCamera(pose, isPrivate: true) { request = $0 }
+        XCTAssertEqual(request?.pose.id, pose.id)
+        XCTAssertEqual(request?.isPrivate, true)
+
+        routeTryPoseToCamera(pose, isPrivate: false) { request = $0 }
+        XCTAssertEqual(request?.isPrivate, false)
     }
 
     // MARK: - The paid gate is untouched by the remembered pose
@@ -352,10 +488,18 @@ final class CameraLastPoseTests: XCTestCase {
 
     // MARK: - Fixtures and helpers
 
-    private func makeModel(store: any CameraLastPoseStore) -> CameraLastPoseModel {
-        // A boundary per model: the fan-out is process-wide per boundary, so sharing the app's would
-        // let one test's session event reset another test's model.
-        CameraLastPoseModel(store: store, boundary: SessionBoundary(tokenStorage: TestTokenStorage()))
+    /// A boundary per model: the fan-out is process-wide per boundary, so sharing the app's would let
+    /// one test's session event reset another test's model. The resolver defaults to "still there",
+    /// because these tests are about the model; the real resolution rules have their own tests below.
+    private func makeModel(
+        store: any CameraLastPoseStore,
+        resolver: any CameraLastPoseResolving = StubLastPoseResolver()
+    ) -> CameraLastPoseModel {
+        CameraLastPoseModel(
+            store: store,
+            resolver: resolver,
+            boundary: SessionBoundary(tokenStorage: TestTokenStorage())
+        )
     }
 
     private func samplePose(
@@ -372,6 +516,25 @@ final class CameraLastPoseTests: XCTestCase {
             instructions: ["Relax your shoulders", "Turn slightly toward the light"],
             isSaved: false,
             guideURL: guideURL
+        )
+    }
+
+    private func makePoseRecord(id: String) -> PoseRecord {
+        PoseRecord(
+            poseId: id,
+            ownerAccountId: "account-1",
+            name: "Soft Standing",
+            description: nil,
+            tags: "[]",
+            difficulty: "Standing",
+            bodyParts: "[]",
+            status: "published",
+            originalPath: "",
+            skeletonPath: "/guides/\(id).png",
+            thumbnailPath: "/photos/\(id).jpg",
+            currentJobId: nil,
+            createdAt: "2026-01-01T00:00:00Z",
+            updatedAt: "2026-01-01T00:00:00Z"
         )
     }
 
@@ -404,6 +567,28 @@ final class CameraLastPoseTests: XCTestCase {
 }
 
 // MARK: - Doubles
+
+/// Resolver double: the model tests only need the answer. The real resolver is exercised against a
+/// real `Pose` table next to them.
+private actor StubLastPoseResolver: CameraLastPoseResolving {
+    private let resolvable: Bool
+    private(set) var checked: [String] = []
+
+    init(resolvable: Bool = true) {
+        self.resolvable = resolvable
+    }
+
+    func isResolvable(_ reference: CameraLastPose) async -> Bool {
+        checked.append(reference.poseId)
+        return resolvable
+    }
+}
+
+/// Collects the outlines a resolver asked about (the closure has to stay `@Sendable`).
+private actor OutlineChecks {
+    private(set) var urls: [URL] = []
+    func record(_ url: URL) { urls.append(url) }
+}
 
 /// Session double: these models only need a boundary to adopt, never credentials.
 private final class TestTokenStorage: TokenStoring, @unchecked Sendable {

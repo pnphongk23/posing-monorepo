@@ -11,12 +11,13 @@ final class PoseDetailFeatureTests: XCTestCase {
     }
 
     @MainActor func testTryPoseCallbackPreservesPoseIdentity() {
-        var received: NativePose?
+        var received: CameraPoseRequest?
         let pose = sampleDetailPose
-        let onTryPose: (NativePose) -> Void = { received = $0 }
-        onTryPose(pose)
-        XCTAssertEqual(received?.id, pose.id)
-        XCTAssertEqual(received?.name, pose.name)
+        let onTryPose: (CameraPoseRequest) -> Void = { received = $0 }
+        onTryPose(CameraPoseRequest(pose: pose))
+        XCTAssertEqual(received?.pose.id, pose.id)
+        XCTAssertEqual(received?.pose.name, pose.name)
+        XCTAssertEqual(received?.isPrivate, false)
     }
 
     @MainActor func testLocalBookmarkToggleUpdatesViewModelState() async {

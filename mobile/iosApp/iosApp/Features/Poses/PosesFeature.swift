@@ -820,14 +820,14 @@ struct PosesScreen: View {
     @StateObject var model: PosesViewModel
     @ObservedObject var jobsService: JobsService = ServiceLocator.jobsService
     @StateObject private var session = SessionPresenceModel()
-    var onTryPose: (NativePose) -> Void = { _ in }
+    var onTryPose: (CameraPoseRequest) -> Void = { _ in }
     /// Lets `AppFeatureRoot` hide the dock's active pill while the Search overlay is up: Search is
     /// not a tab, and `reference/search-blank.png` shows both dock items plain grey.
     var onSearchVisibilityChange: (Bool) -> Void = { _ in }
     /// BUG-261029-05: the camera is a tab, so closing it rebuilt this screen from its root and the
     /// pose detail the user came from was gone. The app root hands the detail back here, and the
     /// rebuilt stack pushes it once.
-    var resumePose: NativePose?
+    var resumePose: CameraPoseRequest?
     /// Fired when the handed-back detail was taken. One-shot: a later visit to this tab must not
     /// silently re-open the pose.
     var onResumeHandled: () -> Void = {}
@@ -845,7 +845,7 @@ struct PosesScreen: View {
     @State private var pendingSignIn: SignInIntent?
     @State private var route: PosesRoute?
     /// The pose detail being restored after a camera visit; `nil` whenever nothing has to be re-pushed.
-    @State private var resumedPose: NativePose?
+    @State private var resumedPose: CameraPoseRequest?
 
     var body: some View {
         ZStack {
@@ -952,7 +952,14 @@ struct PosesScreen: View {
                 // link disappears with it and nothing else in this session re-pushes the pose.
                 if let resumedPose {
                     NavigationLink(
-                        destination: PoseDetailScreen(pose: resumedPose, model: model, onTryPose: onTryPose),
+                        destination: PoseDetailScreen(
+                            pose: resumedPose.pose,
+                            model: model,
+                            onTryPose: onTryPose,
+                            // A private detail (Jobs / Add pose) stays private: confirming it against
+                            // the public catalogue would answer 404 and show "Pose unavailable".
+                            isPrivate: resumedPose.isPrivate
+                        ),
                         isActive: Binding(
                             get: { self.resumedPose != nil },
                             set: { isPresented in
@@ -1227,7 +1234,7 @@ struct PoseCard: View {
 struct PoseGrid: View {
     let poses: [NativePose]
     @ObservedObject var model: PosesViewModel
-    var onTryPose: (NativePose) -> Void = { _ in }
+    var onTryPose: (CameraPoseRequest) -> Void = { _ in }
     /// Fired when one of the last rows is drawn, so the caller can page in the next batch.
     var onNearEnd: (() -> Void)?
     @ObservedObject private var aspectRatioCache: PoseAspectRatioCache
@@ -1243,7 +1250,7 @@ struct PoseGrid: View {
     init(
         poses: [NativePose],
         model: PosesViewModel,
-        onTryPose: @escaping (NativePose) -> Void = { _ in },
+        onTryPose: @escaping (CameraPoseRequest) -> Void = { _ in },
         onNearEnd: (() -> Void)? = nil
     ) {
         self.poses = poses
@@ -1406,7 +1413,7 @@ private struct PoseHeroFailureFill: View {
 struct PoseDetailScreen: View {
     let pose: NativePose
     @ObservedObject var model: PosesViewModel
-    var onTryPose: (NativePose) -> Void
+    var onTryPose: (CameraPoseRequest) -> Void
     var isPrivate: Bool = false
     @ObservedObject private var aspectRatioCache = PoseAspectRatioCache.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -1418,7 +1425,7 @@ struct PoseDetailScreen: View {
     @State private var isUnavailable = false
     @Environment(\.dismiss) private var dismiss
     private let boundary = ServiceLocator.sessionBoundary
-    init(pose: NativePose, model: PosesViewModel, onTryPose: @escaping (NativePose) -> Void, isPrivate: Bool = false) {
+    init(pose: NativePose, model: PosesViewModel, onTryPose: @escaping (CameraPoseRequest) -> Void, isPrivate: Bool = false) {
         self.pose = pose
         self.model = model
         self.onTryPose = onTryPose
@@ -1514,7 +1521,7 @@ struct PoseDetailScreen: View {
     /// inset follows it automatically — so the CTA stays on screen at accessibility sizes too.
     private var usePoseBar: some View {
         Button {
-            routeTryPoseToCamera(pose, onTryPose: onTryPose)
+            routeTryPoseToCamera(pose, isPrivate: isPrivate, onTryPose: onTryPose)
         } label: {
             Label("Use this pose", systemImage: "camera")
                 .lineLimit(2)
@@ -1628,8 +1635,10 @@ struct PoseDetailScreen: View {
     }
 }
 
-func routeTryPoseToCamera(_ pose: NativePose, onTryPose: (NativePose) -> Void) {
-    onTryPose(pose)
+/// "Use this pose" hands the camera the pose **and** its lane: a private pose restored after the
+/// camera came back must not be confirmed against the public catalogue (BUG-261029-05 review).
+func routeTryPoseToCamera(_ pose: NativePose, isPrivate: Bool, onTryPose: (CameraPoseRequest) -> Void) {
+    onTryPose(CameraPoseRequest(pose: pose, isPrivate: isPrivate))
 }
 
 // MARK: - Search
@@ -1983,7 +1992,7 @@ enum SavedSurfaceStage: Equatable {
 /// of calling `/api/me/saved`, so a guest can never be shown cached rows as current (FEAT-013/FEAT-014).
 struct SavedPosesScreen: View {
     @ObservedObject var model: PosesViewModel
-    var onTryPose: (NativePose) -> Void = { _ in }
+    var onTryPose: (CameraPoseRequest) -> Void = { _ in }
     @StateObject private var session = SessionPresenceModel()
     @State private var pendingSignIn: SignInIntent?
     @Environment(\.dismiss) private var dismiss
@@ -2128,7 +2137,7 @@ struct PagingFooter: View {
 
 struct PoseResultsList: View {
     @ObservedObject var model: PosesViewModel
-    var onTryPose: (NativePose) -> Void = { _ in }
+    var onTryPose: (CameraPoseRequest) -> Void = { _ in }
     /// Owner surface: Search and Saved have different frozen loading/error/empty copy.
     var context: PoseResultsContext = .search
     /// Bottom clearance for the dock overlay; the shared Search workspace reserves less than the tab root.

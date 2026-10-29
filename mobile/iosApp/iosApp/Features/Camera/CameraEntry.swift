@@ -1,6 +1,19 @@
 import Foundation
+import Kingfisher
 
 // MARK: - Where the camera was opened from (BUG-261029-05)
+
+/// A pose the user is acting on, plus the lane it belongs to.
+///
+/// A private pose (Jobs / Add pose) only exists behind the account's own endpoints, so anything that
+/// re-opens it later has to remember that: `PoseDetailScreen` confirms a *public* pose against the
+/// public catalogue, and a private one must never be sent there — the endpoint answers 404 and the
+/// restored detail would claim "Pose unavailable" for the pose the user just used.
+struct CameraPoseRequest: Equatable {
+    let pose: NativePose
+    /// Opened from a private detail: the restored detail keeps skipping the public confirm.
+    var isPrivate: Bool = false
+}
 
 /// Why the camera tab is up, so closing it can put the user back where they came from.
 ///
@@ -13,11 +26,12 @@ enum CameraEntry: Equatable {
     /// Opened with no pose chosen — the dock, the gallery.
     case home
     /// "Use this pose" from a pose detail, which back has to return to.
-    case poseDetail(NativePose)
+    case poseDetail(CameraPoseRequest)
 
-    /// The detail the camera was opened from, `nil` for an entry that returns Home.
-    var returnPose: NativePose? {
-        if case .poseDetail(let pose) = self { return pose }
+    /// The detail the camera was opened from, `nil` for an entry that returns Home. It carries the
+    /// private marker, so the restored detail is the same lane as the one the user left.
+    var returnTarget: CameraPoseRequest? {
+        if case .poseDetail(let request) = self { return request }
         return nil
     }
 }
@@ -29,18 +43,18 @@ enum CameraEntry: Equatable {
 /// appears, so going Home and later re-entering the tab from the dock does not silently re-open the
 /// pose.
 struct PosesResumeSlot: Equatable {
-    /// The pose whose detail the Poses root still has to push, `nil` once consumed.
-    private(set) var poseToRestore: NativePose?
+    /// The detail the Poses root still has to push, `nil` once consumed.
+    private(set) var targetToRestore: CameraPoseRequest?
 
     /// Closing the camera records where back has to land: the detail for a `.poseDetail` entry, and
     /// nothing at all for `.home` (which also clears a target left over from an earlier visit).
     mutating func cameraClosed(after entry: CameraEntry) {
-        poseToRestore = entry.returnPose
+        targetToRestore = entry.returnTarget
     }
 
     /// The Poses root took the target (it is pushing it, or decided there is nothing to push).
     mutating func consume() {
-        poseToRestore = nil
+        targetToRestore = nil
     }
 }
 
@@ -145,6 +159,62 @@ enum CameraGuidePolicy {
     }
 }
 
+// MARK: - Is the remembered pose still there?
+
+/// Whether a remembered reference still points at a pose that exists.
+///
+/// Local only, on purpose: the camera has to open the same way offline as it does online, so this
+/// never waits on the network. It is a port so "the pose was deleted / unsaved / unpublished since"
+/// is a unit test instead of something only reachable through a server.
+protocol CameraLastPoseResolving: Sendable {
+    func isResolvable(_ reference: CameraLastPose) async -> Bool
+}
+
+/// Resolves the remembered pose against the offline catalogue, then against the guide art that is
+/// still on this device.
+///
+/// The order matters. Once the catalogue holds anything it *is* the local source of truth: the cache
+/// prunes rows the server no longer lists, so a missing row means the pose was deleted or
+/// unpublished since it was used. An empty catalogue proves nothing, though — a first launch offline
+/// and a catalogue cleared by a session change look identical — so only then does the cached outline
+/// decide, which is what keeps a legitimately remembered pose usable with no network.
+struct CatalogueCameraLastPoseResolver: CameraLastPoseResolving {
+    /// The offline catalogue the Poses list reads. `nil` when the database cannot be opened.
+    let repositoryProvider: @Sendable () -> PoseRepository?
+    /// Is the extracted line art still here? Kingfisher's disk cache for a remote guide, the file
+    /// itself for a local one.
+    let isOutlineAvailable: @Sendable (URL) -> Bool
+
+    init(
+        repositoryProvider: @escaping @Sendable () -> PoseRepository? = { PoseCatalogDatabase.repository },
+        isOutlineAvailable: @escaping @Sendable (URL) -> Bool = CatalogueCameraLastPoseResolver.cachedOutlineExists
+    ) {
+        self.repositoryProvider = repositoryProvider
+        self.isOutlineAvailable = isOutlineAvailable
+    }
+
+    func isResolvable(_ reference: CameraLastPose) async -> Bool {
+        // A row that cannot draw a guide and cannot name a capture is not a pose at all.
+        guard let pose = reference.pose else { return false }
+
+        if let repository = repositoryProvider(),
+           let known = try? await repository.count(), known > 0 {
+            let record = (try? await repository.pose(id: pose.id)) ?? nil
+            return record != nil
+        }
+
+        guard let outline = pose.cameraGuideURL else { return false }
+        return isOutlineAvailable(outline)
+    }
+
+    /// What the camera already downloaded when it drew this guide. A remote guide the user has seen
+    /// is on disk, so "no catalogue to compare against" is not the same as "nothing to draw".
+    static func cachedOutlineExists(_ url: URL) -> Bool {
+        if url.isFileURL { return FileManager.default.fileExists(atPath: url.path) }
+        return ImageCache.default.isCached(forKey: url.cacheKey)
+    }
+}
+
 // MARK: - Store
 
 /// Reads and writes the remembered pose. Async because the row sits behind the same GRDB database the
@@ -244,6 +314,8 @@ final class CameraLastPoseModel: ObservableObject, SessionScoped {
     @Published private(set) var remembered: CameraLastPose?
 
     private let store: any CameraLastPoseStore
+    /// Decides whether the stored reference still names a pose that exists (deleted / unsaved since).
+    private let resolver: any CameraLastPoseResolving
     private let scope: SessionScope
     /// Bumped by a session change. A load that was in flight when the Account moved must not paint
     /// the previous Account's pose over the reset.
@@ -253,9 +325,11 @@ final class CameraLastPoseModel: ObservableObject, SessionScoped {
 
     init(
         store: any CameraLastPoseStore = DeferredCameraLastPoseStore(),
+        resolver: any CameraLastPoseResolving = CatalogueCameraLastPoseResolver(),
         boundary: SessionBoundary = ServiceLocator.sessionBoundary
     ) {
         self.store = store
+        self.resolver = resolver
         self.scope = SessionScope.of(boundary)
         scope.adopt(self)
     }
@@ -272,6 +346,19 @@ final class CameraLastPoseModel: ObservableObject, SessionScoped {
         // first camera open of a run writes the pose and reads the row in the same turn, and the read
         // loses that race. Without this guard the guide then vanished on the *next* camera open.
         guard remembered == nil else { return }
+        guard let loaded else { return }
+
+        // The stored reference is not proof that the pose still exists: it may have been deleted,
+        // unpublished or unsaved since. Anything that moved while the resolver ran wins over its
+        // answer, so the session check is repeated after the await.
+        let resolvable = await Self.resolveOffMain(loaded, using: resolver)
+        guard generation == self.generation, remembered == nil else { return }
+        guard resolvable else {
+            // No pose, no error — and the stale reference goes, so a later open does not keep
+            // re-checking a pose that is gone.
+            save(nil)
+            return
+        }
         remembered = loaded
     }
 
@@ -300,6 +387,16 @@ final class CameraLastPoseModel: ObservableObject, SessionScoped {
         didLoad = true
         writeTask?.cancel()
         save(nil)
+    }
+
+    /// The resolver may have to open the catalogue database, which is blocking file work. This model
+    /// lives on the main actor because a screen owns it, so the lookup is pushed off it — the same rule
+    /// `PoseCatalogCacheStore` and `DeferredCameraSettingsStore` follow.
+    private nonisolated static func resolveOffMain(
+        _ reference: CameraLastPose,
+        using resolver: any CameraLastPoseResolving
+    ) async -> Bool {
+        await Task.detached(priority: .utility) { await resolver.isResolvable(reference) }.value
     }
 
     private func save(_ reference: CameraLastPose?) {

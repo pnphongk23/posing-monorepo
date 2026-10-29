@@ -16,7 +16,7 @@ enum FinishFilter: String, CaseIterable, Identifiable {
 struct JobsScreen<Service: JobsServing & ObservableObject>: View {
     @ObservedObject var jobsService: Service
     @ObservedObject var posesModel: PosesViewModel
-    var onTryPose: (NativePose) -> Void = { _ in }
+    var onTryPose: (CameraPoseRequest) -> Void = { _ in }
     var onAddPose: () -> Void = {}
     @Environment(\.dismiss) private var dismiss
 
@@ -31,7 +31,7 @@ struct JobsScreen<Service: JobsServing & ObservableObject>: View {
         jobsService: Service,
         posesModel: PosesViewModel,
         initialTab: JobsTab = .processing,
-        onTryPose: @escaping (NativePose) -> Void = { _ in },
+        onTryPose: @escaping (CameraPoseRequest) -> Void = { _ in },
         onAddPose: @escaping () -> Void = {}
     ) {
         self.jobsService = jobsService
@@ -332,7 +332,7 @@ extension JobsScreen where Service == JobsService {
         jobsService: JobsService = ServiceLocator.jobsService,
         posesModel: PosesViewModel,
         initialTab: JobsTab = .processing,
-        onTryPose: @escaping (NativePose) -> Void = { _ in },
+        onTryPose: @escaping (CameraPoseRequest) -> Void = { _ in },
         onAddPose: @escaping () -> Void = {}
     ) {
         self.jobsService = jobsService

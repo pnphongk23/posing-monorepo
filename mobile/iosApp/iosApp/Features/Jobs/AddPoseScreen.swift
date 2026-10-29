@@ -148,7 +148,7 @@ final class AddPoseViewModel: ObservableObject {
 struct AddPoseScreen: View {
     @StateObject var viewModel: AddPoseViewModel
     @ObservedObject var posesModel: PosesViewModel
-    var onTryPose: (NativePose) -> Void = { _ in }
+    var onTryPose: (CameraPoseRequest) -> Void = { _ in }
     var onOpenJobs: (JobsTab) -> Void = { _ in }
     @Environment(\.dismiss) private var dismiss
 
@@ -160,7 +160,7 @@ struct AddPoseScreen: View {
     init(
         viewModel: AddPoseViewModel = AddPoseViewModel(),
         posesModel: PosesViewModel,
-        onTryPose: @escaping (NativePose) -> Void = { _ in },
+        onTryPose: @escaping (CameraPoseRequest) -> Void = { _ in },
         onOpenJobs: @escaping (JobsTab) -> Void = { _ in }
     ) {
         _viewModel = StateObject(wrappedValue: viewModel)

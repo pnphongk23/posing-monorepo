@@ -81,6 +81,12 @@ struct PoseRepository: Sendable {
         try await database.pool.read { db in try PoseRecord.fetchOne(db, key: id) }
     }
 
+    /// How much the offline catalogue knows. `0` means "nothing to compare against", which is not the
+    /// same answer as "this pose is gone" (see `CatalogueCameraLastPoseResolver`).
+    func count() async throws -> Int {
+        try await database.pool.read { db in try PoseRecord.fetchCount(db) }
+    }
+
     func save(_ pose: PoseRecord) async throws {
         try await database.pool.write { db in try pose.save(db) }
     }
