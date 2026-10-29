@@ -1,0 +1,15 @@
+# TC-PAY-003 the paywall shown to a signed-out user asks them to sign in
+appId: ${APP_ID}
+tags: [TC-PAY-003, p1]
+---
+- runFlow:
+    file: ../subflows/launch-paywall.yaml
+    env:
+      PAYWALL: "YES"
+- runFlow: ../subflows/open-camera.yaml
+- tapOn:
+    id: "camera.shutter"
+- extendedWaitUntil:
+    visible:
+      id: "paywall.signin"
+    timeout: 10000

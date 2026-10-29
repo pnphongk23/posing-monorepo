@@ -1,0 +1,15 @@
+# TC-PAY-001 capture with the paywall on and signed out opens the paywall
+appId: ${APP_ID}
+tags: [TC-PAY-001, p0]
+---
+- runFlow:
+    file: ../subflows/launch-paywall.yaml
+    env:
+      PAYWALL: "YES"
+- runFlow: ../subflows/open-camera.yaml
+- tapOn:
+    id: "camera.shutter"
+- extendedWaitUntil:
+    visible:
+      id: "paywall.close"
+    timeout: 10000

@@ -1,0 +1,12 @@
+# TC-ACC-009 the Apple button is visible and labelled "Sign in with Apple"
+appId: ${APP_ID}
+tags: [TC-ACC-009, p1]
+---
+- runFlow: ../subflows/launch-accounts-on.yaml
+- tapOn:
+    id: "poses.open-settings"
+- tapOn:
+    id: "settings.account.row"
+- assertVisible:
+    id: "account.signin.apple"
+- assertVisible: "Sign in with Apple"

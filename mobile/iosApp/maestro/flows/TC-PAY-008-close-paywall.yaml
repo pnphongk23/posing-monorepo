@@ -1,0 +1,21 @@
+# TC-PAY-008 closing the paywall returns to the camera
+appId: ${APP_ID}
+tags: [TC-PAY-008, p1]
+---
+- runFlow:
+    file: ../subflows/launch-paywall.yaml
+    env:
+      PAYWALL: "YES"
+- runFlow: ../subflows/open-camera.yaml
+- tapOn:
+    id: "camera.shutter"
+- extendedWaitUntil:
+    visible:
+      id: "paywall.close"
+    timeout: 10000
+- tapOn:
+    id: "paywall.close"
+- assertNotVisible:
+    id: "paywall.close"
+- assertVisible:
+    id: "camera.shutter"

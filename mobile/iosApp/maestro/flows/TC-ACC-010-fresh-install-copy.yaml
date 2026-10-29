@@ -1,0 +1,12 @@
+# TC-ACC-010 a fresh install's Account card does not imply a previous session
+appId: ${APP_ID}
+tags: [TC-ACC-010, p1]
+---
+- runFlow: ../subflows/launch-accounts-on.yaml
+- tapOn:
+    id: "poses.open-settings"
+- tapOn:
+    id: "settings.account.row"
+# TODO(QA-261029-ID): copy has no accessibility id; asserted by text
+- assertVisible: "Not signed in"
+- assertNotVisible: ".*again.*"
