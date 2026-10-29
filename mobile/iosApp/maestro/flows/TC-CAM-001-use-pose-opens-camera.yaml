@@ -1,4 +1,4 @@
-# TC-CAM-001 Use this pose opens the camera with the guide controls
+# TC-CAM-001 Use this pose opens the camera with the guide drawn and its controls
 appId: ${APP_ID}
 tags: [TC-CAM-001, p0]
 ---
@@ -12,3 +12,5 @@ tags: [TC-CAM-001, p0]
     timeout: 20000
 - assertVisible:
     id: "camera.choosePose"
+- assertVisible:
+    id: "camera.poseGuide"

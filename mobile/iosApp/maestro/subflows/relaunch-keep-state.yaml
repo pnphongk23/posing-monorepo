@@ -1,0 +1,9 @@
+# Stop and start the app again keeping its data (simulates a relaunch); wait for Home.
+appId: ${APP_ID}
+---
+- launchApp:
+    stopApp: true
+- extendedWaitUntil:
+    visible:
+      id: "poses.open-search"
+    timeout: 30000

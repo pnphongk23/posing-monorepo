@@ -4,8 +4,8 @@ tags: [TC-CAM-009, p0]
 ---
 - runFlow: ../subflows/launch.yaml
 - runFlow: ../subflows/open-camera.yaml
-# TODO(QA-261029-ID): camera close button has no id (label "Close camera")
-- tapOn: "Close camera"
+- tapOn:
+    id: "camera.close"
 - assertVisible:
     id: "poses.open-search"
 - assertNotVisible:

@@ -1,0 +1,31 @@
+# TC-CAM-011 a pose picked in the camera wins over the remembered one
+appId: ${APP_ID}
+tags: [TC-CAM-011, p1]
+---
+- runFlow: ../subflows/launch.yaml
+- runFlow: ../subflows/open-first-pose.yaml
+- copyTextFrom:
+    id: "poseDetail.title"
+- tapOn:
+    id: "poseDetail.use"
+- extendedWaitUntil:
+    visible:
+      id: "camera.poseGuide"
+      text: ${maestro.copiedText}
+    timeout: 20000
+- tapOn:
+    id: "camera.choosePose"
+- extendedWaitUntil:
+    visible:
+      id: "posePicker.grid"
+    timeout: 10000
+# the grid has no per-cell ids; a cell far from the first one is a different pose
+- tapOn:
+    point: "75%,75%"
+- extendedWaitUntil:
+    visible:
+      id: "camera.poseGuide"
+    timeout: 10000
+- assertNotVisible:
+    id: "camera.poseGuide"
+    text: ${maestro.copiedText}

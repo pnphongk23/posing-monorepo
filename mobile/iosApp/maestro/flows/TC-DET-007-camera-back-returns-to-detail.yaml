@@ -4,19 +4,25 @@ tags: [TC-DET-007, p0]
 ---
 - runFlow: ../subflows/launch.yaml
 - runFlow: ../subflows/open-first-pose.yaml
+- copyTextFrom:
+    id: "poseDetail.title"
 - tapOn:
     id: "poseDetail.use"
 - extendedWaitUntil:
     visible:
       id: "camera.shutter"
     timeout: 20000
-# TODO(QA-261029-ID): camera close button has no id (label "Close camera")
-- tapOn: "Close camera"
+- assertVisible:
+    id: "camera.poseGuide"
+    text: ${maestro.copiedText}
+- tapOn:
+    id: "camera.close"
 - extendedWaitUntil:
     visible:
-      id: "poseDetail.use"
+      id: "poseDetail.title"
+      text: ${maestro.copiedText}
     timeout: 10000
 - assertVisible:
-    id: "poseDetail.back"
+    id: "poseDetail.use"
 - assertNotVisible:
     id: "poses.open-search"

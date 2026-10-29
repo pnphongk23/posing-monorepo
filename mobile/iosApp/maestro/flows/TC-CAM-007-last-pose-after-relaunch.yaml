@@ -1,0 +1,20 @@
+# TC-CAM-007 the dock camera opens with the last used pose guide, also after a relaunch
+appId: ${APP_ID}
+tags: [TC-CAM-007, p1]
+---
+- runFlow: ../subflows/launch.yaml
+- runFlow: ../subflows/open-first-pose.yaml
+- copyTextFrom:
+    id: "poseDetail.title"
+- tapOn:
+    id: "poseDetail.use"
+- extendedWaitUntil:
+    visible:
+      id: "camera.poseGuide"
+      text: ${maestro.copiedText}
+    timeout: 20000
+- runFlow: ../subflows/relaunch-keep-state.yaml
+- runFlow: ../subflows/open-camera.yaml
+- assertVisible:
+    id: "camera.poseGuide"
+    text: ${maestro.copiedText}
