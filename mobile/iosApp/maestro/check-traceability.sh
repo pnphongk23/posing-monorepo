@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Fails if an automated case has no flow, a flow names an unknown case, or flow/case mapping is not 1:1.
+# Fails if a flow is untracked, an automated case has no flow, a flow names an unknown case, or flow/case mapping is not 1:1.
 set -euo pipefail
 cd "$(dirname "$0")"
 cases=../../../docs/qa/test-cases
@@ -20,5 +20,11 @@ while read -r id file; do
   [ -z "$id" ] && continue
   [ -f "flows/$file" ] || { echo "FAIL $id: flow flows/$file missing"; rc=1; }
 done <<< "$auto"
+# Every flow and subflow must be committed, or a clean checkout breaks the traceability table (QA_ALLOW_UNTRACKED=1 while drafting).
+if [ -z "${QA_ALLOW_UNTRACKED:-}" ]; then
+  for f in flows/*.yaml subflows/*.yaml; do
+    git ls-files --error-unmatch "$f" >/dev/null 2>&1 || { echo "FAIL $f: not tracked by git"; rc=1; }
+  done
+fi
 [ $rc -eq 0 ] && echo "traceability OK ($(ls flows | wc -l | tr -d ' ') flows)"
 exit $rc
