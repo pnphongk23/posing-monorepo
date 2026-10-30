@@ -65,6 +65,12 @@ enum APButtonKind: CaseIterable {
     func scale(isPressed: Bool, reduceMotion: Bool) -> CGFloat {
         isPressed && !reduceMotion ? AP.Press.scale : 1
     }
+
+    /// Only the enabled primary action is raised (E1). A disabled control goes flat, so it never
+    /// reads as tappable; secondary buttons and chips are E0 by design.
+    func usesElevation(isEnabled: Bool) -> Bool {
+        self == .primary && isEnabled
+    }
 }
 
 /// Shared body for the three styles: one place owns type, radius, hit target and the press response.
@@ -76,6 +82,20 @@ struct APButtonStyleBody: View {
     @Environment(\.isEnabled) private var isEnabled
 
     var body: some View {
+        Group {
+            if kind.usesElevation(isEnabled: isEnabled) {
+                control.apElevation(.e1, cornerRadius: kind.cornerRadius)
+            } else {
+                control
+            }
+        }
+        .animation(
+            reduceMotion ? nil : .easeOut(duration: AP.Press.duration),
+            value: configuration.isPressed
+        )
+    }
+
+    private var control: some View {
         configuration.label
             .font(kind.font)
             .foregroundStyle(kind.labelColor(isEnabled: isEnabled))
@@ -91,10 +111,6 @@ struct APButtonStyleBody: View {
             )
             .scaleEffect(kind.scale(isPressed: configuration.isPressed, reduceMotion: reduceMotion))
             .apMinimumHitTarget()
-            .animation(
-                reduceMotion ? nil : .easeOut(duration: AP.Press.duration),
-                value: configuration.isPressed
-            )
     }
 }
 

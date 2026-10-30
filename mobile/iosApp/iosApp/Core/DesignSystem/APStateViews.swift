@@ -109,9 +109,6 @@ struct APStateWordRow: View {
                 .foregroundStyle(AP.Color.primaryText)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(word)
-        .accessibilityAddTraits(.isStaticText)
     }
 }
 
@@ -295,12 +292,8 @@ struct APStatusBanner: View {
             RoundedRectangle(cornerRadius: AP.Radius.radius16, style: .continuous)
                 .fill(tone.surface)
         )
+        // No hand-written label: combining the children lets SwiftUI build the announcement from the
+        // Text views that are actually drawn (word, then title, then copy).
         .accessibilityElement(children: action == nil ? .combine : .contain)
-        .accessibilityLabel(accessibilitySummary)
-    }
-
-    /// The word-plus-copy summary VoiceOver reads; also proof in tests that the word is never dropped.
-    var accessibilitySummary: String {
-        [tone.word, title, message].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: ". ")
     }
 }

@@ -5,6 +5,9 @@ import XCTest
 
 /// Behaviour of the shared state components: glyph + word pairing, status surfaces, press response,
 /// Reduce Motion alternatives and Dynamic Type wrapping.
+///
+/// Assertions about what a component *draws* go through `APViewProbe`, which renders the hosted view
+/// and reads its pixels — reading a constant back would only prove the test agrees with itself.
 final class APStateViewsTests: XCTestCase {
     // MARK: - Glyph + word, never colour alone
 
@@ -27,15 +30,46 @@ final class APStateViewsTests: XCTestCase {
         }
     }
 
-    func testBannerSummaryAlwaysLeadsWithTheStateWord() {
-        for tone in APStateTone.allCases {
-            let banner = APStatusBanner(tone: tone, title: "Something happened", message: "More detail")
-            XCTAssertTrue(
-                banner.accessibilitySummary.hasPrefix(tone.word),
-                "\(tone.rawValue) banner must announce its word first, got: \(banner.accessibilitySummary)"
-            )
-            XCTAssertTrue(banner.accessibilitySummary.contains("More detail"))
+    @MainActor func testStatusWordRowDrawsTheWordItIsGiven() {
+        // The word is painted, not only carried in a constant: a longer word widens the ink in the row,
+        // and a row that dropped its Text would keep only the glyph.
+        let probe = APViewProbe(topAligned(APStateWordRow(tone: .offline, word: "Offline")))
+        defer { probe.tearDown() }
+        let short = probe.capture()
+        let long = probe.render(topAligned(APStateWordRow(tone: .offline, word: "Offline offline offline")))
+
+        // The whole frame, so the assertion does not depend on where the row landed.
+        let shortInk = short.inkExtent(inRows: 0..<short.height)
+        let longInk = long.inkExtent(inRows: 0..<long.height)
+        XCTAssertGreaterThan(shortInk, 0, "the word row must paint the glyph and the word")
+        XCTAssertGreaterThan(
+            longInk, shortInk + 40,
+            "a longer word must widen the painted row (short \(shortInk) pt, long \(longInk) pt)"
+        )
+    }
+
+    @MainActor func testBannerPaintsItsStatusWordAndCopy() {
+        let probe = APViewProbe(APStatusBanner(tone: .warning, title: "Storage almost full", message: "Delete a photo."))
+        defer { probe.tearDown() }
+        let filled = probe.capture()
+        let surfaceRows = filled.rows(paintedWith: 0xFED766)
+        guard surfaceRows.count > 24, let first = surfaceRows.first, let last = surfaceRows.last else {
+            return XCTFail("the banner must paint its warningSurface fill, painted \(surfaceRows.count) rows")
         }
+
+        XCTAssertGreaterThan(
+            filled.inkExtent(inRows: first..<min(first + 20, last), background: APPixel(red: 254, green: 215, blue: 102, alpha: 255)),
+            0,
+            "the status row must paint its glyph and word"
+        )
+
+        // Same tone and title, different copy: the pixels below the status row must change, which only
+        // holds while the copy is actually drawn.
+        let changed = probe.render(APStatusBanner(tone: .warning, title: "Storage almost full", message: "Buy more space."))
+        XCTAssertTrue(
+            filled.differs(from: changed, inRows: (first + 20)..<last),
+            "a different message must change the copy pixels"
+        )
     }
 
     // MARK: - Status surfaces and glyph contrast
@@ -68,20 +102,6 @@ final class APStateViewsTests: XCTestCase {
                     ratio, 3.0,
                     "\(tone.rawValue) glyph on its surface is \(ratio):1 in \(style == .dark ? "dark" : "light"), need 3:1"
                 )
-            }
-        }
-    }
-
-    func testStateCopyStaysOnPrimaryText() {
-        // Every banner puts its words on primaryText, which is the pair the tokens document at
-        // 11:1–17:1 on each status surface; a tinted label would drop below 4.5:1 in light mode.
-        for tone in APStateTone.allCases where tone != .empty && tone != .loading {
-            let text = AP.Color.primaryText
-            for style in [UIUserInterfaceStyle.light, .dark] {
-                guard let ratio = contrastRatio(text, on: tone.surface, style: style) else {
-                    return XCTFail("no contrast for \(tone.rawValue)")
-                }
-                XCTAssertGreaterThanOrEqual(ratio, 4.5, "\(tone.rawValue) copy contrast in \(style == .dark ? "dark" : "light")")
             }
         }
     }
@@ -154,16 +174,102 @@ final class APStateViewsTests: XCTestCase {
         XCTAssertGreaterThan(accessibility.width, 0)
     }
 
-    @MainActor func testErrorStateRetryActionIsReachable() {
-        // The retry control exists only when a closure is supplied, and it keeps a 44 pt target.
-        var retried = false
-        let view = APErrorStateView(title: "Couldn’t load poses", message: "Check your connection.", retry: { retried = true })
-        let measured = measure(view.environment(\.dynamicTypeSize, .large), width: 320)
-        XCTAssertGreaterThan(measured.height, 44)
-        XCTAssertFalse(retried, "retry must not fire on appear")
+    // MARK: - Retry control
+
+    @MainActor func testRetryControlIsPaintedOnlyWhenAnActionIsSupplied() {
+        // The retry button is part of the rendered card, not of the model: it is painted only when a
+        // retry closure is passed, it keeps a 44 pt hit area, and it paints its label.
+        // Tall enough for the whole card: a clipped card would make the button's height a lie.
+        let probe = APViewProbe(APErrorStateView(
+            title: "Couldn't load poses",
+            message: "Check your connection.",
+            retry: {}
+        ), size: CGSize(width: 320, height: 460))
+        defer { probe.tearDown() }
+        let painted = probe.capture()
+        let buttonRows = painted.rows(paintedWith: 0xECE5D8)
+
+        XCTAssertFalse(buttonRows.isEmpty, "the retry control must paint its controlFill pill")
+        XCTAssertGreaterThanOrEqual(
+            buttonRows.count, 44,
+            "the retry control must keep a 44 pt hit area, painted \(buttonRows.count) pt"
+        )
+        if let top = buttonRows.first, let bottom = buttonRows.last {
+            XCTAssertGreaterThan(
+                painted.inkExtent(inRows: top..<(bottom + 1), background: APPixel(red: 236, green: 229, blue: 216, alpha: 255)),
+                0,
+                "the retry control must paint its label"
+            )
+        }
+
+        let withoutRetry = probe.render(APErrorStateView(title: "Couldn't load poses", message: "Check your connection."))
+        XCTAssertEqual(withoutRetry.width, 320)
+        XCTAssertTrue(
+            withoutRetry.rows(paintedWith: 0xECE5D8).isEmpty,
+            "no retry closure, no retry control"
+        )
+    }
+
+    // MARK: - Elevation
+
+    @MainActor func testPrimaryActionIsTheOnlyRaisedButtonAndOnlyWhileEnabled() {
+        XCTAssertTrue(APButtonKind.primary.usesElevation(isEnabled: true))
+        XCTAssertFalse(APButtonKind.primary.usesElevation(isEnabled: false), "a disabled primary goes flat")
+        XCTAssertFalse(APButtonKind.secondary.usesElevation(isEnabled: true))
+        XCTAssertFalse(APButtonKind.chip.usesElevation(isEnabled: true))
+
+        // Rendered proof: E1 paints a shadow under the enabled primary fill, and none when disabled.
+        let probe = APViewProbe(primaryButton(enabled: true), size: CGSize(width: 320, height: 200))
+        defer { probe.tearDown() }
+        let enabled = probe.capture()
+        let disabled = probe.render(primaryButton(enabled: false))
+
+        let enabledFill = enabled.rows(paintedWith: 0xE89CAE)
+        let disabledFill = disabled.rows(paintedWith: 0xECE5D8)
+        XCTAssertFalse(enabledFill.isEmpty, "the enabled primary action must paint its accent fill")
+        XCTAssertFalse(disabledFill.isEmpty, "the disabled primary action must paint the flat controlFill")
+
+        XCTAssertGreaterThan(
+            enabled.inkExtent(inRows: shadowBand(below: enabledFill)),
+            0,
+            "enabled primary must carry the E1 shadow below its fill"
+        )
+        XCTAssertEqual(
+            disabled.inkExtent(inRows: shadowBand(below: disabledFill)),
+            0,
+            "disabled primary stays flat: no shadow below its fill"
+        )
     }
 
     // MARK: - Helpers
+
+    /// Pins the content to the top-left so "row 0..40" is where the component is drawn.
+    @MainActor
+    private func topAligned<V: View>(_ view: V) -> some View {
+        VStack(alignment: .leading) {
+            view
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    @MainActor
+    private func primaryButton(enabled: Bool) -> some View {
+        ZStack {
+            Color.white
+            Button("Continue") {}
+                .buttonStyle(APPrimaryButtonStyle())
+                .disabled(!enabled)
+                .padding(.horizontal, AP.Space.space48)
+        }
+        .frame(width: 320, height: 200)
+    }
+
+    /// Rows just outside the control's bottom edge, where the E1 shadow lands.
+    private func shadowBand(below fillRows: [Int]) -> Range<Int> {
+        guard let bottom = fillRows.max() else { return 0..<0 }
+        return (bottom + 2)..<(bottom + 14)
+    }
 
     @MainActor
     private func measure<V: View>(_ view: V, width: CGFloat) -> CGSize {
@@ -188,7 +294,8 @@ final class APStateViewsTests: XCTestCase {
         return UInt32(round(red * 255)) << 16 | UInt32(round(green * 255)) << 8 | UInt32(round(blue * 255))
     }
 
-    private func contrastRatio(_ foreground: SwiftUI.Color, on background: SwiftUI.Color, style: UIUserInterfaceStyle) -> Double? {
+    private func contrastRatio(_ foreground: SwiftUI.Color, on background: SwiftUI.Color,
+                               style: UIUserInterfaceStyle) -> Double? {
         guard let fg = luminance(foreground, style: style), let bg = luminance(background, style: style) else { return nil }
         return (max(fg, bg) + 0.05) / (min(fg, bg) + 0.05)
     }

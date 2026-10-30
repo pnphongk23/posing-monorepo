@@ -31,6 +31,7 @@
 		A9D10C5700000000000000C3 /* APStateViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D10C5700000000000000B3 /* APStateViews.swift */; };
 		A9D10C5700000000000000C4 /* APDesignTokensTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D10C5700000000000000B4 /* APDesignTokensTests.swift */; };
 		A9D10C5700000000000000C5 /* APStateViewsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D10C5700000000000000B5 /* APStateViewsTests.swift */; };
+		A9D10C5700000000000000C6 /* APViewProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D10C5700000000000000B7 /* APViewProbe.swift */; };
 		26FEE10E47B59638546BA083 /* CameraCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = B719EE2E7F62C33D73EBA475 /* CameraCoordinator.swift */; };
 		28D7BB6072FF5454DD3D85B5 /* TokenStorageTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C522CF528E426B84E7C5887 /* TokenStorageTests.swift */; };
 		291594201B0FF97BA4E9FD28 /* AccountSessionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4BFD8884125812979E9FED4B /* AccountSessionTests.swift */; };
@@ -166,6 +167,7 @@
 		A9D10C5700000000000000B3 /* APStateViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APStateViews.swift; sourceTree = "<group>"; };
 		A9D10C5700000000000000B4 /* APDesignTokensTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APDesignTokensTests.swift; sourceTree = "<group>"; };
 		A9D10C5700000000000000B5 /* APStateViewsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APStateViewsTests.swift; sourceTree = "<group>"; };
+		A9D10C5700000000000000B7 /* APViewProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APViewProbe.swift; sourceTree = "<group>"; };
 		307F0530DC9B4D03EF10CD9C /* PosesSessionBoundaryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PosesSessionBoundaryTests.swift; sourceTree = "<group>"; };
 		3199C4916FBCFAB168D672B3 /* FeatureService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeatureService.swift; sourceTree = "<group>"; };
 		31B8B5FE18422BFB70F0CC0B /* LegacyDatabaseCompatibilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegacyDatabaseCompatibilityTests.swift; sourceTree = "<group>"; };
@@ -457,6 +459,7 @@
 			children = (
 				A9D10C5700000000000000B4 /* APDesignTokensTests.swift */,
 				A9D10C5700000000000000B5 /* APStateViewsTests.swift */,
+				A9D10C5700000000000000B7 /* APViewProbe.swift */,
 			);
 			path = DesignSystem;
 			sourceTree = "<group>";
@@ -816,6 +819,7 @@
 				91FA61089DA34D6C20DEE23B /* FeatureStateTests.swift in Sources */,
 				A9D10C5700000000000000C4 /* APDesignTokensTests.swift in Sources */,
 				A9D10C5700000000000000C5 /* APStateViewsTests.swift in Sources */,
+				A9D10C5700000000000000C6 /* APViewProbe.swift in Sources */,
 				5E2B44D1C4A9B540A480E0BA /* GalleryFeatureTests.swift in Sources */,
 				43B62A518E250A2D941976B5 /* GalleryPhotoDeletionTests.swift in Sources */,
 				1AB057FAC4D067898163B0C9 /* JobsFixtures.swift in Sources */,

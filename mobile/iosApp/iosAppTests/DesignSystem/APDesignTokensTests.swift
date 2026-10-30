@@ -243,8 +243,43 @@ final class APDesignTokensTests: XCTestCase {
         XCTAssertEqual(AP.Radius.radius8, 8)
         XCTAssertEqual(AP.Radius.radius16, 16)
         XCTAssertEqual(AP.Radius.radius24, 24)
-        XCTAssertEqual(APFocusRing.width, 2, "focus ring is 2 pt")
-        XCTAssertEqual(APFocusRing.offset, 2, "focus ring sits 2 pt outside the control")
+    }
+
+    func testFocusRingGeometryIsA2PointStrokeAfterA2PointGap() {
+        XCTAssertEqual(APFocusRing.width, 2, "the ring itself is 2 pt")
+        XCTAssertEqual(APFocusRing.offset, 2, "the ring's inner edge sits 2 pt outside the control")
+        XCTAssertEqual(APFocusRing.centerlineOutset, 3, "a centred 2 pt stroke straddles offset + width/2")
+        XCTAssertEqual(APFocusRing.band(fromControlEdge: 100), 102...104)
+        XCTAssertEqual(APFocusRing.band(fromControlEdge: 0), 2...4)
+    }
+
+    @MainActor func testFocusRingPaintsTwoPointsOutsideTheControlWithATwoPointGap() {
+        // Rendered proof of the documented geometry, captured at 2× so a half-point layout phase cannot
+        // turn a band into a one-pixel lie. Everything below is in capture pixels inside the row that
+        // crosses the control's right edge.
+        let probe = probeWithFocusRing(isFocused: true)
+        defer { probe.tearDown() }
+        let painted = probe.capture()
+        guard let band = ringBand(inRow: 120, of: painted) else {
+            return XCTFail("no ring painted on the control's mid line")
+        }
+
+        XCTAssertEqual(band.ringPixels, 4, "the stroke is 2 pt = 4 px at 2×")
+        XCTAssertGreaterThanOrEqual(band.gapPixels, 3, "the ring keeps a 2 pt = 4 px gap from the control")
+        XCTAssertLessThanOrEqual(band.gapPixels, 5, "the gap is 2 pt, not more")
+
+        let unfocused = probeWithFocusRing(isFocused: false)
+        defer { unfocused.tearDown() }
+        XCTAssertNil(
+            ringBand(inRow: 120, of: unfocused.capture()),
+            "no focus, no ring: the outline is never a resting border"
+        )
+    }
+
+    @MainActor func testFocusRingDoesNotChangeTheControlLayout() {
+        let plain = measure(Color.white.frame(width: 80, height: 80), width: 200)
+        let ringed = measure(Color.white.frame(width: 80, height: 80).apFocusRing(isFocused: true), width: 200)
+        XCTAssertEqual(plain, ringed, "the ring paints outside the bounds and takes no layout space")
     }
 
     // MARK: - Hit target
@@ -294,6 +329,46 @@ final class APDesignTokensTests: XCTestCase {
     @MainActor
     private func height(of role: AP.Font.Role, at size: DynamicTypeSize) -> CGFloat {
         measure(Text("Pose").font(role.font).environment(\.dynamicTypeSize, size), width: 400).height
+    }
+
+    /// An 80 × 80 white control centred on the secondaryBackground canvas, so its edge is detectable.
+    @MainActor
+    private func probeWithFocusRing(isFocused: Bool) -> APViewProbe {
+        let view = ZStack {
+            Color(hex: 0xF4F1E8)
+            Color.white
+                .frame(width: 80, height: 80)
+                .apFocusRing(isFocused: isFocused, cornerRadius: AP.Radius.radius8)
+        }
+        .frame(width: 120, height: 120)
+        return APViewProbe(view, size: CGSize(width: 120, height: 120), scale: 2)
+    }
+
+    /// The ring as the renderer painted it on one row: how many pixels are canvas between the control's
+    /// edge and the ring, and how many pixels the ring itself covers.
+    private struct RenderedRing {
+        let gapPixels: Int
+        let ringPixels: Int
+    }
+
+    private func ringBand(inRow y: Int, of bitmap: APBitmap) -> RenderedRing? {
+        var gap: Int?
+        var ring: Int?
+        var x = bitmap.width / 2
+        // Skip the control, which is pure white.
+        while x < bitmap.width, (bitmap.color(x: x, y: y)?.red ?? 0) >= 250 { x += 1 }
+        // Then the gap, until the ring starts.
+        while x < bitmap.width, (bitmap.color(x: x, y: y)?.red ?? 0) > 120 {
+            gap = (gap ?? 0) + 1
+            x += 1
+        }
+        // Then the ring itself.
+        while x < bitmap.width, (bitmap.color(x: x, y: y)?.red ?? 255) < 120 {
+            ring = (ring ?? 0) + 1
+            x += 1
+        }
+        guard let gap, let ring else { return nil }
+        return RenderedRing(gapPixels: gap, ringPixels: ring)
     }
 
     @MainActor

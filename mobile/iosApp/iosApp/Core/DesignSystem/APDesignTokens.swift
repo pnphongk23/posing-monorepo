@@ -283,9 +283,23 @@ struct APElevationModifier<S: InsettableShape>: ViewModifier {
 /// Never a resting border.
 enum APFocusRing {
     static let width: CGFloat = 2
+    /// The gap between the control edge and the ring's inner edge.
     static let offset: CGFloat = 2
+
+    /// How far past the control edge the stroke's *centre line* has to sit: the ring keeps an
+    /// `offset` gap, and a centred stroke of `width` straddles that line by half its thickness.
+    static var centerlineOutset: CGFloat { offset + width / 2 }
+
+    /// The ring's band measured from a control edge: with the documented 2 pt gap and 2 pt stroke a
+    /// control ending at 100 paints its ring over `102...104`, exactly as artboard 00 draws it.
+    static func band(fromControlEdge edge: CGFloat) -> ClosedRange<CGFloat> {
+        (edge + offset)...(edge + offset + width)
+    }
 }
 
+/// The ring is drawn **outside** the shape: the overlay grows by `centerlineOutset` and the stroke is
+/// centred on that expanded edge, so its 2 pt land on `offset...(offset + width)` — a real 2 pt gap
+/// between the control and the ring instead of a ring hugging the control edge.
 struct APFocusRingModifier<S: InsettableShape>: ViewModifier {
     var isFocused: Bool
     var shape: S
@@ -293,8 +307,8 @@ struct APFocusRingModifier<S: InsettableShape>: ViewModifier {
     func body(content: Content) -> some View {
         content.overlay(
             shape
-                .strokeBorder(AP.Color.outline, lineWidth: APFocusRing.width)
-                .padding(-APFocusRing.offset)
+                .inset(by: -APFocusRing.centerlineOutset)
+                .stroke(AP.Color.outline, lineWidth: APFocusRing.width)
                 .opacity(isFocused ? 1 : 0)
                 .allowsHitTesting(false)
         )
