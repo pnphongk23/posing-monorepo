@@ -89,6 +89,10 @@ type_name:
   max_length:
     warning: 60
     error: 1000
+  excluded:
+    # The 2-letter design-token namespace the API is specified with (`AP.Color`, `AP.Font`,
+    # `AP.Space`); renaming it would break the documented token names.
+    - AP
 
 disabled_rules:
   - todo                       # follow-ups are tracked in docs/harness, not in-source markers

@@ -26,6 +26,11 @@
 		22EA1CB33A17DCC6FC82406D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F543015C899423D4B01CEB2E /* Assets.xcassets */; };
 		24323778ABA0C668C758086B /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = 5F5D09D8B3AA79328B33FC59 /* GRDB */; };
 		26B41D3E49A110EDF48E6F44 /* AIPoseComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75D400B2D200FD5985387BFA /* AIPoseComponents.swift */; };
+		A9D10C5700000000000000C1 /* APDesignTokens.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D10C5700000000000000B1 /* APDesignTokens.swift */; };
+		A9D10C5700000000000000C2 /* APButtonStyles.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D10C5700000000000000B2 /* APButtonStyles.swift */; };
+		A9D10C5700000000000000C3 /* APStateViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D10C5700000000000000B3 /* APStateViews.swift */; };
+		A9D10C5700000000000000C4 /* APDesignTokensTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D10C5700000000000000B4 /* APDesignTokensTests.swift */; };
+		A9D10C5700000000000000C5 /* APStateViewsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D10C5700000000000000B5 /* APStateViewsTests.swift */; };
 		26FEE10E47B59638546BA083 /* CameraCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = B719EE2E7F62C33D73EBA475 /* CameraCoordinator.swift */; };
 		28D7BB6072FF5454DD3D85B5 /* TokenStorageTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C522CF528E426B84E7C5887 /* TokenStorageTests.swift */; };
 		291594201B0FF97BA4E9FD28 /* AccountSessionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4BFD8884125812979E9FED4B /* AccountSessionTests.swift */; };
@@ -156,6 +161,11 @@
 		2D49ED5731A9555D73FC2614 /* SessionScopeCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionScopeCoordinator.swift; sourceTree = "<group>"; };
 		2ECB98D7629FBEB99B72912B /* CameraPorts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraPorts.swift; sourceTree = "<group>"; };
 		2EE0355F95175C0D3D140424 /* AIPoseDesignSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIPoseDesignSystem.swift; sourceTree = "<group>"; };
+		A9D10C5700000000000000B1 /* APDesignTokens.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APDesignTokens.swift; sourceTree = "<group>"; };
+		A9D10C5700000000000000B2 /* APButtonStyles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APButtonStyles.swift; sourceTree = "<group>"; };
+		A9D10C5700000000000000B3 /* APStateViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APStateViews.swift; sourceTree = "<group>"; };
+		A9D10C5700000000000000B4 /* APDesignTokensTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APDesignTokensTests.swift; sourceTree = "<group>"; };
+		A9D10C5700000000000000B5 /* APStateViewsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APStateViewsTests.swift; sourceTree = "<group>"; };
 		307F0530DC9B4D03EF10CD9C /* PosesSessionBoundaryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PosesSessionBoundaryTests.swift; sourceTree = "<group>"; };
 		3199C4916FBCFAB168D672B3 /* FeatureService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeatureService.swift; sourceTree = "<group>"; };
 		31B8B5FE18422BFB70F0CC0B /* LegacyDatabaseCompatibilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegacyDatabaseCompatibilityTests.swift; sourceTree = "<group>"; };
@@ -294,6 +304,9 @@
 				75D400B2D200FD5985387BFA /* AIPoseComponents.swift */,
 				2EE0355F95175C0D3D140424 /* AIPoseDesignSystem.swift */,
 				567850A063D54AAE95B3BEC5 /* AIPoseNavigation.swift */,
+				A9D10C5700000000000000B1 /* APDesignTokens.swift */,
+				A9D10C5700000000000000B2 /* APButtonStyles.swift */,
+				A9D10C5700000000000000B3 /* APStateViews.swift */,
 			);
 			path = DesignSystem;
 			sourceTree = "<group>";
@@ -403,6 +416,7 @@
 			isa = PBXGroup;
 			children = (
 				55F67A6F4738AF678A34BF5D /* Architecture */,
+				A9D10C5700000000000000B6 /* DesignSystem */,
 				67AA93CC6D011A65FBB15AE8 /* Camera */,
 				7BCDFCC029B20CBF6C4424F3 /* Database */,
 				C9772FB882D5CFE7AF99E339 /* Features */,
@@ -436,6 +450,15 @@
 				9C522CF528E426B84E7C5887 /* TokenStorageTests.swift */,
 			);
 			path = Services;
+			sourceTree = "<group>";
+		};
+		A9D10C5700000000000000B6 /* DesignSystem */ = {
+			isa = PBXGroup;
+			children = (
+				A9D10C5700000000000000B4 /* APDesignTokensTests.swift */,
+				A9D10C5700000000000000B5 /* APStateViewsTests.swift */,
+			);
+			path = DesignSystem;
 			sourceTree = "<group>";
 		};
 		55F67A6F4738AF678A34BF5D /* Architecture */ = {
@@ -713,6 +736,9 @@
 				26B41D3E49A110EDF48E6F44 /* AIPoseComponents.swift in Sources */,
 				9EB5A02FEC888536D54DF563 /* AIPoseDesignSystem.swift in Sources */,
 				616DE68C034960C7053F8E35 /* AIPoseNavigation.swift in Sources */,
+				A9D10C5700000000000000C1 /* APDesignTokens.swift in Sources */,
+				A9D10C5700000000000000C2 /* APButtonStyles.swift in Sources */,
+				A9D10C5700000000000000C3 /* APStateViews.swift in Sources */,
 				0E456DAEAD3275ED61424B4C /* APIClient.swift in Sources */,
 				85EC64B6F6E7F3864625BB20 /* APIError.swift in Sources */,
 				CA8C401300356B2C6D094555 /* APIModels.swift in Sources */,
@@ -788,6 +814,8 @@
 				CF55B6715CD91131AC93BC60 /* DeleteAccountTests.swift in Sources */,
 				B18D5F82BD558E93E1715A47 /* EndpointPolicyTests.swift in Sources */,
 				91FA61089DA34D6C20DEE23B /* FeatureStateTests.swift in Sources */,
+				A9D10C5700000000000000C4 /* APDesignTokensTests.swift in Sources */,
+				A9D10C5700000000000000C5 /* APStateViewsTests.swift in Sources */,
 				5E2B44D1C4A9B540A480E0BA /* GalleryFeatureTests.swift in Sources */,
 				43B62A518E250A2D941976B5 /* GalleryPhotoDeletionTests.swift in Sources */,
 				1AB057FAC4D067898163B0C9 /* JobsFixtures.swift in Sources */,
