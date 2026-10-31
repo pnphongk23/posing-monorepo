@@ -1,0 +1,30 @@
+# S-06 Settings > About reports the shipped build number
+#
+# The About sheet reads its two values from the bundle (`CFBundleShortVersionString` /
+# `CFBundleVersion`, `SupportScreens.swift:312-313`), so this is the one in-app claim about *which*
+# binary the other cases ran against: on the 1.2 artifact it must read "posing v1.2 (Build 16)".
+# A wrong value here means the smoke run's evidence does not describe the release build.
+appId: ${APP_ID}
+tags: [S-06, p1]
+---
+- runFlow: ../subflows/prod-launch.yaml
+- tapOn:
+    id: "poses.more"
+- tapOn:
+    id: "poses.menu.settings"
+# About is the last row of the Help & support group, below the fold on a 390 pt screen.
+- scrollUntilVisible:
+    element:
+      text: "Replay onboarding guide"
+    direction: DOWN
+- tapOn: "About posing.*"
+- extendedWaitUntil:
+    visible:
+      id: "about.close"
+    timeout: 15000
+- assertVisible: "posing v1[.]2 [(]Build 16[)]"
+- takeScreenshot: docs/qa/prod-smoke/screens/S-06-about-version
+- tapOn:
+    id: "about.close"
+- assertNotVisible:
+    id: "about.close"

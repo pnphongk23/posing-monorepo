@@ -1,0 +1,16 @@
+# Prod-config cold launch: fresh container and keychain, camera/photos allowed, and **no launch
+# arguments at all** — a Release build ignores the `-AIPose*` overrides, so everything below this line
+# has to come from the Firestore `config/app` document (`account_enabled`, `extractPoseEnabled`,
+# `paywall_enabled`). That is the point of this packet: the shipped paths, not the QA seams.
+appId: ${APP_ID}
+---
+- launchApp:
+    clearState: true
+    clearKeychain: true
+    permissions:
+      camera: allow
+      photos: allow
+- extendedWaitUntil:
+    visible:
+      id: "poses.open-search"
+    timeout: 40000

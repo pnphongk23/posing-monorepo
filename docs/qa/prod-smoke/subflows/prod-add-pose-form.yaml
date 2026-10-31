@@ -1,0 +1,39 @@
+# Open Add pose, take one photo from the simulator library and fill the required fields.
+#
+# Prerequisite on the simulator: the library must hold at least one photo
+# (`xcrun simctl addmedia <UDID> /tmp/qa-pose.jpg`). The picker is a system `PHPickerViewController`,
+# so the photo is addressed by position, never by name.
+appId: ${APP_ID}
+---
+- tapOn:
+    id: "poses.add-pose"
+- extendedWaitUntil:
+    visible:
+      id: "addPose.photoPicker"
+    timeout: 20000
+- tapOn:
+    id: "addPose.photoPicker"
+- extendedWaitUntil:
+    visible: "Cancel"
+    timeout: 25000
+- tapOn:
+    point: "16%,26%"
+- extendedWaitUntil:
+    visible: "Change Photo"
+    timeout: 25000
+- tapOn:
+    id: "addPose.nameField"
+- inputText: ${POSE_NAME}
+# Return between the two fields: the tags field sits under the keyboard while it is up, and a tap that
+# lands on the keyboard types into the field that still has focus (it went into the name field on the
+# first attempt). Return on a single-line field resigns first responder.
+- pressKey: Enter
+- tapOn:
+    id: "addPose.tagsField"
+- inputText: "standing"
+- assertVisible:
+    id: "addPose.tagsField"
+    text: "standing"
+# `hideKeyboard` is not used: its dismissal heuristic fails on this form, and a tap-based dismissal can
+# hit a control (the photo picker or the CTA).
+- pressKey: Enter

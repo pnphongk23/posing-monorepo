@@ -1,0 +1,48 @@
+# S-02 Settings > Account > Delete account hands off to the account-deletion request form
+#
+# The row only exists for a signed-in account (`SupportScreens.swift:131`, `isAccountDeletionRequestAvailable`),
+# so this flow signs in first, then taps the row and asserts the hand-off really left the app for the form.
+# The form itself is never submitted: the case is "the destination is reachable", and a submission would
+# create a real deletion request for the E2E account.
+appId: ${APP_ID}
+tags: [S-02, p0]
+---
+- assertTrue:
+    condition: ${E2E_EMAIL != null && E2E_EMAIL.length > 0 && E2E_PASSWORD != null && E2E_PASSWORD.length > 0}
+    label: "E2E_EMAIL / E2E_PASSWORD missing - run with -e E2E_EMAIL=... -e E2E_PASSWORD=..."
+- runFlow: ../subflows/prod-launch.yaml
+- runFlow: ../subflows/prod-sign-in.yaml
+- tapOn:
+    id: "poses.more"
+- tapOn:
+    id: "poses.menu.settings"
+- tapOn:
+    id: "settings.account.row"
+- extendedWaitUntil:
+    visible: "Delete account"
+    timeout: 20000
+- tapOn: "Delete account"
+# The app hands the URL to the system opener (`openURL`), so Safari comes to the foreground with the
+# request form. Assert the form's own title, not the address: `forms.gle/QJo1…` is a redirector, so the
+# address bar shows `docs.google.com` (Safari chrome is outside Maestro's hierarchy, so it is not
+# addressable) and `forms.gle` never stays visible. The title proves the *right* destination loaded —
+# a dead or wrong link has no such page — which "some URL opened" would not.
+- extendedWaitUntil:
+    visible: "posing.*Delete account request"
+    timeout: 40000
+- takeScreenshot: docs/qa/prod-smoke/screens/S-02-delete-account-form
+# Do NOT submit. Come back to the app: the account is untouched (nothing was deleted, no session change).
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: "poses.open-search"
+    timeout: 40000
+- tapOn:
+    id: "poses.more"
+- tapOn:
+    id: "poses.menu.settings"
+- tapOn:
+    id: "settings.account.row"
+- extendedWaitUntil:
+    visible: "Signed in"
+    timeout: 20000

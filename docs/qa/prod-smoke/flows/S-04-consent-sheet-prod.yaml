@@ -1,0 +1,67 @@
+# S-04 consent sheet appears before the photo leaves the device (Prod build, Firestore flag only)
+#
+# Case: Add pose -> fill the form -> submit -> the sheet shows, Cancel sends nothing, submit again ->
+# the sheet shows again. Nothing is uploaded, so no AI cost and no job on the E2E account.
+#
+# Prod has no launch-argument seam: the Add pose entry exists only while Firestore
+# `config/app.extractPoseEnabled == true` (`APHomeHeader.showsAddPose`), so a missing entry is
+# BLOCKED-BY-FLAG, not a failure. Sign-in is needed too, because the consent ledger is keyed by the
+# signed-in account id (`AddPoseConsentStore.sessionAccountID`) — with no session there is no upload to
+# disclose and the sheet is correctly skipped.
+appId: ${APP_ID}
+tags: [S-04, p0]
+---
+- assertTrue:
+    condition: ${E2E_EMAIL != null && E2E_EMAIL.length > 0 && E2E_PASSWORD != null && E2E_PASSWORD.length > 0}
+    label: "E2E_EMAIL / E2E_PASSWORD missing - run with -e E2E_EMAIL=... -e E2E_PASSWORD=..."
+- runFlow: ../subflows/prod-launch.yaml
+- assertVisible:
+    id: "poses.add-pose"
+    label: "extractPoseEnabled is OFF in Firestore config/app - Add pose is not rendered (BLOCKED-BY-FLAG)"
+- runFlow: ../subflows/prod-sign-in.yaml
+- runFlow:
+    file: ../subflows/prod-add-pose-form.yaml
+    env:
+      POSE_NAME: "QA prod consent"
+- tapOn:
+    id: "addPose.submitButton"
+# The sheet is the first thing between the tap and any upload.
+- extendedWaitUntil:
+    visible:
+      id: "addPose.consent.message"
+    timeout: 20000
+- assertVisible:
+    id: "addPose.consent.message"
+    # Maestro matches `text` against the element's whole accessibility text, and the disclosure renders
+    # as one sentence (line wrapping is not in the value). Single-quoted so the regex keeps backslashes.
+    text: '.*saved\s+privately\s+to\s+your\s+account\s+until\s+you\s+delete\s+your\s+account.*'
+- assertVisible:
+    id: "addPose.consent.allowButton"
+- assertVisible:
+    id: "addPose.consent.cancelButton"
+- takeScreenshot: docs/qa/prod-smoke/screens/S-04-consent-sheet
+- tapOn:
+    id: "addPose.consent.cancelButton"
+# Cancel: no upload, no answer recorded, and the filled draft is untouched (the form is behind the sheet).
+- assertNotVisible:
+    id: "addPose.consent.message"
+- assertVisible:
+    id: "addPose.nameField"
+    text: ".*QA prod consent.*"
+- assertVisible: "Change Photo"
+# No ack was recorded, so the same submit asks again: the "once per account" rule was not burned by Cancel.
+- tapOn:
+    id: "addPose.submitButton"
+- extendedWaitUntil:
+    visible:
+      id: "addPose.consent.message"
+    timeout: 20000
+- assertVisible:
+    id: "addPose.consent.cancelButton"
+- tapOn:
+    id: "addPose.consent.cancelButton"
+- assertNotVisible:
+    id: "addPose.consent.message"
+# Still the form, still submitting nothing: this is the end of the case (no job, no upload).
+- assertVisible:
+    id: "addPose.submitButton"

@@ -1,0 +1,9 @@
+# Open the camera from the dock and wait for the shutter (Prod build, no launch arguments).
+appId: ${APP_ID}
+---
+- tapOn:
+    id: "dock.camera"
+- extendedWaitUntil:
+    visible:
+      id: "camera.shutter"
+    timeout: 25000

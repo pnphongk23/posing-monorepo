@@ -1,0 +1,19 @@
+# S-01 clean launch on the Prod build: Home loads, a real pose card renders, nothing crashed
+#
+# Shipping configuration, no launch arguments: the catalogue has to come from the production server and
+# the first card proves the response was decoded (an empty/error surface has no `poses.first-card`).
+appId: ${APP_ID}
+tags: [S-01, p0]
+---
+- runFlow: ../subflows/prod-launch.yaml
+- assertVisible: "Poses"
+- assertVisible:
+    id: "poses.open-search"
+- extendedWaitUntil:
+    visible:
+      id: "poses.first-card"
+    timeout: 40000
+- takeScreenshot: docs/qa/prod-smoke/screens/S-01-home-first-card
+# Still the same foreground screen: a crash would have taken the hierarchy with it.
+- assertVisible:
+    id: "dock.camera"

@@ -1,0 +1,41 @@
+# Sign in with the run-time E2E account on a Prod build and land back on the Poses home.
+#
+# Credentials only ever arrive through `maestro -e E2E_EMAIL=... -e E2E_PASSWORD=...` (shell-sourced
+# from the gitignored `mobile/iosApp/maestro/e2e.local.env`); nothing here names an account.
+#
+# The Account row only exists while the Firestore `config/app.account_enabled` flag is ON
+# (`SupportScreens.swift:328`), so the first assertion is the flag check: on a build with accounts off
+# this fails immediately instead of timing out inside a screen that cannot open.
+appId: ${APP_ID}
+---
+- tapOn:
+    id: "poses.more"
+- tapOn:
+    id: "poses.menu.settings"
+- assertVisible:
+    id: "settings.account.row"
+    label: "account_enabled is OFF in Firestore config/app - Settings has no Account row"
+- tapOn:
+    id: "settings.account.row"
+- tapOn:
+    id: "signin.emailEntry"
+- tapOn:
+    id: "signin.email"
+- inputText: ${E2E_EMAIL}
+- tapOn:
+    id: "signin.password"
+- inputText: ${E2E_PASSWORD}
+# No `hideKeyboard` here: the CTA is docked outside the ScrollView (`SignIn.swift:537-566`), so it is
+# always on screen above the keyboard, and Maestro's dismiss tap can land on it and submit early.
+- tapOn:
+    id: "signin.submit"
+- extendedWaitUntil:
+    visible: "Signed in"
+    timeout: 40000
+# Account -> Settings -> Poses home.
+- tapOn: "Back"
+- tapOn: "Back"
+- extendedWaitUntil:
+    visible:
+      id: "poses.open-search"
+    timeout: 15000
