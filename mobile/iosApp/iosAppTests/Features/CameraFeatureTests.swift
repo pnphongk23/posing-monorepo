@@ -1578,11 +1578,12 @@ final class CameraChromeTests: XCTestCase {
             selectedPoseID: selectedPoseID,
             isPickerExpanded: isPickerExpanded,
             showsPicker: showsPicker,
-            zoomLevel: .one,
+            zoomPresets: [.one, .two],
+            activeZoomPreset: .one,
             onToggleStrip: {},
             onSelectPose: { _ in },
             onRetryStrip: {},
-            onZoom: { _ in },
+            onZoomPreset: { _ in },
             onOpenGallery: {},
             onCapture: {},
             onSwitchCamera: {},
@@ -1990,5 +1991,108 @@ final class CameraAspectRatioModelTests: XCTestCase {
         XCTAssertEqual(CameraAspectRatio.threeFour.accessibilityIdentifier, "camera.tools.ratio.3x4")
         XCTAssertEqual(CameraAspectRatio.oneOne.accessibilityIdentifier, "camera.tools.ratio.1x1")
         XCTAssertEqual(CameraAspectRatio.nineSixteen.accessibilityIdentifier, "camera.tools.ratio.9x16")
+    }
+}
+
+// MARK: - Scale (pose reference size) and lens-aware zoom presets
+
+final class CameraGuideScaleTests: XCTestCase {
+    func testScaleIsClampedToTheGuideRange() {
+        XCTAssertEqual(CameraGuideScale.clamped(0.01), GuideTransform.scaleRange.lowerBound)
+        XCTAssertEqual(CameraGuideScale.clamped(99), GuideTransform.scaleRange.upperBound)
+        XCTAssertEqual(CameraGuideScale.clamped(.nan), 1, "a corrupt value falls back to 1×")
+    }
+
+    func testTheScaleLabelIsAPercentage() {
+        XCTAssertEqual(CameraGuideScale.label(1), "100%")
+        XCTAssertEqual(CameraGuideScale.label(1.5), "150%")
+        XCTAssertEqual(CameraGuideScale.label(0.4), "40%")
+        XCTAssertEqual(CameraGuideScale.label(9), "300%", "the label never leaves the range")
+    }
+
+    func testTheSliderStepsStayInsideTheRange() {
+        XCTAssertEqual(CameraGuideScale.stepped(0.42), 0.4, accuracy: 0.0001)
+        XCTAssertEqual(CameraGuideScale.stepped(1.53), 1.55, accuracy: 0.0001)
+        XCTAssertGreaterThanOrEqual(CameraGuideScale.stepped(0), GuideTransform.scaleRange.lowerBound)
+        XCTAssertLessThanOrEqual(CameraGuideScale.stepped(9), GuideTransform.scaleRange.upperBound)
+    }
+}
+
+final class CameraZoomPresetTests: XCTestCase {
+    func testPresetsFollowTheLensRange() {
+        XCTAssertEqual(
+            CameraZoomPresets.available(range: 0.5...4),
+            [.half, .one, .two],
+            "a lens with an ultra-wide stop offers 0.5x"
+        )
+        XCTAssertEqual(
+            CameraZoomPresets.available(range: 1...2),
+            [.one, .two],
+            "a lens that cannot go below 1x never offers 0.5x"
+        )
+        XCTAssertEqual(CameraZoomPresets.available(range: 2...5), [.two])
+        XCTAssertEqual(CameraZoomPresets.available(range: 3...5), [.one], "1x is always offered")
+    }
+
+    func testRequestsAreClampedToTheLens() {
+        XCTAssertEqual(CameraZoomPresets.clamp(0.4, range: 1...2), 1)
+        XCTAssertEqual(CameraZoomPresets.clamp(9, range: 1...2), 2)
+        XCTAssertEqual(CameraZoomPresets.clamp(.nan, range: 0.5...2), 1)
+        XCTAssertEqual(CameraZoomPresets.clamp(1.5, range: 0.5...2), 1.5)
+    }
+
+    func testTheNearestPresetIsTheHighlightedChoice() {
+        XCTAssertEqual(CameraZoomPresets.nearest(to: 0.5, range: 0.5...2), .half)
+        XCTAssertEqual(CameraZoomPresets.nearest(to: 2.4, range: 0.5...2), .two)
+        XCTAssertEqual(CameraZoomPresets.nearest(to: 3, range: 0.5...2), .two)
+    }
+
+    func testZoomIdentifiersAreTheQaContract() {
+        XCTAssertEqual(CameraZoomPreset.half.accessibilityIdentifier, "camera.zoom.0.5x")
+        XCTAssertEqual(CameraZoomPreset.one.accessibilityIdentifier, "camera.zoom.1x")
+        XCTAssertEqual(CameraZoomPreset.two.accessibilityIdentifier, "camera.zoom.2x")
+    }
+
+    func testTheStoredLevelMatchesTheNearestFactor() {
+        XCTAssertEqual(CameraZoomLevel.nearest(to: 0.5), .one, "the enum has no half stop")
+        XCTAssertEqual(CameraZoomLevel.nearest(to: 2), .two)
+        XCTAssertEqual(CameraZoomLevel.nearest(to: 2.7), .three)
+    }
+}
+
+@MainActor
+final class CameraGuideScaleModelTests: XCTestCase {
+    func testTheScaleControlWritesTheSamePlacementThePinchWrites() {
+        let model = CameraViewModel()
+        model.coordinator.onPermissionResult(.authorized)
+
+        model.setGuideScale(1.5)
+        XCTAssertEqual(model.guideTransform.scale, 1.5, accuracy: 0.0001)
+
+        model.resetGuideTransform()
+        XCTAssertEqual(model.guideTransform.scale, 1, accuracy: 0.0001, "Reset returns the reference to 1×")
+    }
+
+    func testScaleIsGated() {
+        let model = CameraViewModel()
+        model.coordinator.onPermissionResult(.denied)
+        model.setGuideScale(2)
+        XCTAssertEqual(model.guideTransform.scale, 1, accuracy: 0.0001, "a control the camera cannot serve does not move")
+    }
+
+    /// The simulator has no capture device, so the lens range falls back to 1...2: 0.5x is not offered
+    /// and a 0.5x request clamps to the lens instead of failing.
+    func testZoomPresetsAreLensAwareInTheSimulator() {
+        let model = CameraViewModel()
+        model.coordinator.onPermissionResult(.authorized)
+
+        XCTAssertEqual(model.zoomPresets, [.one, .two])
+
+        model.selectZoomPreset(.two)
+        XCTAssertEqual(model.activeZoomPreset, .two)
+        XCTAssertEqual(model.zoomLevel, .two)
+
+        model.selectZoomPreset(.half)
+        XCTAssertEqual(model.activeZoomPreset, .one, "a preset the lens cannot serve clamps to its minimum")
     }
 }

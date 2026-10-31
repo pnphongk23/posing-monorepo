@@ -41,6 +41,8 @@ final class CameraViewModel: ObservableObject {
     /// (thumbnail · shutter · flip only) with the strip behind one clear control. Persisted.
     @Published var isPickerExpanded = true
     @Published var zoomLevel: CameraZoomLevel = .one
+    /// The exact zoom the lens is at (presets write through here: `0.5` is not a `CameraZoomLevel`).
+    @Published private(set) var zoomFactor: CGFloat = 1
     /// URL of the newest capture, drawn as a 48pt thumbnail in the shutter rail.
     @Published private(set) var latestThumbnailURL: URL?
 
@@ -244,6 +246,46 @@ final class CameraViewModel: ObservableObject {
         timerCountdown = nil
     }
 
+    /// The adjust-guide Scale control: writes the same placement value the pinch gesture writes.
+    func setGuideScale(_ scale: CGFloat) {
+        guard cameraControlsEnabled else { return }
+        var transform = guideTransform
+        transform.scale = CameraGuideScale.stepped(scale)
+        guideTransform = transform
+    }
+
+    /// The zoom presets this lens can serve (`0.5x` only where the device's minimum allows it).
+    var zoomPresets: [CameraZoomPreset] {
+        CameraZoomPresets.available(range: deviceZoomRange)
+    }
+
+    /// The preset the current zoom is nearest to, so the pill highlights a real choice.
+    var activeZoomPreset: CameraZoomPreset? {
+        CameraZoomPresets.nearest(to: zoomLevel.factor, range: deviceZoomRange)
+    }
+
+    /// Selecting a preset applies it (clamped to the lens) and keeps the persisted level in step.
+    func selectZoomPreset(_ preset: CameraZoomPreset) {
+        guard cameraControlsEnabled else { return }
+        applyZoom(factor: CameraZoomPresets.clamp(preset.factor, range: deviceZoomRange))
+    }
+
+    func applyZoom(factor: CGFloat) {
+        zoomFactor = CameraZoomPresets.clamp(factor, range: deviceZoomRange)
+        zoomLevel = CameraZoomLevel.nearest(to: zoomFactor)
+        reconcileHardware()
+    }
+
+    /// The active lens's zoom range, best effort: the simulator has no capture device, so the shipped
+    /// presets (1x/2x) are the fallback.
+    private var deviceZoomRange: ClosedRange<CGFloat> {
+        let position: AVCaptureDevice.Position = camera.facing == .front ? .front : .back
+        let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: position)
+            ?? AVCaptureDevice.default(for: .video)
+        guard let device else { return 1...2 }
+        return device.minAvailableVideoZoomFactor...device.maxAvailableVideoZoomFactor
+    }
+
     func setAspectRatio(_ ratio: CameraAspectRatio) {
         guard cameraControlsEnabled else { return }
         aspectRatio = ratio
@@ -377,8 +419,7 @@ final class CameraViewModel: ObservableObject {
     }
 
     func applyZoom(_ level: CameraZoomLevel) {
-        zoomLevel = level
-        reconcileHardware()
+        applyZoom(factor: level.factor)
     }
 
     // MARK: - Settings persistence (FEAT-012)
@@ -470,6 +511,7 @@ final class CameraViewModel: ObservableObject {
             lineColor: guideLineColor,
             transform: persistedTransform,
             zoom: zoomLevel,
+            zoomFactor: Double(zoomFactor),
             isPickerExpanded: isPickerExpanded,
             timer: timerSetting,
             aspectRatio: aspectRatio
@@ -507,7 +549,10 @@ final class CameraViewModel: ObservableObject {
         if !touchedSettings.contains(.flash) { flashSetting = stored.flash }
         if !touchedSettings.contains(.guideVisibility) { isPoseGuideVisible = stored.isPoseGuideVisible }
         if !touchedSettings.contains(.lineColor) { guideLineColor = stored.lineColor }
-        if !touchedSettings.contains(.zoom) { zoomLevel = stored.zoom }
+        if !touchedSettings.contains(.zoom) {
+            zoomLevel = stored.zoom
+            zoomFactor = stored.zoomFactor
+        }
         if !touchedSettings.contains(.pickerExpanded) { isPickerExpanded = stored.isPickerExpanded }
         if !touchedSettings.contains(.aspectRatio) { aspectRatio = stored.aspectRatio }
         if !touchedSettings.contains(.timer) {
@@ -542,9 +587,9 @@ final class CameraViewModel: ObservableObject {
             lastAppliedFlash = flashSetting
             camera.setFlashMode(flashSetting)
         }
-        if lastAppliedZoom != zoomLevel.factor {
-            lastAppliedZoom = zoomLevel.factor
-            camera.setZoomFactor(zoomLevel.factor)
+        if lastAppliedZoom != zoomFactor {
+            lastAppliedZoom = zoomFactor
+            camera.setZoomFactor(zoomFactor)
         }
     }
 
@@ -712,6 +757,75 @@ enum CameraZoomLevel: Int, CaseIterable, Equatable {
         let all = CameraZoomLevel.allCases
         let index = all.firstIndex(of: self) ?? 0
         return all[(index + 1) % all.count]
+    }
+}
+
+extension CameraZoomLevel {
+    /// The stored level nearest a lens factor. The enum keeps every pre-existing settings row readable;
+    /// the exact factor (which can be 0.5x) lives beside it.
+    static func nearest(to factor: CGFloat) -> CameraZoomLevel {
+        allCases.min {
+            abs(CGFloat($0.rawValue) - factor) < abs(CGFloat($1.rawValue) - factor)
+        } ?? .one
+    }
+}
+
+/// The pose reference's size, as the adjust-guide sheet exposes it: the value the pinch gesture
+/// writes, clamped to the documented range, stepped for a slider and reset by one control.
+enum CameraGuideScale {
+    static let range: ClosedRange<CGFloat> = GuideTransform.scaleRange
+    static let step: CGFloat = 0.05
+
+    static func clamped(_ scale: CGFloat) -> CGFloat {
+        guard scale.isFinite else { return 1 }
+        return min(max(scale, range.lowerBound), range.upperBound)
+    }
+
+    static func stepped(_ scale: CGFloat) -> CGFloat {
+        let steps = ((clamped(scale) - range.lowerBound) / step).rounded()
+        return clamped(range.lowerBound + steps * step)
+    }
+
+    /// The value beside the slider: scale as a percentage (1.0 → "100%").
+    static func label(_ scale: CGFloat) -> String {
+        "\(Int((clamped(scale) * 100).rounded()))%"
+    }
+}
+
+/// Lens-aware zoom presets (`05-01`/`05-21`: 0.5x / 1x / 2x). A preset the lens cannot serve is not
+/// offered at all, and a request outside the device's range is clamped instead of failing silently.
+enum CameraZoomPreset: String, CaseIterable, Identifiable, Sendable {
+    case half = "0.5x"
+    case one = "1x"
+    case two = "2x"
+
+    var id: String { rawValue }
+    var factor: CGFloat {
+        switch self {
+        case .half: return 0.5
+        case .one: return 1
+        case .two: return 2
+        }
+    }
+    var accessibilityIdentifier: String { "camera.zoom.\(rawValue)" }
+}
+
+enum CameraZoomPresets {
+    static func available(range: ClosedRange<CGFloat>) -> [CameraZoomPreset] {
+        let presets = CameraZoomPreset.allCases.filter { range.contains($0.factor) }
+        // 1x always exists: it is the lens's native framing even when a device reports a minimum of
+        // exactly 1 (every iPhone does).
+        return presets.isEmpty ? [.one] : presets
+    }
+
+    static func clamp(_ factor: CGFloat, range: ClosedRange<CGFloat>) -> CGFloat {
+        guard factor.isFinite else { return 1 }
+        return min(max(factor, range.lowerBound), range.upperBound)
+    }
+
+    /// The preset closest to a factor, so a clamped or restored value still lights up a choice.
+    static func nearest(to factor: CGFloat, range: ClosedRange<CGFloat>) -> CameraZoomPreset? {
+        available(range: range).min { abs($0.factor - factor) < abs($1.factor - factor) }
     }
 }
 
@@ -1099,6 +1213,7 @@ struct CameraScreen: View {
                             timerSetting: model.timerSetting,
                             aspectRatio: model.aspectRatio,
                             guideOpacity: model.guideOpacity,
+                            guideScale: model.guideTransform.scale,
                             guideLineColor: model.guideLineColor,
                             popupWidth: min(CameraProto.popupWidth, size.width - CameraProto.controlInset * 2),
                             popupMaxHeight: max(
@@ -1114,6 +1229,8 @@ struct CameraScreen: View {
                             onMirrorToggle: { model.toggleGuideMirror() },
                             onTimerChange: { model.setTimerSetting($0) },
                             onAspectRatioChange: { model.setAspectRatio($0) },
+                            onGuideScaleChange: { model.setGuideScale($0) },
+                            onGuideScaleReset: { model.resetGuideTransform() },
                             onGuideOpacityChange: { model.setGuideOpacity($0) },
                             onGuideLineColorChange: { model.setGuideLineColor($0) },
                             onDismiss: { dismissCameraTools() }
@@ -1160,11 +1277,12 @@ struct CameraScreen: View {
             selectedPoseID: guide?.id,
             isPickerExpanded: model.isPickerExpanded,
             showsPicker: isAuthorized,
-            zoomLevel: model.zoomLevel,
+            zoomPresets: model.zoomPresets,
+            activeZoomPreset: model.activeZoomPreset,
             onToggleStrip: { model.togglePickerStrip() },
             onSelectPose: { pose in guide = pose },
             onRetryStrip: { Task { await posePickerModel.load() } },
-            onZoom: { level in model.applyZoom(level) },
+            onZoomPreset: { preset in model.selectZoomPreset(preset) },
             onOpenGallery: onOpenGallery,
             onCapture: { model.capture() },
             onSwitchCamera: { model.switchCamera() },
@@ -1720,11 +1838,12 @@ struct CameraBottomBar: View {
     let selectedPoseID: String?
     let isPickerExpanded: Bool
     let showsPicker: Bool
-    let zoomLevel: CameraZoomLevel
+    let zoomPresets: [CameraZoomPreset]
+    let activeZoomPreset: CameraZoomPreset?
     let onToggleStrip: () -> Void
     let onSelectPose: (NativePose) -> Void
     let onRetryStrip: () -> Void
-    let onZoom: (CameraZoomLevel) -> Void
+    let onZoomPreset: (CameraZoomPreset) -> Void
     let onOpenGallery: () -> Void
     let onCapture: () -> Void
     let onSwitchCamera: () -> Void
@@ -1930,25 +2049,25 @@ struct CameraBottomBar: View {
 
     private var zoomPill: some View {
         HStack(spacing: AP.Space.space4) {
-            ForEach(CameraZoomLevel.allCases, id: \.rawValue) { level in
+            ForEach(zoomPresets) { preset in
                 Button {
-                    onZoom(level)
+                    onZoomPreset(preset)
                 } label: {
-                    Text(level.label)
+                    Text(preset.rawValue)
                         .font(AP.Font.caption.weight(.semibold))
-                        .foregroundStyle(level == zoomLevel ? AP.Color.selectedForeground : AP.Color.secondaryText)
+                        .foregroundStyle(preset == activeZoomPreset ? AP.Color.selectedForeground : AP.Color.secondaryText)
                         .frame(minWidth: AP.HitTarget.minimum, minHeight: AP.HitTarget.minimum)
                         .background(
                             RoundedRectangle(cornerRadius: AP.Radius.radius16, style: .continuous)
-                                .fill(level == zoomLevel ? AP.Color.selectedBackground : .clear)
+                                .fill(preset == activeZoomPreset ? AP.Color.selectedBackground : .clear)
                         )
                 }
                 .buttonStyle(.plain)
                 .disabled(!controlsEnabled)
                 .opacity(controlsEnabled ? 1 : 0.45)
-                .accessibilityLabel("Zoom \(level.label)")
-                .accessibilityAddTraits(level == zoomLevel ? [.isSelected] : [])
-                .accessibilityIdentifier("camera.zoom.\(level.label)")
+                .accessibilityLabel("Zoom \(preset.rawValue)")
+                .accessibilityAddTraits(preset == activeZoomPreset ? [.isSelected] : [])
+                .accessibilityIdentifier(preset.accessibilityIdentifier)
             }
         }
         .padding(AP.Space.space4)
@@ -2075,6 +2194,7 @@ private struct CameraToolsPopup: View {
     let timerSetting: CameraTimerSetting
     let aspectRatio: CameraAspectRatio
     let guideOpacity: Double
+    let guideScale: CGFloat
     let guideLineColor: GuideLineColor
     let popupWidth: CGFloat
     let popupMaxHeight: CGFloat
@@ -2084,6 +2204,8 @@ private struct CameraToolsPopup: View {
     let onMirrorToggle: () -> Void
     let onTimerChange: (CameraTimerSetting) -> Void
     let onAspectRatioChange: (CameraAspectRatio) -> Void
+    let onGuideScaleChange: (CGFloat) -> Void
+    let onGuideScaleReset: () -> Void
     let onGuideOpacityChange: (Double) -> Void
     let onGuideLineColorChange: (GuideLineColor) -> Void
     let onDismiss: () -> Void
@@ -2152,6 +2274,7 @@ private struct CameraToolsPopup: View {
                 )
                 mirrorRow
                 opacityRow
+                guideScaleRow
                 lineColorRow
             }
         }
@@ -2312,6 +2435,46 @@ private struct CameraToolsPopup: View {
         .accessibilityValue(guideFlipped ? "Mirrored" : "Normal")
         .accessibilityIdentifier("camera.tools.mirror.switch")
         .accessibilityAddTraits(guideFlipped ? [.isSelected] : [])
+    }
+
+    /// Pose reference's size: value, slider and a Reset, so the gesture has a visible control.
+    private var guideScaleRow: some View {
+        VStack(alignment: .leading, spacing: AP.Space.space4) {
+            HStack(spacing: AP.Space.space8) {
+                Text("Scale")
+                    .font(AP.Font.body)
+                    .foregroundStyle(AP.Color.primaryText)
+                Spacer(minLength: AP.Space.space8)
+                Text(CameraGuideScale.label(guideScale))
+                    .font(AP.Font.body.weight(.semibold))
+                    .foregroundStyle(AP.Color.accentText)
+            }
+            HStack(spacing: AP.Space.space8) {
+                Slider(
+                    value: Binding(get: { guideScale }, set: { onGuideScaleChange($0) }),
+                    in: CameraGuideScale.range
+                )
+                .tint(AP.Color.accent)
+                .disabled(!controlsEnabled)
+                .accessibilityLabel("Pose guide scale \(CameraGuideScale.label(guideScale))")
+                .accessibilityIdentifier("camera.tools.scale")
+
+                Button("Reset", action: onGuideScaleReset)
+                    .buttonStyle(.plain)
+                    .font(AP.Font.supporting.weight(.semibold))
+                    .foregroundStyle(AP.Color.accentText)
+                    .apMinimumHitTarget()
+                    .disabled(!controlsEnabled)
+                    .accessibilityIdentifier("camera.tools.scale.reset")
+            }
+        }
+        .padding(.horizontal, AP.Space.space12)
+        .padding(.vertical, AP.Space.space8)
+        .background(
+            RoundedRectangle(cornerRadius: AP.Radius.radius16, style: .continuous)
+                .fill(AP.Color.controlFill)
+        )
+        .opacity(controlsEnabled ? 1 : 0.45)
     }
 
     /// Ratio: the saved capture's aspect. The chosen option carries a check glyph and its word.

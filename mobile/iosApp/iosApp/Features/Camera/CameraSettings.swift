@@ -30,6 +30,9 @@ struct CameraSettings: Equatable, Sendable {
     var lineColor: GuideLineColor = .black
     var transform = Transform()
     var zoom: CameraZoomLevel = .one
+    /// The exact zoom the lens was at. `zoom` keeps every pre-existing row readable; the factor adds
+    /// the lenses' 0.5x stop, which the level enum cannot express.
+    var zoomFactor: Double = 1
     /// F12: is the pose picker strip open above the control bar? Default = expanded, and a row
     /// written before the collapsed state existed reads back as expanded (the state that shows more).
     var isPickerExpanded = true
@@ -54,6 +57,7 @@ struct CameraSettings: Equatable, Sendable {
         lineColor: GuideLineColor = .black,
         transform: Transform = Transform(),
         zoom: CameraZoomLevel = .one,
+        zoomFactor: Double? = nil,
         isPickerExpanded: Bool = true,
         timer: CameraTimerSetting = .off,
         aspectRatio: CameraAspectRatio = .threeFour
@@ -68,6 +72,9 @@ struct CameraSettings: Equatable, Sendable {
         self.lineColor = lineColor
         self.transform = transform
         self.zoom = zoom
+        // A caller that sets only the level (every pre-existing call site) keeps the factor in step:
+        // the factor exists to add the lenses' 0.5x stop, not to create a second source of truth.
+        self.zoomFactor = CameraSettings.finiteZoom(zoomFactor ?? Double(zoom.rawValue))
         self.isPickerExpanded = isPickerExpanded
         self.timer = timer
         self.aspectRatio = aspectRatio
@@ -124,7 +131,7 @@ struct CameraSettings: Equatable, Sendable {
 extension CameraSettings: Codable {
     enum CodingKeys: String, CodingKey {
         case version, revision, guideOpacity, guideFlipped, isGridVisible, flash,
-             isPoseGuideVisible, lineColor, transform, zoom, isPickerExpanded, timer, aspectRatio
+             isPoseGuideVisible, lineColor, transform, zoom, zoomFactor, isPickerExpanded, timer, aspectRatio
     }
 
     init(from decoder: Decoder) throws {
@@ -147,6 +154,9 @@ extension CameraSettings: Codable {
             ?? defaults.transform
         zoom = ((try? container.decodeIfPresent(Int.self, forKey: .zoom)) ?? nil)
             .flatMap(CameraZoomLevel.init(rawValue:)) ?? defaults.zoom
+        zoomFactor = CameraSettings.finiteZoom(
+            (try? container.decodeIfPresent(Double.self, forKey: .zoomFactor)) ?? nil ?? Double(defaults.zoom.factor)
+        )
         isPickerExpanded = (try? container.decodeIfPresent(Bool.self, forKey: .isPickerExpanded)) ?? defaults.isPickerExpanded
         timer = ((try? container.decodeIfPresent(String.self, forKey: .timer)) ?? nil)
             .flatMap(CameraTimerSetting.init(rawValue:)) ?? defaults.timer
@@ -166,6 +176,7 @@ extension CameraSettings: Codable {
         try container.encode(lineColor.rawValue, forKey: .lineColor)
         try container.encode(transform, forKey: .transform)
         try container.encode(zoom.rawValue, forKey: .zoom)
+        try container.encode(zoomFactor, forKey: .zoomFactor)
         try container.encode(isPickerExpanded, forKey: .isPickerExpanded)
         try container.encode(timer.rawValue, forKey: .timer)
         try container.encode(aspectRatio.rawValue, forKey: .aspectRatio)
@@ -184,6 +195,12 @@ extension CameraSettings: Codable {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         return String(decoding: try encoder.encode(self), as: UTF8.self)
+    }
+
+    /// A zoom factor is always a positive, finite number: a corrupt row falls back to 1x.
+    static func finiteZoom(_ value: Double) -> Double {
+        guard value.isFinite, value > 0 else { return 1 }
+        return value
     }
 
     private static func clampedOpacity(_ value: Double?) -> Double {
