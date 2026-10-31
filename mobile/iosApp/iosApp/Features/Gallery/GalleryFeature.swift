@@ -1,5 +1,6 @@
 import Foundation
 import Kingfisher
+import Network
 import SwiftUI
 import UIKit
 
@@ -153,6 +154,12 @@ enum GalleryStateCopy {
 
 /// Photo-detail copy. F3 removed the "3 of 12" line, so nothing here counts anything.
 enum GalleryDetailCopy {
+    /// The page header is the screen's name (`07-board12` draws "Photo"); **when** the photo was
+    /// taken moved into the caption block under the frame, so the date is not printed twice.
+    static let title = "Photo"
+    /// The name `DatabaseGalleryStore` falls back to when a capture has no pose name. It matches the
+    /// header, so the caption drops the title line for it instead of repeating "Photo".
+    static let untitledName = "Photo"
     static let failedTitle = "Couldn't load this photo"
     static let failedMessage = "The photo is missing from this device."
     static let retryTitle = "Retry"
@@ -161,7 +168,59 @@ enum GalleryDetailCopy {
     static let saveTitle = "Save"
     static let saveSavingTitle = "Saving…"
     static let deleteTitle = "Delete"
+    static let addPoseTitle = "Add pose"
     static let optionsTitle = "Photo options"
+}
+
+/// The caption block under the framed photo (`07-board12`): the photo's name, then one meta line
+/// (when · what size). The board's star sits in this block but has no model behind it, so it is not
+/// drawn; nothing here is invented — the date, the time and the byte count are all real values.
+enum GalleryDetailCaption {
+    static let separator = " · "
+
+    /// The name line, or `nil` for an unnamed capture (the header already says "Photo").
+    static func title(for item: GalleryItem) -> String? {
+        item.title == GalleryDetailCopy.untitledName ? nil : item.title
+    }
+
+    /// "Today · 11:08 · 1.2 MB". The size is dropped when the file cannot be read, so a missing file
+    /// reports the time it was taken instead of a made-up number.
+    static func line(
+        for date: Date,
+        bytes: Int64?,
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> String {
+        var parts = [
+            GalleryDayLabel.label(for: date, relativeTo: now, calendar: calendar),
+            timeLabel(for: date),
+        ]
+        if let bytes, let size = byteSizeLabel(bytes) { parts.append(size) }
+        return parts.joined(separator: separator)
+    }
+
+    /// The device's own short time format (`11:08` or `11:08 AM`): the board's 24-hour sample is the
+    /// designer's locale, not a rule worth overriding the user's clock setting for.
+    static func timeLabel(for date: Date) -> String {
+        date.formatted(date: .omitted, time: .shortened)
+    }
+
+    /// One decimal from the megabyte up, whole kilobytes below it (1000-based, like Finder).
+    static func byteSizeLabel(_ bytes: Int64) -> String? {
+        guard bytes >= 0 else { return nil }
+        let value = Double(bytes)
+        if value < 1_000 { return "\(bytes) B" }
+        if value < 1_000_000 { return String(format: "%.0f KB", (value / 1_000).rounded()) }
+        if value < 1_000_000_000 { return String(format: "%.1f MB", value / 1_000_000) }
+        return String(format: "%.1f GB", value / 1_000_000_000)
+    }
+
+    /// Blocking file metadata read — call it off the main thread.
+    static func fileSize(at url: URL, fileManager: FileManager = .default) -> Int64? {
+        guard let attributes = try? fileManager.attributesOfItem(atPath: url.path),
+              let size = attributes[.size] as? NSNumber else { return nil }
+        return size.int64Value
+    }
 }
 
 /// The delete confirmation from the export board `07-photo-delete-confirm`: a centred dialog card,
@@ -186,7 +245,9 @@ enum GalleryDetailAccessibility {
     static let optionsIdentifier = "gallery.detail.options"
     static let shareIdentifier = "gallery.detail.share"
     static let saveIdentifier = "gallery.detail.save"
+    static let addPoseIdentifier = "gallery.detail.addPose"
     static let deleteIdentifier = "gallery.detail.delete"
+    static let captionIdentifier = "gallery.detail.caption"
     static let failedIdentifier = "gallery.detail.failed"
     static let failedRetryIdentifier = "gallery.detail.failedRetry"
 }
@@ -232,6 +293,12 @@ enum GalleryStateKind: String, CaseIterable {
     case emptyFilter
     case error
     case grid
+    /// `07-board11`'s offline state, kept in the vocabulary so the decision is explicit: the gallery
+    /// reads photos off this device, so a lost connection cannot make one fail to load, and
+    /// `GalleryStatePresentation` therefore **never** returns this case. What is offline-bound — Add pose
+    /// — reports through `GalleryOfflinePolicy` above the grid instead. If this case ever does arrive,
+    /// the screen still draws the local photos (see `GalleryScreen.content`).
+    case offline
 }
 
 extension GalleryStateKind {
@@ -242,7 +309,7 @@ extension GalleryStateKind {
         switch self {
         case .emptyAll: return GalleryStateCopy.openCameraButtonIdentifier
         case .error: return GalleryStateCopy.retryButtonIdentifier
-        case .loading, .emptyFilter, .grid: return nil
+        case .loading, .emptyFilter, .grid, .offline: return nil
         }
     }
 }
@@ -352,6 +419,77 @@ struct GalleryToast: Identifiable, Equatable {
     }
 }
 
+/// Offline, as the Gallery can honestly report it.
+///
+/// Everything the grid, the viewer, Share, Save and Delete touch is a jpeg the app already wrote to
+/// `Library/Application Support/aipose/`, so losing the connection cannot make a photo fail to load and
+/// there is no offline *grid* state to draw. `07-board11`'s per-cell "Offline" tiles and its "Some
+/// photos can't load" banner describe a model this app does not have.
+///
+/// The one thing the screen owns that leaves the device is **Add pose** (extraction is a server job), so
+/// that is the only place the board's banner is truthful — and it appears only while that action is
+/// actually on screen. A banner over a screen whose every other action works offline would teach users
+/// the wrong thing about their own photos.
+enum GalleryOfflineCopy {
+    static let bannerTitle = "You're offline. Add pose needs a connection."
+    static let bannerMessage = "Your photos are on this device and still open normally."
+    static let bannerIdentifier = "gallery.offline.banner"
+}
+
+enum GalleryOfflinePolicy {
+    /// Only shown when the screen really offers a network-bound action.
+    static func showsBanner(isOffline: Bool, hasAddPoseAction: Bool) -> Bool {
+        isOffline && hasAddPoseAction
+    }
+}
+
+/// Reachability for the Gallery's single network-bound action: created when the screen appears and torn
+/// down when it goes away (`NWPathMonitor.cancel()` is terminal, so a departed screen never keeps a
+/// monitor alive) — the same rule `APSavedOfflineModel` and the camera's pose picker follow.
+///
+/// `@MainActor` on purpose: a globally isolated class is implicitly `Sendable`, which is what makes
+/// passing `self` into `NWPathMonitor`'s `@Sendable` handler safe — the handler only ever hops back to
+/// the main actor to publish, and no state is touched from the monitor's queue.
+@MainActor final class GalleryReachability: ObservableObject {
+    @Published private(set) var isOffline: Bool
+    private let monitorsConnectivity: Bool
+    private var pathMonitor: NWPathMonitor?
+    private let monitorQueue = DispatchQueue(label: "aipose.gallery.path")
+
+    /// `isOffline` is injectable so a test (or a preview) can pin the offline branch without a network;
+    /// tests also switch the monitor off so no queue outlives the case.
+    init(isOffline: Bool = false, monitorsConnectivity: Bool = true) {
+        self.isOffline = isOffline
+        self.monitorsConnectivity = monitorsConnectivity
+    }
+    deinit { pathMonitor?.cancel() }
+
+    func start() {
+        guard monitorsConnectivity, pathMonitor == nil else { return }
+        let monitor = NWPathMonitor()
+        monitor.pathUpdateHandler = { [weak self] path in
+            let offline = path.status != .satisfied
+            Task { @MainActor [weak self] in
+                self?.setOffline(offline)
+            }
+        }
+        pathMonitor = monitor
+        monitor.start(queue: monitorQueue)
+    }
+
+    /// Stops monitoring and forgets the last reading, so a stale "offline" cannot outlive the screen.
+    func stop() {
+        pathMonitor?.cancel()
+        pathMonitor = nil
+        isOffline = false
+    }
+
+    private func setOffline(_ offline: Bool) {
+        guard isOffline != offline else { return }
+        isOffline = offline
+    }
+}
+
 @MainActor final class GalleryViewModel: ObservableObject {
     @Published var state: Loadable<[GalleryItem]> = .idle
     @Published var selectedIndex: Int?
@@ -398,20 +536,8 @@ struct GalleryToast: Identifiable, Equatable {
     }
 
     static func sectionLabel(for day: Date, relativeTo now: Date, calendar: Calendar) -> String {
-        if calendar.isDate(day, inSameDayAs: now) { return "Today" }
-        if let yesterday = calendar.date(byAdding: .day, value: -1, to: now),
-           calendar.isDate(day, inSameDayAs: yesterday) {
-            return "Yesterday"
-        }
-        return sectionDateFormatter.string(from: day)
+        GalleryDayLabel.label(for: day, relativeTo: now, calendar: calendar)
     }
-
-    private static let sectionDateFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "MMM d"
-        return formatter
-    }()
 
     var stateKind: GalleryStateKind {
         GalleryStatePresentation.kind(for: state, timeFilter: timeFilter)
@@ -473,6 +599,9 @@ struct GalleryToast: Identifiable, Equatable {
     }
 }
 
+/// `@MainActor` because it owns a main-actor reachability model created in its own default initializer
+/// (the same shape `APSavedSurface` uses for `APSavedUndo`).
+@MainActor
 struct GalleryScreen: View {
     @StateObject var model: GalleryViewModel
     /// All-gallery-empty recovery (`gallery.html` `Open Camera`). The owning root wires this to the
@@ -481,6 +610,9 @@ struct GalleryScreen: View {
     /// F10 `Add pose (+)`. The owning root supplies the Add pose route; while it is `nil` the control
     /// is hidden rather than shipped as a dead button.
     var onAddPose: (() -> Void)? = nil
+    /// Reachability for the screen's one network-bound action (`07-board11`'s banner). Injectable so a
+    /// test can pin the offline branch without a network.
+    @StateObject private var reachability = GalleryReachability()
     @Namespace private var zoomNamespace
     var body: some View {
         VStack(spacing: 0) {
@@ -494,6 +626,9 @@ struct GalleryScreen: View {
         .neoHiddenNavigationBar()
         .background(AP.Color.background)
         .task { if case .idle = model.state { await model.load() } }
+        // `NWPathMonitor.cancel()` is terminal, so the monitor lives exactly as long as the screen.
+        .onAppear { reachability.start() }
+        .onDisappear { reachability.stop() }
         .onChange(of: model.timeFilter) { _ in model.applyFilter() }
         // F5: the failure snackbar sits directly above the floating dock, never mid-screen.
         .modifier(GalleryToastInset(toast: model.toast, bottomInset: GalleryGridContract.dockInset) {
@@ -504,11 +639,18 @@ struct GalleryScreen: View {
             set: { if !$0 { model.selectedIndex = nil } }
         )) {
             if let index = model.selectedIndex {
-                GalleryDetailPager(items: model.visibleItems, startIndex: index, zoomNamespace: zoomNamespace) { item in
-                    Task { await model.delete(item) }
-                } onDismiss: {
-                    model.selectedIndex = nil
-                }
+                GalleryDetailPager(
+                    items: model.visibleItems,
+                    startIndex: index,
+                    zoomNamespace: zoomNamespace,
+                    onDelete: { item in
+                        Task { await model.delete(item) }
+                    },
+                    onDismiss: {
+                        model.selectedIndex = nil
+                    },
+                    onAddPose: onAddPose
+                )
             }
         }
     }
@@ -518,8 +660,23 @@ struct GalleryScreen: View {
     private var galleryHeader: some View {
         VStack(spacing: 0) {
             GalleryHeaderBar(showsAddPose: showsAddPose) { onAddPose?() }
+            if showsOfflineBanner {
+                // `07-board11`'s banner, scoped to the action that really needs a connection.
+                APStatusBanner(
+                    tone: .offline,
+                    title: GalleryOfflineCopy.bannerTitle,
+                    message: GalleryOfflineCopy.bannerMessage
+                )
+                .padding(.horizontal, AP.Space.space16)
+                .padding(.top, AP.Space.space8)
+                .accessibilityIdentifier(GalleryOfflineCopy.bannerIdentifier)
+            }
             GalleryFilterBar(filter: model.timeFilter) { model.timeFilter = $0 }
         }
+    }
+
+    private var showsOfflineBanner: Bool {
+        GalleryOfflinePolicy.showsBanner(isOffline: reachability.isOffline, hasAddPoseAction: showsAddPose)
     }
 
     private var showsAddPose: Bool {
@@ -531,7 +688,7 @@ struct GalleryScreen: View {
 
     @ViewBuilder private var content: some View {
         switch model.stateKind {
-        case .grid:
+        case .grid, .offline:
             ScrollView {
                 GalleryPhotoGrid(sections: model.dateSections, zoomNamespace: zoomNamespace) { item in
                     model.select(item)
@@ -624,8 +781,9 @@ struct GalleryStateContent: View {
                 actionIdentifier: kind.actionIdentifier
             )
             .accessibilityIdentifier("gallery.error")
-        case .grid:
-            // `kind` never describes the grid; the screen draws `GalleryPhotoGrid` instead.
+        case .grid, .offline:
+            // `kind` never describes the grid or the offline case; the screen draws `GalleryPhotoGrid`
+            // instead. A photo is local, so an "offline" panel would hide photos that are right there.
             EmptyView()
         }
     }
@@ -777,6 +935,26 @@ enum FullScreenImageTarget {
         let edge = max(max(bounds.width, bounds.height), 1)
         return CGSize(width: edge, height: edge)
     }
+}
+
+/// "Today" / "Yesterday" / "Oct 31" — the single day-label rule shared by the grid's day headers
+/// (F3: the date only, never a count) and the photo-detail caption's meta line.
+enum GalleryDayLabel {
+    static func label(for day: Date, relativeTo now: Date, calendar: Calendar) -> String {
+        if calendar.isDate(day, inSameDayAs: now) { return "Today" }
+        if let yesterday = calendar.date(byAdding: .day, value: -1, to: now),
+           calendar.isDate(day, inSameDayAs: yesterday) {
+            return "Yesterday"
+        }
+        return dateFormatter.string(from: day)
+    }
+
+    private static let dateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "MMM d"
+        return formatter
+    }()
 }
 
 /// One calendar-day bucket of gallery items, newest day first (SCR-002-01-GRD-001).
@@ -945,9 +1123,98 @@ private struct GalleryCellButtonBody: View {
     }
 }
 
+/// The photo-detail action tray (`07-board12`). The board's Star action is deliberately absent: there
+/// is no star model, no column and no service call behind it, so shipping the control would be a dead
+/// button. Add pose is present only while the app supplies its destination.
+enum GalleryDetailTrayAction: String, CaseIterable {
+    case share
+    case save
+    case addPose
+    case delete
+
+    var title: String {
+        switch self {
+        case .share: return GalleryDetailCopy.shareTitle
+        case .save: return GalleryDetailCopy.saveTitle
+        case .addPose: return GalleryDetailCopy.addPoseTitle
+        case .delete: return GalleryDetailCopy.deleteTitle
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .share: return "square.and.arrow.up"
+        case .save: return "arrow.down.to.line"
+        case .addPose: return "plus.circle"
+        case .delete: return "trash"
+        }
+    }
+
+    var identifier: String {
+        switch self {
+        case .share: return GalleryDetailAccessibility.shareIdentifier
+        case .save: return GalleryDetailAccessibility.saveIdentifier
+        case .addPose: return GalleryDetailAccessibility.addPoseIdentifier
+        case .delete: return GalleryDetailAccessibility.deleteIdentifier
+        }
+    }
+}
+
+enum GalleryDetailTrayActions {
+    /// Share, Save, Add pose, Delete — destructive last. Never Star.
+    static func actions(hasAddPoseDestination: Bool) -> [GalleryDetailTrayAction] {
+        [.share, .save] + (hasAddPoseDestination ? [.addPose] : []) + [.delete]
+    }
+}
+
 enum GalleryDetailPresentation {
-    /// Bumped for the F1 header, the count-free pager and the board's tray / dialog.
-    static let styleVersion = 3
+    /// Bumped for the F1 header, the count-free pager, the board's tray / dialog, and (v4) the caption
+    /// block under the frame plus the tray's Add pose action.
+    static let styleVersion = 4
+}
+
+/// The caption block under the framed photo (`07-board12`): the photo's name, then one meta line —
+/// "Today · 11:08 · 1.2 MB". The byte count is read from the file itself, off the main thread, and is
+/// simply omitted when the file is gone: this block has no placeholder numbers.
+struct GalleryDetailCaptionView: View {
+    let item: GalleryItem
+    /// Test seam: production reads the file; a render test can hand in a known size.
+    var byteSizeOverride: Int64?
+    /// Test seam for the day label ("Today"/"Yesterday"), which is otherwise relative to the clock.
+    var now: Date = Date()
+
+    @State private var loadedByteSize: Int64?
+
+    private var byteSize: Int64? { byteSizeOverride ?? loadedByteSize }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: AP.Space.space4) {
+            if let title = GalleryDetailCaption.title(for: item) {
+                Text(title)
+                    .font(AP.Font.heading)
+                    .foregroundStyle(AP.Color.primaryText)
+                    .lineLimit(nil)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Text(GalleryDetailCaption.line(for: item.createdAt, bytes: byteSize, now: now))
+                .font(AP.Font.supporting)
+                .foregroundStyle(AP.Color.secondaryText)
+                .lineLimit(nil)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, AP.Space.space24)
+        .padding(.top, AP.Space.space12)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier(GalleryDetailAccessibility.captionIdentifier)
+        .task(id: item.id) {
+            guard byteSizeOverride == nil else { return }
+            let url = item.fileURL
+            loadedByteSize = await Task.detached(priority: .utility) {
+                GalleryDetailCaption.fileSize(at: url)
+            }.value
+        }
+    }
 }
 
 /// The framed media in the pager: photo, `controlFill` placeholder, or the board's in-frame failure
@@ -1095,6 +1362,9 @@ struct GalleryDetailPager: View {
     var zoomNamespace: Namespace.ID?
     let onDelete: (GalleryItem) -> Void
     let onDismiss: () -> Void
+    /// The tray's Add pose action. Hidden while the app has not supplied the Add pose destination,
+    /// exactly like the grid header's `+`, so it never ships as a dead control.
+    var onAddPose: (() -> Void)?
     @State private var page: Int
     @State private var showsDeleteConfirm = false
     @State private var shareItem: GallerySharePayload?
@@ -1107,13 +1377,15 @@ struct GalleryDetailPager: View {
         startIndex: Int,
         zoomNamespace: Namespace.ID? = nil,
         onDelete: @escaping (GalleryItem) -> Void,
-        onDismiss: @escaping () -> Void
+        onDismiss: @escaping () -> Void,
+        onAddPose: (() -> Void)? = nil
     ) {
         self.items = items
         self.startIndex = startIndex
         self.zoomNamespace = zoomNamespace
         self.onDelete = onDelete
         self.onDismiss = onDismiss
+        self.onAddPose = onAddPose
         _page = State(initialValue: startIndex)
     }
 
@@ -1146,6 +1418,11 @@ struct GalleryDetailPager: View {
                 .tabViewStyle(.page(indexDisplayMode: items.count > 1 ? .automatic : .never))
                 .frame(maxHeight: .infinity)
                 .apSnackbar(toast?.message, tone: toast?.tone ?? .error) { toast = nil }
+
+                // `07-board12`: the caption sits under the pager dots, above the tray, and follows the
+                // page the user is on.
+                GalleryDetailCaptionView(item: current)
+                    .padding(.bottom, AP.Space.space16)
 
                 actionTray
             }
@@ -1188,11 +1465,12 @@ struct GalleryDetailPager: View {
         .zoomTransition(sourceID: current.id, in: zoomNamespace)
     }
 
-    /// F1/F2: the shared page header — back control and the inline date on one row — with the
-    /// screen's own options control in the trailing slot. The old "3 of 12" line is gone (F3).
+    /// F1/F2: the shared page header — back control and the screen's name on one row — with the
+    /// screen's own options control in the trailing slot. The old "3 of 12" line is gone (F3), and the
+    /// date lives in the caption block under the frame (`07-board12`).
     private var topbar: some View {
         GalleryDetailHeader(
-            title: current.createdAt.formatted(date: .abbreviated, time: .omitted),
+            title: GalleryDetailCopy.title,
             onBack: onDismiss,
             onDelete: { showsDeleteConfirm = true }
         )
@@ -1202,9 +1480,12 @@ struct GalleryDetailPager: View {
     /// glyph + word actions.
     private var actionTray: some View {
         HStack(spacing: AP.Space.space4) {
-            shareAction
-            saveAction
-            trashAction
+            ForEach(
+                GalleryDetailTrayActions.actions(hasAddPoseDestination: onAddPose != nil),
+                id: \.self
+            ) { action in
+                trayAction(action)
+            }
         }
         .padding(.horizontal, AP.Space.space16)
         .padding(.vertical, AP.Space.space12)
@@ -1273,6 +1554,35 @@ struct GalleryDetailPager: View {
         .disabled(isSaving)
         .accessibilityIdentifier(GalleryDetailAccessibility.saveIdentifier)
         .accessibilityLabel(isSaving ? "Saving to Photos" : "Save to Photos")
+    }
+
+    @ViewBuilder private func trayAction(_ action: GalleryDetailTrayAction) -> some View {
+        switch action {
+        case .share: shareAction
+        case .save: saveAction
+        case .addPose: addPoseAction
+        case .delete: trashAction
+        }
+    }
+
+    /// `07-board12`'s Add pose tray action: it enters the existing Add pose flow instead of inventing a
+    /// second one. The viewer leaves first — the full-screen cover would otherwise stay on top of the
+    /// Add pose form it opened.
+    @ViewBuilder private var addPoseAction: some View {
+        if let onAddPose {
+            Button {
+                onDismiss()
+                onAddPose()
+            } label: {
+                GalleryTrayActionLabel(
+                    title: GalleryDetailTrayAction.addPose.title,
+                    systemImage: GalleryDetailTrayAction.addPose.systemImage
+                )
+            }
+            .buttonStyle(GalleryTrayButtonStyle())
+            .accessibilityIdentifier(GalleryDetailTrayAction.addPose.identifier)
+            .accessibilityLabel("Add pose from this photo")
+        }
     }
 
     private var trashAction: some View {

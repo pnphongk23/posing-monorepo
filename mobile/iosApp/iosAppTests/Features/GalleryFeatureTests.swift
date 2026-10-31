@@ -396,8 +396,9 @@ final class GalleryFeatureTests: XCTestCase {
 
     // MARK: - Photo detail (F1 header, F3 counts)
 
-    func testGalleryDetailPresentationUsesTheBoardV3Contract() {
-        XCTAssertEqual(GalleryDetailPresentation.styleVersion, 3)
+    func testGalleryDetailPresentationUsesTheBoardV4Contract() {
+        // v4 = the `07-board12` caption block under the frame plus the tray's Add pose action.
+        XCTAssertEqual(GalleryDetailPresentation.styleVersion, 4)
     }
 
     /// F3: the pager announces "Photo", never "Photo 3 of 12" — and a grid cell never counts.
@@ -462,6 +463,230 @@ final class GalleryFeatureTests: XCTestCase {
         XCTAssertGreaterThan(destructiveBottom - destructiveTop, 44, "the destructive action is a 48 pt control")
         XCTAssertGreaterThan(cancelBottom - cancelTop, 44, "the cancel action is a 48 pt control")
         XCTAssertLessThan(destructiveBottom, cancelTop, "Delete photo sits above Cancel, as the board draws it")
+    }
+
+    // MARK: - Photo detail caption block (`07-board12`)
+
+    /// The board's caption is the photo's name; an unnamed capture already says "Photo" in the header,
+    /// so repeating it under the frame is noise, not information.
+    func testGalleryDetailCaptionNamesOnlyNamedPhotos() {
+        let named = GalleryItem(
+            id: 1,
+            fileURL: URL(fileURLWithPath: "/tmp/a.jpg"),
+            createdAt: noonToday(),
+            title: "Window light"
+        )
+        let unnamed = GalleryItem(id: 2, fileURL: URL(fileURLWithPath: "/tmp/b.jpg"), createdAt: noonToday())
+
+        XCTAssertEqual(GalleryDetailCaption.title(for: named), "Window light")
+        XCTAssertNil(GalleryDetailCaption.title(for: unnamed), "an unnamed capture must not repeat the header")
+        XCTAssertEqual(GalleryDetailCopy.title, "Photo")
+        XCTAssertEqual(GalleryDetailCopy.untitledName, "Photo")
+    }
+
+    /// `07-board12`'s meta line: "Today · 11:08 · 1.2 MB". The day label is the same rule the grid's
+    /// day headers use, so a photo taken today reads "Today" in both places.
+    func testGalleryDetailCaptionJoinsDayTimeAndSize() {
+        let now = noonToday()
+        let morning = Calendar.current.date(bySettingHour: 11, minute: 8, second: 0, of: now) ?? now
+        let line = GalleryDetailCaption.line(for: morning, bytes: 1_200_000, now: now)
+        let parts = line.components(separatedBy: GalleryDetailCaption.separator)
+
+        XCTAssertEqual(parts.count, 3, "day, time and size: \(line)")
+        XCTAssertEqual(parts[0], "Today")
+        XCTAssertEqual(parts[1], GalleryDetailCaption.timeLabel(for: morning))
+        XCTAssertEqual(parts[2], "1.2 MB")
+        XCTAssertFalse(line.contains("photo"), "F3: the caption carries no count text")
+
+        let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: morning) ?? morning
+        XCTAssertEqual(
+            GalleryDetailCaption.line(for: yesterday, bytes: 1_200_000, now: now)
+                .components(separatedBy: GalleryDetailCaption.separator).first,
+            "Yesterday"
+        )
+    }
+
+    /// A photo whose file is gone reports when it was taken and nothing else — no invented size.
+    func testGalleryDetailCaptionOmitsAnUnknownSize() {
+        let line = GalleryDetailCaption.line(for: noonToday(), bytes: nil)
+        XCTAssertEqual(line.components(separatedBy: GalleryDetailCaption.separator).count, 2, line)
+        XCTAssertFalse(line.contains("MB"))
+    }
+
+    func testGalleryDetailCaptionSizesAreHumanReadable() {
+        XCTAssertEqual(GalleryDetailCaption.byteSizeLabel(0), "0 B")
+        XCTAssertEqual(GalleryDetailCaption.byteSizeLabel(940), "940 B")
+        XCTAssertEqual(GalleryDetailCaption.byteSizeLabel(41_000), "41 KB")
+        XCTAssertEqual(GalleryDetailCaption.byteSizeLabel(1_200_000), "1.2 MB")
+        XCTAssertEqual(GalleryDetailCaption.byteSizeLabel(2_400_000_000), "2.4 GB")
+        XCTAssertNil(GalleryDetailCaption.byteSizeLabel(-1), "an unreadable size is reported as unknown")
+    }
+
+    /// The size is read from the file on disk, so the caption reports the real photo rather than a
+    /// placeholder. A missing file yields `nil`, which drops the segment instead of printing "0 B".
+    func testGalleryDetailCaptionReadsTheRealFileSize() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("GalleryCaptionTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let file = directory.appendingPathComponent("capture.jpg")
+        let bytes = Data(repeating: 0x41, count: 125_000)
+        try bytes.write(to: file)
+
+        XCTAssertEqual(GalleryDetailCaption.fileSize(at: file), Int64(bytes.count))
+        XCTAssertNil(
+            GalleryDetailCaption.fileSize(at: directory.appendingPathComponent("missing.jpg")),
+            "a missing file must not report a size"
+        )
+    }
+
+    /// Rendered: the block is two stacked lines (name, then meta) inside one accessibility element, so
+    /// VoiceOver reads the caption as one sentence and the identifiers stay stable for QA.
+    @MainActor func testGalleryDetailCaptionRendersNameAboveTheMetaLine() {
+        let now = noonToday()
+        let item = GalleryItem(
+            id: 1,
+            fileURL: URL(fileURLWithPath: "/tmp/a.jpg"),
+            createdAt: now,
+            title: "Window light"
+        )
+        let size = CGSize(width: 360, height: 120)
+        let probe = APViewProbe(AP.Color.background, size: size, scale: 1)
+        defer { probe.tearDown() }
+
+        let bitmap = probe.render(
+            galleryHost(
+                GalleryDetailCaptionView(item: item, byteSizeOverride: 1_200_000, now: now),
+                size: size,
+                topAligned: true
+            )
+        )
+        let bands = inkRowBands(in: bitmap)
+        XCTAssertEqual(bands.count, 2, "the caption draws the name above the meta line, saw \(bands.count) bands")
+        XCTAssertEqual(GalleryDetailAccessibility.captionIdentifier, "gallery.detail.caption")
+    }
+
+    // MARK: - Detail tray (`07-board12`)
+
+    /// Share, Save, Delete stay; Add pose joins them when the app owns the Add-pose destination; Star is
+    /// cut because nothing behind it exists.
+    func testGalleryDetailTrayCarriesShareSaveAddPoseAndDelete() {
+        let withDestination = GalleryDetailTrayActions.actions(hasAddPoseDestination: true)
+        XCTAssertEqual(withDestination, [.share, .save, .addPose, .delete])
+        XCTAssertEqual(withDestination.last, .delete, "the destructive action is the last one in the tray")
+        XCTAssertEqual(GalleryDetailTrayAction.addPose.title, "Add pose")
+        XCTAssertNotNil(UIImage(systemName: GalleryDetailTrayAction.addPose.systemImage))
+
+        XCTAssertFalse(
+            GalleryDetailTrayAction.allCases.map(\.rawValue).contains("star"),
+            "the board's Star action has no model and must not ship"
+        )
+    }
+
+    /// No Add-pose destination means no Add pose control: the tray never ships a dead button.
+    func testGalleryDetailTrayHidesAddPoseWithoutADestination() {
+        XCTAssertEqual(
+            GalleryDetailTrayActions.actions(hasAddPoseDestination: false),
+            [.share, .save, .delete]
+        )
+    }
+
+    /// The ids the existing flows drive must not move when Add pose joins the tray.
+    func testGalleryDetailTrayKeepsTheExistingIdentifiers() {
+        XCTAssertEqual(GalleryDetailTrayAction.share.identifier, "gallery.detail.share")
+        XCTAssertEqual(GalleryDetailTrayAction.save.identifier, "gallery.detail.save")
+        XCTAssertEqual(GalleryDetailTrayAction.delete.identifier, "gallery.detail.delete")
+        XCTAssertEqual(GalleryDetailTrayAction.addPose.identifier, "gallery.detail.addPose")
+        XCTAssertNotEqual(GalleryDetailAccessibility.addPoseIdentifier, GalleryHeaderAction.addPose.identifier)
+    }
+
+    // MARK: - Offline (`07-board11`)
+
+    /// The gallery draws local files, so an offline state must never replace them. The banner exists for
+    /// the one action that needs the network — Add pose — and only while that action is on screen.
+    func testGalleryOfflineBannerOnlyAppearsForANetworkBoundAction() {
+        XCTAssertFalse(GalleryOfflinePolicy.showsBanner(isOffline: false, hasAddPoseAction: true))
+        XCTAssertTrue(GalleryOfflinePolicy.showsBanner(isOffline: true, hasAddPoseAction: true))
+        XCTAssertFalse(
+            GalleryOfflinePolicy.showsBanner(isOffline: true, hasAddPoseAction: false),
+            "with no network-bound action the banner would be decoration"
+        )
+    }
+
+    /// The board's copy ("Some photos can't load") is false for photos stored on the device. The banner
+    /// says what actually needs a connection and what still works.
+    func testGalleryOfflineCopyDoesNotClaimLocalPhotosFail() {
+        XCTAssertFalse(GalleryOfflineCopy.bannerTitle.lowercased().contains("can't load"))
+        XCTAssertFalse(GalleryOfflineCopy.bannerMessage.lowercased().contains("can't load"))
+        XCTAssertTrue(GalleryOfflineCopy.bannerTitle.contains("offline"))
+        XCTAssertTrue(GalleryOfflineCopy.bannerTitle.contains(GalleryDetailCopy.addPoseTitle))
+        XCTAssertTrue(
+            GalleryOfflineCopy.bannerMessage.contains("open normally"),
+            "the banner must say the local photos keep working"
+        )
+        XCTAssertEqual(GalleryOfflineCopy.bannerIdentifier, "gallery.offline.banner")
+    }
+
+    /// No store state, filter or connectivity produces an `.offline` panel: the photos are here.
+    @MainActor func testGalleryStatePresentationNeverReportsOffline() {
+        let grids: [Loadable<[GalleryItem]>] = [
+            .idle,
+            .loading,
+            .empty,
+            .failed("boom"),
+            .loaded([GalleryItem(id: 1, fileURL: URL(fileURLWithPath: "/tmp/a.jpg"), createdAt: .now)]),
+        ]
+        for state in grids {
+            for filter in GalleryTimeFilter.allCases {
+                XCTAssertNotEqual(
+                    GalleryStatePresentation.kind(for: state, timeFilter: filter),
+                    .offline,
+                    "an offline device still has its photos: \(state) \(filter)"
+                )
+            }
+        }
+        XCTAssertNil(
+            GalleryStateKind.offline.actionIdentifier,
+            "the offline case offers no action of its own"
+        )
+    }
+
+    /// Reachability is owned by the screen: online until a monitor says otherwise, and forgotten when the
+    /// screen goes away so a stale reading cannot follow the user.
+    @MainActor func testGalleryReachabilityPinsAndForgetsItsReading() {
+        let online = GalleryReachability(monitorsConnectivity: false)
+        XCTAssertFalse(online.isOffline, "the screen starts online")
+
+        let offline = GalleryReachability(isOffline: true, monitorsConnectivity: false)
+        XCTAssertTrue(offline.isOffline, "a test (and a preview) can pin the offline branch")
+        offline.stop()
+        XCTAssertFalse(offline.isOffline, "stopping monitoring forgets the last reading")
+    }
+
+    /// Rendered: the banner is the shared warning-surface component, so it reads as a status and not as
+    /// another card in the grid.
+    @MainActor func testGalleryOfflineBannerPaintsTheWarningSurface() {
+        let size = CGSize(width: 360, height: 200)
+        let probe = APViewProbe(AP.Color.background, size: size, scale: 1)
+        defer { probe.tearDown() }
+
+        let bitmap = probe.render(
+            galleryHost(
+                APStatusBanner(
+                    tone: .offline,
+                    title: GalleryOfflineCopy.bannerTitle,
+                    message: GalleryOfflineCopy.bannerMessage
+                )
+                .padding(.horizontal, AP.Space.space16)
+                .padding(.top, AP.Space.space8),
+                size: size,
+                topAligned: true
+            )
+        )
+        let bannerRows = rowsPainted(with: 0xFED766, in: bitmap, columns: 0..<bitmap.width)
+        XCTAssertGreaterThan(bannerRows.count, 40, "the banner paints warningSurface behind its copy")
+        XCTAssertGreaterThan(inkPixelCount(in: bitmap, columns: 20..<340), 0, "the banner prints its copy")
     }
 
     // MARK: - Filter chips
@@ -619,6 +844,38 @@ final class GalleryFeatureTests: XCTestCase {
     }
 
     // MARK: - Helpers
+
+    /// Contiguous row bands that paint anything other than the app background, i.e. the lines of text a
+    /// block draws.
+    private func inkRowBands(
+        in bitmap: APBitmap,
+        columns: Range<Int>? = nil,
+        background: APPixel = APPixel(red: 251, green: 246, blue: 239, alpha: 255),
+        tolerance: Int = 8
+    ) -> [Range<Int>] {
+        let requested = columns ?? 0..<bitmap.width
+        let band = max(requested.lowerBound, 0)..<min(requested.upperBound, bitmap.width)
+        let inked = (0..<bitmap.height).map { y in
+            band.contains { x in
+                guard let pixel = bitmap.color(x: x, y: y), pixel.alpha > 200 else { return false }
+                return abs(pixel.red - background.red) > tolerance
+                    || abs(pixel.green - background.green) > tolerance
+                    || abs(pixel.blue - background.blue) > tolerance
+            }
+        }
+        var bands: [Range<Int>] = []
+        var start: Int?
+        for y in 0..<bitmap.height {
+            if inked[y] {
+                start = start ?? y
+            } else if let open = start {
+                bands.append(open..<y)
+                start = nil
+            }
+        }
+        if let open = start { bands.append(open..<bitmap.height) }
+        return bands
+    }
 
     /// Non-background pixels inside a column band, over the whole bitmap. Used to prove a control or a
     /// count is *absent* from where it would otherwise be painted.
