@@ -1894,3 +1894,101 @@ final class CameraTimerModelTests: XCTestCase {
         XCTAssertEqual(model.timerSetting, .off, "a control the camera cannot serve does not move")
     }
 }
+
+// MARK: - Ratio (saved capture aspect)
+
+final class CameraAspectCropTests: XCTestCase {
+    func testAThreeByFourCaptureNeedsNoCrop() {
+        let size = CGSize(width: 3000, height: 4000)
+        XCTAssertEqual(CameraAspectCrop.rect(for: .threeFour, imageSize: size), CGRect(origin: .zero, size: size))
+        XCTAssertFalse(CameraAspectCrop.needsCrop(ratio: .threeFour, imageSize: size))
+    }
+
+    func testASquareCropIsCentredAndFullHeight() {
+        let size = CGSize(width: 3000, height: 4000)
+        XCTAssertEqual(
+            CameraAspectCrop.rect(for: .oneOne, imageSize: size),
+            CGRect(x: 0, y: 500, width: 3000, height: 3000)
+        )
+        XCTAssertTrue(CameraAspectCrop.needsCrop(ratio: .oneOne, imageSize: size))
+    }
+
+    func testAStoryCropTrimsTheSides() {
+        let size = CGSize(width: 3000, height: 4000)
+        // 9:16 is narrower than 3:4, so the width gives way and the height is kept.
+        XCTAssertEqual(
+            CameraAspectCrop.rect(for: .nineSixteen, imageSize: size),
+            CGRect(x: 375, y: 0, width: 2250, height: 4000)
+        )
+    }
+
+    func testALandscapeCaptureIsCroppedToThePortraitRatio() {
+        let size = CGSize(width: 4000, height: 3000)
+        XCTAssertEqual(
+            CameraAspectCrop.rect(for: .threeFour, imageSize: size),
+            CGRect(x: 875, y: 0, width: 2250, height: 3000)
+        )
+    }
+
+    func testDegenerateSizesDoNotCrash() {
+        XCTAssertEqual(CameraAspectCrop.rect(for: .oneOne, imageSize: .zero), .zero)
+    }
+
+    /// The saved file really is cropped (dimensions asserted on the written JPEG, no device needed).
+    func testTheSavedFileIsCroppedToTheChosenRatio() throws {
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = 1
+        format.opaque = true
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 400, height: 300), format: format).image { context in
+            UIColor.systemTeal.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 400, height: 300))
+        }
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("crop-\(UUID().uuidString).jpg")
+        try XCTUnwrap(image.jpegData(compressionQuality: 0.9)).write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        XCTAssertTrue(CameraImagePostProcess.cropFileInPlace(at: url.path, ratio: .oneOne))
+
+        let saved = try XCTUnwrap(UIImage(data: try Data(contentsOf: url))?.cgImage)
+        XCTAssertEqual(saved.width, 300, "1:1 keeps the short side")
+        XCTAssertEqual(saved.height, 300)
+    }
+
+    func testACaptureThatAlreadyMatchesIsNotRewritten() throws {
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = 1
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 300, height: 400), format: format).image { _ in }
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("nocrop-\(UUID().uuidString).jpg")
+        try XCTUnwrap(image.jpegData(compressionQuality: 0.9)).write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+        let before = try Data(contentsOf: url)
+
+        XCTAssertFalse(CameraImagePostProcess.cropFileInPlace(at: url.path, ratio: .threeFour))
+
+        XCTAssertEqual(try Data(contentsOf: url), before, "a matching capture is left byte-identical")
+    }
+}
+
+@MainActor
+final class CameraAspectRatioModelTests: XCTestCase {
+    func testTheRatioSettingIsGatedAndPersisted() throws {
+        let model = CameraViewModel()
+        model.coordinator.onPermissionResult(.denied)
+        model.setAspectRatio(.oneOne)
+        XCTAssertEqual(model.aspectRatio, .threeFour, "a control the camera cannot serve does not move")
+
+        model.coordinator.onPermissionResult(.authorized)
+        model.setAspectRatio(.nineSixteen)
+        XCTAssertEqual(model.aspectRatio, .nineSixteen)
+
+        var settings = CameraSettings()
+        settings.aspectRatio = .oneOne
+        XCTAssertEqual(try XCTUnwrap(CameraSettings.decode(try settings.encodedJSON())).aspectRatio, .oneOne)
+    }
+
+    func testTheRatioIdentifiersAreTheQaContract() {
+        XCTAssertEqual(CameraAspectRatio.threeFour.accessibilityIdentifier, "camera.tools.ratio.3x4")
+        XCTAssertEqual(CameraAspectRatio.oneOne.accessibilityIdentifier, "camera.tools.ratio.1x1")
+        XCTAssertEqual(CameraAspectRatio.nineSixteen.accessibilityIdentifier, "camera.tools.ratio.9x16")
+    }
+}

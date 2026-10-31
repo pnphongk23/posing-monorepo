@@ -24,6 +24,8 @@ final class CameraViewModel: ObservableObject {
     @Published private(set) var timerCountdown: Int?
     /// Shutter timer setting (`Off` / `3 s` / `10 s`), persisted like the other settings.
     @Published var timerSetting: CameraTimerSetting = .off
+    /// Saved capture aspect, persisted like the other settings.
+    @Published var aspectRatio: CameraAspectRatio = .threeFour
     /// `pose-visibility-row`: Shown / Hidden for the selected pose reference.
     @Published var isPoseGuideVisible = true
     /// `pose-line-color-black` / `pose-line-color-white`.
@@ -242,6 +244,11 @@ final class CameraViewModel: ObservableObject {
         timerCountdown = nil
     }
 
+    func setAspectRatio(_ ratio: CameraAspectRatio) {
+        guard cameraControlsEnabled else { return }
+        aspectRatio = ratio
+    }
+
     /// Setting the timer while a countdown runs cancels it: the new value applies to the next press.
     func setTimerSetting(_ setting: CameraTimerSetting) {
         guard cameraControlsEnabled else { return }
@@ -379,7 +386,7 @@ final class CameraViewModel: ObservableObject {
     /// The eight settings that survive a relaunch. `CameraSnapshot` carries them in one JSON blob;
     /// the selected pose is deliberately not among them (D8).
     private enum PersistedSetting: Hashable {
-        case opacity, flipped, grid, flash, guideVisibility, lineColor, transform, zoom, pickerExpanded, timer
+        case opacity, flipped, grid, flash, guideVisibility, lineColor, transform, zoom, pickerExpanded, timer, aspectRatio
     }
 
     /// `@Published` sinks rather than setter bodies, because the guided gestures and a few tests
@@ -402,6 +409,7 @@ final class CameraViewModel: ObservableObject {
         $isPickerExpanded.dropFirst().sink { [weak self] _ in self?.settingsDidChange(.pickerExpanded) }
             .store(in: &cancellables)
         $timerSetting.dropFirst().sink { [weak self] _ in self?.settingsDidChange(.timer) }.store(in: &cancellables)
+        $aspectRatio.dropFirst().sink { [weak self] _ in self?.settingsDidChange(.aspectRatio) }.store(in: &cancellables)
     }
 
     /// Gate moves are not camera settings, but the shutter's enabled state reads them: without this
@@ -463,7 +471,8 @@ final class CameraViewModel: ObservableObject {
             transform: persistedTransform,
             zoom: zoomLevel,
             isPickerExpanded: isPickerExpanded,
-            timer: timerSetting
+            timer: timerSetting,
+            aspectRatio: aspectRatio
         )
     }
 
@@ -500,6 +509,7 @@ final class CameraViewModel: ObservableObject {
         if !touchedSettings.contains(.lineColor) { guideLineColor = stored.lineColor }
         if !touchedSettings.contains(.zoom) { zoomLevel = stored.zoom }
         if !touchedSettings.contains(.pickerExpanded) { isPickerExpanded = stored.isPickerExpanded }
+        if !touchedSettings.contains(.aspectRatio) { aspectRatio = stored.aspectRatio }
         if !touchedSettings.contains(.timer) {
             timerSetting = stored.timer
             timerMachine.setting = stored.timer
@@ -620,6 +630,9 @@ final class CameraViewModel: ObservableObject {
                 showStatus(CaptureFailure.writeFailed.userMessage)
                 return
             }
+            // The saved file follows the reserved framing; a failed rewrite keeps the capture (the
+            // photo still exists, only its aspect would differ from the preview).
+            CameraImagePostProcess.cropFileInPlace(at: path, ratio: aspectRatio)
             let savedToPhotos = await PhotosExporter.saveImage(at: URL(fileURLWithPath: path))
             showStatus(savedToPhotos ? "Saved" : "Saved to gallery. Allow Photos access to also save to your library.")
         }
@@ -699,6 +712,73 @@ enum CameraZoomLevel: Int, CaseIterable, Equatable {
         let all = CameraZoomLevel.allCases
         let index = all.firstIndex(of: self) ?? 0
         return all[(index + 1) % all.count]
+    }
+}
+
+/// Capture aspect (`05-camera-tools-sheet` Ratio row: 3:4 / 1:1 / 9:16). 3:4 is the camera's portrait
+/// default, so it is also the "no crop" answer for a 3:4 capture.
+enum CameraAspectRatio: String, CaseIterable, Identifiable, Sendable {
+    case threeFour = "3:4"
+    case oneOne = "1:1"
+    case nineSixteen = "9:16"
+
+    var id: String { rawValue }
+    var widthOverHeight: CGFloat {
+        switch self {
+        case .threeFour: return 3.0 / 4.0
+        case .oneOne: return 1
+        case .nineSixteen: return 9.0 / 16.0
+        }
+    }
+    var accessibilityIdentifier: String {
+        switch self {
+        case .threeFour: return "camera.tools.ratio.3x4"
+        case .oneOne: return "camera.tools.ratio.1x1"
+        case .nineSixteen: return "camera.tools.ratio.9x16"
+        }
+    }
+}
+
+/// The crop that makes a capture match a ratio: centred, largest area of that ratio. Pure, so the
+/// saved dimensions are a unit test instead of something only a device can show.
+enum CameraAspectCrop {
+    static let matchTolerance: CGFloat = 0.005
+
+    static func rect(for ratio: CameraAspectRatio, imageSize: CGSize) -> CGRect {
+        guard imageSize.width > 0, imageSize.height > 0 else { return .zero }
+        let target = ratio.widthOverHeight
+        let current = imageSize.width / imageSize.height
+        if abs(current - target) <= matchTolerance {
+            return CGRect(origin: .zero, size: imageSize)
+        }
+        if current > target {
+            let width = imageSize.height * target
+            return CGRect(x: (imageSize.width - width) / 2, y: 0, width: width, height: imageSize.height)
+        }
+        let height = imageSize.width / target
+        return CGRect(x: 0, y: (imageSize.height - height) / 2, width: imageSize.width, height: height)
+    }
+
+    static func needsCrop(ratio: CameraAspectRatio, imageSize: CGSize) -> Bool {
+        rect(for: ratio, imageSize: imageSize) != CGRect(origin: .zero, size: imageSize)
+    }
+}
+
+/// Saved-photo post-processing for the ratio: the file behind the gallery row is cropped to the aspect
+/// the user framed with, so the saved dimensions match the preview (and are asserted in tests).
+enum CameraImagePostProcess {
+    @discardableResult
+    static func cropFileInPlace(at path: String, ratio: CameraAspectRatio) -> Bool {
+        guard let data = FileManager.default.contents(atPath: path),
+              let image = UIImage(data: data),
+              let cgImage = image.cgImage else { return false }
+        let pixelSize = CGSize(width: cgImage.width, height: cgImage.height)
+        guard CameraAspectCrop.needsCrop(ratio: ratio, imageSize: pixelSize) else { return false }
+        let rect = CameraAspectCrop.rect(for: ratio, imageSize: pixelSize).integral
+        guard let cropped = cgImage.cropping(to: rect) else { return false }
+        let output = UIImage(cgImage: cropped, scale: image.scale, orientation: image.imageOrientation)
+        guard let encoded = output.jpegData(compressionQuality: 0.92) else { return false }
+        return (try? encoded.write(to: URL(fileURLWithPath: path), options: .atomic)) != nil
     }
 }
 
@@ -1017,6 +1097,7 @@ struct CameraScreen: View {
                             isPoseGuideVisible: model.isPoseGuideVisible,
                             guideFlipped: model.guideFlipped,
                             timerSetting: model.timerSetting,
+                            aspectRatio: model.aspectRatio,
                             guideOpacity: model.guideOpacity,
                             guideLineColor: model.guideLineColor,
                             popupWidth: min(CameraProto.popupWidth, size.width - CameraProto.controlInset * 2),
@@ -1032,6 +1113,7 @@ struct CameraScreen: View {
                             onPoseGuideVisibilityToggle: { model.togglePoseGuideVisibility() },
                             onMirrorToggle: { model.toggleGuideMirror() },
                             onTimerChange: { model.setTimerSetting($0) },
+                            onAspectRatioChange: { model.setAspectRatio($0) },
                             onGuideOpacityChange: { model.setGuideOpacity($0) },
                             onGuideLineColorChange: { model.setGuideLineColor($0) },
                             onDismiss: { dismissCameraTools() }
@@ -1991,6 +2073,7 @@ private struct CameraToolsPopup: View {
     let isPoseGuideVisible: Bool
     let guideFlipped: Bool
     let timerSetting: CameraTimerSetting
+    let aspectRatio: CameraAspectRatio
     let guideOpacity: Double
     let guideLineColor: GuideLineColor
     let popupWidth: CGFloat
@@ -2000,6 +2083,7 @@ private struct CameraToolsPopup: View {
     let onPoseGuideVisibilityToggle: () -> Void
     let onMirrorToggle: () -> Void
     let onTimerChange: (CameraTimerSetting) -> Void
+    let onAspectRatioChange: (CameraAspectRatio) -> Void
     let onGuideOpacityChange: (Double) -> Void
     let onGuideLineColorChange: (GuideLineColor) -> Void
     let onDismiss: () -> Void
@@ -2046,6 +2130,7 @@ private struct CameraToolsPopup: View {
             )
             gridRow
             timerRow
+            ratioRow
 
             if hasPose {
                 Divider()
@@ -2227,6 +2312,62 @@ private struct CameraToolsPopup: View {
         .accessibilityValue(guideFlipped ? "Mirrored" : "Normal")
         .accessibilityIdentifier("camera.tools.mirror.switch")
         .accessibilityAddTraits(guideFlipped ? [.isSelected] : [])
+    }
+
+    /// Ratio: the saved capture's aspect. The chosen option carries a check glyph and its word.
+    private var ratioRow: some View {
+        VStack(alignment: .leading, spacing: AP.Space.space4) {
+            HStack(spacing: AP.Space.space8) {
+                Image(systemName: "rectangle.portrait")
+                    .font(AP.Font.body)
+                    .foregroundStyle(AP.Color.primaryText)
+                    .frame(width: 22)
+                    .accessibilityHidden(true)
+                Text("Ratio")
+                    .font(AP.Font.body)
+                    .foregroundStyle(AP.Color.primaryText)
+                Spacer(minLength: AP.Space.space8)
+                Text(aspectRatio.rawValue)
+                    .font(AP.Font.body.weight(.semibold))
+                    .foregroundStyle(AP.Color.accentText)
+            }
+            HStack(spacing: AP.Space.space8) {
+                ForEach(CameraAspectRatio.allCases) { ratio in
+                    ratioChoice(ratio)
+                }
+            }
+        }
+        .padding(.horizontal, AP.Space.space12)
+        .padding(.vertical, AP.Space.space8)
+        .background(
+            RoundedRectangle(cornerRadius: AP.Radius.radius16, style: .continuous)
+                .fill(AP.Color.controlFill)
+        )
+        .disabled(!controlsEnabled)
+        .opacity(controlsEnabled ? 1 : 0.45)
+        .accessibilityIdentifier("camera.tools.ratio")
+    }
+
+    private func ratioChoice(_ ratio: CameraAspectRatio) -> some View {
+        let isSelected = aspectRatio == ratio
+        return Button {
+            onAspectRatioChange(ratio)
+        } label: {
+            HStack(spacing: AP.Space.space4) {
+                if isSelected {
+                    Image(systemName: "checkmark")
+                        .font(AP.Font.caption.weight(.bold))
+                }
+                Text(ratio.rawValue)
+                    .font(AP.Font.supporting.weight(.semibold))
+            }
+            .foregroundStyle(isSelected ? AP.Color.selectedForeground : AP.Color.primaryText)
+            .frame(maxWidth: .infinity, minHeight: AP.HitTarget.minimum)
+        }
+        .buttonStyle(CameraSelectStyle(isSelected: isSelected))
+        .accessibilityLabel("Ratio \(ratio.rawValue)")
+        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+        .accessibilityIdentifier(ratio.accessibilityIdentifier)
     }
 
     /// Timer: Off / 3 s / 10 s, the chosen option with a check glyph and its word.

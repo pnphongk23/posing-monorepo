@@ -35,6 +35,8 @@ struct CameraSettings: Equatable, Sendable {
     var isPickerExpanded = true
     /// Shutter timer (Off / 3 s / 10 s). Default off: a press captures at once.
     var timer: CameraTimerSetting = .off
+    /// Saved capture aspect. Default 3:4: the camera's portrait framing.
+    var aspectRatio: CameraAspectRatio = .threeFour
 
     /// The restored placement in the shape the camera screen draws.
     var guideTransform: GuideTransform { transform.placement }
@@ -53,7 +55,8 @@ struct CameraSettings: Equatable, Sendable {
         transform: Transform = Transform(),
         zoom: CameraZoomLevel = .one,
         isPickerExpanded: Bool = true,
-        timer: CameraTimerSetting = .off
+        timer: CameraTimerSetting = .off,
+        aspectRatio: CameraAspectRatio = .threeFour
     ) {
         self.version = version
         self.revision = revision
@@ -67,6 +70,7 @@ struct CameraSettings: Equatable, Sendable {
         self.zoom = zoom
         self.isPickerExpanded = isPickerExpanded
         self.timer = timer
+        self.aspectRatio = aspectRatio
     }
 
     /// Placement of the pose reference over the preview, in a JSON-friendly (finite, clamped) shape.
@@ -120,7 +124,7 @@ struct CameraSettings: Equatable, Sendable {
 extension CameraSettings: Codable {
     enum CodingKeys: String, CodingKey {
         case version, revision, guideOpacity, guideFlipped, isGridVisible, flash,
-             isPoseGuideVisible, lineColor, transform, zoom, isPickerExpanded, timer
+             isPoseGuideVisible, lineColor, transform, zoom, isPickerExpanded, timer, aspectRatio
     }
 
     init(from decoder: Decoder) throws {
@@ -146,6 +150,8 @@ extension CameraSettings: Codable {
         isPickerExpanded = (try? container.decodeIfPresent(Bool.self, forKey: .isPickerExpanded)) ?? defaults.isPickerExpanded
         timer = ((try? container.decodeIfPresent(String.self, forKey: .timer)) ?? nil)
             .flatMap(CameraTimerSetting.init(rawValue:)) ?? defaults.timer
+        aspectRatio = ((try? container.decodeIfPresent(String.self, forKey: .aspectRatio)) ?? nil)
+            .flatMap(CameraAspectRatio.init(rawValue:)) ?? defaults.aspectRatio
     }
 
     func encode(to encoder: Encoder) throws {
@@ -162,6 +168,7 @@ extension CameraSettings: Codable {
         try container.encode(zoom.rawValue, forKey: .zoom)
         try container.encode(isPickerExpanded, forKey: .isPickerExpanded)
         try container.encode(timer.rawValue, forKey: .timer)
+        try container.encode(aspectRatio.rawValue, forKey: .aspectRatio)
     }
 
     /// `nil` when the payload is not a JSON object this type understands. Callers fall back to full
