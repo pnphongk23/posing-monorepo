@@ -130,6 +130,9 @@ struct APEmptyStateView: View {
     var style: APStateCardStyle = .card
     /// Panel glyph override (Saved uses the bookmark, not the empty tray).
     var glyph: String?
+    /// `false` lets a caller stack extra chrome directly under the copy instead of the panel taking
+    /// the whole height (the Saved sign-in gate puts its button right below the message).
+    var expandsVertically: Bool = true
 
     var body: some View {
         APStateCard(
@@ -141,7 +144,8 @@ struct APEmptyStateView: View {
             actionTitle: actionTitle,
             actionKind: .secondary,
             action: action,
-            style: style
+            style: style,
+            expandsVertically: expandsVertically
         )
     }
 }
@@ -157,6 +161,7 @@ struct APErrorStateView: View {
     var style: APStateCardStyle = .card
     /// Panel glyph override.
     var glyph: String?
+    var expandsVertically: Bool = true
 
     @State private var didAnnounce = false
 
@@ -170,7 +175,8 @@ struct APErrorStateView: View {
             actionTitle: retry == nil ? nil : retryTitle,
             actionKind: .primary,
             action: retry,
-            style: style
+            style: style,
+            expandsVertically: expandsVertically
         )
         .onAppear(perform: announceIfNeeded)
     }
@@ -199,6 +205,7 @@ private struct APStateCard: View {
     let actionKind: APButtonKind
     let action: (() -> Void)?
     let style: APStateCardStyle
+    var expandsVertically: Bool = true
 
     var body: some View {
         VStack(spacing: style == .card ? AP.Space.space12 : AP.Space.space16) {
@@ -224,7 +231,10 @@ private struct APStateCard: View {
             }
         }
         .padding(chromePadding)
-        .frame(maxWidth: .infinity, maxHeight: style == .plain ? .infinity : nil)
+        .frame(
+            maxWidth: .infinity,
+            maxHeight: style == .plain && expandsVertically ? .infinity : nil
+        )
         .background(cardBackground)
         .accessibilityElement(children: action == nil ? .combine : .contain)
     }

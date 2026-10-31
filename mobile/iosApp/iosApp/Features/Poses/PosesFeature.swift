@@ -2085,11 +2085,15 @@ struct SavedPosesScreen: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
+    private var stage: SavedSurfaceStage {
+        SavedSurfaceStage.resolve(isSessionResolved: session.isResolved, isSignedIn: session.isSignedIn)
+    }
+
     var body: some View {
         if AppConfig.shared.isAccountFeatureEnabled {
             VStack(spacing: 0) {
-                header
-                body(by: SavedSurfaceStage.resolve(isSessionResolved: session.isResolved, isSignedIn: session.isSignedIn))
+                header(for: stage)
+                body(by: stage)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .background(AP.Color.background)
@@ -2105,7 +2109,7 @@ struct SavedPosesScreen: View {
 
     // MARK: header (`06-saved-populated`: back, title, count)
 
-    private var header: some View {
+    private func header(for stage: SavedSurfaceStage) -> some View {
         VStack(alignment: .leading, spacing: AP.Space.space8) {
             Button { dismiss() } label: {
                 APHeaderActionGlyph(systemImage: "chevron.left")
@@ -2119,7 +2123,9 @@ struct SavedPosesScreen: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityAddTraits(.isHeader)
 
-            if case .loaded(let poses) = model.state, !poses.isEmpty {
+            // The count only belongs to the signed-in collection: the gate must not show the
+            // catalogue's row count (the model still holds the Poses tab's list at this point).
+            if case .list = stage, case .loaded(let poses) = model.state, !poses.isEmpty {
                 Text(SavedCountCopy.label(poses.count))
                     .font(AP.Font.supporting)
                     .foregroundStyle(AP.Color.secondaryText)
@@ -2201,18 +2207,20 @@ struct SavedPosesScreen: View {
     /// existing semantics: the tap opens the same sign-in prompt (`SignInIntent.openSaved`).
     private var savedSignInRequired: some View {
         VStack(spacing: AP.Space.space16) {
+            Spacer(minLength: 0)
             APEmptyStateView(
                 title: PoseResultsStateCopy.savedSignInTitle,
                 message: PoseResultsStateCopy.savedSignInMessage,
                 style: .plain,
-                glyph: "bookmark"
+                glyph: "bookmark",
+                expandsVertically: false
             )
             Button("Sign in") { pendingSignIn = .openSaved }
                 .buttonStyle(APPrimaryButtonStyle())
                 .fixedSize(horizontal: true, vertical: false)
                 .accessibilityLabel("Sign in")
                 .accessibilityIdentifier("saved.signIn")
-                .padding(.bottom, AP.Space.space32)
+            Spacer(minLength: 0)
         }
         .accessibilityElement(children: .contain)
     }
