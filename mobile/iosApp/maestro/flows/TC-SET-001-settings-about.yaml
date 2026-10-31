@@ -3,13 +3,19 @@ appId: ${APP_ID}
 tags: [TC-SET-001, p0]
 ---
 - runFlow: ../subflows/launch.yaml
-- tapOn:
-    id: "poses.open-settings"
+- runFlow: ../subflows/open-settings.yaml
 - assertVisible: "Privacy"  # TODO(QA-261029-ID) settings.privacy.section
-- assertVisible: "Replay onboarding guide"  # TODO(QA-261029-ID) settings.replayOnboarding
+# Appearance and Account now sit above Privacy and Help & support is the last group, so the
+# onboarding/About rows are below the fold: scroll to them instead of asserting off-screen.
+- scrollUntilVisible:
+    element:
+      text: "Replay onboarding guide"  # TODO(QA-261029-ID) settings.replayOnboarding
+    direction: DOWN
 - tapOn: "About posing.*"  # TODO(QA-261029-ID) settings.about
 - assertVisible:
     id: "about.close"
 - tapOn:
     id: "about.close"
-- assertVisible: "Privacy"  # TODO(QA-261029-ID) settings.privacy.section
+- assertNotVisible:
+    id: "about.close"
+- assertVisible: "Replay onboarding guide"  # back on the Settings list, still scrolled to Help & support

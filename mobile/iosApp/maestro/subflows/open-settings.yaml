@@ -1,0 +1,7 @@
+# Settings moved into the Poses header More menu.
+appId: ${APP_ID}
+---
+- tapOn:
+    id: "poses.more"
+- tapOn:
+    id: "poses.menu.settings"

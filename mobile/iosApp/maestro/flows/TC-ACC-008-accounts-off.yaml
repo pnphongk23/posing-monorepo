@@ -3,8 +3,7 @@ appId: ${APP_ID}
 tags: [TC-ACC-008, p1]
 ---
 - runFlow: ../subflows/launch-accounts-off.yaml
-- tapOn:
-    id: "poses.open-settings"
+- runFlow: ../subflows/open-settings.yaml
 - assertVisible: "Privacy"  # TODO(QA-261029-ID) settings.privacy.section
 - assertNotVisible:
     id: "settings.account.row"

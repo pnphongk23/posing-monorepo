@@ -13,6 +13,8 @@
 | TC-CAM-009 | P0 | Clean install | 1. Launch. 2. Tap dock camera. 3. Tap Close camera | Back on Home (catalogue), camera gone | automated: TC-CAM-009-camera-from-home-closes-to-home.yaml |
 | TC-CAM-010 | P1 | Remembered pose was deleted, made private or unsaved | Tap dock camera | Camera opens with no pose and no error; paywall gate still runs for the remembered pose | manual (needs a pose removed behind the app's back) |
 | TC-CAM-008 | P2 | Device with front camera | Tap switch camera | Preview flips; guide persists | manual |
+| TC-CAM-012 | P0 | Clean install, camera allowed | 1. Tap dock camera. 2. Collapse the pose picker strip. 3. Re-open it with the reopen control | Collapsed: strip hidden, only thumbnail · shutter · flip show. Reopened: strip back above the control bar | pending (S3 ids: collapse and reopen controls) |
+| TC-CAM-013 | P1 | Camera collapsed with a pose guide drawn | Take no action; read the guide | Guide stays drawn (`camera.poseGuide` text unchanged) while collapsed and after reopening | pending (S3 ids) |
 
 
 Note: since `camera.poseGuide` exists (absent when no guide is drawn), CAM-007/011 and DET-007 prove which pose is drawn. TC-CAM-001 asserts the guide is drawn.

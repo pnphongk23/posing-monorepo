@@ -3,8 +3,7 @@ appId: ${APP_ID}
 tags: [TC-ACC-007, p1]
 ---
 - runFlow: ../subflows/launch-accounts-on.yaml
-- tapOn:
-    id: "poses.open-settings"
+- runFlow: ../subflows/open-settings.yaml
 - tapOn:
     id: "settings.account.row"
 - tapOn:
