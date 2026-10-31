@@ -36,6 +36,7 @@
 		28D7BB6072FF5454DD3D85B5 /* TokenStorageTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C522CF528E426B84E7C5887 /* TokenStorageTests.swift */; };
 		291594201B0FF97BA4E9FD28 /* AccountSessionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4BFD8884125812979E9FED4B /* AccountSessionTests.swift */; };
 		2AEA399C3418B1C8291E3462 /* SessionScopedArchitectureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2390F661F0C57B7CC33D5181 /* SessionScopedArchitectureTests.swift */; };
+		2C4A1A53C04CDF05FBB4FCAA /* AccountScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 774F0BEF6D21D830B0D53125 /* AccountScreen.swift */; };
 		315FD02B53566C56BF0693E6 /* JobsServiceSessionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E2CC10B44F2FF3A38B280E4 /* JobsServiceSessionTests.swift */; };
 		31D8698BFF08F7C0753AB329 /* AddPoseScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED4130A7D5193AB0DFA1BEC3 /* AddPoseScreen.swift */; };
 		33B27B4D310716CB30BEB63D /* AppImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E3F05BA7D23C56F8F95252B /* AppImage.swift */; };
@@ -64,6 +65,7 @@
 		5E14AAEFC75F2D1FCC31ECFE /* CameraFeatureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 127AD2AAFA29205C2D63B787 /* CameraFeatureTests.swift */; };
 		5E2B44D1C4A9B540A480E0BA /* GalleryFeatureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21F759916DD6C60D0A6AE6E8 /* GalleryFeatureTests.swift */; };
 		60726B364AB3F7A8F2631462 /* SupportDestinations.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05D11FEB7E0A1D62258645BF /* SupportDestinations.swift */; };
+		60E21B2256AF785F47B563FD /* SettingsScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D9F3EB320D8C8811CC13EC9 /* SettingsScreen.swift */; };
 		616DE68C034960C7053F8E35 /* AIPoseNavigation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 567850A063D54AAE95B3BEC5 /* AIPoseNavigation.swift */; };
 		61756EF06A123420D1E5A424 /* APSavedListTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE52B3C22956A78AA3C49B20 /* APSavedListTests.swift */; };
 		6431F9D53B5E03561AB351B3 /* LegacyDatabaseCompatibilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31B8B5FE18422BFB70F0CC0B /* LegacyDatabaseCompatibilityTests.swift */; };
@@ -76,6 +78,7 @@
 		70F357B4617B371502C1404C /* PoseAPIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F268FEE9D95DFE81D66C708A /* PoseAPIService.swift */; };
 		7342797CFF2900F85521D10B /* RevenueCatAdapterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E5F21303DBA6D3D4B9DF921 /* RevenueCatAdapterTests.swift */; };
 		73919AF6C09FD6F4B94E56C1 /* PosePickerViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D33F377EAE99AD4407CC35B /* PosePickerViewModelTests.swift */; };
+		744458125F1BAC3B240A6A9F /* PaywallScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E891060E288E2CF2F245B31 /* PaywallScreen.swift */; };
 		74F6A0CB74788E4A69E9F049 /* APDesignTokensTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAB0CB5BD7E65BF2E839B790 /* APDesignTokensTests.swift */; };
 		76FBC4B59139CC61DEC8E77F /* APAddPoseRequestTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0FA4FDD16D3D879FABB5EEC0 /* APAddPoseRequestTests.swift */; };
 		789107807CC6F86349D0BFDF /* CaptureImageStorageTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1FADCC33F02A7BB84B9C89D2 /* CaptureImageStorageTests.swift */; };
@@ -198,6 +201,7 @@
 		350521FDA70C1A18E6B3A61D /* SessionBoundary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionBoundary.swift; sourceTree = "<group>"; };
 		377E40D8A0D38EDC9643B59C /* APPageHeader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APPageHeader.swift; sourceTree = "<group>"; };
 		3E5F21303DBA6D3D4B9DF921 /* RevenueCatAdapterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RevenueCatAdapterTests.swift; sourceTree = "<group>"; };
+		3E891060E288E2CF2F245B31 /* PaywallScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaywallScreen.swift; sourceTree = "<group>"; };
 		3ED03771A508B8E0509C19D9 /* SessionScope.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionScope.swift; sourceTree = "<group>"; };
 		3FBAA5A4D55BE2A939B40CEF /* OAuthHandoff.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OAuthHandoff.swift; sourceTree = "<group>"; };
 		3FFBB65B1A5B1CB61A47C46D /* AppleSignInTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleSignInTests.swift; sourceTree = "<group>"; };
@@ -208,6 +212,7 @@
 		49853AF9C91513CEAFF5C5E3 /* Prod-Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "Prod-Release.xcconfig"; sourceTree = "<group>"; };
 		4BFD8884125812979E9FED4B /* AccountSessionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountSessionTests.swift; sourceTree = "<group>"; };
 		4C7621E846F870A8D430896C /* SessionScopeCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionScopeCoordinatorTests.swift; sourceTree = "<group>"; };
+		4D9F3EB320D8C8811CC13EC9 /* SettingsScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsScreen.swift; sourceTree = "<group>"; };
 		4E3F05BA7D23C56F8F95252B /* AppImage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppImage.swift; sourceTree = "<group>"; };
 		50332EA7FC91E3A2C9A013F2 /* SessionBoundaryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionBoundaryTests.swift; sourceTree = "<group>"; };
 		52E97F07902AB9B765D7227F /* CameraLastPoseTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraLastPoseTests.swift; sourceTree = "<group>"; };
@@ -226,6 +231,7 @@
 		6DCAF98D324B169E9441A54D /* PosesPaginationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PosesPaginationTests.swift; sourceTree = "<group>"; };
 		750F0ACBE117003C4AFB9F3A /* JobsScreenModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JobsScreenModelTests.swift; sourceTree = "<group>"; };
 		75D400B2D200FD5985387BFA /* AIPoseComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIPoseComponents.swift; sourceTree = "<group>"; };
+		774F0BEF6D21D830B0D53125 /* AccountScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountScreen.swift; sourceTree = "<group>"; };
 		7A5D19BCF0E318F2ACC86812 /* Dev-Debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "Dev-Debug.xcconfig"; sourceTree = "<group>"; };
 		7AFB0BE693C47B4ECDC70499 /* RevenueCatAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RevenueCatAdapter.swift; sourceTree = "<group>"; };
 		7BA62083D9DEB26115ECADB4 /* PhotoLibraryPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoLibraryPicker.swift; sourceTree = "<group>"; };
@@ -643,12 +649,15 @@
 		E4F0A3CA058047BB8BA907A6 /* Support */ = {
 			isa = PBXGroup;
 			children = (
+				774F0BEF6D21D830B0D53125 /* AccountScreen.swift */,
 				D9D716AFFCACC5FB9D732D15 /* AccountSessionModel.swift */,
 				E62EEBF4311843B030F88E58 /* AppleSignIn.swift */,
 				9DEBB823DA597A76F4FC272E /* PaywallModel.swift */,
+				3E891060E288E2CF2F245B31 /* PaywallScreen.swift */,
 				95302400E9B8AF24B57EB65E /* PremiumGate.swift */,
 				20A0D1B02FF1FB089ACB2E04 /* PremiumGateModel.swift */,
 				0BE311B84AFAC354708F8B47 /* SessionPresenceModel.swift */,
+				4D9F3EB320D8C8811CC13EC9 /* SettingsScreen.swift */,
 				CAB8CF8FAA81E9DB7793CEFD /* SignIn.swift */,
 				69F99C45485E02CD56C6E0C2 /* SupportScreens.swift */,
 			);
@@ -821,6 +830,7 @@
 				918AA712F70B6BABCF3BC129 /* APSavedList.swift in Sources */,
 				D13519F554FFC39D9CE5F76E /* APSnackbar.swift in Sources */,
 				04DCE91D0145EDCBD19822AB /* APStateViews.swift in Sources */,
+				2C4A1A53C04CDF05FBB4FCAA /* AccountScreen.swift in Sources */,
 				7F69C698F57CD038D04C90B8 /* AccountSessionModel.swift in Sources */,
 				AB03A2352A26D05F9DC5C3AA /* AddPoseConsentSheet.swift in Sources */,
 				9528D16EF6214C6DA0145B34 /* AddPoseConsentStore.swift in Sources */,
@@ -856,6 +866,7 @@
 				BD09F8EEF0ABCB6770B7BD3A /* KeychainTokenStorage.swift in Sources */,
 				7D3B733594872CA7A26DBE84 /* OAuthHandoff.swift in Sources */,
 				151A7D9A08B4411FA954B565 /* PaywallModel.swift in Sources */,
+				744458125F1BAC3B240A6A9F /* PaywallScreen.swift in Sources */,
 				C398D217D9ECDC9E4E3D9F15 /* PhotoLibraryPicker.swift in Sources */,
 				B3BAC5D35C6510DC11534F83 /* PhotosExporter.swift in Sources */,
 				70F357B4617B371502C1404C /* PoseAPIService.swift in Sources */,
@@ -870,6 +881,7 @@
 				A8C636E39D6C83F337E98600 /* SessionPresenceModel.swift in Sources */,
 				19840D341F2C5A0C51C93151 /* SessionScope.swift in Sources */,
 				7BC50DEF02537220E6F2A152 /* SessionScopeCoordinator.swift in Sources */,
+				60E21B2256AF785F47B563FD /* SettingsScreen.swift in Sources */,
 				948FDDAA86AAF97BF07F0C41 /* SignIn.swift in Sources */,
 				60726B364AB3F7A8F2631462 /* SupportDestinations.swift in Sources */,
 				6E5D6E01C11EB04A57F1558E /* SupportScreens.swift in Sources */,
