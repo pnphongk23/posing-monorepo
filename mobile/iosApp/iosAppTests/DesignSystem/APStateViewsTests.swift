@@ -155,6 +155,25 @@ final class APStateViewsTests: XCTestCase {
         XCTAssertEqual(resolvedHex(AP.Color.controlFill), resolvedHex(APColorTokens.controlFill.color))
     }
 
+    // MARK: - The one loading look (F4)
+
+    @MainActor func testLoadingStatePaintsTheSharedSeventyTwoPointCircle() {
+        let probe = APViewProbe(APLoadingStateView(label: "Loading jobs"), size: CGSize(width: 393, height: 420))
+        defer { probe.tearDown() }
+        let painted = probe.capture()
+
+        let circleRows = (0..<painted.height).filter { y in
+            (0..<painted.width).contains { x in
+                guard let pixel = painted.color(x: x, y: y) else { return false }
+                return abs(pixel.red - 250) <= 6 && abs(pixel.green - 224) <= 6 && abs(pixel.blue - 231) <= 6
+            }
+        }
+        guard let top = circleRows.first, let bottom = circleRows.last else {
+            return XCTFail("the loading state must paint its accent-tint circle")
+        }
+        XCTAssertEqual(Double(bottom - top + 1), 72, accuracy: 4, "the loading circle is the shared 72 pt")
+    }
+
     // MARK: - Dynamic Type
 
     @MainActor func testEmptyStateWrapsInsteadOfTruncatingAtAccessibilitySizes() {

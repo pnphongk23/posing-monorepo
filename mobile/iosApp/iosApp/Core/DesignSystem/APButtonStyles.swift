@@ -77,6 +77,9 @@ enum APButtonKind: CaseIterable {
 struct APButtonStyleBody: View {
     let configuration: ButtonStyleConfiguration
     let kind: APButtonKind
+    /// Overrides the kind's minimum height, so a caller can make the *painted* control taller instead
+    /// of wrapping it in transparent space.
+    var minimumHeight: CGFloat?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.isEnabled) private var isEnabled
@@ -104,7 +107,7 @@ struct APButtonStyleBody: View {
             .fixedSize(horizontal: false, vertical: true)
             .padding(.horizontal, AP.Space.space16)
             .padding(.vertical, AP.Space.space8)
-            .frame(maxWidth: kind.expands ? .infinity : nil, minHeight: kind.minimumHeight)
+            .frame(maxWidth: kind.expands ? .infinity : nil, minHeight: minimumHeight ?? kind.minimumHeight)
             .background(
                 RoundedRectangle(cornerRadius: kind.cornerRadius, style: .continuous)
                     .fill(kind.fill(isPressed: configuration.isPressed, isEnabled: isEnabled))
@@ -116,8 +119,11 @@ struct APButtonStyleBody: View {
 
 /// Primary action: accent fill → `accentPressed` while pressed.
 struct APPrimaryButtonStyle: ButtonStyle {
+    /// Painted height of the control; `nil` keeps the kind's own minimum.
+    var minimumHeight: CGFloat?
+
     func makeBody(configuration: Configuration) -> some View {
-        APButtonStyleBody(configuration: configuration, kind: .primary)
+        APButtonStyleBody(configuration: configuration, kind: .primary, minimumHeight: minimumHeight)
     }
 }
 

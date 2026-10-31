@@ -149,16 +149,22 @@ struct APPagingFooter: View {
         // stall, because the same footer never re-appeared).
         .task(id: triggerKey) {
             guard APPagingFooterRule.autoLoads(phase), !model.paging.isLoading else { return }
-            if phase == .loading {
-                await model.loadMore()
-            } else {
-                await model.loadMoreResults()
+            // Unstructured on purpose: a page must not be cancelled by this view's own task being
+            // restarted (a re-render while the request is in flight). The model's own in-flight guard
+            // keeps it to one request.
+            Task {
+                if phase == .loading {
+                    await model.loadMore()
+                } else {
+                    await model.loadMoreResults()
+                }
             }
         }
     }
 
-    /// Everything that can change whether another page is wanted: the phase, the in-flight flag and
-    /// the row count. `.task(id:)` restarts when this changes, which is the re-trigger.
+    /// Everything that can change whether another page is wanted — and nothing the request itself
+    /// mutates at *start*. Keying on `isLoading` cancelled the very request that set it; keying on the
+    /// cursor and the row count re-fires when a page actually lands (or a failure changes the phase).
     private var triggerKey: String {
         let phase = APPagingFooterRule.phase(
             error: model.paging.error,
@@ -166,7 +172,7 @@ struct APPagingFooter: View {
             remainingAutoFetches: model.paging.remainingAutoFetches,
             hasRows: hasRows
         )
-        return "\(phase)-\(model.paging.isLoading)-\(model.state.rows.count)"
+        return "\(phase)-\(model.paging.nextOffset)-\(model.state.rows.count)"
     }
 
     private var hasRows: Bool {

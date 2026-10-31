@@ -1617,10 +1617,9 @@ struct PoseDetailScreen: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            .buttonStyle(APPrimaryButtonStyle())
-            // One height for both controls, so the square Save is never a different size than the
-            // primary action — at any Dynamic Type size.
-            .frame(minHeight: barControlHeight)
+            // The shared bar height is applied *inside* the painted control, so the accent fill itself
+            // is 52/72 pt instead of the fill plus transparent padding.
+            .buttonStyle(APPrimaryButtonStyle(minimumHeight: barControlHeight))
             // Stable E2E handle: the Maestro flows and the detail tests target this id.
             .accessibilityIdentifier("poseDetail.use")
         }

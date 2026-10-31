@@ -192,16 +192,8 @@ struct JobsScreen<Service: JobsServing & ObservableObject>: View {
             }
             .padding(.top, AIPoseSpacing.md)
         } else if case .loading = jobsService.loadState, rows.isEmpty {
-            VStack(spacing: AIPoseSpacing.md) {
-                ProgressView()
-                    .tint(AIPoseColor.foreground)
-                    .scaleEffect(1.2)
-                Text("Loading jobs...")
-                    .font(.system(size: 15, weight: .medium))
-                    .foregroundStyle(AIPoseColor.subtext)
-                Spacer()
-            }
-            .padding(.top, AIPoseSpacing.xl)
+            APLoadingStateView(label: "Loading jobs", rows: 3)
+                .padding(.horizontal, AP.Space.space16)
         } else if case .failed(let message) = jobsService.loadState, rows.isEmpty {
             APErrorStateView(
                 title: "Couldn't load jobs",

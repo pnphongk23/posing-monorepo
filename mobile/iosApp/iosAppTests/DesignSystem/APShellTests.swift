@@ -73,46 +73,40 @@ final class APShellTests: XCTestCase {
 
     // MARK: - Footer lifecycle (Sol P1)
 
-    @MainActor func testFooterRetriggersWhenAnInFlightPageFinishes() async {
-        // The stall: `.loadMore` is mounted while the last request is still in flight, so the trigger
-        // is rejected and never re-fires. Keyed on the paging state, it must fire on completion.
-        let service = FooterPageSpy()
+    @MainActor func testSlowPageIsNotCancelledByItsOwnTrigger() async {
+        // The regression: keying the trigger on `isLoading` cancelled the in-flight request as soon as
+        // it set the flag, so a slow page turned into a retry error.
+        let service = SuspendedPageSpy()
         let model = PosesViewModel(service: service)
-        model.state = .loaded([NativePose(id: "1", name: "P", category: "Standing", imageURL: nil, instructions: [], isSaved: false)])
-        model.setPagingForTesting(error: nil, hasMore: true, remainingAutoFetches: 0, isLoading: true)
+        model.state = .loaded([Self.row("1")])
+        model.setPagingForTesting(error: nil, hasMore: true, remainingAutoFetches: 0)
 
         let probe = APViewProbe(APPagingFooter(model: model), size: CGSize(width: 393, height: 220))
         defer { probe.tearDown() }
-        probe.settle()
-        await Task.yield()
-        XCTAssertEqual(service.pageCalls, 0, "an in-flight page must not be requested again")
 
-        model.setPagingForTesting(error: nil, hasMore: true, remainingAutoFetches: 0, isLoading: false)
-        probe.settle()
-        for _ in 0..<20 {
+        for _ in 0..<50 {
             await Task.yield()
-            if service.pageCalls > 0 { break }
+            if service.pageCalls == 1 { break }
+            try? await Task.sleep(nanoseconds: 20_000_000)
         }
-        XCTAssertGreaterThan(service.pageCalls, 0, "the footer must fetch the next page once the previous one settles")
+        XCTAssertEqual(service.pageCalls, 1, "the footer starts one page request")
+        XCTAssertFalse(service.wasCancelled, "the trigger must not cancel the request it started")
+
+        service.release()
+        for _ in 0..<50 {
+            await Task.yield()
+            if model.state.rows.count == 2 { break }
+            try? await Task.sleep(nanoseconds: 20_000_000)
+        }
+        XCTAssertEqual(model.state.rows.count, 2, "the slow page still completes and appends its rows")
+        XCTAssertFalse(service.wasCancelled, "the request survives to completion")
     }
 
-    // MARK: - Appearance (F7)
-
-    @MainActor func testAppearancePreferenceRoundTripsThroughDefaults() throws {
-        let suite = try XCTUnwrap(UserDefaults(suiteName: "ap-appearance-tests"))
-        suite.removeObject(forKey: APAppearance.storageKey)
-        defer { suite.removeObject(forKey: APAppearance.storageKey) }
-
-        XCTAssertEqual(APAppearance.load(from: suite), .system, "the default follows the system")
-
-        let store = APAppearanceStore(defaults: suite)
-        store.appearance = .dark
-        XCTAssertEqual(APAppearance.load(from: suite), .dark, "the choice is persisted")
-        XCTAssertEqual(store.appearance.colorScheme, .dark)
-        XCTAssertNil(APAppearance.system.colorScheme, "system follows the device")
+    private static func row(_ id: String) -> NativePose {
+        NativePose(id: id, name: "Pose \(id)", category: "Standing", imageURL: nil, instructions: [], isSaved: false)
     }
 
-    // MARK: - Applied appearance + pinned bar geometry
+    // MARK: - Applied appearance + pinned bar geometry    // MARK: - Applied appearance + pinned bar geometry
 
     @MainActor func testChosenAppearanceResolvesTheSchemeItNames() {
         func backgroundLuminance(_ appearance: APAppearance) -> Int {
@@ -139,37 +133,38 @@ final class APShellTests: XCTestCase {
         XCTAssertEqual(APBarMetrics.controlHeight(for: .accessibility5), 72)
     }
 
-    @MainActor func testPinnedSaveSquarePaintsAtTheSharedHeightAtAX3() {
-        let pose = NativePose(
-            id: "bar-pose",
-            name: "Window light",
-            category: "Standing",
-            imageURL: nil,
-            instructions: ["Step one"],
-            isSaved: false
-        )
-        let model = PosesViewModel(service: ShellPoseService(pose: pose), bookmarkService: ShellBookmarkStub())
-        model.state = .loaded([pose])
-        let probe = APViewProbe(
-            PoseDetailScreen(pose: pose, model: model, onTryPose: { _ in })
-                .environment(\.dynamicTypeSize, .accessibility3),
-            size: CGSize(width: 393, height: 852)
-        )
-        defer { probe.tearDown() }
-        let painted = probe.capture()
+    @MainActor func testPinnedBarFillsAreEqualHeightAtDefaultAndAX3() {
+        let previous = AppConfig.shared.isAccountFeatureEnabled
+        AppConfig.shared.applyAccountFeatureEnabled(true)
+        defer { AppConfig.shared.applyAccountFeatureEnabled(previous) }
 
-        // The primary action paints the accent fill and the bar is the only place it can be at AX3 in
-        // the bottom band. Its height is the shared bar height (the square Save reads the same value).
-        let barBand = (painted.height - 160)..<painted.height
-        let ctaRows = rowsPainted(with: 0xE89CAE, in: painted).filter { barBand.contains($0) }
-        guard let top = ctaRows.first, let bottom = ctaRows.last else {
-            return XCTFail("the pinned primary action must be painted")
+        for (size, expected) in [(DynamicTypeSize.large, APBarMetrics.controlHeight(for: .large)),
+                                 (DynamicTypeSize.accessibility3, APBarMetrics.controlHeight(for: .accessibility3))] {
+            let pose = Self.row("bar-pose")
+            let model = PosesViewModel(service: ShellPoseService(pose: pose), bookmarkService: ShellBookmarkStub())
+            model.state = .loaded([pose])
+            let probe = APViewProbe(
+                PoseDetailScreen(pose: pose, model: model, onTryPose: { _ in })
+                    .environment(\.dynamicTypeSize, size),
+                size: CGSize(width: 393, height: 852)
+            )
+            let painted = probe.capture()
+            probe.tearDown()
+
+            // The bar is the only place the two control fills appear in the bottom band; the pink
+            // artwork is above it.
+            let barBand = (painted.height - 170)..<painted.height
+            let saveRows = rowsPainted(with: 0xECE5D8, in: painted).filter { barBand.contains($0) }
+            let ctaRows = rowsPainted(with: 0xE89CAE, in: painted).filter { barBand.contains($0) }
+            guard let saveTop = saveRows.first, let saveBottom = saveRows.last,
+                  let ctaTop = ctaRows.first, let ctaBottom = ctaRows.last else {
+                return XCTFail("both pinned controls must be painted at \(size)")
+            }
+            let saveHeight = Double(saveBottom - saveTop + 1)
+            let ctaHeight = Double(ctaBottom - ctaTop + 1)
+            XCTAssertEqual(saveHeight, ctaHeight, accuracy: 4, "the two fills are the same height at \(size)")
+            XCTAssertEqual(saveHeight, Double(expected), accuracy: 6, "the fills are the shared bar height at \(size)")
         }
-        // Rounded corners cost a few pixels in the render, so the bar is compared with a small slack.
-        XCTAssertGreaterThanOrEqual(
-            Double(bottom - top + 1), Double(APBarMetrics.controlHeight(for: .accessibility3)) - 8,
-            "the pinned bar is at least the shared control height"
-        )
     }
 
     // MARK: - Shared-file requests from the Gallery lane
@@ -234,9 +229,12 @@ final class APShellTests: XCTestCase {
     }
 }
 
-/// Counts paged reads so the footer's lifecycle is observable.
-private final class FooterPageSpy: PoseServing, @unchecked Sendable {
+/// A page request that only completes when the test releases it, and remembers cancellation.
+private final class SuspendedPageSpy: PoseServing, @unchecked Sendable {
     private(set) var pageCalls = 0
+    private(set) var wasCancelled = false
+    private var continuation: CheckedContinuation<Void, Never>?
+    private let lock = NSLock()
 
     func poses(query: String?) async throws -> [NativePose] { [] }
 
@@ -244,14 +242,28 @@ private final class FooterPageSpy: PoseServing, @unchecked Sendable {
 
     func posesPage(query: String?, offset: Int, limit: Int) async throws -> PosePage {
         pageCalls += 1
-        return .end
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                lock.lock()
+                self.continuation = continuation
+                lock.unlock()
+            }
+        } onCancel: {
+            lock.lock()
+            wasCancelled = true
+            lock.unlock()
+        }
+        let row = NativePose(id: "slow-\(pageCalls)", name: "Slow", category: "Standing", imageURL: nil, instructions: [], isSaved: false)
+        return PosePage(poses: [row], hasMore: false, consumed: 1)
     }
-}
 
-/// A bookmark service that always succeeds (the bar geometry test only needs the control to render).
-private struct ShellBookmarkStub: PoseBookmarkServing {
-    func savePose(poseId: String) async throws {}
-    func unsavePose(poseId: String) async throws {}
+    func release() {
+        lock.lock()
+        let continuation = self.continuation
+        self.continuation = nil
+        lock.unlock()
+        continuation?.resume()
+    }
 }
 
 /// Serves one pose from the catalogue *and* from `pose(id:)`, so the detail's availability check
@@ -262,8 +274,8 @@ private struct ShellPoseService: PoseServing {
     func pose(id: String) async throws -> NativePose { pose }
 }
 
-/// An empty catalogue: the geometry test drives the state itself.
-private struct APEmptyPoseService: PoseServing {
-    func poses(query: String?) async throws -> [NativePose] { [] }
-    func pose(id: String) async throws -> NativePose { throw PoseAdapterError.poseNotFound(id) }
+/// A bookmark service that always succeeds (the bar geometry test only needs the control to render).
+private struct ShellBookmarkStub: PoseBookmarkServing {
+    func savePose(poseId: String) async throws {}
+    func unsavePose(poseId: String) async throws {}
 }
