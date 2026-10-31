@@ -183,31 +183,23 @@ enum FeatureStateTone: String, CaseIterable {
 
     /// `.nb-empty-state--loading` tints the copy `--nb-color-gray` and keeps the title dark.
     var copyColor: Color { self == .loading ? AIPoseColor.subtext : AIPoseColor.foreground }
-
-    /// The F4 tone this card paints: feature surfaces and the shared panels share one mapping, so a
-    /// state looks the same whichever component a screen reaches for.
-    var stateTone: APStateTone {
-        switch self {
-        case .empty: return .empty
-        case .error: return .error
-        case .loading: return .loading
-        case .offline: return .offline
-        case .success: return .success
-        case .warning: return .warning
-        }
-    }
 }
 
 /// Shared empty / loading / offline / recoverable-error / success / warning surface.
 ///
-/// Owner feedback F4 replaced this card's prototype geometry (`empty-state.css`: a 1.5pt bordered,
-/// 10pt-radius, leading-aligned block with **no icon**) with the one state look: the shared 72 pt
-/// accent-tint circle, centred title, copy and at most one action. The prototype had no icon, so Jobs,
-/// Add pose and the account screens were the last places still painting a state the catalogue, Search,
-/// Saved and the camera did not — F4 is the newer owner decision and overrides the artboard.
+/// Geometry and colour come from `docs/prototype/styles/components/empty-state.css` mapped against
+/// `docs/prototype/styles/tokens.css` **by value, not by name** (token names do not match the Swift
+/// `AIPoseSpacing` enum): white surface, `--nb-border-thin` = 1.5pt black border,
+/// `--nb-radius-medium` = 10pt corner, `--nb-space-md` = 16pt padding, `--nb-space-sm` = 8pt gap
+/// and bottom margin, leading-aligned full-width card, **no shadow**, **no icon**, and **no
+/// centring** — a screen that needs a centred state centres this card in its own call site.
 ///
-/// The panel itself is `APStateCard`, so there is exactly one implementation of a state card in the
-/// app; this type keeps the call sites' API and its live-region behaviour.
+/// `scripts/empty-state.js` `render()` builds the element with `replaceChildren()` and then appends
+/// at most a preserved `[data-empty-state-visual]`, a `<strong>` title, a `<p>` copy and the action;
+/// `empty-state.css` has no icon rule, no centring and no full-height rule. Native must therefore
+/// paint no glyph here: only `gallery-detail-v2.html` supplies a `data-empty-state-visual`, and that
+/// screen keeps its own geometry-preserving placeholder (`GalleryLocalImage.onFailureView`) instead
+/// of this component. Painting an icon is a parity defect — absence is part of the contract.
 ///
 /// Accessibility mirrors `scripts/empty-state.js`: combined children (`aria-atomic`), `alert` +
 /// assertive announcement for `.error`, `status` + polite announcement for every other tone.
@@ -224,24 +216,59 @@ struct FeatureStateView: View {
 
     @State private var didAnnounce = false
 
-    /// `empty-state.css`: `margin-bottom: var(--nb-space-sm)` → 8pt.
+    /// `empty-state.css`: `border-radius: var(--nb-radius-medium)` → 10pt (tokens.css).
+    private static let cornerRadius: CGFloat = NeoChromeTokens.radiusMedium
+    /// `empty-state.css`: `border: var(--nb-border-thin)` → `--nb-border-width-thin` = 1.5pt.
+    private static let borderWidth: CGFloat = NeoChromeTokens.borderThin
+    /// `empty-state.css`: `padding: var(--nb-space-md)` → 16pt (tokens.css, not `AIPoseSpacing.md`).
+    private static let contentPadding: CGFloat = 16
+    /// `empty-state.css`: `gap` / `margin-bottom: var(--nb-space-sm)` → 8pt.
     private static let contentGap: CGFloat = 8
+    /// `empty-state.css`: `.nb-empty-state__copy { max-width: 42ch }`. Measured in the prototype at the
+    /// 14pt body size, `42ch` resolves to 370.37px, so 370pt is the faithful equivalent. It never
+    /// binds on a 390pt screen (the card's inner width is ~326pt), which is exactly the prototype's
+    /// behaviour; a smaller guess would silently re-wrap the copy.
+    private static let copyMaxWidth: CGFloat = 370
 
     var body: some View {
-        APStateCard(
-            tone: tone.stateTone,
-            glyphOverride: nil,
-            showsWord: false,
-            title: title,
-            message: message,
-            actionTitle: actionTitle,
-            actionKind: .secondary,
-            action: action,
-            style: .card,
-            expandsVertically: false,
-            actionIdentifier: actionIdentifier
+        VStack(alignment: .leading, spacing: Self.contentGap) {
+            Text(title)
+                .font(.system(size: 18, weight: .bold))
+                .foregroundStyle(AIPoseColor.foreground)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(message)
+                .font(.system(size: 14))
+                .foregroundStyle(tone.copyColor)
+                // `--nb-type-body-leading` 1.55 on the 14pt body size ≈ 21.7pt line box.
+                .lineSpacing(5)
+                .frame(maxWidth: Self.copyMaxWidth, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
+            if let actionTitle, let action {
+                // `NeoButtonStyle` is shared app-wide and carries no horizontal padding, so the
+                  // state card's action uses inline horizontal padding to match `.nb-btn`
+                  // (`components/button.css`), whose control padding is 16pt on each side.
+                // is `padding: var(--nb-space-compact) var(--nb-space-md)` — 12pt vertical, 16pt
+                // horizontal — so the inline padding belongs here at the call site, not in the style.
+                Button(action: action) {
+                    Text(actionTitle)
+                        .padding(.horizontal, 16)
+                }
+                .buttonStyle(NeoButtonStyle(fill: AIPoseColor.surface))
+                .fixedSize(horizontal: true, vertical: false)
+                .padding(.top, 2)
+                .accessibilityIdentifier(actionIdentifier ?? "")
+            }
+        }
+        .padding(Self.contentPadding)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .clipShape(RoundedRectangle(cornerRadius: Self.cornerRadius))
+        .neoSurface(
+            shape: RoundedRectangle(cornerRadius: Self.cornerRadius),
+            fill: tone.surface,
+            borderWidth: Self.borderWidth,
+            shadowOffset: 0
         )
-        // `margin-bottom: var(--nb-space-sm)`: stacked states keep the prototype's spacing.
+        // `margin-bottom: var(--nb-space-sm)`.
         .padding(.bottom, Self.contentGap)
         .accessibilityElement(children: actionIdentifier == nil ? .combine : .contain)
         .onAppear(perform: announceIfNeeded)

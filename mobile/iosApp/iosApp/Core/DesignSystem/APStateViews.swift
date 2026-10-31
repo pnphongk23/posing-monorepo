@@ -112,34 +112,12 @@ struct APStateWordRow: View {
     }
 }
 
-/// F4: the state illustration. One clean, centred icon — a 72 pt circle in the subtle accent tint with
-/// the glyph centred in the accent ink — and nothing else: no second tile, no offset, no stacked
-/// artwork. Every empty, error, permission, no-results and loading state draws this same view, so the
-/// look cannot drift from one panel to the next.
-struct APStateGlyph: View {
-    /// The circle's diameter (F4 fixes it at 72 pt, whatever the panel's style).
-    static let diameter: CGFloat = 72
-    /// The glyph inside the circle: 28 pt keeps roughly a 22 pt optical margin on every side.
-    static let glyphSize: CGFloat = 28
-
-    var systemImage: String
-
-    var body: some View {
-        Image(systemName: systemImage)
-            .font(.system(size: Self.glyphSize, weight: .semibold))
-            .foregroundStyle(AP.Color.selectedForeground)
-            .frame(width: Self.diameter, height: Self.diameter)
-            .background(Circle().fill(AP.Color.selectedBackground))
-            .accessibilityHidden(true)
-    }
-}
-
 /// How a state panel is mounted.
 enum APStateCardStyle {
     /// Raised `surface` card (E1, radius 24) for surfaces that group the state with other content.
     case card
-    /// Borderless, centred panel on the screen background — the catalogue, Search, Jobs, Saved and
-    /// camera state panels (artboards `02-poses-home-error`, `02-poses-home-no-matches`).
+    /// Borderless, centred panel on the screen background, with the glyph on a tone tile — the
+    /// catalogue and Search state panels (artboards `02-poses-home-error`, `02-poses-home-no-matches`).
     case plain
 }
 
@@ -223,7 +201,7 @@ struct APErrorStateView: View {
 /// `.card` is a raised `surface` block (E1, radius 24, no resting border; the dark edge is the
 /// elevation modifier's `cardStroke` hairline). `.plain` is the catalogue panel: no chrome at all, the
 /// glyph on a tone-coloured tile, centred copy and one action.
-struct APStateCard: View {
+private struct APStateCard: View {
     /// Width cap for a panel action: wide enough to read as the panel's primary control.
     static let panelActionWidth: CGFloat = 260
 
@@ -275,9 +253,25 @@ struct APStateCard: View {
     }
 
     @ViewBuilder private var glyph: some View {
-        // F4: the card and the plain panel draw the same 72 pt accent-tint circle, so a state looks the
-        // same on every surface.
-        APStateGlyph(systemImage: glyphOverride ?? tone.glyph)
+        switch style {
+        case .card:
+            // F4: the same 72 pt accent-tint circle as the plain panel — one state look everywhere.
+            Image(systemName: glyphOverride ?? tone.glyph)
+                .font(.system(size: 28, weight: .semibold))
+                .foregroundStyle(AP.Color.selectedForeground)
+                .frame(width: 72, height: 72)
+                .background(Circle().fill(AP.Color.selectedBackground))
+                .accessibilityHidden(true)
+        case .plain:
+            // Owner feedback F4: one clean, centred icon — a 72 pt circle in the subtle accent tint
+            // with the glyph in the accent ink. No stacked or offset tiles.
+            Image(systemName: glyphOverride ?? tone.glyph)
+                .font(.system(size: 28, weight: .semibold))
+                .foregroundStyle(AP.Color.selectedForeground)
+                .frame(width: 72, height: 72)
+                .background(Circle().fill(AP.Color.selectedBackground))
+                .accessibilityHidden(true)
+        }
     }
 
     private var actionStyle: APButtonStyleForKind {
@@ -320,7 +314,12 @@ struct APLoadingStateView: View {
         VStack(alignment: .leading, spacing: AP.Space.space12) {
             HStack {
                 Spacer(minLength: 0)
-                APStateGlyph(systemImage: reduceMotion ? "circle.dashed" : "arrow.triangle.2.circlepath")
+                Image(systemName: reduceMotion ? "circle.dashed" : "arrow.triangle.2.circlepath")
+                    .font(.system(size: 28, weight: .semibold))
+                    .foregroundStyle(AP.Color.selectedForeground)
+                    .frame(width: 72, height: 72)
+                    .background(Circle().fill(AP.Color.selectedBackground))
+                    .accessibilityHidden(true)
                 Spacer(minLength: 0)
             }
             APStateWordRow(tone: .loading, word: label, useStaticGlyph: reduceMotion)
