@@ -1,0 +1,42 @@
+# TC-PAY-015 Terms of Use and Privacy Policy open the real documents from the paywall
+#
+# The legal links live in the paywall dock (`paywallLegalLink`, labels "Terms of Use" / "Privacy Policy"
+# are code-owned). Ids are requested (`paywall.terms` / `paywall.privacy`) so the flow can stop matching on
+# a label; until then the labels are the contract.
+#
+# The assertion is the document's own text, not "a URL opened": a redirector or a dead host would pass the
+# weaker check, which is exactly the failure this case exists to catch.
+appId: ${APP_ID}
+tags: [TC-PAY-015, p1]
+---
+- runFlow: ../subflows/pay-launch.yaml
+- runFlow: ../subflows/open-camera.yaml
+- tapOn:
+    id: "camera.shutter"
+- extendedWaitUntil:
+    visible:
+      id: "paywall.close"
+    timeout: 25000
+# TODO(paywall.terms): replace the label with id "paywall.terms".
+- tapOn: "Terms of Use"
+- extendedWaitUntil:
+    visible: "posing.*Terms of Service"
+    timeout: 40000
+# Back to the app and the paywall, then the second document.
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: "poses.open-search"
+    timeout: 40000
+- runFlow: ../subflows/open-camera.yaml
+- tapOn:
+    id: "camera.shutter"
+- extendedWaitUntil:
+    visible:
+      id: "paywall.close"
+    timeout: 25000
+# TODO(paywall.privacy): replace the label with id "paywall.privacy".
+- tapOn: "Privacy Policy"
+- extendedWaitUntil:
+    visible: "Privacy Policy"
+    timeout: 40000

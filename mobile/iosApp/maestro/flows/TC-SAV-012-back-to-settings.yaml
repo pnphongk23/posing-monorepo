@@ -1,0 +1,37 @@
+# TC-SAV-012 back from Saved returns to where it was opened
+#
+# Saved is a pushed destination (header + Back, no dock). Entered from Settings -> Library -> Saved (the
+# board's route, and the first route whose row has an id: `settings.saved.row`, landed in the Settings
+# rebuild), Back must pop to Settings — not to Poses, and not out of the app.
+appId: ${APP_ID}
+tags: [TC-SAV-012, p1]
+---
+- runFlow: ../subflows/launch-accounts-on.yaml
+- tapOn:
+    id: "poses.more"
+- tapOn:
+    id: "poses.menu.settings"
+- extendedWaitUntil:
+    visible:
+      id: "settings.saved.row"
+    timeout: 20000
+- tapOn:
+    id: "settings.saved.row"
+- extendedWaitUntil:
+    visible:
+      id: "saved.back"
+    timeout: 20000
+# Signed out, so the gate is the surface; Back must still be there and must still pop.
+- assertVisible:
+    id: "saved.signIn"
+- tapOn:
+    id: "saved.back"
+# Back on Settings, one Screen from where we left it.
+- extendedWaitUntil:
+    visible:
+      id: "settings.saved.row"
+    timeout: 15000
+- assertVisible:
+    id: "poses.menu.settings"
+- assertNotVisible:
+    id: "saved.back"

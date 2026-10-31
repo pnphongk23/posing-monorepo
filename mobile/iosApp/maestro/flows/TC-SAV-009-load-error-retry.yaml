@@ -1,0 +1,47 @@
+# TC-SAV-009 a failed load keeps the list honest: error panel + Try again
+#
+# The failure is produced without touching the network: sign in normally, then relaunch with
+# `-AIPoseAPIBaseURL` pointing at a closed local port (Debug-only launch argument). The keychain survives
+# the relaunch, so the surface is signed-in and every account request fails — exactly the state the case is
+# about. Requires the Dev/Debug build; on a Release build the argument is compiled out.
+#
+# Ids: `saved.retry` (panel) exists; the Try again button inside it needs `saved.retry.button`.
+appId: ${APP_ID}
+tags: [TC-SAV-009, p1]
+---
+- assertTrue:
+    condition: ${E2E_EMAIL != null && E2E_EMAIL.length > 0 && E2E_PASSWORD != null && E2E_PASSWORD.length > 0}
+    label: "E2E_EMAIL / E2E_PASSWORD missing - run with -e E2E_EMAIL=... -e E2E_PASSWORD=..."
+- runFlow: ../subflows/launch-accounts-on.yaml
+- runFlow: ../subflows/pay-sign-in.yaml
+# Same session, unreachable backend: no clearState/clearKeychain, only the endpoint changes.
+- launchApp:
+    stopApp: true
+    arguments:
+      AIPoseAPIBaseURL: "http://127.0.0.1:9"
+      AIPoseAccountsEnabled: "YES"
+- extendedWaitUntil:
+    visible:
+      id: "poses.open-search"
+    timeout: 40000
+- tapOn:
+    id: "poses.more"
+- tapOn:
+    id: "poses.menu.settings"
+- tapOn:
+    id: "settings.saved.row"
+- extendedWaitUntil:
+    visible:
+      id: "saved.retry"
+    timeout: 30000
+- assertVisible: "Couldn.t load saved poses"
+# The empty state must not be shown for a failure: "nothing saved" and "we couldn't ask" are different
+# facts, and telling the user the first when the second is true is how poses look lost.
+- assertNotVisible:
+    id: "saved.browseCommunity"
+# TODO(saved.retry.button): tap by id once it exists.
+- tapOn: "Try again"
+- extendedWaitUntil:
+    visible:
+      id: "saved.retry"
+    timeout: 30000

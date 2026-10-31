@@ -1,0 +1,38 @@
+# TC-SAV-002 a pose saved from the detail is listed in Saved
+#
+# The row in Saved and the toggle on the detail are the same server state; this flow saves from the detail
+# and reads the list, so a stale cache on either surface fails here.
+appId: ${APP_ID}
+tags: [TC-SAV-002, p1]
+---
+- assertTrue:
+    condition: ${E2E_EMAIL != null && E2E_EMAIL.length > 0 && E2E_PASSWORD != null && E2E_PASSWORD.length > 0}
+    label: "E2E_EMAIL / E2E_PASSWORD missing - run with -e E2E_EMAIL=... -e E2E_PASSWORD=..."
+- runFlow: ../subflows/launch-accounts-on.yaml
+- runFlow: ../subflows/pay-sign-in.yaml
+- runFlow: ../subflows/open-first-pose.yaml
+# Clean start for this account: an already-saved pose would make the toggle a no-op and the case vacuous.
+- assertVisible: "Save pose"
+- tapOn:
+    id: "poseDetail.saveButton"
+# The toggle flips to the saved state: same control, opposite action.
+- extendedWaitUntil:
+    visible: "Remove from saved"
+    timeout: 20000
+- tapOn:
+    id: "poseDetail.back"
+- tapOn:
+    id: "poses.more"
+- tapOn:
+    id: "poses.menu.settings"
+- tapOn:
+    id: "settings.saved.row"
+# The pose just saved is the list's first row, and the list is not empty.
+- extendedWaitUntil:
+    visible:
+      id: "poses.first-card"
+    timeout: 25000
+- assertNotVisible:
+    id: "saved.browseCommunity"
+- assertNotVisible:
+    id: "saved.signIn"

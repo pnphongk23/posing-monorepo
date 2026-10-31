@@ -1,0 +1,31 @@
+# Saved, opened in the offline board for evidence runs (build 18+).
+#
+# `-AIPoseSavedOfflineFixture <n>` (DEBUG only, compiled out of Release) marks the first n rows as
+# available offline and lets the list render its offline board: banner above the rows, uncached rows
+# dimmed with "Not saved offline" and no unsave offered. n=0 makes every row uncached; n>=2 keeps the
+# first rows usable so both halves of the board are on screen at once.
+#
+# Sign-in is real: the fixture fakes the offline *cache*, not the network, so the account still loads
+# (the saved collection only exists for a signed-in account).
+appId: ${APP_ID}
+---
+- launchApp:
+    clearState: true
+    clearKeychain: true
+    permissions:
+      camera: allow
+      photos: allow
+    arguments:
+      AIPoseAccountsEnabled: "YES"
+      AIPoseSavedOfflineFixture: ${OFFLINE_CACHED_ROWS}
+- extendedWaitUntil:
+    visible:
+      id: "poses.open-search"
+    timeout: 40000
+- runFlow: pay-sign-in.yaml
+- tapOn:
+    id: "poses.more"
+- tapOn:
+    id: "poses.menu.settings"
+- tapOn:
+    id: "settings.saved.row"
