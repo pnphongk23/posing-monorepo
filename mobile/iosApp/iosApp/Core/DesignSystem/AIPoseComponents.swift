@@ -419,6 +419,9 @@ struct NeoDockTabBar: View {
             .padding(AP.Space.space4)
             .frame(maxWidth: .infinity)
             .frame(height: Self.pillHeight)
+            // Dock chrome does not scale with Dynamic Type (a tab bar keeps its metrics, as iOS does);
+            // at AX sizes a scaling label overflows the pill.
+            .dynamicTypeSize(.large)
             .background(
                 RoundedRectangle(cornerRadius: AP.Radius.radius24, style: .continuous)
                     .fill(AP.Color.surface)

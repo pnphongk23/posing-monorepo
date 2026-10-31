@@ -1723,13 +1723,15 @@ struct SearchScreen: View {
     @State private var selectedSource: PoseLibraryFilter = .all
 
     var body: some View {
-        VStack(spacing: 0) {
-            searchHeader
-            searchField
-            if showsDiscovery {
-                discovery
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                // At the AX sizes the header, the field and the chips are taller than the space above
+                // the keyboard; scrolling keeps them from being pushed off the top of the screen.
+                ScrollView {
+                    content
+                }
             } else {
-                resultsPanel
+                content
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -1741,6 +1743,18 @@ struct SearchScreen: View {
             selectedSource = .all
             model.filter = .all
             await model.load()
+        }
+    }
+
+    private var content: some View {
+        VStack(spacing: 0) {
+            searchHeader
+            searchField
+            if showsDiscovery {
+                discovery
+            } else {
+                resultsPanel
+            }
         }
     }
 
