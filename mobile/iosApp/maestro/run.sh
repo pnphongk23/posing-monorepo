@@ -2,7 +2,8 @@
 # Usage: [SHOTS_DIR=<dir>] run.sh <simulator-udid> [flow-file ...]   (default: every flow in flows/)
 # With SHOTS_DIR set, flows run one by one and the final screen of each is saved as <flow>.png.
 # Flows tagged `e2e` sign in with the real QA account and need the gitignored credentials; without
-# E2E_EMAIL in the environment they are excluded, so the default run stays green with no credentials:
+# E2E_EMAIL in the environment they are excluded, so the default run stays green with no credentials
+# (with SHOTS_DIR set the per-flow loop skips those files outright):
 #   set -a; . ./e2e.local.env; set +a; ./run.sh <udid>
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -29,13 +30,25 @@ cleanup_dead_containers() {
 }
 trap cleanup_dead_containers EXIT
 run() { maestro --device "$udid" test -e APP_ID=posing.camera.app "${e2e_args[@]}" "$@"; }
+# Without credentials `--exclude-tags=e2e` filters those flows out of the invocation; handed one file
+# at a time that leaves an invocation with no flow in it, which the shot loop would score as a failed
+# flow. Skip the file instead of asking maestro to run nothing.
+e2e_tagged() { grep -qE '^tags:.*(,|\[)[[:space:]]*e2e[[:space:]]*(,|\])' "$1"; }
 if [ -z "${SHOTS_DIR:-}" ]; then
   run "${@:-flows}"
   exit $?
 fi
-mkdir -p "$SHOTS_DIR"; rc=0
+mkdir -p "$SHOTS_DIR"; rc=0; skipped=0
 [ $# -gt 0 ] || set -- flows/*.yaml
 for f in "$@"; do
+  if [ -z "${E2E_EMAIL:-}" ] && e2e_tagged "$f"; then
+    echo "run.sh: skipping $f (e2e-tagged, E2E_EMAIL is not set)"
+    skipped=$((skipped + 1))
+    continue
+  fi
   run "$f" && xcrun simctl io "$udid" screenshot "$SHOTS_DIR/$(basename "$f" .yaml).png" >/dev/null 2>&1 || rc=1
 done
+if [ "$skipped" -gt 0 ]; then
+  echo "run.sh: skipped $skipped e2e-tagged flow(s) - export E2E_EMAIL to run them"
+fi
 exit $rc
