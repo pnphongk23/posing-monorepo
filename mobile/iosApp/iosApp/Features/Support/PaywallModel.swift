@@ -1,5 +1,5 @@
-import Foundation
 import Combine
+import Foundation
 
 /// Narrow seam over the native RevenueCat owner, so the paywall and its tests never touch
 /// StoreKit/RevenueCat directly. Mirrors the KMP `PurchaseGateway` contract.
@@ -24,7 +24,7 @@ enum PaywallPlanCatalog {
 
     static func label(for product: PurchaseProduct) -> String {
         switch product.packageType {
-        case .annual: return "Annual"
+        case .annual: return "Yearly"
         case .monthly: return "Monthly"
         case .other: return "Premium"
         }
@@ -57,6 +57,224 @@ enum PaywallPlanCatalog {
     }
 }
 
+/// Money read out of a store-localized price string (`PurchaseProduct.localizedPrice`).
+///
+/// The board's plan copy ("$3.33 per month, billed $39.99 yearly", "Save 44%") is derived from the
+/// real RevenueCat packages, never typed in. `localizedPrice` is a *formatted string* in the store's
+/// price locale, not a number, so the digits, the decimal separator and the currency symbol are
+/// read back out of it; anything that does not parse yields no derived copy instead of a wrong one.
+enum PaywallMoney {
+    /// How one localized price string is laid out: `$39.99` and `39,99 €` are the same amount with a
+    /// different symbol, separator and side.
+    struct Style: Equatable {
+        let prefix: String
+        let suffix: String
+        let decimalSeparator: Character?
+        let groupingSeparator: Character?
+        let groupingSize: Int
+        let fractionDigits: Int
+    }
+
+    /// Digits, the separators that group or split them, and the currency marks around them.
+    private struct Scan {
+        let prefix: String
+        let suffix: String
+        /// Digit runs in order, split at every separator: `999.000` → ["999", "000"].
+        let segments: [String]
+        /// Separator characters that sat between the first and the last digit.
+        let separators: [Character]
+
+        var digits: String { segments.joined() }
+        var trailingDigits: Int { segments.last?.count ?? 0 }
+    }
+
+    private static let separators: Set<Character> = [".", ",", "'", " ", "\u{00A0}", "\u{202F}", "\u{066B}", "\u{066C}"]
+
+    private static func scan(_ localizedPrice: String) -> Scan? {
+        let characters = Array(localizedPrice)
+        guard let first = characters.firstIndex(where: \.isNumber),
+              let last = characters.lastIndex(where: \.isNumber) else { return nil }
+        let prefix = String(characters[..<first])
+        let suffix = String(characters[(last + 1)...])
+        var segments: [String] = []
+        var separatorsSeen: [Character] = []
+        var current = ""
+        for character in characters[first...last] {
+            if character.isNumber {
+                current.append(character)
+            } else if PaywallMoney.separators.contains(character) {
+                segments.append(current)
+                current = ""
+                separatorsSeen.append(character)
+            }
+        }
+        segments.append(current)
+        return Scan(prefix: prefix, suffix: suffix, segments: segments, separators: separatorsSeen)
+    }
+
+    /// The last separator is the decimal mark only when one or two digits follow it: `39.99` is
+    /// thirty-nine ninety-nine, `1,234` is one thousand two hundred thirty-four.
+    static func style(of localizedPrice: String) -> Style? {
+        guard let scan = scan(localizedPrice), !scan.digits.isEmpty else { return nil }
+        let usesDecimalSeparator = (1...2).contains(scan.trailingDigits) && !scan.separators.isEmpty
+        let decimalSeparator = usesDecimalSeparator ? scan.separators.last : nil
+        let groupingSeparator = scan.separators.first { $0 != decimalSeparator }
+        return Style(
+            prefix: scan.prefix,
+            suffix: scan.suffix,
+            decimalSeparator: decimalSeparator,
+            groupingSeparator: groupingSeparator,
+            groupingSize: groupingSize(in: scan, decimalSeparator: decimalSeparator),
+            fractionDigits: usesDecimalSeparator ? scan.trailingDigits : 0
+        )
+    }
+
+    /// Digit count of the last group before the decimal mark (`999.000` → 3, `1.234,56` → 3), so
+    /// re-formatting keeps the store's own grouping.
+    private static func groupingSize(in scan: Scan, decimalSeparator: Character?) -> Int {
+        guard let last = scan.segments.last else { return 3 }
+        guard decimalSeparator != nil, scan.segments.count >= 2 else { return last.count }
+        return scan.segments[scan.segments.count - 2].count
+    }
+
+    static func amount(from localizedPrice: String) -> Decimal? {
+        guard let scan = scan(localizedPrice), !scan.digits.isEmpty else { return nil }
+        let style = style(of: localizedPrice)
+        var normalized = scan.digits
+        if let fractionDigits = style?.fractionDigits, fractionDigits > 0, normalized.count > fractionDigits {
+            let split = normalized.index(normalized.endIndex, offsetBy: -fractionDigits)
+            normalized = String(normalized[..<split]) + "." + String(normalized[split...])
+        }
+        return Decimal(string: normalized, locale: Locale(identifier: "en_US_POSIX"))
+    }
+
+    /// Formats `value` the way the store formatted `sample`, so a derived per-month figure keeps the
+    /// price's symbol, separator and fraction digits.
+    static func formatted(_ value: Decimal, like sample: String) -> String? {
+        guard let style = style(of: sample) else { return nil }
+        let formatter = NumberFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.numberStyle = .decimal
+        formatter.minimumFractionDigits = style.fractionDigits
+        formatter.maximumFractionDigits = style.fractionDigits
+        if let decimalSeparator = style.decimalSeparator { formatter.decimalSeparator = String(decimalSeparator) }
+        if let groupingSeparator = style.groupingSeparator {
+            formatter.usesGroupingSeparator = true
+            formatter.groupingSeparator = String(groupingSeparator)
+            formatter.groupingSize = style.groupingSize
+            formatter.secondaryGroupingSize = style.groupingSize
+        } else {
+            formatter.usesGroupingSeparator = false
+        }
+        guard let number = formatter.string(from: NSDecimalNumber(decimal: value)) else { return nil }
+        return style.prefix + number + style.suffix
+    }
+
+    /// The annual package's price expressed per month, in the price's own format.
+    static func perMonth(annualTotal: Decimal, like sample: String) -> String? {
+        guard annualTotal > 0 else { return nil }
+        return formatted(annualTotal / 12, like: sample)
+    }
+
+    /// Whole-percent saving of the annual package over twelve monthly payments, rounded to the
+    /// nearest percent. `nil` when the offering cannot support the claim (a monthly package that is
+    /// not actually dearer, unparsable prices), because the badge is a promise about the price.
+    static func savingsPercent(annualTotal: Decimal, monthlyTotal: Decimal) -> Int? {
+        guard annualTotal > 0, monthlyTotal > 0 else { return nil }
+        let yearlyAtMonthlyRate = monthlyTotal * 12
+        guard yearlyAtMonthlyRate > annualTotal else { return nil }
+        let saved = (yearlyAtMonthlyRate - annualTotal) / yearlyAtMonthlyRate
+        let percent = NSDecimalNumber(decimal: saved).doubleValue * 100
+        let rounded = Int(percent.rounded())
+        return (1...95).contains(rounded) ? rounded : nil
+    }
+}
+
+/// The plan-card copy the boards ask for, derived from the loaded offering.
+///
+/// Premium unlocks one thing — capturing with the full pose camera (owner decision B5) — so the
+/// benefit line and every plan detail stay inside that claim. Prices, the per-month breakdown and
+/// the saving badge all come from the store packages; when they cannot be derived the copy degrades
+/// to a billing statement rather than inventing a number.
+enum PaywallPlanCopy {
+    static let benefit = "Capture with the full pose camera"
+    static let autoRenewCaption = "Renews automatically until you cancel in Apple ID settings."
+    static let monthlyDetail = "Billed monthly"
+
+    static func savingsBadge(annual: PurchaseProduct, monthly: PurchaseProduct?) -> String? {
+        guard let monthly,
+              let annualTotal = PaywallMoney.amount(from: annual.localizedPrice),
+              let monthlyTotal = PaywallMoney.amount(from: monthly.localizedPrice),
+              let percent = PaywallMoney.savingsPercent(annualTotal: annualTotal, monthlyTotal: monthlyTotal)
+        else { return nil }
+        return "Save \(percent)%"
+    }
+
+    /// "$3.33 per month, billed $39.99 yearly" — both figures read out of the annual package.
+    static func annualDetail(for product: PurchaseProduct) -> String {
+        let cadence = PaywallPlanCatalog.periodLabel(for: product) + "ly"
+        guard let total = PaywallMoney.amount(from: product.localizedPrice),
+              let perMonth = PaywallMoney.perMonth(annualTotal: total, like: product.localizedPrice)
+        else { return "Billed \(cadence)" }
+        return "\(perMonth) per month, billed \(product.localizedPrice) \(cadence)"
+    }
+
+    static func detail(for product: PurchaseProduct) -> String {
+        PaywallPlanCatalog.isAnnual(product)
+            ? annualDetail(for: product)
+            : monthlyDetail
+    }
+
+    /// One plan card's rendered copy, computed once so the view and the tests read the same strings.
+    struct Plan: Equatable, Identifiable {
+        let id: String
+        let title: String
+        let badge: String?
+        let detail: String
+        let price: String
+        let isSelected: Bool
+        /// The package type, so the card's accessibility id follows the plan and not its label.
+        let isAnnual: Bool
+        let accessibilityLabel: String
+    }
+
+    static func plan(_ product: PurchaseProduct, monthly: PurchaseProduct?, isSelected: Bool) -> Plan {
+        let title = PaywallPlanCatalog.label(for: product)
+        let isAnnual = PaywallPlanCatalog.isAnnual(product)
+        let badge = isAnnual ? savingsBadge(annual: product, monthly: monthly) : nil
+        let detail = detail(for: product)
+        let price = product.localizedPrice
+        let selection = isSelected ? "selected" : "not selected"
+        let badgePart = badge.map { ", \($0)" } ?? ""
+        return Plan(
+            id: product.identifier,
+            title: title,
+            badge: badge,
+            detail: detail,
+            price: price,
+            isSelected: isSelected,
+            isAnnual: isAnnual,
+            accessibilityLabel: "\(title) plan, \(selection)\(badgePart). \(detail). \(PaywallPlanCatalog.summaryLine(for: product))"
+        )
+    }
+
+    /// The plan rows shown before the offering can be read (signed out, offline, loading): the two
+    /// packages this build sells, with the price honestly marked as not available yet.
+    static func placeholderPlans(detail: String) -> [Plan] {
+        [
+            Plan(id: "placeholder.annual", title: "Yearly", badge: nil, detail: detail,
+                 price: "—", isSelected: true, isAnnual: true,
+                 accessibilityLabel: "Yearly plan, \(detail)"),
+            Plan(id: "placeholder.monthly", title: "Monthly", badge: nil, detail: detail,
+                 price: "—", isSelected: false, isAnnual: false,
+                 accessibilityLabel: "Monthly plan, \(detail)"),
+        ]
+    }
+
+    static let offlinePlaceholders = placeholderPlans(detail: "Price unavailable offline")
+    static let signedOutPlaceholders = placeholderPlans(detail: "Price shown after you sign in")
+}
+
 /// Paywall presentation state.
 ///
 /// Two owners meet here: the real offering/purchase through `PurchaseGateway`, and FEAT-011
@@ -82,6 +300,21 @@ final class PaywallModel: ObservableObject, SessionScoped {
     @Published private(set) var isSignedIn = false
     @Published private(set) var isAuthenticating = false
     @Published private(set) var authError: String?
+    /// Which provider the last attempt used, so a failure can name it (board 11-15).
+    @Published private(set) var authProvider: PaywallSignInOption?
+    /// The store failure kind behind the last settled snapshot: the error card's copy is chosen from
+    /// the real failure, never from a generic string.
+    @Published private(set) var failure: PurchaseFailure?
+    /// Which operation produced the last settled snapshot. A failed purchase asks for "Try again"
+    /// on the primary CTA; a failed restore keeps "Subscribe" and retries inline (boards 11-08/09).
+    @Published private(set) var lastOperation: Operation?
+    /// Live connectivity. Board 11-11's offline state is the network path, not a parsed error.
+    @Published private(set) var isOffline: Bool
+
+    enum Operation: Equatable {
+        case purchase
+        case restore
+    }
 
     private let gateway: any PurchaseGateway
     private let boundary: SessionBoundary
@@ -90,8 +323,10 @@ final class PaywallModel: ObservableObject, SessionScoped {
     /// wraps — one provider seam, one API call, one error-copy mapping. The paywall adds no second
     /// Apple implementation; it only decides what a resolved attempt means for its phase.
     private let appleSignInAction: AppleSignInAction
+    private let connectivity: ConnectivityReporting
     private let scope: SessionScope
     private var hasStarted = false
+    private var connectivityCancellable: AnyCancellable?
     /// Bumped on every session change so a result that crosses a sign-out or account switch is
     /// dropped instead of being painted into the paywall.
     ///
@@ -108,14 +343,18 @@ final class PaywallModel: ObservableObject, SessionScoped {
         gateway: any PurchaseGateway = RevenueCatAdapter.shared,
         boundary: SessionBoundary = ServiceLocator.sessionBoundary,
         signInAction: SignInAction = SignInAction(),
-        appleSignInAction: AppleSignInAction = AppleSignInAction()
+        appleSignInAction: AppleSignInAction = AppleSignInAction(),
+        connectivity: ConnectivityReporting = NetworkConnectivityMonitor.shared
     ) {
         self.gateway = gateway
         self.boundary = boundary
         self.signInAction = signInAction
         self.appleSignInAction = appleSignInAction
+        self.connectivity = connectivity
+        self.isOffline = connectivity.isOffline
         self.scope = SessionScope.of(boundary)
         observeGateway()
+        observeConnectivity()
     }
 
     var selectedPlan: PurchaseProduct? {
@@ -124,10 +363,62 @@ final class PaywallModel: ObservableObject, SessionScoped {
 
     var isBusy: Bool { phase == .processing }
 
+    /// Board 11-01: one primary action per state, labelled with what the tap does. The unbuyable
+    /// build keeps its existing "Plans unavailable" wording: the CTA is disabled there and the
+    /// error card beside it carries the retry.
     var ctaTitle: String {
-        if phase == .processing { return "Processing…" }
-        guard let selectedPlan else { return "Plans unavailable" }
-        return "Continue with \(PaywallPlanCatalog.label(for: selectedPlan))"
+        switch phase {
+        case .signInRequired: return "Sign in to subscribe"
+        case .purchaseFailed where lastOperation == .purchase: return "Try again"
+        case .unavailable: return "Plans unavailable"
+        default: return "Subscribe"
+        }
+    }
+
+    /// The CTA is always on screen — a state without a usable action still shows the action that is
+    /// coming — and is disabled rather than hidden (boards 11-10/11-11).
+    var isCTAEnabled: Bool {
+        guard !isBusy, !isOffline else { return false }
+        switch phase {
+        case .signInRequired: return !isAuthenticating
+        case .ready, .purchaseCancelled, .entitled, .purchaseFailed: return selectedPlan != nil
+        case .loadingPlans, .processing, .unavailable: return false
+        }
+    }
+
+    /// One line of helper copy above a disabled CTA that says why it cannot be tapped yet.
+    var ctaHelper: String? {
+        if isOffline { return "Connect to the internet to subscribe." }
+        switch phase {
+        case .signInRequired: return PaywallModel.signedOutLine
+        case .loadingPlans: return "Subscribe turns on when plans load."
+        default: return nil
+        }
+    }
+
+    /// Truthful identity line above the CTA. The account payload carries no email address, so the
+    /// paywall never prints one: it states what is actually true, that Premium follows the account.
+    static let signedInLine = "Signed in. Premium follows your account."
+    static let signedOutLine = "Sign in first so Premium follows you."
+
+    /// The plan cards the body renders for the current offering (empty until one is loaded).
+    var planPresentations: [PaywallPlanCopy.Plan] {
+        let monthly = plans.first { $0.packageType == .monthly }
+        return plans.map { product in
+            PaywallPlanCopy.plan(
+                product,
+                monthly: monthly,
+                isSelected: product.identifier == selectedProductID
+            )
+        }
+    }
+
+    /// The plan rows shown when no offering can be read: signed out, offline, or still loading.
+    var placeholderPlans: [PaywallPlanCopy.Plan] {
+        guard plans.isEmpty else { return [] }
+        if isOffline { return PaywallPlanCopy.offlinePlaceholders }
+        if !isSignedIn { return PaywallPlanCopy.signedOutPlaceholders }
+        return []
     }
 
     /// Banner copy for the states that must be truthful about what happened.
@@ -141,9 +432,71 @@ final class PaywallModel: ObservableObject, SessionScoped {
         }
     }
 
+    /// The board's error card (11-08/11-09): a titled message with the action that fixes it.
+    var notice: SupportNotice? {
+        switch phase {
+        case .unavailable(let message):
+            return SupportNotice(title: "Couldn't load plans", message: message, action: .retryLoad)
+        case .purchaseFailed:
+            if lastOperation == .restore {
+                return SupportNotice(
+                    title: "Couldn't restore purchases",
+                    message: restoreFailureMessage,
+                    action: .retryRestore
+                )
+            }
+            return SupportNotice(
+                title: "The purchase didn't go through",
+                message: purchaseFailureMessage,
+                action: nil
+            )
+        case .signInRequired:
+            guard let authError else { return nil }
+            return SupportNotice(
+                title: authFailureTitle,
+                message: authError,
+                action: authProvider == .google ? .retryGoogle : nil
+            )
+        case .loadingPlans, .ready, .processing, .purchaseCancelled, .entitled:
+            return nil
+        }
+    }
+
+    private var purchaseFailureMessage: String {
+        switch failure {
+        case .network:
+            return "Check your connection and try again."
+        case .receiptOwnedByOtherAccount:
+            return "This purchase belongs to another account. Restore purchases to use it here."
+        case .storeProblem:
+            return "The App Store didn't finish it. Try again in a moment."
+        case .cancelled, .other, .none:
+            return "The App Store didn't finish it. If you were charged, tap Restore purchases."
+        }
+    }
+
+    private var restoreFailureMessage: String {
+        switch failure {
+        case .network:
+            return "Check your connection and try again."
+        default:
+            return "The App Store didn't respond. Check your connection and try again."
+        }
+    }
+
+    private var authFailureTitle: String {
+        switch authProvider {
+        case .apple: return "Couldn't sign in with Apple"
+        case .google: return "Couldn't sign in with Google"
+        case .email, .none: return "Couldn't sign in"
+        }
+    }
+
     func start() {
         guard !hasStarted else { return }
         hasStarted = true
+        connectivity.start()
+        isOffline = connectivity.isOffline
         // The paywall ignores session events before `start()`, so adoption happens here rather than in
         // `init`; the scope owns the subscription from now on.
         scope.adopt(self)
@@ -163,6 +516,7 @@ final class PaywallModel: ObservableObject, SessionScoped {
         guard !isAuthenticating else { return }
         isAuthenticating = true
         authError = nil
+        authProvider = .google
         defer { isAuthenticating = false }
 
         switch await signInAction.run() {
@@ -183,6 +537,7 @@ final class PaywallModel: ObservableObject, SessionScoped {
         guard !isAuthenticating else { return }
         isAuthenticating = true
         authError = nil
+        authProvider = .apple
         defer { isAuthenticating = false }
 
         switch await appleSignInAction.run() {
@@ -239,6 +594,8 @@ final class PaywallModel: ObservableObject, SessionScoped {
         guard let selectedPlan, phase != .processing else { return }
         let epoch = sessionEpoch
         let operation = beginOperation()
+        lastOperation = .purchase
+        failure = nil
         phase = .processing
         let snapshot = await gateway.purchase(packageID: selectedPlan.identifier)
         endOperation(operation)
@@ -254,6 +611,8 @@ final class PaywallModel: ObservableObject, SessionScoped {
         guard phase != .processing else { return }
         let epoch = sessionEpoch
         let operation = beginOperation()
+        lastOperation = .restore
+        failure = nil
         phase = .processing
         let snapshot = await gateway.restore()
         endOperation(operation)
@@ -275,6 +634,29 @@ final class PaywallModel: ObservableObject, SessionScoped {
         snapshotCancellable = gateway.snapshots.sink { [weak self] snapshot in
             guard let self else { return }
             Task { await self.reconcile(with: snapshot) }
+        }
+    }
+
+    /// Connectivity is a real input to the state machine: the offline boards (11-11, 11-20) are drawn
+    /// from the network path, and coming back online retries the offering that could not load.
+    private func observeConnectivity() {
+        connectivityCancellable = connectivity.changes
+            // The subscription closure belongs to the main actor; delivering the path change on the
+            // main queue is what makes that isolation true at the call site.
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] offline in
+                guard let self else { return }
+                Task { await self.applyConnectivity(isOffline: offline) }
+            }
+    }
+
+    private func applyConnectivity(isOffline offline: Bool) async {
+        let reconnected = isOffline && !offline
+        guard offline != isOffline else { return }
+        isOffline = offline
+        guard reconnected, isSignedIn, !isBusy else { return }
+        if case .unavailable = phase {
+            await loadPlans()
         }
     }
 
@@ -325,6 +707,9 @@ final class PaywallModel: ObservableObject, SessionScoped {
         plans = []
         selectedProductID = nil
         authError = nil
+        authProvider = nil
+        failure = nil
+        lastOperation = nil
         isAuthenticating = false
         phase = .signInRequired
     }
@@ -348,6 +733,9 @@ final class PaywallModel: ObservableObject, SessionScoped {
         // operation's result (a superseded purchase, say) leaves the live one alone. Once nothing
         // is running, any settled snapshot takes over, so a stale busy phase cannot wedge the sheet.
         if let activeOperation, fromOperation != activeOperation { return }
+        // The failure kind belongs to the settled snapshot that carries it; a snapshot without one
+        // clears it, so an old error can never caption a later state.
+        failure = snapshot.failure
         switch snapshot.state {
         case .unconfigured:
             plans = []

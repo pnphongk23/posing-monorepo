@@ -501,7 +501,11 @@ final class NetworkConnectivityMonitor: ConnectivityReporting {
         guard !hasStarted else { return }
         hasStarted = true
         monitor.pathUpdateHandler = { [state] path in
-            state.subject.send(path.status != .satisfied)
+            let offline = path.status != .satisfied
+            // Publish on the main actor: every reader is a `@MainActor` model whose subscription
+            // closure is main-isolated, so a send from the monitor's own queue would trip the
+            // executor assertion instead of delivering the new path.
+            Task { @MainActor in state.subject.send(offline) }
         }
         monitor.start(queue: queue)
     }

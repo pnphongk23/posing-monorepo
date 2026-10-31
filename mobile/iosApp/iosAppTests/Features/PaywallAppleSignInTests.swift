@@ -40,6 +40,11 @@ final class PaywallAppleSignInTests: XCTestCase {
             PaywallAccessibilityID.planMonthly,
             PaywallAccessibilityID.status,
             PaywallAccessibilityID.cta,
+            PaywallAccessibilityID.benefit,
+            PaywallAccessibilityID.offline,
+            PaywallAccessibilityID.notice,
+            PaywallAccessibilityID.signInSheet,
+            PaywallAccessibilityID.signInClose,
         ]
 
         for identifier in identifiers {

@@ -50,11 +50,9 @@ struct AppFeatureRoot: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(AIPoseColor.background.ignoresSafeArea())
             .onAppear { premiumGate.start() }
-            // The paywall can be requested from any paid trigger; the sheet owns dismissal, and
+            // The paywall can be requested from any paid trigger; the cover owns dismissal, and
             // dismissing it changes nothing, so no access is granted on the way out.
-            .sheet(isPresented: paywallSheetBinding) {
-                PaywallScreen()
-            }
+            .paywallCover(isPresented: paywallSheetBinding)
             // A purchase or a restore that lands while the sheet is open closes it exactly once. The
             // press that opened it is never re-fired: the user is back on the camera, nothing more.
             .onChange(of: premiumGate.entitlement) { _ in settlePaywall() }

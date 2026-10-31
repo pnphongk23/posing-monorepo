@@ -15,6 +15,13 @@ enum PaywallAccessibilityID {
     static let planMonthly = "paywall.plan.monthly"
     static let status = "paywall.status"
     static let cta = "paywall.cta"
+    /// New on the redesign: the single benefit line, the offline banner, the error card and the
+    /// sign-in sheet's own surface and close control.
+    static let benefit = "paywall.benefit"
+    static let offline = "paywall.offline"
+    static let notice = "paywall.notice"
+    static let signInSheet = "paywall.signin.sheet"
+    static let signInClose = "paywall.signin.close"
 
     /// A plan card's id follows the package type the catalog sells, never the store product id.
     static func plan(_ product: PurchaseProduct) -> String {
@@ -26,7 +33,7 @@ enum PaywallAccessibilityID {
 ///
 /// Apple comes first: App Review guideline 4.8 requires Sign in with Apple wherever another
 /// third-party sign-in (Google) is offered, and it must not be the subordinate option. The order
-/// lives in `allCases` because the paywall builds its buttons from it, so the rendered order and
+/// lives in `allCases` because the sign-in sheet builds its buttons from it, so the rendered order and
 /// the asserted order cannot drift apart.
 enum PaywallSignInOption: String, CaseIterable, Identifiable {
     case apple, google, email
@@ -43,16 +50,22 @@ enum PaywallSignInOption: String, CaseIterable, Identifiable {
 }
 
 /// Paid-access surface (`FEAT-011`). Plans, prices and renewal terms come from the StoreKit
-/// offering through `PurchaseGateway`; the prototype's hardcoded prices are gone because StoreKit
-/// metadata is authoritative. An unconfigured SDK or missing offering is shown truthfully as a
-/// retryable state rather than fabricated as purchasable plans.
+/// offering through `PurchaseGateway`; every derived figure (per-month breakdown, saving badge) is
+/// computed from those packages by `PaywallMoney`, so no price is ever typed into the UI.
+///
+/// Layout follows the page-11 boards: a hero, the single shutter benefit (Premium unlocks capture
+/// with the full pose camera and nothing else), two plan cards, the auto-renew disclosure, a pinned
+/// CTA and the 3.1.2 links. Every state — loading, offline, purchase error, restore error, signed
+/// out — keeps those disclosures on screen.
 struct PaywallScreen: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @StateObject private var model: PaywallModel
-    @State private var showsEmailSignIn = false
     /// The email attempt lives on the screen, not in the sheet content (S4).
     @StateObject private var emailSignIn = EmailSignInModel()
+    @State private var showsSignInSheet = false
+    @State private var showsEmailSignIn = false
 
     init(model: @autoclosure @escaping () -> PaywallModel = PaywallModel()) {
         _model = StateObject(wrappedValue: model())
@@ -61,20 +74,38 @@ struct PaywallScreen: View {
     var body: some View {
         VStack(spacing: 0) {
             ScrollView {
-                VStack(alignment: .leading, spacing: AIPoseSpacing.xl) {
-                    paywallHeader
-                    paywallStory
-                    paywallBenefitsPanel
-                    paywallOffer
+                VStack(alignment: .leading, spacing: 0) {
+                    PaywallHero()
+                    VStack(alignment: .leading, spacing: AP.Space.space16) {
+                        titleBlock
+                        benefitRow
+                        planSection
+                        if let notice = model.notice, !model.isOffline {
+                            SupportNoticeCard(notice: notice, action: performNoticeAction)
+                                .accessibilityIdentifier(PaywallAccessibilityID.notice)
+                        }
+                        autoRenewCaption
+                        if let status = model.statusMessage, model.notice == nil, !model.isOffline {
+                            Text(status)
+                                .font(AP.Font.caption)
+                                .foregroundStyle(AP.Color.secondaryText)
+                                .frame(maxWidth: .infinity, alignment: .center)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .accessibilityIdentifier(PaywallAccessibilityID.status)
+                        }
+                    }
+                    .padding(.horizontal, AP.Space.space16)
+                    .padding(.top, AP.Space.space24)
+                    .padding(.bottom, AP.Space.space24)
                 }
-                .padding(.horizontal, AIPoseSpacing.lg)
-                .padding(.top, AIPoseSpacing.sm)
-                .padding(.bottom, AIPoseSpacing.lg)
             }
-            paywallDock
+            // The hero runs under the status bar; the close control and the footer keep their insets.
+            .ignoresSafeArea(edges: .top)
+            footer
         }
-        .background(AIPoseColor.background)
-        .navigationBarHidden(true)
+        .background(AP.Color.background)
+        .overlay(alignment: .topTrailing) { closeButton }
+        .task { model.start() }
         // Email sign-in as a peer of Google (PLAN §4): same `EmailSignInModel`/`APIClient` path,
         // landing in the same isSignedIn/loadPlans() outcome via the call-site seam.
         .emailSignInSheet(
@@ -84,201 +115,206 @@ struct PaywallScreen: View {
         ) {
             Task { await model.resumeAfterEmailSignIn() }
         }
-        .task { model.start() }
-    }
-
-    private var paywallHeader: some View {
-        HStack {
-            HStack(spacing: AIPoseSpacing.sm) {
-                RoundedRectangle(cornerRadius: 2)
-                    .fill(AIPoseColor.accentYellow)
-                    .frame(width: 4, height: 28)
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 0) {
-                      Text("posing").font(.caption.weight(.semibold)).foregroundStyle(AIPoseColor.subtext)
-                    Text("Premium studio").font(.headline.bold())
-                }
+        .sheet(isPresented: $showsSignInSheet) {
+            if #available(iOS 16.0, *) {
+                signInSheet
+                    .presentationDetents([.medium, .large])
+                    .presentationDragIndicator(.visible)
+            } else {
+                signInSheet
             }
-            .accessibilityElement(children: .combine)
-              .accessibilityLabel("posing Premium")
-            Spacer(minLength: 0)
-            Button { dismiss() } label: {
-                Image(systemName: "xmark")
-                    .font(.body.weight(.bold))
-                    .foregroundStyle(.white)
-                    .frame(width: 44, height: 44)
-                    .background(AIPoseColor.foreground)
-                    .clipShape(Circle())
-            }
-            .accessibilityLabel("Close Premium and go back")
-            .accessibilityIdentifier(PaywallAccessibilityID.close)
-        }
-        .overlay(alignment: .bottom) {
-            Rectangle().fill(AIPoseColor.foreground).frame(height: 2).offset(y: AIPoseSpacing.md)
-        }
-        .padding(.bottom, AIPoseSpacing.lg)
-    }
-
-    private var paywallStory: some View {
-        VStack(alignment: .leading, spacing: AIPoseSpacing.sm) {
-            Text("Pose with confidence.").font(.largeTitle.bold())
-            Text("Explore poses, frame the shot, and keep every favorite.")
-                .foregroundStyle(AIPoseColor.subtext)
         }
     }
 
-    private var paywallBenefitsPanel: some View {
-        HStack(spacing: 0) {
-            paywallBenefit(icon: "square.grid.2x2", title: "Discover", subtitle: "Community poses")
-            Divider().background(Color.white.opacity(0.3)).frame(height: 56)
-            paywallBenefit(icon: "camera.fill", title: "Frame", subtitle: "Full pose camera")
-            Divider().background(Color.white.opacity(0.3)).frame(height: 56)
-            paywallBenefit(icon: "square.and.arrow.up", title: "Keep", subtitle: "Save and share")
+    // MARK: - Body
+
+    private var titleBlock: some View {
+        VStack(alignment: .leading, spacing: AP.Space.space8) {
+            Text("Full pose camera")
+                .font(AP.Font.display)
+                .foregroundStyle(AP.Color.primaryText)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityAddTraits(.isHeader)
+            Text("Shoot with the guide on every capture.")
+                .font(AP.Font.body)
+                .foregroundStyle(AP.Color.secondaryText)
+                .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(.vertical, AIPoseSpacing.md)
-        .background(AIPoseColor.foreground)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+    }
+
+    /// Premium gates one thing: capturing with the full pose camera. The three-up benefit panel the
+    /// old paywall drew claimed discovery and saving too, which the entitlement never granted.
+    private var benefitRow: some View {
+        HStack(alignment: .firstTextBaseline, spacing: AP.Space.space8) {
+            Image(systemName: "checkmark")
+                .font(AP.Font.heading)
+                .foregroundStyle(AP.Color.accentText)
+                .accessibilityHidden(true)
+            Text(PaywallPlanCopy.benefit)
+                .font(AP.Font.body)
+                .foregroundStyle(AP.Color.primaryText)
+                .fixedSize(horizontal: false, vertical: true)
+        }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Premium benefits: Discover community poses, Frame with full pose camera, Keep by saving and sharing")
-    }
-
-    private func paywallBenefit(icon: String, title: String, subtitle: String) -> some View {
-        VStack(spacing: AIPoseSpacing.xs) {
-            Image(systemName: icon).foregroundStyle(.white)
-            Text(title).font(.caption.weight(.bold)).foregroundStyle(.white)
-            Text(subtitle).font(.caption2).foregroundStyle(.white.opacity(0.7))
-        }
-        .frame(maxWidth: .infinity)
+        .accessibilityLabel("Premium: \(PaywallPlanCopy.benefit)")
+        .accessibilityIdentifier(PaywallAccessibilityID.benefit)
     }
 
     @ViewBuilder
-    private var paywallOffer: some View {
-        Text("Choose your plan").font(.title3.bold())
-        switch model.phase {
-        case .signInRequired:
-            paywallNotice(
-                model.authError ?? "Your purchase is tied to your account. Sign in to continue.",
-                isError: model.authError != nil,
-                accessibilityLabel: "Sign in to continue with Premium"
-            )
-            ForEach(PaywallSignInOption.allCases) { option in
-                paywallSignInButton(option)
+    private var planSection: some View {
+        if model.isOffline {
+            VStack(alignment: .leading, spacing: AP.Space.space12) {
+                SupportInlineBanner(
+                    tone: .offline,
+                    message: "You're offline. Plans can't load."
+                )
+                .accessibilityIdentifier(PaywallAccessibilityID.offline)
+                planRows(model.planPresentations.isEmpty ? model.placeholderPlans : model.planPresentations)
             }
-        case .loadingPlans:
-            HStack(spacing: AIPoseSpacing.sm) {
+        } else if model.plans.isEmpty {
+            if model.phase == .loadingPlans && model.isSignedIn {
+                loadingPlans
+            } else if !model.isSignedIn {
+                planRows(model.placeholderPlans)
+            }
+        } else {
+            planRows(model.planPresentations)
+        }
+    }
+
+    private func planRows(_ plans: [PaywallPlanCopy.Plan]) -> some View {
+        VStack(spacing: AP.Space.space12) {
+            ForEach(plans) { plan in
+                PaywallPlanRow(
+                    plan: plan,
+                    isSelectable: isSelectable(plan),
+                    action: { model.select(plan.id) }
+                )
+                .accessibilityIdentifier(identifier(for: plan))
+            }
+        }
+    }
+
+    private func isSelectable(_ plan: PaywallPlanCopy.Plan) -> Bool {
+        !model.isOffline && model.plans.contains { $0.identifier == plan.id }
+    }
+
+    /// The plan rows keep one id per package type in every state, so a flow that waits for the annual
+    /// card finds it whether the offering is loaded, still loading or unavailable.
+    private func identifier(for plan: PaywallPlanCopy.Plan) -> String {
+        plan.isAnnual ? PaywallAccessibilityID.planAnnual : PaywallAccessibilityID.planMonthly
+    }
+
+    /// Board 11-10: the plan cards keep their geometry while the offering loads, and the CTA says why
+    /// it cannot be tapped yet instead of disappearing.
+    private var loadingPlans: some View {
+        VStack(alignment: .leading, spacing: AP.Space.space12) {
+            HStack(spacing: AP.Space.space8) {
                 ProgressView()
-                Text("Loading plans…").foregroundStyle(AIPoseColor.subtext)
+                Text("Loading plans…")
+                    .font(AP.Font.caption)
+                    .foregroundStyle(AP.Color.secondaryText)
             }
-            .frame(maxWidth: .infinity, minHeight: 60)
             .accessibilityElement(children: .combine)
-            .accessibilityLabel("Loading Premium plans")
-        case .unavailable(let message):
-            paywallNotice(message, isError: true, accessibilityLabel: "Premium unavailable")
-            Button("Retry") { Task { await model.retry() } }
-                .buttonStyle(NeoButtonStyle(fill: AIPoseColor.surface))
-                .accessibilityLabel("Retry loading Premium plans")
-        case .ready, .processing, .purchaseCancelled, .purchaseFailed, .entitled:
-            paywallPlanCards
-            if let message = model.statusMessage {
-                paywallNotice(
-                    message,
-                    isError: model.phase != .entitled,
-                    accessibilityLabel: model.phase == .entitled ? "Premium access confirmed" : "Purchase result"
-                )
-                .accessibilityIdentifier(PaywallAccessibilityID.status)
-            }
-        }
-    }
-
-    /// One sign-in option, rendered straight from `PaywallSignInOption.allCases`. Apple and Google
-    /// share `NeoButtonStyle`'s geometry (full width, one padded height, one border), so neither is
-    /// the lesser control; only the fill differs, which HIG requires for Apple.
-    @ViewBuilder
-    private func paywallSignInButton(_ option: PaywallSignInOption) -> some View {
-        switch option {
-        case .apple:
-            ContinueWithAppleButton(isAuthenticating: model.isAuthenticating) {
-                Task { await model.signInWithApple() }
-            }
-            .accessibilityIdentifier(option.accessibilityIdentifier)
-        case .google:
-            ContinueWithGoogleButton(isAuthenticating: model.isAuthenticating) {
-                Task { await model.signIn() }
-            }
-            .accessibilityIdentifier(option.accessibilityIdentifier)
-        case .email:
-            Button { showsEmailSignIn = true } label: {
-                Text("Sign in with email")
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(AIPoseColor.foreground)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: .infinity, minHeight: 44)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .disabled(model.isAuthenticating)
-            .accessibilityIdentifier(option.accessibilityIdentifier)
-            .accessibilityLabel("Sign in with email")
-        }
-    }
-
-    private var paywallPlanCards: some View {
-        VStack(spacing: AIPoseSpacing.md) {
-            ForEach(model.plans, id: \.identifier) { product in
-                PaywallPlanCard(
-                    product: product,
-                    isSelected: product.identifier == model.selectedProductID,
-                    onSelect: { model.select(product.identifier) }
-                )
-                .accessibilityIdentifier(PaywallAccessibilityID.plan(product))
-            }
-        }
-        .accessibilityElement(children: .contain)
-    }
-
-    private func paywallNotice(_ text: String, isError: Bool, accessibilityLabel: String) -> some View {
-        Text(text)
-            .font(.footnote.weight(.semibold))
-            .foregroundStyle(isError ? AIPoseColor.error : AIPoseColor.primary900)
-            .fixedSize(horizontal: false, vertical: true)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .accessibilityLabel("\(accessibilityLabel). \(text)")
-    }
-
-    private var paywallDock: some View {
-        VStack(spacing: AIPoseSpacing.md) {
-            // The purchase CTA only exists when there is a purchasable plan: the sign-in-required
-            // and unavailable states own their own action, so a dead disabled button is never shown.
-            if let plan = model.selectedPlan {
-                Button { Task { await model.purchase() } } label: {
-                    Text(model.ctaTitle)
+            .accessibilityLabel("Loading plans")
+            VStack(spacing: AP.Space.space12) {
+                ForEach(0..<2, id: \.self) { _ in
+                    RoundedRectangle(cornerRadius: AP.Radius.radius16, style: .continuous)
+                        .fill(AP.Color.controlFill)
+                        .frame(height: 76)
                 }
-                .buttonStyle(NeoButtonStyle())
-                .frame(minHeight: 44)
-                .disabled(model.isBusy)
-                .accessibilityLabel(model.ctaTitle)
-                .accessibilityIdentifier(PaywallAccessibilityID.cta)
-
-                Text(PaywallPlanCatalog.summaryLine(for: plan))
-                    .font(.footnote)
-                    .foregroundStyle(AIPoseColor.subtext)
-                    .multilineTextAlignment(.center)
-                    .accessibilityLabel(PaywallPlanCatalog.summaryLine(for: plan))
             }
-            HStack(spacing: AIPoseSpacing.lg) {
-                paywallLegalLink("Restore purchases", action: { Task { await model.restore() } })
-                paywallLegalLink("Terms", url: SupportDestinations.termsOfServiceURL)
-                paywallLegalLink("Privacy", url: SupportDestinations.privacyPolicyURL)
-            }
-            Text("Cancel anytime in App Store settings. No free trial.")
-                .font(.caption)
-                .foregroundStyle(AIPoseColor.subtext)
-                .multilineTextAlignment(.center)
+            .accessibilityHidden(true)
         }
-        .padding(AIPoseSpacing.lg)
-        .background(AIPoseColor.background)
-        .overlay(alignment: .top) { Rectangle().fill(AIPoseColor.foreground.opacity(0.15)).frame(height: 1) }
+    }
+
+    private var autoRenewCaption: some View {
+        Text(PaywallPlanCopy.autoRenewCaption)
+            .font(AP.Font.caption)
+            .foregroundStyle(AP.Color.secondaryText)
+            .multilineTextAlignment(.center)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity)
+    }
+
+    private var closeButton: some View {
+        Button { dismiss() } label: {
+            Image(systemName: "xmark")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(AP.Color.primaryText)
+                .frame(width: AP.HitTarget.minimum, height: AP.HitTarget.minimum)
+                .background(
+                    RoundedRectangle(cornerRadius: AP.Radius.radius16, style: .continuous)
+                        .fill(AP.Color.surface)
+                )
+                .apElevation(.e1, cornerRadius: AP.Radius.radius16)
+        }
+        .buttonStyle(.plain)
+        .padding(.trailing, AP.Space.space16)
+        .padding(.top, AP.Space.space8)
+        .accessibilityLabel("Close Premium and go back")
+        .accessibilityIdentifier(PaywallAccessibilityID.close)
+    }
+
+    // MARK: - Footer (pinned CTA + the 3.1.2 disclosures)
+
+    /// Board 11-01: one primary action, one helper line above it, and the required links below it.
+    /// `fixedSize` keeps the dock at its real height at the Accessibility sizes, so the ScrollView
+    /// shrinks instead and nothing is painted over (the AX3 board is a scrolled state).
+    private var footer: some View {
+        VStack(spacing: AP.Space.space12) {
+            if let line = footerLine {
+                Text(line)
+                    .font(AP.Font.caption)
+                    .foregroundStyle(AP.Color.secondaryText)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity)
+            }
+            Button(action: primaryAction) {
+                HStack(spacing: AP.Space.space8) {
+                    if model.isBusy { ProgressView().tint(AP.Color.onAccent) }
+                    Text(model.ctaTitle)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .multilineTextAlignment(.center)
+                }
+            }
+            .buttonStyle(APPrimaryButtonStyle(minimumHeight: 48))
+            .disabled(!model.isCTAEnabled)
+            .accessibilityLabel(model.ctaTitle)
+            .accessibilityIdentifier(PaywallAccessibilityID.cta)
+            legalRow
+        }
+        .padding(.horizontal, AP.Space.space16)
+        .padding(.top, AP.Space.space12)
+        .padding(.bottom, AP.Space.space8)
+        .fixedSize(horizontal: false, vertical: true)
+        .background(AP.Color.background)
+    }
+
+    private var footerLine: String? {
+        if let helper = model.ctaHelper { return helper }
+        return model.isSignedIn ? PaywallModel.signedInLine : nil
+    }
+
+    @ViewBuilder
+    private var legalRow: some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(spacing: AP.Space.space4) {
+                legalLinks
+            }
+        } else {
+            HStack(spacing: AP.Space.space16) {
+                legalLinks
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var legalLinks: some View {
+        paywallLegalLink("Restore purchases", action: { Task { await model.restore() } })
+        paywallLegalLink("Terms of Use", url: SupportDestinations.termsOfServiceURL)
+        paywallLegalLink("Privacy Policy", url: SupportDestinations.privacyPolicyURL)
     }
 
     private func paywallLegalLink(_ title: String, url: URL? = nil, action: (() -> Void)? = nil) -> some View {
@@ -286,82 +322,297 @@ struct PaywallScreen: View {
             if let action { action() } else if let url { openURL(url) }
         } label: {
             Text(title)
-                .font(.footnote.weight(.bold))
-                .supportUnderlinedLink()
-        }
-        .frame(minHeight: 44)
-        .accessibilityLabel(title == "Terms" ? "Terms of Use" : title == "Privacy" ? "Privacy Policy" : title)
-    }
-}
-
-private struct PaywallPlanCard: View {
-    let product: PurchaseProduct
-    let isSelected: Bool
-    let onSelect: () -> Void
-
-    private var isAnnual: Bool { PaywallPlanCatalog.isAnnual(product) }
-
-    var body: some View {
-        Button(action: onSelect) {
-            VStack(alignment: .leading, spacing: AIPoseSpacing.sm) {
-                HStack(spacing: AIPoseSpacing.sm) {
-                    Circle()
-                        .strokeBorder(AIPoseColor.foreground, lineWidth: 2)
-                        .background(Circle().fill(isSelected ? AIPoseColor.foreground : .clear).padding(5))
-                        .frame(width: 22, height: 22)
-                        .accessibilityHidden(true)
-                    Text(PaywallPlanCatalog.label(for: product).uppercased())
-                        .font(.caption.weight(.bold))
-                    if isAnnual {
-                        Text("Recommended")
-                            .font(.caption2.weight(.bold))
-                            .padding(.horizontal, AIPoseSpacing.sm)
-                            .padding(.vertical, 2)
-                            .background(AIPoseColor.accentYellow)
-                            .clipShape(Capsule())
-                            .overlay(Capsule().stroke(AIPoseColor.foreground, lineWidth: 1.5))
-                    }
-                    Spacer(minLength: 0)
+                .font(AP.Font.caption.weight(.semibold))
+                .foregroundStyle(AP.Color.accentText)
+                .fixedSize(horizontal: false, vertical: true)
+                // `Text.underline()` is iOS 16+, so the rule is drawn under the label instead.
+                .padding(.bottom, 2)
+                .overlay(alignment: .bottom) {
+                    Rectangle().fill(AP.Color.accentText).frame(height: 1)
                 }
-                HStack(alignment: .firstTextBaseline, spacing: AIPoseSpacing.xs) {
-                    Text(product.localizedPrice).font(.title3.bold())
-                    Text("/ \(PaywallPlanCatalog.periodLabel(for: product))")
-                        .font(.subheadline.weight(.bold))
-                }
-                Text(PaywallPlanCatalog.termsLine(for: product))
-                    .font(.footnote)
-                    .foregroundStyle(AIPoseColor.subtext)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(AIPoseSpacing.lg)
-            .background(AIPoseColor.surface)
-            .clipShape(RoundedRectangle(cornerRadius: 16))
-            .overlay(
-                RoundedRectangle(cornerRadius: 16)
-                    .stroke(AIPoseColor.foreground, lineWidth: isSelected ? 3 : 2)
-            )
-            .shadow(color: AIPoseColor.foreground, radius: 0, x: isSelected ? 4 : 2, y: isSelected ? 4 : 2)
+                .frame(minHeight: AP.HitTarget.minimum)
         }
         .buttonStyle(.plain)
-        .frame(minHeight: 44)
-        .accessibilityLabel(accessibilityLabel)
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .disabled(model.isBusy)
+        .accessibilityLabel(title)
     }
 
-    private var accessibilityLabel: String {
-        let selection = isSelected ? "selected" : "not selected"
-        let recommendation = isAnnual ? ", recommended" : ""
-        return "\(PaywallPlanCatalog.label(for: product)) plan, \(selection), \(product.localizedPrice) per \(PaywallPlanCatalog.periodLabel(for: product))\(recommendation)"
+    // MARK: - Actions
+
+    private func primaryAction() {
+        guard model.isCTAEnabled else { return }
+        guard model.isSignedIn else {
+            showsSignInSheet = true
+            return
+        }
+        Task { await model.purchase() }
+    }
+
+    private func performNoticeAction(_ action: SupportNotice.Action) {
+        switch action {
+        case .retryLoad: Task { await model.retry() }
+        case .retryRestore: Task { await model.restore() }
+        case .retryGoogle: Task { await model.signIn() }
+        }
+    }
+
+    // MARK: - Sign-in sheet (boards 11-12 … 11-15)
+
+    /// Sign-in is required to buy, so it is its own sheet over the paywall: one method per row, Apple
+    /// first, and the consent line under them.
+    private var signInSheet: some View {
+        PaywallSignInSheet(
+            model: model,
+            onApple: { await model.signInWithApple() },
+            onGoogle: { await model.signIn() },
+            onEmail: {
+                showsSignInSheet = false
+                showsEmailSignIn = true
+            },
+            onClose: { showsSignInSheet = false }
+        )
     }
 }
 
-private extension View {
-    func supportUnderlinedLink() -> some View {
-        overlay(alignment: .bottom) {
-            Rectangle()
-                .fill(AIPoseColor.foreground)
-                .frame(height: 1)
-                .offset(y: 1)
+/// Board 11-01: the paywall opens on imagery. The bundle ships no photo asset (the app draws every
+/// pose from the remote catalog), so the hero is drawn from the design tokens — a soft accent wash
+/// with the pose figure — instead of shipping a stock photo.
+struct PaywallHero: View {
+    var body: some View {
+        ZStack {
+            LinearGradient(
+                colors: [AP.Color.selectedBackground, AP.Color.secondaryBackground],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            Image(systemName: "figure.stand")
+                .font(.system(size: 96, weight: .regular))
+                .foregroundStyle(AP.Color.accentText.opacity(0.9))
         }
+        .frame(maxWidth: .infinity)
+        .frame(height: 200)
+        .clipped()
+        .accessibilityHidden(true)
+    }
+}
+
+/// One plan card (boards 11-02/11-03): selection is a filled box, the saving badge sits beside the
+/// plan name, the billing breakdown under it and the price on the trailing edge. At the Accessibility
+/// sizes the card stacks (board 11-04) instead of squeezing four columns into one row.
+struct PaywallPlanRow: View {
+    let plan: PaywallPlanCopy.Plan
+    let isSelectable: Bool
+    let action: () -> Void
+
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    var body: some View {
+        Button(action: action) {
+            Group {
+                if dynamicTypeSize.isAccessibilitySize {
+                    VStack(alignment: .leading, spacing: AP.Space.space8) {
+                        HStack(spacing: AP.Space.space12) {
+                            selectionBox
+                            Text(plan.title).font(AP.Font.heading)
+                        }
+                        badge
+                        Text(plan.detail).font(AP.Font.caption)
+                        Text(plan.price).font(AP.Font.data)
+                    }
+                } else {
+                    HStack(alignment: .center, spacing: AP.Space.space12) {
+                        selectionBox
+                        VStack(alignment: .leading, spacing: AP.Space.space4) {
+                            HStack(spacing: AP.Space.space8) {
+                                Text(plan.title).font(AP.Font.heading)
+                                badge
+                            }
+                            Text(plan.detail).font(AP.Font.caption)
+                        }
+                        Spacer(minLength: AP.Space.space8)
+                        Text(plan.price).font(AP.Font.data)
+                    }
+                }
+            }
+            .foregroundStyle(plan.isSelected ? AP.Color.selectedForeground : AP.Color.primaryText)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(AP.Space.space16)
+            .background(
+                RoundedRectangle(cornerRadius: AP.Radius.radius16, style: .continuous)
+                    .fill(plan.isSelected ? AP.Color.selectedBackground : AP.Color.controlFill)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: AP.Radius.radius16, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .disabled(!isSelectable)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(plan.accessibilityLabel)
+        .accessibilityAddTraits(plan.isSelected ? [.isButton, .isSelected] : [.isButton])
+    }
+
+    /// Board 11-02: a filled box with a check when selected, an empty box otherwise — never a stroke
+    /// on the row itself.
+    private var selectionBox: some View {
+        RoundedRectangle(cornerRadius: 6, style: .continuous)
+            .fill(plan.isSelected ? AP.Color.selectedForeground : AP.Color.surface)
+            .frame(width: 24, height: 24)
+            .overlay {
+                if plan.isSelected {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(AP.Color.selectedBackground)
+                }
+            }
+            .accessibilityHidden(true)
+    }
+
+    @ViewBuilder
+    private var badge: some View {
+        if let badge = plan.badge {
+            Text(badge)
+                .font(AP.Font.caption.weight(.semibold))
+                .foregroundStyle(AP.Color.accentText)
+                .padding(.horizontal, AP.Space.space8)
+                .padding(.vertical, AP.Space.space4)
+                .background(AP.Color.surface, in: Capsule())
+                .fixedSize()
+                .accessibilityHidden(true)
+        }
+    }
+}
+
+/// Board 11-12 … 11-15: "Sign in to subscribe". One method per row, Apple first, the provider error
+/// card above them, and the consent line under them.
+struct PaywallSignInSheet: View {
+    @ObservedObject var model: PaywallModel
+    let onApple: () async -> Void
+    let onGoogle: () async -> Void
+    let onEmail: () -> Void
+    let onClose: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: AP.Space.space16) {
+            HStack(alignment: .top, spacing: AP.Space.space12) {
+                Text("Sign in to subscribe")
+                    .font(AP.Font.title)
+                    .foregroundStyle(AP.Color.primaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityAddTraits(.isHeader)
+                Spacer(minLength: 0)
+                Button(action: onClose) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(AP.Color.primaryText)
+                        .frame(width: AP.HitTarget.minimum, height: AP.HitTarget.minimum)
+                        .background(
+                            RoundedRectangle(cornerRadius: AP.Radius.radius16, style: .continuous)
+                                .fill(AP.Color.controlFill)
+                        )
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Close sign-in")
+                .accessibilityIdentifier(PaywallAccessibilityID.signInClose)
+            }
+            Text("Create an account or sign in. Your Premium stays with your account.")
+                .font(AP.Font.supporting)
+                .foregroundStyle(AP.Color.secondaryText)
+                .fixedSize(horizontal: false, vertical: true)
+            if let notice = model.notice, model.authError != nil {
+                SupportNoticeCard(notice: notice) { action in
+                    guard action == .retryGoogle else { return }
+                    Task { await onGoogle() }
+                }
+            }
+            ScrollView {
+                VStack(spacing: AP.Space.space12) {
+                    ForEach(PaywallSignInOption.allCases) { option in
+                        button(for: option)
+                            .accessibilityIdentifier(option.accessibilityIdentifier)
+                    }
+                }
+                .padding(.bottom, AP.Space.space8)
+            }
+            consentLine
+        }
+        .padding(.horizontal, AP.Space.space16)
+        .padding(.top, AP.Space.space24)
+        .padding(.bottom, AP.Space.space16)
+        .background(AP.Color.background)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier(PaywallAccessibilityID.signInSheet)
+    }
+
+    @ViewBuilder
+    private func button(for option: PaywallSignInOption) -> some View {
+        switch option {
+        case .apple:
+            ContinueWithAppleButton(isAuthenticating: model.isAuthenticating) {
+                Task { await onApple() }
+            }
+        case .google:
+            ContinueWithGoogleButton(
+                isAuthenticating: model.isAuthenticating && model.authProvider == .google,
+                title: googleTitle
+            ) {
+                Task { await onGoogle() }
+            }
+            .disabled(model.isAuthenticating)
+        case .email:
+            Button(action: onEmail) {
+                HStack(spacing: AP.Space.space12) {
+                    Image(systemName: "envelope")
+                        .font(AP.Font.body)
+                    Text("Continue with email")
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .buttonStyle(APSecondaryButtonStyle())
+            .disabled(model.isAuthenticating)
+            .accessibilityLabel("Continue with email")
+        }
+    }
+
+    /// Board 11-15: after a failed Google attempt the same row is the retry, so the recovery is one
+    /// tap and not a separate control.
+    private var googleTitle: String {
+        if model.isAuthenticating && model.authProvider == .google { return "Opening Google…" }
+        if model.authError != nil && model.authProvider == .google { return "Try Google again" }
+        return "Continue with Google"
+    }
+
+    /// "By continuing you agree to the Terms of Use and Privacy Policy." with both documents linked.
+    private var consentLine: some View {
+        Text(consentText)
+            .font(AP.Font.caption)
+            .foregroundStyle(AP.Color.secondaryText)
+            .multilineTextAlignment(.center)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity)
+            .accessibilityLabel("By continuing you agree to the Terms of Use and Privacy Policy.")
+    }
+
+    private var consentText: AttributedString {
+        var text = AttributedString("By continuing you agree to the ")
+        text.append(link("Terms of Use", SupportDestinations.termsOfServiceURL))
+        text.append(AttributedString(" and "))
+        text.append(link("Privacy Policy", SupportDestinations.privacyPolicyURL))
+        text.append(AttributedString("."))
+        return text
+    }
+
+    private func link(_ title: String, _ url: URL?) -> AttributedString {
+        var part = AttributedString(title)
+        part.foregroundColor = AP.Color.accentText
+        part.underlineStyle = .single
+        if let url { part.link = url }
+        return part
+    }
+}
+
+extension View {
+    /// Board 11-01: the paywall is a full-screen cover with a Close control, not a sheet. Call sites
+    /// that present `PaywallScreen` use this instead of `.sheet`, so the presentation is decided once.
+    func paywallCover(isPresented: Binding<Bool>) -> some View {
+        fullScreenCover(isPresented: isPresented) { PaywallScreen() }
     }
 }
