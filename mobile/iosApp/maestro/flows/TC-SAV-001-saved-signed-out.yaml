@@ -4,6 +4,8 @@ tags: [TC-SAV-001, p0]
 ---
 - runFlow: ../subflows/launch-accounts-on.yaml
 - tapOn:
+    id: "poses.more"
+- tapOn:
     id: "poses.header.saved"
 - assertVisible:
     id: "saved.signIn"
