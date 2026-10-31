@@ -106,8 +106,17 @@ interface PoseRow {
   download_count: number;
 }
 
+export interface PoseStoreOptions {
+  /** Maps a stored media locator to the object key the deletion outbox drains. */
+  resolveObjectKey?: (locator: string) => string;
+}
+
 export class PoseStore {
-  constructor(private readonly db: Sql) {}
+  private readonly resolveObjectKey: (locator: string) => string;
+
+  constructor(private readonly db: Sql, options: PoseStoreOptions = {}) {
+    this.resolveObjectKey = options.resolveObjectKey ?? ((locator: string) => locator);
+  }
 
   /** Creates a local Pose atomically with all three required media roles. */
   async createPose(input: CreatePoseInput, tx?: SqlOrTx): Promise<PoseRecord> {
@@ -350,10 +359,11 @@ export class PoseStore {
   }
 
   /**
-   * Deletes a Pose and, in the same transaction, hands every media locator of that Pose to
-   * the object deletion outbox. `media_assets` cascades with the Pose row, so the locators
-   * are read under the Pose lock first: once the row is gone its objects can still be found
-   * by the outbox sweep. A missing Pose stays a no-op and queues nothing.
+   * Deletes a Pose and, in the same transaction, hands the object keys of every media role of
+   * that Pose to the deletion outbox. `media_assets` cascades with the Pose row, so the
+   * locators are read under the Pose lock first; they are resolved to storage keys and
+   * deduplicated before enqueueing, so the sweep deletes the objects rather than their public
+   * URLs. A missing Pose stays a no-op and queues nothing.
    */
   async deletePose(poseId: string): Promise<boolean> {
     return this.db.begin(async (transaction) => {
@@ -366,10 +376,8 @@ export class PoseStore {
         SELECT locator FROM media_assets WHERE pose_id = ${poseId} ORDER BY role
       `) as Array<{ locator: string }>;
 
-      await queueObjectDeletions(
-        transaction,
-        mediaRows.map((row) => row.locator)
-      );
+      const objectKeys = [...new Set(mediaRows.map((row) => this.resolveObjectKey(row.locator)))];
+      await queueObjectDeletions(transaction, objectKeys);
 
       const result = await transaction`
         DELETE FROM poses WHERE pose_id = ${poseId}

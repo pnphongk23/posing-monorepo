@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { describe, expect, it, vi } from "vitest";
 
+import { objectKeyFromLocator } from "./accountStore";
 import { PoseStore, escapeLikePattern, type CreatePoseInput } from "./communityStore";
 import { ObjectDeletionOutbox, drainPendingObjectDeletions } from "./objectDeletionOutbox";
 import { setupTestDatabase } from "./testDb";
@@ -272,6 +273,41 @@ describe("PoseStore", () => {
     expect(result).toEqual({ deleted: 3, failed: 0 });
     expect(deletedObjects.sort()).toEqual([locators.original, locators.skeleton, locators.thumbnail].sort());
     expect(await outbox.count()).toBe(0);
+  });
+
+  it("queues bare object keys, not public urls, when a locator resolver is wired", async () => {
+    const sql = await setupTestDatabase();
+    const store = new PoseStore(sql, {
+      resolveObjectKey: (locator) => objectKeyFromLocator(locator, R2_PUBLIC_URL)
+    });
+    const poseId = randomUUID();
+    const locators = locatorsFor(poseId);
+    const objectKeys = ["original", "skeleton", "thumbnail"].map((role) => `community/${poseId}/${role}.png`);
+    await store.createPose(
+      poseInput({
+        poseId,
+        originalUrl: locators.original,
+        skeletonUrl: locators.skeleton,
+        thumbnailUrl: locators.thumbnail
+      })
+    );
+
+    expect(await store.deletePose(poseId)).toBe(true);
+
+    const queued = (await new ObjectDeletionOutbox(sql).list()).map((row) => row.key).sort();
+    expect(queued).toEqual([...objectKeys].sort());
+
+    const deletedObjects: string[] = [];
+    const result = await drainPendingObjectDeletions({
+      outbox: new ObjectDeletionOutbox(sql),
+      deleteObject: async (key) => {
+        deletedObjects.push(key);
+      }
+    });
+
+    expect(result).toEqual({ deleted: 3, failed: 0 });
+    expect(deletedObjects.sort()).toEqual([...objectKeys].sort());
+    expect(deletedObjects.some((key) => key.startsWith("http"))).toBe(false);
   });
 
   it("keeps a missing Pose a no-op that queues nothing", async () => {

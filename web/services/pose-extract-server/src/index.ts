@@ -25,7 +25,11 @@ async function main(): Promise<void> {
   await applySchema(sql);
 
   const keyStore = new KeyStore(sql);
-  const communityStore = new PoseStore(sql);
+  const communityStore = new PoseStore(sql, {
+    // Stored locators are public URLs; the outbox drains object keys, so resolve them here
+    // exactly as the account purge does.
+    resolveObjectKey: (locator) => objectKeyFromLocator(locator, env.R2_PUBLIC_URL)
+  });
   const extractionJobStore = new ExtractionJobStore(sql);
   const providerSettingsStore = new ProviderSettingsStore(sql);
   const accountStore = new AccountStore(sql);
