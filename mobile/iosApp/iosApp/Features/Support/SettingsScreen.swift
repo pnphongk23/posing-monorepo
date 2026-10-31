@@ -98,8 +98,11 @@ struct SettingsScreen: View {
 
     private func profileCard(_ summary: AccountSummary) -> some View {
         let name = summary.displayName.isEmpty ? "Account" : summary.displayName
-        return NavigationLink(destination: AccountScreen(posesModel: posesModel, onTryPose: onTryPose)) {
-            SettingsCard {
+        // An email-provider account can carry its address as the display name (the server falls back
+        // to it), so the line is not repeated under itself.
+        let email = account.identity.email.flatMap { $0 == name ? nil : $0 }
+        return SettingsCard {
+            NavigationLink(destination: AccountScreen(posesModel: posesModel, onTryPose: onTryPose)) {
                 HStack(spacing: AP.Space.space12) {
                     avatar(initials: AccountAvatar.initials(for: summary.displayName), diameter: 56)
                     VStack(alignment: .leading, spacing: AP.Space.space4) {
@@ -107,7 +110,7 @@ struct SettingsScreen: View {
                             .font(AP.Font.heading)
                             .foregroundStyle(AP.Color.primaryText)
                             .fixedSize(horizontal: false, vertical: true)
-                        if let email = account.identity.email {
+                        if let email {
                             Text(email)
                                 .font(AP.Font.supporting)
                                 .foregroundStyle(AP.Color.secondaryText)
@@ -120,21 +123,23 @@ struct SettingsScreen: View {
                 .padding(AP.Space.space16)
                 .frame(maxWidth: .infinity, minHeight: AP.HitTarget.minimum, alignment: .leading)
                 .contentShape(Rectangle())
-                .accessibilityElement(children: .contain)
-                .accessibilityIdentifier("settings.accountCard")
             }
+            .buttonStyle(.plain)
+            .accessibilityLabel(
+                "Account, \(name)\(email.map { ", \($0)" } ?? ""). Opens account details"
+            )
+            .accessibilityIdentifier("settings.account.row")
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel(
-            "Account, \(name)\(account.identity.email.map { ", \($0)" } ?? ""). Opens account details"
-        )
-        .accessibilityIdentifier("settings.account.row")
+        // The card itself carries the element QA reads; the link inside it keeps the long-standing
+        // tap target (`settings.account.row`), so both names are addressable on one control tree.
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("settings.accountCard")
     }
 
     /// The card's F4 degradation: no stale identity, still one tap from Account.
     private var neutralAccountRow: some View {
-        NavigationLink(destination: AccountScreen(posesModel: posesModel, onTryPose: onTryPose)) {
-            SettingsCard {
+        SettingsCard {
+            NavigationLink(destination: AccountScreen(posesModel: posesModel, onTryPose: onTryPose)) {
                 HStack(spacing: AP.Space.space12) {
                     Image(systemName: "person.crop.circle")
                         .font(.system(size: 28, weight: .semibold))
@@ -157,13 +162,13 @@ struct SettingsScreen: View {
                 .padding(AP.Space.space16)
                 .frame(maxWidth: .infinity, minHeight: AP.HitTarget.minimum, alignment: .leading)
                 .contentShape(Rectangle())
-                .accessibilityElement(children: .contain)
-                .accessibilityIdentifier("settings.accountCard")
             }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Account. Details unavailable right now. Opens account details")
+            .accessibilityIdentifier("settings.account.row")
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Account. Details unavailable right now. Opens account details")
-        .accessibilityIdentifier("settings.account.row")
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("settings.accountCard")
     }
 
     /// Signed out: one card that says what signing in is for, and the way in.
@@ -439,26 +444,24 @@ private struct SettingsRow: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
-        Group {
-            if dynamicTypeSize.isAccessibilitySize {
-                // At the Accessibility sizes the trailing reading drops to its own line rather than
-                // squeezing the title into a truncated column (board 10-04).
-                VStack(alignment: .leading, spacing: AP.Space.space8) {
-                    HStack(spacing: AP.Space.space12) {
-                        icon
-                        titleText
-                        Spacer(minLength: 0)
-                    }
-                    trailing.padding(.leading, 40 + AP.Space.space12)
-                }
-            } else {
-                HStack(spacing: AP.Space.space12) {
-                    icon
-                    titleText
-                    Spacer(minLength: AP.Space.space8)
-                    trailing
+        HStack(spacing: AP.Space.space12) {
+            icon
+            VStack(alignment: .leading, spacing: AP.Space.space4) {
+                titleText
+                // At the Accessibility sizes the reading (value or badge) drops under the title instead
+                // of squeezing it into a truncated column; the chevron always stays on the trailing
+                // edge, which is how board 10-04 draws the rows.
+                if dynamicTypeSize.isAccessibilitySize, hasReading {
+                    reading
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.top, AP.Space.space4)
                 }
             }
+            Spacer(minLength: AP.Space.space8)
+            if !dynamicTypeSize.isAccessibilitySize, hasReading {
+                reading
+            }
+            SettingsChevron()
         }
         .padding(.horizontal, AP.Space.space16)
         .padding(.vertical, AP.Space.space16)
@@ -485,7 +488,10 @@ private struct SettingsRow: View {
             .fixedSize(horizontal: false, vertical: true)
     }
 
-    @ViewBuilder private var trailing: some View {
+    private var hasReading: Bool { badge != nil || value != nil }
+
+    /// The one reading a row may carry: the `Active` badge, or a supporting value ("Sign in to view").
+    @ViewBuilder private var reading: some View {
         if let badge {
             HStack(spacing: AP.Space.space4) {
                 Image(systemName: "checkmark")
@@ -499,18 +505,21 @@ private struct SettingsRow: View {
             .background(
                 Capsule().fill(AP.Color.successSurface)
             )
+            .fixedSize(horizontal: false, vertical: true)
             .accessibilityIdentifier("settings.premium.status")
         } else if let value {
-            HStack(spacing: AP.Space.space8) {
-                Text(value)
-                    .font(AP.Font.supporting)
-                    .foregroundStyle(AP.Color.secondaryText)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityIdentifier(title == "Premium" ? "settings.premium.status" : "")
-                SettingsChevron()
-            }
-        } else {
-            SettingsChevron()
+            Text(value)
+                .font(AP.Font.supporting)
+                .foregroundStyle(AP.Color.secondaryText)
+                // Inline it reads on the trailing edge; under the title (AX sizes) it reads from the
+                // leading edge like the title above it.
+                .multilineTextAlignment(dynamicTypeSize.isAccessibilitySize ? .leading : .trailing)
+                .frame(
+                    maxWidth: dynamicTypeSize.isAccessibilitySize ? .infinity : nil,
+                    alignment: dynamicTypeSize.isAccessibilitySize ? .leading : .trailing
+                )
+                .fixedSize(horizontal: false, vertical: true)
+                .apIdentifier(title == "Premium" ? "settings.premium.status" : nil)
         }
     }
 }
@@ -589,31 +598,39 @@ struct AboutSheet: View {
     @State private var showsLicences = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: AP.Space.space24) {
+        VStack(alignment: .leading, spacing: 0) {
+            // The header stays put; the body scrolls, because at the Accessibility sizes the rows are
+            // taller than a medium-detent sheet and used to overlap each other.
             header
-            appSummary
-            SettingsCard {
-                externalRow("Terms of Use", systemImage: "doc.text", identifier: "about.terms",
-                            url: SupportDestinations.termsOfServiceURL)
-                SettingsCardSeparator()
-                externalRow("Privacy Policy", systemImage: "shield", identifier: "about.privacy",
-                            url: SupportDestinations.privacyPolicyURL)
-                SettingsCardSeparator()
-                Button { showsLicences = true } label: {
-                    SettingsRow(systemImage: "doc.on.doc", title: "Open-source licences")
+                .padding(.horizontal, AP.Space.space16)
+                .padding(.top, AP.Space.space24)
+                .padding(.bottom, AP.Space.space16)
+            ScrollView {
+                VStack(alignment: .leading, spacing: AP.Space.space24) {
+                    appSummary
+                    SettingsCard {
+                        externalRow("Terms of Use", systemImage: "doc.text", identifier: "about.terms",
+                                    url: SupportDestinations.termsOfServiceURL)
+                        SettingsCardSeparator()
+                        externalRow("Privacy Policy", systemImage: "shield", identifier: "about.privacy",
+                                    url: SupportDestinations.privacyPolicyURL)
+                        SettingsCardSeparator()
+                        Button { showsLicences = true } label: {
+                            SettingsRow(systemImage: "doc.on.doc", title: "Open-source licences")
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Open-source licences")
+                        .accessibilityIdentifier("about.licences")
+                    }
+                    Text("© 2026 \(appName)")
+                        .font(AP.Font.caption)
+                        .foregroundStyle(AP.Color.secondaryText)
+                        .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Open-source licences")
-                .accessibilityIdentifier("about.licences")
+                .padding(.horizontal, AP.Space.space16)
+                .padding(.bottom, AP.Space.space24)
             }
-            Text("© 2026 \(appName)")
-                .font(AP.Font.caption)
-                .foregroundStyle(AP.Color.secondaryText)
-                .frame(maxWidth: .infinity)
-            Spacer(minLength: 0)
         }
-        .padding(.horizontal, AP.Space.space16)
-        .padding(.top, AP.Space.space24)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(AP.Color.background)
         .sheet(isPresented: $showsLicences) {
