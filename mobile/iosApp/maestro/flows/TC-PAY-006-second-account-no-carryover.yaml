@@ -4,17 +4,25 @@ tags: [TC-PAY-006, p1]
 ---
 - runFlow: ../subflows/pay-launch.yaml
 - runFlow: ../subflows/pay-sign-in.yaml
-# Account A buys, and the gate opens for it.
+# Account A must hold the entitlement before B arrives. It already does after TC-PAY-004/005 (the
+# Test Store subscription persists on A's RevenueCat customer), so the buy only happens on a first
+# run; a shutter that gates nothing IS the entitled state this case needs.
 - runFlow: ../subflows/open-camera.yaml
 - tapOn:
     id: "camera.shutter"
-- extendedWaitUntil:
-    visible:
-      id: "paywall.cta"
-    timeout: 20000
-- runFlow: ../subflows/pay-buy-monthly.yaml
-- tapOn:
-    id: "camera.close"
+- runFlow:
+    when:
+      visible:
+        id: "paywall.cta"
+    commands:
+      - runFlow: ../subflows/pay-buy-monthly.yaml
+- runFlow:
+    when:
+      visible:
+        id: "camera.shutter"
+    commands:
+      - tapOn:
+          id: "camera.close"
 # Hand the device to account B.
 - runFlow: ../subflows/open-settings.yaml
 - tapOn:

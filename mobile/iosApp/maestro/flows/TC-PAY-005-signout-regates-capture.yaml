@@ -4,17 +4,25 @@ tags: [TC-PAY-005, p1]
 ---
 - runFlow: ../subflows/pay-launch.yaml
 - runFlow: ../subflows/pay-sign-in.yaml
-# Buy first, so the sign-out below starts from a real entitlement.
+# Start from a real entitlement. Account A holds it after TC-PAY-004 (a Test Store subscription
+# persists on the RevenueCat customer), so the buy is only needed on a first run: the shutter gating
+# nothing IS the entitled state this case needs.
 - runFlow: ../subflows/open-camera.yaml
 - tapOn:
     id: "camera.shutter"
-- extendedWaitUntil:
-    visible:
-      id: "paywall.cta"
-    timeout: 20000
-- runFlow: ../subflows/pay-buy-monthly.yaml
-- tapOn:
-    id: "camera.close"
+- runFlow:
+    when:
+      visible:
+        id: "paywall.cta"
+    commands:
+      - runFlow: ../subflows/pay-buy-monthly.yaml
+- runFlow:
+    when:
+      visible:
+        id: "camera.shutter"
+    commands:
+      - tapOn:
+          id: "camera.close"
 - runFlow: ../subflows/open-settings.yaml
 - tapOn:
     id: "settings.account.row"

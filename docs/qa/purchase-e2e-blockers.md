@@ -13,8 +13,8 @@ RevenueCat key is reported by prefix/status only.
 | 3 | No Debug override for `paywall_enabled` | **RESOLVED**: `-AIPosePaywallEnabled YES\|NO` (plus `-AIPoseAccountsEnabled`, `-AIPosePurchasesConfigured`), Debug-only | `AppConfig.swift:55-60,85-99,187-192`; `DebugLaunchArgumentOverride` `AppConfig.swift:185-215`; QA override seam `PremiumGateModel.swift:37-49` | — |
 | 4 | No capture gating (nothing presented `PaywallScreen`) | **RESOLVED**: the shutter consults `PremiumGate` before camera readiness and the app root presents the paywall sheet | `PremiumGate.swift:68-84` (G1–G8); `CameraFeature.swift:53-59,333-339`; `AppFeatureRoot.swift:125-134`; `PaywallScreen` `SupportScreens.swift:545` | — |
 | 5 | Dashboard: entitlement + products | **RESOLVED** (user): entitlement `posing_pro`, Test Store yearly + monthly in the `default` offering. Parity check by worker `6551b726` pending | `Config/*.xcconfig` ship `posing_pro` (`Dev-Debug.xcconfig:8`); expected offering shape `REVENUECAT_SETUP.md:78-84` | — (verify once on the sim) |
-| 6 | **No test accounts** — the only hard blocker left for TC-PAY-004/005/006 | **OPEN**: email sign-in is automated (`signin.email`/`signin.password`/`signin.submit`) but needs real credentials at run time; nothing credential-shaped is in the repo and the Dev build signs in against the default server | `SignIn.swift:467,480,489,562`; default base URL `AppConfig.swift:8`; `docs/qa/test-cases/account.md:6` (TC-ACC-002 "pending (needs test credentials)") | user: two accounts (A and B) able to sign in via email on that server, handed over out of band as `E2E_EMAIL`/`E2E_PASSWORD` and `E2E_EMAIL_B`/`E2E_PASSWORD_B` |
-| 7 | One purchase confirmed on a simulator | **OPEN** until worker `6551b726` reports the entitlement flip | — | that worker |
+| 6 | Test accounts | **RESOLVED**: two throwaway accounts exist on production; values live only in the gitignored `mobile/iosApp/maestro/e2e.local.env` (chmod 600) and reach Maestro through `E2E_*` | `SignIn.swift:467,480,489,562`; `docs/qa/purchase-e2e/README.md` (run recipe) | — |
+| 7 | One purchase confirmed on a simulator | **RESOLVED**: TC-PAY-004 buys the Monthly plan through the Test Store dialog, reads `paywall.status` = "Premium access confirmed." on a reopened paywall and proves the shutter stops gating | `mobile/iosApp/maestro/flows/TC-PAY-004-purchase-annual-entitles.yaml` | — |
 
 ## What a simulator can and cannot do here
 
@@ -28,16 +28,15 @@ RevenueCat key is reported by prefix/status only.
 - **Not usable:** the Apple sandbox flow needs a sandbox tester signed in on the device plus a
   SpringBoard password sheet — first-run interactive, so it stays manual.
 
-## What is still missing, exactly
+## Result (2026-10-31, Debug-Dev 1.2 build 16 on CF871F97, iOS 26.1)
 
-1. Two sign-in-capable accounts (A and B) on the server the Dev build talks to, supplied as env vars —
-   without them TC-PAY-004/005/006 cannot run, and TC-ACC-002/004 stay pending too.
-2. A Debug-Dev build that contains the Test Store key (`Info.plist → RevenueCatPublicSDKKey` starting
-   `test_`), installed by the Feature lane on the lane-2 simulator.
-3. QA lead GO for the simulator, then the drafted flows in `docs/qa/purchase-e2e/` promoted to
-   `mobile/iosApp/maestro/flows` + `subflows` once they pass.
+TC-PAY-004, TC-PAY-005, TC-PAY-006 and TC-PAY-009 all pass and are promoted into
+`mobile/iosApp/maestro/flows` with their `pay-*` subflows. Nothing is blocked.
 
-## What can run today (no credentials)
+Repeatability caveat for TC-PAY-004: it proves a purchase *grants* access, so its negative control
+expects an account that holds nothing. A Test Store subscription persists on the account's RevenueCat
+customer, so reset it in the dashboard (or use a fresh account) before treating a later 004 red as a
+regression. TC-PAY-005/006 tolerate both the entitled and unentitled starting state.
 
-Unchanged and already automated: TC-PAY-001/002/003/008 (paywall gate surface via
+Also automated and unchanged: TC-PAY-001/002/003/008 (paywall gate surface via
 `subflows/launch-paywall.yaml` with `-AIPosePaywallEnabled` + `-AIPosePurchasesConfigured`).
