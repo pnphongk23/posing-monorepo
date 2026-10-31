@@ -38,15 +38,18 @@ or simulator yet — that is why no case row says `automated:` yet.
 
 ## Running (after GO + credentials)
 
-**Credentials live in a chmod 600 file outside the repo** — `/tmp/ai-pose-e2e.env`, keys `E2E_EMAIL`,
-`E2E_PASSWORD`, `E2E_EMAIL_B`, `E2E_PASSWORD_B` — passed to Maestro with `-e`. They never appear in a
-flow, a doc, a commit or a log line.
+**Credentials live in a chmod 600, gitignored file inside the repo tree but never in git** —
+`mobile/iosApp/maestro/e2e.local.env` (ignored by `.gitignore:76`, `mobile/iosApp/maestro/*.local.env`),
+keys `E2E_EMAIL`, `E2E_PASSWORD`, `E2E_EMAIL_B`, `E2E_PASSWORD_B` — and are passed to Maestro with `-e`.
+They never appear in a flow, a doc, a commit or a log line: no `cat`, no `echo`, no copy of a value.
 
 ```bash
 # lane-2 simulator only, one flow at a time
-set -a; . /tmp/ai-pose-e2e.env; set +a          # exports the four variables for this shell only
+set -a; . mobile/iosApp/maestro/e2e.local.env; set +a     # this shell only
+[ -n "$E2E_PASSWORD" ] && [ -n "$E2E_PASSWORD_B" ] || { echo "credential file not filled"; exit 1; }
 maestro --device CF871F97-... test -e APP_ID=posing.camera.app \
-  -e E2E_EMAIL -e E2E_PASSWORD -e E2E_EMAIL_B -e E2E_PASSWORD_B \
+  -e E2E_EMAIL="$E2E_EMAIL" -e E2E_PASSWORD="$E2E_PASSWORD" \
+  -e E2E_EMAIL_B="$E2E_EMAIL_B" -e E2E_PASSWORD_B="$E2E_PASSWORD_B" \
   docs/qa/purchase-e2e/flows/TC-PAY-004-purchase-annual-entitles.yaml
 ```
 
@@ -71,7 +74,8 @@ has no sign-up route.
 So `qa-e2e-a` / `qa-e2e-b` must be created **outside** the app — Supabase dashboard *Add user* (or the
 Admin API `POST /auth/v1/admin/users`) on the project behind the production server — with the email
 already confirmed (auto-confirm, or "email confirm" ticked), otherwise every sign-in returns the
-`EMAIL_NOT_CONFIRMED` copy above. Then hand the four values over via `/tmp/ai-pose-e2e.env`.
+`EMAIL_NOT_CONFIRMED` copy above. Then hand the four values over via
+`mobile/iosApp/maestro/e2e.local.env`.
 
 ## Promotion (only after a pass on the simulator)
 
