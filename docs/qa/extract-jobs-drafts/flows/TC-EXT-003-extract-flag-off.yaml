@@ -1,0 +1,43 @@
+# TC-EXT-003 extractPoseEnabled off hides Add pose everywhere and blocks submit
+appId: ${APP_ID}
+tags: [TC-EXT-003, p0]
+---
+# The kill switch is a Debug launch arg; the same argument is the only thing that turns these
+# controls on, so this flow fails if any Add pose / Jobs entry leaks through with the flag off.
+- launchApp:
+    clearState: true
+    clearKeychain: true
+    permissions:
+      camera: allow
+      photos: allow
+    arguments:
+      AIPoseExtractPoseEnabled: "false"
+      AIPoseAccountsEnabled: "YES"
+- extendedWaitUntil:
+    visible:
+      id: "poses.open-search"
+    timeout: 30000
+# 1. Poses header: Search and More stay, Add pose does not.
+- assertNotVisible:
+    id: "poses.add-pose"
+- assertVisible:
+    id: "poses.more"
+# 2. More menu: the Jobs row exists but is disabled, so the tap cannot leave the home screen.
+- tapOn:
+    id: "poses.more"
+- assertVisible:
+    id: "poses.jobs"
+- tapOn:
+    id: "poses.jobs"
+- assertVisible:
+    id: "poses.open-search"
+- assertNotVisible:
+    id: "jobs.tab.processing"
+# 3. Gallery header: Add pose is flag-gated there too.
+- tapOn: "Gallery"  # TODO(QA-261029-ID) dock.gallery
+- extendedWaitUntil:
+    visible:
+      id: "gallery.title"
+    timeout: 20000
+- assertNotVisible:
+    id: "gallery.add-pose"

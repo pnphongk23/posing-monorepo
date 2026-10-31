@@ -1,0 +1,35 @@
+# TC-EXT-002 consent Allow uploads once and the job appears in Jobs
+appId: ${APP_ID}
+tags: [TC-EXT-002, p0]
+---
+# Fail fast instead of typing an unresolved placeholder into the sign-in form.
+- assertTrue:
+    condition: ${E2E_EMAIL != null && E2E_EMAIL.length > 0 && E2E_PASSWORD != null && E2E_PASSWORD.length > 0}
+    label: "E2E_EMAIL / E2E_PASSWORD missing - run with -e E2E_EMAIL=... -e E2E_PASSWORD=..."
+- runFlow: ../subflows/ext-launch.yaml
+- runFlow: ../subflows/ext-sign-in.yaml
+- runFlow:
+    file: ../subflows/ext-add-pose-form.yaml
+    env:
+      POSE_NAME: "QA consent allow"
+- tapOn:
+    id: "addPose.submitButton"
+# Consent comes before the upload; Allow is what sends it.
+- runFlow: ../subflows/ext-consent-allow.yaml
+# Allow submits: the form becomes the processing surface, with no second tap needed.
+- extendedWaitUntil:
+    visible:
+      id: "addPose.viewJobsButton"
+    timeout: 30000
+- assertNotVisible:
+    id: "addPose.consent.message"
+- tapOn:
+    id: "addPose.viewJobsButton"
+- extendedWaitUntil:
+    visible:
+      id: "jobs.tab.processing"
+    timeout: 20000
+# One upload, one row: the job created by this submit is listed with the draft name.
+- extendedWaitUntil:
+    visible: "QA consent allow.*"
+    timeout: 20000
