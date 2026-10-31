@@ -22,7 +22,7 @@ when `extractPoseEnabled` is off, F8 More menu).
 | TC-EXT-007 | `flows/TC-EXT-007-pose-preview-publish.yaml` | **out of scope 1.1 (17)** (publish flow has no API); draft kept for later |
 | TC-EXT-008 | `flows/TC-EXT-008-incomplete-submit.yaml` | ids landed (`addPose.submitHint`); needs the 1.1 (17) Add pose UI |
 | TC-EXT-009 | `flows/TC-EXT-009-processing-status.yaml` | ids landed (`addPose.stageStatus`, `viewJobsButton`, `doneButton`); needs the 1.1 (17) UI + one real job |
-| TC-JOB-001 | `flows/TC-JOB-001-finished-view-pose.yaml` | build-17 copy of the committed flow (`Done · added to Poses`); replaces it when that build lands |
+| TC-JOB-001 | `flows/TC-JOB-001-finished-view-pose.yaml` | 1.1 (18) copy: `Done · added to Poses` label **and** the `viewJobsButton` path (fix ee2a4c4). The 17 app needs Done + More, as in the committed flow |
 | TC-JOB-007 | `flows/TC-JOB-007-processing-filters.yaml` | `jobs.tab.processing.count`, `jobs.filter.queued`, `jobs.filter.processing` |
 | TC-JOB-008 | `flows/TC-JOB-008-finished-filters-retry.yaml` | `jobs.filter.done`, `jobs.filter.failed` |
 | TC-JOB-009 | `flows/TC-JOB-009-hide-job.yaml` | `jobs.row.remove.<jobId>` (landed, now the Hide swipe) + `jobs.footer.hint`, `jobs.snackbar` |

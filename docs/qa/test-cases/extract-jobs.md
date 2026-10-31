@@ -104,6 +104,11 @@ before this release). Landed in `791e819` + `e18de09`:
   ("Choose a photo to continue.") instead of doing nothing — see TC-EXT-008.
 - Processing shows no percentages, says "You can leave this screen. Status continues in Jobs.", and the
   footer carries View jobs + Done — see TC-EXT-009.
+- **View jobs** was broken in 1.2 (16)/1.1 (17): it dismissed Add pose and landed on the Poses home (reproduced
+  twice, see the run log). Fixed in `ee2a4c4` — the button now pushes Jobs itself, on Processing while the job is
+  queued/processing and on Finished once it is done/failed. The fix is **not** in the 17 app, so the 17 runs keep the
+  Done + More-menu workaround and the `viewJobsButton` path is re-tested on the 1.1 (18) app
+  (`redesign-drafts/jobs-add-pose/flows/TC-EXT-002-*` and `TC-JOB-001-*` carry the 18 variant).
 
 - Add pose is a **three-step** flow: empty state ("Turn a photo into a pose" → Choose a photo) → form
   (Name, **tag chips + Add tag**, Description with a **200** counter, pinned **Add pose** CTA + Done) →

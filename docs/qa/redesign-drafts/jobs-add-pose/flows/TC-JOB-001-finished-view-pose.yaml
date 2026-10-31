@@ -1,4 +1,5 @@
 # TC-JOB-001 (build 17 copy) finished job -> View pose opens the private pose detail
+# 1.1 (18) variant: uses the View jobs fix ee2a4c4; the 1.2 (16)/1.1 (17) runs keep Done + More.
 # Differs from the committed flow (verified on Dev 1.2 (16)) only in the status line: the 1.1 (17) build reads 'Done · added to Poses'.
 appId: ${APP_ID}
 tags: [TC-JOB-001, p0, e2e]
@@ -26,19 +27,13 @@ tags: [TC-JOB-001, p0, e2e]
     visible:
       id: "addPose.viewPoseButton"
     timeout: 300000
-# Done, then Jobs from the Poses home: the row has to be Ready in the Finish tab.
+# ee2a4c4 (1.1 (18)): View jobs pushes Jobs itself, on the Finished segment for a succeeded job.
 - tapOn:
-    id: "addPose.doneButton"
-- tapOn:
-    id: "poses.more"
-- tapOn:
-    id: "poses.jobs"
+    id: "addPose.viewJobsButton"
 - extendedWaitUntil:
     visible:
       id: "jobs.tab.finish"
     timeout: 20000
-- tapOn:
-    id: "jobs.tab.finish"
 - extendedWaitUntil:
     visible: '.*Done . added to Poses, View pose.*'
     timeout: 30000

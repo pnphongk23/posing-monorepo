@@ -1,4 +1,5 @@
 # TC-EXT-002 consent Allow uploads once and the job appears in Jobs
+# 1.1 (18) variant: uses the View jobs fix ee2a4c4; the 1.2 (16)/1.1 (17) runs keep Done + More.
 # 1.1 (17) copy variant: needs one approved real job before it can replace the committed flow.
 appId: ${APP_ID}
 tags: [TC-EXT-002, p0, e2e]
@@ -29,19 +30,13 @@ tags: [TC-EXT-002, p0, e2e]
     timeout: 30000
 - assertNotVisible:
     id: "addPose.consent.message"
-# Done, then the Jobs entry from the Poses home: the row has to exist for this submit.
+# ee2a4c4 (1.1 (18)): View jobs opens Jobs directly instead of returning to the Poses home.
 - tapOn:
-    id: "addPose.doneButton"
-- tapOn:
-    id: "poses.more"
-- tapOn:
-    id: "poses.jobs"
+    id: "addPose.viewJobsButton"
 - extendedWaitUntil:
     visible:
       id: "jobs.tab.finish"
     timeout: 20000
-- tapOn:
-    id: "jobs.tab.finish"
 # A fast extraction lands the new row straight in Finish; either tab proves it was created once.
 - extendedWaitUntil:
     visible: '.*QA consent allow.*'
