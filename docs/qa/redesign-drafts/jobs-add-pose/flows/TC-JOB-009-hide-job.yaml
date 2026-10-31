@@ -1,4 +1,4 @@
-# TC-JOB-009 Hide drops the row and keeps the pose
+# TC-JOB-009 Hide drops the row without a dialog and keeps the pose
 appId: ${APP_ID}
 tags: [TC-JOB-009, p1, e2e]
 ---
@@ -15,19 +15,13 @@ tags: [TC-JOB-009, p1, e2e]
 - tapOn:
     id: "jobs.tab.finish"
 - assertVisible: '.*Done . added to Poses.*'
-# Hide, not Remove: the pose survives, only the row goes.
+# The gesture explains itself once.
+- assertVisible: ".*Swipe a finished job left to hide it.*"
+# Hide, not Remove: no confirmation dialog appears, the row just goes.
 - swipe:
     start: "90%,30%"
     end: "10%,30%"
 - tapOn:
-    id: "jobs.row.hide..*"
-- runFlow:
-    when:
-      visible:
-        id: "jobs.hide.confirm"
-    commands:
-      - tapOn:
-          id: "jobs.hide.confirm"
+    id: "jobs.row.remove..*"
+- assertNotVisible: "Remove job?"
 - assertNotVisible: '.*Done . added to Poses.*'
-- assertVisible:
-    id: "jobs.footer.hint"

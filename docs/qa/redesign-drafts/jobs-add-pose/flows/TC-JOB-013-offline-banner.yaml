@@ -1,8 +1,7 @@
-# TC-JOB-011 TC JOB 011 offline banner
+# TC-JOB-013 offline keeps the cached rows and explains itself
 appId: ${APP_ID}
-tags: [TC-JOB-011, p1, e2e]
+tags: [TC-JOB-013, p1, e2e]
 ---
-# Offline keeps the cached rows and shows the banner.
 - runFlow: ../../../../mobile/iosApp/maestro/subflows/ext-launch.yaml
 - runFlow: ../../../../mobile/iosApp/maestro/subflows/ext-sign-in.yaml
 - tapOn:
@@ -13,13 +12,14 @@ tags: [TC-JOB-011, p1, e2e]
     visible:
       id: "jobs.tab.finish"
     timeout: 20000
-# The app cannot be put offline per-app on the simulator; this draft waits for the banner after the
-# launch arg `-AIPoseAPIBaseURL http://127.0.0.1:9` is confirmed for a second launch with the stored session.
+# The simulator cannot drop the network per app: this draft asserts the banner and the per-row waiting
+# copy once the API is made unreachable (relaunch with a dead base URL, or stop the stub).
 - runFlow:
     when:
       visible:
         id: "jobs.offline.banner"
     commands:
-      - assertVisible: "You're offline"
+      - assertVisible: "You're offline. Progress resumes when you reconnect."
       - assertVisible:
           id: "jobs.tab.finish"
+      - assertVisible: '.*Queued . waiting for connection.*'
