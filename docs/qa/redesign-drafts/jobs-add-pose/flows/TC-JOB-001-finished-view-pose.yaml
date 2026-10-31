@@ -1,5 +1,5 @@
 # TC-JOB-001 (build 17 copy) finished job -> View pose opens the private pose detail
-# Differs from the committed 1.2 flow only in the status line: build 17 reads 'Done · added to Poses'.
+# Differs from the committed flow (verified on Dev 1.2 (16)) only in the status line: the 1.1 (17) build reads 'Done · added to Poses'.
 appId: ${APP_ID}
 tags: [TC-JOB-001, p0, e2e]
 ---
