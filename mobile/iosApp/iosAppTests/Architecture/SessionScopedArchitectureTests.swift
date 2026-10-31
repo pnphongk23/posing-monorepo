@@ -22,6 +22,8 @@ final class SessionScopedArchitectureTests: XCTestCase {
         "PremiumGateModel":
             "the capture gate's provider snapshot and signed-in state, mirrored per Account",
         "AccountSessionModel": "the Account projection itself",
+        "APSavedUndo":
+            "the Saved Undo offer names a pose that left this Account's collection and the row to restore",
     ]
 
     /// Types that mention an account token but hold nothing the scope owns. Every entry needs a

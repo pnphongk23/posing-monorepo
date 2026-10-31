@@ -124,10 +124,14 @@ enum APSavedUndoRule {
 
 /// Holds the one removal that can still be undone and performs it against the server.
 ///
-/// The offer is only ever made for a **server-confirmed** unsave: a failed attempt never left the
+/// The offer is **Account state**: it names a pose that left this Account's saved collection, so the
+/// controller adopts the session scope and drops the offer on a sign-out or an account switch — the
+/// next Account's screen must never offer to re-save the previous Account's row.
+///
+/// An offer is only ever made for a server-confirmed unsave: a failed attempt never left the
 /// collection, so offering to put the row back would describe something that did not happen.
 @MainActor
-final class APSavedUndo: ObservableObject {
+final class APSavedUndo: ObservableObject, SessionScoped {
     struct Removal: Equatable {
         let pose: NativePose
         /// The position the row had, so Undo restores the list instead of appending a duplicate.
@@ -137,6 +141,23 @@ final class APSavedUndo: ObservableObject {
     @Published private(set) var removal: Removal?
     /// One restore at a time: a second tap on Undo while the first request is out is ignored.
     @Published private(set) var isRestoring = false
+
+    private let scope: SessionScope?
+
+    /// - Parameter boundary: the session boundary to follow. `nil` keeps a directly constructed
+    ///   controller session-agnostic (the surfaces and tests that do not own a boundary).
+    init(boundary: SessionBoundary? = ServiceLocator.sessionBoundary) {
+        let scope = boundary.map { SessionScope.of($0) }
+        self.scope = scope
+        // Held weakly by the scope, so a surface that is rebuilt does not leak its controller.
+        scope?.adopt(self)
+    }
+
+    /// A session change ends the offer: nothing of the previous Account may be re-saved for the next.
+    func resetForSessionChange(_ event: SessionEvent) {
+        removal = nil
+        isRestoring = false
+    }
 
     func offer(_ pose: NativePose, at index: Int) {
         removal = Removal(pose: pose, index: index)
