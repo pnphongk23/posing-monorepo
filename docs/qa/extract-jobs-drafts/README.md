@@ -22,15 +22,16 @@ Subflows: `ext-launch.yaml` (extraction + accounts on, clean container), `ext-si
 (`${E2E_EMAIL}`/`${E2E_PASSWORD}`), `ext-add-pose-form.yaml` (photo from the simulator library,
 name/tags), `ext-consent-allow.yaml`.
 
-Credentials are never in this repo. The QA lead supplies a `chmod 600` env file outside the tree
-(`/tmp/ai-pose-e2e.env`, `KEY=VALUE` lines: `E2E_EMAIL`, `E2E_PASSWORD`, `E2E_EMAIL_B`,
+Credentials are never in this repo. The QA lead supplies `mobile/iosApp/maestro/e2e.local.env`
+(gitignored, `chmod 600`, `KEY=VALUE` lines: `E2E_EMAIL`, `E2E_PASSWORD`, `E2E_EMAIL_B`,
 `E2E_PASSWORD_B`); source it in the shell and pass the values with `-e`, so they never land in a
-command line you print or in a commit. Only accounts A (`E2E_EMAIL`) and B (`E2E_EMAIL_B`) are used —
+command line you print or in a commit. Readiness check without printing anything:
+`[ -n "$E2E_PASSWORD" ]`. Only accounts A (`E2E_EMAIL`) and B (`E2E_EMAIL_B`) are used —
 the third production account (`tester003`) is reserved for the Apple review demo and must stay clean
 (no jobs, no purchases), so no flow, doc example or env file may point at it:
 
 ```
-set -a; . /tmp/ai-pose-e2e.env; set +a
+set -a; . mobile/iosApp/maestro/e2e.local.env; set +a
 maestro --device <UDID> test -e APP_ID=posing.camera.app \
   -e E2E_EMAIL="$E2E_EMAIL" -e E2E_PASSWORD="$E2E_PASSWORD" \
   docs/qa/extract-jobs-drafts/flows/TC-JOB-001-finished-view-pose.yaml
