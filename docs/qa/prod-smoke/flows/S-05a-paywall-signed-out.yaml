@@ -1,0 +1,51 @@
+# S-05a gated capture, signed out: the shutter opens the paywall with its sign-in options
+#
+# Gate rules G1..G4 (`PremiumGate.captureOutcome`): with `paywall_enabled` on, purchases configured and
+# accounts available, a signed-out press is a paywall — and that paywall must offer a way in, in App
+# Review 4.8 order: Apple first, then Google, then email (`PaywallSignInOption.allCases`).
+#
+# The Settings Premium row is asserted first because it is rendered from the *same* value gate rule G1
+# reads: with the row absent the press would legitimately capture and the case would be untestable
+# (BLOCKED-BY-FLAG), not failed. It also proves the Firestore fetch landed before the press.
+#
+# Nothing is purchased here: the flow only closes the sheet.
+appId: ${APP_ID}
+tags: [S-05, p0]
+---
+- runFlow: ../subflows/prod-launch.yaml
+- tapOn:
+    id: "poses.more"
+- tapOn:
+    id: "poses.menu.settings"
+- assertVisible:
+    id: "settings.premium.row"
+    label: "paywall_enabled is OFF in Firestore config/app - a gated press would capture (BLOCKED-BY-FLAG)"
+- tapOn: "Back"
+- extendedWaitUntil:
+    visible:
+      id: "poses.open-search"
+    timeout: 15000
+- runFlow: ../subflows/prod-open-camera.yaml
+- tapOn:
+    id: "camera.shutter"
+- extendedWaitUntil:
+    visible:
+      id: "paywall.close"
+    timeout: 25000
+# All three ways in are offered, and Apple is above Google (guideline 4.8, the reason the order lives in
+# `PaywallSignInOption.allCases`).
+- assertVisible:
+    id: "paywall.signin.apple"
+- assertVisible:
+    id: "paywall.signin"
+    below:
+      id: "paywall.signin.apple"
+- assertVisible:
+    id: "signin.emailEntry"
+- takeScreenshot: docs/qa/prod-smoke/screens/S-05a-paywall-signed-out
+- tapOn:
+    id: "paywall.close"
+- assertNotVisible:
+    id: "paywall.close"
+- assertVisible:
+    id: "camera.shutter"

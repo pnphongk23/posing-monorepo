@@ -1,0 +1,58 @@
+# S-05b gated capture, signed in: the paywall sells the production offering, with no error banner
+#
+# Gate rules G5..G8: a signed-in, linked, confirmed-not-entitled account gets the paywall, which must show
+# the plans the production offering actually carries (annual first, then the monthly anchor) with the
+# store's own prices — not placeholder copy. `paywall.status` is the banner the model renders for a
+# failure/cancel/entitled state, so "no error" is asserted as its absence in the ready phase.
+#
+# Nothing is purchased: `paywall.cta` is never tapped.
+appId: ${APP_ID}
+tags: [S-05, p0]
+---
+- assertTrue:
+    condition: ${E2E_EMAIL != null && E2E_EMAIL.length > 0 && E2E_PASSWORD != null && E2E_PASSWORD.length > 0}
+    label: "E2E_EMAIL / E2E_PASSWORD missing - run with -e E2E_EMAIL=... -e E2E_PASSWORD=..."
+- runFlow: ../subflows/prod-launch.yaml
+- runFlow: ../subflows/prod-sign-in.yaml
+- tapOn:
+    id: "poses.more"
+- tapOn:
+    id: "poses.menu.settings"
+- assertVisible:
+    id: "settings.premium.row"
+    label: "paywall_enabled is OFF in Firestore config/app - a gated press would capture (BLOCKED-BY-FLAG)"
+- tapOn: "Back"
+- extendedWaitUntil:
+    visible:
+      id: "poses.open-search"
+    timeout: 15000
+- runFlow: ../subflows/prod-open-camera.yaml
+- tapOn:
+    id: "camera.shutter"
+- extendedWaitUntil:
+    visible:
+      id: "paywall.close"
+    timeout: 25000
+# Both plans of the production offering, each carrying a real price from the store (a currency amount in
+# the card's label), annual first because it is the highlighted package.
+- extendedWaitUntil:
+    visible:
+      id: "paywall.plan.annual"
+    timeout: 30000
+- assertVisible:
+    id: "paywall.plan.annual"
+    text: '.*[$€£₫¥].*[0-9].*'
+- assertVisible:
+    id: "paywall.plan.monthly"
+    text: '.*[$€£₫¥].*[0-9].*'
+# Ready phase: the plan cards are the whole offer, so no failure/cancel/entitled banner is on screen.
+- assertNotVisible:
+    id: "paywall.status"
+- takeScreenshot: docs/qa/prod-smoke/screens/S-05b-paywall-signed-in-plans
+# Read the prices out of the hierarchy for the report, then leave without buying.
+- tapOn:
+    id: "paywall.close"
+- assertNotVisible:
+    id: "paywall.close"
+- assertVisible:
+    id: "camera.shutter"

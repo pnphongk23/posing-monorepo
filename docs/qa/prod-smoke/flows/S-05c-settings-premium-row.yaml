@@ -1,0 +1,32 @@
+# S-05c the paywall's entry point exists on the shipping build: Settings > Premium
+#
+# `settings.premium.row` is hidden while the kill switch is off (`SupportScreens.swift:356`), so this is
+# the in-app proof that `paywall_enabled` reached the device — and that the user-initiated upgrade path
+# opens the paywall. No purchase is started.
+appId: ${APP_ID}
+tags: [S-05, p1]
+---
+- runFlow: ../subflows/prod-launch.yaml
+- tapOn:
+    id: "poses.more"
+- tapOn:
+    id: "poses.menu.settings"
+- assertVisible:
+    id: "settings.premium.row"
+    label: "paywall_enabled is OFF in Firestore config/app - the Premium row is hidden by design (BLOCKED-BY-FLAG)"
+- takeScreenshot: docs/qa/prod-smoke/screens/S-05c-settings-premium-row
+- tapOn:
+    id: "settings.premium.row"
+- extendedWaitUntil:
+    visible:
+      id: "paywall.close"
+    timeout: 25000
+- assertVisible: "posing Premium"
+- takeScreenshot: docs/qa/prod-smoke/screens/S-05c-premium-row-opens-paywall
+- tapOn:
+    id: "paywall.close"
+- assertNotVisible:
+    id: "paywall.close"
+# Back on Settings, where the row lives (About is below the fold from here).
+- assertVisible:
+    id: "settings.premium.row"

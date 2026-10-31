@@ -1,0 +1,43 @@
+# S-05d the legal destinations open from Settings: Terms of Service and Privacy Policy
+#
+# Both rows hand their URL to the system opener (`openURL`, `SupportScreens.swift:384,395`) to the Google
+# Sites pages in `SupportDestinations` — the ones `SupportDestinationsTests` keeps off the dead
+# `aipose.app` host. The case is "the user reaches the real document", so the assertion is the document's
+# own text, which also proves the right page (not just "some URL opened") and that the app is out of the
+# way. Nothing else is done on the pages.
+appId: ${APP_ID}
+tags: [S-05, p1]
+---
+- runFlow: ../subflows/prod-launch.yaml
+- tapOn:
+    id: "poses.more"
+- tapOn:
+    id: "poses.menu.settings"
+- scrollUntilVisible:
+    element:
+      text: "Terms of Service.*"
+    direction: DOWN
+- tapOn: "Terms of Service.*"
+- extendedWaitUntil:
+    visible: "posing.*Terms of Service"
+    timeout: 40000
+- takeScreenshot: docs/qa/prod-smoke/screens/S-05d-terms-of-service
+# Back to the app for the second document.
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: "poses.open-search"
+    timeout: 40000
+- tapOn:
+    id: "poses.more"
+- tapOn:
+    id: "poses.menu.settings"
+- scrollUntilVisible:
+    element:
+      text: "Privacy Policy.*"
+    direction: DOWN
+- tapOn: "Privacy Policy.*"
+- extendedWaitUntil:
+    visible: "Privacy Policy"
+    timeout: 40000
+- takeScreenshot: docs/qa/prod-smoke/screens/S-05d-privacy-policy

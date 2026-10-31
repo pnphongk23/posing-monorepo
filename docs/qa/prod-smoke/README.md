@@ -50,7 +50,7 @@ that proves the case).
 | S-02 | "Delete account" is a working entry point to the deletion request form: it leaves the app for `forms.gle/QJo1…` and does not touch the session (no self-delete, no in-app confirmation, the account is still signed in afterwards). Form never submitted. | `flows/S-02-delete-account-form.yaml` |
 | ~~S-03~~ | N/A by design: the in-app Support & feedback row was removed on purpose in `54dda46`; the support form URL ships in App Store Connect only. Not a gap, not a blocker. | — |
 | S-04 | The third-party-AI disclosure is shown *before* any photo leaves the device, Cancel sends nothing and records no answer, so the next submit asks again. No upload is performed (no AI cost, no job). | `flows/S-04-consent-sheet-prod.yaml` |
-| S-05 | With `paywall_enabled` on, the paid action (shutter) opens the paywall for a signed-in, unentitled account, and closing it leaves the camera usable. No purchase is started. | `flows/S-05-paywall-gated-capture.yaml` |
+| S-05 | With `paywall_enabled` on, the paid action (shutter) opens the paywall: signed out it offers Apple/Google/email in that order (S-05a), signed in it sells the production offering (S-05b); the Settings Premium entry point reaches it (S-05c) and its legal links open the real documents (S-05d). No purchase is ever started. | `flows/S-05a-paywall-signed-out.yaml`, `flows/S-05b-paywall-signed-in.yaml`, `flows/S-05c-settings-premium-row.yaml`, `flows/S-05d-legal-links.yaml` |
 | S-06 | Settings → About reports the binary the run happened on: `posing v1.2 (Build 16)`, read from the bundle. | `flows/S-06-about-version.yaml` |
 
 ## S-03 is N/A by design (not a gap)
@@ -68,7 +68,17 @@ Run: lane-2 `CF871F97`, Prod-config Release build `1.2 (16)` from `release/1.2` 
 one at a time, with `maestro --device CF871F97-… test`. Firestore `config/app` was read *through the app*:
 the Add pose header entry (extract switch) and the Settings Premium row (paywall switch) are rendered by
 the same values the gates read, so their presence/absence is the flag state as the build sees it.
-`account_enabled` was on; `extractPoseEnabled` was on; **`paywall_enabled` was off**.
+`account_enabled` was on; `extractPoseEnabled` was on; `paywall_enabled` was **off** on the first pass (the flag probe below
+proved it from inside the app) and **on** for the S-05 re-run, which is why S-05 now has four checks.
+
+**Earlier run, `paywall_enabled` off.** The shutter correctly did nothing and the flow stopped at its own flag
+probe instead of pretending to be a gate failure — the same `assertVisible: settings.premium.row` line each S-05
+sub-flow now opens with, so "no paywall" can never be read as a gate defect again.
+
+**S-05 re-run, `paywall_enabled` on (set 19:20).** One red: **S-05b** — see the row above. It is an
+environment limit (no StoreKit products on a simulator), not an app defect, and the app's response to it is
+the correct one. Everything a simulator can prove about the gate passes: signed-out paywall with the right
+option order, signed-in paywall reached, kill-switch surface present, legal links live.
 
 | Case | Result | Evidence (screenshot) | Notes |
 |---|---|---|---|
@@ -76,7 +86,10 @@ the same values the gates read, so their presence/absence is the flag state as t
 | S-02 | **PASS** | `screens/S-02-delete-account-form.png` | signed in as the E2E account, Delete account opened Safari on the real "posing – Delete account request" form; returning to the app still showed the account signed in, so the row neither deletes nor drops the session. Form not submitted |
 | ~~S-03~~ | N/A by design | — | removed in `54dda46`, no in-app entry point |
 | S-04 | **PASS** | `screens/S-04-consent-sheet.png` | the sheet (`message` with the full disclosure, `allowButton`, `cancelButton`) appears on the first submit and again after Cancel; Cancel recorded no acknowledgement (the form stayed filled and no job was created). Nothing was uploaded: no AI cost, no job on the E2E account |
-| S-05 | **BLOCKED-BY-FLAG** | `screens/S-05-paywall-flag-surface.png` | `paywall_enabled` is OFF: the shutter press correctly did nothing, and the flow stops at its own flag probe (the Settings Premium row, gated by the same value) rather than pretending to be a gate failure. Re-run once the switch is flipped |
+| S-05a | **PASS** | `screens/S-05a-paywall-signed-out.png` | signed out, shutter → paywall with all three ways in, Apple **above** Google (asserted with a `below:` selector, guideline 4.8) and email present; closing it returns to the camera |
+| S-05b | **FAIL (BLOCKED-BY-ENV)** | — (failure artifact `.maestro/tests/2026-10-31_192431`) | the gate itself works: a signed-in, unentitled account's shutter opens the paywall with no error banner. But the production offering never loads on a simulator, so the cards/prices are missing: the paywall shows its honest retryable state, "Plans are temporarily unavailable. Retry to check again.", and hides the CTA (so no purchase can be started). A `Retry` press (`Retry loading Premium plans`) reproduces it, so it is structural: a Release build on a simulator has no StoreKit products to resolve (no `.storekit` file, app not installed from the App Store, live `appl_` key, no sandbox account). The app is behaving to contract — it refuses to fabricate plans — but the price assertion cannot pass in this environment |
+| S-05c | **PASS** | `screens/S-05c-settings-premium-row.png`, `screens/S-05c-premium-row-opens-paywall.png` | Settings → Premium row is present (the in-app proof that `paywall_enabled` reached the device) and opening it shows the paywall; closing returns to Settings |
+| S-05d | **PASS** | `screens/S-05d-terms-of-service.png`, `screens/S-05d-privacy-policy.png` | Terms of Service and Privacy Policy each open in Safari on the real documents (asserted on the pages' own text, not just "a URL opened") |
 | S-06 | **PASS** | `screens/S-06-about-version.png` | Settings → About reads `posing v1.2 (Build 16)`, i.e. the binary every other row above ran on |
 
 No case reds. Four runs failed on **flow defects** before passing and are worth knowing for the next lane
