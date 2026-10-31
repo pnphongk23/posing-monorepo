@@ -145,11 +145,13 @@ chevron, the eye once a pose is chosen, and the tools control on the right.
 - [ ] Repeat it and tap the countdown's cancel control before it reaches zero.
 - [ ] **Expected:** the countdown stops, the shutter returns to normal, and **no** new photo appears in the Gallery.
 
-## 6. Zoom is three pills, not one cycling button
-- [ ] Look just above the strip (above the shutter bar when collapsed).
-- [ ] **Expected:** a pill row **1x · 2x · 3x**; the current zoom is the highlighted pill (VoiceOver adds "selected").
+## 6. Zoom is a row of pills, not one cycling button
+**Build 17** (on your phone now): the row holds 1x · 2x · 3x. **Build 18** changes it to 0.5x · 1x · 2x and adds the Poses
+control — see the block below.
+- [ ] **Build 17:** look just above the strip (above the shutter bar when collapsed).
+- [ ] **Expected (17):** a pill row **1x · 2x · 3x**; the current zoom is the highlighted pill (VoiceOver adds "selected").
 - [ ] Tap **2x**.
-- [ ] **Expected:** the preview zooms immediately on that tap; 2x becomes the highlighted pill (no cycling through 3x).
+- [ ] **Expected:** the preview zooms immediately on that tap; 2x becomes the highlighted pill (no cycling through the row).
 - [ ] Force-quit, reopen the camera.
 - [ ] **Expected:** 2x is still the highlighted zoom.
 
