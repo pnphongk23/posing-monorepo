@@ -28,6 +28,12 @@ final class CameraViewModel: ObservableObject {
     @Published var guideTransform = GuideTransform()
     /// Transient capture feedback; cleared by `statusClearTask`.
     @Published var statusMessage: String?
+    /// Tone of that feedback. Status is never carried by colour alone: the snackbar pairs the tone's
+    /// glyph and word with the message (`APStateTone`).
+    @Published private(set) var statusTone: APStateTone = .success
+    /// F12: `true` draws the pose picker strip above the control bar, `false` is the collapsed camera
+    /// (thumbnail · shutter · flip only) with the strip behind one clear control. Persisted.
+    @Published var isPickerExpanded = true
     @Published var zoomLevel: CameraZoomLevel = .one
     /// URL of the newest capture, drawn as a 48pt thumbnail in the shutter rail.
     @Published private(set) var latestThumbnailURL: URL?
@@ -220,6 +226,27 @@ final class CameraViewModel: ObservableObject {
         showCameraTools = false
     }
 
+    // MARK: - Picker strip (F12 collapsed / expanded)
+
+    /// Opens and closes the picker strip. This is the **single** control that re-opens the strip (F12):
+    /// the strip's own chip, drawn above the shutter rail in both states. The pose title pill next to
+    /// Close opens the full picker *sheet* instead (`camera.choosePose`), which is a different surface
+    /// and never the way back from the collapsed bar.
+    func togglePickerStrip() {
+        guard cameraControlsEnabled else { return }
+        isPickerExpanded.toggle()
+    }
+
+    func expandPickerStrip() {
+        guard cameraControlsEnabled else { return }
+        isPickerExpanded = true
+    }
+
+    func collapsePickerStrip() {
+        guard cameraControlsEnabled else { return }
+        isPickerExpanded = false
+    }
+
     func openPosePicker() {
         guard cameraControlsEnabled else { return }
         showPosePicker = true
@@ -278,7 +305,7 @@ final class CameraViewModel: ObservableObject {
     /// The eight settings that survive a relaunch. `CameraSnapshot` carries them in one JSON blob;
     /// the selected pose is deliberately not among them (D8).
     private enum PersistedSetting: Hashable {
-        case opacity, flipped, grid, flash, guideVisibility, lineColor, transform, zoom
+        case opacity, flipped, grid, flash, guideVisibility, lineColor, transform, zoom, pickerExpanded
     }
 
     /// `@Published` sinks rather than setter bodies, because the guided gestures and a few tests
@@ -298,6 +325,8 @@ final class CameraViewModel: ObservableObject {
         $guideLineColor.dropFirst().sink { [weak self] _ in self?.settingsDidChange(.lineColor) }.store(in: &cancellables)
         $guideTransform.dropFirst().sink { [weak self] _ in self?.settingsDidChange(.transform) }.store(in: &cancellables)
         $zoomLevel.dropFirst().sink { [weak self] _ in self?.settingsDidChange(.zoom) }.store(in: &cancellables)
+        $isPickerExpanded.dropFirst().sink { [weak self] _ in self?.settingsDidChange(.pickerExpanded) }
+            .store(in: &cancellables)
     }
 
     /// Gate moves are not camera settings, but the shutter's enabled state reads them: without this
@@ -357,7 +386,8 @@ final class CameraViewModel: ObservableObject {
             isPoseGuideVisible: isPoseGuideVisible,
             lineColor: guideLineColor,
             transform: persistedTransform,
-            zoom: zoomLevel
+            zoom: zoomLevel,
+            isPickerExpanded: isPickerExpanded
         )
     }
 
@@ -393,6 +423,7 @@ final class CameraViewModel: ObservableObject {
         if !touchedSettings.contains(.guideVisibility) { isPoseGuideVisible = stored.isPoseGuideVisible }
         if !touchedSettings.contains(.lineColor) { guideLineColor = stored.lineColor }
         if !touchedSettings.contains(.zoom) { zoomLevel = stored.zoom }
+        if !touchedSettings.contains(.pickerExpanded) { isPickerExpanded = stored.isPickerExpanded }
         if !touchedSettings.contains(.transform) {
             pendingRestoredTransform = restored.map { $0.transform.placement }
             restoredTransformValue = restored?.transform
@@ -513,14 +544,38 @@ final class CameraViewModel: ObservableObject {
     }
 
     private func showStatus(_ message: String?) {
+        showStatus(message, tone: statusToneForCurrentPhase())
+    }
+
+    /// Status is never colour alone: the snackbar draws the tone's glyph **and** word beside the
+    /// message, so a failed capture reads as a failure without relying on the tint.
+    private func statusToneForCurrentPhase() -> APStateTone {
+        switch coordinator.state.phase {
+        case .captureError:
+            return .error
+        case .captureSucceeded:
+            return .success
+        default:
+            return coordinator.state.lastFailure == nil ? .success : .error
+        }
+    }
+
+    private func showStatus(_ message: String?, tone: APStateTone) {
         statusClearTask?.cancel()
         statusMessage = message
+        statusTone = tone
         guard message != nil else { return }
         statusClearTask = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: 2_500_000_000)
             guard !Task.isCancelled else { return }
             self?.statusMessage = nil
         }
+    }
+
+    /// The snackbar was tapped away (F5: a snackbar never parks on screen).
+    func dismissStatusMessage() {
+        statusClearTask?.cancel()
+        statusMessage = nil
     }
 }
 
@@ -592,7 +647,7 @@ enum GuideLineColor: String, CaseIterable {
     case black, white
 
     var label: String { rawValue.capitalized }
-    var color: Color { self == .black ? AIPoseColor.border : .white }
+    var color: Color { self == .black ? AP.Color.background : AP.Color.primaryText }
 }
 
 /// Placement of the pose reference over the preview. Scale and rotation pivot on the reference's
@@ -650,6 +705,9 @@ struct CameraScreen: View {
     @FocusState private var isToolsButtonFocused: Bool
     /// In-flight pinch / twist / drag, folded into `model.guideTransform` when the gesture ends.
     @GestureState private var guideGestureDelta = GuideTransform.Delta.identity
+    /// Height of the top control bar, measured so the tools popup anchors *under* it at every
+    /// Dynamic Type size instead of at a hard-coded offset.
+    @State private var topBarHeight: CGFloat = AP.HitTarget.minimum
 
     init(
         guide: Binding<NativePose?>,
@@ -684,14 +742,7 @@ struct CameraScreen: View {
         ZStack {
             VStack(spacing: 0) {
                 viewport
-                CameraShutterRail(
-                    thumbnailURL: model.latestThumbnailURL,
-                    isBusy: model.coordinator.state.isCaptureInFlight,
-                    controlsEnabled: model.isShutterEnabled,
-                    onOpenGallery: onOpenGallery,
-                    onCapture: { model.capture() },
-                    onSwitchCamera: { model.switchCamera() }
-                )
+                bottomChrome
             }
 
             // `.nb-pose-picker-sheet` — an in-place overlay on Camera, never a pushed route, so
@@ -710,12 +761,26 @@ struct CameraScreen: View {
         }
         .animation(reduceMotion ? nil : .easeOut(duration: 0.25), value: model.showPosePicker)
         .animation(reduceMotion ? nil : .easeOut(duration: 0.1), value: model.showCameraTools)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: model.isPickerExpanded)
+        .background(AP.Color.background.ignoresSafeArea())
+        // The camera is a dark surface, and every AP token inside it has to resolve that way even when
+        // the screen is hosted outside a dark presentation (UIKit host, preview, snapshot): the canvas,
+        // the chrome and the pose reference's white line colour are all read from the dark values.
+        .environment(\.colorScheme, .dark)
         .ignoresSafeArea(.container, edges: .top)
         .neoHiddenNavigationBar()
         .preferredColorScheme(.dark)
         .task { await model.onAppear() }
         .onAppear { model.guideAppeared(hasGuide: guide != nil) }
         .onDisappear { model.onDisappear() }
+        .task(id: stripCatalogueID) {
+            // The strip draws the same catalogue the sheet does, so it is loaded once for both. Not
+            // while the camera is refused (nothing to place a pose on) and not while it is collapsed
+            // (the strip is not on screen to show what the load returns).
+            guard isAuthorized, model.isPickerExpanded else { return }
+            if case .loaded = posePickerModel.state { return }
+            await posePickerModel.load()
+        }
         .task(id: model.showPosePicker) {
             if model.showPosePicker {
                 // R7: monitor only while the sheet is presented.
@@ -724,6 +789,10 @@ struct CameraScreen: View {
                 // (or a load that failed after dismissal) cannot strand the sheet.
                 if case .loaded = posePickerModel.state { return }
                 await posePickerModel.load()
+            } else if model.isPickerExpanded {
+                // The strip keeps drawing the rows it already has, and reopening still retries a
+                // failed load, so the catalogue has to survive a dismissal that leaves it on screen.
+                posePickerModel.dismissKeepingCatalogue()
             } else {
                 posePickerModel.prepareForDismissal()
             }
@@ -743,6 +812,11 @@ struct CameraScreen: View {
         .onChange(of: guide?.id) { _ in model.guideDidChange(hasGuide: guide != nil) }
     }
 
+    /// Identity of "the strip should have the catalogue": authorization plus the collapsed state.
+    private var stripCatalogueID: String {
+        "\(isAuthorized)-\(model.isPickerExpanded)"
+    }
+
     // MARK: Viewport — full-bleed `.nb-camera-viewport--immersive`
 
     private var viewport: some View {
@@ -751,9 +825,8 @@ struct CameraScreen: View {
             ZStack(alignment: .bottomTrailing) {
                 cameraCanvas(size: size)
 
-                // `.nb-camera-tools-menu` — anchored popup at `right: 16pt, bottom: 120pt`
-                // (16 + 44 + 8 + 44 + 8: above the Choose pose control), transform-origin bottom
-                // right. No scrim, no handle, no app-bar Close.
+                // `.nb-camera-tools-menu` — anchored popup: below the tools control, no scrim, no
+                // handle, no app-bar Close.
                 if model.showCameraTools {
                     // Outside tap dismisses without a visible scrim.
                     Color.clear
@@ -761,28 +834,38 @@ struct CameraScreen: View {
                         .onTapGesture { dismissCameraTools() }
                         .accessibilityHidden(true)
 
-                    CameraToolsPopup(
-                        flashSetting: model.flashSetting,
-                        isGridVisible: model.isGridVisible,
-                        controlsEnabled: model.cameraControlsEnabled,
-                        hasPose: guide != nil,
-                        isPoseGuideVisible: model.isPoseGuideVisible,
-                        guideOpacity: model.guideOpacity,
-                        guideLineColor: model.guideLineColor,
-                        popupWidth: min(CameraProto.popupWidth, size.width - CameraProto.spaceMD * 2),
-                        popupMaxHeight: min(size.height * 0.62, CameraProto.popupMaxHeight),
-                        onFlashTap: { model.cycleFlash() },
-                        onGridToggle: { model.toggleGrid() },
-                        onPoseGuideVisibilityToggle: { model.togglePoseGuideVisibility() },
-                        onGuideOpacityChange: { model.setGuideOpacity($0) },
-                        onGuideLineColorChange: { model.setGuideLineColor($0) },
-                        onDismiss: { dismissCameraTools() }
-                    )
-                    .padding(.trailing, CameraProto.controlInset)
-                    .padding(.bottom, CameraProto.popupBottomOffset)
+                    VStack(spacing: 0) {
+                        CameraToolsPopup(
+                            flashSetting: model.flashSetting,
+                            isGridVisible: model.isGridVisible,
+                            controlsEnabled: model.cameraControlsEnabled,
+                            hasPose: guide != nil,
+                            isPoseGuideVisible: model.isPoseGuideVisible,
+                            guideOpacity: model.guideOpacity,
+                            guideLineColor: model.guideLineColor,
+                            popupWidth: min(CameraProto.popupWidth, size.width - CameraProto.controlInset * 2),
+                            popupMaxHeight: max(
+                                AP.Space.space48,
+                                min(
+                                    size.height - CameraProto.topControlsTop - topBarHeight - AP.Space.space16,
+                                    CameraProto.popupMaxHeight
+                                )
+                            ),
+                            onFlashTap: { model.cycleFlash() },
+                            onGridToggle: { model.toggleGrid() },
+                            onPoseGuideVisibilityToggle: { model.togglePoseGuideVisibility() },
+                            onGuideOpacityChange: { model.setGuideOpacity($0) },
+                            onGuideLineColorChange: { model.setGuideLineColor($0) },
+                            onDismiss: { dismissCameraTools() }
+                        )
+                        .padding(.top, CameraProto.topControlsTop + topBarHeight + AP.Space.space8)
+                        .padding(.trailing, CameraProto.controlInset)
+                        Spacer(minLength: 0)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .trailing)
                     .transition(.opacity
-                        .combined(with: .offset(y: CameraProto.spaceSM))
-                        .combined(with: .scale(scale: 0.98, anchor: .bottomTrailing)))
+                        .combined(with: .offset(y: -AP.Space.space8))
+                        .combined(with: .scale(scale: 0.98, anchor: .topTrailing)))
                 }
             }
         }
@@ -790,12 +873,47 @@ struct CameraScreen: View {
             topControls
                 .padding(.horizontal, CameraProto.controlInset)
                 .padding(.top, CameraProto.topControlsTop)
+                .background(
+                    GeometryReader { geo in
+                        Color.clear.preference(key: CameraTopBarHeightKey.self, value: geo.size.height)
+                    }
+                )
         }
-        .overlay(alignment: .bottom) {
-            viewportFooter
-                .padding(.horizontal, CameraProto.controlInset)
-                .padding(.bottom, CameraProto.controlInset)
+        .onPreferenceChange(CameraTopBarHeightKey.self) { height in
+            guard height > 0 else { return }
+            topBarHeight = height
         }
+    }
+
+    /// F12: the whole bottom control surface — snackbar, zoom, pose strip (or its clear re-open
+    /// control) and the shutter rail. One view, so a rendered test can prove what is on screen.
+    private var bottomChrome: some View {
+        CameraBottomBar(
+            thumbnailURL: model.latestThumbnailURL,
+            isBusy: model.coordinator.state.isCaptureInFlight,
+            canCapture: model.isShutterEnabled,
+            controlsEnabled: model.cameraControlsEnabled,
+            status: model.statusMessage,
+            statusTone: model.statusTone,
+            strip: stripContent,
+            selectedPoseID: guide?.id,
+            isPickerExpanded: model.isPickerExpanded,
+            showsPicker: isAuthorized,
+            zoomLevel: model.zoomLevel,
+            onToggleStrip: { model.togglePickerStrip() },
+            onSelectPose: { pose in guide = pose },
+            onRetryStrip: { Task { await posePickerModel.load() } },
+            onZoom: { level in model.applyZoom(level) },
+            onOpenGallery: onOpenGallery,
+            onCapture: { model.capture() },
+            onSwitchCamera: { model.switchCamera() },
+            onDismissStatus: { model.dismissStatusMessage() }
+        )
+    }
+
+    /// What the strip draws. Pure mapping, so "failed" cannot silently render an empty grid.
+    private var stripContent: CameraStripContent {
+        CameraStripContent.resolve(from: posePickerModel.state, filtered: posePickerModel.filteredPoses)
     }
 
     private func dismissCameraTools() {
@@ -807,7 +925,7 @@ struct CameraScreen: View {
 
     private func cameraCanvas(size: CGSize) -> some View {
         ZStack {
-            CameraProto.dark
+            AP.Color.background
 
             if isAuthorized {
                 CameraPreview(session: model.camera.session)
@@ -851,18 +969,9 @@ struct CameraScreen: View {
                     .accessibilityHidden(true)
             }
 
-            // `.nb-camera-status` — capture feedback only (saved / failed). It is anchored
-            // `left: 16 / right: 16` at `bottom: 112` (`--nb-space-md` + `--nb-touch-min` +
-            // `--nb-space-sm` + `--nb-touch-min`) — just above the More + Choose-pose cluster. Picking
-            // a pose shows no chip: the reference itself is the feedback.
-            if let status = model.statusMessage {
-                statusBanner(status)
-                    .position(x: size.width / 2,
-                              y: size.height - CameraProto.statusBottomInset - 18)
-            }
-
+            // F4: the camera's permission state is the shared 72 pt panel, over the scrim.
             if !isAuthorized {
-                permissionGate
+                permissionPanel
             }
         }
         .clipped()
@@ -872,7 +981,7 @@ struct CameraScreen: View {
     private var verticalScrims: some View {
         VStack(spacing: 0) {
             LinearGradient(
-                colors: [CameraProto.dark.opacity(0.68), CameraProto.dark.opacity(0)],
+                colors: [AP.Color.background.opacity(0.68), AP.Color.background.opacity(0)],
                 startPoint: .top, endPoint: .bottom
             )
             .frame(height: 190)
@@ -880,7 +989,7 @@ struct CameraScreen: View {
             Spacer(minLength: 0)
 
             LinearGradient(
-                colors: [CameraProto.dark.opacity(0), CameraProto.dark.opacity(0.54)],
+                colors: [AP.Color.background.opacity(0), AP.Color.background.opacity(0.54)],
                 startPoint: .top, endPoint: .bottom
             )
             .frame(height: 170)
@@ -888,51 +997,60 @@ struct CameraScreen: View {
         .allowsHitTesting(false)
     }
 
-    /// `.nb-camera-viewport__top-controls` — only Close remains; More moved to the lower right.
+    /// The camera's top chrome, one row (F1's camera exception): Close · the current pose as the
+    /// picker's entry point · the guide's eye · the tools. Every control is a 44 pt surface pill with
+    /// no resting border, and the pose title grows with Dynamic Type instead of truncating.
     private var topControls: some View {
-        HStack(spacing: 0) {
-            CameraActionControl(
+        HStack(alignment: .center, spacing: AP.Space.space8) {
+            CameraSurfaceControl(
                 systemImage: "xmark",
                 accessibilityLabel: "Close camera",
                 identifier: "camera.close",
                 action: onClose
             )
-            Spacer(minLength: 0)
-        }
-    }
 
-    /// Lower-right control column: More (`.nb-camera-viewport__tools-btn`, bottom: 68pt) directly
-    /// above Choose pose (`.nb-camera-viewport__profile-btn`, bottom: 16pt).
-    private var viewportFooter: some View {
-        ZStack {
-            CameraZoomPill(level: model.zoomLevel) { model.cycleZoom() }
-            HStack(spacing: 0) {
-                Spacer(minLength: 0)
-                VStack(alignment: .trailing, spacing: CameraProto.spaceSM) {
-                    CameraActionControl(
-                        systemImage: "ellipsis",
-                        rotatesIcon: true,
-                        accessibilityLabel: "Open camera tools",
-                        identifier: "camera.tools",
-                        action: { model.toggleCameraTools() }
-                    )
-                    .focused($isToolsButtonFocused)
-
-                    Button {
-                        model.openPosePicker()
-                    } label: {
-                        Image(systemName: "photo")
-                            .font(.system(size: 16, weight: .bold))
-                            .foregroundStyle(AIPoseColor.foreground)
-                            .frame(width: CameraProto.surface, height: CameraProto.surface)
-                    }
-                    .buttonStyle(NeoSurfaceStyle(fill: AIPoseColor.accentBlue))
-                    .frame(width: CameraProto.touch, height: CameraProto.touch, alignment: .bottom)
-                    .contentShape(Rectangle())
-                    .accessibilityLabel("Choose a pose")
-                    .accessibilityIdentifier("camera.choosePose")
+            Button {
+                model.openPosePicker()
+            } label: {
+                HStack(spacing: AP.Space.space8) {
+                    Text(guide?.name ?? "Choose a pose")
+                        .font(AP.Font.heading)
+                        .foregroundStyle(AP.Color.primaryText)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Image(systemName: "chevron.down")
+                        .font(AP.Font.caption)
+                        .foregroundStyle(AP.Color.secondaryText)
+                        .accessibilityHidden(true)
                 }
+                .padding(.horizontal, AP.Space.space16)
+                .frame(maxWidth: .infinity, minHeight: AP.HitTarget.minimum)
             }
+            .buttonStyle(CameraPressStyle())
+            .disabled(!model.cameraControlsEnabled)
+            .opacity(model.cameraControlsEnabled ? 1 : 0.45)
+            .accessibilityLabel(guide.map { "Pose \($0.name). Open pose picker" } ?? "Choose a pose")
+            .accessibilityIdentifier("camera.choosePose")
+
+            if guide != nil {
+                CameraSurfaceControl(
+                    systemImage: model.isPoseGuideVisible ? "eye" : "eye.slash",
+                    isSelected: !model.isPoseGuideVisible,
+                    accessibilityLabel: model.isPoseGuideVisible ? "Hide pose guide" : "Show pose guide",
+                    identifier: "camera.guideToggle",
+                    action: { model.togglePoseGuideVisibility() }
+                )
+                .accessibilityValue(model.isPoseGuideVisible ? "Shown" : "Hidden")
+            }
+
+            CameraSurfaceControl(
+                systemImage: "slider.horizontal.3",
+                accessibilityLabel: "Camera settings",
+                identifier: "camera.tools",
+                action: { model.toggleCameraTools() }
+            )
+            .focused($isToolsButtonFocused)
         }
     }
 
@@ -1000,80 +1118,16 @@ struct CameraScreen: View {
                         lineColor: model.guideLineColor.color)
     }
 
-    private func statusBanner(_ status: String) -> some View {
-        Text(status)
-            .font(.system(size: 13, weight: .bold))
-            .foregroundStyle(AIPoseColor.foreground)
-            .multilineTextAlignment(.center)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
-            .frame(maxWidth: .infinity)
-            .background(statusTone)
-            .clipShape(RoundedRectangle(cornerRadius: CameraProto.radiusSmall))
-            .overlay(RoundedRectangle(cornerRadius: CameraProto.radiusSmall)
-                .stroke(AIPoseColor.border, lineWidth: CameraProto.borderWidth))
-            .shadow(color: AIPoseColor.border, radius: 0,
-                    x: CameraProto.shadowSmall, y: CameraProto.shadowSmall)
-            .padding(.horizontal, CameraProto.controlInset)
-    }
-
-    private var statusTone: Color {
-        switch model.coordinator.state.phase {
-        case .captureError:
-            return AIPoseColor.primary
-        case .captureSucceeded:
-            return AIPoseColor.success
-        default:
-            return model.coordinator.state.lastFailure == nil ? AIPoseColor.success : AIPoseColor.primary
-        }
-    }
-
-    /// `.nb-camera-permission` — dark scrim, accent-yellow camera tile, white copy.
-    private var permissionGate: some View {
-        ZStack {
-            CameraProto.dark.opacity(0.9)
-
-            VStack(spacing: 0) {
-                Image(systemName: "camera")
-                    .font(.system(size: 26, weight: .semibold))
-                    .foregroundStyle(AIPoseColor.foreground)
-                    .frame(width: 56, height: 56)
-                    .background(AIPoseColor.accentYellow)
-                    .clipShape(RoundedRectangle(cornerRadius: CameraProto.radiusMedium))
-                    .overlay(RoundedRectangle(cornerRadius: CameraProto.radiusMedium)
-                        .stroke(AIPoseColor.border, lineWidth: CameraProto.borderWidth))
-                    .shadow(color: AIPoseColor.border, radius: 0,
-                            x: CameraProto.shadow, y: CameraProto.shadow)
-                    .padding(.bottom, 16)
-
-                Text("Camera access is off")
-                    .font(.system(size: 20, weight: .bold))
-                    .foregroundStyle(.white)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: 260)
-
-                Text("Allow camera access in Settings to line up and capture your pose.")
-                    .font(.system(size: 14))
-                    .foregroundStyle(.white.opacity(0.78))
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: 270)
-                    .padding(.top, 8)
-                    .padding(.bottom, 16)
-
-                if model.coordinator.state.permission == .denied
-                    || model.coordinator.state.permission == .restricted {
-                    PermissionActionButton(title: "Open Settings", fill: AIPoseColor.surface) {
-                        openSystemSettings()
-                    }
-                } else {
-                    PermissionActionButton(title: "Allow Camera", fill: AIPoseColor.accentYellow) {
-                        model.requestPermission()
-                    }
-                }
-            }
-            .padding(CameraProto.spaceXL)
-        }
-        .accessibilityElement(children: .contain)
+    /// F4: the camera's permission state is the shared 72 pt state panel — one clean accent-tint
+    /// circle, title, copy and one action — instead of the old stacked camera tile on a yellow square.
+    private var permissionPanel: some View {
+        CameraPermissionPanel(
+            permission: model.coordinator.state.permission,
+            onAllow: { model.requestPermission() },
+            onOpenSettings: openSystemSettings
+        )
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(AP.Color.scrim)
     }
 
     private func openSystemSettings() {
@@ -1082,49 +1136,13 @@ struct CameraScreen: View {
     }
 }
 
-private struct PermissionActionButton: View {
-    let title: String
-    var fill: Color = AIPoseColor.surface
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Text(title)
-                .font(.system(size: 14, weight: .bold))
-                .foregroundStyle(AIPoseColor.foreground)
-                .padding(.horizontal, CameraProto.spaceMD)
-                .frame(minHeight: CameraProto.touch)
-        }
-        .buttonStyle(NeoSurfaceStyle(fill: fill, shadowOffset: CameraProto.shadow))
-    }
-}
-
-// MARK: - Prototype metrics & palette
+// MARK: - Camera metrics
 //
-// Numbers are absolute point values taken from `docs/prototype/styles/tokens.css`,
-// `components/camera-viewport.css` and `components/camera-guide.css`. They are deliberately
-// *not* `AIPoseSpacing.*` because the prototype spacing scale differs from the native one
-// (proto `md` = 16 while `AIPoseSpacing.md` = 12).
+// Only the layout numbers that have no token (absolute prototype geometry: the immersive top inset,
+// the pose-reference insets, the popup and sheet caps) live here. Colours, radii, spacing, type and
+// elevation come from `AP`.
 
 enum CameraProto {
-    static let dark = AIPoseColor.foreground          // --nb-color-dark #121212
-    static let borderWidth: CGFloat = 2               // --nb-border-width-thick
-    static let radiusSmall: CGFloat = 6
-    static let radiusMedium: CGFloat = 10             // --nb-radius-medium
-    static let radiusLarge: CGFloat = 14              // --nb-radius-large
-    static let pickerTopRadius: CGFloat = 22          // `.nb-pose-picker-panel` 22px 22px 0 0
-    static let shadow: CGFloat = 3                    // --nb-shadow-offset
-    static let shadowSmall: CGFloat = 1.5             // --nb-shadow-offset-small
-    static let shadowLarge: CGFloat = 5               // --nb-shadow-offset-large
-    static let touch: CGFloat = 44                    // --nb-touch-min
-    static let surface: CGFloat = 32                  // .nb-btn__compact-surface
-    static let spaceXS: CGFloat = 4
-    static let spaceSM: CGFloat = 8
-    static let spaceCompact: CGFloat = 12             // --nb-space-compact
-    static let spaceMD: CGFloat = 16
-    static let spaceLG: CGFloat = 24
-    static let spaceXL: CGFloat = 32
-
     // `.nb-camera-viewport__top-controls`
     static let topControlsTop: CGFloat = 62
     static let controlInset: CGFloat = 16
@@ -1137,110 +1155,567 @@ enum CameraProto {
     // `.nb-camera-tools-menu`
     static let popupWidth: CGFloat = 264
     static let popupMaxHeight: CGFloat = 420
-    /// `bottom: calc(16 + 44 + 8 + 44 + 8)` — above the Choose pose control.
-    static let popupBottomOffset: CGFloat = spaceMD + touch + spaceSM + touch + spaceSM
 
     // `.nb-pose-picker-panel`
-    static let pickerHandleWidth: CGFloat = 42
-    static let pickerHandleHeight: CGFloat = 4
     static let pickerMaxHeight: CGFloat = 700
     static let pickerMinHeight: CGFloat = 420
     static let pickerHeightFraction: CGFloat = 0.82
 
     // `.nb-shutter-bar--redesign`
-    static let railHeight: CGFloat = 124
     static let railInset: CGFloat = 24
     static let railControl: CGFloat = 48
     static let shutterSize: CGFloat = 72
-    static let zoomToggle: CGFloat = 36
-
-    // `.nb-camera-status`
-    static let statusBottomInset: CGFloat = 112
 }
 
-// MARK: - Neo-brutalist primitives (private to the camera feature)
-//
-// `NeoSquareIconButton` (36pt, 1.5pt border, 2pt shadow) and `NeoCardModifier` (12pt radius,
-// 4pt shadow) do not match the camera prototype, so the camera screen carries its own
-// screen-local primitives instead of changing the shared design system.
+// MARK: - Camera chrome (AP tokens, forced dark)
 
-private struct NeoSurfaceStyle: ButtonStyle {
-    var fill: Color = AIPoseColor.surface
-    var radius: CGFloat = CameraProto.radiusMedium
-    var shadowOffset: CGFloat = CameraProto.shadowSmall
-    var circle: Bool = false
+/// Pressed = one fill step plus `scale 0.97`; Reduce Motion keeps the fill and drops the scale.
+/// One style for every camera pill, so a press reads the same on the top bar, the strip and the rail.
+private struct CameraPressStyle: ButtonStyle {
+    var isSelected: Bool = false
+    var shape: CameraPillShape = .rounded16
+    /// `nil` keeps the surface fill; a chip that sits on the bar's panel passes `controlFill`.
+    var restingFill: SwiftUI.Color? = nil
 
     func makeBody(configuration: Configuration) -> some View {
-        let pressed = configuration.isPressed
-        // `box-shadow: Npx Npx 0 #000` is drawn as a hard offset shape rather than a
-        // `View.shadow` so the silhouette is always solid (SwiftUI renders a shadow of a
-        // `.background`-filled circle as a ring instead of a disc).
-        let depth = pressed ? 0 : shadowOffset
-        let shift = pressed ? shadowOffset : 0
+        CameraPressBody(
+            configuration: configuration,
+            isSelected: isSelected,
+            shape: shape,
+            restingFill: restingFill
+        )
+    }
+}
 
-        return Group {
-            if circle {
-                configuration.label
-                    .background(fill)
-                    .clipShape(Capsule())
-                    .overlay(Capsule().stroke(AIPoseColor.border, lineWidth: CameraProto.borderWidth))
-                    .background(Capsule().fill(AIPoseColor.border).offset(x: depth, y: depth))
-                    .offset(x: shift, y: shift)
-            } else {
-                configuration.label
-                    .background(fill)
-                    .clipShape(RoundedRectangle(cornerRadius: radius))
-                    .overlay(RoundedRectangle(cornerRadius: radius)
-                        .stroke(AIPoseColor.border, lineWidth: CameraProto.borderWidth))
-                    .background(RoundedRectangle(cornerRadius: radius)
-                        .fill(AIPoseColor.border)
-                        .offset(x: depth, y: depth))
-                    .offset(x: shift, y: shift)
-            }
+private enum CameraPillShape { case rounded16, capsule }
+
+private struct CameraPressBody: View {
+    let configuration: ButtonStyleConfiguration
+    let isSelected: Bool
+    let shape: CameraPillShape
+    var restingFill: SwiftUI.Color? = nil
+
+    @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        configuration.label
+            .background(background)
+            .scaleEffect(configuration.isPressed && !reduceMotion ? AP.Press.scale : 1)
+            .animation(reduceMotion ? nil : .easeOut(duration: AP.Press.duration), value: configuration.isPressed)
+            .apMinimumHitTarget()
+    }
+
+    private var fill: SwiftUI.Color {
+        guard isEnabled else { return AP.Color.controlFill }
+        guard configuration.isPressed else {
+            if let restingFill { return restingFill }
+            return isSelected ? AP.Color.selectedBackground : AP.Color.surface
+        }
+        return isSelected ? AP.Color.selectedBackground : AP.Color.controlFillPressed
+    }
+
+    @ViewBuilder private var background: some View {
+        switch shape {
+        case .rounded16:
+            RoundedRectangle(cornerRadius: AP.Radius.radius16, style: .continuous).fill(fill)
+        case .capsule:
+            Capsule().fill(fill)
         }
     }
 }
 
-/// `44x44` transparent hit area wrapping a `32x32` neo surface (`.nb-btn--compact-action`).
-private struct CameraActionControl: View {
+/// One 44 pt surface pill with no resting border — Close, the guide's eye and the tools.
+private struct CameraSurfaceControl: View {
     let systemImage: String
-    var rotatesIcon: Bool = false
+    var isSelected = false
     let accessibilityLabel: String
     var identifier: String? = nil
     let action: () -> Void
 
+    @Environment(\.isEnabled) private var isEnabled
+
     var body: some View {
         Button(action: action) {
             Image(systemName: systemImage)
-                .font(.system(size: 16, weight: .bold))
-                .rotationEffect(.degrees(rotatesIcon ? 90 : 0))
-                .foregroundStyle(AIPoseColor.foreground)
-                .frame(width: CameraProto.surface, height: CameraProto.surface)
+                .font(AP.Font.heading)
+                .foregroundStyle(labelColor)
+                .frame(width: AP.HitTarget.minimum, height: AP.HitTarget.minimum)
         }
-        .buttonStyle(NeoSurfaceStyle())
-        .frame(width: CameraProto.touch, height: CameraProto.touch, alignment: .center)
-        .contentShape(Rectangle())
+        .buttonStyle(CameraPressStyle(isSelected: isSelected))
         .accessibilityLabel(accessibilityLabel)
-        .accessibilityIdentifier(identifier ?? "")
+        .apIdentifier(identifier)
+    }
+
+    private var labelColor: SwiftUI.Color {
+        guard isEnabled else { return AP.Color.disabled }
+        return isSelected ? AP.Color.selectedForeground : AP.Color.primaryText
     }
 }
 
-/// `.nb-camera-viewport__zoom-btn` + `.nb-camera-zoom-toggle` (36pt circle, centred).
-private struct CameraZoomPill: View {
-    let level: CameraZoomLevel
-    let onTap: () -> Void
+/// Measured height of the top control bar: the tools popup anchors under it at every type size.
+private struct CameraTopBarHeightKey: PreferenceKey {
+    nonisolated(unsafe) static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
+// MARK: - Shared 72 pt state panels (F4)
+
+/// Which shared state panel a camera surface draws.
+///
+/// F4: empty, error, permission and loading all render as ONE component — a 72 pt circle in the
+/// subtle accent tint with the glyph centred, then title, copy and one action. The mapping is pure so
+/// the selection per permission / picker state is a unit test, not something only a screenshot shows.
+enum CameraStatePanel: Equatable {
+    case permissionRequest
+    case permissionDenied
+    case pickerLoading
+    case pickerFailed
+    case pickerEmptyCatalogue
+    case pickerNoMatch(String)
+    case pickerOffline
+
+    /// The camera's own gate: authorized draws no panel at all.
+    static func permission(_ state: CameraPermissionState) -> CameraStatePanel? {
+        switch state {
+        case .authorized: return nil
+        case .notDetermined: return .permissionRequest
+        case .denied, .restricted: return .permissionDenied
+        }
+    }
+
+    /// The pose picker card for a tone. `.success` / `.warning` have no producer here and `nil` means
+    /// the grid draws, so both answer no panel.
+    static func picker(
+        tone: FeatureStateTone?,
+        isNoMatch: Bool,
+        term: String,
+        isOffline: Bool
+    ) -> CameraStatePanel? {
+        switch tone {
+        case .none, .some(.success), .some(.warning):
+            return nil
+        case .some(.loading):
+            return .pickerLoading
+        case .some(.error):
+            return isOffline ? .pickerOffline : .pickerFailed
+        case .some(.offline):
+            return .pickerOffline
+        case .some(.empty):
+            return isNoMatch ? .pickerNoMatch(term) : .pickerEmptyCatalogue
+        }
+    }
+
+    /// The permission copy, in one place so the panel and its tests cannot drift.
+    var permissionCopy: (title: String, message: String, actionTitle: String) {
+        ("Camera access is off",
+         "AI Pose needs the camera to show the pose guide. Turn it on in Settings.",
+         self == .permissionDenied ? "Open Settings" : "Allow Camera")
+    }
+}
+
+/// The camera's permission gate: the shared 72 pt panel over the scrim.
+struct CameraPermissionPanel: View {
+    let permission: CameraPermissionState
+    let onAllow: () -> Void
+    let onOpenSettings: () -> Void
 
     var body: some View {
-        Button(action: onTap) {
-            Text(level.label)
-                .font(.system(size: 13, weight: .bold))
-                .foregroundStyle(AIPoseColor.foreground)
-                .frame(width: CameraProto.zoomToggle, height: CameraProto.zoomToggle)
+        let panel = CameraStatePanel.permission(permission) ?? .permissionDenied
+        let copy = panel.permissionCopy
+        APEmptyStateView(
+            title: copy.title,
+            message: copy.message,
+            actionTitle: copy.actionTitle,
+            action: panel == .permissionDenied ? onOpenSettings : onAllow,
+            style: .plain,
+            glyph: "camera"
+        )
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("camera.permission")
+    }
+}
+
+/// One picker state on the shared panel — used by the sheet, so a failed / empty / loading catalogue
+/// can never fall back to a screen-local card.
+struct CameraPickerStatePanel: View {
+    let panel: CameraStatePanel
+    var onRetry: (() -> Void)?
+
+    var body: some View {
+        switch panel {
+        case .pickerLoading, .permissionRequest, .permissionDenied:
+            APLoadingStateView(label: "Loading poses")
+        case .pickerFailed:
+            APErrorStateView(
+                title: "Couldn't load poses",
+                message: "The pose library didn't respond. Check your connection and try again.",
+                retry: onRetry,
+                style: .plain
+            )
+        case .pickerEmptyCatalogue:
+            APEmptyStateView(
+                title: "No poses yet",
+                message: "Create or save a pose to use it here.",
+                style: .plain,
+                glyph: "tray"
+            )
+        case .pickerNoMatch(let term):
+            APEmptyStateView(
+                title: "No poses match “\(term)”",
+                message: "Try a different pose name.",
+                style: .plain,
+                glyph: "magnifyingglass"
+            )
+        case .pickerOffline:
+            APOfflineBanner(message: "You're offline", retryTitle: "Retry", retry: onRetry)
         }
-        .buttonStyle(NeoSurfaceStyle(circle: true))
-        .frame(width: CameraProto.touch, height: CameraProto.touch, alignment: .bottom)
-        .contentShape(Rectangle())
-        .accessibilityLabel("Zoom \(level.label)")
+    }
+}
+
+// MARK: - Bottom control surface (F12 collapsed / expanded)
+
+/// What the pose strip draws. A pure mapping from the picker's `Loadable`, so a failed or empty
+/// catalogue can never render as a blank strip that looks like "no poses".
+enum CameraStripContent: Equatable {
+    case loading
+    case failed
+    case empty
+    case poses([NativePose])
+
+    /// One mapping for every picker state. A loaded catalogue whose local filter matches nothing is
+    /// `.empty` ("no poses match"), never a blank strip; a first-load failure is `.failed`, which
+    /// keeps a retry within reach instead of showing an empty row.
+    static func resolve(from state: Loadable<[NativePose]>, filtered: [NativePose]) -> CameraStripContent {
+        switch state {
+        case .idle, .loading:
+            return .loading
+        case .failed:
+            return .failed
+        case .empty:
+            return .empty
+        case .loaded:
+            return filtered.isEmpty ? .empty : .poses(filtered)
+        }
+    }
+}
+
+/// Which parts of the bottom surface are on screen (F12). Pure, so "collapsed still has a way back"
+/// is a unit test instead of something only a screenshot can show.
+enum CameraChromeLayout {
+    /// The strip itself is drawn only while expanded and only when the camera can place a pose.
+    static func showsStrip(isPickerExpanded: Bool, showsPicker: Bool) -> Bool {
+        showsPicker && isPickerExpanded
+    }
+
+    /// The control that re-opens (and closes) the strip is always there when a picker is available —
+    /// the collapsed state must never hide its own way back.
+    static func showsStripToggle(showsPicker: Bool) -> Bool { showsPicker }
+
+    static func stripToggleGlyph(isPickerExpanded: Bool) -> String {
+        isPickerExpanded ? "chevron.down" : "chevron.up"
+    }
+
+    static func stripToggleLabel(isPickerExpanded: Bool) -> String {
+        isPickerExpanded ? "Hide pose picker" : "Show pose picker"
+    }
+}
+
+/// Snackbar · zoom · pose strip (or its re-open control) · shutter rail.
+///
+/// The whole bottom surface is one view so the two F12 states and the snackbar's placement above the
+/// control bar are provable from a rendered bitmap (see `CameraChromeTests`).
+struct CameraBottomBar: View {
+    let thumbnailURL: URL?
+    let isBusy: Bool
+    let canCapture: Bool
+    let controlsEnabled: Bool
+    let status: String?
+    let statusTone: APStateTone
+    let strip: CameraStripContent
+    let selectedPoseID: String?
+    let isPickerExpanded: Bool
+    let showsPicker: Bool
+    let zoomLevel: CameraZoomLevel
+    let onToggleStrip: () -> Void
+    let onSelectPose: (NativePose) -> Void
+    let onRetryStrip: () -> Void
+    let onZoom: (CameraZoomLevel) -> Void
+    let onOpenGallery: () -> Void
+    let onCapture: () -> Void
+    let onSwitchCamera: () -> Void
+    let onDismissStatus: () -> Void
+
+    @ScaledMetric(relativeTo: .caption) private var cardWidth: CGFloat = 84
+    @ScaledMetric(relativeTo: .caption) private var cardImageHeight: CGFloat = 92
+
+    /// The strip is chrome, not content: at AX3 its cards grow, but the image stops at 140 pt so the
+    /// bar can never take the whole viewport away from the pose guide. The name wraps instead.
+    private var stripImageHeight: CGFloat { min(cardImageHeight, 140) }
+
+    /// Two caption lines under the image: the strip has one deterministic height in every state, so
+    /// the bar cannot jump when a load lands mid-scroll.
+    @ScaledMetric(relativeTo: .caption) private var cardCaptionHeight: CGFloat = 36
+    private var stripRowHeight: CGFloat { stripImageHeight + cardCaptionHeight + AP.Space.space8 }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            if let status, !status.isEmpty {
+                // F5: the snackbar sits at the bottom, directly above the control bar.
+                APSnackbar(
+                    tone: statusTone,
+                    message: status,
+                    actionTitle: statusTone == .success ? "View" : nil,
+                    action: statusTone == .success ? onOpenGallery : nil,
+                    onDismiss: onDismissStatus
+                )
+                .padding(.horizontal, AP.Space.space16)
+                .padding(.bottom, AP.Space.space12)
+                .accessibilityIdentifier("camera.status")
+            }
+
+            zoomPill
+                .padding(.bottom, AP.Space.space8)
+
+            panel
+        }
+        .frame(maxWidth: .infinity)
+        .background(AP.Color.background)
+    }
+
+    // MARK: Panel
+
+    private var panel: some View {
+        VStack(spacing: AP.Space.space8) {
+            if CameraChromeLayout.showsStrip(isPickerExpanded: isPickerExpanded, showsPicker: showsPicker) {
+                stripView
+            }
+            if CameraChromeLayout.showsStripToggle(showsPicker: showsPicker) {
+                stripToggle
+            }
+            rail
+        }
+        .padding(.top, AP.Space.space12)
+        .padding(.bottom, AP.Space.space8)
+        .frame(maxWidth: .infinity)
+        .background(
+            RoundedTopShape(radius: AP.Radius.radius24)
+                .fill(AP.Color.secondaryBackground)
+        )
+        .accessibilityElement(children: .contain)
+    }
+
+    /// The clear control that re-opens (and closes) the picker strip: glyph + word, never a hidden
+    /// gesture, so the collapsed camera can always get back to the strip.
+    private var stripToggle: some View {
+        Button(action: onToggleStrip) {
+            HStack(spacing: AP.Space.space4) {
+                Image(systemName: CameraChromeLayout.stripToggleGlyph(isPickerExpanded: isPickerExpanded))
+                    .font(AP.Font.caption.weight(.semibold))
+                Text("Poses")
+                    .font(AP.Font.supporting)
+            }
+            .foregroundStyle(AP.Color.primaryText)
+            .padding(.horizontal, AP.Space.space16)
+            .frame(minHeight: AP.HitTarget.minimum)
+        }
+        .buttonStyle(CameraPressStyle(shape: .capsule, restingFill: AP.Color.controlFill))
+        .disabled(!controlsEnabled)
+        .opacity(controlsEnabled ? 1 : 0.45)
+        .accessibilityLabel(CameraChromeLayout.stripToggleLabel(isPickerExpanded: isPickerExpanded))
+        .accessibilityValue(isPickerExpanded ? "Expanded" : "Collapsed")
+        .accessibilityIdentifier("camera.pickerStripToggle")
+    }
+
+    @ViewBuilder private var stripView: some View {
+        switch strip {
+        case .poses(let poses):
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: AP.Space.space8) {
+                    ForEach(poses) { pose in stripCard(pose) }
+                }
+                .padding(.horizontal, AP.Space.space16)
+            }
+            .frame(height: stripRowHeight)
+            .accessibilityIdentifier("camera.poseStrip")
+        case .loading:
+            // Flat controlFill skeleton cards — the loading look, not a spinner over nothing.
+            HStack(spacing: AP.Space.space8) {
+                ForEach(0..<3, id: \.self) { _ in
+                    RoundedRectangle(cornerRadius: AP.Radius.radius16, style: .continuous)
+                        .fill(AP.Color.controlFill)
+                        .frame(width: cardWidth, height: stripImageHeight)
+                }
+            }
+            .frame(maxWidth: .infinity, minHeight: stripRowHeight, alignment: .leading)
+            .padding(.horizontal, AP.Space.space16)
+            .accessibilityIdentifier("camera.poseStrip")
+        case .empty, .failed:
+            HStack(spacing: AP.Space.space12) {
+                APStateWordRow(
+                    tone: strip == .failed ? .error : .empty,
+                    word: strip == .failed ? "Couldn't load poses" : "No poses yet"
+                )
+                Spacer(minLength: 0)
+                if strip == .failed {
+                    Button("Try again", action: onRetryStrip)
+                        .buttonStyle(APChipButtonStyle())
+                        .accessibilityIdentifier("camera.poseStrip.retry")
+                }
+            }
+            .padding(.horizontal, AP.Space.space16)
+            .frame(maxWidth: .infinity, minHeight: stripRowHeight, alignment: .leading)
+            .accessibilityIdentifier("camera.poseStrip")
+        }
+    }
+
+    private func stripCard(_ pose: NativePose) -> some View {
+        let isSelected = pose.id == selectedPoseID
+        return Button {
+            onSelectPose(pose)
+        } label: {
+            VStack(spacing: AP.Space.space4) {
+                ZStack(alignment: .topTrailing) {
+                    KFImage(pose.imageURL)
+                        .placeholder { AP.Color.controlFill }
+                        .onFailureView { AP.Color.controlFill }
+                        .loadDiskFileSynchronously(false)
+                        .contentConfigure { image, _ in
+                            image.resizable().aspectRatio(contentMode: .fill)
+                        }
+                        .frame(width: cardWidth, height: stripImageHeight)
+                        .clipShape(RoundedRectangle(cornerRadius: AP.Radius.radius8, style: .continuous))
+                    if isSelected {
+                        Image(systemName: "checkmark")
+                            .font(AP.Font.caption.weight(.bold))
+                            .foregroundStyle(AP.Color.onAccent)
+                            .frame(width: 20, height: 20)
+                            .background(Circle().fill(AP.Color.accent))
+                            .padding(AP.Space.space4)
+                            .accessibilityHidden(true)
+                    }
+                }
+                Text(pose.name)
+                    .font(AP.Font.caption)
+                    .foregroundStyle(isSelected ? AP.Color.selectedForeground : AP.Color.secondaryText)
+                    .lineLimit(2)
+                    .frame(width: cardWidth - AP.Space.space8, alignment: .leading)
+            }
+            .padding(AP.Space.space4)
+        }
+        .buttonStyle(CameraPressStyle(isSelected: isSelected, restingFill: AP.Color.controlFill))
+        .accessibilityLabel("Use \(pose.name) pose")
+        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+        .accessibilityIdentifier("camera.poseStrip.card.\(pose.id)")
+    }
+
+    // MARK: Zoom
+
+    private var zoomPill: some View {
+        HStack(spacing: AP.Space.space4) {
+            ForEach(CameraZoomLevel.allCases, id: \.rawValue) { level in
+                Button {
+                    onZoom(level)
+                } label: {
+                    Text(level.label)
+                        .font(AP.Font.caption.weight(.semibold))
+                        .foregroundStyle(level == zoomLevel ? AP.Color.selectedForeground : AP.Color.secondaryText)
+                        .frame(minWidth: AP.HitTarget.minimum, minHeight: AP.HitTarget.minimum)
+                        .background(
+                            RoundedRectangle(cornerRadius: AP.Radius.radius16, style: .continuous)
+                                .fill(level == zoomLevel ? AP.Color.selectedBackground : .clear)
+                        )
+                }
+                .buttonStyle(.plain)
+                .disabled(!controlsEnabled)
+                .opacity(controlsEnabled ? 1 : 0.45)
+                .accessibilityLabel("Zoom \(level.label)")
+                .accessibilityAddTraits(level == zoomLevel ? [.isSelected] : [])
+                .accessibilityIdentifier("camera.zoom.\(level.label)")
+            }
+        }
+        .padding(AP.Space.space4)
+        .background(Capsule().fill(AP.Color.controlFill))
+        .accessibilityElement(children: .contain)
+    }
+
+    // MARK: Rail
+
+    private var rail: some View {
+        HStack(spacing: 0) {
+            thumbnailButton
+            Spacer(minLength: 0)
+            shutterButton
+            Spacer(minLength: 0)
+            flipButton
+        }
+        .padding(.horizontal, CameraProto.railInset)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, AP.Space.space8)
+    }
+
+    private var thumbnailButton: some View {
+        Button(action: onOpenGallery) {
+            Group {
+                if let thumbnailURL {
+                    KFImage(thumbnailURL)
+                        .setProcessor(AppImage.downsample(squarePoints: CameraProto.railControl))
+                        .placeholder { AP.Color.controlFill }
+                        .onFailureView { AP.Color.controlFill }
+                        .loadDiskFileSynchronously(false)
+                        .contentConfigure { image, _ in
+                            image.resizable().aspectRatio(contentMode: .fill)
+                        }
+                } else {
+                    AP.Color.controlFill
+                }
+            }
+            .frame(width: CameraProto.railControl, height: CameraProto.railControl)
+            .clipShape(RoundedRectangle(cornerRadius: AP.Radius.radius8, style: .continuous))
+        }
+        .buttonStyle(CameraPressStyle())
+        .accessibilityLabel("Open gallery")
+        .accessibilityIdentifier("camera.gallery")
+    }
+
+    private var shutterButton: some View {
+        Button(action: onCapture) {
+            ZStack {
+                if isBusy {
+                    CameraShutterSpinner()
+                } else {
+                    Circle()
+                        .strokeBorder(AP.Color.onAccent.opacity(0.55), lineWidth: 2)
+                        .padding(AP.Space.space8)
+                }
+            }
+            .frame(width: CameraProto.shutterSize, height: CameraProto.shutterSize)
+            .background(
+                Circle().fill(isBusy ? AP.Color.controlFill : AP.Color.accent)
+            )
+            .apElevation(.e1, cornerRadius: CameraProto.shutterSize / 2)
+        }
+        .buttonStyle(.plain)
+        .scaleEffect(isBusy ? 1 : 1)
+        .opacity(canCapture || isBusy ? 1 : 0.45)
+        .disabled(!canCapture || isBusy)
+        .accessibilityLabel("Take photo")
+        .accessibilityIdentifier("camera.shutter")
+    }
+
+    private var flipButton: some View {
+        Button(action: onSwitchCamera) {
+            Image(systemName: "arrow.triangle.2.circlepath")
+                .font(AP.Font.heading)
+                .foregroundStyle(controlsEnabled ? AP.Color.primaryText : AP.Color.disabled)
+                .frame(width: CameraProto.railControl, height: CameraProto.railControl)
+        }
+        .buttonStyle(CameraPressStyle(restingFill: AP.Color.controlFill))
+        .disabled(!controlsEnabled)
+        .accessibilityLabel("Switch to front camera")
+        .accessibilityIdentifier("camera.flip")
     }
 }
 
@@ -1266,14 +1741,15 @@ private struct CameraFramingGrid: View {
     }
 }
 
-// MARK: - Camera Tools popup (`.nb-camera-tools-menu`)
+// MARK: - Camera tools (AP tokens, forced dark)
 
-/// Anchored popup, not a bottom sheet: absolutely positioned bottom-right with
-/// `transform-origin: bottom right`, dark panel, `3px 3px 0 #000` shadow, no scrim, no handle,
-/// no app-bar Close (`camera-viewport.css` `.nb-camera-tools-menu`).
+/// The camera's settings surface: an anchored popup under the tools control (no scrim, no handle, no
+/// app-bar Close), `surface` fill, radius 24, E1 — the dark card edge is the elevation's `cardStroke`
+/// hairline, never a hand-drawn border. Rows are `controlFill` pills with 44 pt targets and a pressed
+/// fill step, and every status pairs a glyph with a word.
 ///
-/// The popup hugs its content up to `max-height: min(62vh, 420px)` with `overflow-y: auto`, so the
-/// content height is measured once through a preference and the scroll view is bounded to it.
+/// The popup hugs its content up to `max-height` with `overflow-y: auto`, so the content height is
+/// measured once through a preference and the scroll view is bounded to it.
 private struct CameraToolsPopup: View {
     let flashSetting: CameraFlashSetting
     let isGridVisible: Bool
@@ -1309,23 +1785,20 @@ private struct CameraToolsPopup: View {
         .frame(maxWidth: popupWidth, alignment: .leading)
         .modifier(CameraToolsPopupHeight(naturalHeight: naturalContentHeight, maxHeight: popupMaxHeight))
         .background(
-            RoundedRectangle(cornerRadius: CameraProto.radiusMedium)
-                .fill(AIPoseColor.border)
-                .offset(x: CameraProto.shadow, y: CameraProto.shadow)
+            RoundedRectangle(cornerRadius: AP.Radius.radius24, style: .continuous)
+                .fill(AP.Color.surface)
         )
-        .background(CameraProto.dark)
-        .overlay(
-            RoundedRectangle(cornerRadius: CameraProto.radiusMedium)
-                .stroke(AIPoseColor.border, lineWidth: CameraProto.borderWidth)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: CameraProto.radiusMedium))
+        .apElevation(.e1, cornerRadius: AP.Radius.radius24)
+        .clipShape(RoundedRectangle(cornerRadius: AP.Radius.radius24, style: .continuous))
         .accessibilityElement(children: .contain)
         // VoiceOver's local Back (two-finger Z scrub) — the native equivalent of Escape.
         .accessibilityAction(.escape) { onDismiss() }
     }
 
     private var content: some View {
-        VStack(spacing: CameraProto.spaceSM) {
+        VStack(alignment: .leading, spacing: AP.Space.space8) {
+            header
+
             row(
                 systemImage: flashSetting.symbolName,
                 title: "Flash",
@@ -1337,20 +1810,17 @@ private struct CameraToolsPopup: View {
             gridRow
 
             if hasPose {
-                // `.nb-camera-tools-divider` + `.nb-camera-tools-section h3 "Pose guide"`.
-                Rectangle()
-                    .fill(Color.white.opacity(0.26))
-                    .frame(height: 1)
-                    .padding(.vertical, 2)
+                Divider()
+                    .overlay(AP.Color.separator)
+                    .padding(.vertical, AP.Space.space4)
 
                 Text("Pose guide")
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundStyle(.white)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 2)
+                    .font(AP.Font.caption)
+                    .foregroundStyle(AP.Color.secondaryText)
+                    .accessibilityAddTraits(.isHeader)
 
                 row(
-                    systemImage: nil,
+                    systemImage: isPoseGuideVisible ? "eye" : "eye.slash",
                     title: "Pose guide",
                     value: isPoseGuideVisible ? "Shown" : "Hidden",
                     accessibilityLabel: isPoseGuideVisible ? "Hide pose guide" : "Show pose guide",
@@ -1361,11 +1831,25 @@ private struct CameraToolsPopup: View {
                 lineColorRow
             }
         }
-        .padding(CameraProto.spaceSM)
+        .padding(AP.Space.space12)
     }
 
-    /// `.nb-camera-setting-row` — white fill, 2pt black border, radius 10, min-height 44pt,
-    /// 12pt horizontal padding, bold 14pt, pressed translate 1.5pt with pressed shadow.
+    private var header: some View {
+        HStack(spacing: AP.Space.space8) {
+            Text("Camera tools")
+                .font(AP.Font.heading)
+                .foregroundStyle(AP.Color.primaryText)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Button("Done", action: onDismiss)
+                .buttonStyle(.plain)
+                .font(AP.Font.supporting.weight(.semibold))
+                .foregroundStyle(AP.Color.accentText)
+                .apMinimumHitTarget()
+                .accessibilityIdentifier("camera.tools.done")
+        }
+    }
+
+    /// One settings row: glyph + word on `controlFill`, 44 pt tall, pressed fill step.
     private func row(
         systemImage: String?,
         title: String,
@@ -1375,25 +1859,28 @@ private struct CameraToolsPopup: View {
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            HStack(spacing: CameraProto.spaceSM) {
+            HStack(spacing: AP.Space.space8) {
                 if let systemImage {
                     Image(systemName: systemImage)
-                        .font(.system(size: 15, weight: .semibold))
-                        .frame(width: 18, height: 18)
+                        .font(AP.Font.body)
+                        .foregroundStyle(AP.Color.primaryText)
+                        .frame(width: 22)
+                        .accessibilityHidden(true)
                 }
                 Text(title)
-                Spacer(minLength: 0)
+                    .font(AP.Font.body)
+                    .foregroundStyle(AP.Color.primaryText)
+                Spacer(minLength: AP.Space.space8)
                 if let value {
                     Text(value)
-                        .foregroundStyle(AIPoseColor.accentYellow)
+                        .font(AP.Font.body.weight(.semibold))
+                        .foregroundStyle(AP.Color.accentText)
                 }
             }
-            .font(.system(size: 14, weight: .bold))
-            .foregroundStyle(AIPoseColor.foreground)
-            .padding(.horizontal, 12)
-            .frame(maxWidth: .infinity, minHeight: CameraProto.touch, alignment: .leading)
+            .padding(.horizontal, AP.Space.space12)
+            .frame(maxWidth: .infinity, minHeight: AP.HitTarget.minimum, alignment: .leading)
         }
-        .buttonStyle(NeoSurfaceStyle(fill: AIPoseColor.surface))
+        .buttonStyle(CameraRowStyle())
         .disabled(!controlsEnabled)
         .opacity(controlsEnabled ? 1 : 0.45)
         .accessibilityLabel(accessibilityLabel)
@@ -1401,117 +1888,153 @@ private struct CameraToolsPopup: View {
     }
 
     private var gridRow: some View {
-        HStack(spacing: CameraProto.spaceSM) {
+        HStack(spacing: AP.Space.space8) {
             Image(systemName: "grid")
-                .font(.system(size: 15, weight: .semibold))
-                .frame(width: 18, height: 18)
+                .font(AP.Font.body)
+                .foregroundStyle(AP.Color.primaryText)
+                .frame(width: 22)
+                .accessibilityHidden(true)
             Text("Grid")
-            Spacer(minLength: 0)
+                .font(AP.Font.body)
+                .foregroundStyle(AP.Color.primaryText)
+            Spacer(minLength: AP.Space.space8)
             gridSwitch
         }
-        .font(.system(size: 14, weight: .bold))
-        .foregroundStyle(AIPoseColor.foreground)
-        .padding(.horizontal, 12)
-        .frame(maxWidth: .infinity, minHeight: CameraProto.touch, alignment: .leading)
-        .background(AIPoseColor.surface)
-        .clipShape(RoundedRectangle(cornerRadius: CameraProto.radiusMedium))
-        .overlay(RoundedRectangle(cornerRadius: CameraProto.radiusMedium)
-            .stroke(AIPoseColor.border, lineWidth: CameraProto.borderWidth))
-        .background(RoundedRectangle(cornerRadius: CameraProto.radiusMedium)
-            .fill(AIPoseColor.border)
-            .offset(x: CameraProto.shadowSmall, y: CameraProto.shadowSmall))
+        .padding(.horizontal, AP.Space.space12)
+        .frame(maxWidth: .infinity, minHeight: AP.HitTarget.minimum, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: AP.Radius.radius16, style: .continuous)
+                .fill(AP.Color.controlFill)
+        )
         .opacity(controlsEnabled ? 1 : 0.45)
         .accessibilityLabel("Show camera grid")
         .accessibilityIdentifier("camera.tools.grid")
     }
 
-    /// `.nb-switch` / `.nb-switch__slider` / `::before` (`styles/components/toggle.css`), mapped by
-    /// value. `base.css:18` sets `box-sizing: border-box`, so every figure below is the OUTER box and
-    /// the borders are drawn inside it (`strokeBorder`, not `stroke`):
-    ///   track  48x26, fill `--nb-color-white` #FFFFFF, border `--nb-border-thin` 1.5pt #000000,
-    ///          radius `--nb-radius-large` 14pt (wider than half the 26pt track, so it reads as a capsule)
-    ///   knob   16x16, fill #FFFFFF, border 1.5pt #000000, `left: 3px` inset
-    ///   checked track fill `--nb-color-accent-blue` #7FBBE6, knob `translateX(20px)`
-    ///   transition `--nb-transition-fast` 0.1s cubic-bezier(0.16, 1, 0.3, 1)
+    /// Switch: `accent` track when on, `controlFillPressed` when off, ink knob, 44 pt hit area.
     private var gridSwitch: some View {
         Button(action: onGridToggle) {
             ZStack(alignment: .leading) {
                 Capsule()
-                    .fill(isGridVisible ? AIPoseColor.accentBlue : AIPoseColor.surface)
-                    .overlay(Capsule().strokeBorder(AIPoseColor.border, lineWidth: 1.5))
-                    .frame(width: 48, height: 26)
+                    .fill(isGridVisible ? AP.Color.accent : AP.Color.controlFillPressed)
+                    .frame(width: 48, height: 28)
                 Circle()
-                    .fill(AIPoseColor.surface)
-                    .overlay(Circle().strokeBorder(AIPoseColor.border, lineWidth: 1.5))
-                    .frame(width: 16, height: 16)
+                    .fill(AP.Color.onAccent)
+                    .frame(width: 22, height: 22)
                     .padding(.leading, 3)
                     .offset(x: isGridVisible ? 20 : 0)
             }
             .animation(.easeOut(duration: 0.1), value: isGridVisible)
         }
         .buttonStyle(.plain)
+        // The drawn switch is 48x28; the row's own minimum height does not enlarge the Button, so the
+        // target is applied here, where the tap actually lands.
+        .apMinimumHitTarget()
         .disabled(!controlsEnabled)
         .accessibilityLabel("Show camera grid")
+        .accessibilityValue(isGridVisible ? "On" : "Off")
         .accessibilityIdentifier("camera.tools.grid")
         .accessibilityAddTraits(isGridVisible ? [.isSelected] : [])
     }
 
-    /// `.nb-camera-tool-slider-row` — plain white copy on the dark panel (not a white card),
-    /// `min 10% – max 100%`, value output in accent yellow.
+    /// Opacity: label + value on the tone's ink, slider tinted with the accent.
     private var opacityRow: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
+        VStack(alignment: .leading, spacing: AP.Space.space4) {
+            HStack(spacing: AP.Space.space8) {
                 Text("Opacity")
-                Spacer(minLength: 0)
+                    .font(AP.Font.body)
+                    .foregroundStyle(AP.Color.primaryText)
+                Spacer(minLength: AP.Space.space8)
                 Text("\(Int((guideOpacity * 100).rounded()))%")
-                    .foregroundStyle(AIPoseColor.accentYellow)
+                    .font(AP.Font.body.weight(.semibold))
+                    .foregroundStyle(AP.Color.accentText)
             }
             Slider(value: Binding(
                 get: { guideOpacity },
                 set: { onGuideOpacityChange($0) }
             ), in: 0.1...1)
+            .tint(AP.Color.accent)
             .disabled(!controlsEnabled)
             .accessibilityLabel("Pose guide opacity \(Int((guideOpacity * 100).rounded())) percent")
             .accessibilityIdentifier("camera.tools.opacity")
         }
-        .font(.system(size: 13, weight: .bold))
-        .foregroundStyle(.white)
-        .padding(2)
+        .padding(.horizontal, AP.Space.space12)
+        .padding(.vertical, AP.Space.space8)
+        .background(
+            RoundedRectangle(cornerRadius: AP.Radius.radius16, style: .continuous)
+                .fill(AP.Color.controlFill)
+        )
     }
 
-    /// `.nb-camera-tool-choice-row` — "Line color" heading + Black | White choices
-    /// (selected choice fills `--nb-color-accent-blue`).
+    /// Line colour: the selected choice carries a check glyph **and** its word, never colour alone.
     private var lineColorRow: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Line color")
-            HStack(spacing: CameraProto.spaceSM) {
+        VStack(alignment: .leading, spacing: AP.Space.space4) {
+            Text("Line colour")
+                .font(AP.Font.body)
+                .foregroundStyle(AP.Color.primaryText)
+            HStack(spacing: AP.Space.space8) {
                 choiceButton(.black, identifier: "camera.tools.lineColor.black")
                 choiceButton(.white, identifier: "camera.tools.lineColor.white")
             }
         }
-        .font(.system(size: 13, weight: .bold))
-        .foregroundStyle(.white)
-        .padding(2)
+        .padding(.horizontal, AP.Space.space12)
+        .padding(.vertical, AP.Space.space8)
+        .background(
+            RoundedRectangle(cornerRadius: AP.Radius.radius16, style: .continuous)
+                .fill(AP.Color.controlFill)
+        )
         .disabled(!controlsEnabled)
         .opacity(controlsEnabled ? 1 : 0.45)
     }
 
     private func choiceButton(_ color: GuideLineColor, identifier: String) -> some View {
-        Button {
+        let isSelected = guideLineColor == color
+        return Button {
             onGuideLineColorChange(color)
         } label: {
-            Text(color.label)
-                .font(.system(size: 13, weight: .bold))
-                .foregroundStyle(AIPoseColor.foreground)
-                .frame(maxWidth: .infinity, minHeight: 40)
+            HStack(spacing: AP.Space.space4) {
+                if isSelected {
+                    Image(systemName: "checkmark")
+                        .font(AP.Font.caption.weight(.bold))
+                }
+                Text(color.label)
+                    .font(AP.Font.supporting.weight(.semibold))
+            }
+            .foregroundStyle(isSelected ? AP.Color.selectedForeground : AP.Color.primaryText)
+            .frame(maxWidth: .infinity, minHeight: AP.HitTarget.minimum)
         }
-        .buttonStyle(NeoSurfaceStyle(
-            fill: guideLineColor == color ? AIPoseColor.accentBlue : AIPoseColor.surface,
-            radius: CameraProto.radiusSmall
-        ))
-        .accessibilityLabel("\(color.label) pose line color")
-        .accessibilityAddTraits(guideLineColor == color ? .isSelected : [])
+        .buttonStyle(CameraSelectStyle(isSelected: isSelected))
+        .accessibilityLabel("\(color.label) pose line colour")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
         .accessibilityIdentifier(identifier)
+    }
+}
+
+/// Selected/unselected fill for an option chip: `selectedBackground` when chosen, else transparent
+/// (it sits on the row's `controlFill`).
+private struct CameraSelectStyle: ButtonStyle {
+    let isSelected: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .background(
+                RoundedRectangle(cornerRadius: AP.Radius.radius8, style: .continuous)
+                    .fill(isSelected ? AP.Color.selectedBackground
+                          : (configuration.isPressed ? AP.Color.controlFillPressed : Color.clear))
+            )
+            .apMinimumHitTarget()
+    }
+}
+
+/// `controlFill` row with a pressed fill step.
+private struct CameraRowStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .background(
+                RoundedRectangle(cornerRadius: AP.Radius.radius16, style: .continuous)
+                    .fill(configuration.isPressed ? AP.Color.controlFillPressed : AP.Color.controlFill)
+            )
+            .apMinimumHitTarget()
     }
 }
 
@@ -1537,111 +2060,18 @@ private struct CameraToolsPopupHeight: ViewModifier {
     }
 }
 
-// MARK: - Shutter rail
-
-private struct CameraShutterRail: View {
-    let thumbnailURL: URL?
-    let isBusy: Bool
-    let controlsEnabled: Bool
-    let onOpenGallery: () -> Void
-    let onCapture: () -> Void
-    let onSwitchCamera: () -> Void
-
-    var body: some View {
-        HStack(spacing: 0) {
-            thumbnailButton
-            Spacer(minLength: 0)
-            shutterButton
-            Spacer(minLength: 0)
-            flipButton
-        }
-        .padding(.horizontal, CameraProto.railInset)
-        .frame(maxWidth: .infinity)
-        .frame(height: CameraProto.railHeight)
-        // Cream covers the 124pt rail only; the dark canvas behind it is a `ShapeStyle`
-        // background, which SwiftUI extends into the home-indicator inset below the rail
-        // (matching `.nb-camera-phone { background-color: dark }` + transparent footer).
-        .background(AIPoseColor.background, ignoresSafeAreaEdges: [])
-        .background(CameraProto.dark)
-        .overlay(alignment: .top) {
-            AIPoseColor.border.frame(height: CameraProto.borderWidth)
-        }
-    }
-
-    private var thumbnailButton: some View {
-        Button(action: onOpenGallery) {
-            Group {
-                if let thumbnailURL {
-                    // 48pt control: decode a 48pt thumbnail, not the full-resolution capture the
-                    // previous `UIImage(contentsOfFile:)` path pulled in synchronously.
-                    KFImage(thumbnailURL)
-                        .setProcessor(AppImage.downsample(squarePoints: CameraProto.railControl))
-                        .placeholder { AIPoseColor.surface }
-                        .onFailureView { AIPoseColor.surface }
-                        .loadDiskFileSynchronously(false)
-                        .contentConfigure { image, _ in
-                            image.resizable().aspectRatio(contentMode: .fill)
-                        }
-                } else {
-                    AIPoseColor.surface
-                }
-            }
-            .frame(width: CameraProto.railControl, height: CameraProto.railControl)
-            .clipShape(RoundedRectangle(cornerRadius: CameraProto.radiusMedium))
-        }
-        .buttonStyle(NeoSurfaceStyle(
-            fill: AIPoseColor.surface,
-            radius: CameraProto.radiusMedium,
-            shadowOffset: CameraProto.shadowSmall
-        ))
-        .accessibilityLabel("Open gallery")
-    }
-
-    private var shutterButton: some View {
-        Button(action: onCapture) {
-            CameraShutterSpinner()
-                .opacity(isBusy ? 1 : 0)
-                .frame(width: CameraProto.shutterSize, height: CameraProto.shutterSize)
-        }
-        .buttonStyle(NeoSurfaceStyle(
-            fill: AIPoseColor.primary,
-            shadowOffset: CameraProto.shadowLarge,
-            circle: true
-        ))
-        .opacity(controlsEnabled || isBusy ? 1 : 0.45)
-        .disabled(!controlsEnabled || isBusy)
-        .accessibilityLabel("Capture photo")
-        .accessibilityIdentifier("camera.shutter")
-    }
-
-    private var flipButton: some View {
-        Button(action: onSwitchCamera) {
-            Image(systemName: "arrow.clockwise")
-                .font(.system(size: 16, weight: .bold))
-                .foregroundStyle(AIPoseColor.foreground)
-                .frame(width: CameraProto.railControl, height: CameraProto.railControl)
-        }
-        .buttonStyle(NeoSurfaceStyle(
-            fill: AIPoseColor.surface,
-            radius: CameraProto.radiusMedium,
-            shadowOffset: CameraProto.shadow
-        ))
-        .opacity(controlsEnabled ? 1 : 0.45)
-        .disabled(!controlsEnabled)
-        .accessibilityLabel("Switch to front camera")
-    }
-}
-
+/// Spinner drawn inside the shutter while a capture is in flight: a glyph on the controlFill disc,
+/// so a busy shutter reads as busy without a second control appearing.
 private struct CameraShutterSpinner: View {
     @State private var angle: Double = 0
 
     var body: some View {
         ZStack {
             Circle()
-                .stroke(AIPoseColor.foreground.opacity(0.22), lineWidth: 3)
+                .stroke(AP.Color.primaryText.opacity(0.22), lineWidth: 3)
             Circle()
                 .trim(from: 0, to: 0.25)
-                .stroke(AIPoseColor.foreground, style: StrokeStyle(lineWidth: 3, lineCap: .butt))
+                .stroke(AP.Color.primaryText, style: StrokeStyle(lineWidth: 3, lineCap: .round))
                 .rotationEffect(.degrees(angle - 90))
         }
         .frame(width: 24, height: 24)
@@ -1650,6 +2080,7 @@ private struct CameraShutterSpinner: View {
                 angle = 360
             }
         }
+        .accessibilityHidden(true)
     }
 }
 
@@ -1707,16 +2138,49 @@ final class PosePickerViewModel: ObservableObject {
         state = .idle
         query = ""
         stopMonitoring()
+        abandonInFlightLoad()
     }
 
+    /// The catalogue request currently running, if any. Two camera surfaces need the catalogue (the
+    /// F12 strip and the picker sheet), so a second caller **joins** the request in flight instead of
+    /// starting a competing one — there is no pair of requests that can finish out of order.
+    private var inFlightLoad: Task<Void, Never>?
+    /// Bumped for every request that is actually started, and again when a request is abandoned. A
+    /// completion carrying an older generation can never replace newer state (a dismissed load that
+    /// failed late must not overwrite the catalogue a newer request already returned).
+    private var loadGeneration = 0
+
     func load() async {
-        state = .loading
-        do {
-            let poses = try await service.poses(query: nil)
-            state = poses.isEmpty ? .empty : .loaded(poses)
-        } catch {
-            state = .failed(error.localizedDescription)
+        if let inFlightLoad {
+            await inFlightLoad.value
+            return
         }
+        loadGeneration &+= 1
+        let generation = loadGeneration
+        let task = Task { @MainActor [weak self] in
+            guard let self else { return }
+            self.state = .loading
+            do {
+                let poses = try await self.service.poses(query: nil)
+                guard generation == self.loadGeneration else { return }
+                self.state = poses.isEmpty ? .empty : .loaded(poses)
+            } catch {
+                guard generation == self.loadGeneration else { return }
+                self.state = .failed(error.localizedDescription)
+            }
+        }
+        inFlightLoad = task
+        await task.value
+        if loadGeneration == generation { inFlightLoad = nil }
+    }
+
+    /// Drops the request behind the catalogue: the collapsed camera's dismissal retries on reopen
+    /// (R6), so a late answer must not paint the sheet again. Bumping the generation is what makes
+    /// the abandoned completion inert.
+    private func abandonInFlightLoad() {
+        inFlightLoad?.cancel()
+        inFlightLoad = nil
+        loadGeneration &+= 1
     }
 
     /// Local title filter over the loaded catalogue (`guide-picker.js` `render()`).
@@ -1775,12 +2239,20 @@ final class PosePickerViewModel: ObservableObject {
     func clearSearch() {
         query = ""
     }
+
+    /// The sheet closed while the picker strip stays on screen (F12 expanded). R7 still applies —
+    /// monitoring stops and the offline reading is cleared — but the rows stay: the strip is still
+    /// drawing them, and reopening retries any load that is not `.loaded`.
+    func dismissKeepingCatalogue() {
+        stopMonitoring()
+        query = ""
+    }
 }
 
-/// `.nb-pose-picker-sheet` — camera-local bottom sheet: Camera stays visible behind it as the
-/// parent context; panel `height: min(82%, 700px)`, `min-height: 420px`, cream background, 2pt
-/// border with **no bottom border**, radius `22 22 0 0`, `0 -4px 0 #000` shadow, handle, app-bar
-/// Close and **no Back button**.
+/// The pose picker sheet: Camera stays visible behind it as the parent context; panel
+/// `height: min(82%, 700px)`, `min-height: 420px`, `surface` fill, radius 24 on the top corners,
+/// E2 overlay (no border, no hand-drawn shadow), handle, a Done action and **no Back button**. It
+/// renders the camera's dark appearance, so the sheet reads as the same surface as the chrome.
 private struct PosePickerSheet: View {
     @ObservedObject var model: PosePickerViewModel
     @ObservedObject private var aspectRatioCache = PoseAspectRatioCache.shared
@@ -1818,12 +2290,12 @@ private struct PosePickerSheet: View {
         // keeps the modal trait and preserves the descendants.
     }
 
-    /// `.nb-pose-picker-sheet__backdrop` — `rgba(18, 18, 18, 0.48)`.
+    /// The sheet's scrim (`scrim` token: 64% black in the camera's dark appearance).
     private var backdrop: some View {
-        CameraProto.dark
-            .opacity(0.48)
+        AP.Color.scrim
             .contentShape(Rectangle())
             .onTapGesture(perform: onClose)
+            .accessibilityHidden(true)
     }
 
     private func panel(height: CGFloat) -> some View {
@@ -1834,84 +2306,68 @@ private struct PosePickerSheet: View {
             scrollContent
         }
         .padding(EdgeInsets(
-            top: 10,
-            leading: CameraProto.spaceMD,
-            bottom: CameraProto.spaceMD,
-            trailing: CameraProto.spaceMD
+            top: AP.Space.space12,
+            leading: AP.Space.space16,
+            bottom: AP.Space.space16,
+            trailing: AP.Space.space16
         ))
         .frame(maxHeight: height, alignment: .top)
         .frame(maxWidth: .infinity)
-        // `.nb-pose-picker-panel` is opaque `--nb-color-bg` (#FBF6EF). A later `.background` renders
-        // BEHIND an earlier one, so the cream fill must be the FIRST (innermost) background and the
-        // hard `box-shadow: 0 -4px 0 var(--nb-color-border)` shape the SECOND. Inverted, the
-        // full-size black shape painted over the panel and left only a 4pt cream sliver at the
-        // bottom — dark text on black, and on a real device over the live camera feed.
         .background(
-            RoundedTopShape(radius: CameraProto.pickerTopRadius)
-                .fill(AIPoseColor.background)
+            RoundedTopShape(radius: AP.Radius.radius24)
+                .fill(AP.Color.surface)
         )
-        .background(
-            RoundedTopShape(radius: CameraProto.pickerTopRadius)
-                .fill(AIPoseColor.border)
-                .offset(y: -CameraProto.shadow)
-        )
-        .overlay(
-            TopEdgeBorderShape(radius: CameraProto.pickerTopRadius)
-                .stroke(AIPoseColor.border, lineWidth: CameraProto.borderWidth)
-        )
-        // The sheet content is light (cream panel) while Camera stays dark behind it; without this
-        // the dark scheme would render the search TextField's text white-on-white.
-        .environment(\.colorScheme, .light)
+        .clipShape(RoundedTopShape(radius: AP.Radius.radius24))
         .accessibilityElement(children: .contain)
         .accessibilityAddTraits(.isModal)
         .transition(reduceMotion ? .opacity : .opacity.combined(with: .offset(y: 18)))
     }
 
-    /// `.nb-pose-picker-panel__handle` — 42x4 dark, centred.
+    /// The grabber: `separator` fill, centred, decorative.
     private var handle: some View {
         Capsule()
-            .fill(AIPoseColor.foreground)
-            .frame(width: CameraProto.pickerHandleWidth, height: CameraProto.pickerHandleHeight)
-            .padding(.bottom, CameraProto.spaceMD)
+            .fill(AP.Color.separator)
+            .frame(width: AP.Space.space32, height: AP.Space.space4)
+            .padding(.bottom, AP.Space.space16)
             .frame(maxWidth: .infinity)
             .accessibilityHidden(true)
     }
 
-    /// `.nb-pose-picker-panel__header` — nav-title 20pt bold + app-bar Close. No Back button.
+    /// Title + the sheet's Done action (accentText, 44 pt). No Back button.
     private var header: some View {
-        HStack(alignment: .top, spacing: CameraProto.spaceSM) {
+        HStack(alignment: .firstTextBaseline, spacing: AP.Space.space8) {
             Text("Choose a pose")
-                .font(.system(size: 20, weight: .bold))
-                .foregroundStyle(AIPoseColor.foreground)
+                .font(AP.Font.title)
+                .foregroundStyle(AP.Color.primaryText)
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
                 .accessibilityAddTraits(.isHeader)
 
-            CameraActionControl(
-                systemImage: "xmark",
-                accessibilityLabel: "Close pose picker",
-                identifier: "posePicker.close",
-                action: onClose
-            )
+            Button("Done", action: onClose)
+                .buttonStyle(.plain)
+                .font(AP.Font.supporting.weight(.semibold))
+                .foregroundStyle(AP.Color.accentText)
+                .apMinimumHitTarget()
+                .accessibilityLabel("Close pose picker")
+                .accessibilityIdentifier("posePicker.close")
         }
-        .padding(.bottom, CameraProto.spaceCompact)
+        .padding(.bottom, AP.Space.space12)
     }
 
-    /// `.nb-pose-picker-search__field` — white, 2pt black border, radius 10, min-height 50pt,
-    /// 20pt search glyph, 44pt clear button. Focus shifts the field -1.5pt with the large shadow
-    /// (`:focus-within { transform: translate(-1.5px, -1.5px); box-shadow: var(--nb-shadow) }`).
+    /// Search: `controlFill` field, radius 16, 48 pt tall, no resting border — focus is the only
+    /// ring (the shared `outline` focus ring), never a border token.
     private var searchField: some View {
-        let focusOffset: CGFloat = isSearchFocused ? -CameraProto.shadowSmall : 0
-        let shadowDepth: CGFloat = isSearchFocused ? CameraProto.shadow : CameraProto.shadowSmall
-
-        return HStack(spacing: CameraProto.spaceSM) {
+        HStack(spacing: AP.Space.space8) {
             Image(systemName: "magnifyingglass")
-                .font(.system(size: 15, weight: .bold))
-                .foregroundStyle(AIPoseColor.foreground)
-                .frame(width: 20, height: 20)
+                .font(AP.Font.body)
+                .foregroundStyle(AP.Color.secondaryText)
+                .frame(width: 22)
                 .accessibilityHidden(true)
 
             TextField("Search poses", text: $model.query)
-                .font(.system(size: 16))
+                .font(AP.Font.body)
+                .foregroundStyle(AP.Color.primaryText)
+                .tint(AP.Color.accent)
                 .autocorrectionDisabled()
                 .textInputAutocapitalization(.never)
                 .focused($isSearchFocused)
@@ -1924,79 +2380,56 @@ private struct PosePickerSheet: View {
                     isSearchFocused = true
                 } label: {
                     Image(systemName: "xmark")
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundStyle(AIPoseColor.foreground)
+                        .font(AP.Font.caption.weight(.bold))
+                        .foregroundStyle(AP.Color.primaryText)
                         .frame(width: 17, height: 17)
-                        .frame(width: CameraProto.touch, height: CameraProto.touch)
-                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .apMinimumHitTarget()
                 .accessibilityLabel("Clear search")
                 .accessibilityIdentifier("posePicker.searchClear")
             }
         }
-        .padding(EdgeInsets(
-            top: CameraProto.spaceXS,
-            leading: CameraProto.spaceCompact,
-            bottom: CameraProto.spaceXS,
-            trailing: CameraProto.spaceXS
-        ))
-        .frame(minHeight: 50)
-        .background(AIPoseColor.surface)
-        .clipShape(RoundedRectangle(cornerRadius: CameraProto.radiusMedium))
-        .overlay(RoundedRectangle(cornerRadius: CameraProto.radiusMedium)
-            .stroke(AIPoseColor.border, lineWidth: CameraProto.borderWidth))
-        .background(RoundedRectangle(cornerRadius: CameraProto.radiusMedium)
-            .fill(AIPoseColor.border)
-            .offset(x: shadowDepth, y: shadowDepth))
-        .offset(x: focusOffset, y: focusOffset)
-        .padding(.bottom, CameraProto.spaceCompact)
+        .padding(.horizontal, AP.Space.space12)
+        .frame(minHeight: 48)
+        .background(
+            RoundedRectangle(cornerRadius: AP.Radius.radius16, style: .continuous)
+                .fill(AP.Color.controlFill)
+        )
+        .apFocusRing(isFocused: isSearchFocused, cornerRadius: AP.Radius.radius16)
+        .padding(.bottom, AP.Space.space12)
     }
 
     private var scrollContent: some View {
         ScrollView {
             VStack(spacing: 0) {
                 // R5: the notice sits above a populated grid instead of replacing it.
-                if model.showsOfflineNotice { offlineNotice }
+                if model.showsOfflineNotice {
+                    APOfflineBanner(message: "Showing your last available poses.", retryTitle: nil, retry: nil)
+                        .padding(.bottom, AP.Space.space12)
+                }
                 stateSurface
                 poseGrid
             }
-            // `.nb-pose-picker-scroll { padding: 2px 2px calc(40px + safe-area) }`.
-            .padding(.top, 2)
-            .padding(.horizontal, 2)
-            .padding(.bottom, 40)
+            .padding(.bottom, AP.Space.space24)
         }
     }
 
-    /// `.nb-camera-status`-style offline notice (frozen card, `.offline` tone).
-    private var offlineNotice: some View {
-        FeatureStateView(tone: .offline, title: "You're offline", message: "Showing your last available poses.")
-    }
-
-    /// States render through the shared (frozen, icon-less) `FeatureStateView`; the card is
-    /// leading-aligned and top-anchored inside the sheet's scroll area — never centred.
+    /// F4: the picker's loading / error / empty / no-match / offline states all render through the
+    /// shared 72 pt state panel. `CameraStatePanel.picker` owns the selection, so the sheet cannot
+    /// drift back to the old stacked-tile card.
     @ViewBuilder
     private var stateSurface: some View {
-        // Branch on the pure tone so the card that renders is the mapped one, not a restated literal.
-        switch model.stateTone {
-        case .some(.loading):
-            FeatureStateView(tone: .loading, title: "Loading poses", message: "Getting your pose library ready.")
-        case .some(.error):
-            FeatureStateView(tone: .error, title: "Couldn't load poses", message: "Check your connection and try again.", actionTitle: "Try again") {
+        if let panel = CameraStatePanel.picker(
+            tone: model.stateTone,
+            isNoMatch: model.emptyIsNoMatch,
+            term: model.query.trimmingCharacters(in: .whitespaces),
+            isOffline: model.isOffline
+        ) {
+            CameraPickerStatePanel(panel: panel) {
                 Task { await model.load() }
             }
-        case .some(.offline):
-            offlineNotice
-        case .some(.empty):
-            if model.emptyIsNoMatch {
-                let term = model.query.trimmingCharacters(in: .whitespaces)
-                FeatureStateView(tone: .empty, title: "No poses match “\(term)”", message: "Try a different pose name.")
-            } else {
-                FeatureStateView(tone: .empty, title: "No poses yet", message: "Create or save a pose to use it here.")
-            }
-        case .some(.success), .some(.warning), .none:
-            // `.success`/`.warning` have no producer on this surface; `nil` means the grid is shown.
-            EmptyView()
+            .accessibilityIdentifier("posePicker.state")
         }
     }
 
@@ -2078,42 +2511,12 @@ private struct RoundedTopShape: Shape {
     }
 }
 
-/// The panel border has **no bottom border** (`border-bottom: 0`): the path runs down the sides
-/// and over the top edge only.
-private struct TopEdgeBorderShape: Shape {
-    let radius: CGFloat
-
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        path.move(to: CGPoint(x: rect.minX, y: rect.maxY))
-        path.addLine(to: CGPoint(x: rect.minX, y: rect.minY + radius))
-        path.addArc(
-            center: CGPoint(x: rect.minX + radius, y: rect.minY + radius),
-            radius: radius,
-            startAngle: .degrees(180),
-            endAngle: .degrees(270),
-            clockwise: false
-        )
-        path.addLine(to: CGPoint(x: rect.maxX - radius, y: rect.minY))
-        path.addArc(
-            center: CGPoint(x: rect.maxX - radius, y: rect.minY + radius),
-            radius: radius,
-            startAngle: .degrees(270),
-            endAngle: .degrees(0),
-            clockwise: false
-        )
-        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
-        return path
-    }
-}
-
-/// `.nb-pose-grid .nb-card--pose-grid:active` — the flat surface just translates 1.5pt
-/// (no shadow to drop).
+/// The strip / grid card press: the shared pressed response — one fill step and `scale 0.97`
+/// (fill only under Reduce Motion), never a translated hard shadow.
 private struct GuideCardPressStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .offset(x: configuration.isPressed ? CameraProto.shadowSmall : 0,
-                    y: configuration.isPressed ? CameraProto.shadowSmall : 0)
+        // The card draws its own surface, so only the pressed step is painted here.
+        CameraPressBody(configuration: configuration, isSelected: false, shape: .rounded16, restingFill: .clear)
     }
 }
 
@@ -2217,7 +2620,7 @@ struct StickFigureShape: Shape {
 
 private struct StickFigureView: View {
     let kind: StickFigurePose
-    var lineColor: Color = AIPoseColor.border
+    var lineColor: Color = AP.Color.primaryText
 
     var body: some View {
         GeometryReader { proxy in
