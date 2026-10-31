@@ -85,7 +85,8 @@ Boards: `/tmp/ds-261030/export-c/08-*` (Add pose) and `09-*` (Jobs); owner feedb
 and their flows stay in `docs/qa/redesign-drafts/jobs-add-pose/` until Feature confirms the ids listed
 under [Requests to Feature](#requests-to-feature).
 
-Redesign deltas the existing rows above must be re-read against (they were written for build 16):
+Redesign deltas the existing rows above must be re-read against (they were written for 1.2 (16), the build
+before this release):
 
 - Add pose is a **three-step** flow: empty state ("Turn a photo into a pose" → Choose a photo) → form
   (Name, **tag chips + Add tag**, Description with a **200** counter, pinned **Add pose** CTA + Done) →
@@ -114,7 +115,7 @@ Redesign deltas the existing rows above must be re-read against (they were writt
 | TC-JOB-013 | P1 | Signed in, cached rows, then the API becomes unreachable | 1. Load Jobs online. 2. Let a poll fail. 3. Recover | Cached rows stay on screen, the offline banner sits above the list with the recovery copy, in-progress rows additionally say they are waiting for the connection, and both the banner and the per-row state clear on the next successful poll; tabs and filters keep working on the cached rows | pending: banner landed in 2b01b77 (`jobs.offline.banner`, copy "You're offline. Progress resumes when you reconnect."); the per-row waiting state is asserted through `jobRow.name.<jobId>` (label "…, Queued · waiting for connection") |
 | TC-JOB-014 | P2 | Signed in; slow or failing job list | 1. Open Jobs on a slow network. 2. Open Jobs when the list request fails | The loading state uses skeleton rows matching the real row geometry (tabs and filters as placeholders too, not live content); a failed list shows the single F4 state (72 pt accent circle, title, body) with a Try again action that re-requests once and recovers | pending: needs `jobs.loading.skeleton` and `jobs.error.retry` |
 
-## Run log (lane-2 CF871F97, Debug-Dev 1.2 build, account A)
+## Run log (lane-2 CF871F97, run on 1.2 (16), account A)
 
 Run 2026-10-31 19:0x, one flow at a time, photo `xcrun simctl addmedia` + `/tmp/qa-pose.jpg`:
 
@@ -151,7 +152,7 @@ be a stale-coordinate tap rather than a navigation bug) — the flow uses Done +
    The Maestro run is the real proof of tapability — a unit test can pin the modifier, not that a tap on
    the id reaches the button.
 
-## Requests to Feature (build 17 redesign ids)
+## Requests to Feature (1.1 (17) redesign ids)
 
 **Landed in 2b01b77 / 09ef76e:** `jobs.tab.processing`, `jobs.tab.finish`, `jobs.tab.processing.count`
 (label "<N> running"), `jobs.filter.all|queued|processing|done|failed`, `jobs.offline.banner`,
@@ -167,6 +168,6 @@ Add pose: `addPose.choosePhoto`, `addPose.empty.seeJobs`, `addPose.changePhoto`,
 `addPose.preview.tags`. Keep the frozen consent ids (`addPose.consent.message/allowButton/cancelButton`).
 
 Open questions for the boards: the design shows a **20 MB** photo limit while the app copy says 10 MB;
-the design's Done rows read "added to Poses" while build 16 reaches the pose through the Jobs row — confirm
+the design's Done rows read "added to Poses" while 1.2 (16) reached the pose through the Jobs row — confirm
 the chevron opens the same private pose detail. No consent sheet appears in the 08 boards, so the frozen
 copy/ids are assumed unchanged.
