@@ -1,3 +1,4 @@
+import SwiftUI
 import XCTest
 import UIKit
 @testable import iosApp
@@ -48,12 +49,154 @@ final class GalleryFeatureTests: XCTestCase {
         XCTAssertTrue(message.contains("simulator-db"))
     }
 
-    func testGalleryGridContractUsesDenseThreeColumnLayout() {
+    // MARK: - F10: one grid, three columns, no second layout
+
+    /// The old test asserted the *dense* grid (3 pt gap, 6 pt radius). F10 removed it, so the contract
+    /// now carries the token geometry: a 12 pt gap and the 8 pt thumbnail radius.
+    func testGalleryGridUsesTheThreeColumnTokenLayout() {
         XCTAssertEqual(GalleryGridContract.columnCount, 3)
-        XCTAssertEqual(GalleryGridContract.spacing, 3)
-        XCTAssertTrue((6...8).contains(GalleryGridContract.cornerRadius))
+        XCTAssertEqual(GalleryGridContract.spacing, AP.Space.space12)
+        XCTAssertNotEqual(GalleryGridContract.spacing, 3, "the dense grid's 3 pt gap is gone")
+        XCTAssertEqual(GalleryGridContract.cornerRadius, AP.Radius.radius8)
         XCTAssertGreaterThan(GalleryGridContract.dockInset, 0)
     }
+
+    /// `07-gallery-grid-ax3` keeps the 3-up grid: a cell is a photo with no text inside, so nothing
+    /// reflows for Dynamic Type. A reflow rule (2 columns at Large, 1 at AX1) would fail here.
+    func testGalleryGridNeverReflowsForDynamicType() {
+        for size in DynamicTypeSize.allCases {
+            XCTAssertEqual(
+                GalleryGridContract.columnCount(for: size), 3,
+                "\(size) must keep the 3-column grid"
+            )
+        }
+    }
+
+    /// F10 header: exactly one action, Add pose, and no list/grid toggle to switch layouts with.
+    func testGalleryHeaderOffersOnlyAddPose() {
+        XCTAssertEqual(GalleryHeaderActions.actions, [.addPose])
+        XCTAssertEqual(GalleryHeaderAction.allCases.count, 1)
+        XCTAssertEqual(GalleryHeaderAction.addPose.systemImage, "plus")
+        XCTAssertEqual(GalleryHeaderAction.addPose.accessibilityLabel, "Add pose")
+        XCTAssertEqual(GalleryHeaderAction.addPose.identifier, "gallery.add-pose")
+        for action in GalleryHeaderAction.allCases {
+            XCTAssertNotNil(UIImage(systemName: action.systemImage), "\(action) glyph is an SF Symbol")
+        }
+    }
+
+    /// The remote `extractPoseEnabled` flag hides Add pose entirely (F7's rule, reused by F10), and the
+    /// control stays hidden while the app has not supplied the Add pose destination.
+    func testGalleryAddPoseIsHiddenByTheRemoteFlag() {
+        XCTAssertFalse(GalleryHeaderActions.showsAddPose(extractPoseEnabled: false, hasDestination: true))
+        XCTAssertFalse(GalleryHeaderActions.showsAddPose(extractPoseEnabled: false, hasDestination: false))
+        XCTAssertTrue(GalleryHeaderActions.showsAddPose(extractPoseEnabled: true, hasDestination: true))
+        XCTAssertFalse(GalleryHeaderActions.showsAddPose(extractPoseEnabled: true, hasDestination: false))
+    }
+
+    /// Rendered proof: with the flag off the header paints no `controlFill` control at all; with it on
+    /// it paints exactly one 44 pt one. An ungated `+` (or a second toggle control) changes the count.
+    @MainActor func testGalleryHeaderPaintsOnlyTheFlagGatedAddPose() {
+        // Tall enough that the probe's safe-area inset cannot clip the control: the assertion is about
+        // the control's own 44 pt height, not about how much of the window is left below the notch.
+        let size = CGSize(width: 360, height: 200)
+        let probe = APViewProbe(AP.Color.background, size: size, scale: 2)
+        defer { probe.tearDown() }
+
+        let hidden = probe.render(galleryHost(GalleryHeaderBar(showsAddPose: false), size: size))
+        XCTAssertTrue(
+            rowsPainted(with: 0xECE5D8, in: hidden, columns: 540..<720).isEmpty,
+            "with the flag off the header must paint no controlFill control"
+        )
+
+        let shown = probe.render(galleryHost(GalleryHeaderBar(showsAddPose: true), size: size))
+        let controlRows = rowsPainted(with: 0xECE5D8, in: shown, columns: 540..<720).count
+        // 44 pt * scale 2 = 88 px tall; allow the rounded corners to cost a couple of rows.
+        XCTAssertEqual(Double(controlRows), 88, accuracy: 4, "one 44 pt Add pose control, painted \(controlRows) px tall")
+    }
+
+    /// Pixel proof that the gallery paints exactly three columns. Columns are grouped per x across the
+    /// whole grid, so the glyph and the word inside a failed cell cannot split one column into three. A
+    /// list mode or another column count changes the grouping.
+    @MainActor func testGalleryGridPaintsThreeColumns() {
+        let anchor = noonToday()
+        let items = (0..<6).map { offset in
+            GalleryItem(
+                id: Int64(offset),
+                fileURL: URL(fileURLWithPath: "/tmp/gallery-missing-\(offset).jpg"),
+                createdAt: anchor
+            )
+        }
+        let section = GalleryDateSection(day: anchor, label: "Today", items: items)
+        let size = CGSize(width: 360, height: 320)
+        let probe = APViewProbe(AP.Color.background, size: size, scale: 1)
+        defer { probe.tearDown() }
+
+        let bitmap = probe.render(
+            galleryHost(
+                GalleryPhotoGrid(sections: [section], zoomNamespace: nil, onSelect: { _ in }),
+                size: size,
+                topAligned: true
+            )
+        )
+        let columns = paintedColumnRuns(with: 0xECE5D8, in: bitmap)
+        XCTAssertEqual(columns.count, 3, "the gallery paints exactly three columns, saw \(columns.count)")
+    }
+
+    // MARK: - State selection (F4)
+
+    @MainActor func testGalleryStatePresentationPicksOneSharedStatePerState() async {
+        XCTAssertEqual(
+            GalleryStatePresentation.kind(for: .idle, timeFilter: .all), .loading,
+            "an unloaded gallery shows the shared loading state, not an empty grid"
+        )
+        XCTAssertEqual(GalleryStatePresentation.kind(for: .loading, timeFilter: .all), .loading)
+        XCTAssertEqual(GalleryStatePresentation.kind(for: .empty, timeFilter: .all), .emptyAll)
+        XCTAssertEqual(GalleryStatePresentation.kind(for: .empty, timeFilter: .today), .emptyFilter)
+        XCTAssertEqual(GalleryStatePresentation.kind(for: .failed("boom"), timeFilter: .all), .error)
+        XCTAssertEqual(
+            GalleryStatePresentation.kind(
+                for: .loaded([GalleryItem(id: 1, fileURL: URL(fileURLWithPath: "/tmp/a.jpg"), createdAt: .now)]),
+                timeFilter: .all
+            ),
+            .grid
+        )
+    }
+
+    /// QA's TC-GAL-001 taps the empty-state action by id, so the constant must reach the shared panel's
+    /// action control. Renaming it here (or dropping the argument) breaks this test.
+    @MainActor func testGalleryEmptyStateWiresTheQaActionIdentifier() {
+        XCTAssertEqual(GalleryStateCopy.openCameraButtonIdentifier, "gallery.empty.openCameraButton")
+        XCTAssertEqual(GalleryStateCopy.retryButtonIdentifier, "gallery.error.retry")
+
+        let panel = APEmptyStateView(
+            title: GalleryStateCopy.emptyAllTitle,
+            message: GalleryStateCopy.emptyAllMessage,
+            actionTitle: GalleryStateCopy.openCameraActionTitle,
+            action: {},
+            style: .plain,
+            actionIdentifier: GalleryStateCopy.openCameraButtonIdentifier
+        )
+        XCTAssertEqual(panel.actionIdentifier, "gallery.empty.openCameraButton")
+    }
+
+    /// Rendered proof that every non-grid state uses the shared 72 pt accent-tint circle (F4) instead of
+    /// the old stacked tiles / plain spinner.
+    @MainActor func testGalleryStatePanelsDrawTheSeventyTwoPointAccentCircle() {
+        let size = CGSize(width: 360, height: 360)
+        let probe = APViewProbe(AP.Color.background, size: size, scale: 1)
+        defer { probe.tearDown() }
+
+        for kind in [GalleryStateKind.loading, .emptyAll, .emptyFilter, .error] {
+            let bitmap = probe.render(galleryHost(GalleryStateContent(kind: kind), size: size, topAligned: true))
+            let circleRows = bitmap.rows(paintedWith: 0xFAE0E7).count
+            XCTAssertEqual(
+                Double(circleRows), 72, accuracy: 4,
+                "\(kind) must draw the shared 72 pt selectedBackground circle, painted \(circleRows)"
+            )
+        }
+    }
+
+    // MARK: - Day headers carry the date only (F3)
 
     @MainActor func testGalleryDateSectionsGroupByDayNewestFirstWithoutLoss() async {
         let now = noonToday()
@@ -63,13 +206,54 @@ final class GalleryFeatureTests: XCTestCase {
 
         let sections = model.dateSections
         XCTAssertEqual(sections.count, 2)
-        XCTAssertEqual(sections.map(\.label), ["TODAY", "YESTERDAY"])
+        XCTAssertEqual(sections.map(\.label), ["Today", "Yesterday"])
         XCTAssertEqual(sections.map(\.day), sections.map(\.day).sorted(by: >))
         XCTAssertEqual(sections[0].items.count, 4)
         XCTAssertEqual(sections[1].items.count, 2)
         let sectionIDs = sections.flatMap { $0.items.map(\.id) }
         XCTAssertEqual(Set(sectionIDs), Set(items.map(\.id)))
         XCTAssertEqual(sectionIDs.count, items.count)
+    }
+
+    /// F3: the header is the date and nothing else — no "3 photos" and no digits for today/yesterday.
+    @MainActor func testGallerySectionLabelsCarryNoCountText() {
+        let calendar = Calendar.current
+        let now = noonToday()
+        XCTAssertEqual(GalleryViewModel.sectionLabel(for: now, relativeTo: now, calendar: calendar), "Today")
+        XCTAssertFalse(GalleryViewModel.sectionLabel(for: now, relativeTo: now, calendar: calendar).contains("photo"))
+
+        let older = calendar.date(byAdding: .day, value: -8, to: now) ?? now
+        let label = GalleryViewModel.sectionLabel(for: older, relativeTo: now, calendar: calendar)
+        XCTAssertFalse(label.lowercased().contains("photo"), "the day header must not carry a photo count")
+        XCTAssertFalse(label.lowercased().contains(" of "), "the day header must not carry a count")
+    }
+
+    /// Rendered proof: the painted header is exactly as wide as the bare date label, so any trailing
+    /// count text would widen the ink and fail.
+    @MainActor func testGalleryDateHeaderPaintsTheDateOnly() {
+        let size = CGSize(width: 360, height: 200)
+        let probe = APViewProbe(AP.Color.background, size: size, scale: 1)
+        defer { probe.tearDown() }
+        let background = APPixel(red: 251, green: 246, blue: 239, alpha: 255)
+
+        let header = probe.render(galleryHost(GalleryDateSectionHeader(label: "Today"), size: size, topAligned: true))
+        let headerInk = header.inkExtent(inRows: 0..<header.height, background: background)
+
+        let baseline = probe.render(galleryHost(Text("Today").font(AP.Font.heading), size: size, topAligned: true))
+        let baselineInk = baseline.inkExtent(inRows: 0..<baseline.height, background: background)
+
+        print("DIAG headerInk=\(headerInk) baselineInk=\(baselineInk) headerH=\(header.height) headerW=\(header.width)")
+        XCTAssertGreaterThan(headerInk, 0, "the header must paint its date")
+        XCTAssertEqual(
+            Double(headerInk), Double(baselineInk), accuracy: 2,
+            "the header must paint the date only (header \(headerInk) pt, date alone \(baselineInk) pt)"
+        )
+        // A count would be drawn at the trailing edge; the date never reaches the right 40% of the row.
+        XCTAssertEqual(
+            inkPixelCount(in: header, columns: Int(Double(header.width) * 0.6)..<header.width),
+            0,
+            "the header must paint nothing at its trailing edge"
+        )
     }
 
     @MainActor func testGalleryDateSectionsRespectTodayTimeFilter() async {
@@ -81,40 +265,183 @@ final class GalleryFeatureTests: XCTestCase {
 
         let sections = model.dateSections
         XCTAssertEqual(sections.count, 1)
-        XCTAssertEqual(sections.first?.label, "TODAY")
+        XCTAssertEqual(sections.first?.label, "Today")
         XCTAssertEqual(sections.first?.items.count, 4)
     }
 
-    /// 4 items on the current day + 2 items on the previous day, anchored at noon so the
-    /// TODAY/YESTERDAY buckets stay stable across a midnight run boundary.
-    private func daySpreadItems(now: Date? = nil) -> [GalleryItem] {
-        let anchor = now ?? self.noonToday()
-        let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: anchor) ?? anchor
-        let todayItems = (0..<4).map { offset in
-            GalleryItem(
-                id: Int64(offset),
-                fileURL: URL(fileURLWithPath: "/tmp/gallery-today-\(offset).jpg"),
-                createdAt: anchor.addingTimeInterval(Double(-600 * offset))
-            )
-        }
-        let yesterdayItems = (0..<2).map { offset in
-            GalleryItem(
-                id: Int64(100 + offset),
-                fileURL: URL(fileURLWithPath: "/tmp/gallery-yesterday-\(offset).jpg"),
-                createdAt: yesterday.addingTimeInterval(Double(-600 * offset))
-            )
-        }
-        return todayItems + yesterdayItems
+    // MARK: - Delete failures ride the bottom snackbar (F5)
+
+    /// A failed delete used to replace the whole screen with the error state, losing the photos that are
+    /// still there. It now keeps the grid and raises a toast.
+    @MainActor func testGalleryDeleteFailureKeepsTheGridAndRaisesAToast() async {
+        let items = [
+            GalleryItem(id: 1, fileURL: URL(fileURLWithPath: "/tmp/a.jpg"), createdAt: noonToday()),
+            GalleryItem(id: 2, fileURL: URL(fileURLWithPath: "/tmp/b.jpg"), createdAt: noonToday()),
+        ]
+        let model = GalleryViewModel(store: DeleteFailingGalleryStore(items: items, reason: "disk is full"))
+        await model.load()
+        model.select(items[0])
+        await model.delete(items[0])
+
+        XCTAssertEqual(model.stateKind, .grid, "a failed delete must keep the grid on screen")
+        if case .failed = model.state { XCTFail("a failed delete must not turn the screen into an error state") }
+        XCTAssertEqual(model.toast?.message, "disk is full")
+        XCTAssertEqual(model.toast?.tone, .error)
+
+        model.dismissToast()
+        XCTAssertNil(model.toast, "the toast dismisses itself")
     }
 
-    private func noonToday() -> Date {
-        let calendar = Calendar.current
-        return calendar.date(bySettingHour: 12, minute: 0, second: 0, of: Date()) ?? Date()
+    @MainActor func testGalleryDeleteSuccessRemovesThePhotoAndRaisesNoToast() async {
+        let items = [GalleryItem(id: 1, fileURL: URL(fileURLWithPath: "/tmp/a.jpg"), createdAt: noonToday())]
+        let model = GalleryViewModel(store: StubGalleryFeatureStore(items: items))
+        await model.load()
+        model.select(items[0])
+        await model.delete(items[0])
+
+        XCTAssertNil(model.toast)
+        XCTAssertEqual(model.visibleItems.count, 0)
+        XCTAssertEqual(model.stateKind, .emptyAll)
+        XCTAssertNil(model.selectedIndex)
     }
 
-    func testGalleryDetailPresentationUsesCreamV2Contract() {
-        XCTAssertEqual(GalleryDetailPresentation.styleVersion, 2)
+    // MARK: - Photo detail (F1 header, F3 counts)
+
+    func testGalleryDetailPresentationUsesTheBoardV3Contract() {
+        XCTAssertEqual(GalleryDetailPresentation.styleVersion, 3)
     }
+
+    /// F3: the pager announces "Photo", never "Photo 3 of 12" — and a grid cell never counts.
+    func testGalleryDetailVoiceOverLabelsCarryNoCount() {
+        let label = GalleryDetailAccessibility.mediaLabel
+        XCTAssertEqual(label, "Photo")
+        XCTAssertFalse(label.contains(" of "))
+        XCTAssertNil(label.rangeOfCharacter(from: .decimalDigits))
+
+        let item = GalleryItem(id: 1, fileURL: URL(fileURLWithPath: "/tmp/a.jpg"), createdAt: noonToday(), title: "Window light")
+        for phase in GalleryCellPhase.allCases {
+            let cellLabel = GalleryCellBehaviour.voiceOverLabel(title: item.title, date: item.createdAt, phase: phase)
+            XCTAssertFalse(cellLabel.lowercased().contains("photos"), "\(phase) cell label carries a count: \(cellLabel)")
+            XCTAssertFalse(cellLabel.contains(" of "), "\(phase) cell label carries a position: \(cellLabel)")
+            XCTAssertTrue(cellLabel.hasPrefix(item.title) || phase == .failed)
+        }
+    }
+
+    /// `07-gallery-media-states` "Failed, tap to retry": a failed cell retries instead of opening.
+    func testGalleryCellTapsRetryOnlyWhenThePhotoFailed() {
+        XCTAssertEqual(GalleryCellBehaviour.action(for: .failed), .retry)
+        XCTAssertEqual(GalleryCellBehaviour.action(for: .loading), .open)
+        XCTAssertEqual(GalleryCellBehaviour.action(for: .loaded), .open)
+        XCTAssertNotNil(UIImage(systemName: GalleryMediaGlyph.failed), "the failed-photo state ships a real glyph")
+    }
+
+    /// `07-photo-delete-confirm`: destructive action first, neutral cancel under it, copy that says it
+    /// cannot be undone.
+    func testGalleryDeleteConfirmationFollowsTheBoardCopy() {
+        XCTAssertEqual(GalleryDeleteConfirmSpec.title, "Delete this photo?")
+        XCTAssertTrue(GalleryDeleteConfirmSpec.message.contains("can't be undone"))
+        XCTAssertEqual(GalleryDeleteConfirmSpec.confirmTitle, "Delete photo")
+        XCTAssertEqual(GalleryDeleteConfirmSpec.cancelTitle, "Cancel")
+        XCTAssertEqual(GalleryDeleteConfirmSpec.dialogIdentifier, "gallery.detail.deleteConfirm")
+        XCTAssertNotEqual(
+            GalleryDeleteConfirmSpec.confirmIdentifier,
+            GalleryDeleteConfirmSpec.cancelIdentifier,
+            "QA needs a distinct handle for each dialog action"
+        )
+        XCTAssertEqual(GalleryDetailCopy.failedTitle, "Couldn't load this photo")
+        XCTAssertFalse(GalleryDetailCopy.failedTitle.contains(" of "))
+    }
+
+    /// `07-photo-delete-confirm` rendered: the destructive fill sits **above** the neutral cancel on the
+    /// centred card. Swapping the order or dropping a button fails here.
+    @MainActor func testDeleteDialogPaintsTheDestructiveActionAboveTheCancel() {
+        let size = CGSize(width: 360, height: 400)
+        let probe = APViewProbe(AP.Color.background, size: size, scale: 1)
+        defer { probe.tearDown() }
+
+        let bitmap = probe.render(
+            galleryHost(GalleryDeleteDialog(onConfirm: {}, onCancel: {}), size: size)
+        )
+        let destructive = rowsPainted(with: 0xC8302F, in: bitmap, columns: 40..<320)
+        let cancel = rowsPainted(with: 0xECE5D8, in: bitmap, columns: 40..<320)
+        guard let destructiveTop = destructive.first,
+              let destructiveBottom = destructive.last,
+              let cancelTop = cancel.first,
+              let cancelBottom = cancel.last else {
+            return XCTFail("the dialog must paint both actions (destructive \(destructive.count), cancel \(cancel.count) rows)")
+        }
+        XCTAssertGreaterThan(destructiveBottom - destructiveTop, 44, "the destructive action is a 48 pt control")
+        XCTAssertGreaterThan(cancelBottom - cancelTop, 44, "the cancel action is a 48 pt control")
+        XCTAssertLessThan(destructiveBottom, cancelTop, "Delete photo sits above Cancel, as the board draws it")
+    }
+
+    // MARK: - Filter chips
+
+    /// tokens.md: chips wrap to one full-width chip per row at the Accessibility sizes, while the grid
+    /// stays 3-up. Both layouts are pinned explicitly so the runner's own text-size setting cannot make
+    /// the two renders identical.
+    @MainActor func testGalleryFilterChipsStackFullWidthAtAccessibilitySizes() {
+        let size = CGSize(width: 360, height: 400)
+        let probe = APViewProbe(AP.Color.background, size: size, scale: 1)
+        defer { probe.tearDown() }
+
+        let inline = probe.render(
+            galleryHost(
+                GalleryFilterBar(filter: .all, onSelect: { _ in }, stackedLayoutOverride: false),
+                size: size
+            )
+        )
+        let stacked = probe.render(
+            galleryHost(
+                GalleryFilterBar(filter: .all, onSelect: { _ in }, stackedLayoutOverride: true),
+                size: size
+            )
+        )
+        func selectedChipWidth(_ bitmap: APBitmap) -> Int {
+            // The selected chip's own fill band, grouped per column so neither the check glyph nor the
+            // label can split it, and so the other chips on the same row cannot widen it.
+            paintedColumnRuns(with: 0xFAE0E7, in: bitmap).map(\.count).max() ?? 0
+        }
+        func chipRowBands(_ bitmap: APBitmap) -> Int {
+            var rows = Set(bitmap.rows(paintedWith: 0xFAE0E7))
+            rows.formUnion(bitmap.rows(paintedWith: 0xECE5D8))
+            var bands = 0
+            var previous = -2
+            for row in rows.sorted() {
+                if row != previous + 1 { bands += 1 }
+                previous = row
+            }
+            return bands
+        }
+
+        XCTAssertEqual(chipRowBands(inline), 1, "the default layout keeps the chips on one row")
+        XCTAssertEqual(
+            chipRowBands(stacked), GalleryTimeFilter.allCases.count,
+            "at the Accessibility sizes each chip gets its own row"
+        )
+
+        let inlineWidth = selectedChipWidth(inline)
+        let stackedWidth = selectedChipWidth(stacked)
+        XCTAssertGreaterThan(inlineWidth, 0)
+        XCTAssertLessThan(inlineWidth, 200, "an inline chip hugs its label (painted \(inlineWidth) pt)")
+        XCTAssertGreaterThan(
+            stackedWidth, 300,
+            "a stacked chip fills the row (inline \(inlineWidth) pt, stacked \(stackedWidth) pt)"
+        )
+    }
+
+    /// The production rule behind the seam above.
+    func testGalleryFilterBarStacksOnlyAtAccessibilitySizes() {
+        for size in DynamicTypeSize.allCases {
+            XCTAssertEqual(
+                GalleryFilterBar.stacksChips(dynamicTypeSize: size),
+                size.isAccessibilitySize,
+                "\(size) must follow the Dynamic Type rule"
+            )
+        }
+    }
+
+    // MARK: - Unchanged behaviour
 
     /// The sheet must never be handed the Application Support path (see `GallerySharePreparation`).
     func testGallerySharePreparationCopiesIntoSystemTemporaryDirectory() throws {
@@ -149,12 +476,12 @@ final class GalleryFeatureTests: XCTestCase {
         }
     }
 
-    /// A grid cell draws ~117pt, i.e. ~352px @3x — not the 4032px of a 12MP capture.
+    /// A grid cell draws ~110pt, i.e. ~330px @3x — not the 4032px of a 12MP capture.
     @MainActor func testGalleryGridDecodesAtCellSizeNotAtCaptureSize() {
         let cell = GalleryGridContract.cellDrawSize
         let expectedSide = (
             UIScreen.main.bounds.width
-                - AIPoseSpacing.lg * 2
+                - AP.Space.space16 * 2
                 - GalleryGridContract.spacing * CGFloat(GalleryGridContract.columnCount - 1)
         ) / CGFloat(GalleryGridContract.columnCount)
         XCTAssertEqual(cell.width, expectedSide, accuracy: 0.5)
@@ -201,6 +528,151 @@ final class GalleryFeatureTests: XCTestCase {
         XCTAssertLessThan(elapsedMs, 5, "make() must not open the database or write fixture images")
         print("PERF galleryStoreBootstrap.make(ms) = \(String(format: "%.3f", elapsedMs)) (was: db open 3.1-9.3ms on main)")
     }
+
+    // MARK: - Helpers
+
+    /// Non-background pixels inside a column band, over the whole bitmap. Used to prove a control or a
+    /// count is *absent* from where it would otherwise be painted.
+    private func inkPixelCount(
+        in bitmap: APBitmap,
+        columns: Range<Int>,
+        background: APPixel = APPixel(red: 251, green: 246, blue: 239, alpha: 255),
+        tolerance: Int = 8
+    ) -> Int {
+        let band = max(columns.lowerBound, 0)..<min(columns.upperBound, bitmap.width)
+        var count = 0
+        for y in 0..<bitmap.height {
+            for x in band {
+                guard let pixel = bitmap.color(x: x, y: y), pixel.alpha > 200 else { continue }
+                if abs(pixel.red - background.red) > tolerance
+                    || abs(pixel.green - background.green) > tolerance
+                    || abs(pixel.blue - background.blue) > tolerance {
+                    count += 1
+                }
+            }
+        }
+        return count
+    }
+
+    /// Contiguous x-runs of `hex` on one row. One run per painted column, so the count is the column
+    /// count independent of where the grid landed vertically.
+    private func runsPainted(
+        with hex: UInt32,
+        in bitmap: APBitmap,
+        row: Int,
+        tolerance: Int = 6
+    ) -> [Range<Int>] {
+        let target = (red: Int((hex >> 16) & 0xFF), green: Int((hex >> 8) & 0xFF), blue: Int(hex & 0xFF))
+        var runs: [Range<Int>] = []
+        var start: Int?
+        for x in 0..<bitmap.width {
+            let matches: Bool = {
+                guard let pixel = bitmap.color(x: x, y: row), pixel.alpha > 200 else { return false }
+                return abs(pixel.red - target.red) <= tolerance
+                    && abs(pixel.green - target.green) <= tolerance
+                    && abs(pixel.blue - target.blue) <= tolerance
+            }()
+            if matches {
+                start = start ?? x
+            } else if let open = start {
+                runs.append(open..<x)
+                start = nil
+            }
+        }
+        if let open = start { runs.append(open..<bitmap.width) }
+        // A run of one or two pixels is an antialiased edge, not a column.
+        return runs.filter { $0.count > 8 }
+    }
+
+    /// Column bands that paint `hex` anywhere in the bitmap. A column counts as painted when any pixel
+    /// in it matches, so a cell's glyph or word (which splits one horizontal run) cannot inflate the
+    /// count, while the 12 pt gap between cells still separates the bands.
+    private func paintedColumnRuns(
+        with hex: UInt32,
+        in bitmap: APBitmap,
+        tolerance: Int = 6
+    ) -> [Range<Int>] {
+        let target = (red: Int((hex >> 16) & 0xFF), green: Int((hex >> 8) & 0xFF), blue: Int(hex & 0xFF))
+        var painted = [Bool](repeating: false, count: bitmap.width)
+        for y in 0..<bitmap.height {
+            for x in 0..<bitmap.width where !painted[x] {
+                guard let pixel = bitmap.color(x: x, y: y), pixel.alpha > 200 else { continue }
+                painted[x] = abs(pixel.red - target.red) <= tolerance
+                    && abs(pixel.green - target.green) <= tolerance
+                    && abs(pixel.blue - target.blue) <= tolerance
+            }
+        }
+        var runs: [Range<Int>] = []
+        var start: Int?
+        for x in 0..<bitmap.width {
+            if painted[x] {
+                start = start ?? x
+            } else if let open = start {
+                runs.append(open..<x)
+                start = nil
+            }
+        }
+        if let open = start { runs.append(open..<bitmap.width) }
+        return runs.filter { $0.count > 8 }
+    }
+
+    /// Rows that paint `hex` inside a column band. Restricting the band keeps a passing assertion from
+    /// reading the title's antialiasing as a control fill.
+    private func rowsPainted(
+        with hex: UInt32,
+        in bitmap: APBitmap,
+        columns: Range<Int>,
+        tolerance: Int = 6
+    ) -> [Int] {
+        let target = (red: Int((hex >> 16) & 0xFF), green: Int((hex >> 8) & 0xFF), blue: Int(hex & 0xFF))
+        let band = max(columns.lowerBound, 0)..<min(columns.upperBound, bitmap.width)
+        return (0..<bitmap.height).filter { y in
+            band.contains { x in
+                guard let pixel = bitmap.color(x: x, y: y), pixel.alpha > 200 else { return false }
+                return abs(pixel.red - target.red) <= tolerance
+                    && abs(pixel.green - target.green) <= tolerance
+                    && abs(pixel.blue - target.blue) <= tolerance
+            }
+        }
+    }
+
+    /// Hosts a view on the gallery background so rendered assertions read the pixels the app draws.
+    @MainActor private func galleryHost<V: View>(_ view: V, size: CGSize, topAligned: Bool = false) -> some View {
+        ZStack(alignment: topAligned ? .top : .center) {
+            AP.Color.background
+            view
+        }
+        .frame(width: size.width, height: size.height)
+        // Edge to edge: a safe-area band of window white would be counted as ink by `inkExtent`.
+        .ignoresSafeArea()
+    }
+
+    /// 4 items on the current day + 2 items on the previous day, anchored at noon so the
+    /// TODAY/YESTERDAY buckets stay stable across a midnight run boundary.
+    private func daySpreadItems(now: Date? = nil) -> [GalleryItem] {
+        let anchor = now ?? self.noonToday()
+        let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: anchor) ?? anchor
+        let todayItems = (0..<4).map { offset in
+            GalleryItem(
+                id: Int64(offset),
+                fileURL: URL(fileURLWithPath: "/tmp/gallery-today-\(offset).jpg"),
+                createdAt: anchor.addingTimeInterval(Double(-600 * offset))
+            )
+        }
+        let yesterdayItems = (0..<2).map { offset in
+            GalleryItem(
+                id: Int64(100 + offset),
+                fileURL: URL(fileURLWithPath: "/tmp/gallery-yesterday-\(offset).jpg"),
+                createdAt: yesterday.addingTimeInterval(Double(-600 * offset))
+            )
+        }
+        return todayItems + yesterdayItems
+    }
+
+    private func noonToday() -> Date {
+        let calendar = Calendar.current
+        return calendar.date(bySettingHour: 12, minute: 0, second: 0, of: Date()) ?? Date()
+    }
 }
 
 /// Lock-protected recorder for the off-main-thread assertion above.
@@ -233,6 +705,19 @@ private final class StubGalleryFeatureStore: GalleryStoring, @unchecked Sendable
 private struct FailingGalleryStore: GalleryStoring {
     func photos() async throws -> [GalleryItem] { throw NSError(domain: "test", code: 2) }
     func delete(id: Int64) async throws {}
+}
+
+private struct DeleteFailingGalleryStore: GalleryStoring {
+    let items: [GalleryItem]
+    let reason: String
+
+    private struct Failure: LocalizedError {
+        let reason: String
+        var errorDescription: String? { reason }
+    }
+
+    func photos() async throws -> [GalleryItem] { items }
+    func delete(id: Int64) async throws { throw Failure(reason: reason) }
 }
 
 private struct IntegrationBlockedGalleryStore: GalleryStoring {

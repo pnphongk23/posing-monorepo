@@ -144,12 +144,208 @@ enum GalleryStateCopy {
     static let emptyFilterMessage = "Try another filter."
     static let errorTitle = "Couldn't load gallery"
     static let retryActionTitle = "Try again"
+    static let loadingLabel = "Loading gallery…"
+
+    /// QA (TC-GAL-001) taps the empty-state action by id; the panel is the other handle.
+    static let openCameraButtonIdentifier = "gallery.empty.openCameraButton"
+    static let retryButtonIdentifier = "gallery.error.retry"
+}
+
+/// Photo-detail copy. F3 removed the "3 of 12" line, so nothing here counts anything.
+enum GalleryDetailCopy {
+    static let failedTitle = "Couldn't load this photo"
+    static let failedMessage = "The photo is missing from this device."
+    static let retryTitle = "Retry"
+    static let shareTitle = "Share"
+    static let sharePreparingTitle = "Preparing…"
+    static let saveTitle = "Save"
+    static let saveSavingTitle = "Saving…"
+    static let deleteTitle = "Delete"
+    static let optionsTitle = "Photo options"
+}
+
+/// The delete confirmation from the export board `07-photo-delete-confirm`: a centred dialog card,
+/// not the system action sheet, with the destructive action first.
+enum GalleryDeleteConfirmSpec {
+    static let title = "Delete this photo?"
+    static let message = "It will be removed from this device. This can't be undone."
+    static let confirmTitle = "Delete photo"
+    static let cancelTitle = "Cancel"
+
+    static let dialogIdentifier = "gallery.detail.deleteConfirm"
+    static let confirmIdentifier = "gallery.detail.deleteConfirm.delete"
+    static let cancelIdentifier = "gallery.detail.deleteConfirm.cancel"
+}
+
+/// Machine handles on the photo-detail screen. The identifiers are additive (the screen used to
+/// carry labels only); the VoiceOver page label is now count-free (F3).
+enum GalleryDetailAccessibility {
+    static let mediaLabel = "Photo"
+    static let backIdentifier = "gallery.detail.back"
+    static let titleIdentifier = "gallery.detail.title"
+    static let optionsIdentifier = "gallery.detail.options"
+    static let shareIdentifier = "gallery.detail.share"
+    static let saveIdentifier = "gallery.detail.save"
+    static let deleteIdentifier = "gallery.detail.delete"
+    static let failedIdentifier = "gallery.detail.failed"
+    static let failedRetryIdentifier = "gallery.detail.failedRetry"
+}
+
+/// Single source of truth for the gallery grid geometry consumed by `GalleryPhotoGrid`.
+///
+/// F10 keeps exactly one layout: the 3-column grid from `07-gallery-grid`. The list mode, the dense
+/// grid and the list/grid toggle are gone, so there is no second geometry to describe. Values come
+/// from the design tokens (12 pt gap, 8 pt thumbnail radius, 16 pt screen inset) instead of the
+/// legacy 3 pt / 6 pt dense-grid numbers. `dockInset` keeps the last row clear of the floating dock.
+enum GalleryGridContract {
+    static let columnCount = 3
+    static let spacing: CGFloat = AP.Space.space12
+    static let cornerRadius: CGFloat = AP.Radius.radius8
+    static let dockInset: CGFloat = 100
+
+    /// Columns for a type size. `07-gallery-grid-ax3` keeps the grid 3-up: a cell is a photo with no
+    /// text inside it, so nothing needs to reflow for Dynamic Type — the date headers scale instead.
+    static func columnCount(for dynamicTypeSize: DynamicTypeSize) -> Int {
+        columnCount
+    }
+
+    /// The point size one cell is drawn at: the screen width minus the grid's horizontal padding
+    /// (`AP.Space.space16` on each side) split across the three flexible columns. Feeds the image
+    /// decode bound — a cell is ~110pt on a 390pt screen, not 4032px.
+    @MainActor static var cellDrawSize: CGSize {
+        let count = CGFloat(columnCount)
+        let side = (
+            UIScreen.main.bounds.width
+                - AP.Space.space16 * 2
+                - spacing * (count - 1)
+        ) / count
+        let bounded = max(side, 1)
+        return CGSize(width: bounded, height: bounded)
+    }
+}
+
+/// Which state panel the screen shows (`gallery.html` §3.7). Pure so the mapping is testable without
+/// rendering, and so the view only picks copy and actions.
+enum GalleryStateKind: String, CaseIterable {
+    case loading
+    case emptyAll
+    case emptyFilter
+    case error
+    case grid
+}
+
+enum GalleryStatePresentation {
+    static func kind(for state: Loadable<[GalleryItem]>, timeFilter: GalleryTimeFilter) -> GalleryStateKind {
+        switch state {
+        case .idle, .loading:
+            return .loading
+        case .empty:
+            // Only the all-gallery-empty state offers `Open camera`; the filter-empty state stays
+            // actionless and keeps its own copy. The chips above stay interactive, so the filter
+            // remains the way out.
+            return timeFilter == .all ? .emptyAll : .emptyFilter
+        case .failed:
+            return .error
+        case .loaded:
+            return .grid
+        }
+    }
+}
+
+/// F10 header contract: the tab root keeps its large title and offers **only** Add pose, hidden when
+/// the remote `extractPoseEnabled` flag is off — the same rule the Poses header follows (F7).
+enum GalleryHeaderAction: String, CaseIterable {
+    case addPose
+
+    var systemImage: String {
+        switch self {
+        case .addPose: return "plus"
+        }
+    }
+
+    var accessibilityLabel: String {
+        switch self {
+        case .addPose: return "Add pose"
+        }
+    }
+
+    var identifier: String {
+        switch self {
+        case .addPose: return "gallery.add-pose"
+        }
+    }
+}
+
+enum GalleryHeaderActions {
+    /// The complete set. A list/grid toggle, a list mode or a dense grid must never come back.
+    static let actions: [GalleryHeaderAction] = [.addPose]
+
+    /// Add pose is a remote-flag action *and* a destination action: it is hidden when the flag is off
+    /// and while the app has not supplied the Add pose route, so it never ships as a dead control.
+    static func showsAddPose(extractPoseEnabled: Bool, hasDestination: Bool) -> Bool {
+        APHomeHeader.showsAddPose(isExtractPoseEnabled: extractPoseEnabled) && hasDestination
+    }
+}
+
+/// A cell's interaction, so "tap opens the photo" and "tap retries a failed photo" are one testable
+/// rule instead of logic buried in a button closure.
+enum GalleryCellPhase: String, CaseIterable {
+    case loading
+    case loaded
+    case failed
+}
+
+enum GalleryCellAction: String, CaseIterable {
+    case open
+    case retry
+}
+
+enum GalleryCellBehaviour {
+    static func action(for phase: GalleryCellPhase) -> GalleryCellAction {
+        phase == .failed ? .retry : .open
+    }
+
+    /// Count-free (F3) and state-aware: a failed cell is a retry control, not "Photo, 31 Oct".
+    static func voiceOverLabel(title: String, date: Date, phase: GalleryCellPhase) -> String {
+        let formatted = date.formatted(date: .abbreviated, time: .shortened)
+        switch phase {
+        case .failed:
+            return "\(GalleryDetailCopy.failedTitle), \(formatted), \(GalleryDetailCopy.retryTitle)"
+        case .loading, .loaded:
+            return "\(title), \(formatted)"
+        }
+    }
+}
+
+/// The glyph a failed photo cell draws. The board uses a photo-with-slash; the SF Symbol only exists
+/// on newer runtimes, so the fallback keeps the state readable on iOS 15.
+enum GalleryMediaGlyph {
+    static let failed: String = UIImage(systemName: "photo.badge.exclamationmark") != nil
+        ? "photo.badge.exclamationmark"
+        : "exclamationmark.triangle.fill"
+}
+
+/// One toast, shown at the bottom above the chrome (F5). Save and delete failures use it instead of
+/// parked text.
+struct GalleryToast: Identifiable, Equatable {
+    let id: UUID
+    let message: String
+    let tone: APStateTone
+
+    init(message: String, tone: APStateTone = .error) {
+        self.id = UUID()
+        self.message = message
+        self.tone = tone
+    }
 }
 
 @MainActor final class GalleryViewModel: ObservableObject {
     @Published var state: Loadable<[GalleryItem]> = .idle
     @Published var selectedIndex: Int?
     @Published var timeFilter: GalleryTimeFilter = .all
+    /// A recoverable failure (delete, mostly). The grid stays on screen; the message rides above the
+    /// dock in a snackbar (F5).
+    @Published var toast: GalleryToast?
     private let store: any GalleryStoring
     private var allItems: [GalleryItem] = []
 
@@ -189,20 +385,30 @@ enum GalleryStateCopy {
     }
 
     static func sectionLabel(for day: Date, relativeTo now: Date, calendar: Calendar) -> String {
-        if calendar.isDate(day, inSameDayAs: now) { return "TODAY" }
+        if calendar.isDate(day, inSameDayAs: now) { return "Today" }
         if let yesterday = calendar.date(byAdding: .day, value: -1, to: now),
            calendar.isDate(day, inSameDayAs: yesterday) {
-            return "YESTERDAY"
+            return "Yesterday"
         }
-        return sectionDateFormatter.string(from: day).uppercased()
+        return sectionDateFormatter.string(from: day)
     }
 
     private static let sectionDateFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "MMM d, yyyy"
+        formatter.dateFormat = "MMM d"
         return formatter
     }()
+
+    var stateKind: GalleryStateKind {
+        GalleryStatePresentation.kind(for: state, timeFilter: timeFilter)
+    }
+
+    /// The message an error panel shows: the store's own reason when it has one.
+    var errorMessage: String {
+        if case .failed(let message) = state { return message }
+        return GalleryStateCopy.errorTitle
+    }
 
     func load() async {
         state = .loading
@@ -239,8 +445,18 @@ enum GalleryStateCopy {
             selectedIndex = nil
             applyFilter()
         } catch {
-            state = .failed(error.localizedDescription)
+            // A failed delete must not throw away the photos that are still there: the grid stays and
+            // the failure rides a snackbar above the dock.
+            showToast(error.localizedDescription)
         }
+    }
+
+    func showToast(_ message: String, tone: APStateTone = .error) {
+        toast = GalleryToast(message: message, tone: tone)
+    }
+
+    func dismissToast() {
+        toast = nil
     }
 }
 
@@ -249,6 +465,9 @@ struct GalleryScreen: View {
     /// All-gallery-empty recovery (`gallery.html` `Open Camera`). The owning root wires this to the
     /// camera entry point; the default keeps every existing call site compiling untouched.
     var onOpenCamera: () -> Void = {}
+    /// F10 `Add pose (+)`. The owning root supplies the Add pose route; while it is `nil` the control
+    /// is hidden rather than shipped as a dead button.
+    var onAddPose: (() -> Void)? = nil
     @Namespace private var zoomNamespace
     var body: some View {
         VStack(spacing: 0) {
@@ -260,9 +479,13 @@ struct GalleryScreen: View {
         // `.failed` card lets the stack collapse and centres the header and filter chips.
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .neoHiddenNavigationBar()
-        .background(AIPoseColor.background)
+        .background(AP.Color.background)
         .task { if case .idle = model.state { await model.load() } }
         .onChange(of: model.timeFilter) { _ in model.applyFilter() }
+        // F5: the failure snackbar sits directly above the floating dock, never mid-screen.
+        .modifier(GalleryToastInset(toast: model.toast, bottomInset: GalleryGridContract.dockInset) {
+            model.dismissToast()
+        })
         .fullScreenCover(isPresented: Binding(
             get: { model.selectedIndex != nil },
             set: { if !$0 { model.selectedIndex = nil } }
@@ -277,100 +500,201 @@ struct GalleryScreen: View {
         }
     }
 
+    /// Tab root (F1 exception): large title plus the screen's actions. F10 leaves exactly one action,
+    /// Add pose, and drops the list/grid toggle along with the two layouts it switched between.
     private var galleryHeader: some View {
         VStack(spacing: 0) {
-            HStack {
-                Text("Gallery").font(.title2.bold())
-                Spacer()
-            }
-            .padding(.horizontal, AIPoseSpacing.lg)
-            .padding(.top, AIPoseSpacing.sm)
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: AIPoseSpacing.sm) {
-                    ForEach(GalleryTimeFilter.allCases) { filter in
-                        NeoFilterChip(
-                            title: filter.rawValue,
-                            isSelected: model.timeFilter == filter,
-                            variant: .gallery,
-                            action: { model.timeFilter = filter }
-                        )
-                        .accessibilityIdentifier(filter.filterIdentifier)
-                        .accessibilityLabel(filter.rawValue)
-                    }
-                }
-                .padding(.horizontal, AIPoseSpacing.lg)
-                .padding(.vertical, AIPoseSpacing.sm)
-            }
+            GalleryHeaderBar(showsAddPose: showsAddPose) { onAddPose?() }
+            GalleryFilterBar(filter: model.timeFilter) { model.timeFilter = $0 }
         }
     }
 
-    /// State cards render in flow at the top of the content column (`gallery.html` mounts the
-    /// state inside the grid column, 16pt side padding, no centring); the frozen `FeatureStateView`
-    /// is a full-width top-anchored card with no icon slot.
+    private var showsAddPose: Bool {
+        GalleryHeaderActions.showsAddPose(
+            extractPoseEnabled: AppConfig.canExtractPose(isEnabled: AppConfig.shared.isExtractPoseEnabled),
+            hasDestination: onAddPose != nil
+        )
+    }
+
     @ViewBuilder private var content: some View {
-        // Card tone comes from the pure `Loadable.stateTone` mapper; the branches below only choose
-        // this screen's copy and placement.
-        switch model.state.stateTone {
-        case .some(.loading):
-            ProgressView("Loading gallery…").frame(maxWidth: .infinity, maxHeight: .infinity)
-        case .some(.empty):
-            // §3.7: only the all-gallery-empty state offers `Open Camera`; the filter-empty state
-            // stays actionless. The two states keep distinct copy. The prototype appends the card
-            // as a child of the masonry grid (`.nb-gallery-empty-state`: column-span all,
-            // `margin: var(--nb-space-md) 0`), so the card occupies the grid slot — 16pt vertical
-            // margin, the grid's 16pt side padding — while the header and filter chips stay
-            // visible and interactive above it (the chips are the only way out of an empty filter).
-            if model.timeFilter == .all {
-                FeatureStateView(
-                    tone: .empty,
-                    title: GalleryStateCopy.emptyAllTitle,
-                    message: GalleryStateCopy.emptyAllMessage,
-                    actionTitle: GalleryStateCopy.openCameraActionTitle,
-                    actionIdentifier: "gallery.empty.openCameraButton"
-                ) {
-                    onOpenCamera()
-                }
-                .padding(.horizontal, AIPoseSpacing.lg)
-                .padding(.vertical, AIPoseSpacing.lg)
-                // The card keeps its own id (the flows assert on it); the button inside carries
-                // `gallery.empty.openCameraButton`.
-                .accessibilityIdentifier("gallery.empty.openCamera")
-            } else {
-                FeatureStateView(
-                    tone: .empty,
-                    title: GalleryStateCopy.emptyFilterTitle,
-                    message: GalleryStateCopy.emptyFilterMessage
-                )
-                .padding(.horizontal, AIPoseSpacing.lg)
-                .padding(.vertical, AIPoseSpacing.lg)
-            }
-        case .some(.error):
-            let message: String = {
-                if case .failed(let message) = model.state { return message }
-                return GalleryStateCopy.errorTitle
-            }()
-            FeatureStateView(
-                tone: .error,
-                title: GalleryStateCopy.errorTitle,
-                message: message,
-                actionTitle: GalleryStateCopy.retryActionTitle
-            ) {
-                Task { await model.load() }
-            }
-            .padding(.horizontal, AIPoseSpacing.lg)
-        case .some(.offline), .some(.success), .some(.warning):
-            // No producer for these tones on this surface.
-            EmptyView()
-        case nil:
+        switch model.stateKind {
+        case .grid:
             ScrollView {
                 GalleryPhotoGrid(sections: model.dateSections, zoomNamespace: zoomNamespace) { item in
                     model.select(item)
                 }
-                .padding(.horizontal, AIPoseSpacing.lg)
-                .padding(.top, AIPoseSpacing.sm)
+                .padding(.horizontal, AP.Space.space16)
                 .padding(.bottom, GalleryGridContract.dockInset)
             }
+        case .loading, .emptyAll, .emptyFilter, .error:
+            GalleryStateContent(
+                kind: model.stateKind,
+                errorMessage: model.errorMessage,
+                onOpenCamera: onOpenCamera,
+                onRetry: { Task { await model.load() } }
+            )
         }
+    }
+}
+
+/// The tab-root title row: the large title on the left and Add pose on the right, and nothing else.
+struct GalleryHeaderBar: View {
+    var showsAddPose: Bool
+    var onAddPose: () -> Void = {}
+
+    var body: some View {
+        HStack(alignment: .center, spacing: AP.Space.space8) {
+            Text("Gallery")
+                .font(AP.Font.display)
+                .foregroundStyle(AP.Color.primaryText)
+                .lineLimit(nil)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityAddTraits(.isHeader)
+                .accessibilityIdentifier("gallery.title")
+            Spacer(minLength: 0)
+            if showsAddPose {
+                APHeaderActionButton(
+                    systemImage: GalleryHeaderAction.addPose.systemImage,
+                    accessibilityLabel: GalleryHeaderAction.addPose.accessibilityLabel,
+                    action: onAddPose
+                )
+                .accessibilityIdentifier(GalleryHeaderAction.addPose.identifier)
+            }
+        }
+        .padding(.horizontal, AP.Space.space16)
+        .padding(.top, AP.Space.space8)
+    }
+}
+
+/// The four non-grid states, all through the shared components (F4): one 72 pt accent-tint circle,
+/// then title, copy and at most one action.
+struct GalleryStateContent: View {
+    let kind: GalleryStateKind
+    var errorMessage: String = GalleryStateCopy.errorTitle
+    var onOpenCamera: () -> Void = {}
+    var onRetry: () -> Void = {}
+
+    @ViewBuilder var body: some View {
+        switch kind {
+        case .loading:
+            APLoadingStateView(label: GalleryStateCopy.loadingLabel)
+                .padding(.horizontal, AP.Space.space32)
+                .padding(.top, AP.Space.space24)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .accessibilityIdentifier("gallery.loading")
+        case .emptyAll:
+            APEmptyStateView(
+                title: GalleryStateCopy.emptyAllTitle,
+                message: GalleryStateCopy.emptyAllMessage,
+                actionTitle: GalleryStateCopy.openCameraActionTitle,
+                action: onOpenCamera,
+                style: .plain,
+                actionIdentifier: GalleryStateCopy.openCameraButtonIdentifier
+            )
+            // The panel keeps its own id (the flows assert on it); the button inside carries
+            // `gallery.empty.openCameraButton`.
+            .accessibilityIdentifier("gallery.empty.openCamera")
+        case .emptyFilter:
+            APEmptyStateView(
+                title: GalleryStateCopy.emptyFilterTitle,
+                message: GalleryStateCopy.emptyFilterMessage,
+                style: .plain
+            )
+            .accessibilityIdentifier("gallery.empty.filter")
+        case .error:
+            APErrorStateView(
+                title: GalleryStateCopy.errorTitle,
+                message: errorMessage,
+                retryTitle: GalleryStateCopy.retryActionTitle,
+                retry: onRetry,
+                style: .plain,
+                actionIdentifier: GalleryStateCopy.retryButtonIdentifier
+            )
+            .accessibilityIdentifier("gallery.error")
+        case .grid:
+            // `kind` never describes the grid; the screen draws `GalleryPhotoGrid` instead.
+            EmptyView()
+        }
+    }
+}
+
+/// Filter chips in the AP chip style: one scrolling row by default, stacked full-width rows at the
+/// Accessibility sizes (tokens.md "chips wrap: one chip per row at AX3").
+struct GalleryFilterBar: View {
+    let filter: GalleryTimeFilter
+    let onSelect: (GalleryTimeFilter) -> Void
+    /// Layout seam: production follows Dynamic Type; a test can pin either branch so the two layouts are
+    /// asserted on pixels instead of on the runner's own text-size setting.
+    var stackedLayoutOverride: Bool?
+
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    /// tokens.md: at the Accessibility sizes every chip gets its own full-width row.
+    static func stacksChips(dynamicTypeSize: DynamicTypeSize) -> Bool {
+        dynamicTypeSize.isAccessibilitySize
+    }
+
+    private var stacksChips: Bool {
+        stackedLayoutOverride ?? Self.stacksChips(dynamicTypeSize: dynamicTypeSize)
+    }
+
+    var body: some View {
+        Group {
+            if stacksChips {
+                VStack(alignment: .leading, spacing: AP.Space.space8) {
+                    chips(fillsWidth: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: AP.Space.space8) {
+                        chips(fillsWidth: false)
+                    }
+                    .padding(.vertical, AP.Space.space4)
+                }
+            }
+        }
+        .padding(.horizontal, AP.Space.space16)
+        .padding(.top, AP.Space.space8)
+        .padding(.bottom, AP.Space.space4)
+    }
+
+    private func chips(fillsWidth: Bool) -> some View {
+        ForEach(GalleryTimeFilter.allCases) { option in
+            APCategoryChip(
+                title: option.rawValue,
+                isSelected: filter == option,
+                fillsWidth: fillsWidth,
+                action: { onSelect(option) }
+            )
+            .accessibilityIdentifier(option.filterIdentifier)
+            .accessibilityLabel(option.rawValue)
+        }
+    }
+}
+
+/// Bottom snackbar placement (F5). `bottomInset` clears whatever bottom chrome the surface owns — the
+/// Gallery tab root rides above the floating dock; the photo detail uses the shared `.apSnackbar`.
+struct GalleryToastInset: ViewModifier {
+    let toast: GalleryToast?
+    var bottomInset: CGFloat = 0
+    let onDismiss: () -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if let toast {
+                    APSnackbar(tone: toast.tone, message: toast.message, onDismiss: onDismiss)
+                        .padding(.horizontal, AP.Space.space16)
+                        .padding(.bottom, bottomInset > 0 ? bottomInset : AP.Space.space12)
+                }
+            }
+            .task(id: toast?.id) {
+                guard toast != nil else { return }
+                try? await Task.sleep(nanoseconds: UInt64(APSnackbar.autoDismissDelay * 1_000_000_000))
+                guard !Task.isCancelled else { return }
+                onDismiss()
+            }
     }
 }
 
@@ -388,17 +712,26 @@ struct GalleryLocalImage<Placeholder: View>: View {
     let contentMode: SwiftUI.ContentMode
     /// Point size the image is drawn at on screen. The decode is bounded by this, never by the file.
     let targetSize: CGSize
+    /// Fired when the file cannot be read or decoded, so the caller can switch to the failed state
+    /// (`07-gallery-media-states` "Failed, tap to retry").
+    var onFailure: (() -> Void)?
+    /// Fired once the bitmap is on screen, so the caller can leave its loading phase.
+    var onSuccess: (() -> Void)?
     private let placeholder: Placeholder
 
     init(
         url: URL,
         contentMode: SwiftUI.ContentMode,
         targetSize: CGSize,
+        onFailure: (() -> Void)? = nil,
+        onSuccess: (() -> Void)? = nil,
         @ViewBuilder placeholder: () -> Placeholder
     ) {
         self.url = url
         self.contentMode = contentMode
         self.targetSize = targetSize
+        self.onFailure = onFailure
+        self.onSuccess = onSuccess
         self.placeholder = placeholder()
     }
 
@@ -407,6 +740,8 @@ struct GalleryLocalImage<Placeholder: View>: View {
             .setProcessor(AppImage.downsample(points: targetSize, contentMode: contentMode))
             // A missing file must keep the FEAT-002 E1 placeholder behaviour.
             .placeholder { placeholder }
+            .onSuccess { _ in onSuccess?() }
+            .onFailure { _ in onFailure?() }
             .onFailureView { placeholder }
             // `.loadDiskFileSynchronously(false)`: Kingfisher's SwiftUI default reads (and decodes) a
             // disk-cache hit inline, i.e. on the main thread during the view update. Memory hits stay
@@ -417,28 +752,6 @@ struct GalleryLocalImage<Placeholder: View>: View {
                 // unchanged.
                 image.resizable().aspectRatio(contentMode: contentMode)
             }
-    }
-}
-
-/// Single source of truth for the dense gallery grid geometry consumed by `GalleryPhotoGrid`.
-/// SCR-002-01-GRD-002 fixes 3 columns with a 3dp gap; `dockInset` keeps the last row clear of the dock overlay.
-enum GalleryGridContract {
-    static let columnCount = 3
-    static let spacing: CGFloat = 3
-    static let cornerRadius: CGFloat = 6
-    static let dockInset: CGFloat = 100
-
-    /// The point size one cell is drawn at: the screen width minus the grid's horizontal padding
-    /// (`AIPoseSpacing.lg` on each side) split across the three flexible columns. Feeds the image
-    /// decode bound — a cell is ~117pt on a 390pt screen, not 4032px.
-    @MainActor static var cellDrawSize: CGSize {
-        let side = (
-            UIScreen.main.bounds.width
-                - AIPoseSpacing.lg * 2
-                - spacing * CGFloat(columnCount - 1)
-        ) / CGFloat(columnCount)
-        let bounded = max(side, 1)
-        return CGSize(width: bounded, height: bounded)
     }
 }
 
@@ -462,32 +775,32 @@ struct GalleryDateSection: Identifiable, Equatable {
     var id: Date { day }
 }
 
-/// Small uppercase day header; deliberately subordinate to the single "Gallery" screen title.
+/// Day header. Carries the date only — F3 removed the "3 photos" count, and nothing re-adds it.
 struct GalleryDateSectionHeader: View {
     let label: String
 
     var body: some View {
         Text(label)
-            .font(.system(size: 12, weight: .bold))
-            .kerning(0.4)
-            .foregroundStyle(AIPoseColor.subtext)
+            .font(AP.Font.heading)
+            .foregroundStyle(AP.Color.primaryText)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.top, AIPoseSpacing.sm)
-            .padding(.bottom, AIPoseSpacing.xs)
+            .padding(.top, AP.Space.space24)
+            .padding(.bottom, AP.Space.space8)
             .accessibilityAddTraits(.isHeader)
     }
 }
 
-/// SCR-002-01-GRD-002 / GRD-003: dense square 3-column grid, one header per date group.
+/// SCR-002-01-GRD-002 / GRD-003: the 3-column grid, one header per date group.
 struct GalleryPhotoGrid: View {
     let sections: [GalleryDateSection]
     var zoomNamespace: Namespace.ID?
     let onSelect: (GalleryItem) -> Void
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     private var columns: [GridItem] {
         Array(
             repeating: GridItem(.flexible(), spacing: GalleryGridContract.spacing),
-            count: GalleryGridContract.columnCount
+            count: GalleryGridContract.columnCount(for: dynamicTypeSize)
         )
     }
 
@@ -496,11 +809,8 @@ struct GalleryPhotoGrid: View {
             ForEach(sections) { section in
                 Section {
                     ForEach(section.items) { item in
-                        Button { onSelect(item) } label: {
-                            GalleryPhotoCell(item: item)
-                                .zoomTransitionSource(id: item.id, in: zoomNamespace, cornerRadius: GalleryGridContract.cornerRadius)
-                        }
-                        .buttonStyle(.plain)
+                        GalleryPhotoCell(item: item) { onSelect($0) }
+                            .zoomTransitionSource(id: item.id, in: zoomNamespace, cornerRadius: GalleryGridContract.cornerRadius)
                     }
                 } header: {
                     GalleryDateSectionHeader(label: section.label)
@@ -510,58 +820,198 @@ struct GalleryPhotoGrid: View {
     }
 }
 
-/// Dense square photo card. Keeps the FEAT-002 E1 missing-file placeholder behaviour.
+/// Square photo cell: photo when it loads, `controlFill` placeholder while it loads and a glyph +
+/// word retry when it fails. No resting border and no shadow (grid cells are E0).
 struct GalleryPhotoCell: View {
     let item: GalleryItem
+    var onSelect: (GalleryItem) -> Void
+
+    @State private var phase: GalleryCellPhase = .loading
+    @State private var retryToken = 0
 
     var body: some View {
-        Rectangle()
-            .fill(AIPoseColor.surfaceVariant)
-            .aspectRatio(1, contentMode: .fit)
-            .overlay {
-                GalleryLocalImage(url: item.fileURL, contentMode: .fill, targetSize: GalleryGridContract.cellDrawSize) {
-                    AIPoseColor.surfaceVariant.overlay {
-                        Image(systemName: "exclamationmark.triangle")
-                            .foregroundStyle(AIPoseColor.subtext)
-                    }
-                }
+        Button {
+            switch GalleryCellBehaviour.action(for: phase) {
+            case .open:
+                onSelect(item)
+            case .retry:
+                retry()
             }
-            .clipShape(RoundedRectangle(cornerRadius: GalleryGridContract.cornerRadius))
-            .overlay(
-                RoundedRectangle(cornerRadius: GalleryGridContract.cornerRadius)
-                    .stroke(AIPoseColor.foreground, lineWidth: 1.5)
+        } label: {
+            media
+        }
+        .buttonStyle(GalleryCellButtonStyle())
+        .accessibilityLabel(
+            GalleryCellBehaviour.voiceOverLabel(title: item.title, date: item.createdAt, phase: phase)
+        )
+    }
+
+    private var media: some View {
+        ZStack {
+            AP.Color.controlFill
+            if phase == .failed {
+                VStack(spacing: AP.Space.space4) {
+                    Image(systemName: GalleryMediaGlyph.failed)
+                        .font(.system(size: 20, weight: .semibold))
+                    Text(GalleryDetailCopy.retryTitle)
+                        .font(AP.Font.caption)
+                }
+                .foregroundStyle(AP.Color.secondaryText)
+                .accessibilityHidden(true)
+            } else {
+                GalleryLocalImage(
+                    url: item.fileURL,
+                    contentMode: .fill,
+                    targetSize: GalleryGridContract.cellDrawSize,
+                    onFailure: markFailed,
+                    onSuccess: markLoaded
+                ) {
+                    Color.clear
+                }
+                // Reloading is a new identity: Kingfisher keeps the failed cache entry otherwise.
+                .id(retryToken)
+            }
+        }
+        .aspectRatio(1, contentMode: .fit)
+        .clipShape(RoundedRectangle(cornerRadius: GalleryGridContract.cornerRadius, style: .continuous))
+    }
+
+    private func markFailed() {
+        // The callback can land during a view update; defer the state change by one run-loop turn.
+        DispatchQueue.main.async {
+            if phase != .failed, phase != .loaded {
+                phase = .failed
+            }
+        }
+    }
+
+    private func markLoaded() {
+        DispatchQueue.main.async {
+            if phase == .loading {
+                phase = .loaded
+            }
+        }
+    }
+
+    private func retry() {
+        phase = .loading
+        retryToken += 1
+    }
+}
+
+/// Pressed response for a grid cell: one fill step plus `scale 0.97`; Reduce Motion keeps the fill.
+struct GalleryCellButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        GalleryCellButtonBody(configuration: configuration)
+    }
+}
+
+private struct GalleryCellButtonBody: View {
+    let configuration: ButtonStyleConfiguration
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        configuration.label
+            .overlay {
+                RoundedRectangle(cornerRadius: GalleryGridContract.cornerRadius, style: .continuous)
+                    .fill(AP.Color.controlFillPressed)
+                    .opacity(configuration.isPressed ? 0.55 : 0)
+            }
+            .scaleEffect(configuration.isPressed && !reduceMotion ? AP.Press.scale : 1)
+            .animation(
+                reduceMotion ? nil : .easeOut(duration: AP.Press.duration),
+                value: configuration.isPressed
             )
-            .accessibilityLabel("\(item.title), \(item.createdAt.formatted(date: .abbreviated, time: .shortened))")
     }
 }
 
 enum GalleryDetailPresentation {
-    static let styleVersion = 2
+    /// Bumped for the F1 header, the count-free pager and the board's tray / dialog.
+    static let styleVersion = 3
 }
 
+/// The framed media in the pager: photo, `controlFill` placeholder, or the board's in-frame failure
+/// panel with its own retry.
 struct GalleryDetailPhotoFrame: View {
     let item: GalleryItem
 
+    @State private var phase: GalleryCellPhase = .loading
+    @State private var retryToken = 0
+
     var body: some View {
-        Rectangle()
-            .fill(AIPoseColor.surfaceVariant)
-            .aspectRatio(3 / 4, contentMode: .fit)
-            .overlay {
-                GalleryLocalImage(url: item.fileURL, contentMode: .fill, targetSize: FullScreenImageTarget.drawSize) {
-                    VStack(spacing: AIPoseSpacing.sm) {
-                        Image(systemName: "exclamationmark.triangle")
-                        Text("Couldn't load photo").font(.footnote)
-                    }
-                    .foregroundStyle(AIPoseColor.subtext)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(AIPoseColor.surfaceVariant)
+        ZStack {
+            Rectangle().fill(AP.Color.controlFill)
+            switch phase {
+            case .failed:
+                failedPanel
+            case .loading, .loaded:
+                GalleryLocalImage(
+                    url: item.fileURL,
+                    contentMode: .fill,
+                    targetSize: FullScreenImageTarget.drawSize,
+                    onFailure: markFailed,
+                    onSuccess: markLoaded
+                ) {
+                    Color.clear
                 }
+                .id(retryToken)
             }
-            .clipShape(RoundedRectangle(cornerRadius: 22))
+        }
+        .aspectRatio(3 / 4, contentMode: .fit)
+        .clipShape(RoundedRectangle(cornerRadius: AP.Radius.radius24, style: .continuous))
+    }
+
+    private var failedPanel: some View {
+        VStack(spacing: AP.Space.space8) {
+            Image(systemName: GalleryMediaGlyph.failed)
+                .font(.system(size: 28, weight: .semibold))
+                .foregroundStyle(AP.Color.secondaryText)
+                .accessibilityHidden(true)
+            Text(GalleryDetailCopy.failedTitle)
+                .font(AP.Font.heading)
+                .foregroundStyle(AP.Color.primaryText)
+                .multilineTextAlignment(.center)
+            Text(GalleryDetailCopy.failedMessage)
+                .font(AP.Font.supporting)
+                .foregroundStyle(AP.Color.secondaryText)
+                .multilineTextAlignment(.center)
+            Button(GalleryDetailCopy.retryTitle) { retry() }
+                .buttonStyle(APSecondaryButtonStyle())
+                .frame(maxWidth: 200)
+                .padding(.top, AP.Space.space8)
+                .accessibilityIdentifier(GalleryDetailAccessibility.failedRetryIdentifier)
+        }
+        .padding(AP.Space.space24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier(GalleryDetailAccessibility.failedIdentifier)
+    }
+
+    private func markFailed() {
+        DispatchQueue.main.async {
+            if phase != .failed {
+                phase = .failed
+            }
+        }
+    }
+
+    private func markLoaded() {
+        DispatchQueue.main.async {
+            if phase == .loading {
+                phase = .loaded
+            }
+        }
+    }
+
+    private func retry() {
+        phase = .loading
+        retryToken += 1
     }
 }
 
-/// Canonical Gallery detail v2: light-cream canvas, framed media, date/time topbar and a 3-up action tray.
+/// Canonical Gallery detail v3: F1 one-row header, framed media with the pager dots, the board's
+/// action tray and the board's centred delete confirmation. No count line anywhere (F3).
 struct GalleryDetailPager: View {
     let items: [GalleryItem]
     let startIndex: Int
@@ -569,12 +1019,11 @@ struct GalleryDetailPager: View {
     let onDelete: (GalleryItem) -> Void
     let onDismiss: () -> Void
     @State private var page: Int
-    @State private var confirmDelete = false
-    @State private var showOptions = false
+    @State private var showsDeleteConfirm = false
     @State private var shareItem: GallerySharePayload?
     @State private var isPreparingShare = false
     @State private var isSaving = false
-    @State private var saveStatus: String?
+    @State private var toast: GalleryToast?
 
     init(
         items: [GalleryItem],
@@ -598,37 +1047,35 @@ struct GalleryDetailPager: View {
             VStack(spacing: 0) {
                 topbar
 
+                // F5: the snackbar rides directly above the action tray, never mid-screen.
                 TabView(selection: $page) {
                     ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
                         GalleryDetailPhotoFrame(item: item)
-                            .padding(.horizontal, 18)
-                            .padding(.top, AIPoseSpacing.md)
+                            .padding(.horizontal, AP.Space.space24)
+                            .padding(.top, AP.Space.space16)
                             .tag(index)
-                            .accessibilityLabel("Photo \(index + 1) of \(items.count)")
+                            .accessibilityLabel(GalleryDetailAccessibility.mediaLabel)
                     }
                 }
                 .tabViewStyle(.page(indexDisplayMode: items.count > 1 ? .automatic : .never))
                 .frame(maxHeight: .infinity)
-
-                if let saveStatus {
-                    Text(saveStatus)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(AIPoseColor.subtext)
-                        .padding(.top, AIPoseSpacing.sm)
-                        .accessibilityLabel(saveStatus)
-                }
+                .apSnackbar(toast?.message, tone: toast?.tone ?? .error) { toast = nil }
 
                 actionTray
             }
-            .background(AIPoseColor.background.ignoresSafeArea())
+            .background(AP.Color.background.ignoresSafeArea())
             .neoHiddenNavigationBar()
-            .confirmationDialog("Delete this photo?", isPresented: $confirmDelete, titleVisibility: .visible) {
-                Button("Delete", role: .destructive) { onDelete(current); onDismiss() }
-                Button("Cancel", role: .cancel) {}
-            }
-            .confirmationDialog("Photo options", isPresented: $showOptions, titleVisibility: .visible) {
-                Button("Delete Photo", role: .destructive) { onDelete(current); onDismiss() }
-                Button("Cancel", role: .cancel) {}
+            .overlay {
+                if showsDeleteConfirm {
+                    GalleryDeleteDialog(
+                        onConfirm: {
+                            showsDeleteConfirm = false
+                            onDelete(current)
+                            onDismiss()
+                        },
+                        onCancel: { showsDeleteConfirm = false }
+                    )
+                }
             }
             .sheet(item: $shareItem) { payload in
                 ShareSheet(items: [payload.url])
@@ -642,51 +1089,75 @@ struct GalleryDetailPager: View {
                     }
                     .onDisappear { GallerySharePreparation.discard(payload.url) }
             }
-            .onChange(of: page) { _ in saveStatus = nil }
+            // F5: failures use the bottom snackbar, above the tray.
+            .onChange(of: page) { _ in toast = nil }
+            .task(id: toast?.id) {
+                guard toast != nil else { return }
+                try? await Task.sleep(nanoseconds: UInt64(APSnackbar.autoDismissDelay * 1_000_000_000))
+                guard !Task.isCancelled else { return }
+                toast = nil
+            }
         }
         .navigationViewStyle(.stack)
         .zoomTransition(sourceID: current.id, in: zoomNamespace)
     }
 
-    /// Prototype `.topbar`: plain circular back control, centered date/time, plain options control.
+    /// F1/F2: the shared page header — back control and the inline date on one row — with the
+    /// screen's own options control in the trailing slot. The old "3 of 12" line is gone (F3).
     private var topbar: some View {
-        NeoSubscreenHeader(
+        APPageHeader(
             title: current.createdAt.formatted(date: .abbreviated, time: .omitted),
-            subtitle: current.createdAt.formatted(date: .omitted, time: .shortened),
             backLabel: "Back",
-            plainControls: true,
-            titleEmphasis: .topbar,
-            horizontalPadding: 18,
-            bottomPadding: 14,
+            backStyle: .control,
+            backIdentifier: GalleryDetailAccessibility.backIdentifier,
+            titleIdentifier: GalleryDetailAccessibility.titleIdentifier,
             onBack: onDismiss
-        ) {
-            NeoPlainIconButton(systemImage: "ellipsis", accessibilityLabel: "Photo options") {
-                showOptions = true
+        )
+        .overlay(alignment: .trailing) {
+            Menu {
+                Button(role: .destructive) {
+                    showsDeleteConfirm = true
+                } label: {
+                    Label(GalleryDeleteConfirmSpec.confirmTitle, systemImage: "trash")
+                }
+            } label: {
+                APHeaderActionGlyph(systemImage: "ellipsis")
             }
+            .accessibilityLabel(GalleryDetailCopy.optionsTitle)
+            .accessibilityIdentifier(GalleryDetailAccessibility.optionsIdentifier)
+            .padding(.trailing, AP.Space.space16)
         }
     }
 
-    /// Prototype `.action-tray` / `.action-grid`: 3-up evenly divided labelled icon actions on the cream canvas.
+    /// `07-photo-detail`: a raised `surface` tray directly above the bottom safe area, one row of
+    /// glyph + word actions.
     private var actionTray: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: AP.Space.space4) {
             shareAction
             saveAction
             trashAction
         }
-        .padding(.horizontal, AIPoseSpacing.md)
-        .padding(.top, 18)
-        .padding(.bottom, AIPoseSpacing.lg)
+        .padding(.horizontal, AP.Space.space16)
+        .padding(.vertical, AP.Space.space12)
+        // The bar carries the surface down behind the home indicator; the controls stay above it.
+        .background {
+            AP.Color.surface
+                .ignoresSafeArea(edges: .bottom)
+                .apElevation(.e1, cornerRadius: 0)
+        }
     }
 
     @ViewBuilder private var shareAction: some View {
         Button { prepareShare() } label: {
             GalleryTrayActionLabel(
-                title: isPreparingShare ? "Preparing…" : "Share",
-                systemImage: "square.and.arrow.up"
+                title: isPreparingShare ? GalleryDetailCopy.sharePreparingTitle : GalleryDetailCopy.shareTitle,
+                systemImage: "square.and.arrow.up",
+                isEnabled: !isPreparingShare
             )
         }
-        .buttonStyle(.plain)
+        .buttonStyle(GalleryTrayButtonStyle())
         .disabled(isPreparingShare)
+        .accessibilityIdentifier(GalleryDetailAccessibility.shareIdentifier)
         .accessibilityLabel(isPreparingShare ? "Preparing photo for sharing" : "Share photo")
     }
 
@@ -698,7 +1169,7 @@ struct GalleryDetailPager: View {
         let item = current
         let tappedAt = Date()
         isPreparingShare = true
-        saveStatus = nil
+        toast = nil
         Task {
             let prepared = await Task.detached(priority: .userInitiated) {
                 try? GallerySharePreparation.prepare(source: item.fileURL)
@@ -713,59 +1184,207 @@ struct GalleryDetailPager: View {
                 #endif
                 shareItem = GallerySharePayload(url: prepared, tappedAt: tappedAt)
             } else {
-                saveStatus = GallerySharePreparation.Failure.sourceMissing(item.fileURL.lastPathComponent).localizedDescription
+                toast = GalleryToast(
+                    message: GallerySharePreparation.Failure
+                        .sourceMissing(item.fileURL.lastPathComponent).localizedDescription
+                )
             }
         }
     }
 
     private var saveAction: some View {
         Button { saveCurrentToPhotos() } label: {
-            GalleryTrayActionLabel(title: isSaving ? "Saving…" : "Save", systemImage: "arrow.down.to.line")
+            GalleryTrayActionLabel(
+                title: isSaving ? GalleryDetailCopy.saveSavingTitle : GalleryDetailCopy.saveTitle,
+                systemImage: "arrow.down.to.line",
+                isEnabled: !isSaving
+            )
         }
-        .buttonStyle(.plain)
+        .buttonStyle(GalleryTrayButtonStyle())
         .disabled(isSaving)
+        .accessibilityIdentifier(GalleryDetailAccessibility.saveIdentifier)
         .accessibilityLabel(isSaving ? "Saving to Photos" : "Save to Photos")
     }
 
     private var trashAction: some View {
-        Button(role: .destructive) { confirmDelete = true } label: {
-            GalleryTrayActionLabel(title: "Trash", systemImage: "trash", tint: AIPoseColor.error)
+        Button(role: .destructive) { showsDeleteConfirm = true } label: {
+            GalleryTrayActionLabel(
+                title: GalleryDetailCopy.deleteTitle,
+                systemImage: "trash",
+                tint: AP.Color.error
+            )
         }
-        .buttonStyle(.plain)
+        .buttonStyle(GalleryTrayButtonStyle())
+        .accessibilityIdentifier(GalleryDetailAccessibility.deleteIdentifier)
         .accessibilityLabel("Delete photo")
     }
 
-    /// Save reuses the existing Photos export port (`PhotosExporter`); the outcome is reported honestly.
+    /// Save reuses the existing Photos export port (`PhotosExporter`); the outcome is reported honestly
+    /// through the bottom snackbar (success and failure both).
     private func saveCurrentToPhotos() {
         guard !isSaving else { return }
         let item = current
         isSaving = true
-        saveStatus = nil
+        toast = nil
         Task {
             let saved = await PhotosExporter.saveImage(at: item.fileURL)
             await MainActor.run {
                 isSaving = false
-                saveStatus = PhotosExporter.confirmation(saved: saved)
+                toast = GalleryToast(
+                    message: PhotosExporter.confirmation(saved: saved),
+                    tone: saved ? .success : .error
+                )
             }
         }
     }
 }
 
-/// Vertical icon + 11pt bold label used by the detail v2 action tray (min height 70pt, no chrome, radius 14 tap shape).
+/// Glyph + word action in the detail tray. Minimum 70 pt tall, no chrome of its own.
 struct GalleryTrayActionLabel: View {
     let title: String
     let systemImage: String
-    var tint: Color = AIPoseColor.foreground
+    var tint: SwiftUI.Color = AP.Color.primaryText
+    var isEnabled: Bool = true
 
     var body: some View {
-        VStack(spacing: 7) {
+        VStack(spacing: AP.Space.space4) {
             Image(systemName: systemImage)
                 .font(.system(size: 22, weight: .regular))
             Text(title)
-                .font(.system(size: 11, weight: .bold))
+                .font(AP.Font.caption)
+                .lineLimit(nil)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
         }
-        .foregroundStyle(tint)
+        .foregroundStyle(isEnabled ? tint : AP.Color.disabled)
         .frame(maxWidth: .infinity, minHeight: 70)
-        .contentShape(RoundedRectangle(cornerRadius: 14))
+        .contentShape(RoundedRectangle(cornerRadius: AP.Radius.radius16, style: .continuous))
+    }
+}
+
+/// Tray press response: one fill step plus `scale 0.97`; Reduce Motion keeps the fill only.
+struct GalleryTrayButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        GalleryTrayButtonBody(configuration: configuration)
+    }
+}
+
+private struct GalleryTrayButtonBody: View {
+    let configuration: ButtonStyleConfiguration
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.isEnabled) private var isEnabled
+
+    var body: some View {
+        configuration.label
+            .background(
+                RoundedRectangle(cornerRadius: AP.Radius.radius16, style: .continuous)
+                    .fill(fill)
+            )
+            .scaleEffect(configuration.isPressed && !reduceMotion ? AP.Press.scale : 1)
+            .animation(
+                reduceMotion ? nil : .easeOut(duration: AP.Press.duration),
+                value: configuration.isPressed
+            )
+    }
+
+    private var fill: SwiftUI.Color {
+        guard isEnabled, configuration.isPressed else { return .clear }
+        return AP.Color.controlFillPressed
+    }
+}
+
+/// `07-photo-delete-confirm`: the scrim, the centred `surface` card, the destructive action first and
+/// the neutral cancel under it.
+struct GalleryDeleteDialog: View {
+    let onConfirm: () -> Void
+    let onCancel: () -> Void
+
+    var body: some View {
+        ZStack {
+            AP.Color.scrim
+                .ignoresSafeArea()
+                .onTapGesture(perform: onCancel)
+                .accessibilityHidden(true)
+            VStack(spacing: AP.Space.space16) {
+                VStack(spacing: AP.Space.space8) {
+                    Text(GalleryDeleteConfirmSpec.title)
+                        .font(AP.Font.heading)
+                        .foregroundStyle(AP.Color.primaryText)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityAddTraits(.isHeader)
+                    Text(GalleryDeleteConfirmSpec.message)
+                        .font(AP.Font.supporting)
+                        .foregroundStyle(AP.Color.secondaryText)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                VStack(spacing: AP.Space.space8) {
+                    Button(GalleryDeleteConfirmSpec.confirmTitle, action: onConfirm)
+                        .buttonStyle(GalleryDestructiveButtonStyle())
+                        .accessibilityIdentifier(GalleryDeleteConfirmSpec.confirmIdentifier)
+                    Button(GalleryDeleteConfirmSpec.cancelTitle, action: onCancel)
+                        .buttonStyle(APSecondaryButtonStyle())
+                        .accessibilityIdentifier(GalleryDeleteConfirmSpec.cancelIdentifier)
+                }
+            }
+            .padding(AP.Space.space24)
+            .frame(maxWidth: 320)
+            .background(
+                RoundedRectangle(cornerRadius: AP.Radius.radius24, style: .continuous)
+                    .fill(AP.Color.surface)
+            )
+            .apElevation(.e1, cornerRadius: AP.Radius.radius24)
+            .padding(.horizontal, AP.Space.space24)
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier(GalleryDeleteConfirmSpec.dialogIdentifier)
+        }
+        .accessibilityAddTraits(.isModal)
+    }
+}
+
+/// Destructive action: `error` fill with `onError` label. Pressed darkens the fill by 14% (tokens.md),
+/// which is the fill stepping down without a second red token.
+struct GalleryDestructiveButtonStyle: ButtonStyle {
+    /// 14% darker while pressed (tokens.md, destructive button).
+    static let pressedDarkening: Double = 0.14
+
+    func makeBody(configuration: Configuration) -> some View {
+        GalleryDestructiveButtonBody(configuration: configuration)
+    }
+}
+
+private struct GalleryDestructiveButtonBody: View {
+    let configuration: ButtonStyleConfiguration
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        configuration.label
+            .font(AP.Font.heading)
+            .foregroundStyle(AP.Color.onError)
+            .multilineTextAlignment(.center)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, AP.Space.space16)
+            .padding(.vertical, AP.Space.space8)
+            .frame(maxWidth: .infinity, minHeight: 48)
+            .background {
+                let shape = RoundedRectangle(cornerRadius: AP.Radius.radius16, style: .continuous)
+                if configuration.isPressed {
+                    shape
+                        .fill(AP.Color.error)
+                        .overlay {
+                            shape.fill(Color.black.opacity(GalleryDestructiveButtonStyle.pressedDarkening))
+                        }
+                } else {
+                    shape.fill(AP.Color.error)
+                }
+            }
+            .scaleEffect(configuration.isPressed && !reduceMotion ? AP.Press.scale : 1)
+            .animation(
+                reduceMotion ? nil : .easeOut(duration: AP.Press.duration),
+                value: configuration.isPressed
+            )
     }
 }
