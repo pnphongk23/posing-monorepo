@@ -1,0 +1,47 @@
+# TC-EXT-002 consent Allow uploads once and the job appears in Jobs
+appId: ${APP_ID}
+tags: [TC-EXT-002, p0, e2e]
+---
+# Fail fast instead of typing an unresolved placeholder into the sign-in form.
+- assertTrue:
+    condition: ${E2E_EMAIL != null && E2E_EMAIL.length > 0 && E2E_PASSWORD != null && E2E_PASSWORD.length > 0}
+    label: "E2E_EMAIL / E2E_PASSWORD missing - run with -e E2E_EMAIL=... -e E2E_PASSWORD=..."
+- runFlow: ../subflows/ext-launch.yaml
+- runFlow: ../subflows/ext-sign-in.yaml
+- runFlow:
+    file: ../subflows/ext-add-pose-form.yaml
+    env:
+      POSE_NAME: "QA consent allow"
+- runFlow:
+    when:
+      notVisible:
+        id: "addPose.consent.message"
+    commands:
+      - tapOn:
+          id: "addPose.submitButton"
+# Consent comes before the upload; Allow is what sends it.
+- runFlow: ../subflows/ext-consent-allow.yaml
+# Allow submits: the form becomes the processing surface, with no second tap needed.
+- extendedWaitUntil:
+    visible:
+      id: "addPose.viewJobsButton"
+    timeout: 30000
+- assertNotVisible:
+    id: "addPose.consent.message"
+# Done, then the Jobs entry from the Poses home: the row has to exist for this submit.
+- tapOn:
+    id: "addPose.doneButton"
+- tapOn:
+    id: "poses.more"
+- tapOn:
+    id: "poses.jobs"
+- extendedWaitUntil:
+    visible:
+      id: "jobs.tab.finish"
+    timeout: 20000
+- tapOn:
+    id: "jobs.tab.finish"
+# A fast extraction lands the new row straight in Finish; either tab proves it was created once.
+- extendedWaitUntil:
+    visible: '.*QA consent allow.*'
+    timeout: 30000

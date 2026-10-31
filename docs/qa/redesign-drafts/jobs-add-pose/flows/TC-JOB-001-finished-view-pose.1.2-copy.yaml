@@ -1,0 +1,84 @@
+# TC-JOB-001 finished job -> View pose opens the private pose detail
+appId: ${APP_ID}
+tags: [TC-JOB-001, p0, e2e]
+---
+- assertTrue:
+    condition: ${E2E_EMAIL != null && E2E_EMAIL.length > 0 && E2E_PASSWORD != null && E2E_PASSWORD.length > 0}
+    label: "E2E_EMAIL / E2E_PASSWORD missing - run with -e E2E_EMAIL=... -e E2E_PASSWORD=..."
+- runFlow: ../subflows/ext-launch.yaml
+- runFlow: ../subflows/ext-sign-in.yaml
+- runFlow:
+    file: ../subflows/ext-add-pose-form.yaml
+    env:
+      POSE_NAME: "QA finished pose"
+- runFlow:
+    when:
+      notVisible:
+        id: "addPose.consent.message"
+    commands:
+      - tapOn:
+          id: "addPose.submitButton"
+# The clean launch cleared the per-account ack, so the sheet must appear on this first upload.
+- runFlow: ../subflows/ext-consent-allow.yaml
+# Real extraction: the button only exists once the job reports succeeded.
+- extendedWaitUntil:
+    visible:
+      id: "addPose.viewPoseButton"
+    timeout: 300000
+# Done, then Jobs from the Poses home: the row has to be Ready in the Finish tab.
+- tapOn:
+    id: "addPose.doneButton"
+- tapOn:
+    id: "poses.more"
+- tapOn:
+    id: "poses.jobs"
+- extendedWaitUntil:
+    visible:
+      id: "jobs.tab.finish"
+    timeout: 20000
+- tapOn:
+    id: "jobs.tab.finish"
+- extendedWaitUntil:
+    visible: '.*Ready, View pose.*'
+    timeout: 30000
+# The per-job id carries the jobId suffix, so the action is matched by regex.
+- tapOn:
+    id: "jobRow.viewPose..*"
+# Private pose detail: Try this pose works, Save does not exist for a private pose.
+- extendedWaitUntil:
+    visible:
+      id: "poseDetail.use"
+    timeout: 30000
+- assertNotVisible:
+    id: "poseDetail.saveButton"
+- tapOn:
+    id: "poseDetail.back"
+- extendedWaitUntil:
+    visible:
+      id: "jobs.tab.finish"
+    timeout: 20000
+- tapOn: "Back"
+# The private pose is not in Saved.
+- tapOn:
+    id: "poses.more"
+- tapOn:
+    id: "poses.header.saved"
+- extendedWaitUntil:
+    visible: "Saved"
+    timeout: 20000
+- extendedWaitUntil:
+    notVisible:
+      id: "saved.loading"
+    timeout: 20000
+- assertNotVisible: '.*QA finished pose.*'
+- tapOn: "Back"
+# ...and not in Community search either.
+- tapOn:
+    id: "poses.open-search"
+- tapOn:
+    id: "search.field"
+- inputText: "QA finished pose"
+- extendedWaitUntil:
+    visible:
+      id: "search-empty-banner"
+    timeout: 25000

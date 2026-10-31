@@ -1,4 +1,5 @@
 # TC-EXT-001 consent Cancel sends nothing and keeps the draft
+# 1.1 (17) copy variant: the committed flow still asserts the 1.2 (16) wording.
 appId: ${APP_ID}
 tags: [TC-EXT-001, p0, e2e]
 ---
@@ -6,10 +7,10 @@ tags: [TC-EXT-001, p0, e2e]
 - assertTrue:
     condition: ${E2E_EMAIL != null && E2E_EMAIL.length > 0 && E2E_PASSWORD != null && E2E_PASSWORD.length > 0}
     label: "E2E_EMAIL / E2E_PASSWORD missing - run with -e E2E_EMAIL=... -e E2E_PASSWORD=..."
-- runFlow: ../subflows/ext-launch.yaml
-- runFlow: ../subflows/ext-sign-in.yaml
+- runFlow: ../subflows/rd-launch.yaml
+- runFlow: ../subflows/rd-sign-in.yaml
 - runFlow:
-    file: ../subflows/ext-add-pose-form.yaml
+    file: ../subflows/rd-add-pose-form.yaml
     env:
       POSE_NAME: "QA consent cancel"
 - runFlow:
@@ -39,8 +40,10 @@ tags: [TC-EXT-001, p0, e2e]
 - assertVisible:
     id: "addPose.nameField"
     text: "QA consent cancel"
-- assertVisible: "Change Photo"
-- assertVisible: "Add Pose"
+- assertVisible: "Change photo"
+- assertVisible:
+    id: "addPose.title"
+    text: "Add pose"
 # No job was started: the same submit asks for consent again (Cancel records no answer).
 - runFlow:
     when:
