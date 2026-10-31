@@ -1,0 +1,29 @@
+# TC-SET-013 About is a sheet with the app identity and the legal rows
+appId: ${APP_ID}
+tags: [TC-SET-013, p1]
+---
+- runFlow: ../subflows/launch.yaml
+- runFlow: ../subflows/open-settings.yaml
+- scrollUntilVisible:
+    element:
+      id: "settings.about"
+    direction: DOWN
+- tapOn:
+    id: "settings.about"
+- assertVisible:
+    id: "about.version"
+- assertVisible:
+    id: "about.terms"
+- assertVisible:
+    id: "about.privacy"
+- assertVisible:
+    id: "about.licences"
+# The board's "Contact support" row is deliberately not built (no Support surface).
+- assertNotVisible:
+    id: "about.contact"
+- tapOn:
+    id: "about.close"
+- assertNotVisible:
+    id: "about.version"
+- assertVisible:
+    id: "settings.about"

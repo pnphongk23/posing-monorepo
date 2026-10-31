@@ -1,21 +1,35 @@
-# TC-SET-001 settings rows; About opens and closes
+# TC-SET-001 Settings opens from the Poses More menu, lists the hub sections, and About round-trips
 appId: ${APP_ID}
 tags: [TC-SET-001, p0]
 ---
 - runFlow: ../subflows/launch.yaml
 - runFlow: ../subflows/open-settings.yaml
-- assertVisible: "Privacy"  # TODO(QA-261029-ID) settings.privacy.section
-# Appearance and Account now sit above Privacy and Help & support is the last group, so the
-# onboarding/About rows are below the fold: scroll to them instead of asserting off-screen.
+- assertVisible:
+    id: "settings.title"
+- assertVisible:
+    id: "settings.saved.row"
+- assertVisible:
+    id: "settings.appearance.system"
 - scrollUntilVisible:
     element:
-      text: "Replay onboarding guide"  # TODO(QA-261029-ID) settings.replayOnboarding
+      id: "settings.about"
     direction: DOWN
-- tapOn: "About posing.*"  # TODO(QA-261029-ID) settings.about
 - assertVisible:
-    id: "about.close"
+    id: "settings.about"
+- tapOn:
+    id: "settings.about"
+- assertVisible:
+    id: "about.title"
 - tapOn:
     id: "about.close"
 - assertNotVisible:
-    id: "about.close"
-- assertVisible: "Replay onboarding guide"  # back on the Settings list, still scrolled to Help & support
+    id: "about.title"
+# Back on the hub, not dropped into Poses by the sheet dismissal.
+- assertVisible:
+    id: "settings.saved.row"
+- tapOn:
+    id: "settings.back"
+- assertVisible:
+    id: "poses.more"
+- assertNotVisible:
+    id: "settings.saved.row"

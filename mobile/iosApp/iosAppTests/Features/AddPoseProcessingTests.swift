@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import XCTest
 @testable import iosApp
 
@@ -202,5 +203,179 @@ final class AddPoseProcessingTests: XCTestCase {
         XCTAssertEqual(activeRoute, .jobs(.finish))
         XCTAssertTrue(activeRoute?.isJobs == true)
         XCTAssertEqual(activeRoute?.jobsTab, JobsTab.finish)
+    }
+
+    // MARK: - View jobs routing
+
+    @MainActor
+    func testViewJobsAsksForTheSegmentTheJobNeeds() {
+        AppConfig.shared.applyExtractPoseEnabled(true)
+        defer { AppConfig.shared.applyExtractPoseEnabled(true) }
+
+        let model = AddPoseViewModel(jobsService: ProcessingWatchJobsService())
+        model.submittedJobId = "job_1"
+        XCTAssertNil(model.requestedJobsTab, "nothing is asked for before the tap")
+
+        model.currentJobStatus = "queued"
+        model.requestOpenJobs()
+        XCTAssertEqual(model.requestedJobsTab, .processing, "a queued job is still running")
+        model.clearJobsRequest()
+        XCTAssertNil(model.requestedJobsTab)
+
+        model.currentJobStatus = "processing"
+        model.requestOpenJobs()
+        XCTAssertEqual(model.requestedJobsTab, .processing)
+        model.clearJobsRequest()
+
+        model.currentJobStatus = "succeeded"
+        model.requestOpenJobs()
+        XCTAssertEqual(model.requestedJobsTab, .finish, "a settled job lives on the Finished segment")
+        model.clearJobsRequest()
+
+        model.currentJobStatus = "failed"
+        model.requestOpenJobs()
+        XCTAssertEqual(model.requestedJobsTab, .finish, "a failed job lives on the Finished segment")
+    }
+
+    @MainActor
+    func testViewJobsIsNotAskedForWhenPoseExtractionIsOff() {
+        AppConfig.shared.applyExtractPoseEnabled(false)
+        defer { AppConfig.shared.applyExtractPoseEnabled(true) }
+
+        let model = AddPoseViewModel(jobsService: ProcessingWatchJobsService())
+        model.submittedJobId = "job_1"
+        model.currentJobStatus = "processing"
+        model.requestOpenJobs()
+
+        XCTAssertNil(model.requestedJobsTab, "the killed switch hides the Jobs surface entirely")
+    }
+
+    @MainActor
+    func testTheViewJobsTapPushesTheJobsScreenInsteadOfPoppingToPoses() {
+        // The defect (build 16): View jobs handed the tab to the Poses route, which swapped the pushed
+        // destination in the same update as this screen's pop, so the pop won and the user landed on
+        // Poses home. The fix is a push on this screen's own stack; this test drives the real push.
+        AppConfig.shared.applyExtractPoseEnabled(true)
+        defer { AppConfig.shared.applyExtractPoseEnabled(true) }
+
+        let model = AddPoseViewModel(jobsService: ProcessingWatchJobsService())
+        model.name = "Window light"
+        model.submittedJobId = "job_1"
+        model.currentJobStatus = "processing"
+
+        let asked = AskedJobsDestination()
+        let screen = NavigationView {
+            AddPoseScreen(
+                viewModel: model,
+                posesModel: PosesViewModel(service: AddPoseEmptyCatalogueService()),
+                jobsDestination: { tab in
+                    asked.tab = tab
+                    return AnyView(Color.red)
+                }
+            )
+        }
+        let probe = AddPoseNavigationProbe(screen)
+        defer { probe.tearDown() }
+
+        XCTAssertEqual(
+            probe.waitForDepth(1), 1,
+            "the processing card is the only level on the stack to begin with"
+        )
+
+        model.requestOpenJobs()
+
+        XCTAssertEqual(
+            probe.waitForDepth(2), 2,
+            "View jobs must land on the Jobs screen, not back on Poses home"
+        )
+        XCTAssertEqual(asked.tab, .processing, "the push carries the segment the job needs")
+
+        // Back from Jobs: the request clears, so a second visit can push again.
+        model.clearJobsRequest()
+        XCTAssertEqual(probe.waitForDepth(1), 1)
+        // A returning user taps after the pop animation, not during it.
+        probe.settleFor(0.8)
+        model.requestOpenJobs()
+        XCTAssertEqual(probe.waitForDepth(2), 2, "the button keeps working after a round trip")
+    }
+}
+
+/// Records the tab the flow asked the Jobs screen to open on.
+@MainActor
+private final class AskedJobsDestination {
+    var tab: JobsTab?
+}
+
+/// The catalogue is irrelevant here: the probe only needs a model that does not reach the network.
+private struct AddPoseEmptyCatalogueService: PoseServing {
+    func poses(query: String?) async throws -> [NativePose] { [] }
+    func pose(id: String) async throws -> NativePose { throw PoseAdapterError.poseNotFound(id) }
+}
+
+/// Hosts a view inside a real window and reads the navigation stack SwiftUI builds for it, so a test
+/// can assert that a control pushed a screen instead of popping back to the root.
+@MainActor
+private final class AddPoseNavigationProbe {
+    private let window: UIWindow
+    private let host: UIHostingController<AnyView>
+    private let size = CGSize(width: 393, height: 844)
+
+    init<V: View>(_ view: V) {
+        if let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first {
+            window = UIWindow(windowScene: scene)
+        } else {
+            window = UIWindow(frame: CGRect(origin: .zero, size: size))
+        }
+        window.frame = CGRect(origin: .zero, size: size)
+        window.windowLevel = .normal + 1
+        host = UIHostingController(rootView: AnyView(view))
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        host.view.frame = CGRect(origin: .zero, size: size)
+        settle()
+    }
+
+    func settle() {
+        host.view.setNeedsLayout()
+        host.view.layoutIfNeeded()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+    }
+
+    func settleFor(_ seconds: TimeInterval) {
+        RunLoop.main.run(until: Date().addingTimeInterval(seconds))
+    }
+
+    /// Pumps the run loop until the stack holds `expected` levels, and answers what it actually holds
+    /// so a failure prints the depth the navigation really reached.
+    func waitForDepth(_ expected: Int, timeout: TimeInterval = 3) -> Int? {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            settle()
+            if navigationDepth == expected { return expected }
+        }
+        return navigationDepth
+    }
+
+    var navigationDepth: Int? {
+        Self.navigationController(in: host)?.viewControllers.count
+    }
+
+    func tearDown() {
+        host.view.removeFromSuperview()
+        if window.rootViewController === host {
+            window.rootViewController = nil
+        }
+        window.isHidden = true
+    }
+
+    private static func navigationController(in parent: UIViewController) -> UINavigationController? {
+        if let navigation = parent as? UINavigationController { return navigation }
+        for child in parent.children {
+            if let navigation = navigationController(in: child) { return navigation }
+        }
+        if let presented = parent.presentedViewController {
+            return navigationController(in: presented)
+        }
+        return nil
     }
 }

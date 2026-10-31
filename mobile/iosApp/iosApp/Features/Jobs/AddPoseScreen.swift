@@ -393,6 +393,31 @@ final class AddPoseViewModel: ObservableObject {
         processingError ?? AddPoseFormCopy.extractionFailedFallback
     }
 
+    /// The Jobs segment the processing footer's "View jobs" asks for, or `nil` while it asks for
+    /// nothing. The screen turns it into a push on its own stack.
+    ///
+    /// It used to be handed to the Poses route instead, which swapped the pushed destination in the
+    /// same update as the pop of this screen: the pop won and the user landed on Poses home (reported
+    /// twice on build 16). The state stays here so the decision is testable without a view.
+    @Published private(set) var requestedJobsTab: JobsTab?
+
+    /// Bumped on every request, so each push gets a link with a fresh identity: a `NavigationLink` that
+    /// has already been used once does not push again.
+    @Published private(set) var jobsRequestCount = 0
+
+    /// Board `08-board09` "View jobs": a job that is still running belongs on Processing, a settled one
+    /// on Finished.
+    func requestOpenJobs() {
+        guard JobsEntryPolicy.canOpen(extractPoseEnabled: AppConfig.shared.isExtractPoseEnabled) else { return }
+        requestedJobsTab = (stage == .ready || stage == .failed) ? .finish : .processing
+        jobsRequestCount += 1
+    }
+
+    /// The pushed Jobs screen went away (Back): a second visit must be able to push it again.
+    func clearJobsRequest() {
+        requestedJobsTab = nil
+    }
+
     func startWatching(jobId: String) {
         watchTask?.cancel()
         currentJobStatus = "queued"
@@ -445,7 +470,12 @@ struct AddPoseScreen: View {
     @StateObject var viewModel: AddPoseViewModel
     @ObservedObject var posesModel: PosesViewModel
     var onTryPose: (CameraPoseRequest) -> Void = { _ in }
+    /// Superseded: the screen now pushes Jobs on its own stack (see `hiddenJobsLink`). Kept so the
+    /// Poses route that constructs this screen keeps its contract until that call site is cleaned up.
     var onOpenJobs: (JobsTab) -> Void = { _ in }
+    /// Builds the Jobs screen this flow pushes. Production inserts the real screen; a navigation test
+    /// inserts a stand-in and still exercises the real push.
+    private let jobsDestination: (JobsTab) -> AnyView
     @Environment(\.dismiss) private var dismiss
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
@@ -459,12 +489,23 @@ struct AddPoseScreen: View {
         viewModel: AddPoseViewModel = AddPoseViewModel(),
         posesModel: PosesViewModel,
         onTryPose: @escaping (CameraPoseRequest) -> Void = { _ in },
-        onOpenJobs: @escaping (JobsTab) -> Void = { _ in }
+        onOpenJobs: @escaping (JobsTab) -> Void = { _ in },
+        jobsDestination: ((JobsTab) -> AnyView)? = nil
     ) {
         _viewModel = StateObject(wrappedValue: viewModel)
         self.posesModel = posesModel
         self.onTryPose = onTryPose
         self.onOpenJobs = onOpenJobs
+        self.jobsDestination = jobsDestination ?? { tab in
+            AnyView(
+                JobsScreen(
+                    jobsService: ServiceLocator.jobsService,
+                    posesModel: posesModel,
+                    initialTab: tab,
+                    onTryPose: onTryPose
+                )
+            )
+        }
     }
 
     /// The flow is one surface with two stages: the form, then the job the upload produced. Back and
@@ -511,7 +552,40 @@ struct AddPoseScreen: View {
                 Task { await viewModel.submit() }
             }
         }
-        .background(hiddenDetailLink)
+        .background(
+            Group {
+                hiddenDetailLink
+                hiddenJobsLink
+            }
+        )
+    }
+
+    /// The processing footer's "View jobs" is a plain push on this screen's own stack, the same
+    /// mechanism the pose detail above uses. Handing the tab to the Poses route instead swapped the
+    /// pushed destination in the same update as this screen's pop, so the pop won and the user landed
+    /// back on Poses home.
+    ///
+    /// The link stays in the hierarchy and only its `isActive` toggles, with a fresh identity per
+    /// request: a link that is inserted already active fires once, and one that has already been used
+    /// does not fire again, so a second "View jobs" would do nothing without the identity bump.
+    private var hiddenJobsLink: some View {
+        NavigationLink(
+            destination: Group {
+                if let tab = viewModel.requestedJobsTab {
+                    jobsDestination(tab)
+                }
+            },
+            isActive: Binding(
+                get: { viewModel.requestedJobsTab != nil },
+                set: { isPresented in
+                    if !isPresented { viewModel.clearJobsRequest() }
+                }
+            )
+        ) {
+            EmptyView()
+        }
+        .id(viewModel.jobsRequestCount)
+        .hidden()
     }
 
     private var hiddenDetailLink: some View {
@@ -902,12 +976,6 @@ struct AddPoseScreen: View {
         }
     }
 
-    private func openJobs() {
-        guard JobsEntryPolicy.canOpen(extractPoseEnabled: AppConfig.shared.isExtractPoseEnabled) else { return }
-        let targetTab: JobsTab = (viewModel.stage == .ready || viewModel.stage == .failed) ? .finish : .processing
-        onOpenJobs(targetTab)
-    }
-
     // MARK: - Processing
 
     private var processingBody: some View {
@@ -970,7 +1038,7 @@ struct AddPoseScreen: View {
             }
 
             if JobsEntryPolicy.canOpen(extractPoseEnabled: AppConfig.shared.isExtractPoseEnabled) {
-                Button(AddPoseFormCopy.viewJobs, action: openJobs)
+                Button(AddPoseFormCopy.viewJobs) { viewModel.requestOpenJobs() }
                     .buttonStyle(APButtonStyleForKind(kind: viewJobsKind))
                     .accessibilityIdentifier("addPose.viewJobsButton")
             }

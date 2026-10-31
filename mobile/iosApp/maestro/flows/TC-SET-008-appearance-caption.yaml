@@ -1,0 +1,19 @@
+# TC-SET-008 the "follows your iPhone" caption is only true under System
+appId: ${APP_ID}
+tags: [TC-SET-008, p1]
+---
+- runFlow: ../subflows/launch.yaml
+- runFlow: ../subflows/open-settings.yaml
+- scrollUntilVisible:
+    element:
+      id: "settings.appearance.system"
+    direction: DOWN
+- tapOn:
+    id: "settings.appearance.system"
+- assertVisible: "System follows your iPhone setting."
+- tapOn:
+    id: "settings.appearance.dark"
+- assertNotVisible: "System follows your iPhone setting."
+- tapOn:
+    id: "settings.appearance.system"
+- assertVisible: "System follows your iPhone setting."
