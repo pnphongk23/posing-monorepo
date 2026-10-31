@@ -866,11 +866,7 @@ struct PosesScreen: View {
                     .ignoresSafeArea()
                     .onTapGesture { setShowsMoreMenu(false) }
                     .zIndex(1)
-                moreMenuCard
-                    .frame(maxWidth: .infinity, alignment: .trailing)
-                    .padding(.horizontal, AP.Space.space16)
-                    .padding(.top, menuTopInset)
-                    .frame(maxHeight: .infinity, alignment: .top)
+                moreMenuOverlay
                     .zIndex(2)
             }
             if showsSearch {
@@ -1051,6 +1047,25 @@ struct PosesScreen: View {
         }
     }
 
+    /// The menu layer: full width and vertically scrollable at the Accessibility sizes, so a card that
+    /// is taller than the screen still reaches Add pose / Jobs / Saved.
+    @ViewBuilder private var moreMenuOverlay: some View {
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                ScrollView {
+                    moreMenuCard
+                        .padding(.top, menuTopInset)
+                }
+            } else {
+                moreMenuCard
+                    .padding(.top, menuTopInset)
+                    .frame(maxHeight: .infinity, alignment: .top)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .trailing)
+        .padding(.horizontal, AP.Space.space16)
+    }
+
     /// Where the menu card starts: just under the header. The header's height follows the type size
     /// (one line at the default sizes, title above the actions at AX), so the inset does too.
     private var menuTopInset: CGFloat {
@@ -1088,6 +1103,7 @@ struct PosesScreen: View {
             savedDestination: AppConfig.shared.isAccountFeatureEnabled
                 ? AnyView(SavedPosesScreen(model: model, onTryPose: onTryPose))
                 : nil,
+            maxWidth: dynamicTypeSize.isAccessibilitySize ? nil : 296,
             onAddPose: openAddPose,
             onJobs: openJobs,
             onSavedTapped: { setShowsMoreMenu(false) }
@@ -1161,7 +1177,11 @@ struct PosesScreen: View {
                     title: APCategoryFilter.emptyTitle,
                     message: categoryFilter.message,
                     actionTitle: APCategoryFilter.recoveryTitle,
-                    action: { withAnimation(.easeInOut(duration: 0.18)) { categoryFilter.clear() } },
+                    action: {
+                        withAnimation(APCatalogMotion.animation(reduceMotion: reduceMotion)) {
+                            categoryFilter.clear()
+                        }
+                    },
                     style: .plain
                 )
             }
@@ -1182,9 +1202,15 @@ struct PosesScreen: View {
                 categories: categories,
                 filter: categoryFilter,
                 onToggle: { category in
-                    withAnimation(.easeInOut(duration: 0.18)) { categoryFilter.toggle(category) }
+                    withAnimation(APCatalogMotion.animation(reduceMotion: reduceMotion)) {
+                        categoryFilter.toggle(category)
+                    }
                 },
-                onClear: { withAnimation(.easeInOut(duration: 0.18)) { categoryFilter.clear() } }
+                onClear: {
+                    withAnimation(APCatalogMotion.animation(reduceMotion: reduceMotion)) {
+                        categoryFilter.clear()
+                    }
+                }
             )
             .padding(.horizontal, AP.Space.space16)
             .padding(.bottom, AP.Space.space12)
@@ -1721,6 +1747,8 @@ struct SearchScreen: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @FocusState private var isFieldFocused: Bool
     @State private var selectedSource: PoseLibraryFilter = .all
+    /// AX only: the source filter row stays tucked until the compact toggle is opened.
+    @State private var showsSourceFilters = false
 
     var body: some View {
         Group {
@@ -1904,11 +1932,7 @@ struct SearchScreen: View {
     // MARK: results (`03-search-results`)
 
     @ViewBuilder private var resultsPanel: some View {
-        let presentation = APCatalogPresentationRule.presentation(
-            for: model.state,
-            hasVisiblePoses: !model.state.rows.isEmpty,
-            isFilterActive: model.filter != .all
-        )
+        let presentation = resultsPresentation
 
         switch presentation {
         case .loading:
@@ -1916,43 +1940,82 @@ struct SearchScreen: View {
                 .padding(.horizontal, AP.Space.space16)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         case .failed:
-            APErrorStateView(
-                title: PoseResultsStateCopy.searchErrorTitle,
-                message: PoseResultsStateCopy.searchErrorMessage,
-                retry: { Task { await model.load() } },
-                style: .plain
-            )
-            .accessibilityIdentifier("search.retry")
+            // The footer stays mounted: a failed page keeps its retry reachable below the panel.
+            VStack(spacing: 0) {
+                APErrorStateView(
+                    title: PoseResultsStateCopy.searchErrorTitle,
+                    message: PoseResultsStateCopy.searchErrorMessage,
+                    retry: { Task { await model.load() } },
+                    style: .plain
+                )
+                .accessibilityIdentifier("search.retry")
+                searchPagingFooter
+            }
         case .empty, .noMatch:
-            noMatchPanel
+            // An empty page is not the end of the list: the footer's Load more / Retry must stay
+            // reachable here, or a filtered-out page becomes a dead end.
+            VStack(spacing: 0) {
+                noMatchPanel
+                searchPagingFooter
+            }
         case .grid:
             VStack(alignment: .leading, spacing: 0) {
                 resultsHeader
-                sourceFilterRow
                 ScrollView {
+                    sourceFilterRow
                     APPoseGrid(
                         poses: model.state.rows,
                         model: model,
                         onNearEnd: { Task { await model.loadMore() } }
                     )
                     .padding(.horizontal, AP.Space.space16)
-                    APPagingFooter(model: model, bottomInset: APGridLayout.rowSpacing)
+                    searchPagingFooter
                 }
             }
         }
     }
 
-    /// `.nb-search-filter-row`: the source filter, one selection. Restyled, same behaviour and ids.
-    /// Stacked full width at the Accessibility sizes so the row never clips.
+    @ViewBuilder private var searchPagingFooter: some View {
+        if APSearchChrome.mountsPagingFooter(for: resultsPresentation) {
+            APPagingFooter(model: model, bottomInset: APGridLayout.rowSpacing)
+        }
+    }
+
+    private var resultsPresentation: APCatalogPresentation {
+        APCatalogPresentationRule.presentation(
+            for: model.state,
+            hasVisiblePoses: !model.state.rows.isEmpty,
+            isFilterActive: model.filter != .all
+        )
+    }
+
+    /// The source filter, one selection. Compact at the default sizes (one scrolling row, inside the
+    /// results scroll), tucked behind a single toggle at the AX sizes so it cannot eat the viewport.
+    /// The `search.source.*` identifiers live on the chips in both states.
     @ViewBuilder private var sourceFilterRow: some View {
         if dynamicTypeSize.isAccessibilitySize {
             VStack(alignment: .leading, spacing: AP.Space.space8) {
-                ForEach(SearchScreenContract.sourceFilters) { source in
-                    sourceChip(source, fillsWidth: true)
+                Button {
+                    showsSourceFilters.toggle()
+                } label: {
+                    Text("Filter: \(selectedSource.rawValue)")
+                        .font(AP.Font.supporting)
+                        .lineLimit(1)
+                        .padding(.horizontal, AP.Space.space16)
+                        .frame(maxWidth: .infinity, minHeight: AP.HitTarget.minimum, alignment: .leading)
+                }
+                .buttonStyle(APControlFillButtonStyle())
+                .accessibilityLabel("Filter, \(selectedSource.rawValue)")
+                .accessibilityAddTraits(showsSourceFilters ? .isSelected : [])
+
+                if showsSourceFilters {
+                    ForEach(SearchScreenContract.sourceFilters) { source in
+                        sourceChip(source, fillsWidth: true)
+                    }
                 }
             }
             .padding(.horizontal, AP.Space.space16)
-            .padding(.bottom, AP.Space.space12)
+            .padding(.bottom, AP.Space.space8)
         } else {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: AP.Space.space8) {
@@ -1962,7 +2025,7 @@ struct SearchScreen: View {
                 }
                 .padding(.horizontal, AP.Space.space16)
             }
-            .padding(.bottom, AP.Space.space12)
+            .padding(.bottom, AP.Space.space8)
         }
     }
 
@@ -1984,35 +2047,19 @@ struct SearchScreen: View {
         Task { await model.load() }
     }
 
-    /// The results header, kept in full because its three accessibility identifiers are frozen for
-    /// the E2E lane (`search-results-kicker` / `-heading` / `-count`). Design B drops the kicker and
-    /// the heading visually; keeping the ids means keeping the copy, so this is a listed deviation.
-    private var resultsHeader: some View {
-        VStack(alignment: .leading, spacing: AP.Space.space4) {
-            Text(SearchResultsCopy.kicker)
-                .font(AP.Font.caption.weight(.semibold))
-                .kerning(0.7)
+    /// `03-search-results`: the count and the grid, nothing else. The old kicker + heading block ate
+    /// the viewport at the AX sizes and is gone from the design; its two text identifiers
+    /// (`search-results-kicker`, `search-results-heading`) go with it and are reported to QA.
+    @ViewBuilder private var resultsHeader: some View {
+        if !SearchResultsCopy.hidesCount(for: model.state) {
+            Text(SearchResultsCopy.countLabel(for: model.state))
+                .font(AP.Font.supporting)
                 .foregroundStyle(AP.Color.secondaryText)
-                .accessibilityIdentifier("search-results-kicker")
-            HStack(alignment: .firstTextBaseline, spacing: AP.Space.space8) {
-                Text(SearchResultsCopy.heading(query: model.query))
-                    .font(AP.Font.title)
-                    .foregroundStyle(AP.Color.primaryText)
-                    .lineLimit(nil)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityIdentifier("search-results-heading")
-                Spacer(minLength: AP.Space.space8)
-                if !SearchResultsCopy.hidesCount(for: model.state) {
-                    Text(SearchResultsCopy.countLabel(for: model.state))
-                        .font(AP.Font.supporting)
-                        .foregroundStyle(AP.Color.secondaryText)
-                        .accessibilityIdentifier("search-results-count")
-                }
-            }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, AP.Space.space16)
+                .padding(.bottom, AP.Space.space8)
+                .accessibilityIdentifier("search-results-count")
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, AP.Space.space16)
-        .padding(.bottom, AP.Space.space8)
     }
 
     /// `03-search-no-results`: the same borderless panel as the catalogue, with the search copy.

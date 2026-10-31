@@ -150,6 +150,24 @@ final class APCatalogLogicTests: XCTestCase {
         )
     }
 
+    // MARK: - Search chrome and motion
+
+    func testSearchMountsItsPagingFooterForEveryPanel() {
+        // The S1 bug: an empty search page dropped the footer, so a filtered page with more rows
+        // behind it (or a failed page) became a dead end.
+        for presentation in [APCatalogPresentation.loading, .failed, .empty, .noMatch, .grid] {
+            XCTAssertTrue(
+                APSearchChrome.mountsPagingFooter(for: presentation),
+                "\(presentation) must keep its paging footer mounted"
+            )
+        }
+    }
+
+    func testCatalogueMotionIsOffUnderReduceMotion() {
+        XCTAssertNil(APCatalogMotion.animation(reduceMotion: true), "Reduce Motion turns the catalogue animations off")
+        XCTAssertNotNil(APCatalogMotion.animation(reduceMotion: false))
+    }
+
     // MARK: - Paging footer
 
     func testPagingFooterPhaseCoversEveryPagingCondition() {

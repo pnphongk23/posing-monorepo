@@ -12,6 +12,8 @@ struct APMoreMenu: View {
     var isJobsEnabled: Bool = true
     /// The account feature flag gates the Saved entry, exactly as it gated the header link.
     var savedDestination: AnyView?
+    /// `nil` lets the card take the full available width (the AX sizes, where 296 pt would clip).
+    var maxWidth: CGFloat? = 296
     var onAddPose: () -> Void = {}
     var onJobs: () -> Void = {}
     var onSavedTapped: () -> Void = {}
@@ -34,8 +36,14 @@ struct APMoreMenu: View {
                 savedRow(destination: savedDestination)
             }
         }
-        // 296 pt on a 390 pt screen, and it shrinks instead of overflowing on a 320 pt one.
-        .frame(minWidth: 280, idealWidth: 296, maxWidth: 296, alignment: .leading)
+        // 296 pt on a 390 pt screen, and it shrinks instead of overflowing on a 320 pt one; at the AX
+        // sizes the caller passes `nil` so the card uses the whole width and its rows can wrap.
+        .frame(
+            minWidth: maxWidth == nil ? 0 : 280,
+            idealWidth: maxWidth ?? 0,
+            maxWidth: maxWidth ?? .infinity,
+            alignment: .leading
+        )
         .background(
             RoundedRectangle(cornerRadius: AP.Radius.radius24, style: .continuous)
                 .fill(AP.Color.surface)
@@ -56,6 +64,8 @@ struct APMoreMenu: View {
         }
         .buttonStyle(.plain)
         .disabled(!isAddPoseEnabled)
+        .accessibilityLabel("Add pose")
+        .accessibilityHint(isAddPoseEnabled ? "" : "Turned off while we review")
         .accessibilityIdentifier("poses.add-pose")
     }
 

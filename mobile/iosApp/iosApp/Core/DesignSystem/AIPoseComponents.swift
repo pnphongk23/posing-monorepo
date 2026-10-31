@@ -409,14 +409,21 @@ struct NeoDockTabBar: View {
     /// Pill height and shutter diameter from the artboard's dock.
     static let pillHeight: CGFloat = 60
     static let shutterDiameter: CGFloat = 60
+    /// Space the shutter owns in the middle of the pill. The two tab slots are the same size on both
+    /// sides of it, so neither tab drifts towards the shutter.
+    static let shutterSlot: CGFloat = 60
+    static let pillInset: CGFloat = 4
 
     var body: some View {
         ZStack(alignment: .top) {
-            HStack(spacing: AP.Space.space4) {
+            HStack(spacing: 0) {
                 dockItem(tab: .poses, icon: "square.grid.2x2", label: "Poses")
+                // Reserved for the shutter, so the two slots are symmetric and their content centres
+                // on the same line either side of it.
+                Color.clear.frame(width: Self.shutterSlot)
                 dockItem(tab: .gallery, icon: "photo.on.rectangle", label: "Gallery")
             }
-            .padding(AP.Space.space4)
+            .padding(Self.pillInset)
             .frame(maxWidth: .infinity)
             .frame(height: Self.pillHeight)
             // Dock chrome does not scale with Dynamic Type (a tab bar keeps its metrics, as iOS does);
@@ -430,14 +437,13 @@ struct NeoDockTabBar: View {
 
             cameraShutter
                 // The shutter straddles the pill's top edge, exactly as the artboard draws it.
-                .offset(y: -Self.shutterDiameter / 2 + AP.Space.space4)
+                .offset(y: -Self.shutterDiameter / 2 + Self.pillInset)
         }
-        // The artboard insets the pill ~40 pt from both edges, which keeps the centre shutter clear of
-        // the two tab items on every phone width the app supports.
+        // The artboard insets the pill ~40 pt from both edges.
         .padding(.horizontal, AP.Space.space32 + AP.Space.space8)
         // Reserve the space the shutter overflows into, so its upper half is inside the dock's bounds
         // and stays tappable instead of hanging outside the parent's hit area.
-        .padding(.top, NeoDockTabBar.shutterDiameter / 2 - AP.Space.space4)
+        .padding(.top, NeoDockTabBar.shutterDiameter / 2 - Self.pillInset)
         .padding(.bottom, AP.Space.space16)
         .ignoresSafeArea(.container, edges: .bottom)
     }
@@ -456,6 +462,8 @@ struct NeoDockTabBar: View {
         .accessibilityIdentifier("dock.camera")
     }
 
+    /// One tab slot. The selected fill hugs the icon + label (a compact pill, not a stretched half),
+    /// and the slot centres it in the space the shutter leaves on its side.
     private func dockItem(tab: AppTab, icon: String, label: String) -> some View {
         let isActive = activeTab == tab
         return Button { selection = tab } label: {
@@ -467,11 +475,15 @@ struct NeoDockTabBar: View {
                     .lineLimit(1)
             }
             .foregroundStyle(isActive ? AP.Color.selectedForeground : AP.Color.primaryText)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(.horizontal, AP.Space.space12)
+            .padding(.vertical, AP.Space.space4)
+            .frame(minWidth: AP.HitTarget.minimum, minHeight: AP.HitTarget.minimum)
             .background(
                 RoundedRectangle(cornerRadius: AP.Radius.radius16, style: .continuous)
-                    .fill(isActive ? AP.Color.selectedBackground : .clear)
+                    .fill(isActive ? AP.Color.selectedBackground : Color.clear)
             )
+            // Fills the slot so the compact pill stays centred in it.
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .buttonStyle(APDockPressStyle())
         .accessibilityLabel(label)

@@ -258,6 +258,8 @@ struct APPoseCard: View {
     var aspectRatio: CGFloat = 1
     var zoomNamespace: Namespace.ID?
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             artwork
@@ -286,9 +288,11 @@ struct APPoseCard: View {
         }
         .background(AP.Color.surface)
         .clipShape(RoundedRectangle(cornerRadius: AP.Radius.radius16, style: .continuous))
-        .apElevation(.e1, cornerRadius: AP.Radius.radius16)
-        .animation(.easeInOut(duration: 0.2), value: aspectRatio)
+        // The zoom source clips its own copy of the card; the E1 shadow has to sit outside that clip
+        // or the card loses it at rest (token values unchanged: 8% black, 0 1 2 + 0 4 12).
         .zoomTransitionSource(id: pose.id, in: zoomNamespace, cornerRadius: AP.Radius.radius16)
+        .apElevation(.e1, cornerRadius: AP.Radius.radius16)
+        .animation(APCatalogMotion.animation(reduceMotion: reduceMotion), value: aspectRatio)
     }
 
     /// Same two-tier Kingfisher cache as the legacy card: a grid re-render must not re-decode.
@@ -365,6 +369,7 @@ struct APPoseGrid: View {
     }
 
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var columns: Int { APGridLayout.columns(for: dynamicTypeSize) }
 
@@ -436,7 +441,7 @@ struct APPoseGrid: View {
     private func rebuildAssignments() {
         let updated = Self.assignments(for: poses, using: aspectRatioCache, columns: columns)
         guard updated != columnByPoseID else { return }
-        withAnimation(.easeInOut(duration: 0.2)) {
+        withAnimation(APCatalogMotion.animation(reduceMotion: reduceMotion)) {
             columnByPoseID = updated
         }
     }

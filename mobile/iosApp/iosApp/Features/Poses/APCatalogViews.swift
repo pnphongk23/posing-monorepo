@@ -73,6 +73,31 @@ enum APGridLayout {
     }
 }
 
+// MARK: - Motion
+
+/// Catalogue motion: a low-intensity card/grid animation that Reduce Motion turns off entirely.
+enum APCatalogMotion {
+    static let duration: Double = 0.2
+
+    static func animation(reduceMotion: Bool) -> Animation? {
+        reduceMotion ? nil : .easeInOut(duration: duration)
+    }
+}
+
+// MARK: - Search chrome
+
+/// Which chrome the Search results panel keeps mounted. The paging footer is mounted for **every**
+/// panel, including an empty or no-match page: a filtered page can hold no match while the server
+/// still has rows behind it, and a failed page must always offer its retry.
+enum APSearchChrome {
+    static func mountsPagingFooter(for presentation: APCatalogPresentation) -> Bool {
+        switch presentation {
+        case .loading, .failed, .empty, .noMatch, .grid:
+            return true
+        }
+    }
+}
+
 // MARK: - Category filter
 
 /// Multi-select category filter over the loaded catalogue. Client-side on purpose: the paged service
