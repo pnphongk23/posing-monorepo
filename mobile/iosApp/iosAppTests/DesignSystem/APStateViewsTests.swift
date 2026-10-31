@@ -269,19 +269,11 @@ final class APStateViewsTests: XCTestCase {
         // a style that grew its own artwork again fails here instead of shipping.
         XCTAssertEqual(APStateGlyph.diameter, 72, "F4 fixes the state circle at 72 pt")
 
-        func panel(_ style: APStateCardStyle) -> some View {
-            APEmptyStateView(
-                title: "No poses yet",
-                message: "Poses you save and extract land here.",
-                style: style
-            )
-        }
-
-        let probe = APViewProbe(panel(.card), size: CGSize(width: 393, height: 420), scale: 2)
+        let probe = APViewProbe(emptyPanel(.card), size: CGSize(width: 393, height: 420), scale: 2)
         defer { probe.tearDown() }
 
         for (index, style) in [APStateCardStyle.card, .plain].enumerated() {
-            let painted = index == 0 ? probe.capture() : probe.render(panel(style))
+            let painted = index == 0 ? probe.capture() : probe.render(emptyPanel(style))
             guard let circle = paintedBounds(of: 0xFAE0E7, in: painted, scale: 2) else {
                 return XCTFail("\(style) panel must paint its accent-tint circle")
             }
@@ -291,7 +283,7 @@ final class APStateViewsTests: XCTestCase {
             // One tile: the tint is a single contiguous band of rows, not two stacked or offset ones.
             let tintRows = painted.rows(paintedWith: 0xFAE0E7)
             XCTAssertEqual(
-                tintRows.count, Int(circle.height * 2), accuracy: 4,
+                Double(tintRows.count), Double(circle.height * 2), accuracy: 4,
                 "\(style): the tint must be one circle, not a stack of tiles"
             )
 
@@ -369,6 +361,16 @@ final class APStateViewsTests: XCTestCase {
     }
 
     // MARK: - Helpers
+
+    /// The empty panel in either style, so one probe can render both.
+    @MainActor
+    private func emptyPanel(_ style: APStateCardStyle) -> some View {
+        APEmptyStateView(
+            title: "No poses yet",
+            message: "Poses you save and extract land here.",
+            style: style
+        )
+    }
 
     /// A screen with the shared snackbar and a pinned bottom bar, stacked the way the pose detail
     /// stacks them: the snackbar inset inside the bar's inset.
