@@ -26,6 +26,10 @@ struct AppFeatureRoot: View {
     @State private var cameraEntry: CameraEntry = .home
     /// The detail the Poses tab has to re-push the moment its stack is rebuilt (one-shot).
     @State private var posesResume = PosesResumeSlot()
+    /// The Gallery `+` has no destination of its own: it asks the Poses tab to open Add pose, the same
+    /// flow the Poses header `+` runs. Latched rather than delivered straight through, because the
+    /// Poses tab (and the `onChange` watching this signal) is rebuilt when the tab changes.
+    @State private var addPoseRequest = APAddPoseRequest()
     /// F7: the appearance preference lives in Settings now; the root is the one place that applies it.
     @ObservedObject private var appearance = APAppearanceStore.shared
 
@@ -88,8 +92,13 @@ struct AppFeatureRoot: View {
                         onTryPose: openCamera(with:),
                         onSearchVisibilityChange: { isSearchPresented = $0 },
                         resumePose: posesResume.targetToRestore,
-                        onResumeHandled: { posesResume.consume() }
+                        onResumeHandled: { posesResume.consume() },
+                        addPoseRequest: addPoseRequest.signal
                     )
+                    // A request taken in the Gallery is delivered once this rebuilt screen is on
+                    // screen: raising the signal before the switch would hand it to the new screen as
+                    // an initial value, and a value that was never different never fires `onChange`.
+                    .modifier(APAddPoseDelivery(request: $addPoseRequest))
                 }
             }
         case .camera:
@@ -143,7 +152,12 @@ struct AppFeatureRoot: View {
                         // `gallery.html` all-empty `Open Camera` — the gallery's only entry point to
                         // capture. Wired here because the destination is app-level tab routing;
                         // `GalleryScreen` only owns the action site.
-                        onOpenCamera: { tab = .camera }
+                        onOpenCamera: { tab = .camera },
+                        // The Gallery `+` runs the existing Add-pose flow on the Poses tab.
+                        onAddPose: {
+                            addPoseRequest.ask()
+                            tab = .poses
+                        }
                     )
                 }
             }
@@ -201,5 +215,45 @@ struct AppFeatureRoot: View {
             entitlement: premiumGate.entitlement,
             signedIn: premiumGate.isSignedIn
         ))
+    }
+}
+
+// MARK: - Add pose asked for from another tab
+
+/// A request to open the Add pose flow, taken in one tab and run by the Poses tab.
+///
+/// The Poses tab — and with it `PosesScreen`'s `onChange(of: addPoseRequest)` — is rebuilt whenever the
+/// selected tab changes, so a signal raised *before* the switch arrives as the new screen's initial
+/// value and nothing fires: SwiftUI only reports a change, and a value that was never different is not
+/// a change. The request is therefore latched here and the signal is raised on appearance, which is
+/// the same consume-once shape `PosesResumeSlot` uses for the camera's return target.
+struct APAddPoseRequest: Equatable {
+    /// The signal `PosesScreen` watches; every delivery is a new value, so a second request fires again.
+    private(set) var signal = 0
+    /// A request arrived while the Poses tab was not on screen yet.
+    private(set) var isPending = false
+
+    /// The Gallery `+` was tapped.
+    mutating func ask() {
+        isPending = true
+    }
+
+    /// The Poses tab is on screen: hand the pending request over exactly once.
+    /// - Returns: `true` when a request was delivered.
+    @discardableResult
+    mutating func deliver() -> Bool {
+        guard isPending else { return false }
+        isPending = false
+        signal &+= 1
+        return true
+    }
+}
+
+/// Delivers a latched request the moment the receiving tab is on screen.
+struct APAddPoseDelivery: ViewModifier {
+    @Binding var request: APAddPoseRequest
+
+    func body(content: Content) -> some View {
+        content.onAppear { request.deliver() }
     }
 }
