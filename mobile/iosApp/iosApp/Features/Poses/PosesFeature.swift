@@ -2177,28 +2177,16 @@ struct SavedPosesScreen: View {
             .accessibilityIdentifier("saved.loading")
         case .failed:
             VStack(spacing: 0) {
-                APErrorStateView(
-                    title: PoseResultsStateCopy.savedErrorTitle,
-                    message: PoseResultsStateCopy.savedErrorMessage,
-                    retryTitle: PoseResultsStateCopy.retryActionTitle,
-                    retry: { Task { await model.load() } },
-                    style: .plain
-                )
-                .accessibilityIdentifier("saved.retry")
+                // Board `06-board09`: the copy, glyph and `saved.retry` id live with the rest of the
+                // Saved chrome in `APSavedList.swift`.
+                APSavedLoadFailurePanel(retry: { Task { await model.load() } })
                 // A failed page is not the end of the list: keep the paging footer reachable.
                 APPagingFooter(model: model, bottomInset: AP.Space.space16)
             }
         case .empty, .noMatch:
             VStack(spacing: 0) {
-                APEmptyStateView(
-                    title: PoseResultsStateCopy.savedEmptyTitle,
-                    message: PoseResultsStateCopy.savedEmptyMessage,
-                    actionTitle: PoseResultsStateCopy.browseCommunityActionTitle,
-                    action: { dismiss() },
-                    style: .plain,
-                    glyph: "bookmark"
-                )
-                .accessibilityIdentifier("saved.browseCommunity")
+                // Board `06-board06`: one instruction and the way back to the poses.
+                APSavedEmptyPanel(onBrowse: { dismiss() })
                 APPagingFooter(model: model, bottomInset: AP.Space.space16)
             }
         case .grid:
@@ -2215,16 +2203,9 @@ struct SavedPosesScreen: View {
     /// presentation is the shared state panel with the account action below it. The gate keeps its
     /// existing semantics: the tap opens the same sign-in prompt (`SignInIntent.openSaved`).
     private var savedSignInRequired: some View {
-        // F4: the one shared state panel — accent-tint circle, centred copy, wide action.
-        APEmptyStateView(
-            title: PoseResultsStateCopy.savedSignInTitle,
-            message: PoseResultsStateCopy.savedSignInMessage,
-            actionTitle: "Sign in",
-            action: { pendingSignIn = .openSaved },
-            style: .plain,
-            glyph: "bookmark"
-        )
-        .accessibilityIdentifier("saved.signIn")
+        // Board `06-board05`: the person glyph and the sync promise, so a guest is never told the
+        // collection is gone. The panel and its `saved.signIn` id live in `APSavedList.swift`.
+        APSavedSignInPanel(onSignIn: { pendingSignIn = .openSaved })
     }
 }
 

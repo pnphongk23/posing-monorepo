@@ -195,6 +195,255 @@ final class APSavedListTests: XCTestCase {
         XCTAssertLessThanOrEqual(action.height, 60, "the gate's action is one control, not a second panel")
     }
 
+    // MARK: - Undo (06-board04)
+
+    @MainActor func testConfirmedUnsaveOffersUndoThatReSavesThroughTheService() async {
+        let service = UndoBookmarkService()
+        let rows = [savedPose("a"), savedPose("b"), savedPose("c")]
+        let model = PosesViewModel(service: SavedListPoseService(rows: rows), bookmarkService: service)
+        model.filter = .saved
+        model.state = .loaded(rows)
+
+        // The row leaves the collection, and only because the server said so.
+        let unsave = await model.toggleSaved(for: rows[1])
+        XCTAssertEqual(unsave, .saved(false))
+        XCTAssertEqual(service.unsaveCallCount, 1)
+        XCTAssertEqual(model.state.rows.map(\.id), ["a", "c"], "a confirmed unsave removes the row")
+        XCTAssertTrue(APSavedUndoRule.offersUndo(for: unsave), "a confirmed removal is what earns an Undo")
+
+        let undo = APSavedUndo()
+        undo.offer(rows[1], at: 1)
+
+        // The board's snackbar: what left, and the one action that puts it back.
+        let offered = APSavedSnackbarRule.resolve(
+            removedPoseName: rows[1].name,
+            canUndo: model.canSave(rows[1]),
+            failure: model.bookmarkError
+        )
+        XCTAssertEqual(offered?.message, "Removed Pose b")
+        XCTAssertEqual(offered?.actionTitle, "Undo")
+        XCTAssertEqual(offered?.tone, .success)
+        XCTAssertEqual(offered?.kind, .undo)
+
+        let restored = await undo.undo(in: model)
+        XCTAssertTrue(restored)
+        XCTAssertEqual(service.saveCallCount, 1, "Undo sends the save to the server; it never flips the row locally")
+        XCTAssertTrue(model.savedState(for: rows[1]), "the pose is saved again, as the server confirmed")
+        XCTAssertEqual(
+            model.state.rows.map(\.id), ["a", "b", "c"],
+            "the row comes back where it was, not appended"
+        )
+        XCTAssertNil(undo.removal, "a restored row is no longer on offer")
+        XCTAssertNil(model.bookmarkError)
+    }
+
+    @MainActor func testFailedUndoStaysTruthfulAndKeepsTheRetryOffer() async {
+        let service = UndoBookmarkService()
+        let rows = [savedPose("a"), savedPose("b")]
+        let model = PosesViewModel(service: SavedListPoseService(rows: rows), bookmarkService: service)
+        model.filter = .saved
+        model.state = .loaded(rows)
+        await model.toggleSaved(for: rows[1])
+
+        let undo = APSavedUndo()
+        undo.offer(rows[1], at: 1)
+        service.saveError = URLError(.notConnectedToInternet)
+
+        let restored = await undo.undo(in: model)
+        XCTAssertFalse(restored)
+        XCTAssertEqual(service.saveCallCount, 1)
+        XCTAssertFalse(model.savedState(for: rows[1]), "nothing is shown as saved that the server did not confirm")
+        XCTAssertEqual(
+            model.state.rows.map(\.id), ["a"],
+            "a failed undo adds no row: the collection still matches the server"
+        )
+        XCTAssertEqual(
+            model.bookmarkError, SavedMutationCopy.offline,
+            "the reason is the real one, not a generic line"
+        )
+        XCTAssertNotNil(undo.removal, "the copy says try again, so the action that can try again stays")
+
+        let failed = APSavedSnackbarRule.resolve(
+            removedPoseName: rows[1].name,
+            canUndo: model.canSave(rows[1]),
+            failure: model.bookmarkError
+        )
+        XCTAssertEqual(failed?.message, SavedMutationCopy.offline)
+        XCTAssertEqual(failed?.tone, .error)
+        XCTAssertEqual(failed?.actionTitle, "Undo")
+        XCTAssertEqual(failed?.kind, .undo)
+
+        // The retry the copy asks for actually works once the connection is back.
+        service.saveError = nil
+        model.bookmarkError = nil
+        let retried = await undo.undo(in: model)
+        XCTAssertTrue(retried)
+        XCTAssertEqual(service.saveCallCount, 2)
+        XCTAssertEqual(model.state.rows.map(\.id), ["a", "b"])
+    }
+
+    @MainActor func testFailedUnsaveOffersNoUndoAndKeepsThePlainFailureBar() async {
+        let service = UndoBookmarkService()
+        let rows = [savedPose("a")]
+        let model = PosesViewModel(service: SavedListPoseService(rows: rows), bookmarkService: service)
+        model.filter = .saved
+        model.state = .loaded(rows)
+        service.unsaveError = URLError(.notConnectedToInternet)
+
+        let outcome = await model.toggleSaved(for: rows[0])
+        XCTAssertEqual(outcome, .failed(SavedMutationCopy.offline))
+        XCTAssertFalse(
+            APSavedUndoRule.offersUndo(for: outcome),
+            "an unsave that never happened has nothing to undo"
+        )
+        XCTAssertEqual(model.state.rows.map(\.id), ["a"], "the row stays: nothing left the collection")
+
+        let spec = APSavedSnackbarRule.resolve(
+            removedPoseName: nil,
+            canUndo: false,
+            failure: model.bookmarkError
+        )
+        XCTAssertEqual(spec?.message, SavedMutationCopy.offline)
+        XCTAssertEqual(spec?.actionTitle, "Dismiss", "a failure with nothing to undo just goes away")
+        XCTAssertEqual(spec?.kind, .dismiss)
+    }
+
+    // MARK: - Offline (06-board07)
+
+    @MainActor func testOfflineAvailabilityComesFromTheCachedRows() {
+        let cached = savedPose("a")
+        let uncached = savedPose("b")
+
+        XCTAssertTrue(
+            APSavedOfflineMode.online.isAvailableOffline(uncached),
+            "online every saved pose is available"
+        )
+        let offline = APSavedOfflineMode(isOffline: true, cachedPoseIDs: [cached.id])
+        XCTAssertTrue(offline.isAvailableOffline(cached), "a row the cache holds is available offline")
+        XCTAssertFalse(offline.isAvailableOffline(uncached), "a row the cache does not hold is not")
+        XCTAssertFalse(
+            APSavedOfflineMode(isOffline: true).isAvailableOffline(cached),
+            "an offline screen with no catalog answer claims nothing"
+        )
+
+        // The label replaces the category line, and the category still shows when the row is fine.
+        XCTAssertEqual(APSavedRowCopy.subtitle(for: uncached, isAvailableOffline: false), "Not saved offline")
+        XCTAssertEqual(APSavedRowCopy.subtitle(for: cached, isAvailableOffline: true), "Standing")
+        XCTAssertEqual(APSavedStateCopy.notSavedOffline, "Not saved offline")
+        XCTAssertEqual(
+            APSavedStateCopy.offlineBanner,
+            "You're offline. Changes will sync when you're back online."
+        )
+
+        // What the real index reads: the catalog rows the offline saved read is built from.
+        let index = StubOfflineIndex(ids: [cached.id])
+        let offlineModel = APSavedOfflineModel(index: index, monitorsConnectivity: false)
+        XCTAssertFalse(offlineModel.mode.isOffline, "reachability starts from the live path, not from a guess")
+    }
+
+    @MainActor func testOfflineRowDimsAndDropsItsUnsaveControl() {
+        let tileColumn = (393 - 80)..<(393 - 20)
+        let probe = APViewProbe(
+            APSavedPoseRow(pose: savedPose("a")),
+            size: CGSize(width: 393, height: 160)
+        )
+        defer { probe.tearDown() }
+        let available = bands(of: 0xFAE0E7, in: probe.capture(), xRange: tileColumn)
+        XCTAssertEqual(available.count, 1, "a pose the device holds keeps its unsave control")
+
+        let unavailable = probe.render(APSavedPoseRow(pose: savedPose("b"), isAvailableOffline: false))
+        XCTAssertTrue(
+            bands(of: 0xFAE0E7, in: unavailable, xRange: tileColumn).isEmpty,
+            "a pose that is not on the device offers no unsave: the request could not be sent"
+        )
+        let drawn = inkedBands(in: unavailable, xRange: tileColumn).filter { $0.height >= 20 }
+        XCTAssertEqual(drawn.count, 1, "the tile is still drawn, in the muted fill the board uses")
+        XCTAssertEqual(Double(drawn.first?.height ?? 0), 44, accuracy: 2, "same 44 pt tile, disabled")
+    }
+
+    @MainActor func testOfflineSurfaceBannersAboveTheRowsAndDimsWhatTheCacheLacks() {
+        let rows = [savedPose("a"), savedPose("b"), savedPose("c")]
+        let model = PosesViewModel(service: SavedListPoseService(rows: rows), bookmarkService: UndoBookmarkService())
+        model.filter = .saved
+        model.state = .loaded(rows)
+        let offline = APSavedOfflineModel(
+            index: StubOfflineIndex(ids: ["a"]),
+            mode: APSavedOfflineMode(isOffline: true, cachedPoseIDs: ["a"]),
+            monitorsConnectivity: false
+        )
+
+        // A navigation container on purpose: a `NavigationLink` outside one is drawn disabled, which
+        // would wash out every colour this test measures.
+        let probe = APViewProbe(
+            NavigationView {
+                APSavedSurface(model: model, offline: offline) {
+                    APSavedList(poses: rows, model: model)
+                }
+            },
+            size: CGSize(width: 393, height: 620)
+        )
+        defer { probe.tearDown() }
+        let painted = probe.capture()
+
+        // The banner: one full-width warning band at the top of the surface.
+        let bannerBands = bands(of: 0xFED766, in: painted)
+        guard let banner = bannerBands.first else {
+            return XCTFail("an offline Saved surface must say so")
+        }
+        XCTAssertEqual(bannerBands.count, 1, "one banner, not one per row")
+        XCTAssertGreaterThan(banner.widestRun, 300, "the banner is a full-width band, not a chip")
+        XCTAssertLessThan(banner.minY, 160, "the banner sits at the top of the surface")
+
+        // The rows, in the trailing-tile column: only the cached pose keeps its unsave control.
+        let tileColumn = (painted.width - 80)..<(painted.width - 20)
+        let offered = bands(of: 0xFAE0E7, in: painted, xRange: tileColumn).filter { $0.height >= 20 }
+        XCTAssertEqual(offered.count, 1, "only the pose that is on the device offers an unsave")
+        XCTAssertGreaterThan(offered.first?.minY ?? 0, banner.maxY, "the rows come under the banner")
+
+        // Everything under the banner: each of the three rows still draws its tile (one accent, two
+        // muted), and the banner itself carries none.
+        let rowTiles = inkedBands(in: painted, xRange: tileColumn)
+            .filter { $0.height >= 20 && $0.minY > banner.maxY }
+        XCTAssertEqual(rowTiles.count, 3, "every row under the banner still draws its tile")
+        XCTAssertEqual(
+            bands(of: 0xFED766, in: painted, xRange: tileColumn).count, 1,
+            "the banner is the only warning band; the rows below it are not part of it"
+        )
+    }
+
+    // MARK: - The unsave tile scales with Dynamic Type (06-board03)
+
+    @MainActor func testUnsaveTileGrowsAtAccessibilitySizes() {
+        XCTAssertEqual(APSavedRowMetrics.unsaveTileSide(for: .large), 44, "the default tile is the 44 pt target")
+        XCTAssertEqual(APSavedRowMetrics.unsaveTileSide(for: .accessibility3), 64, "AX3 grows the tile")
+        XCTAssertGreaterThan(
+            APSavedRowMetrics.unsaveGlyphSize(for: .accessibility3),
+            APSavedRowMetrics.unsaveGlyphSize(for: .large),
+            "the glyph grows with its tile"
+        )
+
+        let probe = APViewProbe(
+            APSavedPoseRow(pose: savedPose("ax")),
+            size: CGSize(width: 393, height: 160)
+        )
+        defer { probe.tearDown() }
+        let tileColumn = (393 - 80)..<(393 - 20)
+        let plain = bands(of: 0xFAE0E7, in: probe.capture(), xRange: tileColumn)
+        guard let plainTile = plain.first else { return XCTFail("the row must draw its unsave tile") }
+        XCTAssertEqual(Double(plainTile.height), 44, accuracy: 2, "44 pt at the default sizes")
+
+        let scaled = probe.render(
+            APSavedPoseRow(pose: savedPose("ax")).environment(\.dynamicTypeSize, .accessibility3)
+        )
+        let axTiles = bands(of: 0xFAE0E7, in: scaled, xRange: tileColumn)
+        guard let axTile = axTiles.first else { return XCTFail("the AX row must still draw its tile") }
+        XCTAssertEqual(Double(axTile.height), 64, accuracy: 2, "the board's ~64 pt tile at AX3")
+        XCTAssertGreaterThan(
+            Double(axTile.width), Double(plainTile.width) + 8,
+            "the tile grows in both directions, not just taller"
+        )
+    }
+
     // MARK: - Fixtures and helpers
 
     private func savedPose(_ id: String) -> NativePose {
@@ -206,6 +455,126 @@ final class APSavedListTests: XCTestCase {
             instructions: ["Stand a step away from the window."],
             isSaved: true
         )
+    }
+
+    /// Consecutive rows that paint `hex` at least once, merged into one band each. The `xRange`
+    /// variant locates a control in one column (the trailing unsave tile) instead of anywhere.
+    private func bands(
+        of hex: UInt32,
+        in bitmap: APBitmap,
+        xRange: Range<Int>,
+        rows: Range<Int>? = nil,
+        tolerance: Int = 6
+    ) -> [PaintBand] {
+        let target = (red: Int((hex >> 16) & 0xFF), green: Int((hex >> 8) & 0xFF), blue: Int(hex & 0xFF))
+        func matches(_ x: Int, _ y: Int) -> Bool {
+            guard let pixel = bitmap.color(x: x, y: y), pixel.alpha > 200 else { return false }
+            return abs(pixel.red - target.red) <= tolerance
+                && abs(pixel.green - target.green) <= tolerance
+                && abs(pixel.blue - target.blue) <= tolerance
+        }
+
+        var result: [PaintBand] = []
+        var current: (minY: Int, maxY: Int, minX: Int, maxX: Int, widestRun: Int)?
+        for y in (rows ?? 0..<bitmap.height) where y >= 0 && y < bitmap.height {
+            var run = 0
+            var widestRun = 0
+            var minX = Int.max
+            var maxX = Int.min
+            for x in xRange.clamped(to: 0..<bitmap.width) {
+                guard matches(x, y) else {
+                    run = 0
+                    continue
+                }
+                run += 1
+                widestRun = max(widestRun, run)
+                minX = min(minX, x)
+                maxX = max(maxX, x)
+            }
+            guard widestRun > 0 else {
+                if let finished = current { result.append(PaintBand(
+                    minY: finished.minY, maxY: finished.maxY,
+                    minX: finished.minX, maxX: finished.maxX, widestRun: finished.widestRun
+                )) }
+                current = nil
+                continue
+            }
+            if var open = current {
+                open.maxY = y
+                open.minX = min(open.minX, minX)
+                open.maxX = max(open.maxX, maxX)
+                open.widestRun = max(open.widestRun, widestRun)
+                current = open
+            } else {
+                current = (minY: y, maxY: y, minX: minX, maxX: maxX, widestRun: widestRun)
+            }
+        }
+        if let finished = current {
+            result.append(PaintBand(
+                minY: finished.minY, maxY: finished.maxY,
+                minX: finished.minX, maxX: finished.maxX, widestRun: finished.widestRun
+            ))
+        }
+        return result
+    }
+
+    /// Row bands inside one column that paint anything but the card's white surface: how a drawn
+    /// control is located when its own fill is a *blended* colour (a disabled control is painted at
+    /// reduced opacity, so its token colour never appears verbatim).
+    private func inkedBands(
+        in bitmap: APBitmap,
+        xRange: Range<Int>,
+        tolerance: Int = 6
+    ) -> [PaintBand] {
+        func isInk(_ x: Int, _ y: Int) -> Bool {
+            guard let pixel = bitmap.color(x: x, y: y), pixel.alpha > 200 else { return false }
+            return abs(pixel.red - 255) > tolerance
+                || abs(pixel.green - 255) > tolerance
+                || abs(pixel.blue - 255) > tolerance
+        }
+
+        var result: [PaintBand] = []
+        var current: (minY: Int, maxY: Int, minX: Int, maxX: Int, widestRun: Int)?
+        for y in 0..<bitmap.height {
+            var run = 0
+            var widestRun = 0
+            var minX = Int.max
+            var maxX = Int.min
+            for x in xRange.clamped(to: 0..<bitmap.width) {
+                guard isInk(x, y) else {
+                    run = 0
+                    continue
+                }
+                run += 1
+                widestRun = max(widestRun, run)
+                minX = min(minX, x)
+                maxX = max(maxX, x)
+            }
+            guard widestRun > 0 else {
+                if let finished = current { result.append(PaintBand(
+                    minY: finished.minY, maxY: finished.maxY,
+                    minX: finished.minX, maxX: finished.maxX, widestRun: finished.widestRun
+                )) }
+                current = nil
+                continue
+            }
+            if var open = current {
+                open.maxY = y
+                open.minX = min(open.minX, minX)
+                open.maxX = max(open.maxX, maxX)
+                open.widestRun = max(open.widestRun, widestRun)
+                current = open
+            } else {
+                current = (minY: y, maxY: y, minX: minX, maxX: maxX, widestRun: widestRun)
+            }
+        }
+        if let finished = current {
+            result.append(PaintBand(
+                minY: finished.minY, maxY: finished.maxY,
+                minX: finished.minX, maxX: finished.maxX, widestRun: finished.widestRun
+            ))
+        }
+        return result
     }
 
     private final class AskCounter: @unchecked Sendable {
@@ -285,6 +654,62 @@ final class APSavedListTests: XCTestCase {
     }
 }
 
+/// A bookmark service a test can fail on one side only, and count: the proof that Undo really goes
+/// back to the server instead of flipping a flag.
+private final class UndoBookmarkService: PoseBookmarkServing, @unchecked Sendable {
+    private let lock = NSLock()
+    private var saves = 0
+    private var unsaves = 0
+    private var _saveError: Error?
+    private var _unsaveError: Error?
+
+    var saveError: Error? {
+        get { locked { _saveError } }
+        set { locked { _saveError = newValue } }
+    }
+
+    var unsaveError: Error? {
+        get { locked { _unsaveError } }
+        set { locked { _unsaveError = newValue } }
+    }
+
+    var saveCallCount: Int { locked { saves } }
+    var unsaveCallCount: Int { locked { unsaves } }
+
+    func savePose(poseId: String) async throws {
+        let error = locked { () -> Error? in
+            saves += 1
+            return _saveError
+        }
+        if let error { throw error }
+    }
+
+    func unsavePose(poseId: String) async throws {
+        let error = locked { () -> Error? in
+            unsaves += 1
+            return _unsaveError
+        }
+        if let error { throw error }
+    }
+
+    /// iOS 15 target: `NSLock.withLock` is 16+, so the tests do their own.
+    private func locked<T>(_ body: () -> T) -> T {
+        lock.lock()
+        defer { lock.unlock() }
+        return body()
+    }
+}
+
+/// Stands in for the offline catalog: the ids the device holds. A test that mounts the offline board
+/// passes the ids it wants reported, so the rendered state is driven by data, not by faking the view.
+private struct StubOfflineIndex: APSavedOfflineIndex {
+    let ids: Set<String>
+
+    init(ids: Set<String>) { self.ids = ids }
+
+    func cachedPoseIDs() async -> Set<String> { ids }
+}
+
 /// The catalogue the Saved list is drawn from. The rows are handed to the view directly, so the
 /// fixture only has to answer the model's first-window read.
 private struct SavedListPoseService: PoseServing {
@@ -305,3 +730,4 @@ private struct SavedListPoseService: PoseServing {
         return match
     }
 }
+
