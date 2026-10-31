@@ -63,7 +63,27 @@ pending row with the reason — no case is silently unowned.
 - **Credentials** come from the gitignored `mobile/iosApp/maestro/e2e.local.env` via `-e` and every
   credential-backed draft carries the `e2e` tag. The demo account is never used.
 
-## Promotion plan for the 1.1 (17) run
+## Build 1.1 (17) scope: regression only — redesign waits for 1.1 (18)
+
+`/tmp/ai-pose-lane2-app-1.1/dev17/posing.app` is built from `a03d03a`. Verified with
+`git merge-base --is-ancestor <sha> a03d03a`:
+
+| Commit | In build 17? | Consequence |
+|---|---|---|
+| `f73748f` Settings hub + Account rebuild | **yes** | `settings.saved.row`, `settings.back`, `settings.accountCard` exist |
+| `0632361` per-field email validation | **yes** | email sign-in ids unchanged; `signin.google` is gone (nothing in this suite used it) |
+| `18a13f8` support screens split | **yes** | paywall/settings ids survived the file split |
+| `bf1db8c` F4 state component | **no** | state panels still the old chrome |
+| `1925f5c` saved undo + offline rows, `6eab7c9` undo scoping | **no** | TC-SAV-006/010 have no producer in this build |
+| paywall redesign (`paywall.benefit|offline|notice|signin.sheet|signin.close`) | **no** | all paywall redesign drafts stay drafts |
+
+So the build-17 job here is **regression of the nine existing flows** on the new build
+(`TC-SAV-001`, `TC-PAY-001/002/003/004/005/006/008/009` — all 20 accessibility ids they use are present at
+`a03d03a`). Every redesign flow in this directory stays a draft until the **1.1 (18)** app lands after the
+00:30 integration; the promotion table below is then executed against that build instead, with the ids
+re-verified in committed source at that sha.
+
+## Promotion plan (re-verified at every build; currently targeting 1.1 (18))
 
 Ids verified against committed source at `a03d03a` (not the dirty worktree). Promoted into
 `maestro/flows/` with the run, and the matching doc row flipped to `automated: <file>`:

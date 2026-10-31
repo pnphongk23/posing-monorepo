@@ -60,7 +60,14 @@ Rows marked **re-baseline** above change their expected result or their copy, so
 must be updated in the same commit that promotes them: TC-PAY-001, 003, 004, 006, 007, 008, 009, 010, 012,
 014, 015, 017, 018, 020. Unaffected: 002, 005, 011, 013, 016. New in 1.1: 019, 020, 021.
 
-## Promotable at the 1.1 (17) run
+## Build 1.1 (17) = regression only
+
+The build-17 app (`a03d03a`) has the support-screen split but **not** the paywall redesign (none of
+`paywall.benefit`, `paywall.offline`, `paywall.notice`, `paywall.signin.sheet`, `paywall.signin.close` is in
+it), so the 17 run verifies the eight existing flows (**TC-PAY-001/002/003/004/005/006/008/009**) as
+regressions and the drafts below wait for **1.1 (18)**.
+
+## Promotable at the 1.1 (18) run
 
 Verified against committed source at `a03d03a` (the paywall redesign had **not** landed there, and the
 redesign's new ids — `paywall.benefit`, `paywall.offline`, `paywall.notice`, `paywall.signin.sheet`,

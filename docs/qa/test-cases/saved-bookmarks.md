@@ -39,7 +39,13 @@ or on data, `out of scope 1.1` = agreed out of this release.
 - TC-SAV-008's skeleton is a timing state, so it is pinned at the pure-decision level rather than raced
   in a flow.
 
-## Promotable at the 1.1 (17) run
+## Build 1.1 (17) = regression only
+
+The build-17 app (`a03d03a`) does not contain the Saved undo/offline slices (`1925f5c`, `6eab7c9`) nor the
+F4 states (`bf1db8c`), so the 17 run verifies **TC-SAV-001** as a regression and nothing else; the drafts
+below are promoted with the **1.1 (18)** build.
+
+## Promotable at the 1.1 (18) run
 
 Verified against committed source at `a03d03a`: `saved.back`, `saved.signIn`, `saved.browseCommunity`,
 `saved.retry`, `saved.loading`, `settings.saved.row`, `settings.back`, `poseDetail.saveButton`,
