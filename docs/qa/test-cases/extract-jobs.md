@@ -17,10 +17,13 @@ Consent ids (frozen by Feature S1): `addPose.consent.message`, `addPose.consent.
 recorded ack. No consent-specific launch arg; the sheet needs `-AIPoseExtractPoseEnabled true` plus the
 accounts flag.
 
-Run model (QA lead, 2026-10-31): TC-EXT-001, TC-EXT-002 and TC-JOB-001 run against **production** with two
-throwaway accounts (`qa-e2e-a` / `qa-e2e-b`) — credentials only from a `chmod 600` file outside the repo
-(`/tmp/ai-pose-e2e.env`, `E2E_EMAIL` / `E2E_PASSWORD` / `E2E_EMAIL_B` / `E2E_PASSWORD_B`) passed to maestro
-with `-e`, never printed and never committed — and a real photo pushed into the simulator library
+Run model (QA lead, 2026-10-31): TC-EXT-001, TC-EXT-002 and TC-JOB-001 run against **production** with the
+two test accounts only — account A (`E2E_EMAIL`) and account B (`E2E_EMAIL_B`). A third account
+(`tester003`) is reserved for the Apple review demo and must stay clean: no flow, doc example or env file
+uses it. Credentials come only from a `chmod 600` file outside the repo
+(`/tmp/ai-pose-e2e.env`, `E2E_EMAIL` / `E2E_PASSWORD` / `E2E_EMAIL_B` / `E2E_PASSWORD_B`), passed to maestro
+with `-e`; the file is never read into a report, printed or committed, and no credential appears in a flow.
+The flows also need a real photo pushed into the simulator library
 (`xcrun simctl addmedia <udid> /tmp/<photo>.jpg`, kept outside the repo). Flows fail fast when the
 credentials are missing. **Budget: at most 2 real extraction jobs per full run (AI cost)**: TC-EXT-002
 and TC-JOB-001 cost one job each, and the jobs are removed after the run. TC-JOB-002/003/004/005/006

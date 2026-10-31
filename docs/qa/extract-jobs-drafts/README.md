@@ -25,7 +25,9 @@ name/tags), `ext-consent-allow.yaml`.
 Credentials are never in this repo. The QA lead supplies a `chmod 600` env file outside the tree
 (`/tmp/ai-pose-e2e.env`, `KEY=VALUE` lines: `E2E_EMAIL`, `E2E_PASSWORD`, `E2E_EMAIL_B`,
 `E2E_PASSWORD_B`); source it in the shell and pass the values with `-e`, so they never land in a
-command line you print or in a commit:
+command line you print or in a commit. Only accounts A (`E2E_EMAIL`) and B (`E2E_EMAIL_B`) are used —
+the third production account (`tester003`) is reserved for the Apple review demo and must stay clean
+(no jobs, no purchases), so no flow, doc example or env file may point at it:
 
 ```
 set -a; . /tmp/ai-pose-e2e.env; set +a
