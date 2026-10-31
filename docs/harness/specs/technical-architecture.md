@@ -251,7 +251,8 @@ trần: nhiều lane cùng làm trên một working tree, và index dùng chung 
 
 Script lo hết phần dễ sai: chặn khi `/` còn dưới 1.5 GB, chặn khi đã có `xcodebuild` khác chạy
 (một build tại một thời điểm, toàn máy), dùng simulator test chung
-`7CC9393C-88FC-4AE6-88D3-AC68A2E266B7` (override `IOS_VERIFY_SIM`), `-derivedDataPath /tmp/dd-shared`,
+`7CC9393C-88FC-4AE6-88D3-AC68A2E266B7` (override `IOS_VERIFY_SIM`), `-derivedDataPath /tmp/dd-shared`
+(override `IOS_VERIFY_DD` khi cần hai lane build song song; mặc định không đổi),
 `build-for-testing` rồi `test-without-building` với scheme `Dev`, bọc `perl alarm` 1400s, in một
 dòng `executed/failures`. Chỉ nhận thêm `-only-testing:`/`-skip-testing:`. Selector là bundle-relative
 và **không** kèm thư mục nguồn: `iosAppTests/AppConfigTests` (đúng), không phải

@@ -19,6 +19,7 @@
 # Environment:
 #   IOS_VERIFY_SIM   simulator UDID (default: the shared ai-pose-test device)
 #   IOS_VERIFY_TIMEOUT  wall-clock cap in seconds for a single xcodebuild invocation (1400)
+#   IOS_VERIFY_DD       DerivedData path (default: /tmp/dd-shared)
 #
 # Every run (green or red) also drops the shared device's dead app containers
 # (.../com.apple.containermanagerd/Dead/*) and prints the bytes freed. That path is built from the
@@ -35,7 +36,9 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # override deliberately with IOS_VERIFY_SIM when needed.
 DEFAULT_SIM="7CC9393C-88FC-4AE6-88D3-AC68A2E266B7"
 SIM_ID="${IOS_VERIFY_SIM:-$DEFAULT_SIM}"
-DERIVED_DATA="/tmp/dd-shared"
+# DerivedData root: override only when two lanes must build side by side; the default stays
+# the shared path every other lane and the pre-commit notes expect.
+DERIVED_DATA="${IOS_VERIFY_DD:-/tmp/dd-shared}"
 WORKSPACE="$ROOT/mobile/iosApp/iosApp.xcworkspace"
 SCHEME="Dev"
 TIMEOUT_SECONDS="${IOS_VERIFY_TIMEOUT:-1400}"
