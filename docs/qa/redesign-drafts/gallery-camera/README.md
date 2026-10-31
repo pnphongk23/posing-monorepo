@@ -44,6 +44,22 @@ seam asked for in `capture-gallery.md` "Requests to Feature" #1/#7.
 Boards used: `/tmp/ds-261030/export-c/05-camera-collapsed.png`, `05-camera-collapsed-dark.png`,
 `07-gallery-grid-ax3.png`, `07-gallery-grid-dark.png`, plus `FEEDBACK-261031.md` (F3, F4, F5, F10, F12).
 
+## Run plan for the 1.1 builds (lead-confirmed shas)
+The Dev **1.1 (17)** Simulator app is built from `a03d03a`. A draft is promoted into `maestro/flows/` only when every id
+it names exists in the source at that sha (verified with `git grep` on the tree, dynamic ids checked as templates).
+
+| Draft | Build 17 (`a03d03a`) | Why |
+|---|---|---|
+| TC-CAM-006, 012, 013, 014, 015, 016, 018, 019, 021, 022, 024, 033 · TC-GAL-010 | **promote + run** | every id is in `b8878da` / `a03d03a` / `4ac4ddc` |
+| TC-CAM-032 (guide mirror) | **run on 18** | `da61534` (Mirror) is not in `a03d03a` |
+| TC-CAM-023 (Saved scope empty) | stays a draft | needs a signed-in account with an empty saved collection; the assertion is guarded, so a credential-free run proves nothing |
+| TC-CAM-027 / 028 / 034 (Timer, Ratio, guide Scale) | run on 18 | ids not landed yet |
+| TC-GAL-018 / 019 / 021 | device run | need photos in the database + an offline seam |
+
+The Simulator has **no camera feed**: the camera flows assert chrome, ids, labels and state words (which is exactly what
+this build's redesign changed). Anything that needs a captured frame — ratio crop, zoom at capture, front-camera
+mirroring, the capture snackbar — is device-checklist work (§5, §12).
+
 ## Waiting on ids (cases written, no draft yet)
 Guide **mirror** is in committed source (`da61534`) and is drafted (`TC-CAM-032-guide-mirror.yaml`). Timer, Ratio and
 guide **Scale** are in scope for 1.1 but still unlanded, so these cases have no draft:
