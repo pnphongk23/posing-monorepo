@@ -1,0 +1,26 @@
+# TC-JOB-007 TC JOB 007 processing filters
+appId: ${APP_ID}
+tags: [TC-JOB-007, p0, e2e]
+---
+# Processing segment badge + its own filters.
+- runFlow: ../../../../mobile/iosApp/maestro/subflows/ext-launch.yaml
+- runFlow: ../../../../mobile/iosApp/maestro/subflows/ext-sign-in.yaml
+- tapOn:
+    id: "poses.more"
+- tapOn:
+    id: "poses.jobs"
+- extendedWaitUntil:
+    visible:
+      id: "jobs.tab.processing"
+    timeout: 20000
+- assertVisible:
+    id: "jobs.tab.processing.count"
+- tapOn:
+    id: "jobs.filter.queued"
+- assertVisible: ".*Queued.*"
+- assertNotVisible: ".*, Processing$"
+- tapOn:
+    id: "jobs.filter.processing"
+- assertVisible: ".*Processing.*"
+- tapOn:
+    id: "jobs.filter.all"

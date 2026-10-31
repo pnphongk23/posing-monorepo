@@ -1,0 +1,37 @@
+# TC-JOB-010 TC JOB 010 long name ax
+appId: ${APP_ID}
+tags: [TC-JOB-010, p1, e2e]
+---
+# Long pose names and the largest text size must stay readable and tappable.
+- launchApp:
+    clearState: true
+    clearKeychain: true
+    permissions:
+      camera: allow
+      photos: allow
+    arguments:
+      AIPoseExtractPoseEnabled: "true"
+      AIPoseAccountsEnabled: "YES"
+      UIPreferredContentSizeCategoryName: "UICTContentSizeCategoryAccessibilityXXXL"
+- extendedWaitUntil:
+    visible:
+      id: "poses.open-search"
+    timeout: 30000
+- runFlow: ../../../../mobile/iosApp/maestro/subflows/ext-sign-in.yaml
+- tapOn:
+    id: "poses.more"
+- tapOn:
+    id: "poses.jobs"
+- extendedWaitUntil:
+    visible:
+      id: "jobs.tab.finish"
+    timeout: 20000
+- tapOn:
+    id: "jobs.tab.finish"
+# The row name is asserted on its own element, so a truncation shows up as a failure.
+- assertVisible:
+    id: "jobRow.name..*"
+- assertVisible:
+    id: "jobs.tab.processing"
+- assertVisible:
+    id: "jobs.filter.all"

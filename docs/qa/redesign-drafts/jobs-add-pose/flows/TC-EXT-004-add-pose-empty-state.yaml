@@ -1,0 +1,24 @@
+# TC-EXT-004 TC EXT 004 add pose empty state
+appId: ${APP_ID}
+tags: [TC-EXT-004, p0, e2e]
+---
+# Signed in, extraction on: the empty state is the entry point of the whole flow.
+- runFlow: ../../../../mobile/iosApp/maestro/subflows/ext-launch.yaml
+- runFlow: ../../../../mobile/iosApp/maestro/subflows/ext-sign-in.yaml
+- tapOn:
+    id: "poses.add-pose"
+- assertVisible: "Turn a photo into a pose"
+- assertVisible:
+    id: "addPose.choosePhoto"
+- assertVisible:
+    id: "addPose.empty.seeJobs"
+- tapOn:
+    id: "addPose.choosePhoto"
+- extendedWaitUntil:
+    visible: "Cancel"
+    timeout: 20000
+# Cancelling the system picker must land back on the same empty state, nothing changed.
+- tapOn: "Cancel"
+- assertVisible: "Turn a photo into a pose"
+- assertVisible:
+    id: "addPose.choosePhoto"

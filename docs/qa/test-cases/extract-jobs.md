@@ -78,6 +78,39 @@ Checked in code, 2026-10-31:
   would still be the only way to *count* uploads; the drafted flows prove "no job row appeared"
   (TC-EXT-001) and "one job row per submit" (TC-EXT-002) instead.
 
+## Build 17 redesign — Jobs and Add pose (cases pending confirmed ids)
+
+Boards: `/tmp/ds-261030/export-c/08-*` (Add pose) and `09-*` (Jobs); owner feedback
+`FEEDBACK-261031.md`. The redesign changes the shape of both surfaces, so these cases are written now
+and their flows stay in `docs/qa/redesign-drafts/jobs-add-pose/` until Feature confirms the ids listed
+under [Requests to Feature](#requests-to-feature).
+
+Redesign deltas the existing rows above must be re-read against (they were written for build 16):
+
+- Add pose is a **three-step** flow: empty state ("Turn a photo into a pose" → Choose a photo) → form
+  (Name, **tag chips + Add tag**, Description with a **200** counter, pinned **Add pose** CTA + Done) →
+  **Pose preview** (skeleton over the photo, Name, tag chips, **Publish pose** + Done). The comma-separated
+  tags text field and the 500-character description counter are gone.
+- Add pose error state is a card above the form ("Couldn't read this photo" + reason) with a
+  "Choose another photo" action and a disabled CTA plus a "Choose another photo to continue." helper line.
+- Jobs segments read "Processing <badge>" / "Finished" (count only as a badge), and each tab has its own
+  filter chips: **All / Queued / Processing** and **All / Done / Failed**.
+- Job rows show a status line instead of a status word: "Done · added to Poses" (with a chevron that opens
+  the private pose), "Failed · <server message>" (with a Retry action), "Processing"/"Queued" with a striped
+  progress bar for the in-progress rows.
+
+| ID | Pri | Preconditions | Steps | Expected | Automation |
+|---|---|---|---|---|---|
+| TC-EXT-004 | P0 | Signed in, extraction on, this account has no job in progress | 1. Poses header + (Add pose). 2. Read the empty state. 3. Tap Choose a photo | The empty state explains the flow in one sentence ("Choose a photo. We find the pose, then you name and publish it."), offers one primary Choose a photo action, states that Back returns to Poses, and offers "See your jobs". Choose a photo opens the system photo picker; cancelling the picker returns to the same empty state with nothing changed | pending: needs `addPose.choosePhoto` and `addPose.empty.seeJobs` |
+| TC-EXT-005 | P0 | Photo chosen, form on screen | 1. Read the CTA state with no name and no tag. 2. Type a name only. 3. Add one tag chip. 4. Type a 200+ character description | The pinned Add pose CTA is disabled and the helper line says what is missing until the form is valid; it enables only with a photo, a non-empty name and at least one tag. The description counter tracks the limit and refuses input beyond 200 characters instead of silently truncating the saved pose | pending: needs `addPose.tags.addTag`, `addPose.tags.chip.<tag>`, `addPose.description.counter`, `addPose.form.helper`, and a stable `addPose.submitButton` disabled state |
+| TC-EXT-006 | P1 | Form filled, the server rejects the photo (413 / unreadable) | 1. Tap Add pose with a photo the server rejects. 2. Read the error card. 3. Tap Choose another photo | One error card above the form names the problem and the reason ("It's larger than 20 MB (error 413)") without a raw status code alone; the name, tags and description the user typed are kept; the CTA is disabled with "Choose another photo to continue." and Choose another photo reopens the picker | pending: needs `addPose.error.title` / `addPose.error.message` / `addPose.changePhoto` (the card currently only has `addPose.errorView`) |
+| TC-EXT-007 | P0 | A job has been submitted and the skeleton came back | 1. Wait for the Pose preview step. 2. Read Name and tag chips. 3. Tap Publish pose. 4. Repeat with Done instead of Publish | Preview shows the photo with the detected skeleton, the name and the tag chips the user entered, and one primary Publish pose action. Publish pose creates the pose ("Done · added to Poses" in Jobs) exactly once; Done leaves the preview without publishing, and the job stays visible in Jobs so nothing is lost silently | pending: needs `addPose.preview.publishButton`, `addPose.preview.name`, `addPose.preview.tags` |
+| TC-JOB-007 | P0 | Signed in, one queued and one processing job | 1. Open Jobs (Processing). 2. Tap Queued. 3. Tap Processing. 4. Tap All | The Processing segment shows the running count as a badge only, the filter chips narrow the list to exactly the queued rows, then the processing rows, then back to both; the in-progress rows show a progress bar and no action button, and the count in the badge matches the number of in-progress rows | pending: needs `jobs.tab.processing.count`, `jobs.filter.all` / `.queued` / `.processing` |
+| TC-JOB-008 | P0 | Signed in, one done job and one failed job | 1. Open Jobs > Finished. 2. Tap Done. 3. Tap Failed. 4. Tap Retry on the failed row | Done rows read "Done · added to Poses" with a chevron and Failed rows read "Failed · <server message>" with Retry; the filters isolate each group; Retry re-queues exactly that job once and the row moves back to Processing as Queued | pending: needs `jobs.filter.done` / `.failed` and `jobRow.retry.<jobId>` (exists) on the redesigned row |
+| TC-JOB-009 | P1 | Signed in, a finished job | 1. Open Jobs > Finished. 2. Swipe the row and choose Remove. 3. Confirm | Remove asks for confirmation, then drops the row from the list without deleting the pose it produced ("Done · added to Poses" rows keep working through the chevron); cancelling the confirmation keeps the row | pending: needs `jobs.row.remove.<jobId>` (exists as a swipe action) plus a confirmation-dialog button id |
+| TC-JOB-010 | P1 | Long pose name (60+ characters), Accessibility text size | 1. Open Jobs with a long-named job in Processing and Finished. 2. Repeat at AX3 | Names wrap instead of being truncated to "QA consent a…" at default size, the status line stays readable, the segments stay tappable (stacking vertically is fine) and Retry/chevron stay reachable without horizontal scrolling | pending: needs the row name id (`jobRow.name.<jobId>`) so the assertion is on the name element, not a truncated label |
+| TC-JOB-011 | P1 | Signed in, cached rows, then the API fails | 1. Load Jobs online. 2. Let one poll fail. 3. Recover | Cached rows stay, an offline banner sits above the list with the recovery copy, and it clears on the next successful poll; the segments and filters keep working on the cached rows | pending: needs `jobs.offline.banner` |
+
 ## Run log (lane-2 CF871F97, Debug-Dev 1.2 build, account A)
 
 Run 2026-10-31 19:0x, one flow at a time, photo `xcrun simctl addmedia` + `/tmp/qa-pose.jpg`:
@@ -109,3 +142,19 @@ be a stale-coordinate tap rather than a navigation bug) — the flow uses Done +
    by regex in the flow), while the row summary keeps the label "<name>, <status>[, <action>]" and no id.
    The Maestro run is the real proof of tapability — a unit test can pin the modifier, not that a tap on
    the id reaches the button.
+
+## Requests to Feature (build 17 redesign ids)
+
+Jobs: `jobs.tab.processing.count` (badge inside the Processing segment), `jobs.filter.all`,
+`jobs.filter.queued`, `jobs.filter.processing`, `jobs.filter.done`, `jobs.filter.failed`,
+`jobs.empty.addPose`, `jobs.offline.banner`, `jobRow.name.<jobId>`, `jobs.remove.confirm` (dialog
+button; the swipe action `jobs.row.remove.<jobId>` already exists).
+Add pose: `addPose.choosePhoto`, `addPose.empty.seeJobs`, `addPose.changePhoto`, `addPose.error.title`,
+`addPose.error.message`, `addPose.form.helper`, `addPose.description.counter`, `addPose.tags.addTag`,
+`addPose.tags.chip.<tag>`, `addPose.preview.publishButton`, `addPose.preview.name`,
+`addPose.preview.tags`. Keep the frozen consent ids (`addPose.consent.message/allowButton/cancelButton`).
+
+Open questions for the boards: the design shows a **20 MB** photo limit while the app copy says 10 MB;
+the design's Done rows read "added to Poses" while build 16 reaches the pose through the Jobs row — confirm
+the chevron opens the same private pose detail. No consent sheet appears in the 08 boards, so the frozen
+copy/ids are assumed unchanged.

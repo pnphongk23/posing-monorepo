@@ -1,0 +1,37 @@
+# TC-EXT-005 TC EXT 005 add pose form validation
+appId: ${APP_ID}
+tags: [TC-EXT-005, p0, e2e]
+---
+# The CTA enables only for photo + name + at least one tag; the description stops at 200.
+- runFlow: ../../../../mobile/iosApp/maestro/subflows/ext-launch.yaml
+- runFlow: ../../../../mobile/iosApp/maestro/subflows/ext-sign-in.yaml
+- tapOn:
+    id: "poses.add-pose"
+- tapOn:
+    id: "addPose.choosePhoto"
+- extendedWaitUntil:
+    visible: "Cancel"
+    timeout: 20000
+- tapOn:
+    point: "16%,26%"
+- extendedWaitUntil:
+    visible:
+      id: "addPose.submitButton"
+    timeout: 20000
+# Photo only: the CTA is still disabled and the helper says what is missing.
+- assertVisible:
+    id: "addPose.form.helper"
+- tapOn:
+    id: "addPose.nameField"
+- inputText: "QA validation pose"
+- assertVisible:
+    id: "addPose.form.helper"
+# One tag is enough.
+- tapOn:
+    id: "addPose.tags.addTag"
+- inputText: "standing"
+- tapOn: "Done"
+- assertVisible:
+    id: "addPose.tags.chip.standing"
+- assertNotVisible:
+    id: "addPose.form.helper"

@@ -1,0 +1,45 @@
+# TC-EXT-007 TC EXT 007 pose preview publish
+appId: ${APP_ID}
+tags: [TC-EXT-007, p0, e2e]
+---
+# Preview shows the detected skeleton, then Publish pose creates the pose once.
+- runFlow: ../../../../mobile/iosApp/maestro/subflows/ext-launch.yaml
+- runFlow: ../../../../mobile/iosApp/maestro/subflows/ext-sign-in.yaml
+- tapOn:
+    id: "poses.add-pose"
+- tapOn:
+    id: "addPose.choosePhoto"
+- extendedWaitUntil:
+    visible: "Cancel"
+    timeout: 20000
+- tapOn:
+    point: "16%,26%"
+- tapOn:
+    id: "addPose.nameField"
+- inputText: "QA preview pose"
+- tapOn:
+    id: "addPose.tags.addTag"
+- inputText: "standing"
+- tapOn: "Done"
+- tapOn:
+    id: "addPose.submitButton"
+- runFlow:
+    when:
+      visible:
+        id: "addPose.consent.allowButton"
+    commands:
+      - tapOn:
+          id: "addPose.consent.allowButton"
+# Real extraction: the preview step only exists once the skeleton is back.
+- extendedWaitUntil:
+    visible:
+      id: "addPose.preview.publishButton"
+    timeout: 240000
+- assertVisible:
+    id: "addPose.preview.name"
+    text: "QA preview pose"
+- tapOn:
+    id: "addPose.preview.publishButton"
+- extendedWaitUntil:
+    visible: ".*Done . added to Poses.*"
+    timeout: 60000

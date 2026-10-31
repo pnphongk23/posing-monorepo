@@ -1,0 +1,33 @@
+# TC-JOB-008 TC JOB 008 finished filters retry
+appId: ${APP_ID}
+tags: [TC-JOB-008, p0, e2e]
+---
+# Finished segment: Done rows open the pose, Failed rows retry.
+- runFlow: ../../../../mobile/iosApp/maestro/subflows/ext-launch.yaml
+- runFlow: ../../../../mobile/iosApp/maestro/subflows/ext-sign-in.yaml
+- tapOn:
+    id: "poses.more"
+- tapOn:
+    id: "poses.jobs"
+- extendedWaitUntil:
+    visible:
+      id: "jobs.tab.finish"
+    timeout: 20000
+- tapOn:
+    id: "jobs.tab.finish"
+- tapOn:
+    id: "jobs.filter.failed"
+- assertVisible: ".*Failed .*"
+- assertVisible:
+    id: "jobRow.retry..*"
+- tapOn:
+    id: "jobRow.retry..*"
+# Retry re-queues: the row leaves Finished and comes back as Queued in Processing.
+- tapOn:
+    id: "jobs.tab.processing"
+- assertVisible: ".*Queued.*"
+- tapOn:
+    id: "jobs.tab.finish"
+- tapOn:
+    id: "jobs.filter.done"
+- assertVisible: ".*Done . added to Poses.*"

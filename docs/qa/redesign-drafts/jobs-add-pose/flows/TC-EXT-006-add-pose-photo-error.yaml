@@ -1,0 +1,44 @@
+# TC-EXT-006 TC EXT 006 add pose photo error
+appId: ${APP_ID}
+tags: [TC-EXT-006, p1, e2e]
+---
+# A rejected photo keeps the typed draft and asks for another photo.
+- runFlow: ../../../../mobile/iosApp/maestro/subflows/ext-launch.yaml
+- runFlow: ../../../../mobile/iosApp/maestro/subflows/ext-sign-in.yaml
+- tapOn:
+    id: "poses.add-pose"
+- tapOn:
+    id: "addPose.choosePhoto"
+- extendedWaitUntil:
+    visible: "Cancel"
+    timeout: 20000
+- tapOn:
+    point: "16%,26%"
+- tapOn:
+    id: "addPose.nameField"
+- inputText: "QA rejected photo"
+- tapOn:
+    id: "addPose.tags.addTag"
+- inputText: "standing"
+- tapOn: "Done"
+- tapOn:
+    id: "addPose.submitButton"
+- runFlow:
+    when:
+      visible:
+        id: "addPose.consent.allowButton"
+    commands:
+      - tapOn:
+          id: "addPose.consent.allowButton"
+# Server rejects the photo: one card, the draft kept, the CTA disabled again.
+- extendedWaitUntil:
+    visible:
+      id: "addPose.error.title"
+    timeout: 60000
+- assertVisible:
+    id: "addPose.error.message"
+- assertVisible:
+    id: "addPose.changePhoto"
+- assertVisible:
+    id: "addPose.nameField"
+    text: "QA rejected photo"
