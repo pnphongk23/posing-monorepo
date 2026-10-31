@@ -14,6 +14,9 @@ tags: [TC-SET-001, p0]
     element:
       id: "settings.about"
     direction: DOWN
+    # The About row is the last one on the hub: at the end of the scroll it can sit under the home
+    # indicator, so 100% visibility never succeeds.
+    visibilityPercentage: 60
 - assertVisible:
     id: "settings.about"
 - tapOn:

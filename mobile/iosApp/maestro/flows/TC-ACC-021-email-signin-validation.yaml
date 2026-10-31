@@ -8,7 +8,7 @@ tags: [TC-ACC-021, p0]
 - runFlow: ../subflows/open-settings.yaml
 - tapOn:
     id: "settings.account.row"
-# The Account screen's email button carries `signin.emailEntry`; the sheet's email field reuses it.
+# The Account screen's email button carries `signin.emailEntry`; inside the sheet the field is `signin.email`.
 - tapOn:
     id: "signin.emailEntry"
 - assertVisible:
@@ -18,10 +18,13 @@ tags: [TC-ACC-021, p0]
 # One message per empty field...
 - assertVisible: "Enter a valid email address, like name@example.com"
 - assertVisible: "Enter your password"
-# ...and the tap itself is still answered by the shared region.
-- assertVisible: "Enter your email address and password."
+# The shared notice card is deliberately suppressed while the fields carry their own messages
+# (SignIn.swift `serverErrorCard`: "the per-field messages own the empty-form case"), so the tap is
+# answered once, in place, and not twice.
+- assertNotVisible:
+    id: "signin.error"
 # The sheet must stay open: a refused submit is not a dismissal.
 - assertVisible:
     id: "signin.submit"
 - assertVisible:
-    id: "signin.emailEntry"
+    id: "signin.email"

@@ -9,8 +9,11 @@ tags: [TC-ACC-022, p0]
     id: "settings.account.row"
 - tapOn:
     id: "signin.emailEntry"
+# Wait for the sheet to be up before aiming at a field inside it.
+- assertVisible:
+    id: "signin.password"
 - tapOn:
-    id: "signin.emailEntry"
+    id: "signin.email"
 - inputText: "maya@"
 - tapOn:
     id: "signin.password"
@@ -22,7 +25,7 @@ tags: [TC-ACC-022, p0]
 - assertNotVisible: "Enter your password"
 # Correcting the address clears the message without leaving the sheet.
 - tapOn:
-    id: "signin.emailEntry"
+    id: "signin.email"
 - eraseText
 - inputText: "maya@example.com"
 - assertNotVisible: "Enter a valid email address, like name@example.com"
