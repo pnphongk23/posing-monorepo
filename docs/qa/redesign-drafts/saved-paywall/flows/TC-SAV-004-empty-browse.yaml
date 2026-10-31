@@ -1,0 +1,31 @@
+# TC-SAV-004 empty Saved explains itself and offers Browse poses
+#
+# Precondition: the E2E account has nothing saved. Clearing it beforehand is a manual step (or use a
+# dedicated empty account) — the flow asserts the state, it does not create it, because "unsave
+# everything" through the UI is exactly the feature under test elsewhere.
+appId: ${APP_ID}
+tags: [TC-SAV-004, p1]
+---
+- assertTrue:
+    condition: ${E2E_EMAIL != null && E2E_EMAIL.length > 0 && E2E_PASSWORD != null && E2E_PASSWORD.length > 0}
+    label: "E2E_EMAIL / E2E_PASSWORD missing - run with -e E2E_EMAIL=... -e E2E_PASSWORD=..."
+- runFlow: ../../../../../mobile/iosApp/maestro/subflows/launch-accounts-on.yaml
+- runFlow: ../../../../../mobile/iosApp/maestro/subflows/pay-sign-in.yaml
+- tapOn:
+    id: "poses.more"
+- tapOn:
+    id: "poses.header.saved"
+- extendedWaitUntil:
+    visible:
+      id: "saved.browseCommunity"
+    timeout: 25000
+- assertVisible: "No saved poses yet"
+- assertNotVisible:
+    id: "saved.retry"
+# The action returns to where the user can find a pose to keep.
+- tapOn:
+    id: "saved.browseCommunity"
+- extendedWaitUntil:
+    visible:
+      id: "poses.open-search"
+    timeout: 15000

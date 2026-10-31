@@ -1,0 +1,30 @@
+# TC-SAV-012 back from Saved returns to where it was opened
+#
+# Saved is a pushed destination (header + Back, no dock), so Back must pop to Settings/the More menu that
+# opened it — not to Poses, and not out of the app.
+#
+# Entered from the Poses More menu because the Settings → Library → Saved row has no id yet
+# (`settings.saved.row` requested); the assertion itself is about Back, which is the same on both routes.
+appId: ${APP_ID}
+tags: [TC-SAV-012, p1]
+---
+- runFlow: ../../../../../mobile/iosApp/maestro/subflows/launch-accounts-on.yaml
+- tapOn:
+    id: "poses.more"
+- tapOn:
+    id: "poses.header.saved"
+- extendedWaitUntil:
+    visible:
+      id: "saved.back"
+    timeout: 20000
+# Signed out, so the gate is the surface; Back must still be there and must still pop.
+- assertVisible:
+    id: "saved.signIn"
+- tapOn:
+    id: "saved.back"
+- extendedWaitUntil:
+    visible:
+      id: "poses.open-search"
+    timeout: 15000
+- assertNotVisible:
+    id: "saved.back"

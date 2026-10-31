@@ -1,0 +1,35 @@
+# TC-PAY-007 when the offering cannot load, the paywall says so and Retry recovers in place
+#
+# Deterministic environment: any build whose store cannot return products — the Prod-config simulator
+# build is the reliable one (live key, no StoreKit on a simulator). There the paywall must never invent a
+# price: it shows the unavailable notice and a Retry, and no subscribe CTA exists to tap.
+#
+# Ids requested: `paywall.unavailable` (notice) and `paywall.retry` (button). Until they exist the labels
+# the code already owns are used.
+appId: ${APP_ID}
+tags: [TC-PAY-007, p1]
+---
+- runFlow: ../../../../../mobile/iosApp/maestro/subflows/pay-launch.yaml
+- runFlow: ../../../../../mobile/iosApp/maestro/subflows/open-camera.yaml
+- tapOn:
+    id: "camera.shutter"
+- extendedWaitUntil:
+    visible:
+      id: "paywall.close"
+    timeout: 25000
+# TODO(paywall.unavailable): assert by id once it exists.
+- extendedWaitUntil:
+    visible: "Premium unavailable.*"
+    timeout: 30000
+# No price is claimed and no purchase is offered while the offering is missing.
+- assertNotVisible:
+    id: "paywall.plan.annual"
+- assertNotVisible:
+    id: "paywall.cta"
+# TODO(paywall.retry): assert/tap by id once it exists.
+- tapOn: "Retry loading Premium plans"
+# A retry in a still-unreachable environment lands back on the same truthful state — it must not fall
+# through to an empty offer area or a dead CTA.
+- extendedWaitUntil:
+    visible: "Premium unavailable.*"
+    timeout: 30000

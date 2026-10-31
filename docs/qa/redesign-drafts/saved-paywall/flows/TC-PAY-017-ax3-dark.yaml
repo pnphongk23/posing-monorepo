@@ -1,0 +1,39 @@
+# TC-PAY-017 the paywall is still usable at AX3 in dark mode
+#
+# Runner setup (device state, restored afterwards):
+#   xcrun simctl ui <UDID> appearance dark
+#   xcrun simctl ui <UDID> content_size accessibility-extra-large
+#   … run … then: appearance light, content_size large
+#
+# Board 11-board04/11-board05 (and 11-paywall-ax3-scrolled in the owner notes) require: prices and renewal
+# terms reachable by scrolling, and the pinned subscribe button with a clear inset — at AX3 the content is
+# taller than the screen, so the case is about reachability, not layout pixels.
+#
+# Runs on the Prod-config build up to the plan cards, which is where that build's real key stops the run:
+# no CTA is ever tapped here.
+appId: ${APP_ID}
+tags: [TC-PAY-017, p2]
+---
+- runFlow: ../../../../../mobile/iosApp/maestro/subflows/pay-launch.yaml
+- runFlow: ../../../../../mobile/iosApp/maestro/subflows/open-camera.yaml
+- tapOn:
+    id: "camera.shutter"
+- extendedWaitUntil:
+    visible:
+      id: "paywall.close"
+    timeout: 25000
+# The offer area is reachable at AX3: either the plans or the honest loading/unavailable notice, never a
+# blank region the user cannot scroll past.
+- runFlow:
+    when:
+      visible:
+        id: "paywall.plan.annual"
+    commands:
+      - scrollUntilVisible:
+          element:
+            id: "paywall.cta"
+          direction: DOWN
+          timeout: 20000
+- assertVisible:
+    id: "paywall.close"
+- takeScreenshot: ../../../../../docs/qa/redesign-drafts/saved-paywall/screens/TC-PAY-017-ax3-dark

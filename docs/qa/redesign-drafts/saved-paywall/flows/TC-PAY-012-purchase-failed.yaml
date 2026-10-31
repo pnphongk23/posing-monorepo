@@ -1,0 +1,48 @@
+# TC-PAY-012 a purchase that fails grants nothing and says so
+#
+# Runs on the Debug-Dev build whose RevenueCat key is a Test Store key: the SDK's own dialog offers
+# "Test valid purchase" / "Test failed purchase" / "Cancel", so a failure is reproducible with no money
+# and no sandbox Apple ID. A real store failure cannot be provoked this way, which is why the provider's
+# failure path is also covered at unit level.
+appId: ${APP_ID}
+tags: [TC-PAY-012, p1, e2e]
+---
+- runFlow: ../../../../../mobile/iosApp/maestro/subflows/pay-launch.yaml
+- runFlow: ../../../../../mobile/iosApp/maestro/subflows/pay-sign-in.yaml
+- runFlow: ../../../../../mobile/iosApp/maestro/subflows/open-camera.yaml
+- tapOn:
+    id: "camera.shutter"
+- extendedWaitUntil:
+    visible:
+      id: "paywall.cta"
+    timeout: 30000
+- tapOn:
+    id: "paywall.cta"
+- extendedWaitUntil:
+    visible: "Test failed purchase"
+    timeout: 30000
+- tapOn: "Test failed purchase"
+# The banner is the only thing allowed to report the outcome, and the paywall must stay up: a dismissal
+# would look like success.
+- extendedWaitUntil:
+    visible:
+      id: "paywall.status"
+    timeout: 60000
+- assertVisible:
+    id: "paywall.status"
+    text: ".*[Pp]urchase.*"
+- assertNotVisible:
+    id: "camera.shutter"
+# No access: the capture gate is still closed, i.e. the same press asks again rather than capturing.
+- tapOn:
+    id: "paywall.close"
+- assertVisible:
+    id: "camera.shutter"
+- tapOn:
+    id: "camera.shutter"
+- extendedWaitUntil:
+    visible:
+      id: "paywall.close"
+    timeout: 25000
+- tapOn:
+    id: "paywall.close"

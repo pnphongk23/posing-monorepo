@@ -1,0 +1,40 @@
+# TC-SAV-003 unsaving removes the pose from Saved
+#
+# Starts from the list (TC-SAV-002 guarantees a saved row), unsaves by the row's own control, and proves the
+# removal by reloading the screen: an optimistic animation is not evidence that the server heard it.
+#
+# TODO(saved.unsave.<poseID>): the row control is only labelled "Remove from saved" today, which is
+# ambiguous with several rows; the label is used until the id exists.
+appId: ${APP_ID}
+tags: [TC-SAV-003, p1]
+---
+- assertTrue:
+    condition: ${E2E_EMAIL != null && E2E_EMAIL.length > 0 && E2E_PASSWORD != null && E2E_PASSWORD.length > 0}
+    label: "E2E_EMAIL / E2E_PASSWORD missing - run with -e E2E_EMAIL=... -e E2E_PASSWORD=..."
+- runFlow: ../../../../../mobile/iosApp/maestro/subflows/launch-accounts-on.yaml
+- runFlow: ../../../../../mobile/iosApp/maestro/subflows/pay-sign-in.yaml
+- tapOn:
+    id: "poses.more"
+- tapOn:
+    id: "poses.header.saved"
+- extendedWaitUntil:
+    visible: "Remove from saved"
+    timeout: 25000
+- tapOn: "Remove from saved"
+- extendedWaitUntil:
+    visible:
+      id: "saved.browseCommunity"
+    timeout: 25000
+# Leave and come back: the removal survived a fresh load, so it was a write and not a local hide.
+- tapOn:
+    id: "saved.back"
+- tapOn:
+    id: "poses.more"
+- tapOn:
+    id: "poses.header.saved"
+- extendedWaitUntil:
+    visible:
+      id: "saved.browseCommunity"
+    timeout: 25000
+- assertNotVisible:
+    id: "poses.first-card"

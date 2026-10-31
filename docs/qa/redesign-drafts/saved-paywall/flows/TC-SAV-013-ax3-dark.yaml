@@ -1,0 +1,26 @@
+# TC-SAV-013 Saved stays usable at AX3 in dark mode
+#
+# Runner setup (outside the flow, because appearance is device state and must be restored afterwards):
+#   xcrun simctl ui <UDID> appearance dark
+#   xcrun simctl ui <UDID> content_size accessibility-extra-large
+#   … run … then: appearance light, content_size large
+#
+# What the case is about: at the largest text size a state panel and its action must still be reachable —
+# the failure mode F4 fixes (a stacked, offset illustration swallowing the copy) is only visible here.
+appId: ${APP_ID}
+tags: [TC-SAV-013, p2]
+---
+- runFlow: ../../../../../mobile/iosApp/maestro/subflows/launch-accounts-on.yaml
+- tapOn:
+    id: "poses.more"
+- tapOn:
+    id: "poses.header.saved"
+- extendedWaitUntil:
+    visible:
+      id: "saved.signIn"
+    timeout: 25000
+# Header keeps its Back at AX size, and the gate's own copy is still one readable panel.
+- assertVisible:
+    id: "saved.back"
+- assertVisible: "Sign in to see saved poses"
+- assertVisible: "Sign in"
