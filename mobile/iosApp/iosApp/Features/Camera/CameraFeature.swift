@@ -186,6 +186,8 @@ final class CameraViewModel: ObservableObject {
     /// allows reaches the capture path, and that path is untouched: readiness still decides between
     /// capturing and doing nothing.
     func capture() {
+        // The paid-action gate is still the first thing a press meets, before the timer: an unentitled
+        // press opens the paywall and no countdown starts.
         switch premiumGate.captureOutcome(cameraReady: coordinator.state.captureEnabled) {
         case .paywall(let signIn):
             onPremiumRequired(signIn)
@@ -698,6 +700,7 @@ struct CameraScreen: View {
     let onOpenGallery: () -> Void
     @StateObject private var model: CameraViewModel
     @StateObject private var posePickerModel: PosePickerViewModel
+    @StateObject private var savedPosesModel: CameraSavedPosesModel
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// Focus returns to the More control when the Camera Tools popup is dismissed
@@ -716,6 +719,7 @@ struct CameraScreen: View {
         onOpenGallery: @escaping () -> Void = {},
         premiumGate: any PremiumGateProviding = PremiumGateModel(),
         onPremiumRequired: @escaping (Bool) -> Void = { _ in },
+        savedPoses: any CameraSavedPosesProviding = CatalogueSavedPosesService(),
         model: @autoclosure @escaping () -> CameraViewModel? = nil
     ) {
         _guide = guide
@@ -729,6 +733,7 @@ struct CameraScreen: View {
             onPremiumRequired: onPremiumRequired
         ))
         _posePickerModel = StateObject(wrappedValue: PosePickerViewModel(service: poseService))
+        _savedPosesModel = StateObject(wrappedValue: CameraSavedPosesModel(provider: savedPoses))
     }
 
     /// Legacy UIKit host and previews without an injected pose service.
@@ -750,6 +755,7 @@ struct CameraScreen: View {
             if model.showPosePicker {
                 PosePickerSheet(
                     model: posePickerModel,
+                    savedPoses: savedPosesModel,
                     onClose: { model.closePosePicker() },
                     onSelect: { pose in
                         guide = pose
@@ -1124,7 +1130,8 @@ struct CameraScreen: View {
         CameraPermissionPanel(
             permission: model.coordinator.state.permission,
             onAllow: { model.requestPermission() },
-            onOpenSettings: openSystemSettings
+            onOpenSettings: openSystemSettings,
+            onDismiss: onClose
         )
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(AP.Color.scrim)
@@ -1321,18 +1328,35 @@ struct CameraPermissionPanel: View {
     let permission: CameraPermissionState
     let onAllow: () -> Void
     let onOpenSettings: () -> Void
+    /// "Not now": leaves the camera (the board's second action).
+    var onDismiss: () -> Void = {}
+
+    /// The board's copy and the handle QA targets (`05-camera-permission-denied`).
+    static let notNowTitle = "Not now"
+    static let notNowIdentifier = "camera.permission.notNow"
 
     var body: some View {
         let panel = CameraStatePanel.permission(permission) ?? .permissionDenied
         let copy = panel.permissionCopy
-        APEmptyStateView(
-            title: copy.title,
-            message: copy.message,
-            actionTitle: copy.actionTitle,
-            action: panel == .permissionDenied ? onOpenSettings : onAllow,
-            style: .plain,
-            glyph: "camera"
-        )
+        VStack(spacing: AP.Space.space8) {
+            APEmptyStateView(
+                title: copy.title,
+                message: copy.message,
+                actionTitle: copy.actionTitle,
+                action: panel == .permissionDenied ? onOpenSettings : onAllow,
+                style: .plain,
+                glyph: "camera"
+            )
+            // The board's second action: leave the camera without granting access. Nothing on this
+            // screen is usable without the preview, so "Not now" closes it rather than parking the
+            // user on a dead viewfinder.
+            Button(Self.notNowTitle, action: onDismiss)
+                .buttonStyle(.plain)
+                .font(AP.Font.supporting.weight(.semibold))
+                .foregroundStyle(AP.Color.accentText)
+                .apMinimumHitTarget()
+                .accessibilityIdentifier(Self.notNowIdentifier)
+        }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("camera.permission")
     }
@@ -2084,6 +2108,140 @@ private struct CameraShutterSpinner: View {
     }
 }
 
+// MARK: - Picker scope (All / Saved)
+
+/// The picker's two scopes (`05-camera-picker-loaded` boards: an All chip and a Saved chip).
+enum CameraPickerScope: String, CaseIterable, Identifiable {
+    case all = "All"
+    case saved = "Saved"
+
+    var id: String { rawValue }
+    var accessibilityIdentifier: String { "posePicker.scope.\(rawValue.lowercased())" }
+
+    /// The rows this scope draws. Both scopes filter by the same search text through the **same**
+    /// helpers the Poses screens use: the catalogue's own local filter for All, and the shared saved
+    /// name filter for Saved (`PoseAdapterMerge.filterSavedLocally`), so the two cannot drift.
+    func rows(catalogue: [NativePose], saved: [NativePose], query: String) -> [NativePose] {
+        switch self {
+        case .all:
+            let term = query.trimmingCharacters(in: .whitespaces).lowercased()
+            guard !term.isEmpty else { return catalogue }
+            return catalogue.filter { $0.name.lowercased().contains(term) }
+        case .saved:
+            return PoseAdapterMerge.filterSavedLocally(saved, query: query)
+        }
+    }
+}
+
+/// The camera picker's Saved collection.
+///
+/// A port, so the camera never reaches into a store: the app wires it to the same catalogue service
+/// family the Saved screen uses (`PoseServiceBootstrap`), on its **own** filter slot, so asking for
+/// `.saved` here cannot move the Poses tab's route. No new store and no sample rows: the adapter's
+/// cache is the shared `PoseCatalogCacheStore`.
+protocol CameraSavedPosesProviding: Sendable {
+    func savedPoses() async throws -> [NativePose]
+}
+
+struct CatalogueSavedPosesService: CameraSavedPosesProviding {
+    private let service: any PoseServing
+
+    init(bundle: PoseServiceBundle = PoseServiceBootstrap.make()) {
+        bundle.filterState.filter = .saved
+        service = bundle.service
+    }
+
+    func savedPoses() async throws -> [NativePose] {
+        try await service.poses(query: nil)
+    }
+}
+
+/// The Saved chip's rows and their load. Coalesced and generation-guarded like the catalogue load:
+/// the chip can be tapped while a request is in flight, and a stale answer (or an abandoned one) must
+/// never replace a newer collection.
+@MainActor
+final class CameraSavedPosesModel: ObservableObject {
+    @Published private(set) var state: Loadable<[NativePose]> = .idle
+
+    private let provider: any CameraSavedPosesProviding
+    private var inFlightLoad: Task<Void, Never>?
+    private var loadGeneration = 0
+
+    init(provider: any CameraSavedPosesProviding = CatalogueSavedPosesService()) {
+        self.provider = provider
+    }
+
+    var rows: [NativePose] { state.rows }
+
+    func load() async {
+        if let inFlightLoad {
+            await inFlightLoad.value
+            return
+        }
+        loadGeneration &+= 1
+        let generation = loadGeneration
+        let task = Task { @MainActor [weak self] in
+            guard let self else { return }
+            self.state = .loading
+            do {
+                let poses = try await self.provider.savedPoses()
+                guard generation == self.loadGeneration else { return }
+                self.state = poses.isEmpty ? .empty : .loaded(poses)
+            } catch {
+                guard generation == self.loadGeneration else { return }
+                self.state = .failed(error.localizedDescription)
+            }
+        }
+        inFlightLoad = task
+        await task.value
+        if loadGeneration == generation { inFlightLoad = nil }
+    }
+
+    /// The scope left Saved, or the account changed: the rows go, so a return re-reads the account.
+    func reset() {
+        inFlightLoad?.cancel()
+        inFlightLoad = nil
+        loadGeneration &+= 1
+        state = .idle
+    }
+}
+
+/// What the Saved chip draws, from the session stage and the load state. Pure, so the three branches
+/// (signed out, nothing saved, rows) are unit-tested and the sheet cannot invent a fourth.
+enum CameraSavedScopePresentation: Equatable {
+    case resolvingSession
+    case signInRequired
+    case loading
+    case failed
+    case empty
+    case rows([NativePose])
+
+    static func resolve(
+        stage: SavedSurfaceStage,
+        state: Loadable<[NativePose]>,
+        isOffline: Bool
+    ) -> CameraSavedScopePresentation {
+        switch stage {
+        case .resolvingSession:
+            return .resolvingSession
+        case .signInRequired:
+            // The account gate wins over any rows: a guest is never shown cached rows as current.
+            return .signInRequired
+        case .list:
+            switch state {
+            case .idle, .loading:
+                return .loading
+            case .failed:
+                return .failed
+            case .empty:
+                return .empty
+            case .loaded(let poses):
+                return poses.isEmpty ? .empty : .rows(poses)
+            }
+        }
+    }
+}
+
 // MARK: - Pose picker (camera-local bottom sheet, `.nb-pose-picker-*`)
 
 /// Camera-local pose picker (`camera-guide.css` + `guide-picker.js`). It filters the loaded
@@ -2095,6 +2253,9 @@ final class PosePickerViewModel: ObservableObject {
     @Published var query: String = ""
     /// `forcedState === 'offline'`: the sheet keeps showing results with an offline notice.
     @Published private(set) var isOffline = false
+    /// Which collection the sheet lists (`05-camera-picker-loaded`: All / Saved). Saved is
+    /// account-scoped and loaded by `CameraSavedPosesModel`, never by this model.
+    @Published var scope: CameraPickerScope = .all
     private let service: any PoseServing
     /// R7: reachability is created on presentation and torn down on dismissal — `NWPathMonitor`
     /// `cancel()` is terminal, so each presentation gets a fresh monitor rather than one running for
@@ -2235,6 +2396,14 @@ final class PosePickerViewModel: ObservableObject {
     func setOfflineForTesting(_ offline: Bool) { isOffline = offline }
     #endif
 
+    /// The scope chip. One control switches the collection; leaving Saved drops the query so the two
+    /// lists cannot filter each other's text.
+    func selectScope(_ scope: CameraPickerScope) {
+        guard scope != self.scope else { return }
+        self.scope = scope
+        query = ""
+    }
+
     /// `pose-picker-search__clear`: resets to the full grid without refetching.
     func clearSearch() {
         query = ""
@@ -2255,13 +2424,49 @@ final class PosePickerViewModel: ObservableObject {
 /// renders the camera's dark appearance, so the sheet reads as the same surface as the chrome.
 private struct PosePickerSheet: View {
     @ObservedObject var model: PosePickerViewModel
+    @ObservedObject var savedPoses: CameraSavedPosesModel
     @ObservedObject private var aspectRatioCache = PoseAspectRatioCache.shared
     let onClose: () -> Void
     let onSelect: (NativePose) -> Void
     @State private var columnByPoseID: [String: Int] = [:]
+    /// The Saved chip's account gate: the same `SavedSurfaceStage` the Saved screen uses, so a guest
+    /// sees the sign-in panel instead of cached rows.
+    @StateObject private var session = SessionPresenceModel()
 
     @FocusState private var isSearchFocused: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var savedStage: SavedSurfaceStage {
+        SavedSurfaceStage.resolve(isSessionResolved: session.isResolved, isSignedIn: session.isSignedIn)
+    }
+
+    /// Identity of "the Saved chip is showing for this session stage".
+    private var savedScopeTaskKey: String {
+        switch (model.scope, savedStage) {
+        case (.saved, .list): return "saved-list"
+        case (.saved, .signInRequired): return "saved-signed-out"
+        case (.saved, .resolvingSession): return "saved-resolving"
+        case (.all, _): return "all"
+        }
+    }
+
+    private var savedPresentation: CameraSavedScopePresentation {
+        CameraSavedScopePresentation.resolve(
+            stage: savedStage,
+            state: savedPoses.state,
+            isOffline: model.isOffline
+        )
+    }
+
+    /// Rows the grid draws for the current scope. The rule owns the name filter for **both** lists, so
+    /// the catalogue is passed unfiltered and cannot be filtered twice.
+    private var visiblePoses: [NativePose] {
+        model.scope.rows(
+            catalogue: model.state.rows,
+            saved: savedPoses.rows,
+            query: model.query
+        )
+    }
 
     private struct PickerItem: Identifiable {
         let index: Int
@@ -2282,6 +2487,19 @@ private struct PosePickerSheet: View {
             .frame(width: proxy.size.width, height: proxy.size.height, alignment: .bottom)
         }
         .ignoresSafeArea()
+        .task { session.start() }
+        // The Saved chip loads when it is shown *and* the session has resolved to signed-in: the stage
+        // is the task's identity, so a sign-in that lands after the sheet opened still runs the load
+        // instead of leaving the chip on its loading panel.
+        .task(id: savedScopeTaskKey) {
+            guard model.scope == .saved, savedStage == .list else { return }
+            if case .loaded = savedPoses.state { return }
+            await savedPoses.load()
+        }
+        .onChange(of: session.isSignedIn) { _ in
+            // Another Account's saved rows must not survive the switch (same rule as the Saved screen).
+            savedPoses.reset()
+        }
         .transition(reduceMotion ? .opacity : .opacity.combined(with: .offset(y: 18)))
         // R18 probe: `.isModal` was applied here, on the GeometryReader root. Applied to a container
         // that is not itself an accessibility element, SwiftUI collapses the subtree it wraps — the
@@ -2302,6 +2520,7 @@ private struct PosePickerSheet: View {
         VStack(spacing: 0) {
             handle
             header
+            scopeChips
             searchField
             scrollContent
         }
@@ -2352,6 +2571,44 @@ private struct PosePickerSheet: View {
                 .accessibilityIdentifier("posePicker.close")
         }
         .padding(.bottom, AP.Space.space12)
+    }
+
+    /// The All / Saved scope chips (`05-camera-picker-loaded`). The selected chip carries a check glyph
+    /// and its own word, so the chosen collection is never colour-only.
+    private var scopeChips: some View {
+        HStack(spacing: AP.Space.space8) {
+            ForEach(CameraPickerScope.allCases) { scope in
+                scopeChip(scope)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.bottom, AP.Space.space12)
+        .accessibilityIdentifier("posePicker.scope")
+    }
+
+    private func scopeChip(_ scope: CameraPickerScope) -> some View {
+        let isSelected = model.scope == scope
+        return Button {
+            model.selectScope(scope)
+        } label: {
+            HStack(spacing: AP.Space.space4) {
+                if isSelected {
+                    Image(systemName: "checkmark")
+                        .font(AP.Font.caption.weight(.bold))
+                        .accessibilityHidden(true)
+                }
+                Text(scope.rawValue)
+                    .font(AP.Font.supporting.weight(.semibold))
+            }
+            .foregroundStyle(isSelected ? AP.Color.selectedForeground : AP.Color.primaryText)
+            .padding(.horizontal, AP.Space.space16)
+            .frame(minHeight: AP.HitTarget.minimum)
+        }
+        .buttonStyle(CameraPressStyle(isSelected: isSelected, shape: .capsule, restingFill: AP.Color.controlFill))
+        .accessibilityLabel("\(scope.rawValue) poses")
+        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+        .accessibilityValue(isSelected ? "Selected" : "")
+        .accessibilityIdentifier(scope.accessibilityIdentifier)
     }
 
     /// Search: `controlFill` field, radius 16, 48 pt tall, no resting border — focus is the only
@@ -2420,16 +2677,71 @@ private struct PosePickerSheet: View {
     /// drift back to the old stacked-tile card.
     @ViewBuilder
     private var stateSurface: some View {
-        if let panel = CameraStatePanel.picker(
-            tone: model.stateTone,
-            isNoMatch: model.emptyIsNoMatch,
-            term: model.query.trimmingCharacters(in: .whitespaces),
-            isOffline: model.isOffline
-        ) {
-            CameraPickerStatePanel(panel: panel) {
-                Task { await model.load() }
+        switch model.scope {
+        case .saved:
+            savedStateSurface
+        case .all:
+            if let panel = CameraStatePanel.picker(
+                tone: model.stateTone,
+                isNoMatch: model.emptyIsNoMatch,
+                term: model.query.trimmingCharacters(in: .whitespaces),
+                isOffline: model.isOffline
+            ) {
+                CameraPickerStatePanel(panel: panel) {
+                    Task { await model.load() }
+                }
+                .accessibilityIdentifier("posePicker.state")
             }
-            .accessibilityIdentifier("posePicker.state")
+        }
+    }
+
+    /// The Saved chip's panels. Copy is the Saved screen's own (`PoseResultsStateCopy`), so the two
+    /// surfaces cannot describe the same collection differently, and the panels are the shared
+    /// `FeatureStateView` call API — another surface owner may restyle its internals without touching
+    /// this call site.
+    @ViewBuilder
+    private var savedStateSurface: some View {
+        switch savedPresentation {
+        case .resolvingSession:
+            FeatureStateView(
+                tone: .loading,
+                title: PoseResultsStateCopy.savedLoadingTitle,
+                message: PoseResultsStateCopy.savedLoadingMessage
+            )
+            .accessibilityIdentifier("posePicker.saved.loading")
+        case .signInRequired:
+            FeatureStateView(
+                tone: .empty,
+                title: PoseResultsStateCopy.savedSignInTitle,
+                message: PoseResultsStateCopy.savedSignInMessage
+            )
+            .accessibilityIdentifier("posePicker.saved.signIn")
+        case .loading:
+            FeatureStateView(
+                tone: .loading,
+                title: PoseResultsStateCopy.savedLoadingTitle,
+                message: PoseResultsStateCopy.savedLoadingMessage
+            )
+            .accessibilityIdentifier("posePicker.saved.loading")
+        case .failed:
+            FeatureStateView(
+                tone: model.isOffline ? .offline : .error,
+                title: model.isOffline ? "You're offline" : PoseResultsStateCopy.savedErrorTitle,
+                message: model.isOffline ? "Saved poses appear here again when you're back online." : PoseResultsStateCopy.savedErrorMessage,
+                actionTitle: model.isOffline ? nil : PoseResultsStateCopy.retryActionTitle
+            ) {
+                Task { await savedPoses.load() }
+            }
+            .accessibilityIdentifier("posePicker.saved.error")
+        case .empty:
+            FeatureStateView(
+                tone: .empty,
+                title: PoseResultsStateCopy.savedEmptyTitle,
+                message: PoseResultsStateCopy.savedEmptyMessage
+            )
+            .accessibilityIdentifier("posePicker.saved.empty")
+        case .rows:
+            EmptyView()
         }
     }
 
@@ -2437,7 +2749,7 @@ private struct PosePickerSheet: View {
     /// (`PoseCard` + `PoseGridMetrics`, `.nb-grid--masonry`).
     @ViewBuilder
     private var poseGrid: some View {
-        let poses = model.filteredPoses
+        let poses = visiblePoses
         if !poses.isEmpty {
             let columns = itemsByColumn
             HStack(alignment: .top, spacing: PoseGridMetrics.columnSpacing) {
@@ -2471,13 +2783,14 @@ private struct PosePickerSheet: View {
                 rebuildAssignments()
             }
             .accessibilityElement(children: .contain)
+            .accessibilityValue(model.scope.rawValue)
             .accessibilityIdentifier("posePicker.grid")
         }
     }
 
     private var itemsByColumn: [[PickerItem]] {
         var columns = Array(repeating: [PickerItem](), count: 2)
-        for (index, pose) in model.filteredPoses.enumerated() {
+        for (index, pose) in visiblePoses.enumerated() {
             let column = columnByPoseID[pose.id] ?? (index % 2)
             columns[column].append(PickerItem(index: index, pose: pose))
         }
@@ -2485,7 +2798,7 @@ private struct PosePickerSheet: View {
     }
 
     private func rebuildAssignments() {
-        let poses = model.filteredPoses
+        let poses = visiblePoses
         let columns = PoseGridMetrics.columnAssignments(
             for: poses.map { aspectRatioCache.ratio(for: $0.id) },
             columnWidth: PoseGridMetrics.columnWidth

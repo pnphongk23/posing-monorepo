@@ -851,6 +851,231 @@ final class PosePickerCatalogueLoadTests: XCTestCase {
     }
 }
 
+// MARK: - Picker scope (All / Saved)
+
+/// A Saved provider the test drives: `rows` for a success, `failure` for a failure, and an optional
+/// gate that holds the first call open so a stale completion can be delivered late.
+private actor StubSavedPosesService: CameraSavedPosesProviding {
+    private let rows: [NativePose]
+    private let failure: Error?
+    private let heldFirstCall: Bool
+    private var calls = 0
+    private var firstContinuation: CheckedContinuation<[NativePose], Error>?
+    private var firstStarted = false
+
+    init(rows: [NativePose] = [], failure: Error? = nil, heldFirstCall: Bool = false) {
+        self.rows = rows
+        self.failure = failure
+        self.heldFirstCall = heldFirstCall
+    }
+
+    var callCount: Int { calls }
+
+    var firstCallStarted: Bool { firstStarted }
+
+    func releaseFirstCall() {
+        firstStarted = true
+        if let failure {
+            firstContinuation?.resume(throwing: failure)
+        } else {
+            firstContinuation?.resume(returning: rows)
+        }
+        firstContinuation = nil
+    }
+
+    func savedPoses() async throws -> [NativePose] {
+        calls += 1
+        if heldFirstCall, calls == 1 {
+            return try await withCheckedThrowingContinuation { continuation in
+                firstStarted = true
+                firstContinuation = continuation
+            }
+        }
+        if let failure { throw failure }
+        return rows
+    }
+}
+
+@MainActor
+final class CameraPickerScopeTests: XCTestCase {
+    private func pose(_ id: String, name: String? = nil) -> NativePose {
+        NativePose(
+            id: id,
+            name: name ?? "Pose \(id)",
+            category: "Standing",
+            imageURL: nil,
+            instructions: [],
+            isSaved: true
+        )
+    }
+
+    // MARK: Scope switching
+
+    func testThePickerOpensOnAllAndSwitchingScopeClearsTheQuery() {
+        let model = PosePickerViewModel(service: PreviewPoseService())
+        XCTAssertEqual(model.scope, .all, "the picker opens on the catalogue")
+
+        model.query = "arms"
+        model.selectScope(.saved)
+        XCTAssertEqual(model.scope, .saved)
+        XCTAssertEqual(model.query, "", "a scope switch never carries the other list's search")
+
+        model.query = "walk"
+        model.selectScope(.saved)
+        XCTAssertEqual(model.query, "walk", "tapping the chip already selected is a no-op")
+    }
+
+    func testScopeIdentifiersAreTheQaContract() {
+        XCTAssertEqual(CameraPickerScope.all.accessibilityIdentifier, "posePicker.scope.all")
+        XCTAssertEqual(CameraPickerScope.saved.accessibilityIdentifier, "posePicker.scope.saved")
+    }
+
+    func testScopeRowsFilterThroughTheSharedRules() {
+        let catalogue = [pose("a", name: "Arms up"), pose("b", name: "City walk")]
+        let saved = [pose("b", name: "City walk"), pose("c", name: "Café lean")]
+
+        XCTAssertEqual(
+            CameraPickerScope.all.rows(catalogue: catalogue, saved: saved, query: "").map(\.id),
+            ["a", "b"]
+        )
+        XCTAssertEqual(
+            CameraPickerScope.all.rows(catalogue: catalogue, saved: saved, query: "walk").map(\.id),
+            ["b"]
+        )
+        XCTAssertEqual(
+            CameraPickerScope.saved.rows(catalogue: catalogue, saved: saved, query: "").map(\.id),
+            ["b", "c"],
+            "the Saved chip lists the account's saved collection, not the catalogue"
+        )
+        XCTAssertEqual(
+            CameraPickerScope.saved.rows(catalogue: catalogue, saved: saved, query: "lean").map(\.id),
+            ["c"],
+            "the saved list uses the same name filter the Saved screen uses"
+        )
+        XCTAssertEqual(
+            CameraPickerScope.saved.rows(catalogue: catalogue, saved: [], query: "").map(\.id),
+            [],
+            "no saved rows is the empty scope, never the catalogue"
+        )
+    }
+
+    // MARK: Saved data model (real behaviour, no fakes in the app)
+
+    func testSavedScopeLoadsTheAccountsCollection() async {
+        let rows = [pose("s1"), pose("s2")]
+        let model = CameraSavedPosesModel(provider: StubSavedPosesService(rows: rows))
+
+        XCTAssertEqual(model.rows, [], "nothing is drawn before the first load")
+        await model.load()
+
+        XCTAssertEqual(model.rows.map(\.id), ["s1", "s2"])
+    }
+
+    func testSavedScopeEmptyAndFailureStates() async {
+        let empty = CameraSavedPosesModel(provider: StubSavedPosesService(rows: []))
+        await empty.load()
+        guard case .empty = empty.state else {
+            return XCTFail("no saved rows is the empty state, saw \(empty.state)")
+        }
+
+        let failing = CameraSavedPosesModel(
+            provider: StubSavedPosesService(failure: URLError(.notConnectedToInternet))
+        )
+        await failing.load()
+        guard case .failed = failing.state else {
+            return XCTFail("a failed saved load is the error state, saw \(failing.state)")
+        }
+    }
+
+    func testTwoSavedLoadsShareOneRequest() async {
+        let service = StubSavedPosesService(rows: [pose("s1")], heldFirstCall: true)
+        let model = CameraSavedPosesModel(provider: service)
+
+        let first = Task { await model.load() }
+        while !(await service.firstCallStarted) { await Task.yield() }
+        let second = Task { await model.load() }
+        await Task.yield()
+
+        let callsWhileJoining = await service.callCount
+        XCTAssertEqual(callsWhileJoining, 1, "the second tap joins the request in flight")
+
+        await service.releaseFirstCall()
+        await first.value
+        await second.value
+        XCTAssertEqual(model.rows.map(\.id), ["s1"])
+    }
+
+    func testAStaleSavedFailureCannotReplaceANewerCollection() async {
+        let service = StubSavedPosesService(rows: [pose("new")], heldFirstCall: true)
+        let model = CameraSavedPosesModel(provider: service)
+
+        let stale = Task { await model.load() }
+        while !(await service.firstCallStarted) { await Task.yield() }
+        // The scope left Saved (or the account changed): the rows and the request behind them go.
+        model.reset()
+        await model.load()
+        XCTAssertEqual(model.rows.map(\.id), ["new"], "the newer request populated the collection")
+
+        await service.releaseFirstCall()   // the abandoned request fails only now
+        await stale.value
+        XCTAssertEqual(
+            model.rows.map(\.id), ["new"],
+            "a stale failure must not replace the collection a newer request returned"
+        )
+    }
+
+    // MARK: Session gate
+
+    func testSavedScopePresentationPerStageAndState() {
+        let rows = [pose("s1")]
+        XCTAssertEqual(
+            CameraSavedScopePresentation.resolve(stage: .resolvingSession, state: .idle, isOffline: false),
+            .resolvingSession
+        )
+        XCTAssertEqual(
+            CameraSavedScopePresentation.resolve(stage: .signInRequired, state: .loaded(rows), isOffline: false),
+            .signInRequired,
+            "a guest is never shown cached rows as current"
+        )
+        XCTAssertEqual(
+            CameraSavedScopePresentation.resolve(stage: .list, state: .loading, isOffline: false),
+            .loading
+        )
+        XCTAssertEqual(
+            CameraSavedScopePresentation.resolve(stage: .list, state: .failed("boom"), isOffline: false),
+            .failed
+        )
+        XCTAssertEqual(
+            CameraSavedScopePresentation.resolve(stage: .list, state: .empty, isOffline: false),
+            .empty
+        )
+        XCTAssertEqual(
+            CameraSavedScopePresentation.resolve(stage: .list, state: .loaded([]), isOffline: false),
+            .empty
+        )
+        XCTAssertEqual(
+            CameraSavedScopePresentation.resolve(stage: .list, state: .loaded(rows), isOffline: false),
+            .rows(rows)
+        )
+    }
+
+    func testTheSavedCopyIsTheSavedScreensOwn() {
+        // The camera must describe the collection the same way the Saved screen does.
+        XCTAssertEqual(PoseResultsStateCopy.savedEmptyTitle, "No saved poses yet")
+        XCTAssertEqual(PoseResultsStateCopy.savedSignInTitle, "Sign in to view your saved poses")
+        XCTAssertEqual(PoseResultsStateCopy.retryActionTitle, "Try again")
+    }
+
+    // MARK: Permission gate
+
+    func testPermissionGateKeepsItsHandleAndTheBoardsSecondAction() {
+        XCTAssertEqual(CameraPermissionPanel.notNowTitle, "Not now")
+        XCTAssertEqual(CameraPermissionPanel.notNowIdentifier, "camera.permission.notNow")
+        XCTAssertEqual(CameraStatePanel.permissionDenied.permissionCopy.title, "Camera access is off")
+        XCTAssertEqual(CameraStatePanel.permissionDenied.permissionCopy.actionTitle, "Open Settings")
+    }
+}
+
 // MARK: - Camera chrome: F12 collapsed state, F4 state panels, F5 snackbar
 
 /// The redesign slice's own evidence: the collapse/expand contract, the strip's content mapping, the
