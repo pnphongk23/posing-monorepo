@@ -1,9 +1,6 @@
-// Design-B catalogue surfaces: the Poses home grid/cards, the category filter row, the paged footer
-// and the state panel. Same behaviour as the legacy `PoseCard` / `PoseGrid` / `PagingFooter`, on the
-// `AP` token layer and faithful to artboards 02/03.
-//
-// The legacy views stay in place: `PoseResultsList` still drives the Saved slice, which is a later
-// migration, so this file adds the AP variants instead of rewriting the shared ones.
+// Design-B catalogue rules: the AX grid reflow, the category filter, the state-panel choice and the
+// paged footer's phase, plus the motion rule. Faithful to artboards 02/03 and shared by the Poses
+// home, Search and Saved surfaces.
 
 import SwiftUI
 import UIKit

@@ -98,7 +98,7 @@ enum PosesListStateCopy {
     static let retryActionTitle = "Try again"
 }
 
-/// User-visible copy for the `PoseResultsList` transient states, per owner surface:
+/// User-visible copy for the Saved and Search state panels, per owner surface:
 /// `search.html` (report §3.5) vs `saved-list.html` (report §3.8).
 /// Pure and testable: views call these instead of hardcoding strings.
 enum PoseResultsStateCopy {
@@ -282,6 +282,18 @@ private extension URLError {
             debounceNanoseconds: debounceNanoseconds
         )
     }
+
+    #if DEBUG
+    /// Test-only: puts the paging cursor in a specific state (an empty page with rows still behind
+    /// it, or a failed page) so the footer's rendered states can be driven without a network.
+    func setPagingForTesting(error: String? = nil, hasMore: Bool = false, remainingAutoFetches: Int = 0) {
+        var next = paging
+        next.error = error
+        next.hasMore = hasMore
+        next.remainingAutoFetches = remainingAutoFetches
+        paging = next
+    }
+    #endif
 
     /// Typing path: writes the field text and debounces the search (prototype SCR-003-02 350 ms).
     /// The view calls this from the field's `Binding` setter so the debounce has exactly one owner.
@@ -1312,116 +1324,16 @@ struct PoseCard: View {
 }
 
 /// Prototype `.nb-grid--masonry`: two fixed columns, 8pt column gap, `nb-space-md * 0.8` row gap.
-@MainActor
-struct PoseGrid: View {
-    let poses: [NativePose]
-    @ObservedObject var model: PosesViewModel
-    var onTryPose: (CameraPoseRequest) -> Void = { _ in }
-    /// Fired when one of the last rows is drawn, so the caller can page in the next batch.
-    var onNearEnd: (() -> Void)?
-    @ObservedObject private var aspectRatioCache: PoseAspectRatioCache
-    @State private var columnByPoseID: [String: Int]
-    @Namespace private var zoomNamespace
-
-    private struct MasonryItem: Identifiable {
-        let index: Int
-        let pose: NativePose
-        var id: String { pose.id }
-    }
-
-    init(
-        poses: [NativePose],
-        model: PosesViewModel,
-        onTryPose: @escaping (CameraPoseRequest) -> Void = { _ in },
-        onNearEnd: (() -> Void)? = nil
-    ) {
-        self.poses = poses
-        _model = ObservedObject(wrappedValue: model)
-        self.onTryPose = onTryPose
-        self.onNearEnd = onNearEnd
-        let cache = PoseAspectRatioCache.shared
-        _aspectRatioCache = ObservedObject(wrappedValue: cache)
-        _columnByPoseID = State(initialValue: Self.assignments(for: poses, using: cache))
-    }
-
-    private var itemsByColumn: [[MasonryItem]] {
-        var columns = Array(repeating: [MasonryItem](), count: 2)
-        for (index, pose) in poses.enumerated() {
-            let column = columnByPoseID[pose.id] ?? (index % 2)
-            columns[column].append(MasonryItem(index: index, pose: pose))
-        }
-        return columns
-    }
-
-    var body: some View {
-        let columns = itemsByColumn
-        return HStack(alignment: .top, spacing: PoseGridMetrics.columnSpacing) {
-            ForEach(0..<2, id: \.self) { columnIndex in
-                LazyVStack(alignment: .leading, spacing: PoseGridMetrics.rowSpacing) {
-                    ForEach(columns[columnIndex]) { item in
-                        NavigationLink(
-                            destination: PoseDetailScreen(pose: item.pose, model: model, onTryPose: onTryPose)
-                                .zoomTransition(sourceID: item.pose.id, in: zoomNamespace)
-                        ) {
-                            PoseCard(
-                                pose: item.pose,
-                                aspectRatio: aspectRatioCache.ratio(for: item.pose.id),
-                                zoomNamespace: zoomNamespace
-                            )
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityIdentifier(
-                            item.index == 0 ? "poses.first-card" : "poses.card.\(item.pose.id)"
-                        )
-                        .accessibilitySortPriority(Double(poses.count - item.index))
-                        // The last rows coming into view is the scroll trigger for the next page.
-                        .onAppear {
-                            guard item.index >= poses.count - 4 else { return }
-                            onNearEnd?()
-                        }
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .topLeading)
-            }
-        }
-        .frame(maxWidth: .infinity)
-        .onAppear(perform: rebuildAssignments)
-        .onChange(of: poses.map(\.id)) { _ in rebuildAssignments() }
-        .onReceive(
-            aspectRatioCache.$ratios
-                .debounce(for: .milliseconds(250), scheduler: RunLoop.main)
-                .removeDuplicates()
-        ) { _ in
-            rebuildAssignments()
-        }
-    }
-
-    private static func assignments(for poses: [NativePose], using cache: PoseAspectRatioCache) -> [String: Int] {
-        let columns = PoseGridMetrics.columnAssignments(
-            for: poses.map { cache.ratio(for: $0.id) },
-            columnWidth: PoseGridMetrics.columnWidth
-        )
-        return Dictionary(uniqueKeysWithValues: zip(poses.map(\.id), columns))
-    }
-
-    private func rebuildAssignments() {
-        let updated = Self.assignments(for: poses, using: aspectRatioCache)
-        guard updated != columnByPoseID else { return }
-        withAnimation(.easeInOut(duration: 0.2)) {
-            columnByPoseID = updated
-        }
-    }
-}
-
 enum PoseDetailLayoutMetrics {
     /// Footprint of the shared root NeoDockTabBar overlay (48pt bar + 8pt padding + breathing room).
     /// Retained as the dock-parity reference; the dock is hidden on this pushed route.
     static let sharedDockScrollInset: CGFloat = 48 + AIPoseSpacing.sm + AIPoseSpacing.lg
     static let heroCardAspectRatio: CGFloat = 1 / 1.1
 
+    /// The hero is full-bleed (artboard `04-pose-detail-loaded`), so its box is the screen width.
     @MainActor static var heroCardWidth: CGFloat {
         let screenWidth = UIScreen.main.bounds.width > 0 ? UIScreen.main.bounds.width : 390
-        return max(1, screenWidth - 2 * PoseSurfaceMetrics.horizontalPadding)
+        return max(1, screenWidth)
     }
 
     @MainActor static var heroCardHeight: CGFloat {
@@ -1449,46 +1361,19 @@ enum PoseDetailLayoutMetrics {
     }
 }
 
-/// Loading state for the detail hero: a soft sweep over the card, still when Reduce Motion is on.
-private struct PoseHeroShimmer: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var sweep = false
-
-    var body: some View {
-        GeometryReader { proxy in
-            ZStack {
-                AIPoseColor.primary100
-                if !reduceMotion {
-                    LinearGradient(colors: [.clear, .white.opacity(0.55), .clear],
-                                   startPoint: .leading, endPoint: .trailing)
-                        .frame(width: proxy.size.width * 0.6)
-                        .offset(x: sweep ? proxy.size.width : -proxy.size.width)
-                }
-            }
-            .frame(width: proxy.size.width, height: proxy.size.height)
-            .clipped()
-        }
-        .onAppear {
-            guard !reduceMotion else { return }
-            withAnimation(.linear(duration: 1.2).repeatForever(autoreverses: false)) { sweep = true }
-        }
-        .accessibilityLabel("Loading pose photo")
-    }
-}
-
 /// The failed-load state: the same stand-in glyph the grid uses. It is drawn as a card overlay rather
 /// than from `KFImage`'s placeholder closure, because `KFImage` keeps the placeholder it was built
 /// with — a load that fails after the first layout would otherwise leave the shimmer sweeping forever.
 private struct PoseHeroFailureFill: View {
     var body: some View {
         ZStack {
-            AIPoseColor.primary100
+            AP.Color.controlFill
             Image(systemName: "figure.stand")
                 .font(.system(size: 72))
-                .foregroundStyle(AIPoseColor.subtext)
+                .foregroundStyle(AP.Color.secondaryText)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .accessibilityLabel("Pose photo unavailable")
+        .accessibilityLabel(PoseDetailCopy.heroUnavailable)
     }
 }
 
@@ -1499,6 +1384,7 @@ struct PoseDetailScreen: View {
     var isPrivate: Bool = false
     @ObservedObject private var aspectRatioCache = PoseAspectRatioCache.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var heroDidFail = false
     @State private var pendingSignIn: SignInIntent?
     /// Report §3.6 (`pose-detail.html` unavailable state): set only by the definitive
@@ -1535,7 +1421,7 @@ struct PoseDetailScreen: View {
         // R2: `unavailableState` is a header plus one short card, so without this the whole subscreen
         // collapses to the card's height and centres, putting the back button mid-screen.
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(AIPoseColor.background)
+        .background(AP.Color.background)
         .neoHiddenNavigationBar()
         // Saving is account-scoped, so a guest is asked to sign in and the interrupted save
         // resumes once — never silently dropped, never replayed later (FEAT-013 sign-in gating).
@@ -1565,40 +1451,124 @@ struct PoseDetailScreen: View {
     }
 
     private var detailContent: some View {
-        VStack(spacing: 0) {
-            NeoSubscreenHeader(
-                title: pose.name,
-                backIdentifier: "poseDetail.back",
-                // E2E handle: the header title is on screen without scrolling, and its value is the pose
-                // id, so a flow can compare the pose it left with the pose it came back to.
-                titleIdentifier: "poseDetail.title",
-                titleValue: pose.id,
-                onBack: { dismiss() }
-            )
+        ZStack(alignment: .topLeading) {
             ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
+                VStack(alignment: .leading, spacing: 0) {
                     poseHeroCard
-                    Text(pose.name).font(.largeTitle.bold())
-                    Text(pose.category).foregroundStyle(AIPoseColor.subtext)
-                    ForEach(Array(pose.instructions.enumerated()), id: \.offset) { index, step in
-                        Label("\(index + 1). \(step)", systemImage: "sparkles")
-                    }
-                    if !isPrivate && AppConfig.shared.isAccountFeatureEnabled {
-                        Button { Task { await toggleBookmark() } } label: {
-                            Label(isSaved ? "Saved" : "Save pose", systemImage: isSaved ? "bookmark.fill" : "bookmark")
+                    VStack(alignment: .leading, spacing: AP.Space.space16) {
+                        // `poseDetail.title` keeps its label (the pose name) and value (the pose id) so
+                        // the E2E lane can prove which pose the screen came back to.
+                        Text(pose.name)
+                            .font(AP.Font.title)
+                            .foregroundStyle(AP.Color.primaryText)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityAddTraits(.isHeader)
+                            .accessibilityIdentifier("poseDetail.title")
+                            .accessibilityValue(pose.id)
+
+                        if !AppConfig.shared.isAccountFeatureEnabled {
+                            EmptyView()
+                        } else if !isPrivate {
+                            saveControl
                         }
-                        .buttonStyle(NeoButtonStyle(fill: isSaved ? AIPoseColor.accentYellow : AIPoseColor.surface))
-                        // No bookmark service: nothing could confirm the save, so the control is
-                        // inert rather than silently lying about the pose's saved state. A pose the
-                        // server answered 404 for is inert for the same reason: a retry cannot work.
-                        .disabled(isSaving || model.bookmarkService == nil || !model.canSave(pose))
-                        .accessibilityIdentifier("poseDetail.saveButton")
-                        .accessibilityHint(bookmarkUnavailableHint)
+
+                        if isSaved, AppConfig.shared.isAccountFeatureEnabled {
+                            APStatusBanner(tone: .success, title: PoseDetailCopy.savedBanner)
+                        }
+
+                        let tags = PoseDetailTags.chips(for: pose)
+                        if !tags.isEmpty {
+                            tagRow(tags)
+                        }
+
+                        if !pose.instructions.isEmpty {
+                            Text(PoseDetailCopy.howToPose)
+                                .font(AP.Font.heading)
+                                .foregroundStyle(AP.Color.primaryText)
+                                .accessibilityAddTraits(.isHeader)
+                                .padding(.top, AP.Space.space4)
+                            VStack(alignment: .leading, spacing: AP.Space.space12) {
+                                ForEach(Array(pose.instructions.enumerated()), id: \.offset) { index, step in
+                                    APNumberedStep(
+                                        number: index + 1,
+                                        text: PoseDetailTags.stepText(step)
+                                    )
+                                }
+                            }
+                        }
                     }
-                }.padding()
+                    .padding(.horizontal, AP.Space.space16)
+                    .padding(.top, AP.Space.space16)
+                    .padding(.bottom, AP.Space.space24)
+                }
             }
             // BUG-261029-06: the CTA is pinned below the content instead of living at the end of it.
             .safeAreaInset(edge: .bottom, spacing: 0) { usePoseBar }
+            backControl
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+
+    /// The floating back control over the hero (artboard `04-pose-detail-loaded`).
+    private var backControl: some View {
+        Button { dismiss() } label: {
+            Image(systemName: "chevron.left")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(AP.Color.primaryText)
+                .frame(width: AP.HitTarget.minimum, height: AP.HitTarget.minimum)
+                .background(Circle().fill(AP.Color.surface))
+                .apElevation(.e1, cornerRadius: AP.HitTarget.minimum / 2)
+        }
+        .buttonStyle(.plain)
+        .padding(.leading, AP.Space.space16)
+        .padding(.top, AP.Space.space12)
+        .accessibilityLabel(PoseDetailCopy.back)
+        .accessibilityIdentifier("poseDetail.back")
+    }
+
+    /// Tag chips wrap: one per row at the Accessibility sizes.
+    @ViewBuilder private func tagRow(_ tags: [String]) -> some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: AP.Space.space8) {
+                ForEach(tags, id: \.self) { APTagChip(title: $0) }
+            }
+        } else {
+            HStack(spacing: AP.Space.space8) {
+                ForEach(tags, id: \.self) { APTagChip(title: $0) }
+            }
+        }
+    }
+
+    /// `Save pose` / `Saved`. Saving needs an account: a pose is only shown as saved once the server
+    /// confirmed it, so this never flips local state up front and never invents a save.
+    @ViewBuilder private var saveControl: some View {
+        if isSaved {
+            APCategoryChip(title: PoseDetailCopy.saved, isSelected: true) {
+                Task { await toggleBookmark() }
+            }
+            .disabled(isSaving)
+            .accessibilityIdentifier("poseDetail.saveButton")
+            .accessibilityHint(bookmarkUnavailableHint)
+        } else {
+            Button {
+                Task { await toggleBookmark() }
+            } label: {
+                HStack(spacing: AP.Space.space8) {
+                    Image(systemName: "bookmark")
+                        .font(.system(size: 16, weight: .semibold))
+                        .accessibilityHidden(true)
+                    Text(PoseDetailCopy.save)
+                        .font(AP.Font.heading)
+                }
+                .padding(.horizontal, AP.Space.space16)
+                .frame(minHeight: AP.HitTarget.minimum)
+            }
+            .buttonStyle(APControlFillButtonStyle())
+            // No bookmark service: nothing could confirm the save, so the control is inert rather
+            // than silently lying about the pose's saved state.
+            .disabled(isSaving || model.bookmarkService == nil || !model.canSave(pose))
+            .accessibilityIdentifier("poseDetail.saveButton")
+            .accessibilityHint(bookmarkUnavailableHint)
         }
     }
 
@@ -1613,64 +1583,67 @@ struct PoseDetailScreen: View {
         Button {
             routeTryPoseToCamera(pose, isPrivate: isPrivate, onTryPose: onTryPose)
         } label: {
-            Label("Use this pose", systemImage: "camera")
-                .lineLimit(2)
-                .minimumScaleFactor(0.8)
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: AP.Space.space8) {
+                Image(systemName: "camera")
+                    .font(.system(size: 17, weight: .semibold))
+                    .accessibilityHidden(true)
+                Text(PoseDetailCopy.tryPose)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.8)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
-        .buttonStyle(NeoButtonStyle())
+        .buttonStyle(APPrimaryButtonStyle())
         // Stable E2E handle: the Maestro flows and the detail tests target this id.
         .accessibilityIdentifier("poseDetail.use")
-        .padding(.horizontal, PoseSurfaceMetrics.horizontalPadding)
-        .padding(.top, AIPoseSpacing.md)
-        .padding(.bottom, AIPoseSpacing.sm)
+        .padding(.horizontal, AP.Space.space16)
+        .padding(.top, AP.Space.space12)
+        .padding(.bottom, AP.Space.space8)
         .frame(maxWidth: .infinity)
         // Continues under the home indicator instead of leaving a strip of screen behind it.
-        .background(AIPoseColor.background.ignoresSafeArea(edges: .bottom))
-        .overlay(alignment: .top) {
-            Rectangle()
-                .fill(AIPoseColor.border)
-                .frame(height: NeoChromeTokens.borderThin)
-        }
+        .background(AP.Color.background.ignoresSafeArea(edges: .bottom))
     }
 
-    /// Report §3.6: the shared error state for a pose that is no longer confirmed as published,
-    /// with the `Return to Poses` recovery action (this screen is always pushed, so dismissal is
-    /// the honest route back). The frozen component is top-anchored with no icon slot.
+    /// `04-pose-detail-unavailable`: the shared error panel, a Retry, and the way back to the list.
     private var unavailableState: some View {
         VStack(spacing: 0) {
-            NeoSubscreenHeader(title: "Pose unavailable", onBack: { dismiss() })
-            FeatureStateView(
-                tone: .error,
-                title: "Pose unavailable",
-                message: "This pose could not be confirmed as published. Return to Poses and try again.",
-                actionTitle: "Return to Poses"
-            ) {
-                dismiss()
-            }
-            .padding(.horizontal, PoseSurfaceMetrics.horizontalPadding)
+            APErrorStateView(
+                title: PoseDetailCopy.unavailableTitle,
+                message: PoseDetailCopy.unavailableMessage,
+                retryTitle: PoseDetailCopy.retry,
+                retry: { Task { await confirmAvailability() } },
+                style: .plain
+            )
             .accessibilityIdentifier("poseDetail.returnToPoses")
+            Button(PoseDetailCopy.backToPoses) { dismiss() }
+                .buttonStyle(.plain)
+                .font(AP.Font.supporting.weight(.semibold))
+                .foregroundStyle(AP.Color.accentText)
+                .apMinimumHitTarget()
+                .padding(.bottom, AP.Space.space32)
         }
     }
 
-    /// Hero card: the photo fills the bordered card edge to edge and the card takes the photo's own
-    /// aspect ratio, so there is no letterbox inside it. The ratio comes from the grid's cache (the
-    /// card the user tapped already decoded the same photo); until it is known, the prototype's
-    /// `1 / 1.1` is used, with a shimmer placeholder at that size, and the card resizes once the
+    private func confirmAvailability() async {
+        guard !isPrivate else {
+            isUnavailable = false
+            return
+        }
+        isUnavailable = !(await model.confirmPublished(pose))
+    }
+
+    /// Hero: the photo fills the width edge to edge (artboard `04-pose-detail-loaded`), the card
+    /// taking the photo's own aspect ratio so there is no letterbox. The ratio comes from the grid's
+    /// cache (the card the user tapped already decoded the same photo); until it is known the
+    /// prototype's `1 / 1.1` is used with a flat skeleton at that size, and the card resizes once the
     /// photo loads.
-    ///
-    /// Client-only on purpose: a detail route opened without the cache (Jobs, saved list on a cold
-    /// start) settles its ratio from the decode it was going to do anyway, so the resize and the
-    /// photo's fade-in land in the same animated step — no server width/height field is worth a
-    /// contract change for that.
     ///
     /// The photo is loaded with Kingfisher through `AppImage` and downsampled to the drawn width
     /// (memory + disk cache, decode off the main thread); a full-resolution decode here would stall
     /// the pushed screen for ~20-40ms on every appearance.
     private var poseHeroCard: some View {
-        let shape = RoundedRectangle(cornerRadius: Self.heroCardCornerRadius)
-        return Color.clear
+        Color.clear
             .frame(maxWidth: .infinity)
             .aspectRatio(heroAspectRatio, contentMode: .fit)
             .overlay {
@@ -1685,23 +1658,20 @@ struct PoseDetailScreen: View {
                         )
                     }
                     .onFailure { _ in heroDidFail = true }
-                    .placeholder { PoseHeroShimmer() }
+                    .placeholder {
+                        AP.Color.controlFill
+                            .accessibilityLabel(PoseDetailCopy.heroLoading)
+                    }
                     .resizable()
                     .scaledToFill()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             // Card-level, so it is painted whenever the screen re-renders (including a failure that
-            // lands after the first layout) and covers the shimmer it replaces.
+            // lands after the first layout) and covers the placeholder it replaces.
             .overlay {
                 if heroDidFail { PoseHeroFailureFill() }
             }
-            .clipShape(shape)
-            .neoSurface(
-                shape: shape,
-                fill: AIPoseColor.surface,
-                borderWidth: NeoChromeTokens.borderThick,
-                shadowOffset: 0
-            )
+            .clipped()
             // Reduce Motion: the one resize still happens, it just snaps instead of easing.
             .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: heroAspectRatio)
     }
@@ -1934,31 +1904,7 @@ struct SearchScreen: View {
     @ViewBuilder private var resultsPanel: some View {
         let presentation = resultsPresentation
 
-        switch presentation {
-        case .loading:
-            APLoadingStateView(label: "Searching")
-                .padding(.horizontal, AP.Space.space16)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        case .failed:
-            // The footer stays mounted: a failed page keeps its retry reachable below the panel.
-            VStack(spacing: 0) {
-                APErrorStateView(
-                    title: PoseResultsStateCopy.searchErrorTitle,
-                    message: PoseResultsStateCopy.searchErrorMessage,
-                    retry: { Task { await model.load() } },
-                    style: .plain
-                )
-                .accessibilityIdentifier("search.retry")
-                searchPagingFooter
-            }
-        case .empty, .noMatch:
-            // An empty page is not the end of the list: the footer's Load more / Retry must stay
-            // reachable here, or a filtered-out page becomes a dead end.
-            VStack(spacing: 0) {
-                noMatchPanel
-                searchPagingFooter
-            }
-        case .grid:
+        if case .grid = presentation {
             VStack(alignment: .leading, spacing: 0) {
                 resultsHeader
                 ScrollView {
@@ -1972,6 +1918,28 @@ struct SearchScreen: View {
                     searchPagingFooter
                 }
             }
+        } else {
+            APSearchStatePanel(
+                model: model,
+                presentation: presentation,
+                failureTitle: PoseResultsStateCopy.searchErrorTitle,
+                failureMessage: PoseResultsStateCopy.searchErrorMessage,
+                emptyTitle: SearchResultsCopy.emptyTitle(query: model.query, filter: model.filter),
+                emptyMessage: SearchResultsCopy.emptyMessage(query: model.query, filter: model.filter),
+                emptyActionTitle: SearchResultsCopy.emptyRecoveryTitle(query: model.query, filter: model.filter)
+                    ?? "Clear search",
+                onEmptyAction: {
+                    withAnimation(SearchMotion.animation(reduceMotion: reduceMotion)) {
+                        selectedSource = .all
+                        model.filter = .all
+                    }
+                    model.cancelPendingSearch()
+                    Task { await model.startSearch(for: "") }
+                },
+                onRetry: { Task { await model.load() } },
+                emptyIdentifier: "search-empty-banner",
+                retryIdentifier: "search.retry"
+            )
         }
     }
 
@@ -2083,21 +2051,6 @@ struct SearchScreen: View {
     }
 }
 
-/// Which owner surface renders a `PoseResultsList` — Search (`search.html`) and Saved
-/// (`saved-list.html`) carry different frozen state copy.
-enum PoseResultsContext {
-    case search
-    case saved
-}
-
-/// How `PoseResultsList` renders the `.empty` state.
-enum PoseResultsEmptyPresentation {
-    /// Centered `FeatureStateView` (Saved poses).
-    case centered
-    /// Render nothing; the owner draws the prototype's inline banner instead (Search).
-    case hidden
-}
-
 // MARK: - Saved
 
 enum SavedSurfaceStage: Equatable {
@@ -2130,37 +2083,17 @@ struct SavedPosesScreen: View {
     @StateObject private var session = SessionPresenceModel()
     @State private var pendingSignIn: SignInIntent?
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         if AppConfig.shared.isAccountFeatureEnabled {
-            Group {
-                // The stage decision is pure (`SavedSurfaceStage.resolve`) so the signed-in states that
-                // `GET /api/me/saved` returns 401 for in the parity rig remain verifiable in unit tests.
-                switch SavedSurfaceStage.resolve(isSessionResolved: session.isResolved, isSignedIn: session.isSignedIn) {
-                case .resolvingSession:
-                    savedResolvingSession
-                case .signInRequired:
-                    savedSignInRequired
-                case .list:
-                    PoseResultsList(
-                        model: model,
-                        onTryPose: onTryPose,
-                        context: .saved,
-                        // `saved-list.html` `Browse Community` returns to the published Poses collection;
-                        // this screen is always pushed, so dismissal is the only honest route there.
-                        onBrowseCommunity: { dismiss() }
-                    )
-                    .onAppear {
-                        model.filter = .saved
-                        Task { await model.load() }
-                    }
-                }
+            VStack(spacing: 0) {
+                header
+                body(by: SavedSurfaceStage.resolve(isSessionResolved: session.isResolved, isSignedIn: session.isSignedIn))
             }
-            // R3: the session-resolve, sign-in-gate and non-loaded list states are single short cards;
-            // without a top-aligned expander they centre in the pushed view instead of anchoring under
-            // the navigation bar. A loaded `PoseResultsList` (ScrollView) still fills the frame.
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            .navigationTitle("Saved poses")
+            .background(AP.Color.background)
+            .neoHiddenNavigationBar()
             .task { session.start() }
             // A successful sign-in flips `SessionPresenceModel` through the boundary's `.signedIn`
             // event, which mounts the list and loads it — no explicit resume needed here.
@@ -2170,243 +2103,126 @@ struct SavedPosesScreen: View {
         }
     }
 
-    /// `saved-list.html` loading state through the shared component (report §3.8). The card is
-    /// top-anchored like every state surface; the frozen component owns the geometry.
-    private var savedResolvingSession: some View {
-        FeatureStateView(
-            tone: .loading,
-            title: PoseResultsStateCopy.savedLoadingTitle,
-            message: PoseResultsStateCopy.savedLoadingMessage
+    // MARK: header (`06-saved-populated`: back, title, count)
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: AP.Space.space8) {
+            Button { dismiss() } label: {
+                APHeaderActionGlyph(systemImage: "chevron.left")
+            }
+            .buttonStyle(APControlFillButtonStyle())
+            .accessibilityLabel("Back")
+
+            Text("Saved")
+                .font(AP.Font.display)
+                .foregroundStyle(AP.Color.primaryText)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityAddTraits(.isHeader)
+
+            if case .loaded(let poses) = model.state, !poses.isEmpty {
+                Text(SavedCountCopy.label(poses.count))
+                    .font(AP.Font.supporting)
+                    .foregroundStyle(AP.Color.secondaryText)
+                    .accessibilityIdentifier("saved.count")
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, AP.Space.space16)
+        .padding(.top, AP.Space.space8)
+        .padding(.bottom, AP.Space.space12)
+    }
+
+    @ViewBuilder private func body(by stage: SavedSurfaceStage) -> some View {
+        switch stage {
+        case .resolvingSession:
+            // `06-saved-loading`: the list's own skeleton, not a spinner.
+            VStack(spacing: 0) {
+                APSavedListSkeleton(
+                    rows: dynamicTypeSize.isAccessibilitySize ? 3 : 5
+                )
+                Spacer(minLength: 0)
+            }
+            .accessibilityIdentifier("saved.loading")
+        case .signInRequired:
+            savedSignInRequired
+        case .list:
+            listBody
+        }
+    }
+
+    /// The signed-in collection: state panels while loading/failed/empty, the row list once loaded.
+    @ViewBuilder private var listBody: some View {
+        let presentation = APCatalogPresentationRule.presentation(
+            for: model.state,
+            hasVisiblePoses: !model.state.rows.isEmpty,
+            isFilterActive: false
         )
-        .padding(.horizontal, PoseSurfaceMetrics.horizontalPadding)
+        switch presentation {
+        case .loading:
+            VStack(spacing: 0) {
+                APSavedListSkeleton(rows: dynamicTypeSize.isAccessibilitySize ? 3 : 5)
+                Spacer(minLength: 0)
+            }
+            .accessibilityIdentifier("saved.loading")
+        case .failed:
+            APErrorStateView(
+                title: PoseResultsStateCopy.savedErrorTitle,
+                message: PoseResultsStateCopy.savedErrorMessage,
+                retryTitle: PoseResultsStateCopy.retryActionTitle,
+                retry: { Task { await model.load() } },
+                style: .plain
+            )
+            .accessibilityIdentifier("saved.retry")
+        case .empty, .noMatch:
+            APEmptyStateView(
+                title: PoseResultsStateCopy.savedEmptyTitle,
+                message: PoseResultsStateCopy.savedEmptyMessage,
+                actionTitle: PoseResultsStateCopy.browseCommunityActionTitle,
+                action: { dismiss() },
+                style: .plain,
+                glyph: "bookmark"
+            )
+            .accessibilityIdentifier("saved.browseCommunity")
+        case .grid:
+            APSavedList(
+                poses: model.state.rows,
+                model: model,
+                onTryPose: onTryPose,
+                onNearEnd: { Task { await model.loadMore() } }
+            )
+            .onAppear {
+                model.filter = .saved
+            }
+        }
     }
 
     /// FEAT-013 auth gate. Copy stays native (`SignInRequiredPanel` in the KMP `SavedScreen`); the
-    /// presentation is the shared state component instead of the old one-off Image/Text stack.
+    /// presentation is the shared state panel with the account action below it. The gate keeps its
+    /// existing semantics: the tap opens the same sign-in prompt (`SignInIntent.openSaved`).
     private var savedSignInRequired: some View {
-        VStack(spacing: AIPoseSpacing.md) {
-            FeatureStateView(
-                tone: .empty,
+        VStack(spacing: AP.Space.space16) {
+            APEmptyStateView(
                 title: PoseResultsStateCopy.savedSignInTitle,
-                message: PoseResultsStateCopy.savedSignInMessage
+                message: PoseResultsStateCopy.savedSignInMessage,
+                style: .plain,
+                glyph: "bookmark"
             )
-            .padding(.horizontal, PoseSurfaceMetrics.horizontalPadding)
-            // The spinner state lives inside the presented sign-in prompt (`SignInPromptModel`),
-            // so the gate button itself never needs the in-flight flag.
-            ContinueWithGoogleButton(isAuthenticating: false) { pendingSignIn = .openSaved }
-                .padding(.horizontal, PoseSurfaceMetrics.horizontalPadding)
-                .accessibilityLabel("Continue with Google")
+            Button("Sign in") { pendingSignIn = .openSaved }
+                .buttonStyle(APPrimaryButtonStyle())
+                .fixedSize(horizontal: true, vertical: false)
+                .accessibilityLabel("Sign in")
                 .accessibilityIdentifier("saved.signIn")
+                .padding(.bottom, AP.Space.space32)
         }
-        .padding(.vertical, AIPoseSpacing.xl)
         .accessibilityElement(children: .contain)
     }
 }
 
 /// Copy for the paged-list footer. Native (no prototype surface paginates), kept in one place so
 /// the footer, its accessibility labels and its tests cannot disagree.
-enum PagingFooterCopy {
-    static let loadMore = "Load more results"
-    static let retry = "Couldn't load more. Tap to retry"
-    static let loading = "Loading more poses"
-}
-
 /// Footer of a paged list. Shows one of: the auto-fetch spinner, the failed-page retry, or the
 /// explicit "Load more results" button once the automatic fetches are spent. Renders nothing at the
 /// real end of the list, so a caller can mount it unconditionally.
-struct PagingFooter: View {
-    @ObservedObject var model: PosesViewModel
-    /// Bottom clearance (dock overlay) when this footer is the last thing inside a scroll view.
-    var bottomInset: CGFloat = PoseGridMetrics.dockClearance
-
-    var body: some View {
-        VStack(spacing: AIPoseSpacing.sm) {
-            if let error = model.paging.error {
-                footerButton(title: PagingFooterCopy.retry, identifier: "poses.loadMore.retry") {
-                    Task { await model.loadMoreResults() }
-                }
-                // The failure reason (offline, timeout, 5xx) stays available without pushing the
-                // retry copy itself off the button.
-                .accessibilityHint(error)
-            } else if model.paging.hasMore {
-                if model.paging.remainingAutoFetches > 0 {
-                    ProgressView()
-                        .padding(.vertical, AIPoseSpacing.sm)
-                        .accessibilityLabel(PagingFooterCopy.loading)
-                        // Fires once per appearance, and the model ignores it while a page is in
-                        // flight, so a re-render cannot stack requests.
-                        .onAppear { Task { await model.loadMore() } }
-                } else {
-                    footerButton(title: PagingFooterCopy.loadMore, identifier: "poses.loadMore.button") {
-                        Task { await model.loadMoreResults() }
-                    }
-                }
-            }
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.horizontal, PoseGridMetrics.horizontalPadding)
-        .padding(.top, AIPoseSpacing.sm)
-        .padding(.bottom, bottomInset)
-    }
-
-    private func footerButton(title: String, identifier: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(title)
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(AIPoseColor.foreground)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, AIPoseSpacing.md)
-                .frame(minHeight: PoseSurfaceMetrics.touchMinimum)
-                .neoSurface(
-                    shape: RoundedRectangle(cornerRadius: NeoChromeTokens.radiusMedium),
-                    fill: AIPoseColor.surface,
-                    borderWidth: NeoChromeTokens.borderThin,
-                    shadowOffset: 0
-                )
-        }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier(identifier)
-    }
-}
-
-struct PoseResultsList: View {
-    @ObservedObject var model: PosesViewModel
-    var onTryPose: (CameraPoseRequest) -> Void = { _ in }
-    /// Owner surface: Search and Saved have different frozen loading/error/empty copy.
-    var context: PoseResultsContext = .search
-    /// Bottom clearance for the dock overlay; the shared Search workspace reserves less than the tab root.
-    var bottomInset: CGFloat = PoseGridMetrics.dockClearance
-    /// The Search workspace renders its own inline banner instead (prototype `#search-state-message`).
-    var emptyPresentation: PoseResultsEmptyPresentation = .centered
-    /// Saved list only: recovery for the empty state (prototype `Browse Community` → back to Poses).
-    var onBrowseCommunity: () -> Void = {}
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    var body: some View {
-        if let tone = stateTone {
-            VStack(spacing: 0) {
-                stateCard(tone: tone)
-                // An empty page is not the end of the list: a search-filtered page can hold no match
-                // while the server still has rows behind it.
-                PagingFooter(model: model, bottomInset: 0)
-            }
-        } else if case .empty = model.state {
-            // `emptyPresentation == .hidden` (Search): the surface draws its own no-match banner, so
-            // only the pagination footer belongs here.
-            PagingFooter(model: model, bottomInset: 0)
-        } else if case .loaded(let poses) = model.state {
-            ScrollView {
-                PoseGrid(poses: poses, model: model, onTryPose: onTryPose, onNearEnd: requestNextPage)
-                    .padding(.horizontal, PoseGridMetrics.horizontalPadding)
-                    .padding(.top, 2)
-                PagingFooter(model: model, bottomInset: bottomInset)
-            }
-        }
-    }
-
-    private func requestNextPage() {
-        Task { await model.loadMore() }
-    }
-
-    /// Shared-card tone for the current result, or `nil` when this surface draws the grid — or
-    /// nothing at all, which is how Search renders its own inline `#search-state-message` banner.
-    /// Derived from the pure `Loadable.stateTone` mapper so the Saved list states the parity rig
-    /// cannot drive (`GET /api/me/saved` → 401) stay mechanically verifiable.
-    var stateTone: FeatureStateTone? {
-        switch model.state {
-        case .loaded:
-            return nil
-        case .empty:
-            return emptyPresentation == .centered ? model.state.stateTone : nil
-        case .idle, .loading, .failed:
-            return model.state.stateTone
-        }
-    }
-
-    @ViewBuilder private func stateCard(tone: FeatureStateTone) -> some View {
-        switch tone {
-        case .loading:
-            FeatureStateView(
-                tone: .loading,
-                title: stateCopy.loadingTitle,
-                message: stateCopy.loadingMessage
-            )
-            .padding(.horizontal, PoseSurfaceMetrics.horizontalPadding)
-        case .error:
-            FeatureStateView(
-                tone: .error,
-                title: stateCopy.errorTitle,
-                message: stateCopy.errorMessage,
-                actionTitle: PoseResultsStateCopy.retryActionTitle
-            ) {
-                Task { await model.load() }
-            }
-            .padding(.horizontal, PoseSurfaceMetrics.horizontalPadding)
-            .accessibilityIdentifier(context == .saved ? "saved.retry" : "search.retry")
-        case .empty:
-            emptyState
-        case .offline, .success, .warning:
-            // No `Loadable` producer maps to these tones on this surface; the camera pose picker owns
-            // `.offline` separately (see `PosePickerViewModel.stateTone`).
-            EmptyView()
-        }
-    }
-
-    /// Per-surface loading/error copy (report §3.5 vs §3.8).
-    private var stateCopy: (loadingTitle: String, loadingMessage: String, errorTitle: String, errorMessage: String) {
-        switch context {
-        case .search:
-            return (
-                PoseResultsStateCopy.searchLoadingTitle,
-                PoseResultsStateCopy.searchLoadingMessage,
-                PoseResultsStateCopy.searchErrorTitle,
-                PoseResultsStateCopy.searchErrorMessage
-            )
-        case .saved:
-            return (
-                PoseResultsStateCopy.savedLoadingTitle,
-                PoseResultsStateCopy.savedLoadingMessage,
-                PoseResultsStateCopy.savedErrorTitle,
-                PoseResultsStateCopy.savedErrorMessage
-            )
-        }
-    }
-
-    /// Context-aware empty state (SCR-003-02-ST-003). Search keeps the `SearchResultsCopy` copy;
-    /// with a query present the card has no action at all (`app.js:847`), and the only action is
-    /// `Show all poses` on the no-query, non-All branch. The Saved list owns the `saved-list.html`
-    /// "No saved poses yet" state with `Browse Community` whenever no query is in play.
-    @ViewBuilder private var emptyState: some View {
-        if context == .saved, model.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            FeatureStateView(
-                tone: .empty,
-                title: PoseResultsStateCopy.savedEmptyTitle,
-                message: PoseResultsStateCopy.savedEmptyMessage,
-                actionTitle: PoseResultsStateCopy.browseCommunityActionTitle
-            ) {
-                onBrowseCommunity()
-            }
-            .padding(.horizontal, PoseSurfaceMetrics.horizontalPadding)
-            .accessibilityIdentifier("saved.browseCommunity")
-        } else if let recoveryTitle = SearchResultsCopy.emptyRecoveryTitle(query: model.query, filter: model.filter) {
-            FeatureStateView(
-                tone: .empty,
-                title: SearchResultsCopy.emptyTitle(query: model.query, filter: model.filter),
-                message: SearchResultsCopy.emptyMessage(query: model.query, filter: model.filter),
-                actionTitle: recoveryTitle
-            ) {
-                Task { await model.startSearch(for: "") }
-            }
-        } else {
-            FeatureStateView(
-                tone: .empty,
-                title: SearchResultsCopy.emptyTitle(query: model.query, filter: model.filter),
-                message: SearchResultsCopy.emptyMessage(query: model.query, filter: model.filter)
-            )
-        }
-    }
-}
-
 private extension Loadable where Value == [NativePose] {
     /// Equatable presentation summary used only to drive the low-intensity results-panel cross-fade.
     var panelStateKey: String {

@@ -128,10 +128,13 @@ struct APEmptyStateView: View {
     var actionTitle: String?
     var action: (() -> Void)?
     var style: APStateCardStyle = .card
+    /// Panel glyph override (Saved uses the bookmark, not the empty tray).
+    var glyph: String?
 
     var body: some View {
         APStateCard(
             tone: .empty,
+            glyphOverride: glyph,
             showsWord: false,
             title: title,
             message: message,
@@ -152,12 +155,15 @@ struct APErrorStateView: View {
     var retryTitle: String = "Try again"
     var retry: (() -> Void)?
     var style: APStateCardStyle = .card
+    /// Panel glyph override.
+    var glyph: String?
 
     @State private var didAnnounce = false
 
     var body: some View {
         APStateCard(
             tone: .error,
+            glyphOverride: glyph,
             showsWord: style == .card,
             title: title,
             message: message,
@@ -184,6 +190,8 @@ struct APErrorStateView: View {
 /// glyph on a tone-coloured tile, centred copy and one action.
 private struct APStateCard: View {
     let tone: APStateTone
+    /// Optional glyph override (Saved uses the bookmark, not the tray).
+    let glyphOverride: String?
     let showsWord: Bool
     let title: String
     let message: String
@@ -224,12 +232,12 @@ private struct APStateCard: View {
     @ViewBuilder private var glyph: some View {
         switch style {
         case .card:
-            Image(systemName: tone.glyph)
+            Image(systemName: glyphOverride ?? tone.glyph)
                 .font(.system(.largeTitle, design: .default))
                 .foregroundStyle(tone.glyphColor)
                 .accessibilityHidden(true)
         case .plain:
-            Image(systemName: tone.glyph)
+            Image(systemName: glyphOverride ?? tone.glyph)
                 .font(.system(size: 30, weight: .semibold))
                 .foregroundStyle(tone.glyphColor)
                 .frame(width: 72, height: 72)

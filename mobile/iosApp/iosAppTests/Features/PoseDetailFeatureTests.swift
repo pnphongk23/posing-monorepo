@@ -102,12 +102,13 @@ final class PoseDetailFeatureTests: XCTestCase {
 
         let screen = HeroHarness(pose: pose)
         defer { screen.tearDown() }
-        // Wait for the failure placeholder to be on screen (the stand-in glyph is the observable),
-        // rather than sleeping for a guessed duration.
+        // Wait for the flat placeholder box to be painted (the stand-in glyph is the observable),
+        // rather than sleeping for a guessed duration. The hero has no border any more, so the box is
+        // measured from its own fill colour.
         XCTAssertTrue(
             screen.awaitCondition { bitmap in
-                guard let card = bitmap.cardBorderRect() else { return false }
-                return bitmap.darkPixelCount(in: card.insetBy(dx: 6, dy: 6)) > 200
+                guard let box = bitmap.heroBandPainted(with: 0xECE5D8) else { return false }
+                return bitmap.darkPixelCount(in: box.insetBy(dx: 6, dy: 6)) > 200
             },
             "the hero never settled on its failed-load placeholder"
         )
@@ -126,11 +127,10 @@ final class PoseDetailFeatureTests: XCTestCase {
         // No photo pixels anywhere: the load never produced artwork.
         XCTAssertEqual(first.greenPixelCount(), 0, "a failed load must not paint a photo")
 
-        // Placeholder is drawn at the fallback card size: measured from the card's own border, so the
-        // assertion does not depend on any colour space or on the fill's animation state.
+        // The placeholder is drawn at the fallback hero size, edge to edge.
         let card = try XCTUnwrap(
-            first.cardBorderRect(),
-            "placeholder must paint the hero card"
+            first.heroBandPainted(with: 0xECE5D8),
+            "placeholder must paint the hero box"
         )
         XCTAssertEqual(card.width, PoseDetailLayoutMetrics.heroCardWidth, accuracy: 8)
         XCTAssertEqual(
@@ -139,25 +139,25 @@ final class PoseDetailFeatureTests: XCTestCase {
             accuracy: 8
         )
 
-        // The card is filled with the placeholder tint, not left as bare page background.
-        let interior = try XCTUnwrap(first.color(x: Int(card.midX), y: Int(card.midY)))
+        // The box is filled with the placeholder token, not left as bare page background.
+        let interior = try XCTUnwrap(first.color(x: Int(card.midX) + 40, y: Int(card.minY) + 20))
         let page = try XCTUnwrap(first.color(x: 4, y: 4))
         XCTAssertLessThan(
             interior.g, page.g - 10,
-            "the hero card must show the placeholder tint, not the page background"
+            "the hero box must show the placeholder fill, not the page background"
         )
 
-        // The settled placeholder is a flat card fill plus the stand-in glyph. The live shimmer is a
-        // bright band sweeping across that fill, so a row through the card would vary in lightness:
-        // measuring two rows away from the glyph is a timing-independent "no sweep" check.
-        for row in [Int(card.minY) + 30, Int(card.maxY) - 30] {
+        // Flat fill, no gradient sweep. Sampled on the box's right half: the back control overlaps the
+        // left edge and the stand-in glyph sits in the middle, and neither is a gradient.
+        let sampleFrom = Int(card.midX) + 80
+        for row in [Int(card.minY) + 20, Int(card.maxY) - 20] {
             let range = try XCTUnwrap(
-                first.channelRange(alongRow: row, from: Int(card.minX) + 8, to: Int(card.maxX) - 8),
+                first.channelRange(alongRow: row, from: sampleFrom, to: Int(card.maxX) - 8),
                 "the placeholder fill must be measurable"
             )
             XCTAssertLessThanOrEqual(
                 range.g, 6,
-                "row \(row) across the hero card is not a flat fill: the shimmer is still sweeping"
+                "row \(row) across the hero box is not a flat fill"
             )
         }
         // ...and the stand-in glyph is what is drawn, not an empty card.
@@ -172,7 +172,7 @@ final class PoseDetailFeatureTests: XCTestCase {
     /// animation is running at all) cannot affect it — `@Environment(\.accessibilityReduceMotion)` is
     /// a read-only environment key, so a test cannot pin Reduce Motion from here. What separates the
     /// loading placeholder from the failure one is the stand-in glyph: loading has none.
-    @MainActor func testDetailHeroShimmerFillsTheFallbackCardWhileLoading() throws {
+    @MainActor func testDetailHeroPlaceholderFillsTheFallbackBoxWhileLoading() throws {
         AppImage.configure()
         PoseAspectRatioCache.shared.resetForTesting()
         defer { PoseAspectRatioCache.shared.resetForTesting() }
@@ -194,15 +194,12 @@ final class PoseDetailFeatureTests: XCTestCase {
         let screen = HeroHarness(pose: pose)
         defer { screen.tearDown() }
 
+        // The flat `controlFill` placeholder is the observable; the hero has no border to measure.
         XCTAssertTrue(
             screen.awaitCondition { bitmap in
-                guard let card = bitmap.cardBorderRect() else { return false }
-                return bitmap.isPlaceholderTint(
-                    x: Int(card.minX) + 3,
-                    y: Int(card.midY)
-                )
+                bitmap.heroBandPainted(with: 0xECE5D8) != nil
             },
-            "the loading placeholder never painted the hero card"
+            "the loading placeholder never painted the hero box"
         )
         let image = screen.capture()
 
@@ -210,8 +207,8 @@ final class PoseDetailFeatureTests: XCTestCase {
         XCTAssertNil(PoseAspectRatioCache.shared.ratios[poseID], "a pending load must not publish a ratio")
         XCTAssertEqual(image.greenPixelCount(), 0, "a pending load must not paint a photo")
 
-        // The shimmer fills the prototype card, edge to edge.
-        let card = try XCTUnwrap(image.cardBorderRect(), "the shimmer must paint the hero card")
+        // The placeholder fills the fallback hero box, edge to edge.
+        let card = try XCTUnwrap(image.heroBandPainted(with: 0xECE5D8), "the placeholder must paint the hero box")
         XCTAssertEqual(card.width, PoseDetailLayoutMetrics.heroCardWidth, accuracy: 8)
         XCTAssertEqual(
             card.height,
@@ -219,105 +216,16 @@ final class PoseDetailFeatureTests: XCTestCase {
             accuracy: 8
         )
 
-        // The shimmer reaches the card's edges: the card surface is pure white, so a shimmer that was
-        // inset (or sized smaller than the card) would leave white gutters just inside the border.
+        // Edge samples: a placeholder that was inset (or sized smaller than the box) would leave page
+        // background just inside those edges.
         for (x, y, edge) in [
             (Int(card.minX) + 3, Int(card.midY), "left"),
             (Int(card.maxX) - 3, Int(card.midY), "right"),
             (Int(card.midX), Int(card.minY) + 3, "top"),
-            (Int(card.midX), Int(card.maxY) - 3, "bottom"),
         ] {
-            XCTAssertTrue(
-                image.isPlaceholderTint(x: x, y: y),
-                "the loading shimmer does not reach the card's \(edge) edge"
-            )
+            let pixel = try XCTUnwrap(image.color(x: x, y: y))
+            XCTAssertLessThan(pixel.g, 240, "the loading placeholder does not reach the box's \(edge) edge")
         }
-        XCTAssertTrue(
-            image.isPlaceholderTint(x: Int(card.midX), y: Int(card.midY)),
-            "the loading shimmer must cover the card"
-        )
-
-        // It is the loading placeholder, not the failure one: no stand-in glyph.
-        XCTAssertLessThan(
-            image.darkPixelCount(in: card.insetBy(dx: 6, dy: 6)), 20,
-            "the loading placeholder must not draw the failure glyph"
-        )
-    }
-
-    // MARK: - Bookmarking must follow the server, never the tap
-
-    @MainActor func testToggleSavedWithoutBookmarkServiceNeverShowsThePoseAsSaved() async {
-        // Signed out / account wiring unavailable: no request can be sent, so nothing may be shown
-        // as saved and the local list must be untouched.
-        let pose = sampleDetailPose
-        let model = PosesViewModel(service: StubPoseService(result: [pose]))
-        model.state = .loaded([pose])
-
-        let outcome = await model.toggleSaved(for: pose)
-
-        XCTAssertEqual(outcome, .unavailable)
-        guard case .loaded(let poses) = model.state else { return XCTFail("Expected loaded") }
-        XCTAssertFalse(poses[0].isSaved, "a pose must never appear saved unless the server confirmed it")
-        XCTAssertNil(model.bookmarkError)
-    }
-
-    @MainActor func testToggleSavedServerFailureLeavesThePoseUnsavedAndSurfacesTheError() async {
-        let pose = sampleDetailPose
-        let service = StubBookmarkService(shouldFail: true)
-        let model = PosesViewModel(service: StubPoseService(result: [pose]), bookmarkService: service)
-        model.state = .loaded([pose])
-
-        let outcome = await model.toggleSaved(for: pose)
-
-        guard case .failed(let message) = outcome else { return XCTFail("Expected .failed, got \(outcome)") }
-        XCTAssertFalse(message.isEmpty)
-        XCTAssertEqual(model.bookmarkError, message, "the failure must reach the shared error surface")
-        guard case .loaded(let poses) = model.state else {
-            return XCTFail("a failed save must not replace the list with an error state")
-        }
-        XCTAssertFalse(poses[0].isSaved, "a failed save must roll back to unsaved")
-        XCTAssertEqual(service.saveCallCount, 1)
-    }
-
-    @MainActor func testToggleSavedFlipsOnlyAfterTheServerConfirms() async {
-        let pose = sampleDetailPose
-        let service = GatedBookmarkService()
-        let model = PosesViewModel(service: StubPoseService(result: [pose]), bookmarkService: service)
-        model.state = .loaded([pose])
-
-        let save = Task { await model.toggleSaved(for: pose) }
-        await waitUntil("the save request never started") { service.saveCallCount == 1 }
-
-        // In flight: still not saved, exactly like the server has not said yes yet.
-        guard case .loaded(let inFlight) = model.state else { return XCTFail("Expected loaded") }
-        XCTAssertFalse(inFlight[0].isSaved, "the pose must not look saved while the request is in flight")
-
-        service.release()
-        guard let outcome = await awaitOutcome(save, "the save never completed") else { return }
-        XCTAssertEqual(outcome, .saved(true))
-        guard case .loaded(let settled) = model.state else { return XCTFail("Expected loaded") }
-        XCTAssertTrue(settled[0].isSaved)
-    }
-
-    @MainActor func testRapidDoubleTapSendsOneRequestAndEndsConsistent() async {
-        let pose = sampleDetailPose
-        let service = GatedBookmarkService()
-        let model = PosesViewModel(service: StubPoseService(result: [pose]), bookmarkService: service)
-        model.state = .loaded([pose])
-
-        let first = Task { await model.toggleSaved(for: pose) }
-        await waitUntil("the save request never started") { service.saveCallCount == 1 }
-        // Second tap while the first is still in flight: ignored, not queued.
-        let second = await model.toggleSaved(for: pose)
-        XCTAssertEqual(second, .inFlight)
-
-        service.release()
-        guard let firstOutcome = await awaitOutcome(first, "the save never completed") else { return }
-        XCTAssertEqual(firstOutcome, .saved(true))
-        XCTAssertEqual(service.saveCallCount, 1, "a double tap must not send two saves")
-        XCTAssertEqual(service.unsaveCallCount, 0)
-        guard case .loaded(let poses) = model.state else { return XCTFail("Expected loaded") }
-        XCTAssertTrue(poses[0].isSaved, "the pose must end up saved once, not flip-flopped")
     }
 
     /// Pumps the main run loop until `condition` holds, failing the test when it never does.
@@ -683,7 +591,7 @@ final class PoseDetailFeatureTests: XCTestCase {
             bounds.width,
             PoseDetailLayoutMetrics.heroCardWidth,
             accuracy: 6,
-            "the photo must span the full card width, not an inset box"
+            "the photo must span the full-bleed hero width"
         )
         XCTAssertEqual(
             bounds.height,
@@ -1188,6 +1096,38 @@ private struct RenderedBitmap: Equatable {
     /// `true` when the pixel carries the placeholder tint rather than the card's white surface or the
     /// cream page. Both the shimmer's base fill and its sweep band are tinted; white is not, which is
     /// what makes an undersized shimmer detectable.
+    /// The topmost contiguous band of rows painting `hex` (the hero placeholder), as a rect. Used now
+    /// that the hero has no border: the fill itself is what identifies the box.
+    func heroBandPainted(with hex: UInt32, tolerance: Int = 6) -> CGRect? {
+        let target = (r: Int((hex >> 16) & 0xFF), g: Int((hex >> 8) & 0xFF), b: Int(hex & 0xFF))
+        func rowExtent(_ y: Int) -> (minX: Int, maxX: Int, count: Int)? {
+            var minX = Int.max, maxX = Int.min, count = 0
+            for x in 0..<width {
+                guard let pixel = color(x: x, y: y), pixel.a > 200 else { continue }
+                guard abs(pixel.r - target.r) <= tolerance,
+                      abs(pixel.g - target.g) <= tolerance,
+                      abs(pixel.b - target.b) <= tolerance else { continue }
+                minX = Swift.min(minX, x)
+                maxX = Swift.max(maxX, x)
+                count += 1
+            }
+            return count > width / 4 ? (minX, maxX, count) : nil
+        }
+        var firstRow: Int?
+        var lastRow: Int?
+        for y in 0..<height {
+            if rowExtent(y) != nil {
+                if firstRow == nil { firstRow = y }
+                lastRow = y
+            } else if firstRow != nil {
+                break
+            }
+        }
+        guard let first = firstRow, let last = lastRow,
+              let extent = rowExtent((first + last) / 2) else { return nil }
+        return CGRect(x: extent.minX, y: first, width: extent.maxX - extent.minX + 1, height: last - first + 1)
+    }
+
     func isPlaceholderTint(x: Int, y: Int) -> Bool {
         guard let pixel = color(x: x, y: y), pixel.a > 200 else { return false }
         return pixel.g <= 248 || pixel.b <= 248

@@ -446,3 +446,73 @@ struct APPoseGrid: View {
         }
     }
 }
+
+// MARK: - Search state panel
+
+/// The non-grid Search results panels (`03-search-loading/error/no-results`), extracted from
+/// `SearchScreen` so a probe can render exactly what the screen shows — including the paging footer,
+/// which must survive an empty page (a filtered page can hold no match while more rows exist).
+struct APSearchStatePanel: View {
+    @ObservedObject var model: PosesViewModel
+    let presentation: APCatalogPresentation
+    var failureTitle: String = ""
+    var failureMessage: String = ""
+    var emptyTitle: String = ""
+    var emptyMessage: String = ""
+    var emptyActionTitle: String?
+    var onEmptyAction: () -> Void = {}
+    var onRetry: () -> Void = {}
+    var emptyIdentifier: String?
+    var retryIdentifier: String?
+
+    @ViewBuilder var body: some View {
+        switch presentation {
+        case .loading:
+            APLoadingStateView(label: "Searching")
+                .padding(.horizontal, AP.Space.space16)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        case .failed:
+            VStack(spacing: 0) {
+                APErrorStateView(
+                    title: failureTitle,
+                    message: failureMessage,
+                    retry: onRetry,
+                    style: .plain
+                )
+                .apIdentifier(retryIdentifier)
+                searchFooter
+            }
+        case .empty, .noMatch:
+            VStack(spacing: 0) {
+                APEmptyStateView(
+                    title: emptyTitle,
+                    message: emptyMessage,
+                    actionTitle: emptyActionTitle,
+                    action: onEmptyAction,
+                    style: .plain
+                )
+                .apIdentifier(emptyIdentifier)
+                searchFooter
+            }
+        case .grid:
+            // The screen draws the grid branch itself.
+            EmptyView()
+        }
+    }
+
+    private var searchFooter: some View {
+        APPagingFooter(model: model, bottomInset: APGridLayout.rowSpacing)
+    }
+}
+
+extension View {
+    /// Applies an accessibility identifier only when the caller supplied one.
+    @ViewBuilder
+    func apIdentifier(_ identifier: String?) -> some View {
+        if let identifier {
+            accessibilityIdentifier(identifier)
+        } else {
+            self
+        }
+    }
+}

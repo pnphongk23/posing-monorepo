@@ -103,10 +103,11 @@ final class FeatureStateTests: XCTestCase {
         )
     }
 
-    @MainActor func testPoseHeroCardMetricsUseFullContentWidthAndFillArtwork() {
+    @MainActor func testPoseHeroCardMetricsUseFullBleedWidthAndFillArtwork() {
+        // S2: the detail hero is full-bleed (artboard 04-pose-detail-loaded), not an inset card.
         XCTAssertEqual(
             PoseDetailLayoutMetrics.heroCardWidth,
-            UIScreen.main.bounds.width - 2 * PoseSurfaceMetrics.horizontalPadding,
+            UIScreen.main.bounds.width,
             accuracy: 0.5
         )
         XCTAssertEqual(
@@ -535,24 +536,30 @@ final class FeatureStateToneMappingTests: XCTestCase {
     // MARK: Search + Saved list (Saved signed-in states are undrivable in the parity rig)
 
     @MainActor func testSearchAndSavedResultsListTonePerCondition() async {
+        // S2 replaced `PoseResultsList` with the AP presentation rule; the mapping it verifies is the
+        // same one: idle/loading render the loading panel, empty/failed their panels, loaded the list.
         let loadingModel = PosesViewModel(service: StubPoseService(result: []))
-        XCTAssertEqual(PoseResultsList(model: loadingModel, context: .saved).stateTone, .loading)
+        XCTAssertEqual(presentation(for: loadingModel), .loading)
 
         let emptyModel = PosesViewModel(service: StubPoseService(result: []))
         await emptyModel.load()
-        XCTAssertEqual(PoseResultsList(model: emptyModel, context: .saved).stateTone, .empty)
-        XCTAssertEqual(PoseResultsList(model: emptyModel, context: .search).stateTone, .empty)
-        // Search draws its own inline `#search-state-message` banner instead of the card.
-        XCTAssertNil(PoseResultsList(model: emptyModel, context: .search, emptyPresentation: .hidden).stateTone)
+        XCTAssertEqual(presentation(for: emptyModel), .empty)
 
         let failedModel = PosesViewModel(service: FailingPoseService())
         await failedModel.load()
-        XCTAssertEqual(PoseResultsList(model: failedModel, context: .saved).stateTone, .error)
-        XCTAssertEqual(PoseResultsList(model: failedModel, context: .search).stateTone, .error)
+        XCTAssertEqual(presentation(for: failedModel), .failed)
 
         let loadedModel = PosesViewModel(service: StubPoseService(result: [samplePose]))
         await loadedModel.load()
-        XCTAssertNil(PoseResultsList(model: loadedModel, context: .saved).stateTone)
+        XCTAssertEqual(presentation(for: loadedModel), .grid)
+    }
+
+    @MainActor private func presentation(for model: PosesViewModel) -> APCatalogPresentation {
+        APCatalogPresentationRule.presentation(
+            for: model.state,
+            hasVisiblePoses: !model.state.rows.isEmpty,
+            isFilterActive: false
+        )
     }
 
     // MARK: Saved surface stage (session gate + signed-in list)
