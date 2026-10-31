@@ -26,8 +26,8 @@ per-field errors and no offline state.
 | TC-ACC-013 | P0 | Signed in, device offline | Open Account | The offline state exists at all (it is missing today): a banner says cached details are being shown, the cached email and sign-in method still render, **Delete account is disabled with "Connect to the internet to delete"**, and Sign out stays available. An offline user is never led to believe a delete was attempted | pending (ids: `account.offline.banner`, `account.delete`, `account.delete.reason`, `account.signout`) |
 | TC-ACC-014 | P1 | Signed in with a live entitlement | Read Account | Initials avatar, display name, email; **PROFILE** lists Email and Sign-in method; **PREMIUM** shows the plan with its renewal date and a **Manage subscription** row; the footnote states that deleting the account does not cancel the Apple subscription; the pre-redesign "Saved poses" row is gone (Saved lives on the hub) | pending (ids: `account.avatar`, `account.profile.email`, `account.profile.method`, `account.plan`, `account.manageSubscription`) |
 | TC-ACC-015 | P1 | Signed in | Tap Sign out | Sign out is an in-list destructive row (not a header icon, not the primary pink action); afterwards the hub shows the signed-out card (TC-SET-006) and Saved asks to sign in; no account data remains on the device | pending (ids: `account.signout`, plus TC-SET-006 ids for the resulting hub) |
-| TC-ACC-016 | P1 | Signed in | Delete account → in-app confirm dialog | — | **out of scope 1.2** (idea kept for later): the boards draw a confirm dialog + delete-error banner, but the product fact is that Delete account opens the web request form with no in-app confirmation — see TC-ACC-005. Not built, no flow |
-| TC-ACC-017 | P1 | Signed in | Delete fails → inline delete error | — | **out of scope 1.2** (idea kept): same override as TC-ACC-016 |
+| TC-ACC-016 | P1 | Signed in | Delete account → in-app confirm dialog | — | **out of scope 1.1 (17)** (idea kept for later): the boards draw a confirm dialog + delete-error banner, but the product fact is that Delete account opens the web request form with no in-app confirmation — see TC-ACC-005. Not built, no flow |
+| TC-ACC-017 | P1 | Signed in | Delete fails → inline delete error | — | **out of scope 1.1 (17)** (idea kept): same override as TC-ACC-016 |
 | TC-ACC-018 | P1 | Signed in with a long display name and email | Read Account at large and AX3 text sizes | The email wraps inside its row instead of truncating or escaping the card; avatar initials stay aligned; no row overlaps its neighbour | pending (ids: `account.email`, `account.avatar`) — visual wrap check, real risk is truncation |
 | TC-ACC-019 | P1 | Signed in, on Account | Press Back | Back returns to the hub with the profile card still showing the same identity (no flash to signed-out) and no dock of its own | pending (ids: `account.back`, `settings.accountCard`) |
 | TC-ACC-020 | P1 | accounts flag off (launch arg) | Launch with accounts off, open Settings | No profile card, no sign-in card and no Account entry exist anywhere in the hub | pending (ids: `settings.accountCard`, `settings.signIn.card`; TC-ACC-008 covers today's `settings.account.row`) |
@@ -39,7 +39,7 @@ per-field errors and no offline state.
 | TC-ACC-026 | P1 | Email sign-in sheet open, device offline | Submit | An offline banner/notice explains the app cannot reach the service and the sheet stays usable with the typed values intact (no silent failure) — the offline state does not exist today | pending (`signin.offline`, `signin.error`) |
 | TC-ACC-027 | P1 | Email sign-in sheet open | Toggle the password reveal control | The password is masked by default; the reveal control shows it and hides it again, and the field keeps its value | pending (`signin.password`, `signin.showPassword` — the toggle exists) |
 | TC-ACC-028 | P1 | Signed in with a live subscription | Account → tap Manage subscription | The App Store subscription-management page opens (`https://apps.apple.com/account/subscriptions`) and the app leaves the foreground; returning shows Account unchanged. The URL itself must be pinned by a unit test, not by the flow | pending (id: `account.manageSubscription`; flow can only assert the app lost the foreground; request: `SupportDestinations` constant + `SupportDestinationsTests` case for the exact URL) |
-| TC-ACC-029 | P2 | Email sign-in sheet open | Read the sheet for a password-reset path | — | **out of scope 1.2** (idea kept): the app has no password-reset path, so the board's "Forgot password?" link is not built; recording it here stops it being reported as a regression |
+| TC-ACC-029 | P2 | Email sign-in sheet open | Read the sheet for a password-reset path | — | **out of scope 1.1 (17)** (idea kept): the app has no password-reset path, so the board's "Forgot password?" link is not built; recording it here stops it being reported as a regression |
 
 ## Re-baseline when build 17 lands (existing green flows)
 
@@ -57,7 +57,7 @@ per-field errors and no offline state.
 
 ## Assumptions
 
-- **A1 — Profile card is the Account entry**; the 1.2 `settings.account.row` may or may not survive.
+- **A1 — Profile card is the Account entry**; the pre-redesign `settings.account.row` may or may not survive.
 - **A2 — Delete account** is the web form only (product fact); boards 10-10/10-11 are not built.
 - **A3 — Offline** keeps the cached identity readable: a cached read is not a failure and must not look
   like one, hence a separate case from TC-ACC-012.
@@ -78,4 +78,4 @@ Email sign-in: `signin.error.email`, `signin.error.password`, `signin.submitting
 Hub side used by these cases: `settings.accountCard`, `settings.signIn.card` (see `settings.md`).
 Test-side: a `SupportDestinations` constant for the App Store subscriptions URL plus a
 `SupportDestinationsTests` assertion on the exact string (TC-ACC-028 cannot be automated without it).
-Not needed any more: `account.delete.confirm*` and `account.deleteError*` (out of scope 1.2).
+Not needed any more: `account.delete.confirm*` and `account.deleteError*` (out of scope 1.1 (17)).

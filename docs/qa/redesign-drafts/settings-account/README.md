@@ -11,6 +11,6 @@ ignores them, and nothing here has been run on a simulator.
 - Three drafts need harness pieces that do not exist yet and are called out in their headers: a
   signed-in launch subflow (credentials), a way to force the offline state, and the App Store URL
   constant behind Manage subscription.
-- Not drafted on purpose (out of scope 1.2, ideas kept in the docs): in-app delete confirmation and
+- Not drafted on purpose (out of scope 1.1 (17), ideas kept in the docs): in-app delete confirmation and
   delete error (TC-ACC-016/017), the Settings Camera section (TC-SET-009/010/011), Forgot password
   (TC-ACC-029).
