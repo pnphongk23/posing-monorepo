@@ -20,8 +20,17 @@ tags: [TC-JOB-001, p0]
     visible:
       id: "addPose.viewPoseButton"
     timeout: 240000
+# The acceptance is the Jobs row action, not the processing shortcut: Jobs opens on Finish.
 - tapOn:
-    id: "addPose.viewPoseButton"
+    id: "addPose.viewJobsButton"
+- extendedWaitUntil:
+    visible:
+      id: "jobs.tab.finish"
+    timeout: 20000
+- assertVisible: "QA finished pose, Ready, View pose"
+# The per-job id carries the jobId suffix, so the id is matched by regex.
+- tapOn:
+    id: "jobRow.viewPose..*"
 # Private pose detail: Try this pose works, Save does not exist for a private pose.
 - extendedWaitUntil:
     visible:
@@ -31,8 +40,11 @@ tags: [TC-JOB-001, p0]
     id: "poseDetail.saveButton"
 - tapOn:
     id: "poseDetail.back"
-- tapOn:
-    id: "addPose.doneButton"
+- extendedWaitUntil:
+    visible:
+      id: "jobs.tab.finish"
+    timeout: 20000
+- tapOn: "Back"
 # The private pose is not in Saved.
 - tapOn:
     id: "poses.more"
