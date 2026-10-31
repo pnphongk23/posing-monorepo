@@ -97,9 +97,10 @@ The whole top chrome is one row. The eye only exists once a pose is chosen.
 
 ## 5. Shutter and the capture snackbar
 - [ ] Point at something with people in it and tap the shutter once.
-- [ ] **Expected:** the shutter shows a spinner while the photo is being written, the preview comes back by itself, and a
-  snackbar appears at the **bottom, directly above the control bar** — it never covers the shutter bar and never sits
-  mid-screen.
+- [ ] **Expected:** the shutter shows a spinner while the photo is being written and the strip / flip / tools are visibly
+  unavailable; the preview comes back by itself, and a snackbar appears at the **bottom, directly above the control
+  bar** — it never covers the shutter bar and never sits mid-screen. A status such as "Saving photo…" while the write is
+  in flight is the board's behaviour (TC-CAM-026) — if the build shows nothing at all during the write, report it.
 - [ ] **Expected:** the snackbar pairs a tone glyph with the words — a **check** for a save — and if Photos access was
   granted the text reads "Saved"; if it was not granted it reads "Saved to gallery. Allow Photos access to also save to
   your library."
@@ -209,6 +210,11 @@ Gallery ids (committed): `gallery.title`, `gallery.add-pose`, `gallery.filter.al
 `gallery.empty.openCamera` + `.openCameraButton`, `gallery.empty.filter`, `gallery.error` + `.retry`,
 `gallery.detail.back|title|options|share|save|delete`, `gallery.detail.deleteConfirm` (+ `.delete` / `.cancel`),
 `gallery.detail.failed` + `.failedRetry`.
+Not yet in the build (do not report as failures until Feature lands them; the cases exist and are named here so the two
+artifacts stay in step): the pose sheet's **All / Saved** scope chips + "No saved poses yet" (TC-CAM-022/023), the picker's
+**offline** banner and marked not-downloaded poses (TC-CAM-025), the Gallery **offline** banner + offline cells
+(TC-GAL-018) and the photo-detail **caption block** name / date · time · size (TC-GAL-019). Held by the owner for 1.2:
+Scale, mirror-guide, Timer, Ratio (TC-CAM-027) and the Gallery Star action + Starred filter (TC-GAL-020).
 Section numbers shifted with the redesign (twice): the top bar is section 3, the zoom pills section 6, the Gallery is
 section 9, photo detail is the new section 10 and Close moved 8 → 11. Map any older device note to the new number
 before filing it.

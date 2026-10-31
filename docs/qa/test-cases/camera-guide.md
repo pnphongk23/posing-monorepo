@@ -27,10 +27,45 @@ owner feedback of 2026-10-31. The camera chrome (top bar, strip, zoom pills, sna
 | TC-CAM-019 | P1 | Camera, strip expanded | Collapse the strip, relaunch the app keeping its data, reopen the camera | The camera opens collapsed (no strip, "Poses" control still there) — the collapsed state is persisted like the other camera settings; a fresh install opens expanded | pending — draft: docs/qa/redesign-drafts/gallery-camera/TC-CAM-019-collapse-survives-relaunch.yaml |
 | TC-CAM-020 | P1 | Camera, pose catalogue unreachable / empty | Open the camera expanded with no network, then with a catalogue that has no poses | The strip is never a blank row: placeholder cards while loading, "Couldn't load poses" + Try again on failure, "No poses yet" for an empty catalogue | unit: CameraFeatureTests.CameraChromeTests (`testStripContentFollowsEveryPickerState`); device visual: checklist §2 step 6 |
 | TC-CAM-021 | P1 | Camera, catalogue loaded | 1. Open the pose title sheet. 2. Type a term no pose name contains. 3. Tap the search field's clear control | The sheet's search filters the grid by pose name; a query that matches nothing replaces the grid with the shared state panel ("No poses match “<term>”") and clearing restores the full grid without a refetch | pending — draft: docs/qa/redesign-drafts/gallery-camera/TC-CAM-021-picker-search-no-match.yaml (ids `posePicker.search`, `posePicker.searchClear`, `posePicker.state`, `posePicker.grid` committed at `b8878da`) |
+| TC-CAM-022 | P0 | Camera, catalogue loaded, signed in / signed out | 1. Open the pose title sheet. 2. Switch the scope chips All → Saved → All | The sheet offers a two-chip scope: **All** (the whole catalogue) and **Saved** (the user's saved poses only); the active scope is visibly selected and switching re-filters the grid without closing the sheet; signed out, Saved explains that saving needs an account instead of listing anything | pending — ids: `posePicker.scope.all`, `posePicker.scope.saved` (slice 2, in progress; no scope exists in code yet) |
+| TC-CAM-023 | P1 | Camera, signed in, no saved poses | Open the sheet, switch to Saved | The Saved scope with nothing in it shows the shared state panel "No saved poses yet" and a way back to browsing (the All scope / a Browse action) — never an empty grid, and never the whole catalogue mislabelled as saved | pending — ids: `posePicker.state` (exists) + the scope chips; needs a signed-in account with zero saved poses |
+| TC-CAM-024 | P1 | Camera permission refused | Read the permission panel | The panel offers the primary recovery ("Open Settings" / "Allow Camera") and, per board 05-13/14, a secondary **"Not now"** that leaves the camera screen without opening Settings; the camera stays usable afterwards | pending — open question: the shared panel takes exactly one action today, and the camera *is* the screen, so "Not now" needs a product decision before it can be a case (see Requests) |
+| TC-CAM-025 | P1 | Camera, device offline, some poses already downloaded | Open the sheet offline | An offline banner sits above the still-populated grid (board copy: "You're offline. Showing downloaded poses."), poses that are not available offline are marked/dimmed rather than opening a broken reference, and the state clears when the network returns | pending — ids: `posePicker.offline.banner`, per-tile offline marker; today's banner copy is "Showing your last available poses." and tiles are not marked (gap 05-11/12) |
+| TC-CAM-026 | P1 | Device camera, capture in flight | Tap the shutter and read the screen while the photo is written | The shutter shows its spinner and the strip / flip / tools are visibly unavailable; the status reads "Saving photo…" while the write is in flight, then the success snackbar arrives (F5) — no long dead screen with no feedback | manual (device: checklist §5; no capture on the Simulator, and no in-flight status text exists yet — gap 05-16) |
+| TC-CAM-027 | P2 | Camera, pose chosen | Open the tools panel and look for Scale / mirror / Timer / Ratio | **Out of scope for 1.2.** The boards' Adjust-guide sheet (opacity, **scale**, **mirror**) and the tools rows **Timer** (Off/3s/10s) and **Ratio** (3:4/9:16/1:1) are held by the owner; only opacity and line colour ship. Kept as the acceptance target for when they are un-held | out of scope 1.2 (no flow; `guideFlipped` has no UI and the model has no timer/ratio) |
 
 Note: since `camera.poseGuide` exists (absent when no guide is drawn), CAM-007/011 and DET-007 prove *which* pose is
 drawn, and CAM-001/CAM-013 prove that a guide is drawn at all. `camera.pickerStripToggle` pairs a glyph with a label
 ("Hide pose picker" / "Show pose picker") and a value ("Expanded" / "Collapsed") for VoiceOver.
+
+## F4 state coverage for the camera (loading / empty / error / offline)
+| State | Where it is proven |
+|---|---|
+| permission (never asked / refused) | TC-CAM-006 (draft flow, refused branch) + TC-CAM-018 (draft flow) + device checklist §8 for the first-run prompt |
+| picker loading | unit: `CameraPickerStatePanel` selection per picker state (`testStatePanelSelectionPerPickerState`) |
+| picker empty catalogue | unit: same mapping + TC-CAM-021's no-match half (flow) |
+| picker no match (search) | TC-CAM-021 (draft flow) |
+| picker error | unit: `CameraStatePanel.picker` → `.pickerFailed` (shared panel + Retry); no flow — the catalogue failure cannot be forced from Maestro (see Requests) |
+| picker offline | TC-CAM-025 (new) |
+| strip loading / failed / empty | TC-CAM-020 (unit mapping) + device checklist §2 step 6 |
+| capture in flight (busy) | TC-CAM-026 (device) |
+
+## Re-baseline when the build lands (existing cases whose expected outcome may change)
+- **TC-CAM-017** — the shipped success copy is **"Saved"**; the board says **"Photo saved"**. The camera copy slice is in
+  progress, so this case (and checklist §5) must be re-recorded against whatever ships, and the "View" shortcut re-checked
+  with it.
+- **TC-CAM-021** — if the All/Saved scope chips land in the same sheet, the search case grows a scope dimension: the
+  no-match copy may become scope-specific ("No saved poses match …"), so the expected text needs re-recording.
+- **TC-CAM-005** — the sheet gains scope chips; "search for a pose and pick it" then has two entry paths, and the case
+  must say which scope it runs in.
+- **TC-CAM-020** — strip copy/state mapping is stable, but the strip's empty wording ("No poses yet") is shared with the
+  picker's saved-empty copy ("No saved poses yet"); if those are unified, the row changes.
+- **TC-CAM-016** — unchanged unless the held Timer/Ratio/mirror rows change the zoom row's geometry; re-check only.
+
+## Out of scope for 1.2 (no flows; kept as acceptance targets)
+- TC-CAM-027 Adjust-guide **Scale** slider, **mirror-guide** control, **Timer** and **Ratio** rows (held by the owner).
+- The paywall press opening an inline "Capture needs Premium / See plans / Not now" card — the paywall worker's area; the
+  camera keeps opening the full paywall.
 
 ## Requests to Feature (via the QA lead)
 Confirmed and landed at `b8878da`: `camera.close`, `camera.choosePose` (title pill → sheet), `camera.guideToggle`,
@@ -53,3 +88,12 @@ picker"), `camera.poseStrip`, `camera.poseStrip.card.<poseId>`, `camera.poseStri
    screen.
 5. Optional: a tone word on `camera.status` (`accessibilityValue` = "Success"/"Error") so the F5 "glyph **and** word"
    pair is assertable without pixels.
+6. Picker scope chips need ids: `posePicker.scope.all` / `posePicker.scope.saved` (+ a value or `.isSelected` that a flow
+   can read, same problem as request 1). TC-CAM-022/023 cannot be drafted without them.
+7. Picker offline needs `posePicker.offline.banner` and a per-tile marker (`posePicker.card.<poseId>.offline`), and the
+   banner copy has to settle (board: "You're offline. Showing downloaded poses." vs today's "Showing your last available
+   poses.") — TC-CAM-025.
+8. A way to force the picker's failure state from Maestro (a Debug launch arg for a dead catalogue endpoint, or a
+   `-AIPosePickerFixture failed` switch) — otherwise the picker-error panel stays unit-only.
+9. Product answer needed for the permission panel's secondary **"Not now"** (TC-CAM-024): `APEmptyStateView` takes one
+   action, and dismissing the panel leaves the user on a camera that cannot show a viewfinder.
