@@ -18,9 +18,14 @@ appId: ${APP_ID}
 - inputText: ${E2E_PASSWORD}
 - tapOn:
     id: "signin.submit"
+# Signed-in proof: the sign-in card (email entry) is replaced by the profile + Delete account row.
 - extendedWaitUntil:
-    visible: "Signed in"
+    notVisible:
+      id: "signin.emailEntry"
     timeout: 30000
+- extendedWaitUntil:
+    visible: "Delete account"
+    timeout: 15000
 # Account -> Settings -> Poses home.
 - tapOn: "Back"
 - tapOn: "Back"
