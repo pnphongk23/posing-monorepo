@@ -64,9 +64,9 @@ final class AddPoseConsentStore: AddPoseConsentStoring, @unchecked Sendable {
     }
 
     /// The backend identifies an account by the Supabase `sub` claim — `accountAuth` verifies the
-    /// token and looks the account up by it, so `sub` is exactly `AccountSummary.id`. The claim is read
-    /// as a local cache key only: it is never trusted for authorization, and nothing is decoded from
-    /// the signature segment.
+    /// token and looks the account up by it, so `sub` is exactly the account id the account payload
+    /// reports. The claim is read as a local cache key only: it is never trusted for authorization,
+    /// and nothing is decoded from the signature segment.
     static func accountID(fromAccessToken token: String?) -> String? {
         guard let token else { return nil }
         let parts = token.split(separator: ".", omittingEmptySubsequences: false)
