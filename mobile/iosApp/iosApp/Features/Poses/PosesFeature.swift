@@ -266,11 +266,17 @@ private extension URLError {
     #if DEBUG
     /// Test-only: puts the paging cursor in a specific state (an empty page with rows still behind
     /// it, or a failed page) so the footer's rendered states can be driven without a network.
-    func setPagingForTesting(error: String? = nil, hasMore: Bool = false, remainingAutoFetches: Int = 0) {
+    func setPagingForTesting(
+        error: String? = nil,
+        hasMore: Bool = false,
+        remainingAutoFetches: Int = 0,
+        isLoading: Bool = false
+    ) {
         var next = paging
         next.error = error
         next.hasMore = hasMore
         next.remainingAutoFetches = remainingAutoFetches
+        next.isLoading = isLoading
         paging = next
     }
     #endif
@@ -823,6 +829,8 @@ struct PosesScreen: View {
     /// Fired when the handed-back detail was taken. One-shot: a later visit to this tab must not
     /// silently re-open the pose.
     var onResumeHandled: () -> Void = {}
+    /// Worker C's Gallery `+` asks the Poses tab to open Add pose; a counter so repeats are new values.
+    var addPoseRequest: Int = 0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -878,6 +886,9 @@ struct PosesScreen: View {
             session.start()
             if case .idle = model.state { await model.load() }
             await jobsService.refresh()
+            #if DEBUG
+            applyPagingFixtureIfRequested()
+            #endif
         }
         // Seed the restore target once this rebuilt root is on screen: the push itself is the hidden
         // `NavigationLink` below, the same mechanism the Add pose / Jobs routes already use here.
@@ -887,6 +898,14 @@ struct PosesScreen: View {
             onResumeHandled()
         }
         .onChange(of: model.filter) { _ in Task { await model.load() } }
+        .onChange(of: addPoseRequest) { _ in
+            guard APAddPoseSignal.shouldOpen(
+                canExtract: AppConfig.canExtractPose(isEnabled: AppConfig.shared.isExtractPoseEnabled),
+                isRouteOpen: route != nil,
+                isSearchOpen: showsSearch
+            ) else { return }
+            openAddPose()
+        }
         .onChange(of: scenePhase) { newPhase in
             if newPhase == .active {
                 Task { await jobsService.refresh() }
@@ -1214,6 +1233,25 @@ struct PosesScreen: View {
     private func requestNextPage() {
         Task { await model.loadMore() }
     }
+
+    #if DEBUG
+    /// Evidence runs (`-AIPosePagingFixture …`) park the catalogue's footer in one state so the
+    /// spinner, the retry row and the end line can be captured. Compiled out of Release.
+    private func applyPagingFixtureIfRequested() {
+        guard let fixture = AppConfig.debugPagingFixtureOverride?.lowercased(),
+              !model.state.rows.isEmpty else { return }
+        switch fixture {
+        case "loading":
+            model.setPagingForTesting(hasMore: true, remainingAutoFetches: 0, isLoading: true)
+        case "failed":
+            model.setPagingForTesting(error: "You're offline. Try again.", hasMore: true, remainingAutoFetches: 0)
+        case "end":
+            model.setPagingForTesting(hasMore: false)
+        default:
+            break
+        }
+    }
+    #endif
 }
 
 // MARK: - Pose card
@@ -1421,14 +1459,6 @@ struct PoseDetailScreen: View {
             guard intent == .savePose else { return }
             Task { await toggleBookmark() }
         }
-        // F5: a save/unsave failure is a bottom snackbar above the pinned bar, never mid-screen.
-        .apSnackbar(
-            model.bookmarkError,
-            tone: .error,
-            actionTitle: "Dismiss",
-            action: { model.bookmarkError = nil },
-            onDismiss: { model.bookmarkError = nil }
-        )
         .task {
             // §3.6: a detail route is only valid while the pose is still confirmed as published.
             // Private poses skip confirmPublished (D13)
@@ -1482,6 +1512,15 @@ struct PoseDetailScreen: View {
                     .padding(.bottom, PoseDetailLayoutMetrics.ctaClearance)
                 }
             }
+            // F5 + F9: the snackbar rides ABOVE the pinned bar (it is an inset of the scroll content,
+            // so the bar's own inset stays below it).
+            .apSnackbar(
+                model.bookmarkError,
+                tone: .error,
+                actionTitle: "Dismiss",
+                action: { model.bookmarkError = nil },
+                onDismiss: { model.bookmarkError = nil }
+            )
             // BUG-261029-06: the CTA is pinned below the content instead of living at the end of it.
             .safeAreaInset(edge: .bottom, spacing: 0) { usePoseBar }
             // The hero reaches y = 0 (artboard `04-pose-detail-loaded`): the *scroll view* ignores the
@@ -1558,7 +1597,7 @@ struct PoseDetailScreen: View {
     /// end up hidden behind it. The label wraps and the bar grows with Dynamic Type, and the content
     /// inset follows it automatically — so the CTA stays on screen at accessibility sizes too.
     private var usePoseBar: some View {
-        HStack(spacing: AP.Space.space8) {
+        HStack(alignment: .center, spacing: AP.Space.space8) {
             if showsSaveControl {
                 saveBarButton
             }
@@ -1570,13 +1609,18 @@ struct PoseDetailScreen: View {
                         .font(.system(size: 17, weight: .semibold))
                         .accessibilityHidden(true)
                     Text(PoseDetailCopy.tryPose)
-                        .lineLimit(2)
-                        .minimumScaleFactor(0.8)
+                        // One line that shrinks instead of wrapping, so the bar keeps a single height at
+                        // every Dynamic Type size and the square Save matches it exactly.
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.6)
                         .multilineTextAlignment(.center)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
             .buttonStyle(APPrimaryButtonStyle())
+            // One height for both controls, so the square Save is never a different size than the
+            // primary action — at any Dynamic Type size.
+            .frame(minHeight: barControlHeight)
             // Stable E2E handle: the Maestro flows and the detail tests target this id.
             .accessibilityIdentifier("poseDetail.use")
         }
@@ -1586,6 +1630,12 @@ struct PoseDetailScreen: View {
         .frame(maxWidth: .infinity)
         // Continues under the home indicator instead of leaving a strip of screen behind it.
         .background(AP.Color.background.ignoresSafeArea(edges: .bottom))
+    }
+
+    /// Height shared by the two pinned controls (F9): the primary action's minimum and the square
+    /// Save's side come from the same number.
+    private var barControlHeight: CGFloat {
+        APBarMetrics.controlHeight(for: dynamicTypeSize)
     }
 
     private var showsSaveControl: Bool {
@@ -1601,7 +1651,7 @@ struct PoseDetailScreen: View {
             Image(systemName: isSaved ? "bookmark.fill" : "bookmark")
                 .font(.system(size: 18, weight: .semibold))
                 .foregroundStyle(isSaved ? AP.Color.selectedForeground : AP.Color.primaryText)
-                .frame(width: 52, height: 52)
+                .frame(width: barControlHeight, height: barControlHeight)
                 .background(
                     RoundedRectangle(cornerRadius: AP.Radius.radius16, style: .continuous)
                         .fill(isSaved ? AP.Color.selectedBackground : AP.Color.controlFill)

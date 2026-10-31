@@ -133,6 +133,9 @@ struct APEmptyStateView: View {
     /// `false` lets a caller stack extra chrome directly under the copy instead of the panel taking
     /// the whole height (the Saved sign-in gate puts its button right below the message).
     var expandsVertically: Bool = true
+    /// Identifier for the action control, so a screen's E2E flow can tap it
+    /// (`gallery.empty.openCameraButton`).
+    var actionIdentifier: String?
 
     var body: some View {
         APStateCard(
@@ -145,7 +148,8 @@ struct APEmptyStateView: View {
             actionKind: .secondary,
             action: action,
             style: style,
-            expandsVertically: expandsVertically
+            expandsVertically: expandsVertically,
+            actionIdentifier: actionIdentifier
         )
     }
 }
@@ -162,6 +166,8 @@ struct APErrorStateView: View {
     /// Panel glyph override.
     var glyph: String?
     var expandsVertically: Bool = true
+    /// Identifier for the retry control.
+    var actionIdentifier: String?
 
     @State private var didAnnounce = false
 
@@ -176,7 +182,8 @@ struct APErrorStateView: View {
             actionKind: .primary,
             action: retry,
             style: style,
-            expandsVertically: expandsVertically
+            expandsVertically: expandsVertically,
+            actionIdentifier: actionIdentifier
         )
         .onAppear(perform: announceIfNeeded)
     }
@@ -209,6 +216,7 @@ private struct APStateCard: View {
     let action: (() -> Void)?
     let style: APStateCardStyle
     var expandsVertically: Bool = true
+    let actionIdentifier: String?
 
     var body: some View {
         VStack(spacing: style == .card ? AP.Space.space12 : AP.Space.space16) {
@@ -229,6 +237,7 @@ private struct APStateCard: View {
             if let actionTitle, let action {
                 Button(actionTitle, action: action)
                     .buttonStyle(actionStyle)
+                    .apIdentifier(actionIdentifier)
                     // Panels carry a wide action; the card style keeps the inline-size button.
                     .frame(maxWidth: style == .plain ? APStateCard.panelActionWidth : nil)
                     .padding(.top, AP.Space.space4)
@@ -246,9 +255,12 @@ private struct APStateCard: View {
     @ViewBuilder private var glyph: some View {
         switch style {
         case .card:
+            // F4: the same 72 pt accent-tint circle as the plain panel — one state look everywhere.
             Image(systemName: glyphOverride ?? tone.glyph)
-                .font(.system(.largeTitle, design: .default))
-                .foregroundStyle(tone.glyphColor)
+                .font(.system(size: 28, weight: .semibold))
+                .foregroundStyle(AP.Color.selectedForeground)
+                .frame(width: 72, height: 72)
+                .background(Circle().fill(AP.Color.selectedBackground))
                 .accessibilityHidden(true)
         case .plain:
             // Owner feedback F4: one clean, centred icon — a 72 pt circle in the subtle accent tint
@@ -300,6 +312,16 @@ struct APLoadingStateView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: AP.Space.space12) {
+            HStack {
+                Spacer(minLength: 0)
+                Image(systemName: reduceMotion ? "circle.dashed" : "arrow.triangle.2.circlepath")
+                    .font(.system(size: 28, weight: .semibold))
+                    .foregroundStyle(AP.Color.selectedForeground)
+                    .frame(width: 72, height: 72)
+                    .background(Circle().fill(AP.Color.selectedBackground))
+                    .accessibilityHidden(true)
+                Spacer(minLength: 0)
+            }
             APStateWordRow(tone: .loading, word: label, useStaticGlyph: reduceMotion)
             VStack(alignment: .leading, spacing: AP.Space.space8) {
                 ForEach(Array(0..<max(rows, 1)), id: \.self) { index in

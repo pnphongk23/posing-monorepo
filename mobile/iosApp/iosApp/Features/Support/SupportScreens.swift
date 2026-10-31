@@ -474,10 +474,11 @@ struct SettingsScreen: View {
                         iconColor: AIPoseColor.primary,
                         title: option.title,
                         description: "",
-                        trailing: appearance.appearance == option ? .value("Selected") : .chevron
+                        trailing: appearance.appearance == option ? .check : .none
                     )
                 }
                 .buttonStyle(.plain)
+                // Selection is carried by the trait and the checkmark, not by a word.
                 .accessibilityAddTraits(appearance.appearance == option ? .isSelected : [])
                 .accessibilityIdentifier("settings.appearance.\(option.rawValue)")
             }
@@ -772,6 +773,10 @@ struct PaywallScreen: View {
 
 private enum SupportSettingsTrailing {
     case chevron, external, status(String, Color), value(String)
+    /// A selection row: a checkmark on the chosen option, never a chevron.
+    case check
+    /// No indicator at all (the unselected options of a selection row).
+    case none
 }
 
 private struct SupportSettingsRow: View {
@@ -823,6 +828,12 @@ private struct SupportSettingsRow: View {
                 .background(color)
                 .clipShape(Capsule())
                 .overlay(Capsule().stroke(AIPoseColor.foreground, lineWidth: 1.5))
+        case .none:
+            EmptyView()
+        case .check:
+            Image(systemName: "checkmark")
+                .font(.body.weight(.semibold))
+                .foregroundStyle(AIPoseColor.primary900)
         case .value(let label):
             HStack(spacing: AIPoseSpacing.xs) {
                 Text(label).font(.caption.weight(.semibold)).foregroundStyle(AIPoseColor.subtext)

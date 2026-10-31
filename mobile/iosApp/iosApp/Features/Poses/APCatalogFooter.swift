@@ -91,7 +91,6 @@ struct APPagingFooter: View {
                 }
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel(APPagingFooterRule.loading)
-                // Fires once per appearance; the model ignores it while a page is in flight.
                 .onAppear { Task { await model.loadMore() } }
             case .loadMore:
                 // No "Load more" button any more: the same appearance auto-fetches the next page.
@@ -106,7 +105,6 @@ struct APPagingFooter: View {
                 }
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel(APPagingFooterRule.loading)
-                .onAppear { Task { await model.loadMoreResults() } }
             case .failed:
                 Button {
                     Task { await model.loadMoreResults() }
@@ -146,6 +144,29 @@ struct APPagingFooter: View {
         .padding(.horizontal, AP.Space.space16)
         .padding(.top, AP.Space.space8)
         .padding(.bottom, bottomInset)
+        // The trigger is keyed on the paging state, not on appearance: a page that finishes while the
+        // footer is already mounted re-fires here (an empty page that consumed its budget used to
+        // stall, because the same footer never re-appeared).
+        .task(id: triggerKey) {
+            guard APPagingFooterRule.autoLoads(phase), !model.paging.isLoading else { return }
+            if phase == .loading {
+                await model.loadMore()
+            } else {
+                await model.loadMoreResults()
+            }
+        }
+    }
+
+    /// Everything that can change whether another page is wanted: the phase, the in-flight flag and
+    /// the row count. `.task(id:)` restarts when this changes, which is the re-trigger.
+    private var triggerKey: String {
+        let phase = APPagingFooterRule.phase(
+            error: model.paging.error,
+            hasMore: model.paging.hasMore,
+            remainingAutoFetches: model.paging.remainingAutoFetches,
+            hasRows: hasRows
+        )
+        return "\(phase)-\(model.paging.isLoading)-\(model.state.rows.count)"
     }
 
     private var hasRows: Bool {

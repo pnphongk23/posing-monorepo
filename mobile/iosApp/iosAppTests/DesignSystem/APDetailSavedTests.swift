@@ -106,6 +106,25 @@ final class APDetailSavedTests: XCTestCase {
         }
     }
 
+    // MARK: - Rendered: the snackbar (F5)
+
+    @MainActor func testSnackbarAnnouncesAndDismissesItself() async {
+        final class Box: @unchecked Sendable { var dismissals = 0 }
+        let box = Box()
+        let probe = APViewProbe(
+            APSnackbar(message: "You're offline. Try again.", onDismiss: { box.dismissals += 1 }, autoDismissAfter: 0.05),
+            size: CGSize(width: 393, height: 200)
+        )
+        defer { probe.tearDown() }
+        probe.settle()
+        for _ in 0..<40 {
+            await Task.yield()
+            if box.dismissals > 0 { break }
+            try? await Task.sleep(nanoseconds: 20_000_000)
+        }
+        XCTAssertEqual(box.dismissals, 1, "a snackbar dismisses itself once instead of parking on screen")
+    }
+
     // MARK: - Rendered: Saved rows
 
     @MainActor func testSavedRowPaintsItsUnsaveTargetAsASelectedSurface() {

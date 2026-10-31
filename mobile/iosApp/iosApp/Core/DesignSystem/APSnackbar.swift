@@ -4,11 +4,16 @@
 import SwiftUI
 
 struct APSnackbar: View {
+    /// How long a snackbar stays before it dismisses itself (F5: it never parks on screen).
+    static let autoDismissDelay: TimeInterval = 4
+
     var tone: APStateTone = .error
     let message: String
     var actionTitle: String?
     var action: (() -> Void)?
     var onDismiss: (() -> Void)?
+    /// Overridable so a test does not have to wait four seconds.
+    var autoDismissAfter: TimeInterval = APSnackbar.autoDismissDelay
 
     var body: some View {
         HStack(spacing: AP.Space.space12) {
@@ -39,6 +44,15 @@ struct APSnackbar: View {
         .accessibilityElement(children: action == nil ? .combine : .contain)
         .accessibilityLabel(message)
         .onTapGesture { onDismiss?() }
+        // Announced once, then dismissed: the task id is the message, so a new snackbar restarts the
+        // clock and a disappearing one cancels it.
+        .task(id: message) {
+            UIAccessibility.post(notification: .announcement, argument: message)
+            guard autoDismissAfter > 0 else { return }
+            try? await Task.sleep(nanoseconds: UInt64(autoDismissAfter * 1_000_000_000))
+            guard !Task.isCancelled else { return }
+            onDismiss?()
+        }
     }
 }
 

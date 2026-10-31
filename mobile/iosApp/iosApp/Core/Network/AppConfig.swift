@@ -62,6 +62,16 @@ final class AppConfig: @unchecked Sendable {
             isDebugBuild: true
         )
 
+    /// Evidence-run only: forces one catalogue footer state (`-AIPosePagingFixture loading|failed|end`)
+    /// so the spinner, the retry row and the end line can be captured. Compiled out of Release with
+    /// the other evidence switches.
+    static let debugPagingFixtureOverride: String? =
+        DebugLaunchArgumentOverride.stringValue(
+            for: DebugLaunchArgumentOverride.pagingFixtureFlag,
+            in: ProcessInfo.processInfo.arguments,
+            isDebugBuild: true
+        )
+
     /// Debug-only switch for Simulator QA runs: `-AIPoseAccountsEnabled YES|NO` exposes the Saved
     /// and Account surfaces without editing the Firestore `accounts_enabled_v2` document. Compiled
     /// out of Release for the same reason as the paywall override above.
@@ -175,8 +185,22 @@ final class AppConfig: @unchecked Sendable {
 /// payload uses, so `YES`/`NO`/`true`/`false` (any case) are accepted.
 enum DebugLaunchArgumentOverride {
     static let paywallEnabledFlag = "-AIPosePaywallEnabled"
+    /// Evidence runs only: forces the catalogue's paging into one footer state
+    /// (`-AIPosePagingFixture loading|failed|end`). Compiled out of Release with the rest.
+    static let pagingFixtureFlag = "-AIPosePagingFixture"
     static let accountsEnabledFlag = "-AIPoseAccountsEnabled"
     static let purchasesConfiguredFlag = "-AIPosePurchasesConfigured"
+
+    static func stringValue(
+        for flag: String,
+        in arguments: [String],
+        isDebugBuild: Bool
+    ) -> String? {
+        guard isDebugBuild else { return nil }
+        guard let index = arguments.firstIndex(of: flag),
+              arguments.indices.contains(index + 1) else { return nil }
+        return arguments[index + 1]
+    }
 
     static func booleanValue(
         for flag: String,

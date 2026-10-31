@@ -80,6 +80,26 @@ enum APHomeHeader {
     }
 }
 
+// MARK: - Pose detail pinned bar (F9)
+
+/// The two pinned controls (the square Save and the primary Try action) share one height, taken from
+/// the type size so they stay aligned and equal at every Dynamic Type size.
+enum APBarMetrics {
+    static func controlHeight(for size: DynamicTypeSize) -> CGFloat {
+        size.isAccessibilitySize ? 72 : 52
+    }
+}
+
+// MARK: - Add-pose request (Gallery `+`)
+
+/// Whether a request from another tab may open Add pose: only when the feature is on and no route or
+/// search is already presented (no duplicate presentation).
+enum APAddPoseSignal {
+    static func shouldOpen(canExtract: Bool, isRouteOpen: Bool, isSearchOpen: Bool) -> Bool {
+        canExtract && !isRouteOpen && !isSearchOpen
+    }
+}
+
 // MARK: - More menu rows (F8)
 
 /// One row of the labelled More menu.

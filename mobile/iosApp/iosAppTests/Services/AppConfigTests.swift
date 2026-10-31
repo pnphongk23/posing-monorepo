@@ -176,6 +176,9 @@ final class AppConfigTests: XCTestCase {
             "paywallEnabledFlag",
             "accountsEnabledFlag",
             "purchasesConfiguredFlag",
+            "-AIPosePagingFixture",
+            "pagingFixtureFlag",
+            "debugPagingFixtureOverride",
             "debugPaywallEnabledOverride",
             "debugAccountsEnabledOverride",
             "debugPurchasesConfiguredOverride"

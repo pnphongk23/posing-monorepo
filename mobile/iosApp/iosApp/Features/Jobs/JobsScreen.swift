@@ -203,19 +203,13 @@ struct JobsScreen<Service: JobsServing & ObservableObject>: View {
             }
             .padding(.top, AIPoseSpacing.xl)
         } else if case .failed(let message) = jobsService.loadState, rows.isEmpty {
-            VStack(spacing: AIPoseSpacing.md) {
-                FeatureStateView(
-                    tone: .error,
-                    title: "Couldn't load jobs",
-                    message: message,
-                    actionTitle: "Try again"
-                ) {
-                    Task { await jobsService.refresh() }
-                }
-                .padding(.horizontal, AIPoseSpacing.lg)
-                Spacer()
-            }
-            .padding(.top, AIPoseSpacing.lg)
+            APErrorStateView(
+                title: "Couldn't load jobs",
+                message: message,
+                retryTitle: "Try again",
+                retry: { Task { await jobsService.refresh() } },
+                style: .plain
+            )
         } else if rows.isEmpty {
             emptyState
         } else {
@@ -280,22 +274,19 @@ struct JobsScreen<Service: JobsServing & ObservableObject>: View {
     }
 
     private var emptyState: some View {
-        VStack(spacing: AIPoseSpacing.md) {
-            FeatureStateView(
-                tone: .empty,
-                title: "No jobs yet",
-                message: "Pose extraction jobs will appear here when you submit a pose.",
-                actionTitle: AppConfig.canExtractPose(isEnabled: AppConfig.shared.isExtractPoseEnabled) ? "Add pose" : nil
-            ) {
+        APEmptyStateView(
+            title: "No jobs yet",
+            message: "Pose extraction jobs will appear here when you submit a pose.",
+            actionTitle: AppConfig.canExtractPose(isEnabled: AppConfig.shared.isExtractPoseEnabled) ? "Add pose" : nil,
+            action: {
                 if AppConfig.canExtractPose(isEnabled: AppConfig.shared.isExtractPoseEnabled) {
                     onAddPose()
                     dismiss()
                 }
-            }
-            .padding(.horizontal, AIPoseSpacing.lg)
-            Spacer()
-        }
-        .padding(.top, AIPoseSpacing.lg)
+            },
+            style: .plain,
+            glyph: "hourglass"
+        )
     }
 
     private func handleRowAction(_ row: JobRow) {
