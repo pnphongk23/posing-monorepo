@@ -1,9 +1,22 @@
-import { describe, expect, it } from "vitest";
+import { randomUUID } from "node:crypto";
+
+import { describe, expect, it, vi } from "vitest";
 
 import { PoseStore, escapeLikePattern, type CreatePoseInput } from "./communityStore";
+import { ObjectDeletionOutbox, drainPendingObjectDeletions } from "./objectDeletionOutbox";
 import { setupTestDatabase } from "./testDb";
 
 const OWNER_ID = "11111111-1111-4111-8111-111111111111";
+const R2_PUBLIC_URL = "https://cdn.example.com";
+
+/** Public URL locators, exactly what `media_assets.locator` holds for a materialized Pose. */
+function locatorsFor(poseId: string): { original: string; skeleton: string; thumbnail: string } {
+  return {
+    original: `${R2_PUBLIC_URL}/community/${poseId}/original.png`,
+    skeleton: `${R2_PUBLIC_URL}/community/${poseId}/skeleton.png`,
+    thumbnail: `${R2_PUBLIC_URL}/community/${poseId}/thumbnail.png`
+  };
+}
 
 function poseInput(overrides: Partial<CreatePoseInput> = {}): CreatePoseInput {
   return {
@@ -205,5 +218,95 @@ describe("PoseStore", () => {
     expect(await store.getPoseById(created.poseId)).toBeNull();
     const media = await sql`SELECT media_id FROM media_assets WHERE pose_id = ${created.poseId}`;
     expect(media).toHaveLength(0);
+  });
+
+  it("queues every media locator of a deleted Pose for object removal", async () => {
+    const sql = await setupTestDatabase();
+    const store = new PoseStore(sql);
+    const poseId = randomUUID();
+    const locators = locatorsFor(poseId);
+    await store.createPose(
+      poseInput({
+        poseId,
+        originalUrl: locators.original,
+        skeletonUrl: locators.skeleton,
+        thumbnailUrl: locators.thumbnail
+      })
+    );
+
+    expect(await store.deletePose(poseId)).toBe(true);
+
+    const queued = (await new ObjectDeletionOutbox(sql).list()).map((row) => row.key).sort();
+    expect(queued).toEqual([locators.original, locators.skeleton, locators.thumbnail].sort());
+    // The tickets carry no upload horizon: the Pose is finalized, so its objects may go now.
+    const rows = (await sql`
+      SELECT key, not_before, enqueued_at FROM pending_object_deletions
+    `) as Array<{ key: string; not_before: Date | string; enqueued_at: Date | string }>;
+    for (const row of rows) {
+      expect(Date.parse(String(row.not_before))).toBe(Date.parse(String(row.enqueued_at)));
+    }
+  });
+
+  it("removes the queued locators on the next outbox sweep", async () => {
+    const sql = await setupTestDatabase();
+    const store = new PoseStore(sql);
+    const poseId = randomUUID();
+    const locators = locatorsFor(poseId);
+    await store.createPose(
+      poseInput({
+        poseId,
+        originalUrl: locators.original,
+        skeletonUrl: locators.skeleton,
+        thumbnailUrl: locators.thumbnail
+      })
+    );
+    await store.deletePose(poseId);
+
+    const deletedObjects: string[] = [];
+    const deleteObject = vi.fn(async (key: string) => {
+      deletedObjects.push(key);
+    });
+    const outbox = new ObjectDeletionOutbox(sql);
+    const result = await drainPendingObjectDeletions({ outbox, deleteObject });
+
+    expect(result).toEqual({ deleted: 3, failed: 0 });
+    expect(deletedObjects.sort()).toEqual([locators.original, locators.skeleton, locators.thumbnail].sort());
+    expect(await outbox.count()).toBe(0);
+  });
+
+  it("keeps a missing Pose a no-op that queues nothing", async () => {
+    const sql = await setupTestDatabase();
+    const store = new PoseStore(sql);
+
+    expect(await store.deletePose(randomUUID())).toBe(false);
+    expect(await new ObjectDeletionOutbox(sql).count()).toBe(0);
+  });
+
+  it("rolls the delete back when the outbox insert fails, leaving the Pose in place", async () => {
+    const sql = await setupTestDatabase();
+    const store = new PoseStore(sql);
+    const poseId = randomUUID();
+    const locators = locatorsFor(poseId);
+    await store.createPose(
+      poseInput({
+        poseId,
+        originalUrl: locators.original,
+        skeletonUrl: locators.skeleton,
+        thumbnailUrl: locators.thumbnail
+      })
+    );
+    // Forces the first outbox ticket to fail so the delete cannot commit behind it.
+    await sql.unsafe(
+      "ALTER TABLE pending_object_deletions ADD CONSTRAINT test_reject_pose_media CHECK (key NOT LIKE '%/original.png')"
+    );
+
+    await expect(store.deletePose(poseId)).rejects.toThrow();
+
+    expect((await store.getPoseById(poseId))?.poseId).toBe(poseId);
+    const media = (await sql`
+      SELECT role FROM media_assets WHERE pose_id = ${poseId} ORDER BY role
+    `) as Array<{ role: string }>;
+    expect(media.map((row) => row.role)).toEqual(["original", "skeleton", "thumbnail"]);
+    expect(await new ObjectDeletionOutbox(sql).count()).toBe(0);
   });
 });

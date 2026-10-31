@@ -4,6 +4,7 @@ import type { Fragment } from "postgres";
 
 import { PoseMediaNotReadyError } from "../services/errors";
 import type { Sql, SqlOrTx } from "./connection";
+import { ObjectDeletionOutbox } from "./objectDeletionOutbox";
 import { pgTimestamp } from "./pgTypes";
 
 const REQUIRED_MEDIA_ROLES = ["original", "skeleton", "thumbnail"] as const;
@@ -66,6 +67,15 @@ export interface ListPosesFilter {
   q?: string;
   page: number;
   limit: number;
+}
+
+/**
+ * Queues object keys on the caller's transaction through the shared outbox helper, so the
+ * tickets commit or roll back together with the rows that referenced them. The helper only
+ * issues tagged-template statements, which a transaction executor supports verbatim.
+ */
+async function queueObjectDeletions(transaction: SqlOrTx, locators: readonly string[]): Promise<void> {
+  await new ObjectDeletionOutbox(transaction as unknown as Sql).enqueue(locators);
 }
 
 /** Escape SQL LIKE metacharacters so user input is matched literally. */
@@ -339,11 +349,33 @@ export class PoseStore {
     return details.length > 0 ? details.join("; ") : "media state changed, retry";
   }
 
+  /**
+   * Deletes a Pose and, in the same transaction, hands every media locator of that Pose to
+   * the object deletion outbox. `media_assets` cascades with the Pose row, so the locators
+   * are read under the Pose lock first: once the row is gone its objects can still be found
+   * by the outbox sweep. A missing Pose stays a no-op and queues nothing.
+   */
   async deletePose(poseId: string): Promise<boolean> {
-    const result = await this.db`
-      DELETE FROM poses WHERE pose_id = ${poseId}
-    `;
-    return result.count > 0;
+    return this.db.begin(async (transaction) => {
+      const poseRows = (await transaction`
+        SELECT pose_id FROM poses WHERE pose_id = ${poseId} FOR UPDATE
+      `) as Array<{ pose_id: string }>;
+      if (poseRows.length === 0) return false;
+
+      const mediaRows = (await transaction`
+        SELECT locator FROM media_assets WHERE pose_id = ${poseId} ORDER BY role
+      `) as Array<{ locator: string }>;
+
+      await queueObjectDeletions(
+        transaction,
+        mediaRows.map((row) => row.locator)
+      );
+
+      const result = await transaction`
+        DELETE FROM poses WHERE pose_id = ${poseId}
+      `;
+      return result.count > 0;
+    });
   }
 
   private toRecord(row: PoseRow): PoseRecord {
