@@ -63,6 +63,44 @@ pending row with the reason — no case is silently unowned.
 - **Credentials** come from the gitignored `mobile/iosApp/maestro/e2e.local.env` via `-e` and every
   credential-backed draft carries the `e2e` tag. The demo account is never used.
 
+## Run on 1.1 (18) — first run against the redesign
+
+Build `/tmp/ai-pose-lane2-app-1.1/dev18/posing.app` (`1.1`/`18`, Debug-Dev @ `da7c019`), lane-2 `CF871F97`.
+13 drafts promoted (commit `e12d6ec`); the full default suite ran once at the end: **65 flows, 48 PASS,
+17 FAIL** — 8 of those are the camera reds owned by the camera seat (`camera-18-02`), 9 are mine.
+
+| Flow | Result | Reason / evidence |
+|---|---|---|
+| TC-SAV-001 saved-signed-out | **PASS** | `screens/run-1.1-18/TC-SAV-001-saved-signed-out.png` |
+| TC-SAV-002 saved-list-loaded | **PASS** | `…/TC-SAV-002-saved-list-loaded.png` |
+| TC-SAV-012 back-to-settings | **PASS** | flow fixed first (it asserted the Poses menu instead of `settings.back`) — `…/TC-SAV-012-back-to-settings.png` |
+| TC-SAV-013 ax3-dark | **PASS** | dark + `accessibility-extra-large` — `…/TC-SAV-013-ax3-dark.png` |
+| TC-SAV-003 unsave-removes | **FAIL — app bug** | `BUG-SAVED-18-01`: the unsave tile does nothing, so the list never empties |
+| TC-SAV-004 empty-browse | **FAIL — app bug** | same bug: its setup empties the list by unsaving, which cannot happen |
+| TC-SAV-010 unsave-undo | **FAIL — app bug** | same bug: no snackbar, no Undo |
+| TC-PAY-001 capture-gated | **PASS** | `…/TC-PAY-001-capture-gated.png` |
+| TC-PAY-002 capture-ungated | **PASS** | `…/TC-PAY-002-capture-ungated.png` |
+| TC-PAY-004 purchase-annual-entitles | **PASS** | Test Store buy, "Premium access confirmed", shutter ungated — `…/TC-PAY-004-purchase-annual-entitles.png` |
+| TC-PAY-006 second-account-no-carryover | **PASS** | `…/TC-PAY-006-second-account-no-carryover.png` |
+| TC-PAY-008 close-paywall | **PASS** | `…/TC-PAY-008-close-paywall.png` |
+| TC-PAY-013 purchase-cancelled | **PASS** | cancelled banner shown, no access granted — `…/TC-PAY-013-purchase-cancelled.png` |
+| TC-PAY-015 legal-links | **PASS** | Terms + Privacy open the real documents — `…/TC-PAY-015-legal-links.png` |
+| TC-PAY-003 paywall-signin-prompt | **FAIL — app bug** | `BUG-PAY-18-01`: the signed-out CTA is enabled but opens no sheet |
+| TC-PAY-005 signout-regates-capture | **FAIL — app bug** | same bug: after sign-out the sign-in sheet never appears |
+| TC-PAY-009 signin-apple-first | **FAIL — app bug** | same bug: the options live in the sheet that never opens |
+| TC-PAY-012 purchase-failed | **FAIL — app bug** | `BUG-PAY-18-02`: a failed Test Store purchase shows no banner at all |
+| TC-PAY-017 ax3-dark | **FAIL — flow defect** | at AX3 the email-sheet text entry did not land; the app correctly validated it ("Enter your password") and the flow stopped there. Same case passes at light/large. |
+
+Deliberately demoted back to drafts after running (no producer on this build, so they cannot be green
+instead of wrong): **TC-SAV-006** and **TC-SAV-014** (the `-AIPoseSavedOfflineFixture` seam did not render
+the offline board — the fixture applies only once the list is already `.loaded`), **TC-SAV-009** (a dead
+`-AIPoseAPIBaseURL` relaunch no longer forces the error state: the saved collection is served from the local
+store). Reasons recorded in each file header.
+
+**Order dependency learned:** TC-PAY-012/013/017 need an *unentitled* account, and account A becomes
+entitled as soon as TC-PAY-004 buys. They now sign in as account B (the TC-PAY-006 injection) instead of
+depending on where they sit in the suite.
+
 ## Run on 1.1 (17) — Saved/Paywall regression, all green
 
 Build: `/tmp/ai-pose-lane2-app-1.1/dev17/posing.app` (Debug-Dev, `1.1` build `17`), built from `a03d03a`;

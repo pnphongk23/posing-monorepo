@@ -6,7 +6,14 @@ appId: ${APP_ID}
 tags: [TC-PAY-013, p1, e2e]
 ---
 - runFlow: ../subflows/pay-launch.yaml
-- runFlow: ../subflows/pay-sign-in.yaml
+# Account B on purpose: these cases need an *unentitled* account, and account A becomes entitled the
+# moment TC-PAY-004 buys (Test Store subscriptions persist on the RevenueCat customer). TC-PAY-006 uses
+# the same injection.
+- runFlow:
+    file: ../subflows/pay-sign-in.yaml
+    env:
+      E2E_EMAIL: ${E2E_EMAIL_B}
+      E2E_PASSWORD: ${E2E_PASSWORD_B}
 - runFlow: ../subflows/open-camera.yaml
 - tapOn:
     id: "camera.shutter"

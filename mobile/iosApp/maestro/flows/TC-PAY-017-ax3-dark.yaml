@@ -15,10 +15,17 @@ appId: ${APP_ID}
 tags: [TC-PAY-017, p2, e2e]
 ---
 - assertTrue:
-    condition: ${E2E_EMAIL != null && E2E_EMAIL.length > 0 && E2E_PASSWORD != null && E2E_PASSWORD.length > 0}
-    label: "E2E_EMAIL / E2E_PASSWORD missing - run with -e E2E_EMAIL=... -e E2E_PASSWORD=..."
+    condition: ${E2E_EMAIL_B != null && E2E_EMAIL_B.length > 0 && E2E_PASSWORD_B != null && E2E_PASSWORD_B.length > 0}
+    label: "E2E_EMAIL_B / E2E_PASSWORD_B missing - this flow needs the second, never-entitled account"
 - runFlow: ../subflows/pay-launch.yaml
-- runFlow: ../subflows/pay-sign-in.yaml
+# Account B on purpose: these cases need an *unentitled* account, and account A becomes entitled the
+# moment TC-PAY-004 buys (Test Store subscriptions persist on the RevenueCat customer). TC-PAY-006 uses
+# the same injection.
+- runFlow:
+    file: ../subflows/pay-sign-in.yaml
+    env:
+      E2E_EMAIL: ${E2E_EMAIL_B}
+      E2E_PASSWORD: ${E2E_PASSWORD_B}
 - runFlow: ../subflows/open-camera.yaml
 - tapOn:
     id: "camera.shutter"

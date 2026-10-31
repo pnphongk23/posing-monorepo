@@ -14,7 +14,7 @@ tags: [TC-SAV-006, p1, e2e]
     condition: ${E2E_EMAIL != null && E2E_EMAIL.length > 0 && E2E_PASSWORD != null && E2E_PASSWORD.length > 0}
     label: "E2E_EMAIL / E2E_PASSWORD missing - run with -e E2E_EMAIL=... -e E2E_PASSWORD=..."
 - runFlow:
-    file: ../subflows/saved-launch-offline.yaml
+    file: ../../../../../mobile/iosApp/maestro/subflows/saved-launch-offline.yaml
     env:
       OFFLINE_CACHED_ROWS: "0"
 - extendedWaitUntil:

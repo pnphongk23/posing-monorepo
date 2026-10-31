@@ -31,7 +31,8 @@ tags: [TC-SAV-012, p1]
     visible:
       id: "settings.saved.row"
     timeout: 15000
+# Settings' own header is what proves we popped exactly one level; the Poses more-menu is two levels down.
 - assertVisible:
-    id: "poses.menu.settings"
+    id: "settings.back"
 - assertNotVisible:
     id: "saved.back"
