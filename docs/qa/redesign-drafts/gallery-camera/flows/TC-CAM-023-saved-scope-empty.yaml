@@ -1,0 +1,37 @@
+# TC-CAM-023 the Saved scope with nothing saved explains itself instead of drawing an empty grid
+appId: ${APP_ID}
+tags: [TC-CAM-023, p1]
+---
+- runFlow: ../../../../mobile/iosApp/maestro/subflows/launch.yaml
+- runFlow: ../../../../mobile/iosApp/maestro/subflows/open-camera.yaml
+- tapOn:
+    id: "camera.choosePose"
+- extendedWaitUntil:
+    visible:
+      id: "posePicker.grid"
+    timeout: 20000
+- tapOn:
+    id: "posePicker.scope.saved"
+# The Saved scope's own panel, not a blank grid: it borrows the Saved screen's copy so the two cannot drift.
+# (This half needs a signed-in account whose saved collection is empty — otherwise the grid draws instead,
+# which is TC-CAM-022's job. Keep the assertion on the panel id so the intent is readable.)
+- runFlow:
+    when:
+      visible:
+        id: "posePicker.saved.empty"
+    commands:
+      - assertVisible: "No saved poses yet"
+      - assertVisible: "Save poses from Community to find them here."
+      - assertNotVisible:
+          id: "posePicker.grid"
+# The All chip is always the way back to the catalogue.
+- tapOn:
+    id: "posePicker.scope.all"
+- extendedWaitUntil:
+    visible:
+      id: "posePicker.grid"
+    timeout: 20000
+- tapOn:
+    id: "posePicker.close"
+- assertVisible:
+    id: "camera.shutter"

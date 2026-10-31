@@ -76,6 +76,9 @@ The whole top chrome is one row. The eye only exists once a pose is chosen.
 - [ ] Change **Timer**, **Ratio**, **Scale** and the guide **mirror** once each, then reopen the panel.
 - [ ] **Expected:** every row still reads the value you set (in words, not just a different colour), the guide visibly grows
   / flips when you move Scale / mirror, and reopening the camera keeps all four.
+- [ ] **Mirror is the guide only.** With the guide mirrored, check the live preview and then take one photo.
+- [ ] **Expected:** only the pose **overlay** flips; the camera image behind it, and the saved photo, are exactly as they
+  were — the Mirror row never mirrors your capture. (Front-camera capture mirroring is a different thing, §12.3.)
 5. Tap anywhere outside the panel.
 - [ ] **Expected:** it closes with no dark scrim left behind. **Done** also closes it. Turn **Grid** on → the framing grid
   is drawn over the preview; the panel stays open.
@@ -231,10 +234,13 @@ image agree.
 - [ ] Switch to the front camera, hold something with text in view, capture, and read the saved photo.
 - [ ] **Expected:** the photo is upright, mirrored the way the preview showed it, and the pose guide is **not** baked into
   the image.
-4. Guide Scale and mirror (screen only).
-- [ ] With a pose guide on screen, move **Scale**, then toggle the guide's **mirror** control.
-- [ ] **Expected:** the guide grows/shrinks about its centre and flips horizontally, the real preview behind it is
-  untouched, and both survive closing and reopening the camera.
+4. Guide Scale and Mirror (screen only — these never touch the saved photo).
+- [ ] With a pose guide on screen, move **Scale**, then toggle the guide's **Mirror** row.
+- [ ] **Expected:** the guide grows/shrinks about its centre and flips horizontally; the camera preview and the saved
+  photo are untouched; the Mirror row reads **Normal**/**Mirrored** in words and both settings survive closing and
+  reopening the camera.
+- [ ] Capture one photo with the guide mirrored, and open it.
+- [ ] **Expected:** the guide is not in the photo at all (it is an overlay), and the photo is not mirrored by this control.
 
 ## 13. One-line verdict
 - [ ] Everything above passed → reply "device pass" (add "paywall ok" for section 1 if you ran it).

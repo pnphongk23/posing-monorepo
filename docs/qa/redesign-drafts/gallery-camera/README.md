@@ -19,6 +19,11 @@ one explicit pathspec.
 
 | Case | Draft | Blocked on |
 |---|---|---|
+| TC-CAM-022 | `flows/TC-CAM-022-picker-scope-chips.yaml` | a build to run it on (ids landed `a03d03a`: `posePicker.scope` + `.all`/`.saved`, each chip reports a value `Selected`) |
+| TC-CAM-023 | `flows/TC-CAM-023-saved-scope-empty.yaml` | a build + a **signed-in account with zero saved poses**; the empty panel is wrapped in a `runFlow: when`, so the flow only asserts it when the account really is empty |
+| TC-CAM-024 | `flows/TC-CAM-024-permission-not-now.yaml` | a build to run it on (ids landed `a03d03a`: `camera.permission`, `camera.permission.notNow`); relies on `permissions: camera: deny` producing `.denied` |
+| TC-CAM-032 | `flows/TC-CAM-032-guide-mirror.yaml` | a build to run it on (ids landed `da61534`: row `camera.tools.mirror`, switch `camera.tools.mirror.switch` with value "Mirrored"/"Normal") |
+| TC-CAM-033 | `flows/TC-CAM-033-saved-scope-signed-out.yaml` | a build to run it on, signed out (clean launch, no credentials): `posePicker.saved.signIn` landed `a03d03a` |
 | TC-CAM-006 | `flows/TC-CAM-006-permission-panel.yaml` | a build to run it on. Only the *refused* branch is expressible on the Simulator (Maestro writes the TCC answer, so `.notDetermined` — and the "Allow Camera" button — is unreachable); the panel's action has no id (request 2), so it matches "Open Settings" by text |
 | TC-CAM-012 | `flows/TC-CAM-012-collapse-and-reopen-strip.yaml` | a build to run it on. Asserts the strip's presence *and* the control's state label ("Hide pose picker" ↔ "Show pose picker") |
 | TC-CAM-013 | `flows/TC-CAM-013-guide-kept-while-collapsed.yaml` | a build to run it on. Proves the guide is still drawn through the collapse; *which* pose is CAM-007/CAM-011's job |
@@ -40,14 +45,14 @@ Boards used: `/tmp/ds-261030/export-c/05-camera-collapsed.png`, `05-camera-colla
 `07-gallery-grid-ax3.png`, `07-gallery-grid-dark.png`, plus `FEEDBACK-261031.md` (F3, F4, F5, F10, F12).
 
 ## Waiting on ids (cases written, no draft yet)
-Timer, Ratio, guide Scale and guide mirror are **in scope for 1.1** (owner decision, 20:50) but are not in committed
-source, so these cases have no draft:
+Guide **mirror** is in committed source (`da61534`) and is drafted (`TC-CAM-032-guide-mirror.yaml`). Timer, Ratio and
+guide **Scale** are in scope for 1.1 but still unlanded, so these cases have no draft:
 
 | Case | Needs |
 |---|---|
 | TC-CAM-027 (Timer + Ratio rows) | `camera.tools.timer`, `camera.tools.ratio` + a readable value per row |
 | TC-CAM-028 (countdown + cancel) | `camera.timer.countdown`, `camera.timer.cancel` — the countdown UI may render without a feed, so this one is intended to become a draft flow |
-| TC-CAM-032 (guide Scale + mirror) | `camera.tools.scale`, `camera.tools.mirror` + readable values |
+| TC-CAM-034 (guide Scale) | `camera.tools.scale` + a readable value |
 
 TC-CAM-029/030/031 (saved-image crop, zoom and front-camera mirroring) can never be a flow — there is no capture on the
 Simulator — and live in [docs/qa/camera-device-checklist.md](../../camera-device-checklist.md) §12.

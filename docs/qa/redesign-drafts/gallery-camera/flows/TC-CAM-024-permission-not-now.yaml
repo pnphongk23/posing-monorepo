@@ -1,0 +1,36 @@
+# TC-CAM-024 a refused camera offers "Not now", which leaves the camera instead of a dead viewfinder
+appId: ${APP_ID}
+tags: [TC-CAM-024, p1]
+---
+# Camera denied at launch: Maestro writes the TCC answer, so the app sees .denied (the "Allow Camera"
+# branch, and the system prompt behind it, stays device-only — checklist §8).
+- launchApp:
+    clearState: true
+    clearKeychain: true
+    permissions:
+      camera: deny
+      photos: allow
+- extendedWaitUntil:
+    visible:
+      id: "poses.open-search"
+    timeout: 30000
+- tapOn:
+    id: "dock.camera"
+- extendedWaitUntil:
+    visible:
+      id: "camera.permission"
+    timeout: 20000
+# Both actions are on the panel: the recovery and the way out.
+- assertVisible: "Camera access is off"
+- assertVisible: "Open Settings"
+- assertVisible:
+    id: "camera.permission.notNow"
+# "Not now" closes the camera rather than parking the user on a screen with no preview.
+- tapOn:
+    id: "camera.permission.notNow"
+- extendedWaitUntil:
+    visible:
+      id: "poses.open-search"
+    timeout: 20000
+- assertNotVisible:
+    id: "camera.permission"

@@ -1,0 +1,43 @@
+# TC-CAM-022 the picker's All / Saved scope chips refilter the grid in place
+appId: ${APP_ID}
+tags: [TC-CAM-022, p0]
+---
+- runFlow: ../../../../mobile/iosApp/maestro/subflows/launch.yaml
+- runFlow: ../../../../mobile/iosApp/maestro/subflows/open-camera.yaml
+- tapOn:
+    id: "camera.choosePose"
+- extendedWaitUntil:
+    visible:
+      id: "posePicker.grid"
+    timeout: 20000
+# Two chips, one container, and the active one reports itself as selected (a readable value, not colour).
+- assertVisible:
+    id: "posePicker.scope"
+- assertVisible:
+    id: "posePicker.scope.all"
+- assertVisible:
+    id: "posePicker.scope.saved"
+- assertVisible: "All poses"
+- assertVisible: "Saved poses"
+# Switching scope re-filters the same sheet — it does not close it and does not leave the camera behind.
+- tapOn:
+    id: "posePicker.scope.saved"
+- extendedWaitUntil:
+    visible:
+      id: "posePicker.scope.saved"
+    timeout: 10000
+- assertVisible:
+    id: "posePicker.scope"
+- assertVisible:
+    id: "posePicker.close"
+# Back to All: the catalogue grid is reachable again in one tap.
+- tapOn:
+    id: "posePicker.scope.all"
+- extendedWaitUntil:
+    visible:
+      id: "posePicker.grid"
+    timeout: 20000
+- tapOn:
+    id: "posePicker.close"
+- assertVisible:
+    id: "camera.shutter"
