@@ -199,6 +199,18 @@ final class JobsService: ObservableObject, JobsServing, SessionScoped {
     }
 
     func refresh() async {
+        // The extraction kill switch owns the whole surface: while it is off this service is a
+        // no-op that never puts a request on the wire, and it cannot paint rows the flag says the
+        // build may not show. Without this guard a flag-off install still called
+        // `listMyExtractJobs` on every `.signedIn` and on every poll tick.
+        guard AppConfig.canExtractPose(isEnabled: AppConfig.shared.isExtractPoseEnabled) else {
+            activeCount = 0
+            inProgress = []
+            finished = []
+            isOffline = false
+            loadState = .idle
+            return
+        }
         // A refresh that was on the wire during a session change must not write the previous
         // Account's rows over the cleared state (the hand-written observer had no such check).
         let ticket = await scope.beginRequest()
@@ -254,6 +266,10 @@ final class JobsService: ObservableObject, JobsServing, SessionScoped {
     }
 
     func startPolling() {
+        // Flag off means no poll loop at all — not a loop whose body is skipped — so a kill-switched
+        // build issues zero list requests while the Jobs surface is on screen. A flag that turns on
+        // later starts polling from the next `startPolling()` (the Jobs screen on appear).
+        guard AppConfig.canExtractPose(isEnabled: AppConfig.shared.isExtractPoseEnabled) else { return }
         guard pollingTask == nil else { return }
         pollingTask = Task { [weak self] in
             while !Task.isCancelled {

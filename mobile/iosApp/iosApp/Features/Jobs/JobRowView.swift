@@ -12,6 +12,8 @@ struct JobRowView: View {
     var body: some View {
         HStack(spacing: AIPoseSpacing.md) {
             thumbnailView
+                // Decorative: the summary element below already speaks the name and the state.
+                .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(row.name)
@@ -20,6 +22,14 @@ struct JobRowView: View {
                     .lineLimit(1)
 
                 statusBadge
+            }
+            // Only the text group is combined. `children: .combine` on the row itself swallowed the
+            // action button, so `jobRow.retry.<id>` / `jobRow.viewPose.<id>` never reached the
+            // accessibility tree and no UI test could tap them.
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(Self.accessibilitySummary(for: row))
+            .accessibilityAction(named: "Remove") {
+                onHide?(row)
             }
 
             Spacer(minLength: 8)
@@ -34,11 +44,26 @@ struct JobRowView: View {
                 .stroke(AIPoseColor.foreground, lineWidth: 1.5)
         )
         .shadow(color: AIPoseColor.foreground, radius: 0, x: 2, y: 2)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(row.name), \(row.statusLabel)\(row.action != .none ? ", \(row.action.rawValue)" : "")")
-        .accessibilityAction(named: "Remove") {
-            onHide?(row)
-        }
+        // A container, not one combined element: the summary text and the action button must stay
+        // separate accessibility elements.
+        .accessibilityElement(children: .contain)
+    }
+
+    /// The one sentence assistive tech reads for the row.
+    static func accessibilitySummary(for row: JobRow) -> String {
+        "\(row.name), \(row.statusLabel)\(row.action != .none ? ", \(row.action.rawValue)" : "")"
+    }
+
+    /// Identifier carried by the retry button. It sits on the button inside the row's `.contain`
+    /// element, so a UI test reaches it without matching the row summary.
+    static func retryIdentifier(jobId: String) -> String {
+        "jobRow.retry.\(jobId)"
+    }
+
+    /// Identifier carried by the view-pose button, with the same containment contract as
+    /// `retryIdentifier(jobId:)`.
+    static func viewPoseIdentifier(jobId: String) -> String {
+        "jobRow.viewPose.\(jobId)"
     }
 
     @ViewBuilder
@@ -116,7 +141,7 @@ struct JobRowView: View {
                         .padding(.vertical, AIPoseSpacing.xs)
                 }
                 .buttonStyle(NeoButtonStyle(fill: AIPoseColor.surface))
-                .accessibilityIdentifier("jobRow.retry.\(row.jobId)")
+                .accessibilityIdentifier(Self.retryIdentifier(jobId: row.jobId))
             }
         case .viewPose:
             Button {
@@ -128,7 +153,7 @@ struct JobRowView: View {
                     .padding(.vertical, AIPoseSpacing.xs)
             }
             .buttonStyle(NeoButtonStyle(fill: AIPoseColor.primary))
-            .accessibilityIdentifier("jobRow.viewPose.\(row.jobId)")
+            .accessibilityIdentifier(Self.viewPoseIdentifier(jobId: row.jobId))
         }
     }
 }
