@@ -64,49 +64,6 @@ final class AppleSignInTests: XCTestCase {
         XCTAssertNil(unnamed)
     }
 
-    func testReauthorizationAsksAppleForNoScopesAndReturnsTheCode() async {
-        let provider = StubAppleAuthorizationProvider(authorizationCode: "reauth-code")
-        let action = AppleReauthorizationAction(provider: provider)
-
-        let outcome = await action.run()
-
-        XCTAssertEqual(outcome, .code("reauth-code"))
-        let request = try? XCTUnwrap(provider.requests.first)
-        XCTAssertEqual(request?.purpose, .deleteAccountReauth)
-        XCTAssertEqual(request?.purpose.requestedScopes.isEmpty, true)
-        XCTAssertEqual(request?.requestNonce, AppleNonce.sha256Hex(request?.rawNonce ?? ""))
-    }
-
-    func testReauthorizationMapsCancellationAndMissingCodeSeparately() async {
-        let cancelled = AppleReauthorizationAction(
-            provider: StubAppleAuthorizationProvider(error: CancellationError())
-        )
-        let cancelledOutcome = await cancelled.run()
-        XCTAssertEqual(cancelledOutcome, .cancelled)
-
-        let noCode = AppleReauthorizationAction(provider: StubAppleAuthorizationProvider(authorizationCode: nil))
-        let noCodeOutcome = await noCode.run()
-        XCTAssertEqual(noCodeOutcome, .failed(AccountStateCopy.deleteAccountAppleConfirmationFailedMessage))
-
-        let failing = AppleReauthorizationAction(
-            provider: StubAppleAuthorizationProvider(error: AppleTestError.message)
-        )
-        let failingOutcome = await failing.run()
-        XCTAssertEqual(failingOutcome, .failed(AccountStateCopy.deleteAccountAppleConfirmationFailedMessage))
-    }
-
-    func testReauthorizationCodeThrowsCancellationWhenTheSheetIsClosed() async {
-        let action = AppleReauthorizationAction(provider: StubAppleAuthorizationProvider(error: CancellationError()))
-        do {
-            _ = try await action.authorizationCode()
-            XCTFail("Expected the cancellation to surface")
-        } catch is CancellationError {
-            // expected
-        } catch {
-            XCTFail("Unexpected error: \(error)")
-        }
-    }
-
     func testAppleSignInRequestOmitsNilFullName() throws {
         let data = try JSONEncoder().encode(AppleSignInRequest(
             identityToken: "identity-token",
@@ -145,12 +102,10 @@ private final class StubAppleAuthorizationProvider: AppleAuthorizationProviding 
     var requests: [AppleAuthorizationRequest] = []
     let fullName: String?
     let error: Error?
-    let authorizationCode: String?
 
-    init(fullName: String? = "Ada Lovelace", error: Error? = nil, authorizationCode: String? = "apple-code") {
+    init(fullName: String? = "Ada Lovelace", error: Error? = nil) {
         self.fullName = fullName
         self.error = error
-        self.authorizationCode = authorizationCode
     }
 
     func authorize(_ request: AppleAuthorizationRequest) async throws -> AppleAuthorizationResult {
@@ -159,8 +114,7 @@ private final class StubAppleAuthorizationProvider: AppleAuthorizationProviding 
         return AppleAuthorizationResult(
             identityToken: "identity-token",
             rawNonce: request.rawNonce,
-            fullName: fullName,
-            authorizationCode: authorizationCode
+            fullName: fullName
         )
     }
 }

@@ -463,9 +463,10 @@ final class PoseDetailFeatureTests: XCTestCase {
         XCTAssertTrue(model.savedState(for: pose))
     }
 
-    /// Delete account (`DELETE /api/account` → sign-out) then sign in as somebody else: the same
-    /// reset, driven through the real account model instead of a bare `signOut()`.
-    @MainActor func testDeleteAccountThenSignInDropsTheDeletedAccountsSave() async {
+    /// Sign out through the real account model, then sign in as somebody else: the model must drop
+    /// the previous Account's save. (Account deletion is an external request now — it no longer
+    /// signs anybody out in-app — so sign-out is what drives this reset.)
+    @MainActor func testAccountSignOutThenSignInDropsThePreviousAccountsSave() async {
         let pose = sampleDetailPose
         let boundary = SessionBoundary(tokenStorage: DetailTestTokenStorage(credentials: detailCredentialsA))
         let bookmarks = StubBookmarkService()
@@ -484,14 +485,13 @@ final class PoseDetailFeatureTests: XCTestCase {
         let account = AccountSessionModel(
             boundary: boundary,
             readAccount: { AccountSummary(id: "account-a", displayName: "A", createdAt: nil) },
-            signInAction: SignInAction(start: {}),
-            deleteAccount: { _ in }
+            signInAction: SignInAction(start: {})
         )
         account.start()
         await waitUntil("signed in") { if case .signedIn = account.state { return true }; return false }
-        account.deleteAccount()
+        account.signOut()
         await waitUntil("signed out") { account.state == .signedOut }
-        await waitUntil("the model dropped the deleted Account's save") { !model.savedState(for: pose) }
+        await waitUntil("the model dropped the previous Account's save") { !model.savedState(for: pose) }
 
         await boundary.saveCredentials(detailCredentialsB)
         let bTap = await model.toggleSaved(for: pose)

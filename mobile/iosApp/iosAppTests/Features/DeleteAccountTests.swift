@@ -2,442 +2,132 @@ import Foundation
 import XCTest
 @testable import iosApp
 
+/// "Delete account" is an external deletion **request** now (user decision, release sprint): the row
+/// opens a Google Form where the account owner asks for deletion, and an admin deletes by hand.
+///
+/// So these tests pin the whole contract of the replacement row:
+/// - it hands the opener exactly one URL, and that URL is the `SupportDestinations.deleteAccount`
+///   constant the app ships (no per-user URL, no interpolation);
+/// - it issues no request at all — the app must not send `DELETE /api/account` any more, so the one
+///   instrumented API client the screen could reach must see nothing;
+/// - it only exists for a signed-in account and it never touches the session.
 @MainActor
 final class DeleteAccountTests: XCTestCase {
-    func test204ClearsCredentialsAndReachesSignedOut() async {
-        let storage = DeleteTestTokenStorage(credentials: deleteTestCredentials)
-        let model = makeModel(storage: storage, deleteAccount: { _ in })
-        model.start()
-        await waitUntil("signed in") { if case .signedIn = model.state { return true }; return false }
+    func testDeleteAccountRowOpensTheDeletionRequestFormExactlyOnce() async throws {
+        let harness = try await signedInHarness()
+        var opened: [URL] = []
 
-        model.deleteAccount()
+        let openedURL = harness.model.openAccountDeletionRequest { opened.append($0) }
+
+        XCTAssertEqual(opened.count, 1, "one tap hands over one URL")
+        XCTAssertEqual(opened.first?.absoluteString, SupportDestinations.deleteAccount)
+        XCTAssertEqual(opened.first, SupportDestinations.deleteAccountURL)
+        XCTAssertEqual(openedURL, SupportDestinations.deleteAccountURL, "the model reports what it opened")
+    }
+
+    /// The user asked for deletion *somewhere else*: nothing about the local session may change, or
+    /// the person would be signed out of an account that still exists.
+    func testOpeningTheFormMakesNoNetworkCallAndKeepsTheSession() async throws {
+        let harness = try await signedInHarness()
+        let requestsAfterProjection = harness.requests.value
+        XCTAssertEqual(requestsAfterProjection, 1, "the screen projected the account once")
+        XCTAssertEqual(harness.model.state, .signedIn(deleteTestAccount))
+
+        var opened: [URL] = []
+        harness.model.openAccountDeletionRequest { opened.append($0) }
+        // Give any (unwanted) fire-and-forget work a chance to run before asserting silence.
+        for _ in 0..<5 { await Task.yield() }
+
+        XCTAssertEqual(opened.count, 1)
+        XCTAssertEqual(harness.requests.value, requestsAfterProjection, "opening the form sends no request")
+        XCTAssertEqual(harness.model.state, .signedIn(deleteTestAccount), "the account stays signed in")
+        XCTAssertEqual(
+            harness.storage.loadCredentials()?.accessToken,
+            deleteTestCredentials.accessToken,
+            "the credentials are untouched: only an admin may delete the account"
+        )
+        XCTAssertNil(harness.model.authError)
+    }
+
+    /// The row belongs to an account. Signed out (or failed) there is nothing to ask about, so the
+    /// screen renders no row and `openAccountDeletionRequest` declines instead of opening a form.
+    func testSignedOutAccountHasNoDeletionRequestRow() async {
+        let storage = DeleteTestTokenStorage(credentials: nil)
+        let model = AccountSessionModel(
+            boundary: SessionBoundary(tokenStorage: storage),
+            readAccount: { deleteTestAccount },
+            signInAction: SignInAction(start: {}),
+            signInHistory: DeleteTestSignInHistory(hasSignedInBefore: true)
+        )
+        model.start()
         await waitUntil("signed out") { model.state == .signedOut }
 
-        XCTAssertNil(storage.loadCredentials())
-        XCTAssertFalse(model.isDeletingAccount)
-        XCTAssertNil(model.deleteAccountError)
+        XCTAssertFalse(model.isAccountDeletionRequestAvailable, "no deletion row while signed out")
+
+        var opened: [URL] = []
+        let openedURL = model.openAccountDeletionRequest { opened.append($0) }
+        XCTAssertNil(openedURL)
+        XCTAssertTrue(opened.isEmpty, "a signed-out tap opens nothing")
     }
 
-    func test401KeepsCredentialsSignedInAndSurfacesSignInAgain() async {
+    func testFailedAccountProjectionHasNoDeletionRequestRow() async {
         let storage = DeleteTestTokenStorage(credentials: deleteTestCredentials)
-        let model = makeModel(storage: storage) { _ in
-            throw PoseAPIError(code: "401", message: "Unauthorized")
-        }
+        let model = AccountSessionModel(
+            boundary: SessionBoundary(tokenStorage: storage),
+            readAccount: { throw PoseAPIError(code: "500", message: "boom") },
+            signInAction: SignInAction(start: {}),
+            signInHistory: DeleteTestSignInHistory(hasSignedInBefore: true)
+        )
         model.start()
-        await waitUntil("signed in") { if case .signedIn = model.state { return true }; return false }
+        await waitUntil("failed") { if case .failed = model.state { return true }; return false }
 
-        model.deleteAccount()
-        await waitUntil("delete failure") { model.deleteAccountError != nil }
-
-        XCTAssertNotNil(storage.loadCredentials())
-        XCTAssertEqual(model.state, .signedIn(deleteTestAccount))
-        XCTAssertEqual(model.deleteAccountError, "Please sign in again.")
+        XCTAssertFalse(model.isAccountDeletionRequestAvailable)
+        var opened: [URL] = []
+        XCTAssertNil(model.openAccountDeletionRequest { opened.append($0) })
+        XCTAssertTrue(opened.isEmpty)
     }
 
-    func test503BackendEnvelopeKeepsCredentialsSignedInAndSurfacesUnavailable() async {
+    func testSignedInAccountStillOffersSignOutAndTheDeletionRow() async throws {
+        let harness = try await signedInHarness()
+
+        XCTAssertTrue(harness.model.isAccountDeletionRequestAvailable, "the screen renders the row from this")
+        XCTAssertTrue(harness.model.isSignOutAvailable, "sign-out is not gated by anything any more")
+    }
+
+    // MARK: - harness
+
+    private struct Harness {
+        let model: AccountSessionModel
+        let storage: DeleteTestTokenStorage
+        let requests: DeleteTestRequestCounter
+    }
+
+    /// A model backed by a real `PoseAPIService` whose transport is instrumented, so "no network call"
+    /// is an assertion about the client the model actually holds rather than a claim about the code.
+    private func signedInHarness() async throws -> Harness {
         let storage = DeleteTestTokenStorage(credentials: deleteTestCredentials)
-        let errorRecorder = DeleteTestErrorRecorder()
-        DeleteMockURLProtocol.requestHandler = { request in
-            XCTAssertEqual(request.url?.path, "/api/account")
-            let body = #"{"error":{"code":"AUTH_PENDING_VALIDATION","message":"Account deletion is pending runtime validation"}}"#
-            return (HTTPURLResponse(url: request.url!, statusCode: 503, httpVersion: nil, headerFields: nil)!, Data(body.utf8))
-        }
+        let requests = DeleteTestRequestCounter()
+        // Left installed for the life of the test: the counter has to keep observing *after* the
+        // projection, which is exactly the window the "no request" assertion is about.
+        DeleteTestSpyURLProtocol.counter = requests
+
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [DeleteTestSpyURLProtocol.self]
         let client = APIClient(
             baseURL: "https://test.server",
-            session: makeDeleteMockSession(),
+            session: URLSession(configuration: config),
             boundary: SessionBoundary(tokenStorage: storage)
         )
-        let model = makeModel(storage: storage) { _ in
-            do {
-                try await client.deleteAccount()
-                XCTFail("Expected account deletion to fail")
-            } catch let error as PoseAPIError {
-                errorRecorder.record(error)
-                throw error
-            }
-        }
-        model.start()
-        await waitUntil("signed in") { if case .signedIn = model.state { return true }; return false }
-
-        model.deleteAccount()
-        await waitUntil("delete failure") { model.deleteAccountError != nil }
-
-        XCTAssertEqual(errorRecorder.code, "AUTH_PENDING_VALIDATION")
-        XCTAssertNotNil(storage.loadCredentials())
-        XCTAssertEqual(model.state, .signedIn(deleteTestAccount))
-        XCTAssertEqual(model.deleteAccountError, "Account deletion is temporarily unavailable. Try again later.")
-    }
-
-    func test409RunsTheAppleSheetOnceAndDeletesWithTheCode() async {
-        let storage = DeleteTestTokenStorage(credentials: deleteTestCredentials)
-        let calls = DeleteTestCodeLog()
-        let apple = DeleteTestCounter()
-        let model = makeModel(
-            storage: storage,
-            deleteAccount: { code in
-                calls.append(code)
-                if code == nil { throw AccountDeletionError.appleReauthRequired }
-            },
-            appleReauthorize: {
-                apple.increment()
-                return "apple-code-123"
-            }
-        )
-        model.start()
-        await waitUntil("signed in") { if case .signedIn = model.state { return true }; return false }
-
-        model.deleteAccount()
-        await waitUntil("signed out") { model.state == .signedOut }
-
-        XCTAssertEqual(apple.value, 1, "the Apple sheet runs exactly once")
-        XCTAssertEqual(calls.values, [nil, "apple-code-123"], "the retry carries the fresh code")
-        XCTAssertNil(storage.loadCredentials())
-        XCTAssertNil(model.deleteAccountError)
-    }
-
-    /// A cancelled sheet sends no second request, so the server was never asked to delete anything.
-    func testCancelledAppleSheetSendsOneRequestAndSaysNothingWasDeleted() async {
-        let storage = DeleteTestTokenStorage(credentials: deleteTestCredentials)
-        let calls = DeleteTestCodeLog()
-        let model = makeModel(
-            storage: storage,
-            deleteAccount: { code in
-                calls.append(code)
-                throw AccountDeletionError.appleReauthRequired
-            },
-            appleReauthorize: { throw CancellationError() }
-        )
-        model.start()
-        await waitUntil("signed in") { if case .signedIn = model.state { return true }; return false }
-
-        model.deleteAccount()
-        await waitUntil("delete failure") { model.deleteAccountError != nil }
-
-        XCTAssertEqual(calls.values, [nil], "exactly one request in total")
-        XCTAssertEqual(model.deleteAccountError, "Deletion cancelled. Your account was not deleted.")
-        XCTAssertNotNil(storage.loadCredentials())
-        XCTAssertEqual(model.state, .signedIn(deleteTestAccount))
-        XCTAssertFalse(model.isDeletingAccount)
-    }
-
-    /// The handshake allows one Apple confirmation. A second 409 is terminal for this attempt.
-    func testSecond409IssuesNoThirdRequestAndSaysCouldNotConfirm() async {
-        let storage = DeleteTestTokenStorage(credentials: deleteTestCredentials)
-        let calls = DeleteTestCodeLog()
-        let apple = DeleteTestCounter()
-        let model = makeModel(
-            storage: storage,
-            deleteAccount: { code in
-                calls.append(code)
-                throw AccountDeletionError.appleReauthRequired
-            },
-            appleReauthorize: {
-                apple.increment()
-                return "apple-code-123"
-            }
-        )
-        model.start()
-        await waitUntil("signed in") { if case .signedIn = model.state { return true }; return false }
-
-        model.deleteAccount()
-        await waitUntil("delete failure") { model.deleteAccountError != nil }
-
-        XCTAssertEqual(calls.values, [nil, "apple-code-123"], "no third request")
-        XCTAssertEqual(apple.value, 1, "no second Apple sheet")
-        XCTAssertEqual(model.deleteAccountError, "Couldn't confirm with Apple. Try again.")
-        XCTAssertNotNil(storage.loadCredentials())
-    }
-
-    func testAppleIdentityMismatchSurfacesItsOwnCopyAndKeepsTheSession() async {
-        let storage = DeleteTestTokenStorage(credentials: deleteTestCredentials)
-        let calls = DeleteTestCodeLog()
-        let model = makeModel(
-            storage: storage,
-            deleteAccount: { code in
-                calls.append(code)
-                throw AccountDeletionError.appleIdentityMismatch
-            }
-        )
-        model.start()
-        await waitUntil("signed in") { if case .signedIn = model.state { return true }; return false }
-
-        model.deleteAccount()
-        await waitUntil("delete failure") { model.deleteAccountError != nil }
-
-        XCTAssertEqual(calls.values, [nil])
-        XCTAssertEqual(model.deleteAccountError, "That Apple ID doesn't match this account. Try again.")
-        XCTAssertNotNil(storage.loadCredentials())
-    }
-
-    /// A google/email account is deleted by the first request; the Apple sheet never opens.
-    func testNonAppleAccountDeletesOnTheFirstRequestWithoutApple() async {
-        let storage = DeleteTestTokenStorage(credentials: deleteTestCredentials)
-        let calls = DeleteTestCodeLog()
-        let apple = DeleteTestCounter()
-        let model = makeModel(
-            storage: storage,
-            deleteAccount: { code in calls.append(code) },
-            appleReauthorize: {
-                apple.increment()
-                return "apple-code-123"
-            }
-        )
-        model.start()
-        await waitUntil("signed in") { if case .signedIn = model.state { return true }; return false }
-
-        model.deleteAccount()
-        await waitUntil("signed out") { model.state == .signedOut }
-
-        XCTAssertEqual(calls.values, [nil], "one request, no code")
-        XCTAssertEqual(apple.value, 0, "no Apple call for a non-Apple account")
-        XCTAssertNil(storage.loadCredentials())
-    }
-
-    func testAppleSheetFailureKeepsTheAccountAndSaysRetry() async {
-        let storage = DeleteTestTokenStorage(credentials: deleteTestCredentials)
-        let model = makeModel(
-            storage: storage,
-            deleteAccount: { _ in throw AccountDeletionError.appleReauthRequired },
-            appleReauthorize: { throw AppleReauthorizationError(message: "Apple did not return an authorization code.") }
-        )
-        model.start()
-        await waitUntil("signed in") { if case .signedIn = model.state { return true }; return false }
-
-        model.deleteAccount()
-        await waitUntil("delete failure") { model.deleteAccountError != nil }
-
-        XCTAssertEqual(model.deleteAccountError, "Couldn't confirm with Apple. Try again.")
-        XCTAssertNotNil(storage.loadCredentials())
-        XCTAssertEqual(model.state, .signedIn(deleteTestAccount))
-    }
-
-    /// A deletion reply that lands after another account signed in must be dropped: it may not sign out
-    /// B, and it may not wipe B's local data.
-    func test204ForANewerSessionLeavesThatSessionAndItsDataUntouched() async throws {
-        let temp = try DeleteTestDatabase()
-        defer { temp.cleanUp() }
-        try await temp.seedSavedRow("mine-1")
-
-        let storage = DeleteTestTokenStorage(credentials: deleteTestCredentials)
-        let boundary = SessionBoundary(tokenStorage: storage)
-        let gate = DeleteTestGate()
-        let model = makeModel(
-            storage: storage,
-            boundary: boundary,
-            deleteAccount: { _ in await gate.wait() },
-            account: { signedInTestAccount(storage) }
-        )
-        model.start()
-        await waitUntil("signed in as A") { model.state == .signedIn(deleteTestAccount) }
-
-        model.deleteAccount()
-        await waitUntil("the delete request is in flight") { await gate.isWaiting }
-
-        // The user leaves the screen and account B signs in before A's reply arrives.
-        await boundary.signOut()
-        await boundary.saveCredentials(deleteTestCredentialsB)
-        await waitUntil("B is signed in") { model.state == .signedIn(deleteTestBAccount) }
-
-        await gate.open()
-        await waitUntil("the deletion settles") { !model.isDeletingAccount }
-
-        XCTAssertEqual(storage.loadCredentials()?.accessToken, "access-b", "B's credentials survive")
-        XCTAssertEqual(model.state, .signedIn(deleteTestBAccount), "B stays signed in")
-        XCTAssertNil(model.deleteAccountError, "B sees no error for A's attempt")
-        let savedAfterSwitch = try await temp.savedRowCount()
-        XCTAssertEqual(savedAfterSwitch, 1, "B's local data is untouched")
-    }
-
-    /// The Apple sheet is the account-switching gap: when the session changes while it is open, the
-    /// confirmation must not be sent on the new session's bearer.
-    func testSessionChangeDuringTheAppleSheetSendsNoRetryRequest() async {
-        let storage = DeleteTestTokenStorage(credentials: deleteTestCredentials)
-        let boundary = SessionBoundary(tokenStorage: storage)
-        let calls = DeleteTestCodeLog()
-        let gate = DeleteTestGate()
-        let model = makeModel(
-            storage: storage,
-            boundary: boundary,
-            deleteAccount: { code in
-                calls.append(code)
-                throw AccountDeletionError.appleReauthRequired
-            },
-            appleReauthorize: {
-                await gate.wait()
-                return "apple-code-123"
-            },
-            account: { signedInTestAccount(storage) }
-        )
-        model.start()
-        await waitUntil("signed in as A") { model.state == .signedIn(deleteTestAccount) }
-
-        model.deleteAccount()
-        await waitUntil("the Apple sheet is open") { await gate.isWaiting }
-
-        await boundary.signOut()
-        await boundary.saveCredentials(deleteTestCredentialsB)
-        await waitUntil("B is signed in") { model.state == .signedIn(deleteTestBAccount) }
-
-        await gate.open()
-        await waitUntil("the deletion settles") { !model.isDeletingAccount }
-
-        XCTAssertEqual(calls.values, [nil], "A's confirmation is never sent on B's session")
-        XCTAssertEqual(storage.loadCredentials()?.accessToken, "access-b")
-        XCTAssertEqual(model.state, .signedIn(deleteTestBAccount))
-    }
-
-    func testSignOutIsUnavailableWhileADeletionIsInFlight() async {
-        let storage = DeleteTestTokenStorage(credentials: deleteTestCredentials)
-        let gate = DeleteTestGate()
-        let model = makeModel(storage: storage, deleteAccount: { _ in await gate.wait() })
-        model.start()
-        await waitUntil("signed in") { if case .signedIn = model.state { return true }; return false }
-
-        XCTAssertTrue(model.isSignOutAvailable)
-
-        model.deleteAccount()
-        await waitUntil("the delete request is in flight") { await gate.isWaiting }
-        XCTAssertFalse(model.isSignOutAvailable, "the screen must not offer a switch mid-deletion")
-
-        model.signOut()
-        await Task.yield()
-        XCTAssertNotNil(storage.loadCredentials(), "a sign-out tapped mid-deletion is ignored")
-        XCTAssertEqual(model.state, .signedIn(deleteTestAccount))
-
-        await gate.open()
-        await waitUntil("the deletion settles") { model.state == .signedOut }
-    }
-
-    func testDoubleConfirmIssuesExactlyOneRequest() async {
-        let storage = DeleteTestTokenStorage(credentials: deleteTestCredentials)
-        let calls = DeleteTestCounter()
-        let model = makeModel(storage: storage) { _ in
-            calls.increment()
-            try await Task.sleep(nanoseconds: 50_000_000)
-        }
-        model.start()
-        await waitUntil("signed in") { if case .signedIn = model.state { return true }; return false }
-
-        model.deleteAccount()
-        model.deleteAccount()
-        await waitUntil("signed out") { model.state == .signedOut }
-        XCTAssertEqual(calls.value, 1)
-    }
-
-    /// The whole deletion reset, with the pieces the app actually wires together: the Account screen
-    /// ends up signed out, the Saved surface falls back to its sign-in gate, the persisted Saved rows
-    /// are gone, and the store identity is released exactly once.
-    @MainActor func test204ResetsSessionSavedCatalogAndPurchaseIdentity() async throws {
-        let temp = try DeleteTestDatabase()
-        defer { temp.cleanUp() }
-        try await temp.seedSavedRow("mine-1")
-        let cache = PoseCatalogCacheStore(repository: temp.repository, scheduler: DeleteTestRefreshScheduler())
-
-        let storage = DeleteTestTokenStorage(credentials: deleteTestCredentials)
-        let boundary = SessionBoundary(tokenStorage: storage)
-        let provider = FakePurchasesProvider()
-        let purchases = RevenueCatAdapter(provider: provider, entitlementID: FakePurchasesProvider.entitlementKey)
-        let coordinator = SessionScopeCoordinator(
-            boundary: boundary,
-            cache: cache,
-            purchases: purchases,
-            readAccount: { deleteTestAccount }
-        )
-        coordinator.start()
-        await waitUntil("the store identity is linked") { purchases.linkedAccountID == deleteTestAccount.id }
-
-        let model = makeModel(storage: storage, boundary: boundary, deleteAccount: { _ in })
-        model.start()
-        await waitUntil("signed in") { if case .signedIn = model.state { return true }; return false }
-        let seeded = try await temp.savedRowCount()
-        XCTAssertEqual(seeded, 1, "the account starts with a Saved row")
-
-        model.deleteAccount()
-        await waitUntil("signed out") { model.state == .signedOut }
-        // Polled inline rather than through the closure: `temp` is a test DB holder, and capturing it
-        // in an escaping async closure is exactly the data race Swift 6 rejects.
-        var remainingSaved = try await temp.savedRowCount()
-        let savedDeadline = Date().addingTimeInterval(5)
-        while remainingSaved != 0, Date() < savedDeadline {
-            try? await Task.sleep(nanoseconds: 10_000_000)
-            remainingSaved = try await temp.savedRowCount()
-        }
-        await waitUntil("the store identity is released") { provider.logOutCalls == 1 }
-
-        let hasSession = await boundary.hasStoredSession()
-        XCTAssertFalse(hasSession)
-        XCTAssertEqual(
-            SavedSurfaceStage.resolve(isSessionResolved: true, isSignedIn: hasSession),
-            .signInRequired,
-            "the Saved surface offers sign-in instead of another Account's rows"
-        )
-        XCTAssertEqual(remainingSaved, 0, "the Saved catalog is cleared")
-        XCTAssertEqual(provider.logOutCalls, 1, "the store identity is released exactly once")
-        XCTAssertNil(purchases.linkedAccountID)
-    }
-
-    /// A failed deletion changes nothing: the session, the Saved rows and the store identity survive
-    /// so the user can retry.
-    @MainActor func test503LeavesSessionCatalogAndPurchaseIdentityUntouched() async throws {
-        let temp = try DeleteTestDatabase()
-        defer { temp.cleanUp() }
-        try await temp.seedSavedRow("mine-1")
-        let cache = PoseCatalogCacheStore(repository: temp.repository, scheduler: DeleteTestRefreshScheduler())
-
-        let storage = DeleteTestTokenStorage(credentials: deleteTestCredentials)
-        let boundary = SessionBoundary(tokenStorage: storage)
-        let provider = FakePurchasesProvider()
-        let purchases = RevenueCatAdapter(provider: provider, entitlementID: FakePurchasesProvider.entitlementKey)
-        let coordinator = SessionScopeCoordinator(
-            boundary: boundary,
-            cache: cache,
-            purchases: purchases,
-            readAccount: { deleteTestAccount }
-        )
-        coordinator.start()
-        await waitUntil("the store identity is linked") { purchases.linkedAccountID == deleteTestAccount.id }
-
-        let model = makeModel(storage: storage, boundary: boundary) { _ in
-            throw PoseAPIError(code: "503", message: "Account deletion is pending runtime validation")
-        }
-        model.start()
-        await waitUntil("signed in") { if case .signedIn = model.state { return true }; return false }
-
-        model.deleteAccount()
-        await waitUntil("delete failure") { model.deleteAccountError != nil }
-
-        XCTAssertEqual(model.state, .signedIn(deleteTestAccount))
-        let hasSession = await boundary.hasStoredSession()
-        XCTAssertTrue(hasSession)
-        let remainingSaved = try await temp.savedRowCount()
-        XCTAssertEqual(remainingSaved, 1, "a failed deletion must not touch the Saved catalog")
-        XCTAssertEqual(provider.logOutCalls, 0, "a failed deletion must not release the store identity")
-    }
-
-    func testConfirmationCopyStatesIrreversibilityWithoutSubscriptionClaim() {
-        let copy = AccountStateCopy.deleteAccountConfirmationMessage
-        XCTAssertTrue(copy.localizedCaseInsensitiveContains("cannot be recovered"))
-        XCTAssertFalse(copy.localizedCaseInsensitiveContains("subscription"))
-        XCTAssertFalse(copy.localizedCaseInsensitiveContains("Apple"))
-    }
-
-    /// `boundary` is injectable so a test that also runs `SessionScopeCoordinator` wires *one*
-    /// boundary: two instances over the same storage would not share session events, and the
-    /// coordinator would never learn about the sign-out.
-    private func makeModel(
-        storage: DeleteTestTokenStorage,
-        boundary sharedBoundary: SessionBoundary? = nil,
-        deleteAccount: @escaping AccountSessionModel.AccountDeleter,
-        appleReauthorize: @escaping AccountSessionModel.AppleReauthorizer = { "unused-apple-code" },
-        account: @escaping AccountSessionModel.AccountReader = { deleteTestAccount }
-    ) -> AccountSessionModel {
-        AccountSessionModel(
-            boundary: sharedBoundary ?? SessionBoundary(tokenStorage: storage),
-            readAccount: account,
+        let service = PoseAPIService(client: client)
+        let model = AccountSessionModel(
+            boundary: SessionBoundary(tokenStorage: storage),
+            readAccount: { try await service.getCurrentAccount() },
             signInAction: SignInAction(start: {}),
-            deleteAccount: deleteAccount,
-            appleReauthorize: appleReauthorize
+            signInHistory: DeleteTestSignInHistory(hasSignedInBefore: true)
         )
+        model.start()
+        await waitUntil("signed in") { model.state == .signedIn(deleteTestAccount) }
+        return Harness(model: model, storage: storage, requests: requests)
     }
 
     private func waitUntil(_ label: String, _ condition: @escaping () async -> Bool) async {
@@ -447,156 +137,77 @@ final class DeleteAccountTests: XCTestCase {
         }
         XCTFail("Timed out waiting for \(label)")
     }
-
-    private func makeDeleteMockSession() -> URLSession {
-        let config = URLSessionConfiguration.ephemeral
-        config.protocolClasses = [DeleteMockURLProtocol.self]
-        return URLSession(configuration: config)
-    }
-}
-
-/// One temp catalog plus the rows a deletion reset has to tell apart.
-private final class DeleteTestDatabase {
-    let root: URL
-    let database: AppDatabase
-
-    var repository: PoseRepository { PoseRepository(database: database) }
-
-    init() throws {
-        root = FileManager.default.temporaryDirectory
-            .appendingPathComponent("delete-account-\(UUID().uuidString)", isDirectory: true)
-        database = try AppDatabase(
-            location: AppDatabaseLocation(url: root.appendingPathComponent("aipose.db"), kind: .freshInstall)
-        )
-    }
-
-    func seedSavedRow(_ id: String) async throws {
-        try await repository.upsert([
-            PoseRecord(
-                poseId: id,
-                ownerAccountId: PoseCatalogBucket.saved.rawValue,
-                name: "Mine",
-                description: nil,
-                tags: "[]",
-                difficulty: nil,
-                bodyParts: "[]",
-                status: PoseCatalogMapping.savedStatus,
-                originalPath: "",
-                skeletonPath: "/s.png",
-                thumbnailPath: "/t.png",
-                currentJobId: nil,
-                createdAt: "2024-03-01T00:00:00Z",
-                updatedAt: "2024-03-01T00:00:00Z"
-            )
-        ])
-    }
-
-    func savedRowCount() async throws -> Int {
-        try await repository.cached().filter { $0.status == PoseCatalogMapping.savedStatus }.count
-    }
-
-    func cleanUp() {
-        try? database.pool.close()
-        try? FileManager.default.removeItem(at: root)
-    }
-}
-
-private struct DeleteTestRefreshScheduler: PoseRefreshScheduling {
-    func schedule(_ operation: @escaping @Sendable () async -> Void) {}
 }
 
 private let deleteTestCredentials = SessionCredentials(accessToken: "access", refreshToken: "refresh")
-private let deleteTestCredentialsB = SessionCredentials(accessToken: "access-b", refreshToken: "refresh-b")
 private let deleteTestAccount = AccountSummary(id: "apple-user", displayName: "Apple User", createdAt: nil)
-private let deleteTestBAccount = AccountSummary(id: "account-b", displayName: "Account B", createdAt: nil)
-
-/// The account a session-switching test should project: decided by which token storage holds, so the
-/// re-read after B signs in really answers as B.
-private func signedInTestAccount(_ storage: DeleteTestTokenStorage) -> AccountSummary {
-    storage.loadCredentials()?.accessToken == deleteTestCredentialsB.accessToken
-        ? deleteTestBAccount
-        : deleteTestAccount
-}
 
 private final class DeleteTestTokenStorage: TokenStoring, @unchecked Sendable {
+    private let lock = NSLock()
     private var credentials: SessionCredentials?
 
     init(credentials: SessionCredentials?) { self.credentials = credentials }
-    func saveCredentials(_ credentials: SessionCredentials) { self.credentials = credentials }
-    func loadCredentials() -> SessionCredentials? { credentials }
-    func clearCredentials() { credentials = nil }
+    func saveCredentials(_ credentials: SessionCredentials) { lock.lock(); self.credentials = credentials; lock.unlock() }
+    func loadCredentials() -> SessionCredentials? { lock.lock(); defer { lock.unlock() }; return credentials }
+    func clearCredentials() { lock.lock(); credentials = nil; lock.unlock() }
 }
 
-/// Holds a request open so a test can move the session under it.
-private actor DeleteTestGate {
-    private var continuation: CheckedContinuation<Void, Never>?
-    private(set) var isWaiting = false
-    /// Set once `open()` was called before the request arrived, so a late waiter still proceeds.
-    private var opened = false
-
-    func wait() async {
-        if opened { return }
-        isWaiting = true
-        await withCheckedContinuation { continuation = $0 }
-        isWaiting = false
-    }
-
-    func open() async {
-        opened = true
-        continuation?.resume()
-        continuation = nil
-    }
-}
-
-/// Records the authorization code of every delete request, in order, so the handshake is observable.
-private final class DeleteTestCodeLog: @unchecked Sendable {
+/// Records the install's sign-in history in memory; nothing in these tests reads `UserDefaults`.
+private final class DeleteTestSignInHistory: SignInHistoryRecording, @unchecked Sendable {
     private let lock = NSLock()
-    private var recorded: [String?] = []
+    private var recorded: Bool
 
-    func append(_ code: String?) { lock.lock(); recorded.append(code); lock.unlock() }
+    init(hasSignedInBefore: Bool) { recorded = hasSignedInBefore }
 
-    var values: [String?] { lock.lock(); defer { lock.unlock() }; return recorded }
+    var hasSignedInBefore: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return recorded
+    }
+
+    func recordSignedIn() {
+        lock.lock()
+        recorded = true
+        lock.unlock()
+    }
 }
 
-private final class DeleteTestCounter: @unchecked Sendable {
+private final class DeleteTestRequestCounter: @unchecked Sendable {
     private let lock = NSLock()
     private var count = 0
 
-    func increment() { lock.lock(); count += 1; lock.unlock() }
-    var value: Int { lock.lock(); defer { lock.unlock() }; return count }
-}
-
-private final class DeleteTestErrorRecorder: @unchecked Sendable {
-    private let lock = NSLock()
-    private var recordedCode: String?
-
-    func record(_ error: PoseAPIError) {
+    func increment() {
         lock.lock()
-        recordedCode = error.code
+        count += 1
         lock.unlock()
     }
 
-    var code: String? {
+    var value: Int {
         lock.lock()
         defer { lock.unlock() }
-        return recordedCode
+        return count
     }
 }
 
-private final class DeleteMockURLProtocol: URLProtocol {
-    nonisolated(unsafe) static var requestHandler: ((URLRequest) -> (HTTPURLResponse, Data))?
+/// Instrumented transport: every request makes it here, so a silent `DELETE /api/account` (or any
+/// other call) would show up in `DeleteTestRequestCounter`.
+private final class DeleteTestSpyURLProtocol: URLProtocol {
+    nonisolated(unsafe) static var counter: DeleteTestRequestCounter?
 
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
     override func startLoading() {
-        guard let handler = Self.requestHandler else {
-            client?.urlProtocol(self, didFailWithError: URLError(.badURL))
-            return
-        }
-        let (response, data) = handler(request)
+        Self.counter?.increment()
+        let body = #"{"data":{"id":"apple-user","displayName":"Apple User"}}"#
+        let response = HTTPURLResponse(
+            url: request.url ?? URL(string: "https://test.server")!,
+            statusCode: 200,
+            httpVersion: nil,
+            headerFields: nil
+        )!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: data)
+        client?.urlProtocol(self, didLoad: Data(body.utf8))
         client?.urlProtocolDidFinishLoading(self)
     }
 

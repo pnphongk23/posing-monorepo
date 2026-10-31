@@ -8,6 +8,7 @@ final class SupportDestinationsTests: XCTestCase {
             SupportDestinations.termsOfService,
             SupportDestinations.privacyPolicy,
             SupportDestinations.support,
+            SupportDestinations.deleteAccount,
         ] {
             guard let url = SupportDestinations.webURL(raw) else {
                 return XCTFail("\(raw) is not a usable web URL")
@@ -19,6 +20,22 @@ final class SupportDestinationsTests: XCTestCase {
         XCTAssertNotNil(SupportDestinations.termsOfServiceURL)
         XCTAssertNotNil(SupportDestinations.privacyPolicyURL)
         XCTAssertNotNil(SupportDestinations.supportURL)
+        XCTAssertNotNil(SupportDestinations.deleteAccountURL)
+    }
+
+    /// LAUNCH GUARD for the two external forms the Settings/Account rows open. "Delete account"
+    /// leaves the app for a Google Form an admin works through by hand, so a placeholder value would
+    /// ship a row that opens a form nobody reads — the same "tap does nothing" bug class as the dead
+    /// `aipose.app` host below. Both destinations must be real before release.
+    func testDeleteAccountDestinationIsNotAPlaceholder() {
+        XCTAssertFalse(
+            SupportDestinations.isPlaceholder(SupportDestinations.deleteAccount),
+            "SupportDestinations.deleteAccount must not be a placeholder: \(SupportDestinations.deleteAccount)"
+        )
+        XCTAssertFalse(
+            SupportDestinations.isPlaceholder(SupportDestinations.support),
+            "SupportDestinations.support must not be a placeholder: \(SupportDestinations.support)"
+        )
     }
 
     /// Regression guard: FEAT-015 `PA-015-04` names `aipose.app/terms|privacy`, but that

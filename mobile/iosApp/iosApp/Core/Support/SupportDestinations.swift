@@ -13,11 +13,24 @@ enum SupportDestinations {
     static let termsOfService = "https://sites.google.com/view/posingapp/terms-of-service"
     static let privacyPolicy = "https://sites.google.com/view/posingapp/privacy-policy"
     /// FEAT-015 `PA-015-03`.
-    static let support = "https://forms.gle/sample-aipose-feedback"
+    static let support = "https://forms.gle/AaeCnLdnvMz4kCSa6"
+    /// Where "Delete account" sends the user: an external request form an admin works through by
+    /// hand. The app deletes nothing itself any more, so a working URL is the whole feature —
+    /// `SupportDestinationsTests.testDeleteAccountDestinationIsNotAPlaceholder` fails while this is
+    /// still the pre-launch placeholder, which is deliberate: shipping it would make the row dead.
+    static let deleteAccount = "https://forms.gle/QJo1cwnPPbDSfsPL6"
 
     static var termsOfServiceURL: URL? { webURL(termsOfService) }
     static var privacyPolicyURL: URL? { webURL(privacyPolicy) }
     static var supportURL: URL? { webURL(support) }
+    static var deleteAccountURL: URL? { webURL(deleteAccount) }
+
+    /// `true` while a destination is still the pre-launch stand-in (`REPLACE…` or `sample`).
+    /// Those strings are the marker the two placeholder guards in `SupportDestinationsTests` read.
+    static func isPlaceholder(_ raw: String) -> Bool {
+        let lowered = raw.lowercased()
+        return lowered.contains("replace") || lowered.contains("sample")
+    }
 
     /// Accepts only absolute `http(s)` URLs with a host, so a typo or a missing scheme
     /// degrades to "not configured" instead of a tap that silently does nothing.

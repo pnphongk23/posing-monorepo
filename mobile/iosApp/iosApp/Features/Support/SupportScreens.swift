@@ -56,14 +56,6 @@ enum AccountStateCopy {
     static let signedOutMessage = "Sign in again to access your Saved poses."
     static let neverSignedInTitle = "Not signed in"
     static let neverSignedInMessage = "Sign in to save poses."
-    static let deleteAccountConfirmationTitle = "Delete account?"
-    static let deleteAccountConfirmationMessage = "This cannot be undone and your data cannot be recovered."
-    /// The Apple sheet was closed: nothing was sent after it, so the account is still there.
-    static let deleteAccountCancelledMessage = "Deletion cancelled. Your account was not deleted."
-    /// Apple refused the code twice, or the sheet failed. One retry is all the handshake allows.
-    static let deleteAccountAppleConfirmationFailedMessage = "Couldn't confirm with Apple. Try again."
-    /// The code came from a different Apple ID than the one this account signs in with.
-    static let deleteAccountAppleIdentityMismatchMessage = "That Apple ID doesn't match this account. Try again."
 
     /// Which register the sign-in card (and its email sheet) speaks. Pure input → output so the
     /// never-signed-in case is testable without a screen: the only input is the install's
@@ -83,13 +75,15 @@ struct AccountScreen: View {
     var onTryPose: (CameraPoseRequest) -> Void = { _ in }
     @StateObject private var model: AccountSessionModel
     @Environment(\.dismiss) private var dismiss
+    /// The same external-open mechanism the Settings/Support rows use: "Delete account" leaves the
+    /// app for the deletion request form, it does not delete anything in-app.
+    @Environment(\.openURL) private var openURL
     @State private var showsEmailSignIn = false
     /// The email attempt lives on the screen, not in the sheet content: the Account card re-renders
     /// with the session it is observing, and an attempt opened from it must not be discarded by
     /// that (S4).
     @StateObject private var emailSignIn = EmailSignInModel()
     @StateObject private var appleSignIn = AppleSignInModel()
-    @State private var showsDeleteConfirmation = false
 
     init(
         posesModel: PosesViewModel,
@@ -110,8 +104,6 @@ struct AccountScreen: View {
             // F1: the shared page header; the sign-out control rides in its trailing slot.
             HStack(alignment: .center, spacing: AP.Space.space12) {
                 APPageHeader(title: "Account", onBack: { dismiss() })
-                // No sign-out while a deletion is in flight: switching accounts mid-deletion would let a
-                // reply land on the next session. See `AccountSessionModel.isSignOutAvailable`.
                 if model.isSignOutAvailable {
                     NeoCompactActionButton(
                         systemImage: "rectangle.portrait.and.arrow.right",
@@ -131,13 +123,13 @@ struct AccountScreen: View {
                     case .signedIn(let account):
                         accountProfileCard(account)
                         savedPosesRow
-                        deleteAccountRow
-                        if let error = model.deleteAccountError {
-                            FeatureStateView(tone: .error, title: "Account deletion failed", message: error)
-                                .accessibilityIdentifier("account.delete.error")
-                        }
                       case .failed(let message):
                         failedCard(message)
+                    }
+                    // Only an account has something to ask about: a signed-out or failed surface
+                    // offers no deletion row at all.
+                    if model.isAccountDeletionRequestAvailable {
+                        deleteAccountRow
                     }
                 }
                 .padding(.horizontal, AIPoseSpacing.lg)
@@ -150,13 +142,6 @@ struct AccountScreen: View {
         // Email sign-in (PLAN §4): presented from the signed-out card; success arrives through the
         // existing `SessionBoundary` `.signedIn` event — no new navigation state (DESIGN §3.2).
         .emailSignInSheet(model: emailSignIn, isPresented: $showsEmailSignIn, intentLine: signInCard.message)
-        .alert(AccountStateCopy.deleteAccountConfirmationTitle, isPresented: $showsDeleteConfirmation) {
-            Button("Delete account", role: .destructive) { model.deleteAccount() }
-                .disabled(model.isDeletingAccount)
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text(AccountStateCopy.deleteAccountConfirmationMessage)
-        }
         .task { model.start() }
     }
 
@@ -286,15 +271,14 @@ struct AccountScreen: View {
         .accessibilityLabel("Saved poses")
     }
 
+    /// Opens the deletion **request** form in the browser. The row, its label ("Delete account") and
+    /// its placement under Saved poses are unchanged; only the destination is: an admin deletes the
+    /// account, the app never sends a delete of its own.
     private var deleteAccountRow: some View {
-        Button { showsDeleteConfirmation = true } label: {
+        Button { model.openAccountDeletionRequest { openURL($0) } } label: {
             HStack(spacing: AIPoseSpacing.md) {
-                if model.isDeletingAccount {
-                    ProgressView().tint(AIPoseColor.error)
-                } else {
-                    Image(systemName: "trash").accessibilityHidden(true)
-                }
-                Text(model.isDeletingAccount ? "Deleting account…" : "Delete account")
+                Image(systemName: "trash").accessibilityHidden(true)
+                Text("Delete account")
                     .font(.headline.bold())
                 Spacer(minLength: 0)
             }
@@ -304,7 +288,6 @@ struct AccountScreen: View {
             .neoCard(background: AIPoseColor.surface)
         }
         .buttonStyle(.plain)
-        .disabled(model.isDeletingAccount)
         .accessibilityLabel("Delete account")
     }
 
