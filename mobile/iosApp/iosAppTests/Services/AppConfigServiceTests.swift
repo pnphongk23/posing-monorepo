@@ -63,7 +63,7 @@ final class AppConfigServiceTests: XCTestCase {
     func testResolveWithValidFirestoreData() {
         let data: [String: Any] = [
             "api_baseurl": "https://custom.api.endpoint",
-            "accounts_enabled_v2": true,
+            "account_enabled": true,
             "extractPoseEnabled": false
         ]
         let payload = AppConfigService.resolvePayload(data: data)
@@ -75,7 +75,7 @@ final class AppConfigServiceTests: XCTestCase {
     func testResolveWithInvalidEndpointFallsBackToDefault() {
         let invalidData: [String: Any] = [
           "api_baseurl": "not-a-valid-url",
-          "accounts_enabled_v2": "true",
+          "account_enabled": "true",
           "extractPoseEnabled": "garbage"
         ]
         let payload = AppConfigService.resolvePayload(data: invalidData)
@@ -104,7 +104,7 @@ final class AppConfigServiceTests: XCTestCase {
     func testAccountEnabledResolutionOrder() {
         // A fetched true value is enabled.
         let p1 = AppConfigService.resolvePayload(
-            data: ["accounts_enabled_v2": "true"]
+            data: ["account_enabled": "true"]
         )
         XCTAssertTrue(p1.isAccountEnabled)
 
@@ -116,7 +116,7 @@ final class AppConfigServiceTests: XCTestCase {
 
         // Missing / unparseable in both defaults to false
         let p3 = AppConfigService.resolvePayload(
-            data: ["accounts_enabled_v2": "unparseable"]
+            data: ["account_enabled": "unparseable"]
         )
         XCTAssertFalse(p3.isAccountEnabled)
     }
@@ -165,7 +165,7 @@ final class AppConfigServiceTests: XCTestCase {
     func testConfigSourceFetchSuccessApplied() async {
         let source = StubConfigSource(result: .success([
             "api_baseurl": "https://fetched.source.io",
-            "accounts_enabled_v2": true,
+            "account_enabled": true,
             "extractPoseEnabled": false
         ]))
 
@@ -210,7 +210,7 @@ final class AppConfigServiceTests: XCTestCase {
 
     func testMissingEndpointUsesDefaultWhileOtherFieldsResolve() {
         let payload = AppConfigService.resolvePayload(data: [
-            "accounts_enabled_v2": false,
+            "account_enabled": false,
             "extractPoseEnabled": true
         ])
 
@@ -400,25 +400,38 @@ final class AppConfigServiceTests: XCTestCase {
         XCTAssertFalse(AppConfigService.isFirebasePlistValid(at: URL(fileURLWithPath: "/tmp/missing.plist")))
     }
 
-    // MARK: - accounts_enabled_v2: the build-scoped account switch (FEAT-013 phase 03)
+    // MARK: - account_enabled: the account switch on the shared config document
 
-    /// Only the v2 key counts. The legacy key is what the shipped v1.0 build still reads, so flipping
-    /// it (or an operator editing the wrong row) must not switch this build's account surface on.
-    func testAccountSwitchIsReadFromTheV2KeyOnly() {
-        XCTAssertTrue(AppConfigService.resolvePayload(data: ["accounts_enabled_v2": true]).isAccountEnabled)
-        XCTAssertTrue(AppConfigService.resolvePayload(data: ["accounts_enabled_v2": "true"]).isAccountEnabled)
-        XCTAssertFalse(
-            AppConfigService.resolvePayload(data: ["account_enabled": true]).isAccountEnabled,
-            "the legacy key must not enable accounts in this build"
-        )
+    /// The 1.2 build reads `account_enabled` — the row the live document carries — and nothing
+    /// else. The switch fails closed: only an explicit boolean (or its accepted string form) says
+    /// on, so a missing row, an unparsable value and a fetch error all keep the account surface
+    /// hidden rather than half-open.
+    func testAccountSwitchIsReadFromTheSharedDocumentKey() {
         XCTAssertTrue(
-            AppConfigService.resolvePayload(
-                data: ["account_enabled": false, "accounts_enabled_v2": true]
-            ).isAccountEnabled
+            AppConfigService.resolvePayload(data: ["account_enabled": true]).isAccountEnabled,
+            "the row the production document carries switches accounts on"
         )
+        XCTAssertTrue(AppConfigService.resolvePayload(data: ["account_enabled": "true"]).isAccountEnabled)
+        XCTAssertFalse(AppConfigService.resolvePayload(data: ["account_enabled": false]).isAccountEnabled)
+        XCTAssertFalse(AppConfigService.resolvePayload(data: [:]).isAccountEnabled, "a missing row is off")
+        XCTAssertFalse(AppConfigService.resolvePayload(data: ["account_enabled": "garbage"]).isAccountEnabled)
         XCTAssertFalse(
-            AppConfigService.resolvePayload(data: ["accounts_enabled_v2": "garbage"]).isAccountEnabled
+            AppConfigService.resolvePayload(data: ["account_enabled": ["nested": true]]).isAccountEnabled,
+            "a non-boolean value is off"
         )
+    }
+
+    /// The same switch on every failed launch path: an empty document, a throwing source and a
+    /// timeout all resolve accounts off, so a Firestore outage never opens a sign-in surface the
+    /// build cannot complete a purchase on.
+    func testEveryFailedLaunchPathResolvesAccountsOff() async {
+        struct SourceFailure: Error {}
+        let empty = await AppConfigService.fetchAndResolve(source: StubConfigSource(result: .success(nil)))
+        let failing = await AppConfigService.fetchAndResolve(source: StubConfigSource(result: .failure(SourceFailure())))
+
+        XCTAssertFalse(empty.payload.isAccountEnabled)
+        XCTAssertEqual(failing.outcome, .error)
+        XCTAssertFalse(failing.payload.isAccountEnabled)
     }
 
     // MARK: - Extraction fails closed (D6 = A)

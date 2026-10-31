@@ -33,12 +33,11 @@ document `app` (`config/app`), with public read access (no Firebase Auth sign-in
 | Field Name | Type | Default Value | Description |
 | --- | --- | --- | --- |
 | `api_baseurl` | String | `https://pose-extract-server-production.up.railway.app` | Base URL for the AI Pose backend API. Must be valid HTTP/HTTPS URL without trailing spaces. |
-| `accounts_enabled_v2` | Boolean or String | `false` | Build-scoped switch for the Account surface (sign-in, Saved, account deletion). Accepted true values: `true`, `1`, `yes` (case-insensitive). This build reads **only** this key. |
+| `account_enabled` | Boolean or String | `false` | Account switch for the Account surface (sign-in, Saved, account deletion). Accepted true values: `true`, `1`, `yes` (case-insensitive). Fails **closed**: a missing key, a non-boolean value and a fetch error all resolve to `false`. |
 | `extractPoseEnabled` | Boolean or String | `false` | Enables/disables pose extraction UI entry points (Add Pose button, job submission, form submit). Fails **closed**: a missing key, an invalid value, a fetch error, an offline launch and a fresh install all resolve to `false`. Only an explicit `true` (or its accepted string form) turns it on. |
 
-> The legacy `account_enabled` key is **not** read by this build. It stays `false` for the shipped
-> v1.0 build, whose account deletion path predates Sign in with Apple token revocation; flipping
-> `accounts_enabled_v2` therefore cannot switch that surface on in a build that lacks the fix.
+> `account_enabled` sits on the same document as `extractPoseEnabled` and `paywall_enabled`; there
+> is no second account key.
 >
 > `extractPoseEnabled` was default-on until this build (payload `schemaVersion` 1). A cache written
 > by an older build is read with extraction **off** (`AppConfigService.resolveInitialPayload`), even
@@ -69,11 +68,11 @@ used as the environment descriptor.
 - `extractPoseEnabled` is a Boolean (or accepted Boolean string) field on the public-readable
   `config/app` document. Set it to `true` to show pose extraction and Jobs entry points; any other
   value, a missing field, or an unreachable document leaves them hidden. The other fields are
-  `api_baseurl` (String) and `accounts_enabled_v2` (Boolean or parseable Boolean string; defaults to
+  `api_baseurl` (String) and `account_enabled` (Boolean or parseable Boolean string; defaults to
   `false`).
 - Debug Simulator runs can override flags with launch arguments:
   - `-AIPoseAccountEnabled true|false`
-  - `-AIPoseAccountsEnabled true|false` (same switch as `accounts_enabled_v2`; the older
+  - `-AIPoseAccountsEnabled true|false` (same switch as `account_enabled`; the older
     `-AIPoseAccountEnabled` wins when both are passed)
   - `-AIPoseExtractPoseEnabled true|false`
   - `-AIPosePaywallEnabled true|false` (same switch as `paywall_enabled`)

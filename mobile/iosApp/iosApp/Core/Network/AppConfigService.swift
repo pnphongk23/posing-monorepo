@@ -117,12 +117,8 @@ struct FirestoreConfigSource: ConfigSource {
 enum AppConfigService {
     static let defaultURL = "https://pose-extract-server-production.up.railway.app"
     static let endpointKey = "api_baseurl"
-    /// Build-scoped account switch. This build reads v2 only, so the live v1.0 build — which keeps
-    /// reading the legacy key below — cannot be exposed to an account surface whose deletion path
-    /// predates Sign in with Apple token revocation.
-    static let accountsEnabledV2Key = "accounts_enabled_v2"
-    /// Legacy key. This build deliberately ignores it; the v1.0 build still reads it (and it stays
-    /// `false`).
+    /// The account switch. It lives on the same `config/app` document as `extractPoseEnabled` and
+    /// `paywall_enabled`, and it is the only key this build reads for accounts.
     static let accountEnabledKey = "account_enabled"
     static let extractPoseEnabledKey = "extractPoseEnabled"
     static let paywallEnabledKey = "paywall_enabled"
@@ -196,11 +192,10 @@ enum AppConfigService {
             fetchedRaw: fetchedEndpointRaw
         )
 
-        // 2. Account Enabled: build-scoped key, defaults to false when unavailable. The legacy key
-        // is ignored on purpose (see `accountsEnabledV2Key`).
-        let fetchedAccountRaw = data?[accountsEnabledV2Key]
-        let accountEnabled = parseBoolean(raw: fetchedAccountRaw)
-            ?? false
+        // 2. Account Enabled: fails **closed**. A missing key, a non-boolean value, a fetch error
+        // and an offline launch all resolve to `false`, so a broken read can never expose an
+        // account surface that cannot complete a purchase.
+        let accountEnabled = resolveSwitch(data?[accountEnabledKey], defaultValue: false)
 
         // 3. Extract Pose Enabled: fails **closed** (D6 = A). Only an explicit boolean (or its
         // string form) turns extraction on, so a missing key, a fetch error and an offline launch

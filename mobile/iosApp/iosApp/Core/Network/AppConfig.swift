@@ -73,7 +73,7 @@ final class AppConfig: @unchecked Sendable {
         )
 
     /// Debug-only switch for Simulator QA runs: `-AIPoseAccountsEnabled YES|NO` exposes the Saved
-    /// and Account surfaces without editing the Firestore `accounts_enabled_v2` document. Compiled
+    /// and Account surfaces without editing the Firestore `account_enabled` document. Compiled
     /// out of Release for the same reason as the paywall override above.
     static let debugAccountsEnabledOverride: Bool? =
         DebugLaunchArgumentOverride.booleanValue(
@@ -118,7 +118,7 @@ final class AppConfig: @unchecked Sendable {
         defer { lock.unlock() }
         #if DEBUG
         // The historical `-AIPoseAccountEnabled` keeps its precedence; `-AIPoseAccountsEnabled`
-        // names the FieldPath it overrides (`accounts_enabled_v2`) and is the fallback. Both sit on
+        // names the FieldPath it overrides (`account_enabled`) and is the fallback. Both sit on
         // top of the resolved payload, so the kill switch itself is untouched.
         if let override = Self.debugAccountFeatureEnabledOverride { return override }
         if let override = Self.debugAccountsEnabledOverride { return override }
@@ -172,7 +172,7 @@ final class AppConfig: @unchecked Sendable {
 
 #if DEBUG
 /// QA-only launch-argument overrides for the Firestore switches (`paywall_enabled`,
-/// `accounts_enabled_v2`) plus the purchase-context precondition (`-AIPosePurchasesConfigured`), so a
+/// `account_enabled`) plus the purchase-context precondition (`-AIPosePurchasesConfigured`), so a
 /// Simulator run can exercise every surface without editing the production documents.
 ///
 /// The whole reader is compiled **only** into a Debug build: Release carries neither the argument
