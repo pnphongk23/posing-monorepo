@@ -7,8 +7,25 @@
 #   set -a; . ./e2e.local.env; set +a; ./run.sh <udid>
 set -euo pipefail
 cd "$(dirname "$0")"
-./check-traceability.sh
 udid=${1:?simulator udid}; shift || true
+# Disk gate: the lane-2 simulator accumulates XCTest attachments fast enough to fill the volume (it
+# happened on 1.1 build 17), and an ENOSPC mid-run reads as random test failures. Refuse to start
+# below the floor instead of discovering it halfway through a suite.
+min_free_gb=${RUN_MIN_FREE_GB:-3}
+free_gb=$(df -g / | awk 'NR==2 {print $4}')
+if [ "${free_gb:-0}" -lt "$min_free_gb" ]; then
+  echo "run.sh: refusing to start - ${free_gb:-0} GB free on /, need ${min_free_gb} GB. Attachments live under" \
+       "~/Library/Developer/CoreSimulator/Devices/<udid>/data/Containers/Data/InternalDaemon/*/Attachments."
+  exit 3
+fi
+# Lane 2 only: drop XCTest attachments older than ten minutes (never another simulator, never erase).
+purge_attachments() {
+  case "$udid" in CF871F97*) ;; *) return 0 ;; esac
+  find "$HOME/Library/Developer/CoreSimulator/Devices/$udid/data/Containers/Data/InternalDaemon/"*/Attachments \
+    -type f -mmin +10 -delete 2>/dev/null || true
+}
+purge_attachments
+./check-traceability.sh
 export MAESTRO_CLI_NO_ANALYTICS=1
 # `e2e`-tagged flows run only when the run-time credentials exist; otherwise they are filtered out of
 # the run entirely (a flow that fails fast on a missing E2E_EMAIL must never redden the default suite).
@@ -25,6 +42,7 @@ else
 fi
 # Reinstalls leave dead app containers behind; drop them after every run (this simulator only, disk is tight).
 cleanup_dead_containers() {
+  purge_attachments
   case "$udid" in CF871F97*) return 0 ;; esac
   rm -rf "$HOME/Library/Developer/CoreSimulator/Devices/$udid/data/Library/Caches/com.apple.containermanagerd/Dead/"* 2>/dev/null || true
 }
