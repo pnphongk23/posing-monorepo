@@ -20,6 +20,10 @@ final class CameraViewModel: ObservableObject {
     @Published var showCameraTools = false
     /// `.nb-pose-picker-sheet` — camera-local bottom sheet, not a pushed route.
     @Published var showPosePicker = false
+    /// Visible countdown (`nil` when idle): the number and its Cancel above the shutter.
+    @Published private(set) var timerCountdown: Int?
+    /// Shutter timer setting (`Off` / `3 s` / `10 s`), persisted like the other settings.
+    @Published var timerSetting: CameraTimerSetting = .off
     /// `pose-visibility-row`: Shown / Hidden for the selected pose reference.
     @Published var isPoseGuideVisible = true
     /// `pose-line-color-black` / `pose-line-color-white`.
@@ -66,6 +70,8 @@ final class CameraViewModel: ObservableObject {
     private let onPremiumRequired: (Bool) -> Void
     private var timeoutTask: Task<Void, Never>?
     private var statusClearTask: Task<Void, Never>?
+    private var timerMachine = CameraTimerMachine()
+    private var countdownTask: Task<Void, Never>?
 
     // MARK: Persistence (FEAT-012)
 
@@ -161,6 +167,10 @@ final class CameraViewModel: ObservableObject {
     func onDisappear() {
         timeoutTask?.cancel()
         statusClearTask?.cancel()
+        countdownTask?.cancel()
+        countdownTask = nil
+        timerCountdown = nil
+        timerMachine.cancel()
         camera.stop()
     }
 
@@ -197,13 +207,68 @@ final class CameraViewModel: ObservableObject {
         case .capture:
             break
         }
-        guard coordinator.onCaptureRequested() else { return }
+        switch timerMachine.shutterPressed(isReady: coordinator.state.captureEnabled) {
+        case .captureNow:
+            performCapture()
+        case .countdownStarted(let remaining):
+            timerCountdown = remaining
+            startCountdownTicks()
+        case .countdownAdvanced, .cancelled, .ignored:
+            break
+        }
+    }
+
+    /// The (possibly delayed) capture. Only the timer machine reaches this, so an immediate and a
+    /// counted-down capture cannot diverge.
+    private func performCapture() {
+        guard coordinator.onCaptureRequested() else {
+            timerMachine.captureFinished()
+            timerCountdown = nil
+            return
+        }
         timeoutTask?.cancel()
         timeoutTask = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: 10_000_000_000)
             self?.coordinator.onCaptureTimeoutTick()
         }
         observeCaptureCompletion()
+    }
+
+    /// The countdown's Cancel control: back to ready, no photo, no queued capture.
+    func cancelTimer() {
+        guard timerMachine.cancel() else { return }
+        countdownTask?.cancel()
+        countdownTask = nil
+        timerCountdown = nil
+    }
+
+    /// Setting the timer while a countdown runs cancels it: the new value applies to the next press.
+    func setTimerSetting(_ setting: CameraTimerSetting) {
+        guard cameraControlsEnabled else { return }
+        if timerMachine.isCountingDown { cancelTimer() }
+        timerSetting = setting
+        timerMachine.setting = setting
+    }
+
+    private func startCountdownTicks() {
+        countdownTask?.cancel()
+        countdownTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                guard let self, !Task.isCancelled else { return }
+                switch self.timerMachine.tick() {
+                case .countdownAdvanced(let remaining):
+                    self.timerCountdown = remaining
+                case .captureNow:
+                    self.timerCountdown = nil
+                    self.performCapture()
+                    return
+                case .cancelled, .countdownStarted, .ignored:
+                    self.timerCountdown = nil
+                    return
+                }
+            }
+        }
     }
 
     func switchCamera() {
@@ -314,7 +379,7 @@ final class CameraViewModel: ObservableObject {
     /// The eight settings that survive a relaunch. `CameraSnapshot` carries them in one JSON blob;
     /// the selected pose is deliberately not among them (D8).
     private enum PersistedSetting: Hashable {
-        case opacity, flipped, grid, flash, guideVisibility, lineColor, transform, zoom, pickerExpanded
+        case opacity, flipped, grid, flash, guideVisibility, lineColor, transform, zoom, pickerExpanded, timer
     }
 
     /// `@Published` sinks rather than setter bodies, because the guided gestures and a few tests
@@ -336,6 +401,7 @@ final class CameraViewModel: ObservableObject {
         $zoomLevel.dropFirst().sink { [weak self] _ in self?.settingsDidChange(.zoom) }.store(in: &cancellables)
         $isPickerExpanded.dropFirst().sink { [weak self] _ in self?.settingsDidChange(.pickerExpanded) }
             .store(in: &cancellables)
+        $timerSetting.dropFirst().sink { [weak self] _ in self?.settingsDidChange(.timer) }.store(in: &cancellables)
     }
 
     /// Gate moves are not camera settings, but the shutter's enabled state reads them: without this
@@ -396,7 +462,8 @@ final class CameraViewModel: ObservableObject {
             lineColor: guideLineColor,
             transform: persistedTransform,
             zoom: zoomLevel,
-            isPickerExpanded: isPickerExpanded
+            isPickerExpanded: isPickerExpanded,
+            timer: timerSetting
         )
     }
 
@@ -433,6 +500,10 @@ final class CameraViewModel: ObservableObject {
         if !touchedSettings.contains(.lineColor) { guideLineColor = stored.lineColor }
         if !touchedSettings.contains(.zoom) { zoomLevel = stored.zoom }
         if !touchedSettings.contains(.pickerExpanded) { isPickerExpanded = stored.isPickerExpanded }
+        if !touchedSettings.contains(.timer) {
+            timerSetting = stored.timer
+            timerMachine.setting = stored.timer
+        }
         if !touchedSettings.contains(.transform) {
             pendingRestoredTransform = restored.map { $0.transform.placement }
             restoredTransformValue = restored?.transform
@@ -535,6 +606,8 @@ final class CameraViewModel: ObservableObject {
                 try? await Task.sleep(nanoseconds: 50_000_000)
             }
             timeoutTask?.cancel()
+            timerMachine.captureFinished()
+            timerCountdown = nil
             reloadThumbnail()
 
             guard case .captureSucceeded(_, let photo) = coordinator.state.phase else {
@@ -626,6 +699,94 @@ enum CameraZoomLevel: Int, CaseIterable, Equatable {
         let all = CameraZoomLevel.allCases
         let index = all.firstIndex(of: self) ?? 0
         return all[(index + 1) % all.count]
+    }
+}
+
+/// Shutter timer (`05-camera-tools-sheet`: Off / 3 s / 10 s).
+enum CameraTimerSetting: String, CaseIterable, Identifiable, Sendable {
+    case off = "Off"
+    case threeSeconds = "3 s"
+    case tenSeconds = "10 s"
+
+    var id: String { rawValue }
+    var seconds: Int {
+        switch self {
+        case .off: return 0
+        case .threeSeconds: return 3
+        case .tenSeconds: return 10
+        }
+    }
+    var accessibilityIdentifier: String {
+        switch self {
+        case .off: return "camera.tools.timer.off"
+        case .threeSeconds: return "camera.tools.timer.3s"
+        case .tenSeconds: return "camera.tools.timer.10s"
+        }
+    }
+}
+
+/// The shutter countdown as a state machine with no clock of its own: the view model feeds it presses
+/// and one-second ticks, so start / advance / fire / cancel / a second press are all deterministic.
+struct CameraTimerMachine: Equatable {
+    enum Phase: Equatable {
+        case ready
+        case counting(remaining: Int)
+        /// A capture is in flight: no press or tick may start another one.
+        case capturing
+    }
+
+    enum Effect: Equatable {
+        case captureNow
+        case countdownStarted(remaining: Int)
+        case countdownAdvanced(remaining: Int)
+        case cancelled
+        case ignored
+    }
+
+    private(set) var phase: Phase = .ready
+    var setting: CameraTimerSetting = .off
+
+    var isCountingDown: Bool {
+        if case .counting = phase { return true }
+        return false
+    }
+
+    var remainingSeconds: Int? {
+        if case .counting(let remaining) = phase { return remaining }
+        return nil
+    }
+
+    mutating func shutterPressed(isReady: Bool) -> Effect {
+        guard phase == .ready else { return .ignored }
+        guard setting.seconds > 0 else {
+            guard isReady else { return .ignored }
+            phase = .capturing
+            return .captureNow
+        }
+        // A timed press starts the countdown even before the session is ready; readiness is decided
+        // when the countdown fires, so a slow camera still gets the full warning.
+        phase = .counting(remaining: setting.seconds)
+        return .countdownStarted(remaining: setting.seconds)
+    }
+
+    mutating func tick() -> Effect {
+        guard case .counting(let remaining) = phase else { return .ignored }
+        guard remaining > 1 else {
+            phase = .capturing
+            return .captureNow
+        }
+        phase = .counting(remaining: remaining - 1)
+        return .countdownAdvanced(remaining: remaining - 1)
+    }
+
+    mutating func cancel() -> Bool {
+        guard isCountingDown else { return false }
+        phase = .ready
+        return true
+    }
+
+    mutating func captureFinished() {
+        phase = .ready
     }
 }
 
@@ -855,6 +1016,7 @@ struct CameraScreen: View {
                             hasPose: guide != nil,
                             isPoseGuideVisible: model.isPoseGuideVisible,
                             guideFlipped: model.guideFlipped,
+                            timerSetting: model.timerSetting,
                             guideOpacity: model.guideOpacity,
                             guideLineColor: model.guideLineColor,
                             popupWidth: min(CameraProto.popupWidth, size.width - CameraProto.controlInset * 2),
@@ -869,6 +1031,7 @@ struct CameraScreen: View {
                             onGridToggle: { model.toggleGrid() },
                             onPoseGuideVisibilityToggle: { model.togglePoseGuideVisibility() },
                             onMirrorToggle: { model.toggleGuideMirror() },
+                            onTimerChange: { model.setTimerSetting($0) },
                             onGuideOpacityChange: { model.setGuideOpacity($0) },
                             onGuideLineColorChange: { model.setGuideLineColor($0) },
                             onDismiss: { dismissCameraTools() }
@@ -910,6 +1073,7 @@ struct CameraScreen: View {
             controlsEnabled: model.cameraControlsEnabled,
             status: model.statusMessage,
             statusTone: model.statusTone,
+            timerCountdown: model.timerCountdown,
             strip: stripContent,
             selectedPoseID: guide?.id,
             isPickerExpanded: model.isPickerExpanded,
@@ -922,7 +1086,8 @@ struct CameraScreen: View {
             onOpenGallery: onOpenGallery,
             onCapture: { model.capture() },
             onSwitchCamera: { model.switchCamera() },
-            onDismissStatus: { model.dismissStatusMessage() }
+            onDismissStatus: { model.dismissStatusMessage() },
+            onCancelTimer: { model.cancelTimer() }
         )
     }
 
@@ -1467,6 +1632,8 @@ struct CameraBottomBar: View {
     let controlsEnabled: Bool
     let status: String?
     let statusTone: APStateTone
+    /// Shutter-timer countdown (`nil` when idle): a visible number and its own Cancel.
+    let timerCountdown: Int?
     let strip: CameraStripContent
     let selectedPoseID: String?
     let isPickerExpanded: Bool
@@ -1480,6 +1647,7 @@ struct CameraBottomBar: View {
     let onCapture: () -> Void
     let onSwitchCamera: () -> Void
     let onDismissStatus: () -> Void
+    let onCancelTimer: () -> Void
 
     @ScaledMetric(relativeTo: .caption) private var cardWidth: CGFloat = 84
     @ScaledMetric(relativeTo: .caption) private var cardImageHeight: CGFloat = 92
@@ -1509,6 +1677,11 @@ struct CameraBottomBar: View {
                 .accessibilityIdentifier("camera.status")
             }
 
+            if let timerCountdown {
+                countdownBadge(timerCountdown)
+                    .padding(.bottom, AP.Space.space8)
+            }
+
             zoomPill
                 .padding(.bottom, AP.Space.space8)
 
@@ -1516,6 +1689,33 @@ struct CameraBottomBar: View {
         }
         .frame(maxWidth: .infinity)
         .background(AP.Color.background)
+    }
+
+    /// The countdown: seconds left plus its own Cancel. Cancelling returns to ready with no photo;
+    /// the shutter is not the cancel control, so a second press can never read as one.
+    private func countdownBadge(_ seconds: Int) -> some View {
+        HStack(spacing: AP.Space.space12) {
+            Text("\(seconds)")
+                .font(AP.Font.data)
+                .foregroundStyle(AP.Color.primaryText)
+                .accessibilityHidden(true)
+            Text("Get ready")
+                .font(AP.Font.supporting)
+                .foregroundStyle(AP.Color.secondaryText)
+            Button("Cancel", action: onCancelTimer)
+                .buttonStyle(.plain)
+                .font(AP.Font.supporting.weight(.semibold))
+                .foregroundStyle(AP.Color.accentText)
+                .apMinimumHitTarget()
+                .accessibilityIdentifier("camera.timer.cancel")
+        }
+        .padding(.horizontal, AP.Space.space16)
+        .padding(.vertical, AP.Space.space8)
+        .background(Capsule().fill(AP.Color.surface))
+        .apElevation(.e1, cornerRadius: AP.Space.space24)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Timer \(seconds) seconds. Cancel the timer.")
+        .accessibilityIdentifier("camera.timer.countdown")
     }
 
     // MARK: Panel
@@ -1790,6 +1990,7 @@ private struct CameraToolsPopup: View {
     let hasPose: Bool
     let isPoseGuideVisible: Bool
     let guideFlipped: Bool
+    let timerSetting: CameraTimerSetting
     let guideOpacity: Double
     let guideLineColor: GuideLineColor
     let popupWidth: CGFloat
@@ -1798,6 +1999,7 @@ private struct CameraToolsPopup: View {
     let onGridToggle: () -> Void
     let onPoseGuideVisibilityToggle: () -> Void
     let onMirrorToggle: () -> Void
+    let onTimerChange: (CameraTimerSetting) -> Void
     let onGuideOpacityChange: (Double) -> Void
     let onGuideLineColorChange: (GuideLineColor) -> Void
     let onDismiss: () -> Void
@@ -1843,6 +2045,7 @@ private struct CameraToolsPopup: View {
                 action: onFlashTap
             )
             gridRow
+            timerRow
 
             if hasPose {
                 Divider()
@@ -2024,6 +2227,62 @@ private struct CameraToolsPopup: View {
         .accessibilityValue(guideFlipped ? "Mirrored" : "Normal")
         .accessibilityIdentifier("camera.tools.mirror.switch")
         .accessibilityAddTraits(guideFlipped ? [.isSelected] : [])
+    }
+
+    /// Timer: Off / 3 s / 10 s, the chosen option with a check glyph and its word.
+    private var timerRow: some View {
+        VStack(alignment: .leading, spacing: AP.Space.space4) {
+            HStack(spacing: AP.Space.space8) {
+                Image(systemName: "timer")
+                    .font(AP.Font.body)
+                    .foregroundStyle(AP.Color.primaryText)
+                    .frame(width: 22)
+                    .accessibilityHidden(true)
+                Text("Timer")
+                    .font(AP.Font.body)
+                    .foregroundStyle(AP.Color.primaryText)
+                Spacer(minLength: AP.Space.space8)
+                Text(timerSetting.rawValue)
+                    .font(AP.Font.body.weight(.semibold))
+                    .foregroundStyle(AP.Color.accentText)
+            }
+            HStack(spacing: AP.Space.space8) {
+                ForEach(CameraTimerSetting.allCases) { setting in
+                    timerChoice(setting)
+                }
+            }
+        }
+        .padding(.horizontal, AP.Space.space12)
+        .padding(.vertical, AP.Space.space8)
+        .background(
+            RoundedRectangle(cornerRadius: AP.Radius.radius16, style: .continuous)
+                .fill(AP.Color.controlFill)
+        )
+        .disabled(!controlsEnabled)
+        .opacity(controlsEnabled ? 1 : 0.45)
+        .accessibilityIdentifier("camera.tools.timer")
+    }
+
+    private func timerChoice(_ setting: CameraTimerSetting) -> some View {
+        let isSelected = timerSetting == setting
+        return Button {
+            onTimerChange(setting)
+        } label: {
+            HStack(spacing: AP.Space.space4) {
+                if isSelected {
+                    Image(systemName: "checkmark")
+                        .font(AP.Font.caption.weight(.bold))
+                }
+                Text(setting.rawValue)
+                    .font(AP.Font.supporting.weight(.semibold))
+            }
+            .foregroundStyle(isSelected ? AP.Color.selectedForeground : AP.Color.primaryText)
+            .frame(maxWidth: .infinity, minHeight: AP.HitTarget.minimum)
+        }
+        .buttonStyle(CameraSelectStyle(isSelected: isSelected))
+        .accessibilityLabel("Timer \(setting.rawValue)")
+        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+        .accessibilityIdentifier(setting.accessibilityIdentifier)
     }
 
     private var opacityRow: some View {

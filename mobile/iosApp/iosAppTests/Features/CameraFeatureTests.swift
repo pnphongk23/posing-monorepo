@@ -1573,6 +1573,7 @@ final class CameraChromeTests: XCTestCase {
             controlsEnabled: true,
             status: status,
             statusTone: .success,
+            timerCountdown: nil,
             strip: .poses(poses),
             selectedPoseID: selectedPoseID,
             isPickerExpanded: isPickerExpanded,
@@ -1585,7 +1586,8 @@ final class CameraChromeTests: XCTestCase {
             onOpenGallery: {},
             onCapture: {},
             onSwitchCamera: {},
-            onDismissStatus: {}
+            onDismissStatus: {},
+            onCancelTimer: {}
         )
     }
 
@@ -1800,5 +1802,95 @@ final class CameraGuideMirrorTests: XCTestCase {
         settings.guideFlipped = true
         let decoded = try XCTUnwrap(CameraSettings.decode(try settings.encodedJSON()))
         XCTAssertTrue(decoded.guideFlipped)
+    }
+}
+
+// MARK: - Timer (shutter countdown)
+
+final class CameraTimerMachineTests: XCTestCase {
+    func testWithoutATimerThePressCapturesAtOnce() {
+        var machine = CameraTimerMachine()
+        machine.setting = .off
+        XCTAssertEqual(machine.shutterPressed(isReady: true), .captureNow)
+        XCTAssertEqual(machine.phase, .capturing)
+
+        var notReady = CameraTimerMachine()
+        XCTAssertEqual(notReady.shutterPressed(isReady: false), .ignored, "an unready camera never captures")
+    }
+
+    func testTheCountdownFiresExactlyOnce() {
+        var machine = CameraTimerMachine()
+        machine.setting = .threeSeconds
+
+        XCTAssertEqual(machine.shutterPressed(isReady: true), .countdownStarted(remaining: 3))
+        XCTAssertEqual(machine.tick(), .countdownAdvanced(remaining: 2))
+        XCTAssertEqual(machine.tick(), .countdownAdvanced(remaining: 1))
+        XCTAssertEqual(machine.tick(), .captureNow, "the tick that reaches zero is the capture")
+        XCTAssertEqual(machine.phase, .capturing)
+        XCTAssertEqual(machine.tick(), .ignored, "a capture in flight is never fired again")
+
+        machine.captureFinished()
+        XCTAssertEqual(machine.phase, .ready, "the next press starts from scratch")
+    }
+
+    func testASecondPressDuringTheCountdownIsIgnored() {
+        var machine = CameraTimerMachine()
+        machine.setting = .tenSeconds
+        XCTAssertEqual(machine.shutterPressed(isReady: true), .countdownStarted(remaining: 10))
+        XCTAssertEqual(machine.shutterPressed(isReady: true), .ignored, "never a double capture")
+        XCTAssertEqual(machine.shutterPressed(isReady: false), .ignored)
+        XCTAssertEqual(machine.remainingSeconds, 10, "the running countdown is untouched")
+    }
+
+    func testCancelReturnsToReadyWithoutCapturing() {
+        var machine = CameraTimerMachine()
+        machine.setting = .threeSeconds
+        _ = machine.shutterPressed(isReady: true)
+
+        XCTAssertTrue(machine.cancel())
+        XCTAssertEqual(machine.phase, .ready)
+        XCTAssertFalse(machine.cancel(), "nothing to cancel when ready")
+        XCTAssertFalse(machine.isCountingDown)
+    }
+}
+
+@MainActor
+final class CameraTimerModelTests: XCTestCase {
+    func testTheShutterWaitsForTheCountdownAndCancelTakesNoPhoto() {
+        let model = CameraViewModel(premiumGate: StubPremiumGate(.capture))
+        model.coordinator.onPermissionResult(.authorized)
+        model.setTimerSetting(.threeSeconds)
+
+        model.capture()
+        XCTAssertEqual(model.timerCountdown, 3, "the countdown is visible")
+        XCTAssertFalse(model.coordinator.state.isCaptureInFlight, "nothing is captured before it ends")
+
+        model.capture()
+        XCTAssertEqual(model.timerCountdown, 3, "a second press is ignored, not a second capture")
+        XCTAssertFalse(model.coordinator.state.isCaptureInFlight)
+
+        model.cancelTimer()
+        XCTAssertNil(model.timerCountdown)
+        XCTAssertFalse(model.coordinator.state.isCaptureInFlight, "cancel takes no photo")
+    }
+
+    func testThePaywallStillWinsOverTheTimer() {
+        let gate = StubPremiumGate(.paywall(signIn: false))
+        var prompts: [Bool] = []
+        let model = CameraViewModel(premiumGate: gate, onPremiumRequired: { prompts.append($0) })
+        model.coordinator.onPermissionResult(.authorized)
+        model.setTimerSetting(.threeSeconds)
+
+        model.capture()
+
+        XCTAssertEqual(prompts, [false], "the gate is still the first thing a press meets")
+        XCTAssertNil(model.timerCountdown, "no countdown starts for a gated press")
+    }
+
+    func testTheTimerSettingIsGated() {
+        let model = CameraViewModel()
+        model.coordinator.onPermissionResult(.denied)
+        model.setTimerSetting(.tenSeconds)
+        XCTAssertEqual(model.timerSetting, .off, "a control the camera cannot serve does not move")
     }
 }
