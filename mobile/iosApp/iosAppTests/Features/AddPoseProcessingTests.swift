@@ -1,3 +1,4 @@
+import SwiftUI
 import XCTest
 @testable import iosApp
 
@@ -102,6 +103,51 @@ final class AddPoseProcessingTests: XCTestCase {
         try? await Task.sleep(nanoseconds: 50_000_000)
         XCTAssertTrue(model.isJobGone)
         XCTAssertEqual(model.currentJobStatus, "gone")
+    }
+
+    // MARK: - The restyled processing card (board 08-board09)
+
+    @MainActor
+    func testProcessingCardNamesTheStageAndPaintsItsIndeterminateBar() {
+        let probe = APViewProbe(
+            AddPoseProcessingCard(name: "Window light", stage: .processing),
+            size: CGSize(width: 361, height: 220)
+        )
+        defer { probe.tearDown() }
+        let processing = probe.capture()
+
+        // The bar carries the stage by shape and colour, and it is accent ink, not a number.
+        let barRows = processing.rows(paintedWith: 0x8C3350)
+        XCTAssertFalse(barRows.isEmpty, "the processing card must paint its striped indeterminate bar")
+
+        // The copy under the bar is the board's promise that leaving the screen is safe.
+        XCTAssertTrue(AddPoseFormCopy.leaveHint.contains("Status continues in Jobs"))
+
+        // Swapping the stage the server reported must change what the card says. The stripes animate,
+        // so the comparison has to stop above the bar: what differs there is the stage copy and glyph.
+        let ready = probe.render(AddPoseProcessingCard(name: "Window light", stage: .ready))
+        let barTop = barRows.first ?? processing.height
+        let firstDifferingRow = (0..<max(1, min(barTop, processing.height))).first { row in
+            processing.differs(from: ready, inRows: row..<(row + 1))
+        }
+        guard let firstDifferingRow else {
+            return XCTFail("the card must name the stage it was given instead of one hard-coded status")
+        }
+        XCTAssertLessThan(
+            firstDifferingRow, max(1, barTop),
+            "the stage copy above the bar is where the reported status has to show up"
+        )
+    }
+
+    func testIndeterminateBarHasNoPercentageAndStopsUnderReduceMotion() {
+        XCTAssertNil(
+            AddPoseIndeterminateBar.animation(reduceMotion: true),
+            "Reduce Motion keeps the stripes still; the stage word carries the state"
+        )
+        XCTAssertNotNil(AddPoseIndeterminateBar.animation(reduceMotion: false))
+        for stage in AddPoseStage.allCases {
+            XCTAssertFalse(stage.label.contains("%"), "no percentage anywhere (B3c)")
+        }
     }
 
     func testViewJobsTargetTabSelection() {

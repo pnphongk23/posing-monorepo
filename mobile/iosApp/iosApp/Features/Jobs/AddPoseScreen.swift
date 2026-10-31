@@ -1,8 +1,117 @@
-import Kingfisher
 import SwiftUI
+
+// MARK: - Copy
+
+/// Every string the Add pose flow draws, in one place so the boards' wording is testable and the
+/// frozen consent copy keeps living in `AddPoseConsentCopy` (App Review 5.1.2(i)).
+enum AddPoseFormCopy {
+    static let screenTitle = "Add pose"
+    static let processingTitle = "Processing"
+
+    static let nameLabel = "Name"
+    static let namePlaceholder = "Pose name"
+    static let tagsLabel = "Tags"
+    static let tagPlaceholder = "Add tag"
+    static let descriptionLabel = "Description"
+    static let descriptionPlaceholder = "Describe the pose"
+
+    static let changePhoto = "Change photo"
+    static let choosePhoto = "Choose photo"
+    static let chooseAnotherPhoto = "Choose another photo"
+
+    static let addPose = "Add pose"
+    static let addingPose = "Adding…"
+    static let viewPose = "View pose"
+    static let viewJobs = "View jobs"
+    static let done = "Done"
+    static let retry = "Retry"
+
+    static let offlineBanner = "You're offline. Your draft is kept on this device."
+    static let offlineSubmitHint = "Connect to the internet to add this pose."
+    static let photoRequiredHint = "Choose a photo to continue."
+    static let leaveHint = "You can leave this screen. Status continues in Jobs."
+
+    static let nameRequired = "Add a name for your pose."
+    static let tagsRequired = "Pick at least one tag."
+    static func descriptionTooLong(_ characters: Int) -> String {
+        "\(characters) character\(characters == 1 ? "" : "s") too long."
+    }
+
+    static let photoErrorTitle = "Couldn't read this photo"
+    static let extractionFailedTitle = "Extraction failed"
+    static let extractionFailedFallback = "Pose extraction could not be completed."
+    static let jobGoneTitle = "Job removed"
+    static let jobGoneMessage = "This job was removed."
+    static let extractOffTitle = "Pose extraction is off"
+    static let extractOffMessage = "Pose extraction is currently unavailable."
+    static let processingOffline = "You're offline. Status resumes when you're back online."
+}
+
+/// Failures the server reports about the photo itself. They are drawn on the photo block (board
+/// `08-board08`) rather than in the transient toast, because the fix is another photo, not a retry.
+enum AddPosePhotoError: String, Equatable {
+    case unreadable
+    case tooLarge
+
+    var message: String {
+        switch self {
+        case .unreadable:
+            return "It isn't a JPEG or PNG. Choose another photo."
+        case .tooLarge:
+            // The documented upload limit is 10 MB (`POST /api/extract-pose`, contract §Extract Pose).
+            return "It's larger than 10 MB. Choose a smaller photo."
+        }
+    }
+}
+
+/// The stage the processing card names. Derived from the status the server reports — never from
+/// elapsed time — so the card cannot claim progress the backend did not report, and no percentage is
+/// ever invented (B3c).
+enum AddPoseStage: String, CaseIterable, Equatable {
+    case queued
+    case processing
+    case ready
+    case failed
+
+    /// An unrecognised status is reported as in flight: the backend emits exactly these four states,
+    /// and the card must never claim "ready" for a state it does not recognise.
+    init(status: String) {
+        switch status.lowercased() {
+        case "queued": self = .queued
+        case "succeeded": self = .ready
+        case "failed": self = .failed
+        default: self = .processing
+        }
+    }
+
+    var label: String {
+        switch self {
+        case .queued: return "Queued"
+        case .processing: return AddPoseFormCopy.processingTitle
+        case .ready: return "Pose ready"
+        case .failed: return "Failed"
+        }
+    }
+
+    var glyph: String {
+        switch self {
+        case .queued: return "clock"
+        case .processing: return "sparkles"
+        case .ready: return "checkmark.circle.fill"
+        case .failed: return "exclamationmark.triangle.fill"
+        }
+    }
+
+    var isInFlight: Bool { self == .queued || self == .processing }
+}
 
 @MainActor
 final class AddPoseViewModel: ObservableObject {
+    /// Tags and description limits from `isFormValid`. The screen draws both, so they are named here
+    /// instead of restated in the view.
+    static let maxTags = 10
+    static let descriptionLimit = 500
+
     @Published var selectedImage: UIImage?
     @Published var selectedImageData: Data?
     @Published var selectedFileName: String?
@@ -24,6 +133,17 @@ final class AddPoseViewModel: ObservableObject {
 
     /// Drives the consent sheet. The form stays mounted behind it, so Cancel leaves it filled.
     @Published var isConsentPromptVisible = false
+
+    /// Board `08-board07`: the per-field errors appear once the user has tried to add the pose, so the
+    /// form never accuses someone who has not started yet.
+    @Published var showsFieldErrors = false
+
+    /// The inline tag input. The tags themselves stay in `tagsText` (comma separated, the property the
+    /// tests and `parsedTags` already read), so the chips and the field can never disagree.
+    @Published var tagDraft = ""
+
+    /// A photo-specific failure, drawn on the photo block instead of the transient snackbar.
+    @Published private(set) var photoError: AddPosePhotoError?
 
     private let jobsService: any JobsServing
     private let consentStore: any AddPoseConsentStoring
@@ -50,6 +170,8 @@ final class AddPoseViewModel: ObservableObject {
         watchTask?.cancel()
     }
 
+    // MARK: - Form state
+
     var parsedTags: [String] {
         tagsText
             .split(separator: ",")
@@ -62,10 +184,95 @@ final class AddPoseViewModel: ObservableObject {
         guard selectedImageData != nil else { return false }
         guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
         let tags = parsedTags
-        guard !tags.isEmpty && tags.count <= 10 else { return false }
-        guard descriptionText.count <= 500 else { return false }
+        guard !tags.isEmpty && tags.count <= Self.maxTags else { return false }
+        guard descriptionText.count <= Self.descriptionLimit else { return false }
         return true
     }
+
+    var poseName: String {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? AddPoseFormCopy.namePlaceholder : trimmed
+    }
+
+    /// The footer CTA stays live unless the upload is already running or the device is offline, so a
+    /// tap can explain what is missing (board `08-board07`) instead of a dead control explaining
+    /// nothing.
+    var isSubmitEnabled: Bool { !isSubmitting && !isOffline }
+
+    /// The reason under the footer CTA when it cannot do anything useful (boards `08-board06`,
+    /// `08-board08`).
+    var submitHint: String? {
+        if isOffline { return AddPoseFormCopy.offlineSubmitHint }
+        guard selectedImageData == nil else { return nil }
+        return AddPoseFormCopy.photoRequiredHint
+    }
+
+    var nameFieldError: String? {
+        guard showsFieldErrors, name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        return AddPoseFormCopy.nameRequired
+    }
+
+    var tagsFieldError: String? {
+        guard showsFieldErrors, parsedTags.isEmpty else { return nil }
+        return AddPoseFormCopy.tagsRequired
+    }
+
+    var descriptionOverflow: Int { max(0, descriptionText.count - Self.descriptionLimit) }
+
+    /// Live, not gated on a submit attempt: the counter already turns red, and an over-long
+    /// description blocks the CTA (board `08-board07`).
+    var descriptionFieldError: String? {
+        guard descriptionOverflow > 0 else { return nil }
+        return AddPoseFormCopy.descriptionTooLong(descriptionOverflow)
+    }
+
+    /// Copy for the transient bottom snackbar (F5). Photo failures are not toasts.
+    var snackbarMessage: String? {
+        photoError == nil ? submitError : nil
+    }
+
+    // MARK: - Tags
+
+    /// Adds the tag the inline field holds and clears the field. Duplicates and the eleventh tag are
+    /// dropped instead of failing the form later.
+    func commitTagDraft() {
+        let parts = tagDraft.components(separatedBy: ",")
+        var tags = parsedTags
+        for part in parts {
+            Self.append(part, to: &tags)
+        }
+        tagsText = tags.joined(separator: ", ")
+        tagDraft = ""
+    }
+
+    /// Commits what the user has already finished typing (everything before the last comma) and keeps
+    /// the word still in progress, so "standing, indoor" becomes two chips while it is typed.
+    func commitCompletedTags() {
+        guard tagDraft.contains(",") else { return }
+        let parts = tagDraft.components(separatedBy: ",")
+        var tags = parsedTags
+        for part in parts.dropLast() {
+            Self.append(part, to: &tags)
+        }
+        tagsText = tags.joined(separator: ", ")
+        tagDraft = parts.last?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    }
+
+    func removeTag(_ tag: String) {
+        var tags = parsedTags
+        tags.removeAll { $0 == tag }
+        tagsText = tags.joined(separator: ", ")
+    }
+
+    private static func append(_ raw: String, to tags: inout [String]) {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        guard tags.count < maxTags else { return }
+        guard !tags.contains(where: { $0.caseInsensitiveCompare(trimmed) == .orderedSame }) else { return }
+        tags.append(trimmed)
+    }
+
+    // MARK: - Submitting
 
     func submit() async -> Bool {
         guard AppConfig.canExtractPose(isEnabled: AppConfig.shared.isExtractPoseEnabled) else {
@@ -125,9 +332,22 @@ final class AddPoseViewModel: ObservableObject {
         return !consentStore.hasAcknowledged(accountID: accountID)
     }
 
+    /// Clears the snackbar and the photo banner: the user has seen them.
+    func dismissSubmitError() {
+        submitError = nil
+        photoError = nil
+    }
+
+    /// A freshly chosen photo clears the previous photo failure, so an old banner cannot describe the
+    /// new photo.
+    func clearPhotoError() {
+        photoError = nil
+    }
+
     private func performUpload(imageData: Data, fileName: String, draft: PoseDraft) async -> Bool {
         isSubmitting = true
         submitError = nil
+        photoError = nil
         isOffline = false
         defer { isSubmitting = false }
 
@@ -144,9 +364,11 @@ final class AddPoseViewModel: ObservableObject {
             submitError = "You're offline. Check your connection."
             return false
         } catch JobsError.invalidImage {
+            photoError = .unreadable
             submitError = "Only JPEG and PNG images are supported. Choose another photo."
             return false
         } catch JobsError.imageTooLarge {
+            photoError = .tooLarge
             submitError = "Photo exceeds the 10 MB limit. Choose another photo."
             return false
         } catch JobsError.invalidMetadata {
@@ -156,6 +378,19 @@ final class AddPoseViewModel: ObservableObject {
             submitError = "Couldn't send. Try again."
             return false
         }
+    }
+
+    // MARK: - Processing
+
+    /// The stage the processing card names, from the status the server reported.
+    var stage: AddPoseStage { AddPoseStage(status: currentJobStatus) }
+
+    var isFailed: Bool { !isJobGone && stage == .failed }
+
+    var isReady: Bool { !isJobGone && stage == .ready }
+
+    var failureMessage: String {
+        processingError ?? AddPoseFormCopy.extractionFailedFallback
     }
 
     func startWatching(jobId: String) {
@@ -212,11 +447,13 @@ struct AddPoseScreen: View {
     var onTryPose: (CameraPoseRequest) -> Void = { _ in }
     var onOpenJobs: (JobsTab) -> Void = { _ in }
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     @State private var showsPhotoPicker = false
     @State private var pendingSignIn: SignInIntent?
     @State private var detailedPose: NativePose?
     @State private var isLoadingGuide = false
+    @FocusState private var isTagFieldFocused: Bool
 
     init(
         viewModel: AddPoseViewModel = AddPoseViewModel(),
@@ -230,31 +467,28 @@ struct AddPoseScreen: View {
         self.onOpenJobs = onOpenJobs
     }
 
+    /// The flow is one surface with two stages: the form, then the job the upload produced. Back and
+    /// Done both pop to Poses, because that is where this screen is pushed from.
+    private var isProcessingFlow: Bool { viewModel.submittedJobId != nil }
+
     var body: some View {
         VStack(spacing: 0) {
+            // F1: back and title on one row, the title inline beside the button.
             APPageHeader(
-                title: viewModel.submittedJobId == nil ? "Add Pose" : "Processing Pose",
+                title: isProcessingFlow ? AddPoseFormCopy.processingTitle : AddPoseFormCopy.screenTitle,
+                titleIdentifier: "addPose.title",
                 onBack: { dismiss() }
             )
 
-            if !AppConfig.canExtractPose(isEnabled: AppConfig.shared.isExtractPoseEnabled) && viewModel.submittedJobId == nil {
-                VStack(spacing: AIPoseSpacing.md) {
-                    FeatureStateView(
-                        tone: .error,
-                        title: "Pose Extraction Disabled",
-                        message: "Pose extraction is currently unavailable."
-                    )
-                    .padding(.horizontal, AIPoseSpacing.lg)
-                    Spacer()
-                }
-                .padding(.top, AIPoseSpacing.xl)
-            } else if viewModel.submittedJobId == nil {
-                formView
+            if !AppConfig.canExtractPose(isEnabled: AppConfig.shared.isExtractPoseEnabled) && !isProcessingFlow {
+                extractionDisabled
+            } else if isProcessingFlow {
+                processingBody
             } else {
-                processingView
+                formBody
             }
         }
-        .background(AIPoseColor.background)
+        .background(AP.Color.background.ignoresSafeArea())
         .neoHiddenNavigationBar()
         .sheet(isPresented: $showsPhotoPicker) {
             PhotoLibraryPicker(
@@ -277,279 +511,621 @@ struct AddPoseScreen: View {
                 Task { await viewModel.submit() }
             }
         }
-        .background(
-            Group {
-                if let detailedPose {
-                    NavigationLink(
-                        destination: PoseDetailScreen(
-                            pose: detailedPose,
-                            model: posesModel,
-                            onTryPose: onTryPose,
-                            isPrivate: true
-                        ),
-                        isActive: Binding(
-                            get: { true },
-                            set: { if !$0 { self.detailedPose = nil } }
-                        )
-                    ) {
-                        EmptyView()
-                    }
-                    .hidden()
-                }
-            }
-        )
+        .background(hiddenDetailLink)
     }
 
-    // MARK: - Form View
-    private var formView: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: AIPoseSpacing.lg) {
-                // Photo picker area
-                photoPickerArea
-
-                // Name field
-                VStack(alignment: .leading, spacing: AIPoseSpacing.xs) {
-                    Text("Pose Name *")
-                        .font(.system(size: 14, weight: .bold))
-                        .foregroundStyle(AIPoseColor.foreground)
-
-                    TextField("e.g. Standing Hero Pose", text: $viewModel.name)
-                        .font(.body)
-                        .padding(.horizontal, AIPoseSpacing.md)
-                        .frame(minHeight: 48)
-                        .background(AIPoseColor.surface)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
-                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(AIPoseColor.foreground, lineWidth: 2))
-                        .accessibilityIdentifier("addPose.nameField")
-                }
-
-                // Tags field
-                VStack(alignment: .leading, spacing: AIPoseSpacing.xs) {
-                    Text("Tags (1–10, comma-separated) *")
-                        .font(.system(size: 14, weight: .bold))
-                        .foregroundStyle(AIPoseColor.foreground)
-
-                    TextField("e.g. standing, full body, beginner", text: $viewModel.tagsText)
-                        .font(.body)
-                        .padding(.horizontal, AIPoseSpacing.md)
-                        .frame(minHeight: 48)
-                        .background(AIPoseColor.surface)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
-                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(AIPoseColor.foreground, lineWidth: 2))
-                        .accessibilityIdentifier("addPose.tagsField")
-                }
-
-                // Description field
-                VStack(alignment: .leading, spacing: AIPoseSpacing.xs) {
-                    HStack {
-                        Text("Description (Optional)")
-                            .font(.system(size: 14, weight: .bold))
-                            .foregroundStyle(AIPoseColor.foreground)
-                        Spacer()
-                        Text("\(viewModel.descriptionText.count)/500")
-                            .font(.caption)
-                            .foregroundStyle(viewModel.descriptionText.count > 500 ? AIPoseColor.error : AIPoseColor.subtext)
-                    }
-
-                    TextEditor(text: $viewModel.descriptionText)
-                        .font(.body)
-                        .frame(minHeight: 96)
-                        .padding(AIPoseSpacing.sm)
-                        .background(AIPoseColor.surface)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
-                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(AIPoseColor.foreground, lineWidth: 2))
-                        .accessibilityIdentifier("addPose.descriptionField")
-                }
-
-                // Error card
-                if let error = viewModel.submitError {
-                    FeatureStateView(
-                        tone: .error,
-                        title: "Couldn't add pose",
-                        message: error
+    private var hiddenDetailLink: some View {
+        Group {
+            if let detailedPose {
+                NavigationLink(
+                    destination: PoseDetailScreen(
+                        pose: detailedPose,
+                        model: posesModel,
+                        onTryPose: onTryPose,
+                        isPrivate: true
+                    ),
+                    isActive: Binding(
+                        get: { true },
+                        set: { if !$0 { self.detailedPose = nil } }
                     )
-                    .accessibilityIdentifier("addPose.errorView")
+                ) {
+                    EmptyView()
                 }
-
-                // Submit button
-                Button {
-                    Task {
-                        let hasSession = await ServiceLocator.sessionBoundary.hasStoredSession()
-                        if !hasSession {
-                            pendingSignIn = .addPose
-                        } else {
-                            _ = await viewModel.submit()
-                        }
-                    }
-                } label: {
-                    HStack(spacing: AIPoseSpacing.sm) {
-                        if viewModel.isSubmitting {
-                            ProgressView().tint(AIPoseColor.foreground)
-                        }
-                        Text(viewModel.isSubmitting ? "Submitting…" : "Extract Pose")
-                            .font(.system(size: 16, weight: .bold))
-                    }
-                    .frame(maxWidth: .infinity, minHeight: 48)
-                }
-                .buttonStyle(NeoButtonStyle(fill: viewModel.isFormValid && !viewModel.isOffline ? AIPoseColor.primary : AIPoseColor.surfaceVariant))
-                .disabled(!viewModel.isFormValid || viewModel.isSubmitting || viewModel.isOffline)
-                .accessibilityIdentifier("addPose.submitButton")
+                .hidden()
             }
-            .padding(AIPoseSpacing.lg)
         }
     }
 
-    private var photoPickerArea: some View {
+    // MARK: - Extraction switched off
+
+    private var extractionDisabled: some View {
+        APErrorStateView(
+            title: AddPoseFormCopy.extractOffTitle,
+            message: AddPoseFormCopy.extractOffMessage,
+            retry: nil,
+            style: .plain
+        )
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+
+    // MARK: - Form
+
+    private var formBody: some View {
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: AP.Space.space24) {
+                    if viewModel.isOffline {
+                        offlineBanner
+                    }
+                    if let photoError = viewModel.photoError {
+                        photoErrorBanner(photoError)
+                    }
+                    photoBlock
+                    tagsBlock
+                    descriptionBlock
+                }
+                .padding(.horizontal, AP.Space.space16)
+                .padding(.top, AP.Space.space8)
+                .padding(.bottom, AP.Space.space24)
+            }
+            // F5: a failed submit is announced at the bottom, right above the pinned CTA.
+            .apSnackbar(viewModel.snackbarMessage, tone: .error) { viewModel.dismissSubmitError() }
+            .onChange(of: viewModel.selectedImageData) { _ in viewModel.clearPhotoError() }
+            .onChange(of: isTagFieldFocused) { isFocused in
+                // Leaving the field keeps whatever was typed instead of silently dropping a tag.
+                if !isFocused { viewModel.commitTagDraft() }
+            }
+
+            formFooter
+        }
+    }
+
+    private var offlineBanner: some View {
+        APOfflineBanner(
+            message: AddPoseFormCopy.offlineBanner,
+            retryTitle: AddPoseFormCopy.retry,
+            // The CTA is disabled while offline (board `08-board06`), so the banner owns the retry.
+            retry: { submitTapped(ignoringOffline: true) }
+        )
+        .accessibilityIdentifier("addPose.offlineBanner")
+    }
+
+    private func photoErrorBanner(_ error: AddPosePhotoError) -> some View {
+        APStatusBanner(
+            tone: .error,
+            title: AddPoseFormCopy.photoErrorTitle,
+            message: error.message
+        )
+        // The id the legacy error card carried, so the QA flow that reads it keeps working.
+        .accessibilityIdentifier("addPose.errorView")
+    }
+
+    @ViewBuilder
+    private var photoBlock: some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: AP.Space.space16) {
+                photoTile
+                nameColumn
+            }
+        } else {
+            HStack(alignment: .top, spacing: AP.Space.space16) {
+                photoTile
+                nameColumn
+            }
+        }
+    }
+
+    private var photoTile: some View {
         Button {
             showsPhotoPicker = true
         } label: {
-            if let image = viewModel.selectedImage {
-                ZStack(alignment: .topTrailing) {
-                    Image(uiImage: image)
-                        .resizable()
-                        .scaledToFit()
-                        .frame(maxWidth: .infinity, maxHeight: 280)
-                        .clipShape(RoundedRectangle(cornerRadius: 14))
-                        .overlay(RoundedRectangle(cornerRadius: 14).stroke(AIPoseColor.foreground, lineWidth: 2))
-
-                    Text("Change Photo")
-                        .font(.caption.bold())
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .background(AIPoseColor.surface)
-                        .clipShape(Capsule())
-                        .overlay(Capsule().stroke(AIPoseColor.foreground, lineWidth: 1.5))
-                        .padding(8)
-                }
-            } else {
-                VStack(spacing: AIPoseSpacing.sm) {
-                    Image(systemName: "photo.badge.plus")
-                        .font(.system(size: 36))
-                        .foregroundStyle(AIPoseColor.foreground)
-                    Text("Choose photo from library")
-                        .font(.system(size: 15, weight: .bold))
-                        .foregroundStyle(AIPoseColor.foreground)
-                    Text("JPEG or PNG, max 10 MB")
-                        .font(.caption)
-                        .foregroundStyle(AIPoseColor.subtext)
-                }
-                .frame(maxWidth: .infinity, minHeight: 180)
-                .background(AIPoseColor.surfaceVariant)
-                .clipShape(RoundedRectangle(cornerRadius: 14))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 14)
-                        .stroke(AIPoseColor.foreground, style: StrokeStyle(lineWidth: 2, dash: [6]))
-                )
-            }
-        }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier("addPose.photoPicker")
-    }
-
-    // MARK: - Processing View
-    private var processingView: some View {
-        ScrollView {
-            VStack(spacing: AIPoseSpacing.lg) {
+            Group {
                 if let image = viewModel.selectedImage {
                     Image(uiImage: image)
                         .resizable()
-                        .scaledToFit()
-                        .frame(maxWidth: .infinity, maxHeight: 240)
-                        .clipShape(RoundedRectangle(cornerRadius: 14))
-                        .overlay(RoundedRectangle(cornerRadius: 14).stroke(AIPoseColor.foreground, lineWidth: 2))
-                }
-
-                // Processing Status
-                processingStatusCard
-
-                // Action Buttons
-                VStack(spacing: AIPoseSpacing.md) {
-                    if viewModel.currentJobStatus.lowercased() == "succeeded", let poseId = viewModel.currentPoseId {
-                        Button {
-                            Task {
-                                isLoadingGuide = true
-                                defer { isLoadingGuide = false }
-                                do {
-                                    let guide = try await ServiceLocator.jobsService.getGuide(id: poseId)
-                                    self.detailedPose = GuidePoseMapper.map(guide, baseURL: AppConfig.shared.SERVER_BASE_URL)
-                                } catch {
-                                    // fallback
-                                }
-                            }
-                        } label: {
-                            HStack {
-                                if isLoadingGuide { ProgressView().tint(AIPoseColor.foreground) }
-                                Text("View pose")
-                                    .font(.system(size: 16, weight: .bold))
-                            }
-                            .frame(maxWidth: .infinity, minHeight: 48)
-                        }
-                        .buttonStyle(NeoButtonStyle(fill: AIPoseColor.primary))
-                        .accessibilityIdentifier("addPose.viewPoseButton")
+                        .scaledToFill()
+                } else {
+                    ZStack {
+                        AP.Color.controlFill
+                        Image(systemName: viewModel.photoError == nil ? "photo" : "exclamationmark.triangle.fill")
+                            .font(.system(size: 24, weight: .semibold))
+                            .foregroundStyle(viewModel.photoError == nil ? AP.Color.secondaryText : AP.Color.error)
                     }
-
-                    if JobsEntryPolicy.canOpen(extractPoseEnabled: AppConfig.shared.isExtractPoseEnabled) {
-                        Button {
-                            guard JobsEntryPolicy.canOpen(extractPoseEnabled: AppConfig.shared.isExtractPoseEnabled) else { return }
-                            let targetTab: JobsTab = (viewModel.currentJobStatus.lowercased() == "succeeded" || viewModel.currentJobStatus.lowercased() == "failed") ? .finish : .processing
-                            onOpenJobs(targetTab)
-                        } label: {
-                            Text("View jobs")
-                                .font(.system(size: 16, weight: .bold))
-                                .frame(maxWidth: .infinity, minHeight: 48)
-                        }
-                        .buttonStyle(NeoButtonStyle(fill: viewModel.currentJobStatus.lowercased() == "succeeded" ? AIPoseColor.surface : AIPoseColor.primary))
-                        .accessibilityIdentifier("addPose.viewJobsButton")
-                    }
-
-                    Button("Done") {
-                        dismiss()
-                    }
-                    .buttonStyle(NeoButtonStyle(fill: AIPoseColor.surface))
-                    .accessibilityIdentifier("addPose.doneButton")
                 }
             }
-            .padding(AIPoseSpacing.lg)
+            .frame(width: 88, height: 108)
+            .clipShape(RoundedRectangle(cornerRadius: AP.Radius.radius16, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: AP.Radius.radius16, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("addPose.photoPicker")
+        .accessibilityLabel(viewModel.selectedImage == nil ? AddPoseFormCopy.choosePhoto : AddPoseFormCopy.changePhoto)
+    }
+
+    private var nameColumn: some View {
+        VStack(alignment: .leading, spacing: AP.Space.space8) {
+            fieldLabel(AddPoseFormCopy.nameLabel)
+            nameField
+            if let message = viewModel.nameFieldError {
+                fieldError(message)
+            }
+            photoActionLink
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var nameField: some View {
+        TextField(AddPoseFormCopy.namePlaceholder, text: $viewModel.name)
+            .font(AP.Font.body)
+            .foregroundStyle(AP.Color.primaryText)
+            .submitLabel(.done)
+            .padding(.horizontal, AP.Space.space16)
+            .frame(minHeight: 52)
+            .background(fieldBackground)
+            .overlay(alignment: .trailing) {
+                if viewModel.nameFieldError != nil {
+                    Image(systemName: "exclamationmark.triangle")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(AP.Color.error)
+                        .padding(.trailing, AP.Space.space16)
+                        .accessibilityHidden(true)
+                }
+            }
+            .accessibilityIdentifier("addPose.nameField")
+    }
+
+    private var photoActionLink: some View {
+        Button {
+            showsPhotoPicker = true
+        } label: {
+            Text(photoActionTitle)
+                .font(AP.Font.supporting.weight(.semibold))
+                .foregroundStyle(AP.Color.accentText)
+                .frame(minHeight: AP.HitTarget.minimum, alignment: .leading)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("addPose.changePhotoButton")
+    }
+
+    private var tagsBlock: some View {
+        VStack(alignment: .leading, spacing: AP.Space.space12) {
+            fieldLabel(AddPoseFormCopy.tagsLabel)
+            if !viewModel.parsedTags.isEmpty {
+                tagChips
+            }
+            tagField
+            if let message = viewModel.tagsFieldError {
+                fieldError(message)
+            }
         }
     }
 
     @ViewBuilder
-    private var processingStatusCard: some View {
-        if viewModel.isJobGone {
-            FeatureStateView(
-                tone: .empty,
-                title: "Job Removed",
-                message: "This job was removed."
-            )
-        } else if viewModel.currentJobStatus.lowercased() == "failed" {
-            VStack(spacing: AIPoseSpacing.md) {
-                FeatureStateView(
-                    tone: .error,
-                    title: "Extraction Failed",
-                    message: viewModel.processingError ?? "Pose extraction could not be completed.",
-                    actionTitle: AppConfig.canExtractPose(isEnabled: AppConfig.shared.isExtractPoseEnabled) ? "Retry" : nil
-                ) {
-                    guard AppConfig.canExtractPose(isEnabled: AppConfig.shared.isExtractPoseEnabled) else { return }
-                    Task { await viewModel.retryProcessing() }
+    private var tagChips: some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: AP.Space.space8) {
+                ForEach(viewModel.parsedTags, id: \.self) { tag in
+                    tagChip(tag, fillsWidth: true)
                 }
             }
-        } else if viewModel.currentJobStatus.lowercased() == "succeeded" {
-            FeatureStateView(
-                tone: .success,
-                title: "Pose Ready",
-                message: "Pose extraction completed successfully."
-            )
+            .frame(maxWidth: .infinity, alignment: .leading)
         } else {
-            // Queued or Processing
-            VStack(spacing: AIPoseSpacing.sm) {
-                FeatureStateView(
-                    tone: .loading,
-                    title: viewModel.currentJobStatus.lowercased() == "queued" ? "Queued" : "Extracting Pose",
-                    message: viewModel.isProcessingOffline
-                        ? "You're offline — polling will resume when you're back online."
-                        : "Detecting pose skeleton from your image. This usually takes a few seconds."
-                )
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: AP.Space.space8) {
+                    ForEach(viewModel.parsedTags, id: \.self) { tag in
+                        tagChip(tag, fillsWidth: false)
+                    }
+                }
+                .padding(.vertical, 2)
             }
+        }
+    }
+
+    private func tagChip(_ tag: String, fillsWidth: Bool) -> some View {
+        APCategoryChip(title: tag, isSelected: true, fillsWidth: fillsWidth) {
+            viewModel.removeTag(tag)
+        }
+        .accessibilityIdentifier("addPose.tag.\(tag)")
+        .accessibilityHint("Removes this tag")
+    }
+
+    /// The tags are the chips; this field exists to add one. It commits on Return, on a comma, and when
+    /// the field loses focus, so a typed tag is never lost.
+    private var tagField: some View {
+        HStack(spacing: AP.Space.space8) {
+            Image(systemName: "plus")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(AP.Color.primaryText)
+                .accessibilityHidden(true)
+            TextField(AddPoseFormCopy.tagPlaceholder, text: $viewModel.tagDraft)
+                .font(AP.Font.body)
+                .foregroundStyle(AP.Color.primaryText)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .submitLabel(.done)
+                .focused($isTagFieldFocused)
+                .onSubmit { viewModel.commitTagDraft() }
+                .onChange(of: viewModel.tagDraft) { _ in viewModel.commitCompletedTags() }
+                .accessibilityIdentifier("addPose.tagsField")
+        }
+        .padding(.horizontal, AP.Space.space16)
+        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+        .background(fieldBackground)
+    }
+
+    private var descriptionBlock: some View {
+        VStack(alignment: .leading, spacing: AP.Space.space8) {
+            HStack(alignment: .firstTextBaseline, spacing: AP.Space.space8) {
+                fieldLabel(AddPoseFormCopy.descriptionLabel)
+                Spacer(minLength: AP.Space.space8)
+                Text("\(viewModel.descriptionText.count)/\(AddPoseViewModel.descriptionLimit)")
+                    .font(AP.Font.caption)
+                    .foregroundStyle(viewModel.descriptionFieldError == nil ? AP.Color.secondaryText : AP.Color.error)
+                    .accessibilityIdentifier("addPose.descriptionCounter")
+            }
+            descriptionEditor
+            if let message = viewModel.descriptionFieldError {
+                fieldError(message)
+            }
+        }
+    }
+
+    private var descriptionEditor: some View {
+        TextEditor(text: $viewModel.descriptionText)
+            .font(AP.Font.body)
+            .foregroundStyle(AP.Color.primaryText)
+            .padding(AP.Space.space12)
+            .frame(minHeight: 132)
+            .background(fieldBackground)
+            .apTransparentTextEditorBackground()
+            .overlay(alignment: .topLeading) {
+                if viewModel.descriptionText.isEmpty {
+                    Text(AddPoseFormCopy.descriptionPlaceholder)
+                        .font(AP.Font.body)
+                        .foregroundStyle(AP.Color.secondaryText)
+                        .padding(AP.Space.space16)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                }
+            }
+            .accessibilityIdentifier("addPose.descriptionField")
+    }
+
+    private var formFooter: some View {
+        VStack(spacing: AP.Space.space12) {
+            if let hint = viewModel.submitHint {
+                Text(hint)
+                    .font(AP.Font.supporting)
+                    .foregroundStyle(AP.Color.secondaryText)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("addPose.submitHint")
+            }
+
+            Button { submitTapped() } label: {
+                HStack(spacing: AP.Space.space8) {
+                    if viewModel.isSubmitting {
+                        ProgressView().tint(AP.Color.onAccent)
+                    }
+                    Text(viewModel.isSubmitting ? AddPoseFormCopy.addingPose : AddPoseFormCopy.addPose)
+                }
+            }
+            .buttonStyle(APPrimaryButtonStyle())
+            .disabled(!viewModel.isSubmitEnabled)
+            .accessibilityIdentifier("addPose.submitButton")
+
+            doneTextButton
+        }
+        .padding(.horizontal, AP.Space.space16)
+        .padding(.top, AP.Space.space12)
+        .padding(.bottom, AP.Space.space4)
+        .background(AP.Color.background)
+    }
+
+    private var doneTextButton: some View {
+        Button(AddPoseFormCopy.done) { dismiss() }
+            .buttonStyle(.plain)
+            .font(AP.Font.heading)
+            .foregroundStyle(AP.Color.accentText)
+            .frame(maxWidth: .infinity, minHeight: AP.HitTarget.minimum)
+            .contentShape(Rectangle())
+            .accessibilityIdentifier("addPose.doneButton")
+    }
+
+    // MARK: - Shared field chrome
+
+    private var fieldBackground: some View {
+        RoundedRectangle(cornerRadius: AP.Radius.radius16, style: .continuous)
+            .fill(AP.Color.controlFill)
+    }
+
+    private func fieldLabel(_ text: String) -> some View {
+        Text(text)
+            .font(AP.Font.heading)
+            .foregroundStyle(AP.Color.primaryText)
+    }
+
+    /// Glyph and copy together, so a field error never rests on colour alone.
+    private func fieldError(_ message: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: AP.Space.space8) {
+            Image(systemName: "exclamationmark.triangle")
+                .font(.system(size: 15, weight: .semibold))
+                .accessibilityHidden(true)
+            Text(message)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .font(AP.Font.caption)
+        .foregroundStyle(AP.Color.error)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// The link under the photo names the next step: choose, change, or replace the photo that could
+    /// not be read (board `08-board08`).
+    private var photoActionTitle: String {
+        if viewModel.photoError != nil { return AddPoseFormCopy.chooseAnotherPhoto }
+        return viewModel.selectedImage == nil ? AddPoseFormCopy.choosePhoto : AddPoseFormCopy.changePhoto
+    }
+
+    // MARK: - Actions
+
+    private func submitTapped(ignoringOffline: Bool = false) {
+        guard ignoringOffline || viewModel.isSubmitEnabled else { return }
+        viewModel.showsFieldErrors = true
+        // Without a photo there is nothing to upload: send the user straight to the picker instead of
+        // showing an error about a control they have not used yet.
+        guard viewModel.selectedImageData != nil else {
+            showsPhotoPicker = true
+            return
+        }
+        Task {
+            let hasSession = await ServiceLocator.sessionBoundary.hasStoredSession()
+            if !hasSession {
+                pendingSignIn = .addPose
+            } else {
+                _ = await viewModel.submit()
+            }
+        }
+    }
+
+    private func loadGuide(poseId: String) {
+        Task {
+            isLoadingGuide = true
+            defer { isLoadingGuide = false }
+            do {
+                let guide = try await ServiceLocator.jobsService.getGuide(id: poseId)
+                self.detailedPose = GuidePoseMapper.map(guide, baseURL: AppConfig.shared.SERVER_BASE_URL)
+            } catch {
+                // The processing card already reports the job's own failure; a guide that will not load
+                // leaves the user on this screen with View jobs and Done.
+            }
+        }
+    }
+
+    private func openJobs() {
+        guard JobsEntryPolicy.canOpen(extractPoseEnabled: AppConfig.shared.isExtractPoseEnabled) else { return }
+        let targetTab: JobsTab = (viewModel.stage == .ready || viewModel.stage == .failed) ? .finish : .processing
+        onOpenJobs(targetTab)
+    }
+
+    // MARK: - Processing
+
+    private var processingBody: some View {
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(spacing: AP.Space.space16) {
+                    if viewModel.isJobGone {
+                        APEmptyStateView(
+                            title: AddPoseFormCopy.jobGoneTitle,
+                            message: AddPoseFormCopy.jobGoneMessage
+                        )
+                    } else if viewModel.isFailed {
+                        APErrorStateView(
+                            title: AddPoseFormCopy.extractionFailedTitle,
+                            message: viewModel.failureMessage,
+                            retryTitle: AddPoseFormCopy.retry,
+                            retry: canRetry ? { Task { await viewModel.retryProcessing() } } : nil,
+                            actionIdentifier: "addPose.retryButton"
+                        )
+                    } else {
+                        AddPoseProcessingCard(
+                            name: viewModel.poseName,
+                            stage: viewModel.stage,
+                            image: viewModel.selectedImage
+                        )
+                        if viewModel.isProcessingOffline {
+                            APStatusBanner(tone: .warning, title: AddPoseFormCopy.processingOffline)
+                                .accessibilityIdentifier("addPose.processingOfflineBanner")
+                        }
+                    }
+                }
+                .padding(.horizontal, AP.Space.space16)
+                .padding(.top, AP.Space.space8)
+                .padding(.bottom, AP.Space.space24)
+            }
+
+            processingFooter
+        }
+    }
+
+    private var canRetry: Bool {
+        AppConfig.canExtractPose(isEnabled: AppConfig.shared.isExtractPoseEnabled)
+    }
+
+    private var processingFooter: some View {
+        VStack(spacing: AP.Space.space12) {
+            if viewModel.isReady, let poseId = viewModel.currentPoseId {
+                Button {
+                    loadGuide(poseId: poseId)
+                } label: {
+                    HStack(spacing: AP.Space.space8) {
+                        if isLoadingGuide {
+                            ProgressView().tint(AP.Color.onAccent)
+                        }
+                        Text(AddPoseFormCopy.viewPose)
+                    }
+                }
+                .buttonStyle(APPrimaryButtonStyle())
+                .accessibilityIdentifier("addPose.viewPoseButton")
+            }
+
+            if JobsEntryPolicy.canOpen(extractPoseEnabled: AppConfig.shared.isExtractPoseEnabled) {
+                Button(AddPoseFormCopy.viewJobs, action: openJobs)
+                    .buttonStyle(APButtonStyleForKind(kind: viewJobsKind))
+                    .accessibilityIdentifier("addPose.viewJobsButton")
+            }
+
+            Button(AddPoseFormCopy.done) { dismiss() }
+                .buttonStyle(APSecondaryButtonStyle())
+                .accessibilityIdentifier("addPose.doneButton")
+        }
+        .padding(.horizontal, AP.Space.space16)
+        .padding(.top, AP.Space.space12)
+        .padding(.bottom, AP.Space.space8)
+        .background(AP.Color.background)
+    }
+
+    /// While the job is still running, View jobs is the one useful action; once it settles, marking it
+    /// secondary keeps the quieter "Done — status continues in Jobs" reading of the board.
+    private var viewJobsKind: APButtonKind {
+        (viewModel.isReady || viewModel.isFailed) ? .secondary : .primary
+    }
+}
+
+// MARK: - Processing card
+
+/// The job as a share card: the photo, its name, the stage the server reported and an indeterminate
+/// bar. No percentage and no ETA — the backend reports a state, not a fraction.
+struct AddPoseProcessingCard: View {
+    let name: String
+    let stage: AddPoseStage
+    var image: UIImage?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: AP.Space.space12) {
+            HStack(alignment: .top, spacing: AP.Space.space16) {
+                thumbnail
+                VStack(alignment: .leading, spacing: AP.Space.space4) {
+                    Text(name)
+                        .font(AP.Font.heading)
+                        .foregroundStyle(AP.Color.primaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                    HStack(spacing: AP.Space.space8) {
+                        Image(systemName: stage.glyph)
+                            .font(AP.Font.caption)
+                            .foregroundStyle(stage.tint)
+                            .accessibilityHidden(true)
+                        Text(stage.label)
+                            .font(AP.Font.supporting)
+                            .foregroundStyle(AP.Color.secondaryText)
+                            .accessibilityIdentifier("addPose.stageStatus")
+                    }
+                }
+                Spacer(minLength: 0)
+            }
+
+            AddPoseIndeterminateBar()
+
+            Text(AddPoseFormCopy.leaveHint)
+                .font(AP.Font.caption)
+                .foregroundStyle(AP.Color.secondaryText)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(AP.Space.space16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: AP.Radius.radius24, style: .continuous)
+                .fill(AP.Color.surface)
+        )
+        .apElevation(.e1, cornerRadius: AP.Radius.radius24)
+        .accessibilityElement(children: .contain)
+    }
+
+    private var thumbnail: some View {
+        Group {
+            if let image {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                ZStack {
+                    AP.Color.controlFill
+                    Image(systemName: "photo")
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundStyle(AP.Color.secondaryText)
+                }
+            }
+        }
+        .frame(width: 72, height: 72)
+        .clipShape(RoundedRectangle(cornerRadius: AP.Radius.radius16, style: .continuous))
+        .accessibilityHidden(true)
+    }
+}
+
+private extension AddPoseStage {
+    var tint: SwiftUI.Color {
+        switch self {
+        case .queued, .processing: return AP.Color.secondaryText
+        case .ready: return AP.Color.success
+        case .failed: return AP.Color.error
+        }
+    }
+}
+
+/// Indeterminate progress: accent stripes that slide, never a number. Reduce Motion keeps the stripes
+/// still — the stage word beside the bar carries the state.
+struct AddPoseIndeterminateBar: View {
+    static let height: CGFloat = 10
+    static let stripeWidth: CGFloat = 12
+    static let cycleDuration: Double = 0.9
+
+    /// `nil` under Reduce Motion, so nothing sweeps across the screen.
+    static func animation(reduceMotion: Bool) -> Animation? {
+        reduceMotion ? nil : .linear(duration: cycleDuration).repeatForever(autoreverses: false)
+    }
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var shift: CGFloat = 0
+
+    var body: some View {
+        Canvas { context, size in
+            let stripe = Self.stripeWidth
+            let period = stripe * 2
+            var offset = -size.height + shift.truncatingRemainder(dividingBy: period)
+            while offset < size.width {
+                var path = Path()
+                path.move(to: CGPoint(x: offset, y: size.height))
+                path.addLine(to: CGPoint(x: offset + stripe, y: size.height))
+                path.addLine(to: CGPoint(x: offset + stripe + size.height, y: 0))
+                path.addLine(to: CGPoint(x: offset + size.height, y: 0))
+                path.closeSubpath()
+                context.fill(path, with: .color(AP.Color.accentText))
+                offset += period
+            }
+        }
+        .frame(height: Self.height)
+        .clipShape(Capsule())
+        .accessibilityHidden(true)
+        .onAppear(perform: start)
+    }
+
+    private func start() {
+        guard let animation = Self.animation(reduceMotion: reduceMotion) else { return }
+        withAnimation(animation) { shift = Self.stripeWidth * 2 }
+    }
+}
+
+// MARK: - iOS 15 text editor background
+
+private extension View {
+    /// iOS 15's `TextEditor` paints its own opaque system background, which would cover the
+    /// `controlFill` field the board draws; iOS 16 hides it declaratively.
+    @ViewBuilder
+    func apTransparentTextEditorBackground() -> some View {
+        if #available(iOS 16.0, *) {
+            self.scrollContentBackground(.hidden)
+        } else {
+            self.onAppear { UITextView.appearance().backgroundColor = .clear }
         }
     }
 }

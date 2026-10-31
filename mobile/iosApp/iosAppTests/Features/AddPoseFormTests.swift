@@ -1,3 +1,4 @@
+import SwiftUI
 import XCTest
 @testable import iosApp
 
@@ -136,6 +137,210 @@ final class AddPoseFormTests: XCTestCase {
         XCTAssertEqual(model.submitError, "Sign in to add a pose.")
     }
 
+    // MARK: - Restyled form (direction B, boards 08-board04..08)
+
+    func testFieldErrorsStayQuietUntilTheUserTriesToAddThePose() {
+        let model = AddPoseViewModel(jobsService: StubJobsService())
+
+        // An untouched form accuses nobody, even though it is not valid yet.
+        XCTAssertFalse(model.isFormValid)
+        XCTAssertNil(model.nameFieldError)
+        XCTAssertNil(model.tagsFieldError)
+
+        model.showsFieldErrors = true
+        XCTAssertEqual(model.nameFieldError, AddPoseFormCopy.nameRequired)
+        XCTAssertEqual(model.tagsFieldError, AddPoseFormCopy.tagsRequired)
+
+        model.name = "Window light"
+        model.tagsText = "standing"
+        XCTAssertNil(model.nameFieldError)
+        XCTAssertNil(model.tagsFieldError)
+    }
+
+    func testDescriptionOverflowIsReportedAsCharactersOverTheLimit() {
+        let model = AddPoseViewModel(jobsService: StubJobsService())
+        model.descriptionText = String(repeating: "a", count: AddPoseViewModel.descriptionLimit)
+        XCTAssertNil(model.descriptionFieldError)
+        XCTAssertEqual(model.descriptionOverflow, 0)
+
+        model.descriptionText += "abc"
+        XCTAssertEqual(model.descriptionOverflow, 3)
+        XCTAssertEqual(model.descriptionFieldError, "3 characters too long.")
+        XCTAssertFalse(model.isFormValid)
+
+        model.descriptionText = String(repeating: "a", count: AddPoseViewModel.descriptionLimit + 1)
+        XCTAssertEqual(model.descriptionFieldError, "1 character too long.")
+    }
+
+    func testTagsAreChipsOverTheSameCommaSeparatedText() {
+        let model = AddPoseViewModel(jobsService: StubJobsService())
+        model.tagsText = "standing, indoor"
+        XCTAssertEqual(model.parsedTags, ["standing", "indoor"])
+
+        // Typing is committed a comma at a time, so the chip appears while the next tag is typed.
+        model.tagDraft = "outdoor, "
+        model.commitCompletedTags()
+        XCTAssertEqual(model.parsedTags, ["standing", "indoor", "outdoor"])
+        XCTAssertEqual(model.tagDraft, "", "nothing is left in the field once the comma committed it")
+
+        // Return commits the rest of the field.
+        model.tagDraft = "studio"
+        model.commitTagDraft()
+        XCTAssertEqual(model.parsedTags, ["standing", "indoor", "outdoor", "studio"])
+        XCTAssertEqual(model.tagDraft, "")
+
+        // Duplicates and blanks never become chips.
+        model.commitTagDraft()
+        model.tagDraft = "  STANDING ,  , studio"
+        model.commitTagDraft()
+        XCTAssertEqual(model.parsedTags, ["standing", "indoor", "outdoor", "studio"])
+
+        // Tapping a chip removes exactly that tag.
+        model.removeTag("indoor")
+        XCTAssertEqual(model.parsedTags, ["standing", "outdoor", "studio"])
+    }
+
+    func testTheEleventhTagIsDroppedInsteadOfFailingTheFormLater() {
+        let model = AddPoseViewModel(jobsService: StubJobsService())
+        for index in 0..<(AddPoseViewModel.maxTags + 2) {
+            model.tagDraft = "tag\(index)"
+            model.commitTagDraft()
+        }
+        XCTAssertEqual(model.parsedTags.count, AddPoseViewModel.maxTags)
+        XCTAssertEqual(model.parsedTags.last, "tag\(AddPoseViewModel.maxTags - 1)")
+    }
+
+    func testPhotoFailuresLandOnThePhotoInsteadOfTheSnackbar() async {
+        let stub = StubJobsService()
+        let model = AddPoseViewModel(jobsService: stub)
+        model.selectedImageData = Data("test_photo".utf8)
+        model.selectedFileName = "photo.jpg"
+        model.name = "Window light"
+        model.tagsText = "standing"
+
+        stub.submitResult = .failure(JobsError.invalidImage)
+        _ = await model.submit()
+        XCTAssertEqual(model.photoError, .unreadable)
+        XCTAssertNil(model.snackbarMessage, "a photo that cannot be read is not a transient toast")
+
+        model.clearPhotoError()
+        XCTAssertNil(model.photoError)
+
+        stub.submitResult = .failure(JobsError.imageTooLarge)
+        _ = await model.submit()
+        XCTAssertEqual(model.photoError, .tooLarge)
+        XCTAssertTrue(
+            AddPosePhotoError.tooLarge.message.contains("10 MB"),
+            "the copy names the documented 10 MB upload limit, not the board's 20 MB"
+        )
+
+        // A transient failure is a snackbar, with the model's original copy kept intact.
+        stub.submitResult = .failure(JobsError.serverError("boom"))
+        _ = await model.submit()
+        XCTAssertNil(model.photoError, "a new attempt starts clean")
+        XCTAssertEqual(model.snackbarMessage, "Couldn't send. Try again.")
+    }
+
+    func testOfflineSubmitDisablesTheFooterAndExplainsWhy() async {
+        let stub = StubJobsService()
+        let model = AddPoseViewModel(jobsService: stub)
+        model.name = "Window light"
+        model.tagsText = "standing"
+
+        // No photo yet: the footer says what to do instead of silently disabling.
+        XCTAssertEqual(model.submitHint, AddPoseFormCopy.photoRequiredHint)
+        XCTAssertTrue(model.isSubmitEnabled, "an incomplete form must still be able to explain itself")
+
+        model.selectedImageData = Data("test_photo".utf8)
+        model.selectedFileName = "photo.jpg"
+        XCTAssertNil(model.submitHint)
+
+        stub.submitResult = .failure(JobsError.offline)
+        _ = await model.submit()
+        XCTAssertTrue(model.isOffline)
+        XCTAssertFalse(model.isSubmitEnabled, "board 08-board06 disables the CTA while offline")
+        XCTAssertEqual(model.submitHint, AddPoseFormCopy.offlineSubmitHint)
+    }
+
+    func testProcessingCopyComesFromTheStatusTheServerReported() {
+        XCTAssertEqual(AddPoseStage(status: "QUEUED"), .queued)
+        XCTAssertEqual(AddPoseStage(status: "processing"), .processing)
+        XCTAssertEqual(AddPoseStage(status: "succeeded"), .ready)
+        XCTAssertEqual(AddPoseStage(status: "failed"), .failed)
+        XCTAssertEqual(AddPoseStage(status: "something-new"), .processing, "an unknown state never claims it is ready")
+
+        XCTAssertEqual(AddPoseStage.queued.label, "Queued")
+        XCTAssertEqual(AddPoseStage.processing.label, "Processing")
+        XCTAssertEqual(AddPoseStage.ready.label, "Pose ready")
+        XCTAssertEqual(AddPoseStage.failed.label, "Failed")
+
+        for stage in AddPoseStage.allCases {
+            XCTAssertFalse(stage.label.contains("%"), "no percentage is ever invented (B3c)")
+            XCTAssertFalse(stage.glyph.isEmpty, "the stage pairs a glyph with its word")
+        }
+        XCTAssertTrue(AddPoseStage.queued.isInFlight)
+        XCTAssertTrue(AddPoseStage.processing.isInFlight)
+        XCTAssertFalse(AddPoseStage.ready.isInFlight)
+        XCTAssertFalse(AddPoseStage.failed.isInFlight)
+    }
+
+    func testTheFormCarriesNoLegacyOrCountCopy() {
+        // F3 bans result counts, and the legacy screen's CTA and labels are gone with the restyle.
+        let copy = [
+            AddPoseFormCopy.screenTitle, AddPoseFormCopy.nameLabel, AddPoseFormCopy.tagsLabel,
+            AddPoseFormCopy.descriptionLabel, AddPoseFormCopy.addPose, AddPoseFormCopy.changePhoto,
+            AddPoseFormCopy.choosePhoto, AddPoseFormCopy.done, AddPoseFormCopy.viewJobs,
+            AddPoseFormCopy.leaveHint, AddPoseFormCopy.offlineBanner
+        ]
+        XCTAssertFalse(copy.contains("Extract Pose"))
+        for value in copy {
+            XCTAssertFalse(value.contains("1–10"), "the tag limit is enforced, not printed")
+            XCTAssertFalse(value.lowercased().contains("pose name *"), "labels are no longer marked with an asterisk")
+        }
+        XCTAssertEqual(AddPoseFormCopy.screenTitle, "Add pose", "the board's sentence-case inline title")
+        XCTAssertEqual(AddPoseFormCopy.processingTitle, "Processing")
+    }
+
+    func testConsentIdentifiersAreUntouched() {
+        // The App Review 5.1.2(i) surface is not part of the restyle: same ids, same wording.
+        XCTAssertEqual(AddPoseConsentSheet.Identifiers.message, "addPose.consent.message")
+        XCTAssertEqual(AddPoseConsentSheet.Identifiers.allowButton, "addPose.consent.allowButton")
+        XCTAssertEqual(AddPoseConsentSheet.Identifiers.cancelButton, "addPose.consent.cancelButton")
+        XCTAssertTrue(AddPoseConsentCopy.message.contains("third-party AI service"))
+    }
+
+    @MainActor
+    func testTheFormPaintsAnInlineHeaderAndAPinnedAccentCallToAction() {
+        let model = AddPoseViewModel(jobsService: StubJobsService())
+        model.selectedImageData = Data("test_photo".utf8)
+        model.selectedFileName = "photo.jpg"
+        model.name = "Window light"
+        model.tagsText = "standing, indoor"
+
+        let size = CGSize(width: 393, height: 720)
+        let probe = APViewProbe(
+            AddPoseScreen(viewModel: model, posesModel: PosesViewModel(service: AddPoseEmptyPoseService())),
+            size: size
+        )
+        defer { probe.tearDown() }
+        let painted = probe.capture()
+
+        // F2: the back control paints the neutral `controlFill` square in the header row.
+        let controlFillRows = painted.rows(paintedWith: 0xECE5D8)
+        XCTAssertFalse(
+            controlFillRows.filter { $0 < 80 }.isEmpty,
+            "the inline header must paint its back control"
+        )
+
+        // The CTA is pinned: the accent fill lives in the bottom band, not in the scrolling form.
+        let accentRows = painted.rows(paintedWith: 0xE89CAE)
+        XCTAssertFalse(accentRows.isEmpty, "the form must paint its accent CTA")
+        XCTAssertGreaterThan(
+            accentRows.first ?? 0, painted.height - 160,
+            "the CTA is pinned at the bottom (starts at row \(accentRows.first ?? 0) of \(painted.height))"
+        )
+    }
+
     func testExtractKillSwitchBlocksFormAndSubmitThenAllowsWhenEnabled() async {
         let stub = StubJobsService()
         let model = AddPoseViewModel(jobsService: stub)
@@ -158,4 +363,11 @@ final class AddPoseFormTests: XCTestCase {
         XCTAssertNil(model.submitError)
         XCTAssertEqual(stub.submitCallCount, 1)
     }
+}
+
+/// The catalogue is irrelevant to this screen; the probe only needs a model that does not reach the
+/// network while the form is rendered.
+private struct AddPoseEmptyPoseService: PoseServing {
+    func poses(query: String?) async throws -> [NativePose] { [] }
+    func pose(id: String) async throws -> NativePose { throw PoseAdapterError.poseNotFound(id) }
 }
