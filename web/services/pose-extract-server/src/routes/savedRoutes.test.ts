@@ -46,11 +46,27 @@ describe("protected saved routes", () => {
     expect(store.remove).toHaveBeenCalledTimes(2);
   });
 
+  it("scopes every verb to the authenticated account, ignoring caller-supplied account ids", async () => {
+    const store = { list: vi.fn().mockResolvedValue({ poses: [], total: 0 }), save: vi.fn().mockResolvedValue(null), remove: vi.fn().mockResolvedValue(undefined) };
+    const app = routeApp(store);
+    const FOREIGN_ACCOUNT = "99999999-9999-4999-8999-999999999999";
+
+    await request(app).get(`/api/me/saved?accountId=${FOREIGN_ACCOUNT}&account_id=${FOREIGN_ACCOUNT}`).expect(200);
+    await request(app).put(`/api/me/saved/${POSE.poseId}?accountId=${FOREIGN_ACCOUNT}`).send({ accountId: FOREIGN_ACCOUNT }).expect(404);
+    await request(app).delete(`/api/me/saved/${POSE.poseId}`).send({ accountId: FOREIGN_ACCOUNT }).expect(204);
+
+    expect(store.list).toHaveBeenCalledWith(ACCOUNT.id, 1, 20);
+    expect(store.save).toHaveBeenCalledWith(ACCOUNT.id, POSE.poseId);
+    expect(store.remove).toHaveBeenCalledWith(ACCOUNT.id, POSE.poseId);
+  });
+
   it("mounts through the existing Account auth boundary and returns its 401 envelope", async () => {
     const accountStore = { upsert: vi.fn(), getById: vi.fn() } as unknown as AccountStore;
     const savedStore = {} as SavedStore;
     const app = createApp({ version: "test", accountStore, supabaseUrl: "https://example.supabase.co", savedStore });
 
     await request(app).get("/api/me/saved").expect(401).expect({ error: { code: "UNAUTHORIZED", message: "Unauthorized" } });
+    await request(app).put(`/api/me/saved/${POSE.poseId}`).expect(401).expect({ error: { code: "UNAUTHORIZED", message: "Unauthorized" } });
+    await request(app).delete(`/api/me/saved/${POSE.poseId}`).expect(401).expect({ error: { code: "UNAUTHORIZED", message: "Unauthorized" } });
   });
 });

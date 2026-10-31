@@ -1,8 +1,14 @@
+import { createSign, generateKeyPairSync } from "node:crypto";
+
 import express from "express";
 import request from "supertest";
 import { describe, expect, it, vi } from "vitest";
 
+import { createApp } from "../app";
+import type { AccountRecord, AccountStore } from "../db/accountStore";
 import type { ExtractionJobListItem, ExtractionJobStore } from "../db/extractionJobStore";
+import { ExtractionJobStore as ExtractionJobStoreImpl } from "../db/extractionJobStore";
+import { setupTestDatabase } from "../db/testDb";
 import { createMyExtractJobsRoutes } from "./myExtractJobsRoutes";
 
 const ACCOUNT = { id: "account-111", displayName: "User", createdAt: "2026-01-01T00:00:00.000Z" };
@@ -152,5 +158,118 @@ describe("myExtractJobsRoutes", () => {
     const res2 = await request(app).delete("/api/me/extract-jobs/job-2");
     expect(res2.status).toBe(404);
     expect(res2.body.error.code).toBe("JOB_NOT_FOUND");
+  });
+});
+
+const SUPABASE_URL = "https://project-test.supabase.co";
+const JWT_KEY_ID = "test-jwt-key-id";
+const OWNER_A = "account-owner-a";
+const OWNER_B = "account-owner-b";
+const { privateKey, publicKey } = generateKeyPairSync("ec", { namedCurve: "P-256" });
+const testJwk = {
+  ...publicKey.export({ format: "jwk" }),
+  alg: "ES256",
+  kid: JWT_KEY_ID,
+  kty: "EC",
+  crv: "P-256",
+  use: "sig"
+};
+
+function accountJwt(accountId: string): string {
+  const encodePart = (value: unknown) => Buffer.from(JSON.stringify(value)).toString("base64url");
+  const input = `${encodePart({ alg: "ES256", typ: "JWT", kid: JWT_KEY_ID })}.${encodePart({
+    iss: `${SUPABASE_URL}/auth/v1`,
+    aud: "authenticated",
+    exp: 2_500_000_000,
+    sub: accountId
+  })}`;
+  const signer = createSign("sha256");
+  signer.update(input);
+  signer.end();
+  return `${input}.${signer.sign({ key: privateKey, dsaEncoding: "ieee-p1363" }).toString("base64url")}`;
+}
+
+async function createMountedApp() {
+  const sql = await setupTestDatabase();
+  const jobStore = new ExtractionJobStoreImpl(sql);
+
+  const signedIn = new Map<string, AccountRecord>();
+  const accountStore = {
+    async getById(id: string) {
+      return signedIn.get(id) ?? null;
+    },
+    async upsert(input: { id: string; displayName: string }) {
+      const record: AccountRecord = { id: input.id, displayName: input.displayName, createdAt: "2026-01-01T00:00:00.000Z" };
+      signedIn.set(input.id, record);
+      return record;
+    }
+  } as unknown as AccountStore;
+
+  const app = createApp({
+    version: "test",
+    extractionJobStore: jobStore,
+    accountStore,
+    supabaseUrl: SUPABASE_URL,
+    supabaseJwtKeyId: JWT_KEY_ID,
+    fetchJwks: vi.fn(async () => new Response(JSON.stringify({ keys: [testJwk] }), { status: 200 })) as unknown as typeof fetch
+  });
+
+  async function signIn(accountId: string): Promise<string> {
+    await accountStore.upsert({ id: accountId, displayName: accountId });
+    await sql`INSERT INTO accounts (id, display_name) VALUES (${accountId}, ${accountId}) ON CONFLICT (id) DO NOTHING`;
+    return accountJwt(accountId);
+  }
+
+  return { jobStore, app, signIn };
+}
+
+describe("myExtractJobsRoutes behind the mounted Account auth boundary", () => {
+  it("answers 401 on every verb without a bearer token", async () => {
+    const { app } = await createMountedApp();
+
+    const calls = [
+      request(app).get("/api/me/extract-jobs"),
+      request(app).post("/api/me/extract-jobs/job-1/retry"),
+      request(app).delete("/api/me/extract-jobs/job-1")
+    ];
+
+    for (const call of calls) {
+      await call.expect(401).expect({ error: { code: "UNAUTHORIZED", message: "Unauthorized" } });
+    }
+  });
+
+  it("never lists, retries, or hides another account's job", async () => {
+    const { jobStore, app, signIn } = await createMountedApp();
+    const tokenA = await signIn(OWNER_A);
+    const tokenB = await signIn(OWNER_B);
+
+    const jobA = await jobStore.enqueue({
+      sourceImageBase64: "c291cmNl",
+      sourceMimeType: "image/jpeg",
+      ownerAccountId: OWNER_A,
+      poseDraft: { name: "Owner A pose", tags: ["balance"], description: null }
+    });
+
+    const listA = await request(app).get("/api/me/extract-jobs").set("Authorization", `Bearer ${tokenA}`).expect(200);
+    expect(listA.body.data.map((job: { jobId: string }) => job.jobId)).toEqual([jobA.id]);
+
+    const listB = await request(app).get("/api/me/extract-jobs").set("Authorization", `Bearer ${tokenB}`).expect(200);
+    expect(listB.body.data).toEqual([]);
+    expect(listB.body.meta.nextCursor).toBeNull();
+
+    await request(app)
+      .post(`/api/me/extract-jobs/${jobA.id}/retry`)
+      .set("Authorization", `Bearer ${tokenB}`)
+      .expect(404)
+      .expect({ error: { code: "JOB_NOT_FOUND", message: "Job not found" } });
+
+    await request(app)
+      .delete(`/api/me/extract-jobs/${jobA.id}`)
+      .set("Authorization", `Bearer ${tokenB}`)
+      .expect(404)
+      .expect({ error: { code: "JOB_NOT_FOUND", message: "Job not found" } });
+
+    const rereadByA = await request(app).get("/api/me/extract-jobs").set("Authorization", `Bearer ${tokenA}`).expect(200);
+    expect(rereadByA.body.data.map((job: { jobId: string }) => job.jobId)).toEqual([jobA.id]);
   });
 });

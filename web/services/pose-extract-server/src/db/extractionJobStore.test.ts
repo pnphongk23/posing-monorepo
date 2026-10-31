@@ -419,3 +419,48 @@ describe("ExtractionJobStore", () => {
     });
   });
 });
+
+describe("ExtractionJobStore ownership and retry cap", () => {
+  it("scopes listByOwner to the caller's own jobs", async () => {
+    const sql = await setupDatabaseWithOwners();
+    const store = new ExtractionJobStore(sql);
+
+    const jobA = await store.enqueue({
+      sourceImageBase64: "c291cmNl",
+      sourceMimeType: "image/jpeg",
+      ownerAccountId: OWNER_A,
+      poseDraft: SAMPLE_DRAFT
+    });
+    const jobB = await store.enqueue({
+      sourceImageBase64: "c291cmNl",
+      sourceMimeType: "image/jpeg",
+      ownerAccountId: OWNER_B,
+      poseDraft: SAMPLE_DRAFT
+    });
+
+    expect((await store.listByOwner(OWNER_A)).jobs.map((job) => job.id)).toEqual([jobA.id]);
+    expect((await store.listByOwner(OWNER_B)).jobs.map((job) => job.id)).toEqual([jobB.id]);
+  });
+
+  it("stops claiming a queued row that already reached max_attempts", async () => {
+    const sql = await setupDatabaseWithOwners();
+    const store = new ExtractionJobStore(sql);
+
+    await sql`
+      INSERT INTO extraction_jobs (id, status, source_image_base64, source_mime_type, max_attempts, attempts)
+      VALUES (${"job-capped"}, 'queued', ${"c291cmNl"}, 'image/png', 2, 2)
+    `;
+    await sql`
+      INSERT INTO extraction_jobs (id, status, source_image_base64, source_mime_type, max_attempts, attempts)
+      VALUES (${"job-claimable"}, 'queued', ${"c291cmNl"}, 'image/png', 2, 1)
+    `;
+
+    const claimed = await store.claimNext("lock-token", 120);
+    expect(claimed?.id).toBe("job-claimable");
+    expect(await store.claimNext("lock-token-2", 120)).toBeNull();
+
+    const capped = await store.getById("job-capped");
+    expect(capped?.status).toBe("queued");
+    expect(capped?.attempts).toBe(2);
+  });
+});

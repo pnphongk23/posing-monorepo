@@ -4,6 +4,7 @@ import request from "supertest";
 import { describe, expect, it, vi } from "vitest";
 
 import { createApp } from "../app";
+import { getEnv } from "../config/env";
 import type { AccountRecord, AccountStore } from "../db/accountStore";
 import { ExtractionJobStore } from "../db/extractionJobStore";
 import { setupTestDatabase } from "../db/testDb";
@@ -109,5 +110,58 @@ describe("POST /api/extract-pose account admission", () => {
     expect(response.status).toBe(202);
     const rows = (await sql`SELECT owner_account_id FROM extraction_jobs`) as Array<{ owner_account_id: string | null }>;
     expect(rows).toEqual([{ owner_account_id: null }]);
+  });
+
+  it("returns 401 UNAUTHORIZED and stores nothing without a bearer token", async () => {
+    const { sql, app } = await createHarness();
+
+    const response = await request(app)
+      .post("/api/extract-pose")
+      .field("name", "Anonymous Pose")
+      .field("tags", "balance")
+      .attach("image", Buffer.from("fake-image-content"), { filename: "pose.jpg", contentType: "image/jpeg" });
+
+    expect(response.status).toBe(401);
+    expect(response.body).toEqual({ error: { code: "UNAUTHORIZED", message: "Unauthorized" } });
+    const rows = (await sql`SELECT COUNT(*)::int AS count FROM extraction_jobs`) as Array<{ count: number }>;
+    expect(rows[0]?.count).toBe(0);
+  });
+
+  it("answers an authenticated upload with the extraction flag off; the kill switch is client-side only", async () => {
+    const { sql, accountStore, app } = await createHarness();
+    await accountStore.upsert({ id: "account-a", displayName: "User A" });
+    await sql`INSERT INTO accounts (id, display_name) VALUES (${ "account-a" }, ${ "User A" })`;
+
+    // The mobile app fails closed on its own flag; the server holds no equivalent gate, so an
+    // authenticated caller is still served and no server config key can turn the route off.
+    const parsedEnv = getEnv({
+      DATABASE_URL: "postgres://postgres@127.0.0.1:5432/postgres",
+      ADMIN_SECRET: ADMIN_SECRET,
+      SUPABASE_URL,
+      SUPABASE_JWT_KEY_ID: JWT_KEY_ID,
+      R2_ACCOUNT_ID: "r2-account",
+      R2_ACCESS_KEY_ID: "r2-access-key",
+      R2_SECRET_ACCESS_KEY: "r2-secret-key",
+      R2_BUCKET: "r2-bucket",
+      R2_PUBLIC_URL: "https://cdn.example.com",
+      EXTRACT_POSE_ENABLED: "false"
+    });
+    expect(Object.keys(parsedEnv).filter((key) => /extract/i.test(key))).toEqual([]);
+
+    const previous = process.env.EXTRACT_POSE_ENABLED;
+    process.env.EXTRACT_POSE_ENABLED = "false";
+    try {
+      const response = await submit(app, accountJwt("account-a"));
+
+      expect(response.status).toBe(202);
+      const rows = (await sql`SELECT owner_account_id FROM extraction_jobs`) as Array<{ owner_account_id: string }>;
+      expect(rows).toEqual([{ owner_account_id: "account-a" }]);
+    } finally {
+      if (previous === undefined) {
+        delete process.env.EXTRACT_POSE_ENABLED;
+      } else {
+        process.env.EXTRACT_POSE_ENABLED = previous;
+      }
+    }
   });
 });
