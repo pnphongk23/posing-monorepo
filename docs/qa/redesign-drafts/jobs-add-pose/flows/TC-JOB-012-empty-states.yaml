@@ -1,0 +1,44 @@
+# TC-JOB-012 three distinct Jobs empty states
+appId: ${APP_ID}
+tags: [TC-JOB-012, p0, e2e]
+---
+- runFlow: ../../../../mobile/iosApp/maestro/subflows/ext-launch.yaml
+- runFlow: ../../../../mobile/iosApp/maestro/subflows/ext-sign-in.yaml
+- tapOn:
+    id: "poses.more"
+- tapOn:
+    id: "poses.jobs"
+- extendedWaitUntil:
+    visible:
+      id: "jobs.tab.processing"
+    timeout: 20000
+# Empty Finished: explains where results land and offers a way back to Processing.
+- tapOn:
+    id: "jobs.tab.finish"
+- runFlow:
+    when:
+      visible:
+        id: "jobs.empty.action"
+    commands:
+      - assertVisible:
+          id: "jobs.empty.title"
+      - assertVisible:
+          id: "jobs.empty.body"
+      - tapOn:
+          id: "jobs.empty.action"
+      - assertVisible:
+          id: "jobs.tab.processing"
+# Empty filter: nothing matches, Show all clears it without leaving the screen.
+- tapOn:
+    id: "jobs.tab.finish"
+- tapOn:
+    id: "jobs.filter.failed"
+- runFlow:
+    when:
+      visible:
+        id: "jobs.empty.action"
+    commands:
+      - tapOn:
+          id: "jobs.empty.action"
+      - assertVisible:
+          id: "jobs.tab.finish"

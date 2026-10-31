@@ -1,8 +1,7 @@
-# TC-JOB-009 TC JOB 009 remove job
+# TC-JOB-009 Hide drops the row and keeps the pose
 appId: ${APP_ID}
 tags: [TC-JOB-009, p1, e2e]
 ---
-# Remove drops the row, keeps the pose.
 - runFlow: ../../../../mobile/iosApp/maestro/subflows/ext-launch.yaml
 - runFlow: ../../../../mobile/iosApp/maestro/subflows/ext-sign-in.yaml
 - tapOn:
@@ -15,16 +14,20 @@ tags: [TC-JOB-009, p1, e2e]
     timeout: 20000
 - tapOn:
     id: "jobs.tab.finish"
-- swipe:
-    start: "90%,30%"
-    end: "10%,30%"
-- assertVisible: "Remove job?"
-# Cancel keeps the row.
-- tapOn: "Keep"
-- assertVisible: ".*Done . added to Poses.*"
+- assertVisible: '.*Done . added to Poses.*'
+# Hide, not Remove: the pose survives, only the row goes.
 - swipe:
     start: "90%,30%"
     end: "10%,30%"
 - tapOn:
-    id: "jobs.remove.confirm"
-- assertNotVisible: ".*Done . added to Poses.*"
+    id: "jobs.row.hide..*"
+- runFlow:
+    when:
+      visible:
+        id: "jobs.hide.confirm"
+    commands:
+      - tapOn:
+          id: "jobs.hide.confirm"
+- assertNotVisible: '.*Done . added to Poses.*'
+- assertVisible:
+    id: "jobs.footer.hint"

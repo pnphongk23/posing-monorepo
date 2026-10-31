@@ -16,12 +16,13 @@ when `extractPoseEnabled` is off, F8 More menu).
 | TC-EXT-004 | `flows/TC-EXT-004-add-pose-empty-state.yaml` | `addPose.choosePhoto`, `addPose.empty.seeJobs` |
 | TC-EXT-005 | `flows/TC-EXT-005-add-pose-form-validation.yaml` | `addPose.tags.addTag`, `addPose.tags.chip.<tag>`, `addPose.form.helper` |
 | TC-EXT-006 | `flows/TC-EXT-006-add-pose-photo-error.yaml` | `addPose.error.title`, `addPose.error.message`, `addPose.changePhoto` + a fixture the server rejects |
-| TC-EXT-007 | `flows/TC-EXT-007-pose-preview-publish.yaml` | `addPose.preview.publishButton`, `addPose.preview.name` + one approved real job |
+| TC-EXT-007 | `flows/TC-EXT-007-pose-preview-publish.yaml` | **out of scope 1.2** (publish flow has no API); draft kept for later |
 | TC-JOB-007 | `flows/TC-JOB-007-processing-filters.yaml` | `jobs.tab.processing.count`, `jobs.filter.queued`, `jobs.filter.processing` |
 | TC-JOB-008 | `flows/TC-JOB-008-finished-filters-retry.yaml` | `jobs.filter.done`, `jobs.filter.failed` |
-| TC-JOB-009 | `flows/TC-JOB-009-remove-job.yaml` | `jobs.remove.confirm` (swipe action id already exists) |
+| TC-JOB-009 | `flows/TC-JOB-009-hide-job.yaml` | `jobs.row.hide.<jobId>`, `jobs.hide.confirm` (optional), `jobs.footer.hint` |
 | TC-JOB-010 | `flows/TC-JOB-010-long-name-ax.yaml` | `jobRow.name.<jobId>`; needs a job with a 60+ character name |
-| TC-JOB-011 | `flows/TC-JOB-011-offline-banner.yaml` | `jobs.offline.banner` + confirmation that `-AIPoseAPIBaseURL` is honoured for a dead-endpoint relaunch |
+| TC-JOB-011 | `flows/TC-JOB-011-offline-banner.yaml` | superseded by TC-JOB-013 — keep for reference only |
+| TC-JOB-012 | `flows/TC-JOB-012-empty-states.yaml` | `jobs.empty.title` / `.body` / `.action` per state |
 
 Run one against the lane-2 simulator (credentials never leave the shell):
 
