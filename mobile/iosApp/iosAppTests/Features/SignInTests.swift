@@ -1,3 +1,4 @@
+import Combine
 import XCTest
 @testable import iosApp
 
@@ -341,6 +342,142 @@ final class EmailSignInModelTests: XCTestCase {
         }
         XCTAssertTrue(condition(), "Timed out waiting for \(description)", file: file, line: line)
     }
+}
+
+/// Board 11-17: each field states its own problem, in place. The rules mirror the endpoint
+/// (`z.string().trim().email()` and `z.string().min(1)`), so the sheet never refuses a credential the
+/// backend would accept and never sends one it would reject.
+@MainActor
+final class EmailSignInValidationTests: XCTestCase {
+    override func tearDown() {
+        SignInMockURLProtocol.requestHandler = nil
+        SignInMockURLProtocol.errorHandler = nil
+        super.tearDown()
+    }
+
+    func testAcceptsTheAddressesTheEndpointAccepts() {
+        for address in [
+            "reviewer@example.com",
+            "a.b+tag@sub.example.co",
+            "MAYA@EXAMPLE.COM",
+            "  maya@example.com  ",
+        ] {
+            XCTAssertTrue(EmailSignInModel.isValidEmail(address), "\(address) must pass the client rule")
+        }
+    }
+
+    func testRejectsTheAddressesTheEndpointRejects() {
+        for address in [
+            "",
+            "maya",
+            "maya@",
+            "@example.com",
+            "maya@example",
+            "maya@example.c",
+            "maya@.com",
+            "maya@example..com",
+            "maya @example.com",
+            ".maya@example.com",
+            "maya.@example.com",
+        ] {
+            XCTAssertFalse(EmailSignInModel.isValidEmail(address), "\(address) must fail the client rule")
+        }
+    }
+
+    func testEmptyFormReportsBothFieldsInPlace() {
+        let model = makeModel()
+
+        XCTAssertFalse(model.validate())
+        XCTAssertEqual(model.emailError, "Enter a valid email address, like name@example.com")
+        XCTAssertEqual(model.passwordError, "Enter your password")
+        XCTAssertTrue(model.hasFieldErrors)
+    }
+
+    func testInvalidEmailWithAPasswordOnlyReportsTheEmail() {
+        let model = makeModel()
+        model.email = "maya@"
+        model.password = "correct-horse"
+
+        XCTAssertFalse(model.validate())
+        XCTAssertEqual(model.emailError, EmailSignInModel.invalidEmailText)
+        XCTAssertNil(model.passwordError)
+    }
+
+    /// The endpoint accepts any non-empty password, so the client rule is presence only: a one
+    /// character password is valid here even though a sign-up screen would demand more.
+    func testPasswordRuleIsPresenceOnlyLikeTheBackend() {
+        let model = makeModel()
+        model.email = "maya@example.com"
+        model.password = "x"
+
+        XCTAssertTrue(model.validate())
+        XCTAssertNil(model.passwordError)
+    }
+
+    /// A rejected tap never reaches the network, and the shared error region still answers it so
+    /// "nothing happened" is not a state the sheet can be left in.
+    func testInvalidFormNeverCallsTheNetwork() async {
+        SignInMockURLProtocol.requestHandler = { _ in
+            XCTFail("No network call for an invalid form")
+            let empty = Data()
+            return (HTTPURLResponse(url: URL(string: "https://test.server")!, statusCode: 200, httpVersion: nil, headerFields: nil)!, empty)
+        }
+        let model = makeModel()
+        model.email = "maya@"
+        model.password = "correct-horse"
+
+        let succeeded = await model.submit()
+
+        XCTAssertFalse(succeeded)
+        XCTAssertEqual(model.emailError, EmailSignInModel.invalidEmailText)
+        XCTAssertEqual(model.errorText, EmailSignInModel.incompleteFormText)
+        XCTAssertFalse(model.isSubmitting)
+    }
+
+    /// Editing the field is the fix, so its message goes with the keystroke.
+    func testEditingAFieldClearsItsMessage() {
+        let model = makeModel()
+        _ = model.validate()
+        XCTAssertNotNil(model.emailError)
+
+        model.email = "m"
+        XCTAssertNil(model.emailError, "the email message belongs to the value it described")
+        XCTAssertNotNil(model.passwordError, "the other field keeps its own message")
+    }
+
+    /// Owner decision: no password-reset path exists, so the sheet must not draw the link the board
+    /// sketches (it would be a dead control).
+    func testEmailSignInHasNoForgotPasswordControl() throws {
+        let url = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("iosApp/Features/Support/SignIn.swift")
+        let source = try String(contentsOf: url, encoding: .utf8)
+        // A rendered control would carry the copy as a string literal; prose in a comment is not a
+        // control, so the assertion is on the literal.
+        XCTAssertFalse(source.contains("\"Forgot password"))
+        XCTAssertFalse(source.contains("resetPassword"))
+    }
+
+    private func makeModel() -> EmailSignInModel {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [SignInMockURLProtocol.self]
+        let client = APIClient(
+            baseURL: "https://test.server",
+            session: URLSession(configuration: config),
+            boundary: SessionBoundary(tokenStorage: InMemoryTokenStorage())
+        )
+        return EmailSignInModel(client: client, connectivity: SignInTestConnectivity())
+    }
+}
+
+@MainActor
+private final class SignInTestConnectivity: ConnectivityReporting {
+    private let subject = CurrentValueSubject<Bool, Never>(false)
+    var isOffline: Bool { subject.value }
+    var changes: AnyPublisher<Bool, Never> { subject.eraseToAnyPublisher() }
+    func start() {}
 }
 
 private final class SignInMockURLProtocol: URLProtocol {

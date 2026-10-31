@@ -1,3 +1,6 @@
+import Combine
+import Foundation
+import Network
 import SwiftUI
 
 /// Account-scoped entry points that may interrupt the user with the shared sign-in prompt.
@@ -141,50 +144,75 @@ final class SignInPromptModel: ObservableObject {
 
 /// The one "Continue with Google" control. Every surface that can start the handoff shares it, so
 /// the spinner, the disabled state and the accessibility label cannot drift apart.
+///
+/// Direction B chrome: the neutral secondary fill. Google's own logo is supplied at build time, so
+/// until it is the row shows the dashed placeholder the board draws.
 struct ContinueWithGoogleButton: View {
     let isAuthenticating: Bool
+    /// Row label; the paywall's sign-in sheet turns the same row into the retry after a failure.
+    var title: String = "Continue with Google"
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: AIPoseSpacing.sm) {
+            HStack(spacing: AP.Space.space12) {
                 if isAuthenticating {
-                    ProgressView().tint(AIPoseColor.foreground)
+                    ProgressView()
+                } else {
+                    Circle()
+                        .strokeBorder(
+                            AP.Color.primaryText,
+                            style: StrokeStyle(lineWidth: 1.5, dash: [3, 3])
+                        )
+                        .frame(width: 20, height: 20)
                 }
-                Text(isAuthenticating ? "Signing in…" : "Continue with Google")
+                Text(isAuthenticating ? "Opening Google…" : title)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .multilineTextAlignment(.center)
             }
         }
-        .buttonStyle(NeoButtonStyle())
+        .buttonStyle(APSecondaryButtonStyle())
         .disabled(isAuthenticating)
-        .accessibilityLabel(isAuthenticating ? "Signing in" : "Continue with Google")
+        .accessibilityLabel(isAuthenticating ? "Opening Google" : title)
     }
 }
 
-/// Custom control is intentional here so the app's neo-brutalist surfaces remain consistent while
-/// the action itself still runs `ASAuthorizationAppleIDProvider` through the injected seam.
+/// Sign in with Apple, drawn with the system button's proportions: 52 pt high, 17 pt label, 16 pt
+/// corner radius, one line, the Apple logo beside the wordmark. The action still runs the app's
+/// `ASAuthorizationAppleIDProvider` seam (`AppleSignInAction`), which owns the nonce and the API call,
+/// so the paywall, the prompt and the Account card share one handoff.
 ///
-/// The label colour is passed **into** the style (`NeoButtonStyle(foreground:)`), not applied to the
-/// button from outside: `ButtonStyle.makeBody` sets the label's `foregroundStyle` itself, so an
-/// outer `.foregroundStyle(...)` can never win. The shipped build applied it outside against a
-/// `fill: AIPoseColor.foreground` (near-black) fill, so the black logo + wordmark were painted
-/// black-on-black and QA saw an empty box (BUG-261029-02).
+/// HIG: black fill with a white wordmark in light mode, white fill with a black wordmark in dark mode.
 struct ContinueWithAppleButton: View {
     let isAuthenticating: Bool
     let action: () -> Void
 
+    @Environment(\.colorScheme) private var colorScheme
+
     var body: some View {
         Button(action: action) {
-            HStack(spacing: AIPoseSpacing.sm) {
-                if isAuthenticating { ProgressView().tint(AppleSignInCopy.labelColor) }
-                Image(systemName: "apple.logo")
+            HStack(spacing: AP.Space.space8) {
+                if isAuthenticating {
+                    ProgressView().tint(AppleSignInCopy.labelColor(for: colorScheme))
+                } else {
+                    Image(systemName: "apple.logo")
+                        .font(.system(size: 17, weight: .medium))
+                }
                 Text(isAuthenticating ? AppleSignInCopy.pendingTitle : AppleSignInCopy.title)
+                    .font(AP.Font.heading)
+                    // System proportions: the wordmark never wraps, it scales down at AX sizes.
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
             }
-            // No local `minHeight`/`frame`: the shared style already stretches to full width and pads
-            // to a ≥44pt target, so the Apple control keeps the exact height of the Google button
-            // beside it (the old inner 44pt minimum made it visibly taller).
-            .contentShape(Rectangle())
+            .foregroundStyle(AppleSignInCopy.labelColor(for: colorScheme))
+            .frame(maxWidth: .infinity, minHeight: AppleSignInCopy.height)
+            .background(
+                RoundedRectangle(cornerRadius: AP.Radius.radius16, style: .continuous)
+                    .fill(AppleSignInCopy.fillColor(for: colorScheme))
+            )
+            .contentShape(RoundedRectangle(cornerRadius: AP.Radius.radius16, style: .continuous))
         }
-        .buttonStyle(NeoButtonStyle(fill: AppleSignInCopy.fillColor, foreground: AppleSignInCopy.labelColor))
+        .buttonStyle(.plain)
         .disabled(isAuthenticating)
         .accessibilityLabel(isAuthenticating ? AppleSignInCopy.pendingAccessibilityLabel : AppleSignInCopy.title)
     }
@@ -198,9 +226,20 @@ enum AppleSignInCopy {
     static let pendingAccessibilityLabel = "Signing in"
     /// `account.signin.apple` (accessibility identifier convention `<screen>.<element>`).
     static let identifier = "account.signin.apple"
-    /// HIG: the Apple button is black with a white logo and wordmark.
-    static let fillColor = AIPoseColor.foreground
-    static let labelColor = AIPoseColor.surface
+    /// System button geometry (board 11-21 measures it at 358 × 52).
+    static let height: CGFloat = 52
+    /// HIG: the Apple button is black with a white logo and wordmark in light mode…
+    static let fillColor = SwiftUI.Color.black
+    static let labelColor = SwiftUI.Color.white
+
+    /// …and white with a black logo and wordmark in dark mode, exactly like `SignInWithAppleButton`.
+    static func fillColor(for colorScheme: ColorScheme) -> SwiftUI.Color {
+        colorScheme == .dark ? .white : fillColor
+    }
+
+    static func labelColor(for colorScheme: ColorScheme) -> SwiftUI.Color {
+        colorScheme == .dark ? .black : labelColor
+    }
 
     /// True when the glyph/text colour is actually visible against the fill. The shipped bug was
     /// precisely `fill == label`; a test asserts this so the pair cannot silently collapse again.
@@ -325,14 +364,25 @@ struct SignInPromptView: View {
 /// no presentation — the caller decides what success means.
 @MainActor
 final class EmailSignInModel: ObservableObject {
-    @Published var email = ""
-    @Published var password = ""
+    @Published var email = "" {
+        didSet { if emailError != nil { emailError = nil } }
+    }
+    @Published var password = "" {
+        didSet { if passwordError != nil { passwordError = nil } }
+    }
     @Published private(set) var isSubmitting = false
     @Published private(set) var errorText: String?
+    /// Per-field messages (board 11-17): each field states its own problem, in place.
+    @Published private(set) var emailError: String?
+    @Published private(set) var passwordError: String?
+    /// Live connectivity: board 11-20 disables the CTA and says why.
+    @Published private(set) var isOffline: Bool
 
-    /// Copy for a submit tap that has nothing to send. One string for a missing email, a missing
-    /// password, or both: the sheet never says which field the server would have rejected.
+    /// Copy for a submit tap that has nothing to send. Kept for the shared error region so a tap is
+    /// always answered; the per-field messages below carry the detail the board draws.
     static let incompleteFormText = "Enter your email address and password."
+    static let invalidEmailText = "Enter a valid email address, like name@example.com"
+    static let missingPasswordText = "Enter your password"
 
     /// Both fields carry input. Gates the CTA's *fill*, never its tap: a tap on the muted CTA must
     /// still be answered (`submit()`), because a control that swallows a tap with no feedback is
@@ -341,24 +391,66 @@ final class EmailSignInModel: ObservableObject {
         !email.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !password.isEmpty
     }
 
-    private let client: APIClient
+    var hasFieldErrors: Bool { emailError != nil || passwordError != nil }
 
-    init(client: APIClient = ServiceLocator.makeAPIClient()) {
+    private let client: APIClient
+    private let connectivity: ConnectivityReporting
+
+    init(
+        client: APIClient = ServiceLocator.makeAPIClient(),
+        connectivity: ConnectivityReporting = NetworkConnectivityMonitor.shared
+    ) {
         self.client = client
+        self.connectivity = connectivity
+        self.isOffline = connectivity.isOffline
+    }
+
+    /// Starts the connectivity read (the view calls this once it appears).
+    func start() {
+        connectivity.start()
+        isOffline = connectivity.isOffline
+    }
+
+    /// The same shape the sign-in endpoint enforces (`z.string().trim().email()`): a local part, an
+    /// `@`, and a domain with a dot and a two-letter-or-longer alphabetic suffix. Anything looser
+    /// would let the sheet send a request the backend answers with a 400.
+    static func isValidEmail(_ value: String) -> Bool {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !trimmed.contains(where: \.isWhitespace) else { return false }
+        let parts = trimmed.split(separator: "@", omittingEmptySubsequences: false)
+        guard parts.count == 2 else { return false }
+        let local = parts[0]
+        let domain = parts[1]
+        guard !local.isEmpty, !local.hasPrefix("."), !local.hasSuffix("."), !local.contains("..") else {
+            return false
+        }
+        let labels = domain.split(separator: ".", omittingEmptySubsequences: false)
+        guard labels.count >= 2, labels.allSatisfy({ !$0.isEmpty }) else { return false }
+        guard let suffix = labels.last, suffix.count >= 2, suffix.allSatisfy(\.isLetter) else { return false }
+        return true
+    }
+
+    /// Fills the per-field messages. `true` when the form may be sent.
+    @discardableResult
+    func validate() -> Bool {
+        let trimmedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines)
+        emailError = Self.isValidEmail(trimmedEmail) ? nil : Self.invalidEmailText
+        // The endpoint accepts any non-empty password (`z.string().min(1)`), so the client rule is
+        // presence only: a stricter rule here would refuse credentials the backend accepts.
+        passwordError = password.isEmpty ? Self.missingPasswordText : nil
+        return emailError == nil && passwordError == nil
     }
 
     /// Runs the sign-in once per call. `true` only for a real sign-in — the caller then resolves
     /// the interrupted intent, if any.
     ///
     /// Every outcome writes a state the sheet can render, including an incomplete form: a tap with
-    /// empty fields sets `incompleteFormText` in the same error region a rejected credential uses.
-    /// Before this, such a tap was a silent no-op that left the sheet exactly as it started — an
-    /// empty form with no error — which is the observable outcome the verification lane reported
-    /// and could not tell apart from a failed sign-in.
+    /// empty fields sets `incompleteFormText` in the same error region a rejected credential uses
+    /// and the per-field messages beside the fields themselves.
     func submit() async -> Bool {
         let trimmedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !isSubmitting else { return false }
-        guard !trimmedEmail.isEmpty, !password.isEmpty else {
+        guard validate() else {
             errorText = Self.incompleteFormText
             return false
         }
@@ -374,9 +466,139 @@ final class EmailSignInModel: ObservableObject {
         }
     }
 }
+/// Live connectivity. The offline states on the paywall (board 11-11) and in email sign-in
+/// (board 11-20) are read from the network path, never guessed from an error string.
+@MainActor
+protocol ConnectivityReporting: AnyObject {
+    var isOffline: Bool { get }
+    /// Emits the new `isOffline` value whenever the path changes.
+    var changes: AnyPublisher<Bool, Never> { get }
+    func start()
+}
 
-/// Email + password sign-in surface (DESIGN-signin.md §3–7). Presented as a `.sheet` from the
-/// shared prompt, the Account signed-out card and the paywall — never from the 9-line overlay.
+/// One monitor for the app: connectivity is a process-wide fact, and every surface that needs it
+/// reads the same source instead of polling.
+@MainActor
+final class NetworkConnectivityMonitor: ConnectivityReporting {
+    static let shared = NetworkConnectivityMonitor()
+
+    /// The path handler runs on the monitor's own queue, so the subject it feeds lives in a
+    /// `Sendable` box instead of being captured off the main actor. `CurrentValueSubject` is safe to
+    /// send to from any thread; every subscriber hops back to the main actor itself.
+    private final class OfflineState: @unchecked Sendable {
+        let subject = CurrentValueSubject<Bool, Never>(false)
+    }
+
+    private let state = OfflineState()
+    private let monitor = NWPathMonitor()
+    private let queue = DispatchQueue(label: "com.aipose.connectivity")
+    private var hasStarted = false
+
+    var isOffline: Bool { state.subject.value }
+    var changes: AnyPublisher<Bool, Never> { state.subject.eraseToAnyPublisher() }
+
+    func start() {
+        guard !hasStarted else { return }
+        hasStarted = true
+        monitor.pathUpdateHandler = { [state] path in
+            state.subject.send(path.status != .satisfied)
+        }
+        monitor.start(queue: queue)
+    }
+}
+
+/// One actionable message on a support surface: the boards' error card instead of a plain footnote
+/// line, with the action that fixes it where one exists.
+struct SupportNotice: Equatable {
+    enum Action: Equatable {
+        case retryLoad
+        case retryRestore
+        case retryGoogle
+    }
+
+    let title: String
+    let message: String
+    let action: Action?
+
+    var actionTitle: String? { action == nil ? nil : "Try again" }
+}
+
+/// Board 11-11/11-20: a one-line status banner in the state's own surface, glyph plus words.
+struct SupportInlineBanner: View {
+    let tone: APStateTone
+    let message: String
+
+    var body: some View {
+        HStack(spacing: AP.Space.space12) {
+            Image(systemName: tone.glyph)
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(tone.glyphColor)
+                .accessibilityHidden(true)
+            Text(message)
+                .font(AP.Font.supporting)
+                .foregroundStyle(AP.Color.primaryText)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.horizontal, AP.Space.space16)
+        .padding(.vertical, AP.Space.space12)
+        .background(
+            RoundedRectangle(cornerRadius: AP.Radius.radius16, style: .continuous)
+                .fill(tone.surface)
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(message)
+    }
+}
+
+/// The boards' error card (11-08/11-09/11-15/11-19): title, truthful body and the action that fixes
+/// it. One component for the paywall and for email sign-in.
+struct SupportNoticeCard: View {
+    let notice: SupportNotice
+    var action: (SupportNotice.Action) -> Void = { _ in }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: AP.Space.space12) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(AP.Color.error)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: AP.Space.space8) {
+                Text(notice.title)
+                    .font(AP.Font.heading)
+                    .foregroundStyle(AP.Color.error)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(notice.message)
+                    .font(AP.Font.supporting)
+                    .foregroundStyle(AP.Color.primaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let actionTitle = notice.actionTitle, let noticeAction = notice.action {
+                    Button(actionTitle) { action(noticeAction) }
+                        .buttonStyle(.plain)
+                        .font(AP.Font.supporting.weight(.semibold))
+                        .foregroundStyle(AP.Color.accentText)
+                        .frame(minHeight: AP.HitTarget.minimum)
+                        .accessibilityLabel(actionTitle)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(AP.Space.space16)
+        .background(
+            RoundedRectangle(cornerRadius: AP.Radius.radius16, style: .continuous)
+                .fill(AP.Color.errorSurface)
+        )
+        .accessibilityElement(children: .contain)
+    }
+}
+
+/// Email + password sign-in surface. Presented as a `.sheet` from the shared prompt, the Account
+/// signed-out card and the paywall.
+///
+/// Board page 11 (11-16 … 11-20): an F1 header, one labelled field per row with its own inline
+/// message, a server error card above the fields, an offline banner, and the CTA pinned at the
+/// bottom. There is no password-reset link: the app has no reset path (owner decision), so drawing
+/// one would be a dead control.
 struct EmailSignInScreen: View {
     /// The interrupted intent, one line of subtext under the header (DESIGN §3).
     let intentLine: String
@@ -392,8 +614,6 @@ struct EmailSignInScreen: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isPasswordShown = false
-    @State private var isGoogleAuthenticating = false
-    @State private var googleError: String?
     @State private var submitTask: Task<Void, Never>?
 
     /// Keyboard focus chain: the email field's `.next` return key must actually advance to the
@@ -402,7 +622,6 @@ struct EmailSignInScreen: View {
     /// field that just scrolled under the keyboard.
     private enum FocusField { case email, password }
     @FocusState private var focusedField: FocusField?
-    private let googleAction = SignInAction()
 
     init(
         model: EmailSignInModel,
@@ -414,176 +633,212 @@ struct EmailSignInScreen: View {
         _model = ObservedObject(wrappedValue: model)
     }
 
-    /// A failed Google attempt inside the sheet is a state change like any other: routed through
-    /// the same error region. `model.errorText` and `googleError` never overlap — only one flow
-    /// runs at a time.
-    private var activeError: String? { model.errorText ?? googleError }
-
     var body: some View {
         VStack(spacing: 0) {
             APPageHeader(title: "Sign in with email", backLabel: "Back", onBack: cancel)
             ScrollView {
-                VStack(alignment: .leading, spacing: AIPoseSpacing.md) {
+                VStack(alignment: .leading, spacing: AP.Space.space16) {
                     Text(intentLine)
-                        .font(.subheadline)
-                        .foregroundStyle(AIPoseColor.subtext)
+                        .font(AP.Font.supporting)
+                        .foregroundStyle(AP.Color.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
+                    if model.isOffline {
+                        SupportInlineBanner(tone: .offline, message: "You're offline. Connect to sign in.")
+                            .accessibilityIdentifier("signin.offline")
+                    }
+                    serverErrorCard
                     emailField
                     passwordField
-                    errorRegion
                 }
-                .padding(.horizontal, AIPoseSpacing.lg)
-                .padding(.top, AIPoseSpacing.sm)
-                .padding(.bottom, AIPoseSpacing.lg)
+                .padding(.horizontal, AP.Space.space16)
+                .padding(.top, AP.Space.space8)
+                .padding(.bottom, AP.Space.space24)
             }
             dock
         }
-        .background(AIPoseColor.background)
+        .background(AP.Color.background)
+        .onAppear { model.start() }
         .interactiveDismissDisabled(model.isSubmitting)
         // No `onDisappear` cancellation (S4): a content-view teardown is not a user cancel, and
         // cancelling the in-flight attempt there abandoned a real sign-in request with no error to
         // show for it. The explicit header Back (`cancel()`) is the only path that cancels.
     }
 
-    // MARK: fields — the app's text-input chrome, minus the offset shadow (DESIGN §4)
+    // MARK: fields
 
     private var emailField: some View {
-        TextField("Email address", text: $model.email)
-            .textContentType(.username)
-            .keyboardType(.emailAddress)
-            .textInputAutocapitalization(.never)
-            .autocorrectionDisabled()
-            .submitLabel(.next)
-            .focused($focusedField, equals: .email)
-            .onSubmit { focusedField = .password }
-            .font(.body)
-            .foregroundStyle(AIPoseColor.foreground)
-            .frame(minHeight: 44)
-            .padding(.horizontal, AIPoseSpacing.md)
-            .background(AIPoseColor.surface)
-            .clipShape(RoundedRectangle(cornerRadius: 12))
-            .overlay(RoundedRectangle(cornerRadius: 12).stroke(AIPoseColor.foreground, lineWidth: 2))
+        VStack(alignment: .leading, spacing: AP.Space.space8) {
+            fieldLabel("Email")
+            HStack(spacing: AP.Space.space8) {
+                Image(systemName: "envelope")
+                    .font(AP.Font.body)
+                    .foregroundStyle(AP.Color.secondaryText)
+                    .accessibilityHidden(true)
+                TextField("name@example.com", text: $model.email)
+                    .textContentType(.username)
+                    .keyboardType(.emailAddress)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .submitLabel(.next)
+                    .focused($focusedField, equals: .email)
+                    .onSubmit { focusedField = .password }
+                    .font(AP.Font.body)
+                    .foregroundStyle(AP.Color.primaryText)
+                    .accessibilityIdentifier("signin.email")
+                if model.emailError != nil {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(AP.Color.error)
+                        .accessibilityHidden(true)
+                }
+            }
+            .padding(.horizontal, AP.Space.space16)
+            .frame(minHeight: 52)
+            .background(fieldBackground(hasError: model.emailError != nil, isFocused: focusedField == .email))
             .disabled(model.isSubmitting)
-            .accessibilityIdentifier("signin.email")
+            if let emailError = model.emailError {
+                fieldError(emailError, identifier: "signin.email.error")
+            }
+        }
     }
 
     private var passwordField: some View {
-        HStack(spacing: 0) {
-            Group {
-                if isPasswordShown {
-                    TextField("Password", text: $model.password)
-                        .textContentType(.password)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        // The id must sit on the FIELD element (F1): on the wrapping `Group` it
-                        // does not propagate to the field (verified in the live hierarchy).
-                        .accessibilityIdentifier("signin.password")
-                } else {
-                    SecureField("Password", text: $model.password)
-                        .textContentType(.password)
-                        .accessibilityIdentifier("signin.password")
+        VStack(alignment: .leading, spacing: AP.Space.space8) {
+            fieldLabel("Password")
+            HStack(spacing: AP.Space.space8) {
+                Image(systemName: "key")
+                    .font(AP.Font.body)
+                    .foregroundStyle(AP.Color.secondaryText)
+                    .accessibilityHidden(true)
+                Group {
+                    if isPasswordShown {
+                        TextField("Password", text: $model.password)
+                            .textContentType(.password)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            // The id must sit on the FIELD element (F1): on the wrapping `Group` it
+                            // does not propagate to the field (verified in the live hierarchy).
+                            .accessibilityIdentifier("signin.password")
+                    } else {
+                        SecureField("Password", text: $model.password)
+                            .textContentType(.password)
+                            .accessibilityIdentifier("signin.password")
+                    }
                 }
-            }
-            // Re-identity on every Show/Hide swap: SwiftUI otherwise keeps the old field alive
-            // and a re-hidden SecureField can render blank while the binding still holds the
-            // value (F3). A fresh field view re-reads the binding, so the dots come back.
-            .id(isPasswordShown)
-            .submitLabel(.done)
-            .focused($focusedField, equals: .password)
-            .onSubmit { submitTask = Task { await submit() } }
-            .font(.body)
-            .foregroundStyle(AIPoseColor.foreground)
-            .frame(minHeight: 44)
+                // Re-identity on every Show/Hide swap: SwiftUI otherwise keeps the old field alive
+                // and a re-hidden SecureField can render blank while the binding still holds the
+                // value (F3). A fresh field view re-reads the binding, so the dots come back.
+                .id(isPasswordShown)
+                .submitLabel(.done)
+                .focused($focusedField, equals: .password)
+                .onSubmit { submitTask = Task { await submit() } }
+                .font(AP.Font.body)
+                .foregroundStyle(AP.Color.primaryText)
 
-            Button {
-                isPasswordShown.toggle()
-            } label: {
-                Text(isPasswordShown ? "Hide" : "Show")
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(AIPoseColor.foreground)
-                    .frame(minWidth: 44, minHeight: 44)
-                    .contentShape(Rectangle())
+                if model.passwordError != nil {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(AP.Color.error)
+                        .accessibilityHidden(true)
+                }
+
+                Button {
+                    isPasswordShown.toggle()
+                } label: {
+                    Image(systemName: isPasswordShown ? "eye.slash" : "eye")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(AP.Color.primaryText)
+                        .frame(minWidth: AP.HitTarget.minimum, minHeight: AP.HitTarget.minimum)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(model.isSubmitting)
+                .accessibilityIdentifier("signin.showPassword")
+                .accessibilityLabel(isPasswordShown ? "Hide password" : "Show password")
+                .accessibilityValue(isPasswordShown ? "shown" : "hidden")
             }
-            .buttonStyle(.plain)
+            .padding(.leading, AP.Space.space16)
+            .frame(minHeight: 52)
+            .background(fieldBackground(hasError: model.passwordError != nil, isFocused: focusedField == .password))
             .disabled(model.isSubmitting)
-            .accessibilityIdentifier("signin.showPassword")
-            .accessibilityLabel(isPasswordShown ? "Hide password" : "Show password")
-            .accessibilityValue(isPasswordShown ? "shown" : "hidden")
+            if let passwordError = model.passwordError {
+                fieldError(passwordError, identifier: "signin.password.error")
+            }
         }
-        .padding(.leading, AIPoseSpacing.md)
-        .background(AIPoseColor.surface)
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).stroke(AIPoseColor.foreground, lineWidth: 2))
-        .disabled(model.isSubmitting)
     }
 
-    @ViewBuilder
-    private var errorRegion: some View {
-        if let activeError {
-            FeatureStateView(tone: .error, title: SignInPromptStateCopy.failureTitle, message: activeError)
+    private func fieldLabel(_ title: String) -> some View {
+        Text(title)
+            .font(AP.Font.supporting.weight(.semibold))
+            .foregroundStyle(AP.Color.primaryText)
+    }
+
+    /// Focus tints the field, an invalid field goes to the error surface: the two reads the board
+    /// distinguishes (11-16 focused, 11-17 invalid) without a resting border.
+    private func fieldBackground(hasError: Bool, isFocused: Bool) -> some View {
+        RoundedRectangle(cornerRadius: AP.Radius.radius16, style: .continuous)
+            .fill(hasError ? AP.Color.errorSurface : (isFocused ? AP.Color.selectedBackground : AP.Color.controlFill))
+    }
+
+    private func fieldError(_ message: String, identifier: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: AP.Space.space8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(AP.Color.error)
+                .accessibilityHidden(true)
+            Text(message)
+                .font(AP.Font.caption.weight(.semibold))
+                .foregroundStyle(AP.Color.error)
                 .fixedSize(horizontal: false, vertical: true)
-                .accessibilityIdentifier("signin.error")
-                .transition(reduceMotion ? .identity : .opacity)
+        }
+        .accessibilityIdentifier(identifier)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(message)
+    }
+
+    /// Board 11-19: a rejected sign-in is a titled card above the fields. The per-field messages own
+    /// the empty-form case, so the card never repeats them.
+    @ViewBuilder
+    private var serverErrorCard: some View {
+        if let error = model.errorText, !model.hasFieldErrors {
+            SupportNoticeCard(
+                notice: SupportNotice(title: "Couldn't sign in", message: error, action: nil)
+            )
+            .accessibilityIdentifier("signin.error")
+            .transition(reduceMotion ? .identity : .opacity)
         }
     }
 
-    /// The single primary action plus the Google peer option, docked above the safe area
-    /// (paywall dock precedent, DESIGN §5 "long content").
+    /// The single primary action, docked above the safe area (DESIGN §5 "long content").
     ///
     /// `fixedSize` on the dock (G1): at accessibility text sizes the sheet cannot give this VStack
-    /// its ideal height, and a compressed child (the CTA reported 97pt for ~200pt of content in the
-    /// AX tree) overflows its frame and paints over its neighbours. Refusing compression here
-    /// pushes the squeeze onto the ScrollView instead, which scrolls; the secondary keeps a real
-    /// `md` separation so the CTA's 4pt offset shadow can never touch its glyphs.
+    /// its ideal height, and a compressed child overflows its frame and paints over its neighbours.
+    /// Refusing compression here pushes the squeeze onto the ScrollView instead, which scrolls.
     private var dock: some View {
-        VStack(spacing: AIPoseSpacing.md) {
+        VStack(spacing: AP.Space.space12) {
             Button {
                 submitTask = Task { await submit() }
             } label: {
-                HStack(spacing: AIPoseSpacing.sm) {
-                    if model.isSubmitting { ProgressView().tint(AIPoseColor.foreground) }
+                HStack(spacing: AP.Space.space8) {
+                    if model.isSubmitting { ProgressView().tint(AP.Color.onAccent) }
                     Text(model.isSubmitting ? "Signing in…" : "Sign in")
                         .fixedSize(horizontal: false, vertical: true)
                         .multilineTextAlignment(.center)
                 }
             }
-            // Call-site disabled affordance (F2): `NeoButtonStyle` never reads `isEnabled`, so a
-            // `.disabled` CTA still paints the full primary fill and shadow. An empty form keeps
-            // its fill token but mutes to the neutral surface, matching DESIGN §5 "initial".
-            // During the in-flight request the fill stays primary — the spinner + "Signing in…"
-            // label own the loading read (DESIGN §5 "loading"), not a disabled look.
-            .buttonStyle(NeoButtonStyle(fill: model.canSubmit ? AIPoseColor.primary : AIPoseColor.surfaceVariant))
-            .opacity(model.canSubmit ? 1 : 0.8)
-            .frame(minHeight: 44)
-            // An incomplete form mutates the fill (§5 "initial") but never swallows the tap: the
-            // model answers it with `incompleteFormText` so "nothing happened" is not a state this
-            // sheet can be left in (S4).
-            .disabled(model.isSubmitting)
+            .buttonStyle(APPrimaryButtonStyle(minimumHeight: 48))
+            // An incomplete form keeps the CTA tappable: the tap is answered with the field messages
+            // (S4). Only the in-flight request and a known-offline device disable it.
+            .disabled(model.isSubmitting || model.isOffline)
             .accessibilityIdentifier("signin.submit")
             .accessibilityLabel(model.isSubmitting ? "Signing in" : "Sign in")
-
-            Button {
-                Task { await continueWithGoogle() }
-            } label: {
-                Text("Use Google instead")
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(AIPoseColor.foreground)
-                    // Wrap, never clip, at accessibility text sizes (F5).
-                    .fixedSize(horizontal: false, vertical: true)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: .infinity, minHeight: 44)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .disabled(isGoogleAuthenticating)
-            .accessibilityIdentifier("signin.google")
-            .accessibilityLabel(isGoogleAuthenticating ? "Signing in" : "Use Google instead")
         }
-        .padding(AIPoseSpacing.lg)
-        .background(AIPoseColor.background)
+        .padding(.horizontal, AP.Space.space16)
+        .padding(.vertical, AP.Space.space12)
+        .background(AP.Color.background)
         .fixedSize(horizontal: false, vertical: true)
         .overlay(alignment: .top) {
-            Rectangle().fill(AIPoseColor.foreground.opacity(0.15)).frame(height: 1)
+            Rectangle().fill(AP.Color.separator).frame(height: 1)
         }
     }
 
@@ -599,21 +854,6 @@ struct EmailSignInScreen: View {
     private func cancel() {
         submitTask?.cancel()
         dismiss()
-    }
-
-    private func continueWithGoogle() async {
-        guard !isGoogleAuthenticating else { return }
-        isGoogleAuthenticating = true
-        defer { isGoogleAuthenticating = false }
-        switch await googleAction.run() {
-        case .succeeded:
-            onResolved()
-            dismiss()
-        case .cancelled:
-            break
-        case .failed(let text):
-            googleError = text
-        }
     }
 }
 
