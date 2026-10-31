@@ -93,6 +93,23 @@ Notes, so the next run does not re-learn them:
 - Build 17 confirms the Settings rebuild at runtime: `settings.premium.row` lives in the new Library group
   and still opens the paywall, which is what TC-PAY-004/005/006 use as their entitlement probe.
 
+## Disk hygiene on lane 2 (CF871F97) — run this before and after every Maestro batch
+
+The lane-2 simulator accumulates XCTest attachments and has already filled the disk once. Before starting a
+run and again after every batch:
+
+```bash
+# lane 2 ONLY — never another simulator
+find ~/Library/Developer/CoreSimulator/Devices/CF871F97-1789-4490-B3E3-0B5EFA39F23F/data/Containers/Data/InternalDaemon/*/Attachments \
+  -type f -mmin +10 -delete
+rm -rf ~/Library/Developer/CoreSimulator/Devices/CF871F97-1789-4490-B3E3-0B5EFA39F23F/data/Library/Caches/com.apple.containermanagerd/Dead/*
+df -h /    # require >= 3 GiB free; under that, do not start — tell the QA lead
+```
+
+`run.sh` cannot do this for us: its `cleanup_dead_containers` deliberately skips `CF871F97*`, and it does not
+touch XCTest attachments at all, so both commands are manual on this lane. Never `simctl erase`. Keep bulky
+screenshots/logs under `/tmp/qa-*`; the evidence that matters is committed under `screens/`.
+
 ## Build 1.1 (17) scope: regression only — redesign waits for 1.1 (18)
 
 `/tmp/ai-pose-lane2-app-1.1/dev17/posing.app` is built from `a03d03a`. Verified with

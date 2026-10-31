@@ -13,6 +13,23 @@ file in `maestro/flows/` to be git-tracked *and* marked `automated:` in `docs/qa
 that mapping is the main suite's, not this packet's. Promote a flow into `maestro/flows/` (and add its
 case row) only if the release package decides it should stay.
 
+## Disk hygiene on lane 2 (CF871F97) — run this before and after every Maestro batch
+
+The lane-2 simulator accumulates XCTest attachments and has already filled the disk once. Before starting a
+run and again after every batch:
+
+```bash
+# lane 2 ONLY — never another simulator
+find ~/Library/Developer/CoreSimulator/Devices/CF871F97-1789-4490-B3E3-0B5EFA39F23F/data/Containers/Data/InternalDaemon/*/Attachments \
+  -type f -mmin +10 -delete
+rm -rf ~/Library/Developer/CoreSimulator/Devices/CF871F97-1789-4490-B3E3-0B5EFA39F23F/data/Library/Caches/com.apple.containermanagerd/Dead/*
+df -h /    # require >= 3 GiB free; under that, do not start — tell the QA lead
+```
+
+`run.sh` cannot do this for us: its `cleanup_dead_containers` deliberately skips `CF871F97*`, and it does not
+touch XCTest attachments at all, so both commands are manual on this lane. Never `simctl erase`. Keep bulky
+screenshots/logs under `/tmp/qa-*`; the evidence that matters is committed under `screens/`.
+
 ## Prerequisites (each is a way a case becomes BLOCKED, never a way it "passes")
 
 | Prerequisite | Needed by | If missing |
