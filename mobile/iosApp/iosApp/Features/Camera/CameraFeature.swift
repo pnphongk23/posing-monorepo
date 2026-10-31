@@ -344,10 +344,9 @@ final class CameraViewModel: ObservableObject {
 
     // MARK: - Picker strip (F12 collapsed / expanded)
 
-    /// Opens and closes the picker strip. This is the **single** control that re-opens the strip (F12):
-    /// the strip's own chip, drawn above the shutter rail in both states. The pose title pill next to
-    /// Close opens the full picker *sheet* instead (`camera.choosePose`), which is a different surface
-    /// and never the way back from the collapsed bar.
+    /// Opens and closes the picker strip. This is the **single** control that re-opens the strip: the
+    /// Poses control at the right end of the scale row. The strip's own Browse entry
+    /// (`camera.choosePose`) opens the full picker *sheet* (search + All/Saved scopes).
     func togglePickerStrip() {
         guard cameraControlsEnabled else { return }
         isPickerExpanded.toggle()
@@ -1281,6 +1280,7 @@ struct CameraScreen: View {
             activeZoomPreset: model.activeZoomPreset,
             onToggleStrip: { model.togglePickerStrip() },
             onSelectPose: { pose in guide = pose },
+            onBrowse: { model.openPosePicker() },
             onRetryStrip: { Task { await posePickerModel.load() } },
             onZoomPreset: { preset in model.selectZoomPreset(preset) },
             onOpenGallery: onOpenGallery,
@@ -1377,9 +1377,9 @@ struct CameraScreen: View {
         .allowsHitTesting(false)
     }
 
-    /// The camera's top chrome, one row (F1's camera exception): Close · the current pose as the
-    /// picker's entry point · the guide's eye · the tools. Every control is a 44 pt surface pill with
-    /// no resting border, and the pose title grows with Dynamic Type instead of truncating.
+    /// The camera's top chrome: Close on the left, the guide's eye when a reference is up, tools on the
+    /// right. The old "Choose a pose" dropdown pill is gone (owner device feedback): picking a pose is
+    /// the Poses control in the scale row, which opens the strip and its Browse entry.
     private var topControls: some View {
         HStack(alignment: .center, spacing: AP.Space.space8) {
             CameraSurfaceControl(
@@ -1389,29 +1389,7 @@ struct CameraScreen: View {
                 action: onClose
             )
 
-            Button {
-                model.openPosePicker()
-            } label: {
-                HStack(spacing: AP.Space.space8) {
-                    Text(guide?.name ?? "Choose a pose")
-                        .font(AP.Font.heading)
-                        .foregroundStyle(AP.Color.primaryText)
-                        .multilineTextAlignment(.leading)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    Image(systemName: "chevron.down")
-                        .font(AP.Font.caption)
-                        .foregroundStyle(AP.Color.secondaryText)
-                        .accessibilityHidden(true)
-                }
-                .padding(.horizontal, AP.Space.space16)
-                .frame(maxWidth: .infinity, minHeight: AP.HitTarget.minimum)
-            }
-            .buttonStyle(CameraPressStyle())
-            .disabled(!model.cameraControlsEnabled)
-            .opacity(model.cameraControlsEnabled ? 1 : 0.45)
-            .accessibilityLabel(guide.map { "Pose \($0.name). Open pose picker" } ?? "Choose a pose")
-            .accessibilityIdentifier("camera.choosePose")
+            Spacer(minLength: 0)
 
             if guide != nil {
                 CameraSurfaceControl(
@@ -1819,6 +1797,36 @@ enum CameraChromeLayout {
     static func stripToggleLabel(isPickerExpanded: Bool) -> String {
         isPickerExpanded ? "Hide pose picker" : "Show pose picker"
     }
+
+    /// What the Poses control does on the scale row. It is the only way into the picker, so a collapsed
+    /// camera always expands first; the strip itself carries the sheet's Browse entry
+    /// (`camera.choosePose` → search + All/Saved scopes).
+    enum PickerControlTarget: Equatable {
+        case expandStrip
+        case collapseStrip
+    }
+
+    static func pickerControlTarget(isPickerExpanded: Bool) -> PickerControlTarget {
+        isPickerExpanded ? .collapseStrip : .expandStrip
+    }
+
+    /// The strip's Browse entry is only meaningful while the strip is on screen.
+    static func showsStripBrowse(isPickerExpanded: Bool, showsPicker: Bool) -> Bool {
+        showsPicker && isPickerExpanded
+    }
+
+    /// The bottom surface's vertical order, top to bottom. F5 puts the snackbar first, directly above
+    /// the control bar: `CameraBottomBar` renders its children in exactly this order.
+    enum BottomSlot: Equatable {
+        case snackbar
+        case scaleRow
+        case panel
+    }
+
+    static let bottomSurfaceOrder: [BottomSlot] = [.snackbar, .scaleRow, .panel]
+
+    /// The full picker sheet's handle, kept from the removed top pill so the E2E path is unchanged.
+    static let browseIdentifier = "camera.choosePose"
 }
 
 /// Snackbar · zoom · pose strip (or its re-open control) · shutter rail.
@@ -1842,6 +1850,7 @@ struct CameraBottomBar: View {
     let activeZoomPreset: CameraZoomPreset?
     let onToggleStrip: () -> Void
     let onSelectPose: (NativePose) -> Void
+    let onBrowse: () -> Void
     let onRetryStrip: () -> Void
     let onZoomPreset: (CameraZoomPreset) -> Void
     let onOpenGallery: () -> Void
@@ -1883,7 +1892,7 @@ struct CameraBottomBar: View {
                     .padding(.bottom, AP.Space.space8)
             }
 
-            zoomPill
+            scaleRow
                 .padding(.bottom, AP.Space.space8)
 
             panel
@@ -1969,6 +1978,9 @@ struct CameraBottomBar: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: AP.Space.space8) {
                     ForEach(poses) { pose in stripCard(pose) }
+                    if showsPicker {
+                        browseAllCard
+                    }
                 }
                 .padding(.horizontal, AP.Space.space16)
             }
@@ -2003,6 +2015,33 @@ struct CameraBottomBar: View {
             .frame(maxWidth: .infinity, minHeight: stripRowHeight, alignment: .leading)
             .accessibilityIdentifier("camera.poseStrip")
         }
+    }
+
+    /// The strip's last card opens the full picker (search + All/Saved scopes). It keeps the
+    /// `camera.choosePose` handle the old top pill had, so the existing E2E path still reaches
+    /// `posePicker.search` and `posePicker.grid`.
+    private var browseAllCard: some View {
+        Button(action: onBrowse) {
+            VStack(spacing: AP.Space.space4) {
+                Image(systemName: "magnifyingglass")
+                    .font(AP.Font.heading)
+                    .foregroundStyle(AP.Color.primaryText)
+                    .frame(width: cardWidth, height: stripImageHeight)
+                    .background(
+                        RoundedRectangle(cornerRadius: AP.Radius.radius8, style: .continuous)
+                            .fill(AP.Color.controlFill)
+                    )
+                Text("Browse")
+                    .font(AP.Font.caption)
+                    .foregroundStyle(AP.Color.secondaryText)
+                    .lineLimit(1)
+                    .frame(width: cardWidth - AP.Space.space8, alignment: .leading)
+            }
+            .padding(AP.Space.space4)
+        }
+        .buttonStyle(CameraPressStyle(restingFill: AP.Color.controlFill))
+        .accessibilityLabel("Browse all poses")
+        .accessibilityIdentifier("camera.choosePose")
     }
 
     private func stripCard(_ pose: NativePose) -> some View {
@@ -2046,6 +2085,23 @@ struct CameraBottomBar: View {
     }
 
     // MARK: Zoom
+
+    /// The scale row: the zoom presets stay centred, the Poses control sits at its right end (owner
+    /// feedback calls this row the scale bar). The Poses control is the only way back into the picker,
+    /// so it is always present while the camera can pick a pose.
+    private var scaleRow: some View {
+        ZStack {
+            zoomPill
+            if showsPicker, CameraChromeLayout.showsStripToggle(showsPicker: showsPicker) {
+                HStack(spacing: 0) {
+                    Spacer(minLength: 0)
+                    stripToggle
+                }
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, AP.Space.space16)
+    }
 
     private var zoomPill: some View {
         HStack(spacing: AP.Space.space4) {
