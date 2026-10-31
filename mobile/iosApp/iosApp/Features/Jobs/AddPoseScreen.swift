@@ -22,11 +22,28 @@ final class AddPoseViewModel: ObservableObject {
     @Published var isProcessingOffline = false
     @Published var isJobGone = false
 
-    private let jobsService: any JobsServing
-    private var watchTask: Task<Void, Never>?
+    /// Drives the consent sheet. The form stays mounted behind it, so Cancel leaves it filled.
+    @Published var isConsentPromptVisible = false
 
-    init(jobsService: any JobsServing = ServiceLocator.jobsService) {
+    private let jobsService: any JobsServing
+    private let consentStore: any AddPoseConsentStoring
+    private var watchTask: Task<Void, Never>?
+    /// The upload that was validated but held back for consent; it is never reconstructed from the form,
+    /// so a later edit cannot change the photo the user is agreeing to send.
+    private var pendingConsentUpload: PendingUpload?
+
+    private struct PendingUpload {
+        let imageData: Data
+        let fileName: String
+        let draft: PoseDraft
+    }
+
+    init(
+        jobsService: any JobsServing = ServiceLocator.jobsService,
+        consentStore: any AddPoseConsentStoring = AddPoseConsentStore.shared
+    ) {
         self.jobsService = jobsService
+        self.consentStore = consentStore
     }
 
     deinit {
@@ -59,16 +76,60 @@ final class AddPoseViewModel: ObservableObject {
             return false
         }
 
-        isSubmitting = true
-        submitError = nil
-        isOffline = false
-        defer { isSubmitting = false }
-
         let draft = PoseDraft(
             name: name.trimmingCharacters(in: .whitespacesAndNewlines),
             tags: parsedTags,
             description: descriptionText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : descriptionText.trimmingCharacters(in: .whitespacesAndNewlines)
         )
+
+        // App Review 5.1.2(i): the photo leaves the device only after the user has been told where it
+        // goes and has allowed it. Nothing is sent while the sheet is up — not even a prefetch.
+        if await needsConsent() {
+            pendingConsentUpload = PendingUpload(imageData: imageData, fileName: fileName, draft: draft)
+            submitError = nil
+            isOffline = false
+            isConsentPromptVisible = true
+            return false
+        }
+
+        return await performUpload(imageData: imageData, fileName: fileName, draft: draft)
+    }
+
+    /// The user allowed the upload: remember the answer for this account, then send the held photo once.
+    @discardableResult
+    func allowConsent() async -> Bool {
+        guard let pending = pendingConsentUpload else {
+            isConsentPromptVisible = false
+            return false
+        }
+        pendingConsentUpload = nil
+        isConsentPromptVisible = false
+        if let accountID = await consentStore.accountID() {
+            consentStore.recordAcknowledgement(accountID: accountID)
+        }
+        return await performUpload(imageData: pending.imageData, fileName: pending.fileName, draft: pending.draft)
+    }
+
+    /// The user cancelled: nothing is sent, nothing is remembered, and the filled form is untouched.
+    func cancelConsent() {
+        pendingConsentUpload = nil
+        isConsentPromptVisible = false
+    }
+
+    private func needsConsent() async -> Bool {
+        // `nil` means no usable session: `JobsService.submit` refuses without stored credentials and the
+        // backend rejects any token without a `sub` claim, so there is no upload to disclose yet. A real
+        // signed-in session always resolves, and then the sheet is authoritative.
+        guard let accountID = await consentStore.accountID() else { return false }
+        guard !consentStore.promptsEveryUpload else { return true }
+        return !consentStore.hasAcknowledged(accountID: accountID)
+    }
+
+    private func performUpload(imageData: Data, fileName: String, draft: PoseDraft) async -> Bool {
+        isSubmitting = true
+        submitError = nil
+        isOffline = false
+        defer { isSubmitting = false }
 
         do {
             let jobId = try await jobsService.submit(image: imageData, fileName: fileName, draft: draft)
@@ -200,6 +261,15 @@ struct AddPoseScreen: View {
                 selectedImage: $viewModel.selectedImage,
                 selectedImageData: $viewModel.selectedImageData,
                 selectedFileName: $viewModel.selectedFileName
+            )
+        }
+        .sheet(
+            isPresented: $viewModel.isConsentPromptVisible,
+            onDismiss: { viewModel.cancelConsent() }
+        ) {
+            AddPoseConsentSheet(
+                onAllow: { Task { await viewModel.allowConsent() } },
+                onCancel: { viewModel.cancelConsent() }
             )
         }
         .signInPrompt($pendingSignIn) { intent in
