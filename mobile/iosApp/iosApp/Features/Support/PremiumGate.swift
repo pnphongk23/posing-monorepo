@@ -45,7 +45,7 @@ struct PremiumGateInputs: Equatable {
 /// 1. **G1 — kill switch.** `paywall_enabled == false` → today's behaviour. Checked first so the
 ///    switch is a real rollback, not one flag among many.
 /// 2. **G3 — can this build even sell?** No purchasable configuration (SDK key or entitlement id
-///    missing/placeholder) **or** accounts switched off (`accounts_enabled_v2 == false`, and a
+///    missing/placeholder) **or** accounts switched off (`account_enabled == false`, and a
 ///    purchase needs a signed-in Account) → allow. A paywall nobody can complete would lock the
 ///    camera for good (risk R1, NFR-002).
 /// 3. **G4 — signed out.** A known state, not an outage: the paywall opens with its sign-in prompt
