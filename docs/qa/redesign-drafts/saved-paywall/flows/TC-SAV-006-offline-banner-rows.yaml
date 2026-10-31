@@ -1,10 +1,12 @@
 # TC-SAV-006 offline: the banner explains the state and uncached rows say what they are
 #
-# Runs on build 18+ with the DEBUG-only fixture (`saved-launch-offline.yaml`, two first rows available) —
-# the simulator's network cannot be switched off per app, and the real-loss half stays unit/XCTest-mapped.
+# Runs on build 18+ with the DEBUG-only fixture (`saved-launch-offline.yaml`) at 0 cached rows: every row
+# is then outside the offline cache, which makes "Not saved offline" deterministic whatever the account
+# happens to have saved. (The cached half — a row that still opens offline — needs n>=1 and at least n+1
+# saved poses, so it is covered by the offline unit tests instead of by data luck.)
 #
 # What the case is about: an offline user must be able to tell "this list is what I have" from "this is
-# everything I saved". A row the device cannot serve is dimmed and labelled, not silently unopenable.
+# everything I saved". A row the device cannot serve is labelled, not silently unopenable.
 appId: ${APP_ID}
 tags: [TC-SAV-006, p1, e2e]
 ---
@@ -14,19 +16,17 @@ tags: [TC-SAV-006, p1, e2e]
 - runFlow:
     file: ../subflows/saved-launch-offline.yaml
     env:
-      OFFLINE_CACHED_ROWS: "2"
+      OFFLINE_CACHED_ROWS: "0"
 - extendedWaitUntil:
     visible:
       id: "saved.offlineBanner"
     timeout: 30000
 - assertVisible: "You.re offline. Changes will sync when you.re back online."
-# The first rows stay usable …
+- assertVisible: "Not saved offline"
+# The rows are still there (this is an offline list, not an empty one) …
 - assertVisible:
     id: "poses.first-card"
-- assertVisible: "Remove from saved"
-# … and the ones the cache cannot serve announce themselves instead of pretending to be gone.
-- assertVisible: "Not saved offline"
-# Offline is a state, not an empty list or a failure: neither panel may be shown.
+# … and offline is its own state: neither the empty state nor the failure panel may appear.
 - assertNotVisible:
     id: "saved.browseCommunity"
 - assertNotVisible:
