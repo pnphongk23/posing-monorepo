@@ -98,17 +98,23 @@ struct JobsScreen<Service: JobsServing & ObservableObject>: View {
         VStack(spacing: 0) {
             APPageHeader(title: "Jobs", onBack: { dismiss() })
 
-            segmentControl
+            // Board `09-board08`: while nothing has loaded yet the tabs, the chips and the rows are all
+            // placeholders, so the real chrome never pops in above a list that is still coming.
+            if isFirstLoad {
+                JobsLoadingSkeleton()
+            } else {
+                segmentControl
 
-            if jobsService.isOffline {
-                offlineBanner
+                if jobsService.isOffline {
+                    offlineBanner
+                }
+
+                if showsFilterChips {
+                    filterChips
+                }
+
+                content
             }
-
-            if showsFilterChips {
-                filterChips
-            }
-
-            content
         }
         .background(AP.Color.background)
         .neoHiddenNavigationBar()
@@ -284,9 +290,7 @@ struct JobsScreen<Service: JobsServing & ObservableObject>: View {
     @ViewBuilder
     private var content: some View {
         if tabRows.isEmpty {
-            if case .loading = jobsService.loadState {
-                JobsLoadingSkeleton()
-            } else if case .failed(let message) = jobsService.loadState {
+            if case .failed(let message) = jobsService.loadState {
                 APErrorStateView(
                     title: "Couldn't load jobs",
                     message: message,
@@ -302,6 +306,13 @@ struct JobsScreen<Service: JobsServing & ObservableObject>: View {
         } else {
             jobList
         }
+    }
+
+    /// A first load has nothing to show anywhere yet. Every later poll also reports `.loading`, so the
+    /// skeleton is scoped to this case — an idle segment must not flash placeholders every five seconds.
+    private var isFirstLoad: Bool {
+        guard case .loading = jobsService.loadState else { return false }
+        return jobsService.inProgress.isEmpty && jobsService.finished.isEmpty
     }
 
     private var jobList: some View {

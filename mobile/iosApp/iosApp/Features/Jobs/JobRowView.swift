@@ -253,8 +253,11 @@ struct JobIndeterminateBar: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     static let height: CGFloat = 12
-    static let stripeWidth: CGFloat = 9
-    static let stripeGap: CGFloat = 6
+    /// Width of the band itself; the shape adds the 45° lean on top of it.
+    static let coreWidth: CGFloat = 5
+    /// One stripe's painted width: the band plus its diagonal lean (one bar height for 45°).
+    static var stripeWidth: CGFloat { height + coreWidth }
+    static let stripeGap: CGFloat = 4
     /// One full cycle of stripe + gap: the marching distance that loops seamlessly.
     static var period: CGFloat { stripeWidth + stripeGap }
     static let duration: Double = 0.9
@@ -288,14 +291,17 @@ struct JobIndeterminateBar: View {
     }
 }
 
-/// One diagonal band: a parallelogram leaning right, so a row of them reads as hatching.
+/// One diagonal band: a parallelogram leaning 45°, so a row of them reads as hatching (boards
+/// `09-board01/06`).
 private struct JobStripe: Shape {
     func path(in rect: CGRect) -> Path {
+        let lean = rect.height
+        let core = max(1, rect.width - lean)
         var path = Path()
         path.move(to: CGPoint(x: rect.minX, y: rect.maxY))
-        path.addLine(to: CGPoint(x: rect.minX + rect.width / 2, y: rect.minY))
-        path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
-        path.addLine(to: CGPoint(x: rect.maxX - rect.width / 2, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.minX + lean, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.minX + lean + core, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.minX + core, y: rect.maxY))
         path.closeSubpath()
         return path
     }
