@@ -263,6 +263,18 @@ enum APPagingFooterRule {
     static let retry = "Retry"
     static let end = "You've reached the end"
 
+    /// The footer's trigger identity. It must change when an attempt *settles* (a page landed, failed or
+    /// was discarded by the cursor guard) and must not change at request start — keying on `isLoading`
+    /// cancelled the request that set it.
+    static func triggerKey(
+        phase: APPagingFooterPhase,
+        nextOffset: Int,
+        rowCount: Int,
+        completedAttempts: Int
+    ) -> String {
+        "\(phase)-\(nextOffset)-\(rowCount)-\(completedAttempts)"
+    }
+
     /// F6: infinite scroll. A list with rows behind it never waits for a tap — the footer's
     /// appearance fetches the next page (the model's own in-flight guard keeps it to one request).
     static func autoLoads(_ phase: APPagingFooterPhase) -> Bool {

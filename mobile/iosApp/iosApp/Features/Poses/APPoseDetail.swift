@@ -20,6 +20,34 @@ enum PoseDetailCopy {
     static let heroUnavailable = "Pose photo unavailable"
 }
 
+/// What a tap on the detail's Save control should do. Pure, so the signed-out path (NEW-21) is
+/// testable without a live session: no account → ask to sign in; otherwise the model owns the attempt.
+enum PoseDetailSaveIntent: Equatable {
+    case signIn
+    case toggle
+    case ignore
+}
+
+enum PoseDetailSaveGate {
+    static func intent(
+        hasStoredSession: Bool,
+        hasBookmarkService: Bool,
+        canSave: Bool,
+        isSaving: Bool
+    ) -> PoseDetailSaveIntent {
+        guard hasBookmarkService, canSave, !isSaving else { return .ignore }
+        return hasStoredSession ? .toggle : .signIn
+    }
+}
+
+/// Whether the pinned bar offers the Save control at all: an account feature that is on, and a pose
+/// that is not private (NEW-13: a Jobs/Add-pose detail has no bookmark semantics).
+enum PoseDetailSaveVisibility {
+    static func showsSaveControl(isAccountEnabled: Bool, isPrivate: Bool) -> Bool {
+        isAccountEnabled && !isPrivate
+    }
+}
+
 /// The tags shown under the title. The catalogue carries one category per pose, so the chip row is
 /// that category (trimmed, never blank) — the artboard's three chips are sample data, not three
 /// different fields.

@@ -206,6 +206,10 @@ private extension URLError {
         /// Bumped when the cursor itself moves (a row the user removed). A window that was requested
         /// for the old offset is dropped instead of advancing the cursor past a row it skipped.
         var cursorGeneration = 0
+        /// Bumped when an attempt settles — completed *or* discarded. The footer keys its trigger on
+        /// this, so a page dropped by the cursor guard (an unsave mid-flight) still re-asks for the
+        /// corrected offset instead of leaving the spinner stuck.
+        var completedAttempts = 0
     }
 
     @Published private(set) var paging = Paging()
@@ -270,13 +274,21 @@ private extension URLError {
         error: String? = nil,
         hasMore: Bool = false,
         remainingAutoFetches: Int = 0,
-        isLoading: Bool = false
+        isLoading: Bool = false,
+        nextOffset: Int? = nil,
+        cursorMoved: Bool = false
     ) {
         var next = paging
+        if let nextOffset { next.nextOffset = nextOffset }
         next.error = error
         next.hasMore = hasMore
         next.remainingAutoFetches = remainingAutoFetches
         next.isLoading = isLoading
+        if cursorMoved {
+            // What removing a visible row does: the cursor moves back one and its generation bumps.
+            next.nextOffset = max(0, next.nextOffset - 1)
+            next.cursorGeneration += 1
+        }
         paging = next
     }
     #endif
@@ -374,6 +386,8 @@ private extension URLError {
         // this request may settle it.
         defer {
             if generation == listGeneration { paging.isLoading = false }
+            // Always: a discarded window must still release the footer's trigger.
+            paging.completedAttempts += 1
         }
         let ticket = await beginSessionRequest()
         guard generation == listGeneration else { return }
@@ -1554,41 +1568,6 @@ struct PoseDetailScreen: View {
         }
     }
 
-    /// `Save pose` / `Saved`. Saving needs an account: a pose is only shown as saved once the server
-    /// confirmed it, so this never flips local state up front and never invents a save.
-    @ViewBuilder private var saveControl: some View {
-        if isSaved {
-            APCategoryChip(title: PoseDetailCopy.saved, isSelected: true) {
-                Task { await toggleBookmark() }
-            }
-            .disabled(isSaving)
-            .accessibilityLabel("Remove from saved")
-            .accessibilityIdentifier("poseDetail.saveButton")
-            .accessibilityHint(bookmarkUnavailableHint)
-        } else {
-            Button {
-                Task { await toggleBookmark() }
-            } label: {
-                HStack(spacing: AP.Space.space8) {
-                    Image(systemName: "bookmark")
-                        .font(.system(size: 16, weight: .semibold))
-                        .accessibilityHidden(true)
-                    Text(PoseDetailCopy.save)
-                        .font(AP.Font.heading)
-                }
-                .padding(.horizontal, AP.Space.space16)
-                .frame(minHeight: AP.HitTarget.minimum)
-            }
-            .buttonStyle(APControlFillButtonStyle())
-            // No bookmark service: nothing could confirm the save, so the control is inert rather
-            // than silently lying about the pose's saved state.
-            .disabled(isSaving || model.bookmarkService == nil || !model.canSave(pose))
-            .accessibilityLabel("Save pose")
-            .accessibilityIdentifier("poseDetail.saveButton")
-            .accessibilityHint(bookmarkUnavailableHint)
-        }
-    }
-
     /// The always-visible primary action (`poseDetail.use`).
     ///
     /// `.safeAreaInset` is what makes this correct on every device instead of a fixed height pinned
@@ -1638,7 +1617,10 @@ struct PoseDetailScreen: View {
     }
 
     private var showsSaveControl: Bool {
-        AppConfig.shared.isAccountFeatureEnabled && !isPrivate
+        PoseDetailSaveVisibility.showsSaveControl(
+            isAccountEnabled: AppConfig.shared.isAccountFeatureEnabled,
+            isPrivate: isPrivate
+        )
     }
 
     /// F9: the square Save control, left of the primary action, same height and aligned. Saved shows
@@ -1748,13 +1730,23 @@ struct PoseDetailScreen: View {
     /// Saving needs an account: a pose is only shown as saved once the server confirmed it, so this
     /// never flips local state up front and never invents a save for a missing bookmark service.
     private func toggleBookmark() async {
-        guard AppConfig.shared.isAccountFeatureEnabled, !isSaving else { return }
-        guard await boundary.hasStoredSession() else {
+        guard AppConfig.shared.isAccountFeatureEnabled else { return }
+        let intent = PoseDetailSaveGate.intent(
+            hasStoredSession: await boundary.hasStoredSession(),
+            hasBookmarkService: model.bookmarkService != nil,
+            canSave: model.canSave(pose),
+            isSaving: isSaving
+        )
+        switch intent {
+        case .signIn:
+            // NEW-21: a signed-out Save asks for the account instead of silently doing nothing.
             pendingSignIn = .savePose
+        case .toggle:
+            // The model owns the attempt (and its in-flight flag); this screen only reads the result.
+            await model.toggleSaved(for: pose.withSaved(isSaved))
+        case .ignore:
             return
         }
-        // The model owns the attempt (and its in-flight flag); this screen only reads the result.
-        await model.toggleSaved(for: pose.withSaved(isSaved))
     }
 }
 

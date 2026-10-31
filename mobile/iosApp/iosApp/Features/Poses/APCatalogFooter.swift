@@ -164,7 +164,8 @@ struct APPagingFooter: View {
 
     /// Everything that can change whether another page is wanted — and nothing the request itself
     /// mutates at *start*. Keying on `isLoading` cancelled the very request that set it; keying on the
-    /// cursor and the row count re-fires when a page actually lands (or a failure changes the phase).
+    /// cursor, the row count and a per-attempt completion token re-fire when a page lands, fails, or is
+    /// discarded by the cursor guard — none of which the request mutates at *start*.
     private var triggerKey: String {
         let phase = APPagingFooterRule.phase(
             error: model.paging.error,
@@ -172,7 +173,12 @@ struct APPagingFooter: View {
             remainingAutoFetches: model.paging.remainingAutoFetches,
             hasRows: hasRows
         )
-        return "\(phase)-\(model.paging.nextOffset)-\(model.state.rows.count)"
+        return APPagingFooterRule.triggerKey(
+            phase: phase,
+            nextOffset: model.paging.nextOffset,
+            rowCount: model.state.rows.count,
+            completedAttempts: model.paging.completedAttempts
+        )
     }
 
     private var hasRows: Bool {

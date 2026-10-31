@@ -102,6 +102,39 @@ final class APShellTests: XCTestCase {
         XCTAssertFalse(service.wasCancelled, "the request survives to completion")
     }
 
+    @MainActor func testPageDiscardedByACursorMoveIsRequestedAgainAtTheCorrectedOffset() async {
+        // Unsaving a visible row while the next page is in flight moves the cursor: the pending window
+        // is discarded, so the footer must ask again for the corrected offset instead of stalling.
+        let service = OffsetRecordingSpy()
+        let model = PosesViewModel(service: service)
+        model.state = .loaded([Self.row("1"), Self.row("2")])
+        // Budget left, so the phase stays `.loading` across the discard: nothing but the completion
+        // token can re-fire the trigger then.
+        model.setPagingForTesting(error: nil, hasMore: true, remainingAutoFetches: 3, nextOffset: 20)
+
+        let probe = APViewProbe(APPagingFooter(model: model), size: CGSize(width: 393, height: 220))
+        defer { probe.tearDown() }
+        for _ in 0..<50 {
+            await Task.yield()
+            if service.offsets.count == 1 { break }
+            try? await Task.sleep(nanoseconds: 20_000_000)
+        }
+        XCTAssertEqual(service.offsets, [20], "the first page starts at the cursor")
+
+        // The removal lands while the page is still in flight.
+        model.setPagingForTesting(error: nil, hasMore: true, remainingAutoFetches: 3, isLoading: true, cursorMoved: true)
+        service.release()
+        for _ in 0..<60 {
+            await Task.yield()
+            if service.offsets.count >= 2 { break }
+            try? await Task.sleep(nanoseconds: 20_000_000)
+        }
+        XCTAssertEqual(
+            service.offsets, [20, 19],
+            "after a discarded page the footer re-asks for the corrected offset (one row up)"
+        )
+    }
+
     private static func row(_ id: String) -> NativePose {
         NativePose(id: id, name: "Pose \(id)", category: "Standing", imageURL: nil, instructions: [], isSaved: false)
     }
@@ -165,6 +198,137 @@ final class APShellTests: XCTestCase {
             XCTAssertEqual(saveHeight, ctaHeight, accuracy: 4, "the two fills are the same height at \(size)")
             XCTAssertEqual(saveHeight, Double(expected), accuracy: 6, "the fills are the shared bar height at \(size)")
         }
+    }
+
+    func testFooterTriggerChangesWhenADiscardedAttemptSettles() {
+        // The stall: an unsave mid-flight moves the cursor, the pending window is discarded, and
+        // nothing about phase/offset/rows changes at completion. Only the attempt token differs, so
+        // only the token can re-fire the trigger.
+        let before = APPagingFooterRule.triggerKey(phase: .loading, nextOffset: 19, rowCount: 2, completedAttempts: 4)
+        let after = APPagingFooterRule.triggerKey(phase: .loading, nextOffset: 19, rowCount: 2, completedAttempts: 5)
+        XCTAssertNotEqual(before, after, "a settled attempt must change the trigger identity")
+        XCTAssertEqual(
+            before,
+            APPagingFooterRule.triggerKey(phase: .loading, nextOffset: 19, rowCount: 2, completedAttempts: 4),
+            "the identity is stable while nothing settles"
+        )
+    }
+
+    // MARK: - Pose detail: one Save, its gate and its visibility (S3)
+
+    func testDetailExposesSingleSaveIdentifier() throws {
+        // Two views carrying `poseDetail.saveButton` make Maestro tap an arbitrary one, so the source
+        // itself is the contract: exactly one occurrence in the detail screen.
+        let source = try String(
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appendingPathComponent("iosApp/Features/Poses/PosesFeature.swift"),
+            encoding: .utf8
+        )
+        let occurrences = source.components(separatedBy: "\"poseDetail.saveButton\"").count - 1
+        XCTAssertEqual(occurrences, 1, "exactly one view may carry poseDetail.saveButton")
+        XCTAssertFalse(
+            source.contains("private var saveControl"),
+            "the dead inline Save control must not come back"
+        )
+    }
+
+    func testSignedOutSaveAsksToSignInInsteadOfDoingNothing() {
+        // NEW-21: the signed-out tap is a sign-in request, not a silent no-op.
+        XCTAssertEqual(
+            PoseDetailSaveGate.intent(hasStoredSession: false, hasBookmarkService: true, canSave: true, isSaving: false),
+            .signIn
+        )
+        XCTAssertEqual(
+            PoseDetailSaveGate.intent(hasStoredSession: true, hasBookmarkService: true, canSave: true, isSaving: false),
+            .toggle
+        )
+        XCTAssertEqual(
+            PoseDetailSaveGate.intent(hasStoredSession: true, hasBookmarkService: true, canSave: true, isSaving: true),
+            .ignore,
+            "a tap while a save is in flight is ignored, not queued"
+        )
+        XCTAssertEqual(
+            PoseDetailSaveGate.intent(hasStoredSession: true, hasBookmarkService: false, canSave: true, isSaving: false),
+            .ignore,
+            "no bookmark service: nothing could confirm the save"
+        )
+        XCTAssertEqual(
+            PoseDetailSaveGate.intent(hasStoredSession: true, hasBookmarkService: true, canSave: false, isSaving: false),
+            .ignore,
+            "a pose the server says is gone is not offered again"
+        )
+    }
+
+    func testPrivateDetailOffersNoSaveControl() {
+        // NEW-13: a private (Jobs / Add-pose) detail has no bookmark semantics, so no Save control.
+        XCTAssertTrue(PoseDetailSaveVisibility.showsSaveControl(isAccountEnabled: true, isPrivate: false))
+        XCTAssertFalse(PoseDetailSaveVisibility.showsSaveControl(isAccountEnabled: true, isPrivate: true))
+        XCTAssertFalse(PoseDetailSaveVisibility.showsSaveControl(isAccountEnabled: false, isPrivate: false))
+    }
+
+    @MainActor func testPrivateDetailPaintsOnlyThePrimaryAction() {
+        let previous = AppConfig.shared.isAccountFeatureEnabled
+        AppConfig.shared.applyAccountFeatureEnabled(true)
+        defer { AppConfig.shared.applyAccountFeatureEnabled(previous) }
+
+        let pose = Self.row("private-pose")
+        let model = PosesViewModel(service: ShellPoseService(pose: pose), bookmarkService: ShellBookmarkStub())
+        model.state = .loaded([pose])
+        let probe = APViewProbe(
+            PoseDetailScreen(pose: pose, model: model, onTryPose: { _ in }, isPrivate: true),
+            size: CGSize(width: 393, height: 852)
+        )
+        defer { probe.tearDown() }
+        let painted = probe.capture()
+
+        // Geometry, not colour: with a Save square beside it the CTA starts ~68 pt in; on a private
+        // pose the primary action owns the bar and starts at the 16 pt inset.
+        let barBand = (painted.height - 170)..<painted.height
+        let ctaRows = rowsPainted(with: 0xE89CAE, in: painted).filter { barBand.contains($0) }
+        guard let ctaTop = ctaRows.first, let ctaBottom = ctaRows.last else {
+            return XCTFail("the primary action must be painted in the bar")
+        }
+        var leftEdge = Int.max
+        for y in ctaTop...ctaBottom {
+            for x in 0..<painted.width {
+                guard let pixel = painted.color(x: x, y: y) else { continue }
+                if abs(pixel.red - 232) <= 8 && abs(pixel.green - 156) <= 8 && abs(pixel.blue - 174) <= 8 {
+                    leftEdge = min(leftEdge, x)
+                }
+            }
+        }
+        XCTAssertLessThanOrEqual(
+            Double(leftEdge), 22,
+            "a private pose must not paint a Save control: the primary action starts at the bar's inset"
+        )
+    }
+
+    // MARK: - Saved failure copy (401 / 404 / offline)
+
+    func testSavedFailuresKeepTheirActionableCopy() {
+        XCTAssertEqual(
+            SavedMutationCopy.text(for: PoseAPIError(code: "401", message: "Server error: 401")),
+            "Please sign in again."
+        )
+        XCTAssertEqual(
+            SavedMutationCopy.text(for: PoseAPIError(code: "NOT_FOUND", message: "Pose not found")),
+            "This pose is no longer available."
+        )
+        XCTAssertEqual(
+            SavedMutationCopy.text(for: URLError(.notConnectedToInternet)),
+            "You're offline. Try again when connected."
+        )
+        XCTAssertEqual(
+            SavedMutationCopy.text(for: APIClientError.httpStatus(401)),
+            "Please sign in again."
+        )
+        XCTAssertEqual(
+            SavedMutationCopy.text(for: APIClientError.httpStatus(404)),
+            "This pose is no longer available."
+        )
     }
 
     // MARK: - Shared-file requests from the Gallery lane
@@ -244,24 +408,31 @@ private final class SuspendedPageSpy: PoseServing, @unchecked Sendable {
         pageCalls += 1
         await withTaskCancellationHandler {
             await withCheckedContinuation { continuation in
-                lock.lock()
-                self.continuation = continuation
-                lock.unlock()
+                store(continuation)
             }
         } onCancel: {
-            lock.lock()
-            wasCancelled = true
-            lock.unlock()
+            markCancelled()
         }
         let row = NativePose(id: "slow-\(pageCalls)", name: "Slow", category: "Standing", imageURL: nil, instructions: [], isSaved: false)
         return PosePage(poses: [row], hasMore: false, consumed: 1)
     }
 
+    // Locking lives in synchronous helpers: `NSLock.lock()` is unavailable from an async context and
+    // a lock must never be held across an `await`.
+    private func store(_ continuation: CheckedContinuation<Void, Never>) {
+        lock.withLock { self.continuation = continuation }
+    }
+
+    private func markCancelled() {
+        lock.withLock { wasCancelled = true }
+    }
+
     func release() {
-        lock.lock()
-        let continuation = self.continuation
-        self.continuation = nil
-        lock.unlock()
+        let continuation = lock.withLock { () -> CheckedContinuation<Void, Never>? in
+            let pending = self.continuation
+            self.continuation = nil
+            return pending
+        }
         continuation?.resume()
     }
 }
@@ -278,4 +449,40 @@ private struct ShellPoseService: PoseServing {
 private struct ShellBookmarkStub: PoseBookmarkServing {
     func savePose(poseId: String) async throws {}
     func unsavePose(poseId: String) async throws {}
+}
+
+/// Records the offset of every page request and completes only when released.
+private final class OffsetRecordingSpy: PoseServing, @unchecked Sendable {
+    private(set) var offsets: [Int] = []
+    private var continuation: CheckedContinuation<Void, Never>?
+    private let lock = NSLock()
+
+    func poses(query: String?) async throws -> [NativePose] { [] }
+
+    func pose(id: String) async throws -> NativePose { throw PoseAdapterError.poseNotFound(id) }
+
+    func posesPage(query: String?, offset: Int, limit: Int) async throws -> PosePage {
+        record(offset)
+        await withCheckedContinuation { continuation in
+            store(continuation)
+        }
+        return PosePage(poses: [], hasMore: false, consumed: 0)
+    }
+
+    private func record(_ offset: Int) {
+        lock.withLock { offsets.append(offset) }
+    }
+
+    private func store(_ continuation: CheckedContinuation<Void, Never>) {
+        lock.withLock { self.continuation = continuation }
+    }
+
+    func release() {
+        let continuation = lock.withLock { () -> CheckedContinuation<Void, Never>? in
+            let pending = self.continuation
+            self.continuation = nil
+            return pending
+        }
+        continuation?.resume()
+    }
 }
