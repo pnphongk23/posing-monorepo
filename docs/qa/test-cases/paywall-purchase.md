@@ -10,16 +10,29 @@
 | TC-PAY-006 | P1 | Account A entitled on this device, account B has never purchased | 1. Sign out of A. 2. Sign in as B. 3. Camera → shutter | Paywall with the plans and no sign-in prompt, no "Premium access confirmed" — A's entitlement is not carried over | pending (flow drafted: `docs/qa/purchase-e2e/flows/TC-PAY-006-second-account-no-carryover.yaml` — needs the second credential pair too) |
 | TC-PAY-007 | P1 | Plans fail to load | Open paywall offline | "Retry loading Premium plans" works | manual |
 | TC-PAY-008 | P1 | paywall switch on, signed out | 1. Launch with the paywall on. 2. Open the camera. 3. Tap the shutter. 4. Close the paywall | Camera visible again, paywall gone | automated: TC-PAY-008-close-paywall.yaml |
+| TC-PAY-009 | P1 | paywall switch on, signed out | 1. Launch with the paywall on. 2. Open the camera. 3. Tap the shutter | The signed-out paywall offers Sign in with Apple first (`paywall.signin.apple`), then Google (`paywall.signin`) and email (`signin.emailEntry`) in that visual order, with Apple not the lesser control (same full-width size and border as Google) | pending (flow drafted: `docs/qa/purchase-e2e/flows/TC-PAY-009-signin-apple-first.yaml`; ordering + ids pinned by unit tests) |
 
-Notes on TC-PAY-004/005/006 (why they are still not automated):
+Notes on TC-PAY-004/005/006/009 (why they are still not automated):
 
 - A purchase **can** be driven on the simulator — the Dev-Debug build uses a RevenueCat **Test Store**
   key, whose dialog ("Test valid purchase" / "Test failed purchase" / "Cancel") is app-process UI with
   stable labels. A `.storekit` file or a sandbox Apple ID is not needed and would not help (a scheme
   StoreKit configuration is applied by Xcode's run action, not by a Maestro launch).
-- The remaining blocker is sign-in: all three cases start from a real Account, and the repo holds no
-  test credentials (`SIGNIN` form is automated, the accounts are not). The flows are drafted in
-  `docs/qa/purchase-e2e/` and take `E2E_EMAIL`/`E2E_PASSWORD` (+ `_B`) from the runner environment.
+- The remaining blocker for 004/005/006 is sign-in: all three start from a real Account, and the
+  credentials exist only in the gitignored `mobile/iosApp/maestro/e2e.local.env`. TC-PAY-009 needs no
+  account, but its flow is still a draft until the same simulator run happens.
+- Every paywall element the flows touch is addressed by id — `paywall.close`, `paywall.signin.apple`,
+  `paywall.signin`, `signin.emailEntry`, `paywall.plan.annual`, `paywall.plan.monthly`, `paywall.status`,
+  `paywall.cta` (`SupportScreens.swift:541-557`, one declaration each per
+  `PaywallAppleSignInTests.testEveryPaywallIdentifierIsDeclaredOnceAndRenderedFromTheConstants`), so no
+  flow depends on a price-bearing label.
 - The simulator has no capture device, so "capture succeeds" is asserted as the **gate** answer (an
   unentitled press opens the paywall, an entitled one does not) plus the provider's confirmation
-  banner. Whether a photo is actually written after the purchase stays a device check (TC-GAL-002).
+  banner read by id. Whether a photo is actually written after the purchase stays a device check
+  (TC-GAL-002).
+- "Equal prominence" in TC-PAY-009 is geometry, which no Maestro selector can measure; the flow asserts
+  presence and the Apple-above-Google order (`below:` selector), while size/width parity is pinned by
+  `PaywallAppleSignInTests` + `PaywallSignInOption.allCases`.
+- Apple cancel shows no banner and an Apple failure shows `authError` in the sign-in notice; neither is
+  a separate case here because both are asserted at unit level
+  (`PaywallAppleSignInTests`, paywall model tests).

@@ -28,10 +28,16 @@ or simulator yet — that is why no case row says `automated:` yet.
   confirmed." banner must not be asserted right after the purchase — it can be gone first. The flows
   read entitlement where it is stable instead: reopening the paywall from Settings → Premium
   (`settings.premium.row`, `SupportScreens.swift:385`).
-- **Plan cards carry no accessibility id** — only a composed label
-  (`PaywallPlanCard.accessibilityLabel`, `SupportScreens.swift:903-907`), so the Monthly card is tapped
-  by label prefix `Monthly plan, not selected` and the purchase CTA is checked through its
-  `Continue with <plan>` label (`PaywallModel.ctaTitle`).
+- **Every paywall element is addressed by id, never by a price-bearing label**: `paywall.close`,
+  `paywall.signin.apple`, `paywall.signin` (Google), `signin.emailEntry`, `paywall.plan.annual`,
+  `paywall.plan.monthly`, `paywall.status`, `paywall.cta` — one declaration each in
+  `PaywallAccessibilityID` (`SupportScreens.swift:541-557`), pinned by
+  `PaywallAppleSignInTests.testEveryPaywallIdentifierIsDeclaredOnceAndRenderedFromTheConstants`. The only
+  labels a flow reads are the stable code-owned ones: `Continue with <plan>` (`PaywallModel.ctaTitle`)
+  and the status banner text behind `paywall.status`.
+- **The signed-out paywall orders its sign-in options Apple → Google → email**
+  (`PaywallSignInOption.allCases`, `SupportScreens.swift:567-578`), so TC-PAY-009 asserts Google with a
+  `below: { id: paywall.signin.apple }` selector instead of relying on render order.
 - **TC-PAY-005 cannot prove the entitlement was dropped**: a signed-out shutter is gated by branch G4
   regardless of entitlement (`PremiumGate.swift:75`). TC-PAY-006 is the real carry-over check — it
   requires B to be signed in (so G4 does not apply) and to be gated with loaded plans.
@@ -79,8 +85,8 @@ already confirmed (auto-confirm, or "email confirm" ticked), otherwise every sig
 
 ## Promotion (only after a pass on the simulator)
 
-1. `cp docs/qa/purchase-e2e/flows/TC-PAY-00{4,5,6}-*.yaml mobile/iosApp/maestro/flows/`
+1. `cp docs/qa/purchase-e2e/flows/TC-PAY-00{4,5,6,9}-*.yaml mobile/iosApp/maestro/flows/`
 2. `cp docs/qa/purchase-e2e/subflows/pay-*.yaml mobile/iosApp/maestro/subflows/`
-3. Set the three rows in `docs/qa/test-cases/paywall-purchase.md` to `automated: <file>`.
+3. Set the rows in `docs/qa/test-cases/paywall-purchase.md` to `automated: <file>` (004/005/006/009).
 4. `cd mobile/iosApp/maestro && ./check-traceability.sh` (must print `traceability OK`).
 5. Commit the flows + the case rows with an explicit pathspec.

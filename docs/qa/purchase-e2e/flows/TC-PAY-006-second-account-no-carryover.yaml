@@ -34,14 +34,25 @@ tags: [TC-PAY-006, p1]
 - runFlow: ../subflows/open-camera.yaml
 - tapOn:
     id: "camera.shutter"
-# B is signed in and holds nothing: the gate must ask for Premium *without* the sign-in prompt, and
-# the paywall must not claim access. A carried-over entitlement would have skipped the paywall
-# altogether, so these assertions fail together on a leak.
+# B is signed in and holds nothing: the gate must ask for Premium *without* the sign-in options, the
+# offering must load for B, and the paywall must not claim access. A carried-over entitlement would
+# have skipped the paywall altogether, so these fail together on a leak.
 - extendedWaitUntil:
     visible:
       id: "paywall.cta"
     timeout: 20000
-- assertVisible: "Continue with Annual"
+- scrollUntilVisible:
+    element:
+      id: "paywall.plan.monthly"
+    direction: DOWN
+    timeout: 20000
+- assertVisible:
+    id: "paywall.plan.annual"
+- assertNotVisible:
+    id: "paywall.signin.apple"
 - assertNotVisible:
     id: "paywall.signin"
-- assertNotVisible: ".*Premium access confirmed.*"
+- assertNotVisible:
+    id: "signin.emailEntry"
+- assertNotVisible:
+    id: "paywall.status"

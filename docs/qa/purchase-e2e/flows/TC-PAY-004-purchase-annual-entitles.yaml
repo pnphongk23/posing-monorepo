@@ -4,9 +4,9 @@ tags: [TC-PAY-004, p1]
 ---
 - runFlow: ../subflows/pay-launch.yaml
 - runFlow: ../subflows/pay-sign-in.yaml
-# Negative control: a signed-in account with no entitlement is gated and the plans are real (Annual
-# preselected, price from the test-store offering). Without this the "no paywall after the purchase"
-# check at the end could pass vacuously.
+# Negative control: a signed-in account with no entitlement is gated and the offering really loaded
+# (both package cards present). Without this the "no paywall after the purchase" check at the end
+# could pass vacuously.
 - runFlow: ../subflows/open-camera.yaml
 - tapOn:
     id: "camera.shutter"
@@ -14,7 +14,13 @@ tags: [TC-PAY-004, p1]
     visible:
       id: "paywall.cta"
     timeout: 20000
-- assertVisible: "Continue with Annual"
+- scrollUntilVisible:
+    element:
+      id: "paywall.plan.monthly"
+    direction: DOWN
+    timeout: 20000
+- assertVisible:
+    id: "paywall.plan.annual"
 - runFlow: ../subflows/pay-buy-monthly.yaml
 # Entitlement as the provider reports it on a fresh load of the paywall, not as the purchase call
 # happened to return it.
@@ -24,8 +30,10 @@ tags: [TC-PAY-004, p1]
 - tapOn:
     id: "settings.premium.row"
 - extendedWaitUntil:
-    visible: ".*Premium access confirmed.*"
+    visible:
+      id: "paywall.status"
     timeout: 20000
+- assertVisible: ".*Premium access confirmed.*"
 - tapOn:
     id: "paywall.close"
 - tapOn: "Back"
@@ -36,6 +44,8 @@ tags: [TC-PAY-004, p1]
     id: "camera.shutter"
 - assertNotVisible:
     id: "paywall.cta"
+- assertNotVisible:
+    id: "paywall.signin.apple"
 - assertNotVisible:
     id: "paywall.signin"
 - assertVisible:

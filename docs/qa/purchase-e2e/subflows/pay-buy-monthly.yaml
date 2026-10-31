@@ -1,16 +1,25 @@
 # Buys the Monthly plan from an open paywall through the RevenueCat Test Store dialog. Preconditions:
-# paywall on screen, signed in, plans loaded (paywall.cta present, Annual preselected by
-# PaywallPlanCatalog.ordered). Ends on the camera: a confirmed entitlement closes the sheet by itself
-# (PremiumGate.swift:140-151), so the confirmation banner is deliberately NOT asserted here — it can
-# be gone before a selector could read it. Callers assert entitlement where it is stable instead.
+# paywall on screen, signed in, plans loaded. Ends on the camera: a confirmed entitlement closes the
+# sheet by itself (PremiumGate.swift:140-151), so the confirmation banner is deliberately NOT asserted
+# here — it can be gone before a selector could read it. Callers assert entitlement where it is stable.
 appId: ${APP_ID}
 ---
 - extendedWaitUntil:
     visible:
       id: "paywall.cta"
     timeout: 30000
-# Annual is the default selection; picking Monthly proves the picked plan is the one purchased.
-- tapOn: "Monthly plan, not selected.*"
+# Both packages the offering must expose (stage-2 plan cards carry one id per package type, never a
+# price), then the Monthly card is picked. Annual is preselected; picking Monthly proves the choice
+# reaches the purchase.
+- scrollUntilVisible:
+    element:
+      id: "paywall.plan.monthly"
+    direction: DOWN
+    timeout: 20000
+- assertVisible:
+    id: "paywall.plan.annual"
+- tapOn:
+    id: "paywall.plan.monthly"
 - assertVisible: "Continue with Monthly"
 - tapOn:
     id: "paywall.cta"

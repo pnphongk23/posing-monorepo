@@ -1,0 +1,24 @@
+# TC-PAY-009 the signed-out paywall offers Sign in with Apple first, then Google and email
+appId: ${APP_ID}
+tags: [TC-PAY-009, p1]
+---
+# Signed out with the paywall on: `pay-launch` enables the Debug switches and never signs in.
+- runFlow: ../subflows/pay-launch.yaml
+- runFlow: ../subflows/open-camera.yaml
+- tapOn:
+    id: "camera.shutter"
+- extendedWaitUntil:
+    visible:
+      id: "paywall.signin.apple"
+    timeout: 20000
+# Apple is the first option in the column, so Google (its peer) must sit below it on screen. This is
+# the ordering half of guideline 4.8; "equal prominence" is geometry (shared NeoButtonStyle size and
+# full width, pinned by PaywallAppleSignInTests), which no Maestro selector can measure.
+- assertVisible:
+    id: "paywall.signin"
+    below:
+      id: "paywall.signin.apple"
+- assertVisible:
+    id: "signin.emailEntry"
+    below:
+      id: "paywall.signin"
