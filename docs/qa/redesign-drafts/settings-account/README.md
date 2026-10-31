@@ -12,15 +12,21 @@ Nothing here has been run on a simulator yet.
   subflow (credentials), a way to force the offline state, and the App Store URL constant behind Manage
   subscription.
 
-## Two kinds of draft
+## What is still here (5 drafts)
 
-1. **Re-baselines of cases that already have a committed flow** — `TC-SET-001-settings-about`,
-   `TC-ACC-008-accounts-off`. The committed versions still assert the pre-redesign Privacy group, which no
-   longer exists on 1.1 (18); these copies replace them as soon as they pass on that build.
-2. **Flows for new cases** — `TC-SET-006/007/008/012/013`, `TC-ACC-021`.
+- `TC-SET-017` — the hub profile card when the account read fails (needs a signed-in session plus a
+  failing read).
+- `TC-ACC-012` — Account F4 error state and its retry (same dependency).
+- `TC-ACC-013` — Account offline: cached identity, Delete disabled with its reason (no supported way to
+  reach a cached-offline state yet).
+- `TC-ACC-024` — the submit control cannot be double-fired (no deterministic in-flight hook: the button
+  label only flips for the length of a real request).
+- `TC-ACC-028` — Manage subscription opens the App Store page; it renders only with a live entitlement
+  (`showsManageSubscription`), so it needs an entitled account, and the exact URL needs a unit test.
 
-Signed-in or undeterministic cases stay drafts for now: `TC-SET-005`, `TC-SET-017`,
-`TC-ACC-012/013/014/024/028`.
+Promoted and no longer drafted (green on 1.1 (18), rows now `automated:`): `TC-SET-001`, `TC-SET-005`,
+`TC-SET-006`, `TC-SET-007`, `TC-SET-008`, `TC-SET-012`, `TC-SET-013`, `TC-ACC-008`, `TC-ACC-014`,
+`TC-ACC-021`, `TC-ACC-022`, `TC-ACC-023`.
 
 ## Not drafted on purpose (out of scope 1.1 (18), ideas kept in the docs)
 
