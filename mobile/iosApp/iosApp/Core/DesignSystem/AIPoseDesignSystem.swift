@@ -158,48 +158,47 @@ struct NeoButtonStyle: ButtonStyle {
     }
 }
 
-/// Tones of the shared prototype state component `nb-empty-state`
-/// (`docs/prototype/scripts/empty-state.js` + `styles/components/empty-state.css`).
+/// Tones of the shared state panels (`docs/prototype/scripts/empty-state.js` +
+/// `styles/components/empty-state.css`), mapped onto the direction-B `APStateTone` the shared panel
+/// draws.
 enum FeatureStateTone: String, CaseIterable {
     case empty, error, loading, offline, success, warning
 
-    /// Container fill. `empty`/`loading` keep the white surface; `error` uses
-    /// `--nb-color-error-surface`; `offline` and `warning` share `--nb-color-warning-surface`;
-    /// `success` uses `--nb-color-success-surface`.
-    /// Note: `empty-state.css` maps the container fill by tone, so the old plain-white
-    /// `.nb-empty-state` base rule is overridden for the four coloured tones.
-    var surface: Color {
+    /// The shared tone this card paints, so a feature surface and a catalogue panel show the same
+    /// state colour whichever component the screen reaches for (`AP.Color.*` tokens only).
+    var stateTone: APStateTone {
         switch self {
-        case .empty, .loading: return AIPoseColor.surface
-        case .error: return AIPoseColor.errorSurface
-        case .offline, .warning: return AIPoseColor.warning
-        case .success: return AIPoseColor.success
+        case .empty: return .empty
+        case .error: return .error
+        case .loading: return .loading
+        case .offline: return .offline
+        case .success: return .success
+        case .warning: return .warning
         }
     }
+
+    /// Container fill, read from the shared tone so the two mappings cannot drift apart.
+    var surface: Color { stateTone.surface }
 
     /// `empty-state.js` `ROLE_BY_STATE`: only `error` is `role="alert"`; every other tone is
     /// `role="status"`. `LIVE_BY_STATE` matches: `error` is `aria-live="assertive"`, rest `polite`.
     var isAssertive: Bool { self == .error }
 
-    /// `.nb-empty-state--loading` tints the copy `--nb-color-gray` and keeps the title dark.
-    var copyColor: Color { self == .loading ? AIPoseColor.subtext : AIPoseColor.foreground }
+    /// `.nb-empty-state--loading` tints the copy and keeps the title dark.
+    var copyColor: Color { self == .loading ? AP.Color.secondaryText : AP.Color.primaryText }
 }
 
 /// Shared empty / loading / offline / recoverable-error / success / warning surface.
 ///
-/// Geometry and colour come from `docs/prototype/styles/components/empty-state.css` mapped against
-/// `docs/prototype/styles/tokens.css` **by value, not by name** (token names do not match the Swift
-/// `AIPoseSpacing` enum): white surface, `--nb-border-thin` = 1.5pt black border,
-/// `--nb-radius-medium` = 10pt corner, `--nb-space-md` = 16pt padding, `--nb-space-sm` = 8pt gap
-/// and bottom margin, leading-aligned full-width card, **no shadow**, **no icon**, and **no
-/// centring** — a screen that needs a centred state centres this card in its own call site.
+/// Owner feedback F4 replaced this card's prototype geometry (`empty-state.css`: a 1.5pt bordered,
+/// 10pt-radius, leading-aligned block with **no icon**) with the one state look: a centred 72 pt
+/// accent-tint circle with the glyph in the accent ink, then the title, the copy and at most one
+/// action. No stacked or offset tiles, no red tile for errors. F4 is the newer owner decision and
+/// overrides the artboard.
 ///
-/// `scripts/empty-state.js` `render()` builds the element with `replaceChildren()` and then appends
-/// at most a preserved `[data-empty-state-visual]`, a `<strong>` title, a `<p>` copy and the action;
-/// `empty-state.css` has no icon rule, no centring and no full-height rule. Native must therefore
-/// paint no glyph here: only `gallery-detail-v2.html` supplies a `data-empty-state-visual`, and that
-/// screen keeps its own geometry-preserving placeholder (`GalleryLocalImage.onFailureView`) instead
-/// of this component. Painting an icon is a parity defect — absence is part of the contract.
+/// The panel itself is `APStateCard`, so there is exactly one implementation of a state panel in the
+/// app; this type keeps the call sites' API, their accessibility identifiers and its live-region
+/// behaviour. Loading states that already draw the skeleton (`APLoadingStateView`) keep it.
 ///
 /// Accessibility mirrors `scripts/empty-state.js`: combined children (`aria-atomic`), `alert` +
 /// assertive announcement for `.error`, `status` + polite announcement for every other tone.
@@ -213,62 +212,31 @@ struct FeatureStateView: View {
     /// cards without a handle keep the combined element they always had.
     var actionIdentifier: String? = nil
     var action: (() -> Void)? = nil
+    /// How the panel is mounted: the raised `surface` card most feature states sit in, or the
+    /// borderless centred panel a screen paints directly on its own background (Jobs, permission
+    /// boards). Both draw the same F4 circle; only the chrome around it changes.
+    var style: APStateCardStyle = .card
 
     @State private var didAnnounce = false
 
-    /// `empty-state.css`: `border-radius: var(--nb-radius-medium)` → 10pt (tokens.css).
-    private static let cornerRadius: CGFloat = NeoChromeTokens.radiusMedium
-    /// `empty-state.css`: `border: var(--nb-border-thin)` → `--nb-border-width-thin` = 1.5pt.
-    private static let borderWidth: CGFloat = NeoChromeTokens.borderThin
-    /// `empty-state.css`: `padding: var(--nb-space-md)` → 16pt (tokens.css, not `AIPoseSpacing.md`).
-    private static let contentPadding: CGFloat = 16
-    /// `empty-state.css`: `gap` / `margin-bottom: var(--nb-space-sm)` → 8pt.
+    /// `empty-state.css`: `margin-bottom: var(--nb-space-sm)` → 8pt.
     private static let contentGap: CGFloat = 8
-    /// `empty-state.css`: `.nb-empty-state__copy { max-width: 42ch }`. Measured in the prototype at the
-    /// 14pt body size, `42ch` resolves to 370.37px, so 370pt is the faithful equivalent. It never
-    /// binds on a 390pt screen (the card's inner width is ~326pt), which is exactly the prototype's
-    /// behaviour; a smaller guess would silently re-wrap the copy.
-    private static let copyMaxWidth: CGFloat = 370
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Self.contentGap) {
-            Text(title)
-                .font(.system(size: 18, weight: .bold))
-                .foregroundStyle(AIPoseColor.foreground)
-                .fixedSize(horizontal: false, vertical: true)
-            Text(message)
-                .font(.system(size: 14))
-                .foregroundStyle(tone.copyColor)
-                // `--nb-type-body-leading` 1.55 on the 14pt body size ≈ 21.7pt line box.
-                .lineSpacing(5)
-                .frame(maxWidth: Self.copyMaxWidth, alignment: .leading)
-                .fixedSize(horizontal: false, vertical: true)
-            if let actionTitle, let action {
-                // `NeoButtonStyle` is shared app-wide and carries no horizontal padding, so the
-                  // state card's action uses inline horizontal padding to match `.nb-btn`
-                  // (`components/button.css`), whose control padding is 16pt on each side.
-                // is `padding: var(--nb-space-compact) var(--nb-space-md)` — 12pt vertical, 16pt
-                // horizontal — so the inline padding belongs here at the call site, not in the style.
-                Button(action: action) {
-                    Text(actionTitle)
-                        .padding(.horizontal, 16)
-                }
-                .buttonStyle(NeoButtonStyle(fill: AIPoseColor.surface))
-                .fixedSize(horizontal: true, vertical: false)
-                .padding(.top, 2)
-                .accessibilityIdentifier(actionIdentifier ?? "")
-            }
-        }
-        .padding(Self.contentPadding)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .clipShape(RoundedRectangle(cornerRadius: Self.cornerRadius))
-        .neoSurface(
-            shape: RoundedRectangle(cornerRadius: Self.cornerRadius),
-            fill: tone.surface,
-            borderWidth: Self.borderWidth,
-            shadowOffset: 0
+        APStateCard(
+            tone: tone.stateTone,
+            glyphOverride: nil,
+            showsWord: false,
+            title: title,
+            message: message,
+            actionTitle: actionTitle,
+            actionKind: .secondary,
+            action: action,
+            style: style,
+            expandsVertically: false,
+            actionIdentifier: actionIdentifier
         )
-        // `margin-bottom: var(--nb-space-sm)`.
+        // `margin-bottom: var(--nb-space-sm)`: stacked states keep the prototype's spacing.
         .padding(.bottom, Self.contentGap)
         .accessibilityElement(children: actionIdentifier == nil ? .combine : .contain)
         .onAppear(perform: announceIfNeeded)

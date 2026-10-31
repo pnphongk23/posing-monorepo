@@ -472,6 +472,7 @@ final class FeatureStateToneMappingTests: XCTestCase {
     // MARK: Six-tone contract (styles/tokens.css + scripts/empty-state.js)
 
     /// `tokens.css`: error `#FFF4F5`; warning/offline `#FED766`; success `#B5E2B9`; empty/loading white.
+    /// F4 reads them from the shared `APStateTone`, so the feature card and the catalogue panel agree.
     func testEveryToneMapsToItsPrototypeSurfaceToken() {
         let expected: [FeatureStateTone: UInt] = [
             .empty: 0xFFFFFF,
@@ -487,11 +488,11 @@ final class FeatureStateToneMappingTests: XCTestCase {
         }
     }
 
-    /// `empty-state.css`: base `color: var(--nb-color-dark)`; `.nb-empty-state--loading` tints it
-    /// `--nb-color-gray` while the title is explicitly reset to dark.
+    /// `empty-state.css`: base copy is the body ink; `.nb-empty-state--loading` dims it to the
+    /// secondary ink while the title stays `primaryText` (direction-B tokens since F4).
     func testOnlyLoadingToneDimsTheCopy() {
         for tone in FeatureStateTone.allCases {
-            assertColor(tone.copyColor, tone == .loading ? 0x6B7280 : 0x121212, "copy for .\(tone)")
+            assertColor(tone.copyColor, tone == .loading ? 0x5E574C : 0x121212, "copy for .\(tone)")
         }
     }
 

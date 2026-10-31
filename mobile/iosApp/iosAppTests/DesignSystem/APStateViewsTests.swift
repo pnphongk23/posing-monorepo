@@ -174,6 +174,110 @@ final class APStateViewsTests: XCTestCase {
         XCTAssertEqual(Double(bottom - top + 1), 72, accuracy: 4, "the loading circle is the shared 72 pt")
     }
 
+    // MARK: - The one state look (F4)
+
+    @MainActor func testEveryStatePanelPaintsOneCentredSeventyTwoPointCircle() {
+        // F4: one clean, centred icon — a 72 pt accent-tint circle with the glyph in the accent ink —
+        // and no second, offset tile behind it. Asserted on painted pixels for both panel styles, so a
+        // style that grew its own artwork again fails here instead of shipping.
+        XCTAssertEqual(APStateGlyph.diameter, 72, "F4 fixes the state circle at 72 pt")
+        XCTAssertLessThan(APStateGlyph.glyphSize, APStateGlyph.diameter / 2, "the glyph sits inside the circle")
+
+        let probe = APViewProbe(emptyPanel(.card), size: CGSize(width: 393, height: 420), scale: 2)
+        defer { probe.tearDown() }
+
+        for (index, style) in [APStateCardStyle.card, .plain].enumerated() {
+            let painted = index == 0 ? probe.capture() : probe.render(emptyPanel(style))
+            assertOneCentredCircle(in: painted, label: "\(style)")
+        }
+    }
+
+    @MainActor func testTheErrorStateUsesTheSameCircleAsTheEmptyState() {
+        // F4 is one illustration for every state, so the error panel cannot grow a different one (the
+        // pre-F4 look put a white tile on top of a red tile — the defect the owner called broken).
+        let probe = APViewProbe(
+            APErrorStateView(title: "Couldn't load jobs", message: "Check your connection.", retry: {}),
+            size: CGSize(width: 393, height: 480),
+            scale: 2
+        )
+        defer { probe.tearDown() }
+        assertOneCentredCircle(in: probe.capture(), label: "error panel")
+    }
+
+    /// `FeatureStateView` is the entry point the feature screens call (Jobs, Add pose, Saved, account,
+    /// camera picker). It must paint the same circle for every tone, not the prototype's icon-less
+    /// bordered card it used before F4.
+    @MainActor func testFeatureStateViewPaintsTheSharedCircleForEveryTone() {
+        let probe = APViewProbe(
+            featureState(.error, withAction: true),
+            size: CGSize(width: 393, height: 560),
+            scale: 2
+        )
+        defer { probe.tearDown() }
+
+        for (index, tone) in FeatureStateTone.allCases.enumerated() {
+            let view = featureState(tone, withAction: tone == .error)
+            let painted = index == 0 ? probe.capture() : probe.render(view)
+            assertOneCentredCircle(in: painted, label: "FeatureStateView .\(tone.rawValue)")
+        }
+    }
+
+    /// The circle is the one fixed part: at AX3 the copy wraps and the card grows, while the circle
+    /// stays 72 pt and the glyph stays centred inside it.
+    @MainActor func testFeatureStateViewKeepsTheCircleAtAccessibilitySizesWhileTheCopyWraps() {
+        let large = measure(
+            featureState(.error, withAction: true).environment(\.dynamicTypeSize, .large),
+            width: 320
+        )
+        let accessibility = measure(
+            featureState(.error, withAction: true).environment(\.dynamicTypeSize, .accessibility3),
+            width: 320
+        )
+        XCTAssertGreaterThan(
+            accessibility.height, large.height + 60,
+            "the card must grow with Dynamic Type instead of clipping its copy (large \(large.height), AX3 \(accessibility.height))"
+        )
+
+        let probe = APViewProbe(
+            featureState(.error, withAction: true).environment(\.dynamicTypeSize, .accessibility3),
+            size: CGSize(width: 320, height: accessibility.height.rounded(.up)),
+            scale: 2
+        )
+        defer { probe.tearDown() }
+        assertOneCentredCircle(in: probe.capture(), label: "AX3")
+    }
+
+    /// The call API is what the screens and Maestro depend on: the identifiers a state carries are
+    /// applied by the screen on this view, and the action identifier has to reach the shared card's
+    /// control. SwiftUI's accessibility tree is not materialised for a unit-test host (see
+    /// `JobRowAccessibilityTests`), so the pass-through is pinned at source level.
+    func testFeatureStateViewThreadsItsActionIdentifierIntoTheSharedCard() throws {
+        let source = try String(
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent() // DesignSystem
+                .deletingLastPathComponent() // iosAppTests
+                .deletingLastPathComponent() // iosApp (project dir)
+                .appendingPathComponent("iosApp/Core/DesignSystem/AIPoseDesignSystem.swift"),
+            encoding: .utf8
+        )
+        guard let body = source.range(of: "struct FeatureStateView: View {") else {
+            return XCTFail("FeatureStateView must still exist at this path")
+        }
+        let view = source[body.lowerBound...]
+        XCTAssertTrue(
+            view.contains("actionIdentifier: actionIdentifier"),
+            "the action identifier must reach the shared card's control (gallery.empty.openCameraButton)"
+        )
+        XCTAssertTrue(
+            view.contains("tone: tone.stateTone"),
+            "the feature tone must map onto the shared tone"
+        )
+        XCTAssertTrue(
+            view.contains(".accessibilityElement(children: actionIdentifier == nil ? .combine : .contain)"),
+            "a state without an action stays one combined element; one with an action keeps the button addressable"
+        )
+    }
+
     // MARK: - Dynamic Type
 
     @MainActor func testEmptyStateWrapsInsteadOfTruncatingAtAccessibilitySizes() {
@@ -262,6 +366,151 @@ final class APStateViewsTests: XCTestCase {
     }
 
     // MARK: - Helpers
+
+    /// The empty panel in either style, so one probe can render both.
+    @MainActor
+    private func emptyPanel(_ style: APStateCardStyle) -> some View {
+        APEmptyStateView(
+            title: "No poses yet",
+            message: "Poses you save and extract land here.",
+            style: style
+        )
+    }
+
+    @MainActor
+    private func featureState(_ tone: FeatureStateTone, withAction: Bool) -> some View {
+        var action: (() -> Void)?
+        if withAction { action = {} }
+        return FeatureStateView(
+            tone: tone,
+            title: "Couldn't add pose",
+            message: "Pose extraction could not be completed. Try again in a moment.",
+            actionTitle: withAction ? "Try again" : nil,
+            action: action
+        )
+    }
+
+    /// Asserts the F4 illustration: exactly one accent-tint circle, 72 pt square, with the accent glyph
+    /// centred inside it.
+    ///
+    /// The circle is measured from the largest *connected* patch of tint pixels, not from a bounding
+    /// box over every tint-coloured pixel: the accent primary action's anti-aliased edge also blends to
+    /// the tint colour, and a stacked or offset second tile would be a second patch of its own. The
+    /// glyph punches a hole through the tint without disconnecting the ring around it, which is why the
+    /// connected patch still measures the whole circle.
+    @MainActor
+    private func assertOneCentredCircle(in painted: APBitmap, label: String, file: StaticString = #filePath, line: UInt = #line) {
+        let scale: CGFloat = 2
+        let patches = tintPatches(0xFAE0E7, in: painted)
+        guard let circlePatch = patches.first else {
+            return XCTFail("\(label): the state must paint its accent-tint circle", file: file, line: line)
+        }
+        let circle = CGRect(
+            x: CGFloat(circlePatch.minX) / scale,
+            y: CGFloat(circlePatch.minY) / scale,
+            width: CGFloat(circlePatch.maxX - circlePatch.minX + 1) / scale,
+            height: CGFloat(circlePatch.maxY - circlePatch.minY + 1) / scale
+        )
+        XCTAssertEqual(Double(circle.width), 72, accuracy: 2, "\(label): the circle is 72 pt wide", file: file, line: line)
+        XCTAssertEqual(Double(circle.height), 72, accuracy: 2, "\(label): the circle is 72 pt tall", file: file, line: line)
+
+        // One tile: a second tile would be a patch of its own, not the anti-aliasing fringes the accent
+        // primary button leaves behind. The circle stays by far the biggest tint patch.
+        let second = patches.dropFirst().first?.area ?? 0
+        XCTAssertLessThan(
+            second, circlePatch.area / 3,
+            "\(label): the tint is one circle, not a stack of tiles (\(patches.count) patches, biggest \(circlePatch.area) px, next \(second) px)",
+            file: file, line: line
+        )
+
+        guard let glyph = paintedBounds(of: 0x8C3350, in: painted, scale: scale) else {
+            return XCTFail("\(label): the state must paint its glyph in the accent ink", file: file, line: line)
+        }
+        XCTAssertTrue(
+            circle.contains(glyph),
+            "\(label): the glyph sits inside the circle (glyph \(glyph), circle \(circle))", file: file, line: line
+        )
+        XCTAssertEqual(glyph.midX, circle.midX, accuracy: 2, "\(label): the glyph is centred horizontally", file: file, line: line)
+        XCTAssertEqual(glyph.midY, circle.midY, accuracy: 2, "\(label): the glyph is centred vertically", file: file, line: line)
+    }
+
+    /// One connected patch of pixels painted with the same colour, in pixel coordinates.
+    private struct TintPatch {
+        let minX: Int
+        let maxX: Int
+        let minY: Int
+        let maxY: Int
+        let area: Int
+    }
+
+    /// Connected patches (4-neighbour) of `hex`, biggest first.
+    private func tintPatches(_ hex: UInt32, in bitmap: APBitmap) -> [TintPatch] {
+        let target = (red: Int((hex >> 16) & 0xFF), green: Int((hex >> 8) & 0xFF), blue: Int(hex & 0xFF))
+        func matches(_ x: Int, _ y: Int) -> Bool {
+            guard let pixel = bitmap.color(x: x, y: y), pixel.alpha > 200 else { return false }
+            return abs(pixel.red - target.red) <= 6
+                && abs(pixel.green - target.green) <= 6
+                && abs(pixel.blue - target.blue) <= 6
+        }
+
+        var seen = [Bool](repeating: false, count: bitmap.width * bitmap.height)
+        var patches: [TintPatch] = []
+        for y in 0..<bitmap.height {
+            for x in 0..<bitmap.width where !seen[y * bitmap.width + x] && matches(x, y) {
+                var stack = [(x, y)]
+                seen[y * bitmap.width + x] = true
+                var patch = TintPatch(minX: x, maxX: x, minY: y, maxY: y, area: 0)
+                while let (cx, cy) = stack.popLast() {
+                    patch = TintPatch(
+                        minX: min(patch.minX, cx), maxX: max(patch.maxX, cx),
+                        minY: min(patch.minY, cy), maxY: max(patch.maxY, cy),
+                        area: patch.area + 1
+                    )
+                    for (nx, ny) in [(cx - 1, cy), (cx + 1, cy), (cx, cy - 1), (cx, cy + 1)] {
+                        guard nx >= 0, nx < bitmap.width, ny >= 0, ny < bitmap.height else { continue }
+                        guard !seen[ny * bitmap.width + nx], matches(nx, ny) else { continue }
+                        seen[ny * bitmap.width + nx] = true
+                        stack.append((nx, ny))
+                    }
+                }
+                patches.append(patch)
+            }
+        }
+        return patches.sorted { $0.area > $1.area }
+    }
+
+    /// Bounding box of the pixels painted with `hex`, in points.
+    private func paintedBounds(
+        of hex: UInt32,
+        in bitmap: APBitmap,
+        scale: CGFloat,
+        tolerance: Int = 6
+    ) -> CGRect? {
+        let target = (red: Int((hex >> 16) & 0xFF), green: Int((hex >> 8) & 0xFF), blue: Int(hex & 0xFF))
+        var minX = Int.max
+        var maxX = Int.min
+        var minY = Int.max
+        var maxY = Int.min
+        for y in 0..<bitmap.height {
+            for x in 0..<bitmap.width {
+                guard let pixel = bitmap.color(x: x, y: y), pixel.alpha > 200 else { continue }
+                guard abs(pixel.red - target.red) <= tolerance,
+                      abs(pixel.green - target.green) <= tolerance,
+                      abs(pixel.blue - target.blue) <= tolerance else { continue }
+                minX = min(minX, x)
+                maxX = max(maxX, x)
+                minY = min(minY, y)
+                maxY = max(maxY, y)
+            }
+        }
+        guard minX <= maxX else { return nil }
+        return CGRect(
+            x: CGFloat(minX) / scale,
+            y: CGFloat(minY) / scale,
+            width: CGFloat(maxX - minX + 1) / scale,
+            height: CGFloat(maxY - minY + 1) / scale
+        )
+    }
 
     /// Pins the content to the top-left so "row 0..40" is where the component is drawn.
     @MainActor
