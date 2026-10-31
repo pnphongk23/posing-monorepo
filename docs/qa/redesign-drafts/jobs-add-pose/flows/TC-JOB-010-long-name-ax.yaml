@@ -17,7 +17,7 @@ tags: [TC-JOB-010, p1, e2e]
     visible:
       id: "poses.open-search"
     timeout: 30000
-- runFlow: ../subflows/rd-sign-in.yaml
+- runFlow: ../subflows/ext-sign-in.yaml
 - tapOn:
     id: "poses.more"
 - tapOn:

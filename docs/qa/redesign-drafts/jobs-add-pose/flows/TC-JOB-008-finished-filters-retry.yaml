@@ -3,8 +3,8 @@ appId: ${APP_ID}
 tags: [TC-JOB-008, p0, e2e]
 ---
 # Finished segment: Done rows open the pose, Failed rows retry.
-- runFlow: ../subflows/rd-launch.yaml
-- runFlow: ../subflows/rd-sign-in.yaml
+- runFlow: ../subflows/ext-launch.yaml
+- runFlow: ../subflows/ext-sign-in.yaml
 - tapOn:
     id: "poses.more"
 - tapOn:

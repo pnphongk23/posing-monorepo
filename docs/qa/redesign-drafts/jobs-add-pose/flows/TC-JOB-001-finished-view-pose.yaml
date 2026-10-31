@@ -7,10 +7,10 @@ tags: [TC-JOB-001, p0, e2e]
 - assertTrue:
     condition: ${E2E_EMAIL != null && E2E_EMAIL.length > 0 && E2E_PASSWORD != null && E2E_PASSWORD.length > 0}
     label: "E2E_EMAIL / E2E_PASSWORD missing - run with -e E2E_EMAIL=... -e E2E_PASSWORD=..."
-- runFlow: ../subflows/rd-launch.yaml
-- runFlow: ../subflows/rd-sign-in.yaml
+- runFlow: ../subflows/ext-launch.yaml
+- runFlow: ../subflows/ext-sign-in.yaml
 - runFlow:
-    file: ../subflows/rd-add-pose-form.yaml
+    file: ../subflows/ext-add-pose-form.yaml
     env:
       POSE_NAME: "QA finished pose"
 - runFlow:
@@ -21,7 +21,7 @@ tags: [TC-JOB-001, p0, e2e]
       - tapOn:
           id: "addPose.submitButton"
 # The clean launch cleared the per-account ack, so the sheet must appear on this first upload.
-- runFlow: ../subflows/rd-consent-allow.yaml
+- runFlow: ../subflows/ext-consent-allow.yaml
 # Real extraction: the button only exists once the job reports succeeded.
 - extendedWaitUntil:
     visible:

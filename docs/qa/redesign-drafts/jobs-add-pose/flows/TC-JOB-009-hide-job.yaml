@@ -2,8 +2,8 @@
 appId: ${APP_ID}
 tags: [TC-JOB-009, p1, e2e]
 ---
-- runFlow: ../subflows/rd-launch.yaml
-- runFlow: ../subflows/rd-sign-in.yaml
+- runFlow: ../subflows/ext-launch.yaml
+- runFlow: ../subflows/ext-sign-in.yaml
 - tapOn:
     id: "poses.more"
 - tapOn:
