@@ -12,12 +12,38 @@ appId: ${APP_ID}
     timeout: 15000
 - tapOn:
     id: "addPose.photoPicker"
-# System photo picker: the sheet is UIKit, so the first cell is addressed by position.
+# System photo picker: the sheet is UIKit, so the first cell is addressed by position. A tap that lands
+# while the sheet is still animating is swallowed, so each attempt re-taps the cell (and re-opens the
+# picker if the previous attempt had already closed it).
 - extendedWaitUntil:
     visible: "Cancel"
     timeout: 20000
 - tapOn:
-    point: "16%,26%"
+    point: "16%,25%"
+- runFlow:
+    when:
+      notVisible: "Change Photo"
+    commands:
+      - tapOn:
+          point: "16%,25%"
+      - runFlow:
+          when:
+            visible: "Cancel"
+          commands:
+            - tapOn:
+                point: "16%,25%"
+- runFlow:
+    when:
+      notVisible: "Change Photo"
+    commands:
+      - tapOn:
+          point: "16%,25%"
+      - runFlow:
+          when:
+            visible: "Cancel"
+          commands:
+            - tapOn:
+                point: "16%,25%"
 - extendedWaitUntil:
     visible: "Change Photo"
     timeout: 20000

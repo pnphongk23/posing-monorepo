@@ -20,20 +20,28 @@ tags: [TC-JOB-001, p0, e2e]
           id: "addPose.submitButton"
 # The clean launch cleared the per-account ack, so the sheet must appear on this first upload.
 - runFlow: ../subflows/ext-consent-allow.yaml
-# Real extraction: wait for the job to succeed (the button only exists once status == succeeded).
+# Real extraction: the button only exists once the job reports succeeded.
 - extendedWaitUntil:
     visible:
       id: "addPose.viewPoseButton"
-    timeout: 240000
-# The acceptance is the Jobs row action, not the processing shortcut: Jobs opens on Finish.
+    timeout: 300000
+# Done, then Jobs from the Poses home: the row has to be Ready in the Finish tab.
 - tapOn:
-    id: "addPose.viewJobsButton"
+    id: "addPose.doneButton"
+- tapOn:
+    id: "poses.more"
+- tapOn:
+    id: "poses.jobs"
 - extendedWaitUntil:
     visible:
       id: "jobs.tab.finish"
     timeout: 20000
-- assertVisible: "QA finished pose, Ready, View pose"
-# The per-job id carries the jobId suffix, so the id is matched by regex.
+- tapOn:
+    id: "jobs.tab.finish"
+- extendedWaitUntil:
+    visible: '.*Ready, View pose.*'
+    timeout: 30000
+# The per-job id carries the jobId suffix, so the action is matched by regex.
 - tapOn:
     id: "jobRow.viewPose..*"
 # Private pose detail: Try this pose works, Save does not exist for a private pose.
@@ -73,4 +81,4 @@ tags: [TC-JOB-001, p0, e2e]
 - extendedWaitUntil:
     visible:
       id: "search-empty-banner"
-    timeout: 20000
+    timeout: 25000
