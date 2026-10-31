@@ -86,6 +86,10 @@ final class PaywallModel: ObservableObject, SessionScoped {
     private let gateway: any PurchaseGateway
     private let boundary: SessionBoundary
     private let signInAction: SignInAction
+    /// The Apple handoff is the same `AppleSignInAction` the Account sheet's `AppleSignInModel`
+    /// wraps — one provider seam, one API call, one error-copy mapping. The paywall adds no second
+    /// Apple implementation; it only decides what a resolved attempt means for its phase.
+    private let appleSignInAction: AppleSignInAction
     private let scope: SessionScope
     private var hasStarted = false
     /// Bumped on every session change so a result that crosses a sign-out or account switch is
@@ -103,11 +107,13 @@ final class PaywallModel: ObservableObject, SessionScoped {
     init(
         gateway: any PurchaseGateway = RevenueCatAdapter.shared,
         boundary: SessionBoundary = ServiceLocator.sessionBoundary,
-        signInAction: SignInAction = SignInAction()
+        signInAction: SignInAction = SignInAction(),
+        appleSignInAction: AppleSignInAction = AppleSignInAction()
     ) {
         self.gateway = gateway
         self.boundary = boundary
         self.signInAction = signInAction
+        self.appleSignInAction = appleSignInAction
         self.scope = SessionScope.of(boundary)
         observeGateway()
     }
@@ -160,6 +166,26 @@ final class PaywallModel: ObservableObject, SessionScoped {
         defer { isAuthenticating = false }
 
         switch await signInAction.run() {
+        case .succeeded:
+            await adoptSignedInSession()
+        case .cancelled:
+            break
+        case .failed(let text):
+            authError = text
+        }
+    }
+
+    /// Sign in with Apple from the paywall (App Review 4.8): a third-party sign-in is offered, so
+    /// Apple's must be offered beside it and land in the same outcome. Success resumes exactly like
+    /// the Google path (`adoptSignedInSession` → `loadPlans`); a dismissed Apple sheet is a no-op
+    /// with no banner, because the user chose to cancel rather than failed to sign in.
+    func signInWithApple() async {
+        guard !isAuthenticating else { return }
+        isAuthenticating = true
+        authError = nil
+        defer { isAuthenticating = false }
+
+        switch await appleSignInAction.run() {
         case .succeeded:
             await adoptSignedInSession()
         case .cancelled:

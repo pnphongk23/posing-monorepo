@@ -221,7 +221,7 @@ struct AccountScreen: View {
             }
             .buttonStyle(.plain)
             .disabled(model.isAuthenticating)
-            .accessibilityIdentifier("signin.emailEntry")
+            .accessibilityIdentifier(PaywallAccessibilityID.signInEmail)
             .accessibilityLabel("Sign in with email")
         }
         .accessibilityElement(children: .contain)
@@ -538,6 +538,46 @@ enum CameraAccessStatus: String {
 
 // MARK: - Paywall
 
+/// Every accessibility identifier the paywall exposes, in one place: Maestro flows and the id test
+/// read the same strings, so a rename cannot silently break a query.
+enum PaywallAccessibilityID {
+    static let close = "paywall.close"
+    static let signInApple = "paywall.signin.apple"
+    static let signInGoogle = "paywall.signin"
+    /// Shared with the Account sheet: it presents the same email sign-in sheet, so both surfaces
+    /// keep one id and QA can drive either one.
+    static let signInEmail = "signin.emailEntry"
+    static let planAnnual = "paywall.plan.annual"
+    static let planMonthly = "paywall.plan.monthly"
+    static let status = "paywall.status"
+    static let cta = "paywall.cta"
+
+    /// A plan card's id follows the package type the catalog sells, never the store product id.
+    static func plan(_ product: PurchaseProduct) -> String {
+        PaywallPlanCatalog.isAnnual(product) ? planAnnual : planMonthly
+    }
+}
+
+/// The paywall's sign-in options, in presentation order.
+///
+/// Apple comes first: App Review guideline 4.8 requires Sign in with Apple wherever another
+/// third-party sign-in (Google) is offered, and it must not be the subordinate option. The order
+/// lives in `allCases` because the paywall builds its buttons from it, so the rendered order and
+/// the asserted order cannot drift apart.
+enum PaywallSignInOption: String, CaseIterable, Identifiable {
+    case apple, google, email
+
+    var id: String { rawValue }
+
+    var accessibilityIdentifier: String {
+        switch self {
+        case .apple: return PaywallAccessibilityID.signInApple
+        case .google: return PaywallAccessibilityID.signInGoogle
+        case .email: return PaywallAccessibilityID.signInEmail
+        }
+    }
+}
+
 /// Paid-access surface (`FEAT-011`). Plans, prices and renewal terms come from the StoreKit
 /// offering through `PurchaseGateway`; the prototype's hardcoded prices are gone because StoreKit
 /// metadata is authoritative. An unconfigured SDK or missing offering is shown truthfully as a
@@ -607,7 +647,7 @@ struct PaywallScreen: View {
                     .clipShape(Circle())
             }
             .accessibilityLabel("Close Premium and go back")
-            .accessibilityIdentifier("paywall.close")
+            .accessibilityIdentifier(PaywallAccessibilityID.close)
         }
         .overlay(alignment: .bottom) {
             Rectangle().fill(AIPoseColor.foreground).frame(height: 2).offset(y: AIPoseSpacing.md)
@@ -657,23 +697,9 @@ struct PaywallScreen: View {
                 isError: model.authError != nil,
                 accessibilityLabel: "Sign in to continue with Premium"
             )
-            ContinueWithGoogleButton(isAuthenticating: model.isAuthenticating) {
-                Task { await model.signIn() }
+            ForEach(PaywallSignInOption.allCases) { option in
+                paywallSignInButton(option)
             }
-            .accessibilityIdentifier("paywall.signin")
-            Button { showsEmailSignIn = true } label: {
-                Text("Sign in with email")
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(AIPoseColor.foreground)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: .infinity, minHeight: 44)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .disabled(model.isAuthenticating)
-            .accessibilityIdentifier("signin.emailEntry")
-            .accessibilityLabel("Sign in with email")
         case .loadingPlans:
             HStack(spacing: AIPoseSpacing.sm) {
                 ProgressView()
@@ -695,7 +721,41 @@ struct PaywallScreen: View {
                     isError: model.phase != .entitled,
                     accessibilityLabel: model.phase == .entitled ? "Premium access confirmed" : "Purchase result"
                 )
+                .accessibilityIdentifier(PaywallAccessibilityID.status)
             }
+        }
+    }
+
+    /// One sign-in option, rendered straight from `PaywallSignInOption.allCases`. Apple and Google
+    /// share `NeoButtonStyle`'s geometry (full width, one padded height, one border), so neither is
+    /// the lesser control; only the fill differs, which HIG requires for Apple.
+    @ViewBuilder
+    private func paywallSignInButton(_ option: PaywallSignInOption) -> some View {
+        switch option {
+        case .apple:
+            ContinueWithAppleButton(isAuthenticating: model.isAuthenticating) {
+                Task { await model.signInWithApple() }
+            }
+            .accessibilityIdentifier(option.accessibilityIdentifier)
+        case .google:
+            ContinueWithGoogleButton(isAuthenticating: model.isAuthenticating) {
+                Task { await model.signIn() }
+            }
+            .accessibilityIdentifier(option.accessibilityIdentifier)
+        case .email:
+            Button { showsEmailSignIn = true } label: {
+                Text("Sign in with email")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(AIPoseColor.foreground)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(model.isAuthenticating)
+            .accessibilityIdentifier(option.accessibilityIdentifier)
+            .accessibilityLabel("Sign in with email")
         }
     }
 
@@ -707,6 +767,7 @@ struct PaywallScreen: View {
                     isSelected: product.identifier == model.selectedProductID,
                     onSelect: { model.select(product.identifier) }
                 )
+                .accessibilityIdentifier(PaywallAccessibilityID.plan(product))
             }
         }
         .accessibilityElement(children: .contain)
@@ -733,7 +794,7 @@ struct PaywallScreen: View {
                 .frame(minHeight: 44)
                 .disabled(model.isBusy)
                 .accessibilityLabel(model.ctaTitle)
-                .accessibilityIdentifier("paywall.cta")
+                .accessibilityIdentifier(PaywallAccessibilityID.cta)
 
                 Text(PaywallPlanCatalog.summaryLine(for: plan))
                     .font(.footnote)
