@@ -1,0 +1,24 @@
+# TC-SAV-014 offline: no unsave is offered for a row the device cannot serve
+#
+# Same DEBUG fixture as TC-SAV-006 but with 0 cached rows, so every row is uncached. The point of the case
+# is the absence of a control: offering "Remove from saved" offline would either fail behind the user's
+# back or, worse, look successful while the server never heard about it.
+appId: ${APP_ID}
+tags: [TC-SAV-014, p1, e2e]
+---
+- assertTrue:
+    condition: ${E2E_EMAIL != null && E2E_EMAIL.length > 0 && E2E_PASSWORD != null && E2E_PASSWORD.length > 0}
+    label: "E2E_EMAIL / E2E_PASSWORD missing - run with -e E2E_EMAIL=... -e E2E_PASSWORD=..."
+- runFlow:
+    file: ../subflows/saved-launch-offline.yaml
+    env:
+      OFFLINE_CACHED_ROWS: "0"
+- extendedWaitUntil:
+    visible:
+      id: "saved.offlineBanner"
+    timeout: 30000
+- assertVisible: "Not saved offline"
+# The whole board is uncached, so no row offers the destructive action.
+- assertNotVisible: "Remove from saved"
+# And the reason is on screen, not implied.
+- assertVisible: "You.re offline. Changes will sync when you.re back online."

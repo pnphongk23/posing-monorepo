@@ -1,0 +1,33 @@
+# TC-SAV-006 offline: the banner explains the state and uncached rows say what they are
+#
+# Runs on build 18+ with the DEBUG-only fixture (`saved-launch-offline.yaml`, two first rows available) —
+# the simulator's network cannot be switched off per app, and the real-loss half stays unit/XCTest-mapped.
+#
+# What the case is about: an offline user must be able to tell "this list is what I have" from "this is
+# everything I saved". A row the device cannot serve is dimmed and labelled, not silently unopenable.
+appId: ${APP_ID}
+tags: [TC-SAV-006, p1, e2e]
+---
+- assertTrue:
+    condition: ${E2E_EMAIL != null && E2E_EMAIL.length > 0 && E2E_PASSWORD != null && E2E_PASSWORD.length > 0}
+    label: "E2E_EMAIL / E2E_PASSWORD missing - run with -e E2E_EMAIL=... -e E2E_PASSWORD=..."
+- runFlow:
+    file: ../subflows/saved-launch-offline.yaml
+    env:
+      OFFLINE_CACHED_ROWS: "2"
+- extendedWaitUntil:
+    visible:
+      id: "saved.offlineBanner"
+    timeout: 30000
+- assertVisible: "You.re offline. Changes will sync when you.re back online."
+# The first rows stay usable …
+- assertVisible:
+    id: "poses.first-card"
+- assertVisible: "Remove from saved"
+# … and the ones the cache cannot serve announce themselves instead of pretending to be gone.
+- assertVisible: "Not saved offline"
+# Offline is a state, not an empty list or a failure: neither panel may be shown.
+- assertNotVisible:
+    id: "saved.browseCommunity"
+- assertNotVisible:
+    id: "saved.retry"

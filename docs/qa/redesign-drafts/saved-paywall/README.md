@@ -10,7 +10,7 @@ build. Nothing here has run yet — the QA lead has not named a build for the re
 
 | Screen | Cases | Automated (already in `maestro/flows`) | Draft flows here | Unit / XCTest | Pending (ids or data) |
 |---|---|---|---|---|---|
-| Saved | 13 | 1 (TC-SAV-001) | 6 (002, 003, 004, 009, 012, 013) | 1 (TC-SAV-008 skeleton decision) | 5 (005, 006 offline ids, 007 isolation, 010 undo ids, 011 data) |
+| Saved | 15 | 1 (TC-SAV-001) | 9 (002, 003, 004, 006, 009, 010, 012, 013, 014) | 2 (TC-SAV-008 skeleton, TC-SAV-015 undo failure) | 3 (005, 007, 011) |
 | Paywall / purchase | 21 | 8 (001–006, 008, 009) | 5 (007, 012, 013, 015, 017) | 2 (TC-PAY-010 loading, 011 processing) | 6 (014 restore ids, 016 sign-in resume, 018 offering, 019 3.1.2 disclosure ids, 020 shutter-only claim, 021 identity line ids) |
 
 MUST-COVER items for build 17 land in these rows: **Saved Undo** (TC-SAV-010), **Saved offline cached
@@ -74,7 +74,7 @@ pending row with the reason — no case is silently unowned.
 | `0632361` per-field email validation | **yes** | email sign-in ids unchanged; `signin.google` is gone (nothing in this suite used it) |
 | `18a13f8` support screens split | **yes** | paywall/settings ids survived the file split |
 | `bf1db8c` F4 state component | **no** | state panels still the old chrome |
-| `1925f5c` saved undo + offline rows, `6eab7c9` undo scoping | **no** | TC-SAV-006/010 have no producer in this build |
+| `1925f5c` saved undo + offline rows, `6eab7c9` undo scoping | **no** | TC-SAV-006/010/014 have no producer in this build |
 | paywall redesign (`paywall.benefit|offline|notice|signin.sheet|signin.close`) | **no** | all paywall redesign drafts stay drafts |
 
 So the build-17 job here is **regression of the nine existing flows** on the new build
@@ -95,13 +95,16 @@ Ids verified against committed source at `a03d03a` (not the dirty worktree). Pro
 | TC-SAV-004 | `TC-SAV-004-empty-browse.yaml` | empty state + Browse poses; needs an account with nothing saved |
 | TC-SAV-009 | `TC-SAV-009-load-error-retry.yaml` | error panel + Try again; uses the Debug `-AIPoseAPIBaseURL` relaunch seam |
 | TC-SAV-012 | `TC-SAV-012-back-to-settings.yaml` | Settings → Saved → Back → Settings (`settings.saved.row`) |
+| TC-SAV-006 | `TC-SAV-006-offline-banner-rows.yaml` | offline board via the DEBUG `-AIPoseSavedOfflineFixture 2` seam (`subflows/saved-launch-offline.yaml`) |
+| TC-SAV-010 | `TC-SAV-010-unsave-undo.yaml` | server-confirmed unsave → "Removed <pose>" + Undo restores at its previous index (snackbar read by text) |
+| TC-SAV-014 | `TC-SAV-014-no-unsave-offline.yaml` | same seam with 0 cached rows: no unsave offered |
 | TC-SAV-013 | `TC-SAV-013-ax3-dark.yaml` | AX3 + dark; runner sets device state and restores it |
 | TC-PAY-012 | `TC-PAY-012-purchase-failed.yaml` | Test Store "Test failed purchase" |
 | TC-PAY-013 | `TC-PAY-013-purchase-cancelled.yaml` | Test Store "Cancel" |
 | TC-PAY-015 | `TC-PAY-015-legal-links.yaml` | legal links from the paywall |
 | TC-PAY-017 | `TC-PAY-017-ax3-dark.yaml` | AX3 + dark with plans loaded (signed in, nothing bought) |
 
-Stays a draft: **TC-PAY-007** (plans-unavailable/offline has no deterministic producer on a Test Store build).
+Saved undo + offline landed in `1925f5c`/`6eab7c9` (**not** in build 17, so 18). Stays a draft: **TC-PAY-007** (plans-unavailable/offline has no deterministic producer on a Test Store build).
 
 Paywall redesign ids (`paywall.benefit`, `paywall.offline`, `paywall.notice`, `paywall.signin.sheet`,
 `paywall.signin.close`) are **pending commit** — the drafts that would use them (TC-PAY-007/009/016/020) stay
