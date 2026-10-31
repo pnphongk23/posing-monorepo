@@ -1,5 +1,6 @@
 import SwiftUI
 import Combine
+import UIKit
 import XCTest
 @testable import iosApp
 
@@ -956,5 +957,133 @@ private enum PaywallStateTestError: Error, LocalizedError, Sendable {
 private final class PaywallStateAppleProvider: AppleAuthorizationProviding {
     func authorize(_ request: AppleAuthorizationRequest) async throws -> AppleAuthorizationResult {
         AppleAuthorizationResult(identityToken: "identity-token", rawNonce: request.rawNonce, fullName: nil)
+    }
+}
+
+/// Visual check for the redesign: the paywall and its sign-in sheet rendered at the board's states,
+/// written to `/tmp/shots/PW/` so they can be compared to the page-11 boards. Not an image diff —
+/// the PNGs are the artifact, and the geometry assertions catch a collapsed or clipped screen.
+@MainActor
+final class PaywallSnapshotTests: XCTestCase {
+    private let outputDirectory = URL(fileURLWithPath: "/tmp/shots/PW")
+    private let phone = CGSize(width: 390, height: 844)
+
+    override func setUp() {
+        super.setUp()
+        try? FileManager.default.createDirectory(at: outputDirectory, withIntermediateDirectories: true)
+    }
+
+    private func render<Content: View>(
+        _ view: Content,
+        style: UIUserInterfaceStyle,
+        size: CGSize? = nil,
+        contentSize: ContentSizeCategory = .large,
+        filename: String
+    ) {
+        let size = size ?? phone
+        let host = UIHostingController(
+            rootView: view.environment(\.sizeCategory, contentSize)
+        )
+        host.overrideUserInterfaceStyle = style
+        host.view.frame = CGRect(origin: .zero, size: size)
+        host.view.layoutIfNeeded()
+
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = 1
+        let image = UIGraphicsImageRenderer(size: size, format: format).image { _ in
+            host.view.drawHierarchy(in: CGRect(origin: .zero, size: size), afterScreenUpdates: true)
+        }
+        XCTAssertEqual(image.size, size)
+        guard let data = image.pngData() else {
+            XCTFail("no PNG for \(filename)")
+            return
+        }
+        let url = outputDirectory.appendingPathComponent(filename)
+        try? data.write(to: url)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
+    }
+
+    private func readyModel() async -> PaywallModel {
+        let gateway = FakePurchaseGateway(nextLoad: readyOffering)
+        let model = PaywallModel(
+            gateway: gateway,
+            boundary: SessionBoundary(tokenStorage: InMemoryTokenStorage(credentials: session)),
+            signInAction: SignInAction(start: {}),
+            connectivity: FakeConnectivity()
+        )
+        model.start()
+        let deadline = Date().addingTimeInterval(3)
+        while model.phase != .ready && Date() < deadline {
+            try? await Task.sleep(nanoseconds: 5_000_000)
+        }
+        XCTAssertEqual(model.phase, .ready)
+        return model
+    }
+
+    func testCapturePaywallLightDarkAndAccessibility() async {
+        let model = await readyModel()
+        render(PaywallScreen(model: model), style: .light, filename: "paywall-light.png")
+        render(PaywallScreen(model: model), style: .dark, filename: "paywall-dark.png")
+        render(
+            PaywallScreen(model: model),
+            style: .light,
+            contentSize: .accessibilityExtraExtraExtraLarge,
+            filename: "paywall-ax3.png"
+        )
+    }
+
+    /// Board 11-06: signed out, the plans keep their shape and the primary action is sign-in.
+    func testCaptureSignedOutPaywall() async {
+        let gateway = FakePurchaseGateway(nextLoad: readyOffering)
+        let model = PaywallModel(
+            gateway: gateway,
+            boundary: SessionBoundary(tokenStorage: InMemoryTokenStorage()),
+            signInAction: SignInAction(start: {}),
+            connectivity: FakeConnectivity()
+        )
+        model.start()
+        let deadline = Date().addingTimeInterval(3)
+        while model.phase != .signInRequired && Date() < deadline {
+            try? await Task.sleep(nanoseconds: 5_000_000)
+        }
+        XCTAssertEqual(model.phase, .signInRequired)
+        render(PaywallScreen(model: model), style: .light, filename: "paywall-signed-out.png")
+    }
+
+    /// Boards 11-12/11-17: the sign-in sheet and the email form with both field messages.
+    func testCaptureSignInSheetAndEmailValidation() {
+        let model = PaywallModel(
+            gateway: FakePurchaseGateway(nextLoad: readyOffering),
+            boundary: SessionBoundary(tokenStorage: InMemoryTokenStorage()),
+            signInAction: SignInAction(start: {}),
+            connectivity: FakeConnectivity()
+        )
+        render(
+            PaywallSignInSheet(
+                model: model,
+                onApple: {},
+                onGoogle: {},
+                onEmail: {},
+                onClose: {}
+            ),
+            style: .light,
+            size: CGSize(width: 390, height: 420),
+            filename: "signin-sheet-light.png"
+        )
+
+        let email = EmailSignInModel(connectivity: FakeConnectivity())
+        email.email = "maya@"
+        _ = email.validate()
+        render(
+            EmailSignInScreen(model: email, intentLine: "Your purchase is tied to your account."),
+            style: .light,
+            filename: "email-validation.png"
+        )
+        render(
+            EmailSignInScreen(model: email, intentLine: "Your purchase is tied to your account."),
+            style: .dark,
+            contentSize: .accessibilityExtraExtraExtraLarge,
+            filename: "email-validation-ax3-dark.png"
+        )
     }
 }

@@ -85,6 +85,9 @@ struct PaywallScreen: View {
                                 .accessibilityIdentifier(PaywallAccessibilityID.notice)
                         }
                         autoRenewCaption
+                        if dynamicTypeSize.isAccessibilitySize {
+                            legalRow
+                        }
                         if let status = model.statusMessage, model.notice == nil, !model.isOffline {
                             Text(status)
                                 .font(AP.Font.caption)
@@ -283,7 +286,9 @@ struct PaywallScreen: View {
             .disabled(!model.isCTAEnabled)
             .accessibilityLabel(model.ctaTitle)
             .accessibilityIdentifier(PaywallAccessibilityID.cta)
-            legalRow
+            if !dynamicTypeSize.isAccessibilitySize {
+                legalRow
+            }
         }
         .padding(.horizontal, AP.Space.space16)
         .padding(.top, AP.Space.space12)
@@ -454,7 +459,7 @@ struct PaywallPlanRow: View {
     /// on the row itself.
     private var selectionBox: some View {
         RoundedRectangle(cornerRadius: 6, style: .continuous)
-            .fill(plan.isSelected ? AP.Color.selectedForeground : AP.Color.surface)
+            .fill(plan.isSelected ? AP.Color.selectedForeground : AP.Color.background)
             .frame(width: 24, height: 24)
             .overlay {
                 if plan.isSelected {
