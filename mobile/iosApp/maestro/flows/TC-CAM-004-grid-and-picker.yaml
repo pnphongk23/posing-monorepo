@@ -8,6 +8,12 @@ tags: [TC-CAM-004, p0]
     id: "camera.tools"
 - tapOn:
     id: "camera.tools.grid"
+# The Browse card is the strip's last card and only exists once the catalogue has loaded, so wait for
+# it instead of assuming it: a clean launch may still be showing skeleton cards.
+- extendedWaitUntil:
+    visible:
+      id: "camera.choosePose"
+    timeout: 20000
 - tapOn:
     id: "camera.choosePose"
 - assertVisible:

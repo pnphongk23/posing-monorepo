@@ -1,0 +1,44 @@
+# TC-CAM-015 the tools popover starts at Flash, has no title or Done, and dismisses on an outside tap
+appId: ${APP_ID}
+tags: [TC-CAM-015, p1]
+---
+- runFlow: ../subflows/launch.yaml
+- runFlow: ../subflows/open-first-pose.yaml
+- tapOn:
+    id: "poseDetail.use"
+- extendedWaitUntil:
+    visible:
+      id: "camera.shutter"
+    timeout: 20000
+- tapOn:
+    id: "camera.tools"
+# No title row and no Done button any more: the popover opens on its first control.
+- assertNotVisible:
+    id: "camera.tools.done"
+# A pose is chosen, so every row the panel owns is present — Flash and Grid always, the pose rows with a guide.
+- assertVisible:
+    id: "camera.tools.flash"
+- assertVisible:
+    id: "camera.tools.grid"
+- assertVisible:
+    id: "camera.tools.poseGuide"
+- assertVisible:
+    id: "camera.tools.opacity"
+- assertVisible:
+    id: "camera.tools.lineColor.black"
+# Dismissal is the outside tap: tap the preview well clear of the popover and the popover goes away.
+- tapOn:
+    point: "20%,45%"
+- assertNotVisible:
+    id: "camera.tools.flash"
+- assertNotVisible:
+    id: "camera.tools.grid"
+- assertVisible:
+    id: "camera.close"
+- assertVisible:
+    id: "camera.shutter"
+# Re-open proves the popover is really gone and comes back on its first control.
+- tapOn:
+    id: "camera.tools"
+- assertVisible:
+    id: "camera.tools.flash"

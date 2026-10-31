@@ -10,7 +10,11 @@ tags: [TC-CAM-001, p0]
     visible:
       id: "camera.shutter"
     timeout: 20000
-- assertVisible:
-    id: "camera.choosePose"
+# The Browse card is the strip's last card and only exists once the catalogue has loaded, so wait for
+# it instead of assuming it: a clean launch may still be showing skeleton cards.
+- extendedWaitUntil:
+    visible:
+      id: "camera.choosePose"
+    timeout: 20000
 - assertVisible:
     id: "camera.poseGuide"

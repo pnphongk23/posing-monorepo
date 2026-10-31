@@ -1,0 +1,43 @@
+# TC-CAM-027 the tools popover's Timer and Ratio rows set a value and keep it
+appId: ${APP_ID}
+tags: [TC-CAM-027, p0]
+---
+# Ids landed at 117b8bb; NOT in the 1.1 (17) app — run this draft on the 18 app (or later).
+# Timer / Ratio change what a capture does, and the Simulator has no camera: this flow proves the
+# controls, their values and their persistence; the capture itself is device-checklist §5 / §12.
+- runFlow: ../subflows/launch.yaml
+- runFlow: ../subflows/open-camera.yaml
+- tapOn:
+    id: "camera.tools"
+- assertVisible:
+    id: "camera.tools.timer"
+- assertVisible:
+    id: "camera.tools.ratio"
+# The per-option ids are NOT exposed at runtime on dev18 (every Timer/Ratio choice reports the row id
+# `camera.tools.timer` / `camera.tools.ratio` — bug note camera-18-03), so the option is chosen by its word.
+- tapOn: ".*Timer 3 s.*"
+- assertVisible:
+    id: "camera.tools.timer"
+# Ratio: 3:4 is the default; switch to a square and to a tall frame.
+- tapOn: ".*1:1.*"
+- assertVisible:
+    id: "camera.tools.ratio"
+- tapOn: ".*9:16.*"
+- assertVisible:
+    id: "camera.tools.ratio"
+# Dismissal is by tapping outside the popover (build 18 has no Done button).
+- tapOn:
+    point: "20%,45%"
+- assertNotVisible:
+    id: "camera.tools.timer"
+- assertVisible:
+    id: "camera.shutter"
+# Both settings persist like every other camera setting.
+- runFlow: ../subflows/relaunch-keep-state.yaml
+- runFlow: ../subflows/open-camera.yaml
+- tapOn:
+    id: "camera.tools"
+- assertVisible:
+    id: "camera.tools.timer"
+- assertVisible:
+    id: "camera.tools.ratio"

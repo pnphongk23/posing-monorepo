@@ -13,6 +13,12 @@ tags: [TC-CAM-011, p1]
       id: "camera.poseGuide"
       text: ${maestro.copiedText}
     timeout: 20000
+# The Browse card is the strip's last card and only exists once the catalogue has loaded, so wait for
+# it instead of assuming it: a clean launch may still be showing skeleton cards.
+- extendedWaitUntil:
+    visible:
+      id: "camera.choosePose"
+    timeout: 20000
 - tapOn:
     id: "camera.choosePose"
 - extendedWaitUntil:

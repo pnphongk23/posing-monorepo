@@ -32,6 +32,9 @@ not what you see, stop and report that step number.
 - [ ] **Expected:** the zoom choices **0.5x · 1x · 2x** on the left (a phone whose lens cannot do 0.5x simply does not offer
   it) and one **⌃ Poses** button at the **right end of that same row**, each compact with no background box and still easy
   to hit.
+- [ ] Count the **⌃ Poses** buttons.
+- [ ] **Expected:** exactly **one**, at the right end of the zoom row — if a second one appears above the shutter, report it
+  (it was a defect in the first 1.1 (18) dev builds).
 - [ ] Look at the bottom bar itself.
 - [ ] **Expected:** exactly three things — the last-photo thumbnail, the shutter and the flip-camera button — on a bar that
   is **see-through** (50 %) over the preview.
@@ -70,7 +73,10 @@ not what you see, stop and report that step number.
 - [ ] **Expected:** the guide follows your fingers 1:1 and stays within the preview; the bars do not move.
 - [ ] Tap the **eye** in the top bar, then tap it again.
 - [ ] **Expected:** the guide hides (crossed-out eye, "Show pose guide") and returns in the same place, size and colour.
-- [ ] Open the pose-guide section of the tools panel and read its rows.
+- [ ] Open the tools panel and scroll inside it until the pose-guide section is on screen.
+- [ ] **Expected:** the rows are all reachable by scrolling the panel if they sit below its edge — a row you cannot bring into
+  view (or one that only reacts when you tap somewhere else) is a defect to report.
+- [ ] Read its rows.
 - [ ] **Expected:** Pose guide (Shown/Hidden), **Mirror**, **Opacity** with a %, **Scale** with a % and a **Reset**, and
   **Line colour Black | White** with a tick on the chosen colour.
 - [ ] Toggle **Mirror**, then drag **Scale**, then tap **Reset**, then switch **Line colour**.

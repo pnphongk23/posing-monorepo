@@ -79,6 +79,13 @@ filter states) behaved as the cases expect.
 Still drafts: TC-CAM-014, 015, 021, 022, 023, 032, 033 (held — they tap `camera.choosePose` / `camera.tools.done`, both
 removed in build 18) and the device-only cases (Gallery caption/offline/tray, Timer/Ratio/Scale, saved-image checks).
 
+## Run log — 1.1 (18), dev18, lane-2 CF871F97, 2026-11-01 02:4x–03:1x
+Promoted and run 21 flows (12 live + 9 new): **PASS** TC-CAM-006/007/009/012/013/015/016/018/019/024/027 + TC-GAL-001 +
+TC-GAL-010; **FAIL** TC-CAM-001/004/011/014/021/022/033 (one app bug: no reachable entry to the picker sheet) and
+TC-CAM-032 (clipped pose-guide rows). TC-CAM-016 and TC-CAM-018 each failed once and passed on the single rerun (flaky
+zustand of the shared sim, no app crash report). Bugs filed in `bug-notes/` (4 files). Evidence:
+`/tmp/qa-cam-1.1-18/shots/` + the probe screenshots and hierarchy dumps beside it.
+
 ## Waiting on ids (cases written, no draft yet)
 Guide **mirror** is in committed source (`da61534`) and is drafted (`TC-CAM-032-guide-mirror.yaml`). Timer, Ratio and
 guide **Scale** are in scope for 1.1 but still unlanded, so these cases have no draft:

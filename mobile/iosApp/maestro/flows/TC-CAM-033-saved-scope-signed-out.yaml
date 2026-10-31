@@ -1,0 +1,46 @@
+# TC-CAM-033 signed out, the Saved scope asks for a sign-in instead of showing rows or an error
+appId: ${APP_ID}
+tags: [TC-CAM-033, p1]
+---
+# Accounts switch off is the closest a Simulator flow gets to "signed out" without the e2e account:
+# accounts enabled + cleared keychain is signed out too, so either launch works for this case. Using the
+# plain clean launch (no session) keeps the flow credential-free.
+- runFlow: ../subflows/launch.yaml
+- runFlow: ../subflows/open-camera.yaml
+# `camera.choosePose` is the strip's Browse card since d001b80 — the strip opens expanded, so the card is
+# on screen; the tap still opens the full picker sheet (search + All/Saved).
+- assertVisible:
+    id: "camera.poseStrip"
+# The Browse card is the strip's last card and only exists once the catalogue has loaded.
+- extendedWaitUntil:
+    visible:
+      id: "camera.choosePose"
+    timeout: 20000
+- tapOn:
+    id: "camera.choosePose"
+- extendedWaitUntil:
+    visible:
+      id: "posePicker.grid"
+    timeout: 20000
+- tapOn:
+    id: "posePicker.scope.saved"
+- extendedWaitUntil:
+    visible:
+      id: "posePicker.saved.signIn"
+    timeout: 20000
+# The Saved screen's own sign-in copy, and no pose rows underneath it.
+- assertVisible: "Sign in to view your saved poses"
+- assertVisible: "Your saved poses are tied to your account. Sign in to keep them synced."
+- assertNotVisible:
+    id: "posePicker.grid"
+# Signed out never blocks the catalogue: All still lists poses.
+- tapOn:
+    id: "posePicker.scope.all"
+- extendedWaitUntil:
+    visible:
+      id: "posePicker.grid"
+    timeout: 20000
+- tapOn:
+    id: "posePicker.close"
+- assertVisible:
+    id: "camera.shutter"

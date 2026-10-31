@@ -1,0 +1,59 @@
+# TC-CAM-014 the top bar: Close · pose title · eye · tools, and the eye only with a pose
+appId: ${APP_ID}
+tags: [TC-CAM-014, p0]
+---
+- runFlow: ../subflows/launch.yaml
+- runFlow: ../subflows/open-camera.yaml
+# One row, and no eye while no pose is chosen.
+- assertVisible:
+    id: "camera.close"
+# The Browse card is the strip's last card and only exists once the catalogue has loaded.
+- extendedWaitUntil:
+    visible:
+      id: "camera.choosePose"
+    timeout: 20000
+- assertVisible:
+    id: "camera.tools"
+- assertNotVisible:
+    id: "camera.guideToggle"
+# The title pill is the picker's entry point: it opens the sheet.
+# `camera.choosePose` is the strip's Browse card since d001b80 — the strip opens expanded, so the card is
+# on screen; the tap still opens the full picker sheet (search + All/Saved).
+- assertVisible:
+    id: "camera.poseStrip"
+# The Browse card is the strip's last card and only exists once the catalogue has loaded.
+- extendedWaitUntil:
+    visible:
+      id: "camera.choosePose"
+    timeout: 20000
+- tapOn:
+    id: "camera.choosePose"
+- extendedWaitUntil:
+    visible:
+      id: "posePicker.grid"
+    timeout: 20000
+# The sheet's grid has no per-cell ids yet (Requests to Feature #3), so a card is tapped by point.
+- tapOn:
+    point: "75%,75%"
+- extendedWaitUntil:
+    visible:
+      id: "camera.poseGuide"
+    timeout: 10000
+# A pose is chosen, so the eye appears and owns the guide's visibility — its label is the action.
+- assertVisible:
+    id: "camera.guideToggle"
+- assertVisible: "Hide pose guide"
+- tapOn:
+    id: "camera.guideToggle"
+- assertNotVisible:
+    id: "camera.poseGuide"
+- assertVisible: "Show pose guide"
+# …and toggling it back draws the guide again without touching the title or the strip.
+- tapOn:
+    id: "camera.guideToggle"
+- assertVisible:
+    id: "camera.poseGuide"
+- assertVisible:
+    id: "camera.choosePose"
+- assertVisible:
+    id: "camera.pickerStripToggle"
