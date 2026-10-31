@@ -63,6 +63,36 @@ pending row with the reason — no case is silently unowned.
 - **Credentials** come from the gitignored `mobile/iosApp/maestro/e2e.local.env` via `-e` and every
   credential-backed draft carries the `e2e` tag. The demo account is never used.
 
+## Run on 1.1 (17) — Saved/Paywall regression, all green
+
+Build: `/tmp/ai-pose-lane2-app-1.1/dev17/posing.app` (Debug-Dev, `1.1` build `17`), built from `a03d03a`;
+lane-2 `CF871F97`, install-only, `run.sh` per flow. 9/9 PASS, screenshots in
+`screens/run-1.1-17/` (one per flow, final screen):
+
+| Flow | Result | Screenshot |
+|---|---|---|
+| TC-SAV-001 saved-signed-out | PASS | `screens/run-1.1-17/TC-SAV-001-saved-signed-out.png` |
+| TC-PAY-001 capture-gated | PASS | `…/TC-PAY-001-capture-gated.png` |
+| TC-PAY-002 capture-ungated | PASS | `…/TC-PAY-002-capture-ungated.png` |
+| TC-PAY-003 paywall-signin-prompt | PASS | `…/TC-PAY-003-paywall-signin-prompt.png` |
+| TC-PAY-004 purchase-annual-entitles (Test Store) | PASS | `…/TC-PAY-004-purchase-annual-entitles.png` |
+| TC-PAY-005 signout-regates-capture | PASS | `…/TC-PAY-005-signout-regates-capture.png` |
+| TC-PAY-006 second-account-no-carryover | PASS (2nd attempt) | `…/TC-PAY-006-second-account-no-carryover.png` |
+| TC-PAY-008 close-paywall | PASS | `…/TC-PAY-008-close-paywall.png` |
+| TC-PAY-009 signin-apple-first | PASS | `…/TC-PAY-009-signin-apple-first.png` |
+
+Notes, so the next run does not re-learn them:
+
+- **TC-PAY-006's first attempt died at B's sign-in** with `Failed to connect to /127.0.0.1:7001` — the
+  Maestro iOS driver dropped, no assertion failed and there was no app crash report. Rerunning the same
+  flow immediately passed end to end, so it is harness flake, not a product or flow defect. If it recurs,
+  restart the run rather than editing the flow.
+- TC-PAY-004 is the only flow that *buys* anything: it does so through the RevenueCat **Test Store**
+  dialog on the Dev-Debug key. It leaves the E2E account entitled, which is what TC-PAY-005 then regates —
+  so 004/005/006 must run in that order in the same session.
+- Build 17 confirms the Settings rebuild at runtime: `settings.premium.row` lives in the new Library group
+  and still opens the paywall, which is what TC-PAY-004/005/006 use as their entitlement probe.
+
 ## Build 1.1 (17) scope: regression only — redesign waits for 1.1 (18)
 
 `/tmp/ai-pose-lane2-app-1.1/dev17/posing.app` is built from `a03d03a`. Verified with
