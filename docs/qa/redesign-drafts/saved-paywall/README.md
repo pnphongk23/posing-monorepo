@@ -10,8 +10,38 @@ build. Nothing here has run yet — the QA lead has not named a build for the re
 
 | Screen | Cases | Automated (already in `maestro/flows`) | Draft flows here | Unit / XCTest | Pending (ids or data) |
 |---|---|---|---|---|---|
-| Saved | 13 | 1 (TC-SAV-001) | 6 (002, 003, 004, 009, 012, 013) | 1 (TC-SAV-008 skeleton decision) | 5 (005, 006 manual, 007, 010 ids, 011 data) |
-| Paywall / purchase | 18 | 8 (001–006, 008, 009) | 5 (007, 012, 013, 015, 017) | 2 (TC-PAY-010 loading, 011 processing) | 3 (014 restore ids, 016 sign-in resume, 018 offering e2e) |
+| Saved | 13 | 1 (TC-SAV-001) | 6 (002, 003, 004, 009, 012, 013) | 1 (TC-SAV-008 skeleton decision) | 5 (005, 006 offline ids, 007 isolation, 010 undo ids, 011 data) |
+| Paywall / purchase | 21 | 8 (001–006, 008, 009) | 5 (007, 012, 013, 015, 017) | 2 (TC-PAY-010 loading, 011 processing) | 6 (014 restore ids, 016 sign-in resume, 018 offering, 019 3.1.2 disclosure ids, 020 shutter-only claim, 021 identity line ids) |
+
+MUST-COVER items for build 17 land in these rows: **Saved Undo** (TC-SAV-010), **Saved offline cached
+mode** (TC-SAV-006), **Paywall 3.1.2 disclosures** (TC-PAY-019), **shutter-only claim** (TC-PAY-020),
+and the F4 state component on both screens (TC-SAV-008/009/006 + TC-PAY-007/010/012).
+
+## Re-baselining (cases written against the pre-redesign screen)
+
+The gap table (`/tmp/gap/05-06.md` §06, `/tmp/gap/09-11.md` §11) makes several of these cases *different*
+behaviour, not just different pixels. When build 17 lands, these must be updated in the same commit that
+promotes their flow, and their existing assertions re-checked:
+
+| Case | What changes |
+|---|---|
+| TC-SAV-001, TC-SAV-004 | copy: gate text, empty-state action "Browse poses" (was "Browse Community") |
+| TC-SAV-006, TC-SAV-010 | new behaviour: offline cached mode + per-row "Not saved offline"; unsave Undo (both MISSING today) |
+| TC-SAV-009, TC-SAV-013 | error copy; AX3 unsave tile sizing |
+| TC-PAY-001, TC-PAY-008 | presentation becomes a full-screen cover |
+| TC-PAY-003, TC-PAY-009, TC-PAY-016 | signed-out paywall keeps the plans and offers one "Sign in to subscribe"; the options move into a sheet with the system Apple button |
+| TC-PAY-004, TC-PAY-006, TC-PAY-018 | CTA is "Subscribe" (not "Continue with <plan>"); plan labels Yearly/Monthly + store saving badge |
+| TC-PAY-007, TC-PAY-010 | offline/skeleton offer shape: "Price unavailable offline" rows, skeleton cards, disabled subscribe + helper copy |
+| TC-PAY-012, TC-PAY-013, TC-PAY-014 | outcome is an error **card** with Try again; restore gains an inline retry and a failure state |
+| TC-PAY-015, TC-PAY-017, TC-PAY-020 | legal labels "Terms of Use"/"Privacy Policy"; AX3-scrolled disclosure + dock inset; shutter-only benefit list |
+
+Also re-baselined on the flow side (owned here): `mobile/iosApp/maestro/subflows/pay-buy-monthly.yaml`
+asserts the label **"Continue with Monthly"**, which the redesign replaces with "Subscribe" — that
+assertion must change with the CTA copy, or TC-PAY-004/005/006 break for a copy reason.
+
+No Saved or Paywall case is out of scope for 1.2 (the out-of-scope list — publish flow, Gallery Star,
+in-app delete confirm, Forgot password, camera Timer/Ratio/Scale/mirror — touches no case in these two
+docs; password reset is named in the paywall doc only to keep it away from this surface).
 
 Every case in those two docs is either `automated:`, a `draft:` file here, a unit test, or an explicit
 pending row with the reason — no case is silently unowned.
