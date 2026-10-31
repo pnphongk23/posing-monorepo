@@ -395,66 +395,107 @@ extension View {
     }
 }
 
+/// The shell dock (artboard `01-nav-map` "Dock"): a raised `surface` pill holding Poses and Gallery
+/// with a separate raised Camera shutter in the centre. The camera is an action, never a selection,
+/// and it opens the full-screen camera with the dock hidden.
+///
+/// Selected dock items fill with `selectedBackground` and tint `selectedForeground`; the search
+/// workspace hides the dock entirely, so `activeTab` can be `nil` (every item plain).
 struct NeoDockTabBar: View {
     @Binding var selection: AppTab
-    /// Tab rendered with the active pill. `nil` renders every item inactive, which is what the
-    /// prototype does on screens that are not tabs: `search-blank.png` shows both dock icons plain
-    /// grey, while `poses-list.png` highlights the Poses item.
+    /// Tab rendered with the active fill. `nil` renders every item inactive.
     var activeTab: AppTab?
+
+    /// Pill height and shutter diameter from the artboard's dock.
+    static let pillHeight: CGFloat = 60
+    static let shutterDiameter: CGFloat = 60
+
     var body: some View {
-        HStack(spacing: AIPoseSpacing.xs) {
-            HStack(spacing: 2) {
+        ZStack(alignment: .top) {
+            HStack(spacing: AP.Space.space4) {
                 dockItem(tab: .poses, icon: "square.grid.2x2", label: "Poses")
                 dockItem(tab: .gallery, icon: "photo.on.rectangle", label: "Gallery")
             }
-            .padding(2)
+            .padding(AP.Space.space4)
             .frame(maxWidth: .infinity)
-            .frame(height: 48)
-            .neoSurface(
-                shape: Capsule(),
-                fill: AIPoseColor.surface,
-                borderWidth: NeoChromeTokens.borderThick,
-                shadowOffset: NeoChromeTokens.shadowSmall
+            .frame(height: Self.pillHeight)
+            .background(
+                RoundedRectangle(cornerRadius: AP.Radius.radius24, style: .continuous)
+                    .fill(AP.Color.surface)
             )
-            Button { selection = .camera } label: {
-                Image(systemName: "camera.fill")
-                    .font(.body.weight(.bold))
-                    .frame(width: 48, height: 48)
-                    .foregroundStyle(AIPoseColor.foreground)
-                    .neoSurface(
-                        shape: Circle(),
-                        fill: AIPoseColor.primary,
-                        borderWidth: NeoChromeTokens.borderThick,
-                        shadowOffset: NeoChromeTokens.shadowSmall
-                    )
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Open Camera")
-            .accessibilityIdentifier("dock.camera")
+            .apElevation(.e1, cornerRadius: AP.Radius.radius24)
+
+            cameraShutter
+                // The shutter straddles the pill's top edge, exactly as the artboard draws it.
+                .offset(y: -Self.shutterDiameter / 2 + AP.Space.space4)
         }
-        .padding(.horizontal, AIPoseSpacing.lg)
-        // The fixed prototype frame has no native home-indicator inset; keep the dock 16pt
-        // from the physical screen bottom instead of adding SwiftUI's container safe area.
-        .padding(.bottom, AIPoseSpacing.lg)
+        // The artboard insets the pill ~40 pt from both edges, which keeps the centre shutter clear of
+        // the two tab items on every phone width the app supports.
+        .padding(.horizontal, AP.Space.space32 + AP.Space.space8)
+        // Reserve the space the shutter overflows into, so its upper half is inside the dock's bounds
+        // and stays tappable instead of hanging outside the parent's hit area.
+        .padding(.top, NeoDockTabBar.shutterDiameter / 2 - AP.Space.space4)
+        .padding(.bottom, AP.Space.space16)
         .ignoresSafeArea(.container, edges: .bottom)
+    }
+
+    private var cameraShutter: some View {
+        Button { selection = .camera } label: {
+            Image(systemName: "camera.fill")
+                .font(.system(size: 22, weight: .semibold))
+                .foregroundStyle(AP.Color.onAccent)
+                .frame(width: Self.shutterDiameter, height: Self.shutterDiameter)
+                .background(Circle().fill(AP.Color.accent))
+                .apElevation(.e1, cornerRadius: Self.shutterDiameter / 2)
+        }
+        .buttonStyle(APDockPressStyle())
+        .accessibilityLabel("Open Camera")
+        .accessibilityIdentifier("dock.camera")
     }
 
     private func dockItem(tab: AppTab, icon: String, label: String) -> some View {
         let isActive = activeTab == tab
         return Button { selection = tab } label: {
+            VStack(spacing: AP.Space.space4) {
                 Image(systemName: icon)
-                    .font(.body.weight(.semibold))
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .neoSurface(
-                        shape: Capsule(),
-                        fill: isActive ? AIPoseColor.accentBlue : .clear,
-                        borderColor: isActive ? AIPoseColor.foreground : .clear,
-                        borderWidth: NeoChromeTokens.borderThin,
-                        shadowOffset: 0
-                    )
+                    .font(.system(size: 20, weight: .semibold))
+                Text(label)
+                    .font(AP.Font.caption)
+                    .lineLimit(1)
+            }
+            .foregroundStyle(isActive ? AP.Color.selectedForeground : AP.Color.primaryText)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(
+                RoundedRectangle(cornerRadius: AP.Radius.radius16, style: .continuous)
+                    .fill(isActive ? AP.Color.selectedBackground : .clear)
+            )
         }
-        .buttonStyle(.plain)
+        .buttonStyle(APDockPressStyle())
         .accessibilityLabel(label)
         .accessibilityAddTraits(isActive ? .isSelected : [])
+    }
+}
+
+/// Press feedback for the dock: fill is owned by the item (selected/unselected), so the style only
+/// steps the opacity and scales — and holds still under Reduce Motion.
+struct APDockPressStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        APDockPressBody(configuration: configuration)
+    }
+}
+
+private struct APDockPressBody: View {
+    let configuration: ButtonStyleConfiguration
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        configuration.label
+            .opacity(configuration.isPressed ? 0.85 : 1)
+            .scaleEffect(configuration.isPressed && !reduceMotion ? AP.Press.scale : 1)
+            .animation(
+                reduceMotion ? nil : .easeOut(duration: AP.Press.duration),
+                value: configuration.isPressed
+            )
     }
 }

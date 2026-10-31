@@ -833,6 +833,12 @@ struct PosesScreen: View {
     var onResumeHandled: () -> Void = {}
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    /// Multi-select category chips over the loaded catalogue (design B: one accent, one neutral).
+    @State private var categoryFilter = APCategoryFilter()
+    /// The labelled "More" menu: Add pose, Jobs, Saved live here now, so the header keeps three
+    /// 44 pt actions instead of five (`01-nav-map` "Poses header" / "More menu").
+    @State private var showsMoreMenu = false
     /// The Search workspace is presented **in place** instead of being pushed on the stack.
     ///
     /// `AppFeatureRoot` overlays `NeoDockTabBar` on top of its `<tab>Root`, so a `NavigationLink`
@@ -854,18 +860,32 @@ struct PosesScreen: View {
                 content
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            if showsMoreMenu && !showsSearch {
+                // The page dims behind the card; tapping anywhere outside it closes the menu.
+                Color.black.opacity(0.08)
+                    .ignoresSafeArea()
+                    .onTapGesture { setShowsMoreMenu(false) }
+                    .zIndex(1)
+                moreMenuCard
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                    .padding(.horizontal, AP.Space.space16)
+                    .padding(.top, menuTopInset)
+                    .frame(maxHeight: .infinity, alignment: .top)
+                    .zIndex(2)
+            }
             if showsSearch {
                 // Short states (e.g. the no-match banner) must not let the ZStack centre the overlay.
                 SearchScreen(model: model, onClose: { setShowsSearch(false) })
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .background(AP.Color.background)
                     .transition(.move(edge: .trailing))
-                    .zIndex(1)
+                    .zIndex(2)
             }
         }
         // R8: the page title now lives in the single in-content row (`.nb-nav-bar--poses`), so the
         // centred system nav-bar title is gone; keeping both would render the title twice.
         .neoHiddenNavigationBar()
-        .background(AIPoseColor.background)
+        .background(AP.Color.background)
         .task {
             session.start()
             if case .idle = model.state { await model.load() }
@@ -980,163 +1000,199 @@ struct PosesScreen: View {
         onSearchVisibilityChange(shown)
     }
 
-    /// ONE row: left-aligned page title plus the actions, per `nav-bar.css:60-80`
+    /// Artboard `02-poses-home-loaded`: the large title and three 44 pt actions on one line at the
+    /// default sizes, and the actions dropped under the title at the Accessibility sizes.
     private var posesHeader: some View {
-        HStack(spacing: AIPoseSpacing.sm) {
-            // `.nb-nav-bar__center { flex: 1 1 auto }` with a left-aligned title.
-            Text("Poses")
-                .font(.system(size: 20, weight: .bold))
-                .foregroundStyle(AIPoseColor.foreground)
-                .lineLimit(1)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .accessibilityAddTraits(.isHeader)
-
-            if AppConfig.canExtractPose(isEnabled: AppConfig.shared.isExtractPoseEnabled) {
-                Button {
-                    guard AppConfig.canExtractPose(isEnabled: AppConfig.shared.isExtractPoseEnabled) else { return }
-                    if session.isSignedIn {
-                        route = .addPose
-                    } else {
-                        pendingSignIn = .addPose
-                    }
-                } label: {
-                    PosesHeaderIconLabel(systemImage: "plus")
+        VStack(alignment: .leading, spacing: AP.Space.space12) {
+            if dynamicTypeSize.isAccessibilitySize {
+                posesTitle
+                HStack(spacing: AP.Space.space8) {
+                    Spacer(minLength: 0)
+                    headerActions
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Add pose")
-                .accessibilityIdentifier("poses.add-pose")
-            }
-
-            if JobsEntryPolicy.canOpen(extractPoseEnabled: AppConfig.shared.isExtractPoseEnabled) {
-                Button {
-                    guard JobsEntryPolicy.canOpen(extractPoseEnabled: AppConfig.shared.isExtractPoseEnabled) else { return }
-                    if session.isSignedIn {
-                        route = .jobs(.processing)
-                    } else {
-                        pendingSignIn = .openJobs
-                    }
-                } label: {
-                    ZStack(alignment: .topTrailing) {
-                        PosesHeaderIconLabel(systemImage: "clock.arrow.circlepath")
-                        if session.isSignedIn && jobsService.activeCount > 0 {
-                            Text("\(jobsService.activeCount)")
-                                .font(.system(size: 10, weight: .bold))
-                                .foregroundStyle(AIPoseColor.surface)
-                                .padding(.horizontal, 4)
-                                .padding(.vertical, 2)
-                                .background(AIPoseColor.error)
-                                .clipShape(Capsule())
-                                .offset(x: 4, y: -4)
-                        }
-                    }
+            } else {
+                HStack(alignment: .center, spacing: AP.Space.space8) {
+                    posesTitle
+                    Spacer(minLength: AP.Space.space8)
+                    headerActions
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Jobs\(session.isSignedIn && jobsService.activeCount > 0 ? ", \(jobsService.activeCount) active" : "")")
-                .accessibilityIdentifier("poses.jobs")
             }
-
-            Button { setShowsSearch(true) } label: {
-                PosesHeaderIconLabel(systemImage: "magnifyingglass")
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Search")
-            .accessibilityIdentifier("poses.open-search")
-
-            if AppConfig.shared.isAccountFeatureEnabled {
-                NavigationLink(destination: SavedPosesScreen(model: model, onTryPose: onTryPose)) {
-                    PosesHeaderIconLabel(systemImage: "bookmark.fill")
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Open Saved poses")
-                .accessibilityIdentifier("poses.header.saved")
-            }
-
-            NavigationLink(destination: SettingsScreen(posesModel: model, onTryPose: onTryPose)) {
-                PosesHeaderIconLabel(systemImage: "gearshape.fill")
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Open Settings")
-            .accessibilityIdentifier("poses.open-settings")
         }
-        // `.nb-nav-bar { height: 52px; margin-bottom: 16px }`.
-        .frame(height: 52)
-        .padding(.horizontal, AIPoseSpacing.lg)
-        .padding(.bottom, AIPoseSpacing.lg)
+        .padding(.horizontal, AP.Space.space16)
+        .padding(.top, AP.Space.space8)
+        .padding(.bottom, AP.Space.space12)
     }
 
-    /// State cards render in flow at the top of the content column — `poses-list.html` mounts
-    /// `.nb-state-message` inside `.nb-phone__content` (16pt side padding, no centring) — and the
-    /// frozen `FeatureStateView` is a full-width top-anchored card with no icon slot.
-    @ViewBuilder private var content: some View {
-        // The card tone is read from the pure `Loadable.stateTone` mapper rather than restated per
-        // branch, so the tone a screen produces for a condition is verifiable in a unit test even
-        // when the UI state cannot be driven (Saved signed-in states in the parity rig).
-        switch model.state.stateTone {
-        case .some(.loading):
-            FeatureStateView(
-                tone: .loading,
-                title: PosesListStateCopy.loadingTitle,
-                message: PosesListStateCopy.loadingMessage
-            )
-            .padding(.horizontal, PoseGridMetrics.horizontalPadding)
-        case .some(.empty):
-            // §3.4: the empty state has no personal Create CTA — poses appear when available.
-            // The footer still mounts: a server-filtered list can be empty on page 1 and hold
-            // matches on a later page.
-            VStack(spacing: 0) {
-                FeatureStateView(
-                    tone: .empty,
-                    title: PosesListStateCopy.emptyTitle,
-                    message: PosesListStateCopy.emptyMessage
-                )
-                .padding(.horizontal, PoseGridMetrics.horizontalPadding)
-                PagingFooter(model: model, bottomInset: 0)
+    private var posesTitle: some View {
+        Text("Poses")
+            .font(AP.Font.display)
+            .foregroundStyle(AP.Color.primaryText)
+            .lineLimit(nil)
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityAddTraits(.isHeader)
+    }
+
+    private var headerActions: some View {
+        HStack(spacing: AP.Space.space8) {
+            APHeaderActionButton(systemImage: "magnifyingglass", accessibilityLabel: "Search") {
+                setShowsMoreMenu(false)
+                setShowsSearch(true)
             }
-        case .some(.error):
-            FeatureStateView(
-                tone: .error,
+            .accessibilityIdentifier("poses.open-search")
+
+            NavigationLink(destination: SettingsScreen(posesModel: model, onTryPose: onTryPose)) {
+                APHeaderActionGlyph(systemImage: "sun.max")
+            }
+            .buttonStyle(APControlFillButtonStyle())
+            .accessibilityLabel("Open Settings")
+            .accessibilityIdentifier("poses.open-settings")
+
+            moreButton
+        }
+    }
+
+    /// Where the menu card starts: just under the header. The header's height follows the type size
+    /// (one line at the default sizes, title above the actions at AX), so the inset does too.
+    private var menuTopInset: CGFloat {
+        let titleHeight: CGFloat = dynamicTypeSize.isAccessibilitySize ? 62 : 41
+        return AP.Space.space8 + titleHeight + AP.Space.space12 + AP.HitTarget.minimum + AP.Space.space12
+    }
+
+    private var moreButton: some View {
+        Button {
+            setShowsMoreMenu(!showsMoreMenu)
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(showsMoreMenu ? AP.Color.selectedForeground : AP.Color.primaryText)
+                .frame(width: AP.HitTarget.minimum, height: AP.HitTarget.minimum)
+                .background(
+                    RoundedRectangle(cornerRadius: AP.Radius.radius16, style: .continuous)
+                        .fill(showsMoreMenu ? AP.Color.selectedBackground : AP.Color.controlFill)
+                )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("More")
+        .accessibilityAddTraits(showsMoreMenu ? .isSelected : [])
+        .accessibilityIdentifier("poses.more")
+    }
+
+    /// `01-nav-map` "More menu": the labelled card with Add pose, Jobs and Saved. The three entry
+    /// identifiers are unchanged — they moved, they did not disappear.
+    private var moreMenuCard: some View {
+        APMoreMenu(
+            jobsActiveCount: jobsService.activeCount,
+            isSignedIn: session.isSignedIn,
+            isAddPoseEnabled: AppConfig.canExtractPose(isEnabled: AppConfig.shared.isExtractPoseEnabled),
+            isJobsEnabled: JobsEntryPolicy.canOpen(extractPoseEnabled: AppConfig.shared.isExtractPoseEnabled),
+            savedDestination: AppConfig.shared.isAccountFeatureEnabled
+                ? AnyView(SavedPosesScreen(model: model, onTryPose: onTryPose))
+                : nil,
+            onAddPose: openAddPose,
+            onJobs: openJobs,
+            onSavedTapped: { setShowsMoreMenu(false) }
+        )
+    }
+
+    private func setShowsMoreMenu(_ shown: Bool) {
+        withAnimation(SearchMotion.animation(reduceMotion: reduceMotion)) { showsMoreMenu = shown }
+    }
+
+    private func openAddPose() {
+        guard AppConfig.canExtractPose(isEnabled: AppConfig.shared.isExtractPoseEnabled) else { return }
+        setShowsMoreMenu(false)
+        if session.isSignedIn {
+            route = .addPose
+        } else {
+            pendingSignIn = .addPose
+        }
+    }
+
+    private func openJobs() {
+        guard JobsEntryPolicy.canOpen(extractPoseEnabled: AppConfig.shared.isExtractPoseEnabled) else { return }
+        setShowsMoreMenu(false)
+        if session.isSignedIn {
+            route = .jobs(.processing)
+        } else {
+            pendingSignIn = .openJobs
+        }
+    }
+
+    /// The catalogue body: chips, grid and paged footer, or the state panel the presentation rule
+    /// picks for this model state (`APCatalogPresentationRule`, tested).
+    @ViewBuilder private var content: some View {
+        let rows = model.state.rows
+        let visible = categoryFilter.apply(to: rows)
+        let presentation = APCatalogPresentationRule.presentation(
+            for: model.state,
+            hasVisiblePoses: !visible.isEmpty,
+            isFilterActive: categoryFilter.isActive
+        )
+
+        switch presentation {
+        case .loading:
+            ScrollView {
+                APPoseGridSkeleton()
+                    .padding(.horizontal, AP.Space.space16)
+                    .padding(.top, AP.Space.space4)
+                APPagingFooter(model: model, bottomInset: 0)
+            }
+        case .failed:
+            APErrorStateView(
                 title: PosesListStateCopy.errorTitle,
                 message: PosesListStateCopy.errorMessage,
-                actionTitle: PosesListStateCopy.retryActionTitle
-            ) {
-                Task { await model.load() }
+                retry: { Task { await model.load() } },
+                style: .plain
+            )
+        case .empty:
+            VStack(spacing: 0) {
+                APEmptyStateView(
+                    title: PosesListStateCopy.emptyTitle,
+                    message: PosesListStateCopy.emptyMessage,
+                    style: .plain
+                )
+                // A filtered server list can be empty on page 1 and hold rows behind it.
+                APPagingFooter(model: model, bottomInset: 0)
             }
-            .padding(.horizontal, PoseGridMetrics.horizontalPadding)
-        // `stateTone` cannot be these for a `Loadable`; listed so the switch stays exhaustive.
-        case .some(.offline), .some(.success), .some(.warning):
-            EmptyView()
-        case nil:
-            if case .loaded(let poses) = model.state {
-                ScrollView {
-                    // §3.4: the visible "<N> poses" catalogue count is removed with the tablist.
-                    PoseGrid(poses: poses, model: model, onTryPose: onTryPose, onNearEnd: { requestNextPage() })
-                        .padding(.horizontal, PoseGridMetrics.horizontalPadding)
-                    PagingFooter(model: model)
-                }
+        case .noMatch:
+            VStack(spacing: 0) {
+                categoryChips(for: rows)
+                APEmptyStateView(
+                    title: APCategoryFilter.emptyTitle,
+                    message: categoryFilter.message,
+                    actionTitle: APCategoryFilter.recoveryTitle,
+                    action: { withAnimation(.easeInOut(duration: 0.18)) { categoryFilter.clear() } },
+                    style: .plain
+                )
             }
+        case .grid:
+            ScrollView {
+                categoryChips(for: rows)
+                APPoseGrid(poses: visible, model: model, onTryPose: onTryPose, onNearEnd: { requestNextPage() })
+                    .padding(.horizontal, AP.Space.space16)
+                APPagingFooter(model: model)
+            }
+        }
+    }
+
+    @ViewBuilder private func categoryChips(for poses: [NativePose]) -> some View {
+        let categories = APCategoryFilter.categories(in: poses)
+        if !categories.isEmpty {
+            APCategoryFilterBar(
+                categories: categories,
+                filter: categoryFilter,
+                onToggle: { category in
+                    withAnimation(.easeInOut(duration: 0.18)) { categoryFilter.toggle(category) }
+                },
+                onClear: { withAnimation(.easeInOut(duration: 0.18)) { categoryFilter.clear() } }
+            )
+            .padding(.horizontal, AP.Space.space16)
+            .padding(.bottom, AP.Space.space12)
         }
     }
 
     private func requestNextPage() {
         Task { await model.loadMore() }
-    }
-}
-
-/// Prototype `.nb-btn__compact-surface`: a 32pt boxed surface.
-private struct PosesHeaderIconLabel: View {
-    let systemImage: String
-    var fill: Color = AIPoseColor.surface
-    var body: some View {
-        Image(systemName: systemImage)
-            .font(.system(size: 14, weight: .bold))
-            .foregroundStyle(AIPoseColor.foreground)
-            .frame(width: 32, height: 32)
-            .neoSurface(
-                shape: RoundedRectangle(cornerRadius: NeoChromeTokens.radiusMedium),
-                fill: fill,
-                borderWidth: NeoChromeTokens.borderThin,
-                shadowOffset: 0
-            )
     }
 }
 
@@ -1657,17 +1713,18 @@ func routeTryPoseToCamera(_ pose: NativePose, isPrivate: Bool, onTryPose: (Camer
 /// reserve `40px + safe-area` at the bottom (see `PoseGridMetrics.searchDockClearance`).
 struct SearchScreen: View {
     @ObservedObject var model: PosesViewModel
-    /// Supplied when the workspace is overlaid in place (keeps the dock tab bar visible);
-    /// falls back to the navigation `dismiss` action when it is pushed instead.
+    /// Supplied when the workspace is overlaid in place (the dock is hidden while it is up, so the
+    /// back control is the only way out); falls back to the navigation `dismiss` action when pushed.
     var onClose: (() -> Void)?
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @FocusState private var isFieldFocused: Bool
     @State private var selectedSource: PoseLibraryFilter = .all
 
     var body: some View {
         VStack(spacing: 0) {
-            SearchNavHeader(title: SearchResultsCopy.screenTitle, onBack: close)
+            searchHeader
             searchField
             if showsDiscovery {
                 discovery
@@ -1676,7 +1733,7 @@ struct SearchScreen: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(AIPoseColor.background)
+        .background(AP.Color.background)
         .animation(SearchMotion.animation(reduceMotion: reduceMotion), value: showsDiscovery)
         .animation(SearchMotion.animation(reduceMotion: reduceMotion), value: model.state.panelStateKey)
         .neoHiddenNavigationBar()
@@ -1691,31 +1748,49 @@ struct SearchScreen: View {
         if let onClose { onClose() } else { dismiss() }
     }
 
-    // MARK: search field (`.nb-search-field`)
+    // MARK: header (`03-search-idle`: Back, then the large Search title)
+
+    private var searchHeader: some View {
+        VStack(alignment: .leading, spacing: AP.Space.space12) {
+            Button(action: close) {
+                APHeaderActionGlyph(systemImage: "chevron.left")
+            }
+            .buttonStyle(APControlFillButtonStyle())
+            .accessibilityLabel("Back")
+            .accessibilityIdentifier("search.back")
+
+            Text(SearchResultsCopy.screenTitle)
+                .font(AP.Font.display)
+                .foregroundStyle(AP.Color.primaryText)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityAddTraits(.isHeader)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, AP.Space.space16)
+        .padding(.top, AP.Space.space8)
+        .padding(.bottom, AP.Space.space12)
+    }
+
+    // MARK: search field (`.nb-search-field` replaced)
 
     private var searchField: some View {
-        HStack(spacing: 4) {
-            // The prototype's SVG glyph is inset ~4pt inside its 20px box; SF Symbols are not.
+        HStack(spacing: AP.Space.space8) {
             Image(systemName: "magnifyingglass")
-                .font(.system(size: 19, weight: .semibold))
-                .foregroundStyle(AIPoseColor.foreground)
-                .frame(width: 20, height: 20)
-                .padding(.leading, 4)
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(AP.Color.accentText)
+                .accessibilityHidden(true)
 
             TextField("Search poses", text: Binding(get: { model.query }, set: { model.updateQuery($0) }))
-                .font(.system(size: 16))
-                .foregroundStyle(AIPoseColor.foreground)
+                .font(AP.Font.body)
+                .foregroundStyle(AP.Color.primaryText)
                 .textInputAutocapitalization(.never)
                 .disableAutocorrection(true)
                 .submitLabel(.search)
-                .frame(minHeight: PoseSurfaceMetrics.touchMinimum)
+                .frame(minHeight: AP.HitTarget.minimum)
                 .focused($isFieldFocused)
                 .onSubmit {
-                    // Pressing the keyboard's Search key only dismisses the keyboard (standard iOS
-                    // search behaviour). The debounced search has already run for this query; calling
-                    // `load()` again would rebuild the grid and flash placeholders over artwork that
-                    // is already loaded. If the user submits inside the debounce window, the pending
-                    // scheduled search still fires.
+                    // The keyboard's Search key only dismisses the keyboard: the debounced search has
+                    // already run, and re-loading would rebuild the grid over loaded artwork.
                     isFieldFocused = false
                 }
                 .accessibilityIdentifier("search.field")
@@ -1723,31 +1798,25 @@ struct SearchScreen: View {
             if !model.query.isEmpty {
                 Button { clearSearch() } label: {
                     Image(systemName: "xmark")
-                        .font(.system(size: 17, weight: .medium))
-                        .foregroundStyle(AIPoseColor.foreground)
-                        .frame(width: PoseSurfaceMetrics.touchMinimum, height: PoseSurfaceMetrics.touchMinimum)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(AP.Color.primaryText)
+                        .frame(width: AP.HitTarget.minimum, height: AP.HitTarget.minimum)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Clear search")
             }
         }
-        // `.nb-search-field { padding: 4px 4px 4px 12px; min-height: 56px }`
-        .padding(.leading, 12)
-        .padding(.trailing, 4)
-        .padding(.vertical, 4)
-        .frame(minHeight: PoseSurfaceMetrics.searchFieldMinHeight)
-        .background(AIPoseColor.surface)
-        .clipShape(RoundedRectangle(cornerRadius: PoseSurfaceMetrics.searchFieldCornerRadius))
-        .overlay(
-            RoundedRectangle(cornerRadius: PoseSurfaceMetrics.searchFieldCornerRadius)
-                .stroke(AIPoseColor.foreground, lineWidth: 2)
+        .padding(.leading, AP.Space.space16)
+        .padding(.trailing, AP.Space.space8)
+        .padding(.vertical, AP.Space.space4)
+        .frame(minHeight: 56)
+        .background(
+            RoundedRectangle(cornerRadius: AP.Radius.radius16, style: .continuous)
+                .fill(isFieldFocused || !model.query.isEmpty ? AP.Color.selectedBackground : AP.Color.controlFill)
         )
-        // `:focus-within { transform: translate(-1.5px,-1.5px); box-shadow: shadow-small }`
-        .shadow(color: AIPoseColor.foreground, radius: 0, x: isFieldFocused ? 1.5 : 3, y: isFieldFocused ? 1.5 : 3)
-        .offset(x: isFieldFocused ? -1.5 : 0, y: isFieldFocused ? -1.5 : 0)
-        .padding(.horizontal, PoseSurfaceMetrics.horizontalPadding)
-        .padding(.bottom, PoseSurfaceMetrics.searchFormBottomMargin)
+        .padding(.horizontal, AP.Space.space16)
+        .padding(.bottom, AP.Space.space16)
     }
 
     private func clearSearch() {
@@ -1759,7 +1828,7 @@ struct SearchScreen: View {
         Task { await model.startSearch(for: "") }
     }
 
-    // MARK: discovery (`.nb-search-discovery`)
+    // MARK: discovery (`03-search-idle`)
 
     private var showsDiscovery: Bool {
         model.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && selectedSource == .all
@@ -1767,151 +1836,189 @@ struct SearchScreen: View {
 
     private var discovery: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                Text("Recent searches")
-                    .font(.system(size: 18, weight: .bold))
-                    .foregroundStyle(AIPoseColor.foreground)
-                    .lineLimit(1)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.bottom, 8)
-
-                HStack(spacing: 8) {
-                    ForEach(SearchScreenContract.recentSearches, id: \.self) { term in
-                        SearchChip(title: term) { Task { await model.startSearch(for: term) } }
-                            .accessibilityIdentifier("search.recent.\(term.lowercased())")
+            VStack(alignment: .leading, spacing: AP.Space.space12) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text("Recent")
+                        .font(AP.Font.heading)
+                        .foregroundStyle(AP.Color.primaryText)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .accessibilityAddTraits(.isHeader)
+                    Button("Clear") {
+                        withAnimation(SearchMotion.animation(reduceMotion: reduceMotion)) {
+                            selectedSource = .all
+                            model.filter = .all
+                        }
+                        model.cancelPendingSearch()
+                        Task { await model.startSearch(for: "") }
                     }
-                    Spacer(minLength: 0)
+                    .buttonStyle(.plain)
+                    .font(AP.Font.caption.weight(.semibold))
+                    .foregroundStyle(AP.Color.accentText)
+                    .apMinimumHitTarget()
+                }
+
+                // Chips wrap: at the Accessibility sizes one chip per row, never a clipped line.
+                if dynamicTypeSize.isAccessibilitySize {
+                    VStack(alignment: .leading, spacing: AP.Space.space8) {
+                        ForEach(SearchScreenContract.recentSearches, id: \.self) { term in
+                            recentChip(term, fillsWidth: true)
+                        }
+                    }
+                } else {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: AP.Space.space8) {
+                            ForEach(SearchScreenContract.recentSearches, id: \.self) { term in
+                                recentChip(term, fillsWidth: false)
+                            }
+                        }
+                    }
                 }
             }
-            .padding(.horizontal, PoseSurfaceMetrics.horizontalPadding)
-            .padding(.bottom, PoseGridMetrics.searchDockClearance)
+            .padding(.horizontal, AP.Space.space16)
+            .padding(.bottom, APGridLayout.rowSpacing)
         }
     }
 
-    // MARK: results (`.nb-search-results-panel`)
+    private func recentChip(_ term: String, fillsWidth: Bool) -> some View {
+        APSearchTermChip(title: term, systemImage: "clock") {
+            Task { await model.startSearch(for: term) }
+        }
+        .frame(maxWidth: fillsWidth ? .infinity : nil, alignment: .leading)
+        .accessibilityIdentifier("search.recent.\(term.lowercased())")
+    }
 
-    private var resultsPanel: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // Prototype `#search-state-message` (`.nb-state-message.nb-search-state`) sits between the
-            // search form and the results panel; the prototype hides the grid when nothing matches.
-            if case .empty = model.state { noMatchBanner }
-            resultsHeader
-            filterRow
-            PoseResultsList(
-                model: model,
-                context: .search,
-                bottomInset: PoseGridMetrics.searchDockClearance,
-                emptyPresentation: .hidden
+    // MARK: results (`03-search-results`)
+
+    @ViewBuilder private var resultsPanel: some View {
+        let presentation = APCatalogPresentationRule.presentation(
+            for: model.state,
+            hasVisiblePoses: !model.state.rows.isEmpty,
+            isFilterActive: model.filter != .all
+        )
+
+        switch presentation {
+        case .loading:
+            APLoadingStateView(label: "Searching")
+                .padding(.horizontal, AP.Space.space16)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        case .failed:
+            APErrorStateView(
+                title: PoseResultsStateCopy.searchErrorTitle,
+                message: PoseResultsStateCopy.searchErrorMessage,
+                retry: { Task { await model.load() } },
+                style: .plain
             )
+            .accessibilityIdentifier("search.retry")
+        case .empty, .noMatch:
+            noMatchPanel
+        case .grid:
+            VStack(alignment: .leading, spacing: 0) {
+                resultsHeader
+                sourceFilterRow
+                ScrollView {
+                    APPoseGrid(
+                        poses: model.state.rows,
+                        model: model,
+                        onNearEnd: { Task { await model.loadMore() } }
+                    )
+                    .padding(.horizontal, AP.Space.space16)
+                    APPagingFooter(model: model, bottomInset: APGridLayout.rowSpacing)
+                }
+            }
         }
     }
 
-    /// `.nb-state-message.nb-search-state` (report §3.5 no-match): the frozen shared card carries
-    /// the tone surface, structure and a11y; copy stays `SearchResultsCopy`. The wrapper adds 8pt of
-    /// bottom padding because `.nb-search-state { margin: 0 0 16px }` on top of the component's own
-    /// 8pt bottom margin makes the prototype's 16px total.
-    private var noMatchBanner: some View {
-        FeatureStateView(
-            tone: .empty,
+    /// `.nb-search-filter-row`: the source filter, one selection. Restyled, same behaviour and ids.
+    /// Stacked full width at the Accessibility sizes so the row never clips.
+    @ViewBuilder private var sourceFilterRow: some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: AP.Space.space8) {
+                ForEach(SearchScreenContract.sourceFilters) { source in
+                    sourceChip(source, fillsWidth: true)
+                }
+            }
+            .padding(.horizontal, AP.Space.space16)
+            .padding(.bottom, AP.Space.space12)
+        } else {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: AP.Space.space8) {
+                    ForEach(SearchScreenContract.sourceFilters) { source in
+                        sourceChip(source, fillsWidth: false)
+                    }
+                }
+                .padding(.horizontal, AP.Space.space16)
+            }
+            .padding(.bottom, AP.Space.space12)
+        }
+    }
+
+    private func sourceChip(_ source: PoseLibraryFilter, fillsWidth: Bool) -> some View {
+        APCategoryChip(
+            title: source.rawValue,
+            isSelected: selectedSource == source,
+            fillsWidth: fillsWidth,
+            action: { apply(source: source) }
+        )
+        .accessibilityIdentifier("search.source.\(source.id)")
+    }
+
+    private func apply(source: PoseLibraryFilter) {
+        withAnimation(SearchMotion.animation(reduceMotion: reduceMotion)) {
+            selectedSource = source
+            model.filter = source
+        }
+        Task { await model.load() }
+    }
+
+    /// The results header, kept in full because its three accessibility identifiers are frozen for
+    /// the E2E lane (`search-results-kicker` / `-heading` / `-count`). Design B drops the kicker and
+    /// the heading visually; keeping the ids means keeping the copy, so this is a listed deviation.
+    private var resultsHeader: some View {
+        VStack(alignment: .leading, spacing: AP.Space.space4) {
+            Text(SearchResultsCopy.kicker)
+                .font(AP.Font.caption.weight(.semibold))
+                .kerning(0.7)
+                .foregroundStyle(AP.Color.secondaryText)
+                .accessibilityIdentifier("search-results-kicker")
+            HStack(alignment: .firstTextBaseline, spacing: AP.Space.space8) {
+                Text(SearchResultsCopy.heading(query: model.query))
+                    .font(AP.Font.title)
+                    .foregroundStyle(AP.Color.primaryText)
+                    .lineLimit(nil)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("search-results-heading")
+                Spacer(minLength: AP.Space.space8)
+                if !SearchResultsCopy.hidesCount(for: model.state) {
+                    Text(SearchResultsCopy.countLabel(for: model.state))
+                        .font(AP.Font.supporting)
+                        .foregroundStyle(AP.Color.secondaryText)
+                        .accessibilityIdentifier("search-results-count")
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, AP.Space.space16)
+        .padding(.bottom, AP.Space.space8)
+    }
+
+    /// `03-search-no-results`: the same borderless panel as the catalogue, with the search copy.
+    private var noMatchPanel: some View {
+        APEmptyStateView(
             title: SearchResultsCopy.emptyTitle(query: model.query, filter: model.filter),
             message: SearchResultsCopy.emptyMessage(query: model.query, filter: model.filter),
             actionTitle: SearchResultsCopy.emptyRecoveryTitle(query: model.query, filter: model.filter)
-        ) {
-            // `app.js:848` `Show all poses` -> `setSource('all')`, the same path the source chip takes.
-            withAnimation(SearchMotion.animation(reduceMotion: reduceMotion)) {
-                selectedSource = .all
-                model.filter = .all
-            }
-            Task { await model.load() }
-        }
-        .padding(.horizontal, PoseSurfaceMetrics.horizontalPadding)
-        .padding(.bottom, 8)
-        .accessibilityIdentifier("search-empty-banner")
-    }
-
-    /// `.nb-search-results-header`: kicker + heading left, count right, `margin-bottom: 16px`.
-    private var resultsHeader: some View {
-        HStack(alignment: .bottom, spacing: 16) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(SearchResultsCopy.kicker)
-                    .font(.system(size: 12, weight: .bold))
-                    .kerning(0.72)
-                    .foregroundStyle(AIPoseColor.subtext)
-                    .accessibilityIdentifier("search-results-kicker")
-                Text(SearchResultsCopy.heading(query: model.query))
-                    .font(.system(size: 20, weight: .bold))
-                    .foregroundStyle(AIPoseColor.foreground)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
-                    .accessibilityIdentifier("search-results-heading")
-            }
-            Spacer(minLength: 0)
-            // R12: `app.js:837` hides the count at zero, and `search-no-match.png` shows the header
-            // with no count. The label function is unchanged; only its visibility is conditional.
-            if !SearchResultsCopy.hidesCount(for: model.state) {
-                Text(SearchResultsCopy.countLabel(for: model.state))
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(AIPoseColor.subtext)
-                    .multilineTextAlignment(.trailing)
-                    .lineLimit(2)
-                    .frame(maxWidth: 110, alignment: .trailing)
-                    .accessibilityIdentifier("search-results-count")
-            }
-        }
-        .padding(.horizontal, PoseSurfaceMetrics.horizontalPadding)
-        .padding(.bottom, 16)
-    }
-
-    /// `.nb-search-filter-row { gap: 4px; padding: 2px 2px 6px; margin-bottom: 16px }`.
-    /// No "Source" heading — the prototype has none.
-    private var filterRow: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 4) {
-                ForEach(SearchScreenContract.sourceFilters) { source in
-                    SearchChip(title: source.rawValue, kind: .filter, isActive: selectedSource == source) {
-                        withAnimation(SearchMotion.animation(reduceMotion: reduceMotion)) {
-                            selectedSource = source
-                            model.filter = source
-                        }
-                        Task { await model.load() }
-                    }
-                    .accessibilityIdentifier("search.source.\(source.id)")
+                ?? "Clear search",
+            action: {
+                withAnimation(SearchMotion.animation(reduceMotion: reduceMotion)) {
+                    selectedSource = .all
+                    model.filter = .all
                 }
-            }
-            .padding(.horizontal, 2)
-            .padding(.top, 2)
-            .padding(.bottom, 6)
-        }
-        .padding(.horizontal, PoseSurfaceMetrics.horizontalPadding)
-        .padding(.bottom, 16)
-    }
-
-}
-
-/// `.nb-nav-bar.nb-search-nav`: 52pt tall bar with a 44pt boxed back control, a centred 20pt bold
-/// title, `margin-bottom: 24px` (`#pose-search .nb-search-nav`). The trailing column is empty but
-/// keeps `--nb-touch-min` reserved, exactly like `.nb-nav-bar__right`.
-private struct SearchNavHeader: View {
-    let title: String
-    let onBack: () -> Void
-
-    var body: some View {
-        ZStack {
-            Text(title)
-                .font(.system(size: 20, weight: .bold))
-                .foregroundStyle(AIPoseColor.foreground)
-                .lineLimit(1)
-                .padding(.horizontal, PoseSurfaceMetrics.touchMinimum + 8)
-            HStack(spacing: 8) {
-                NeoBackButton(accessibilityLabel: "Back", action: onBack)
-                    .accessibilityIdentifier("search.back")
-                Spacer(minLength: 0)
-                Color.clear.frame(width: PoseSurfaceMetrics.touchMinimum, height: PoseSurfaceMetrics.touchMinimum)
-            }
-        }
-        .frame(height: PoseSurfaceMetrics.navBarHeight)
-        .padding(.horizontal, PoseSurfaceMetrics.horizontalPadding)
-        .padding(.bottom, PoseSurfaceMetrics.navBarBottomMargin)
+                model.cancelPendingSearch()
+                Task { await model.startSearch(for: "") }
+            },
+            style: .plain
+        )
+        .accessibilityIdentifier("search-empty-banner")
     }
 }
 
@@ -1928,48 +2035,6 @@ enum PoseResultsEmptyPresentation {
     case centered
     /// Render nothing; the owner draws the prototype's inline banner instead (Search).
     case hidden
-}
-
-/// Prototype `.nb-search-chip` / `.nb-search-filter` (search.css): rounded-rect control (radius 10,
-/// **not** a capsule), white fill, 1.5pt black border and a hard 1.5pt shadow. The shared
-/// `NeoFilterChip` uses a capsule + blue active fill, which the prototype does not.
-private struct SearchChip: View {
-    enum Kind {
-        /// `.nb-search-chip`: 14pt semibold, `padding: 8px 12px`, always shadowed.
-        case recent
-        /// `.nb-search-filter`: 12pt semibold, `padding: 4px 8px`, `box-shadow: none` unless active.
-        case filter
-    }
-
-    let title: String
-    var kind: Kind = .recent
-    var isActive: Bool = false
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Text(title)
-                .font(.system(size: kind == .recent ? 14 : 12, weight: .semibold))
-                .foregroundStyle(AIPoseColor.foreground)
-                .lineLimit(1)
-                .fixedSize(horizontal: true, vertical: false)
-                .padding(.horizontal, kind == .recent ? 12 : 8)
-                .padding(.vertical, kind == .recent ? 8 : 4)
-                .frame(minHeight: PoseSurfaceMetrics.touchMinimum)
-                .background(isActive ? AIPoseColor.accentYellow : AIPoseColor.surface)
-                .clipShape(RoundedRectangle(cornerRadius: PoseSurfaceMetrics.chipCornerRadius))
-                .overlay(
-                    RoundedRectangle(cornerRadius: PoseSurfaceMetrics.chipCornerRadius)
-                        .stroke(AIPoseColor.foreground, lineWidth: PoseSurfaceMetrics.chipBorderWidth)
-                )
-                .shadow(
-                    color: (kind == .recent || isActive) ? AIPoseColor.foreground : .clear,
-                    radius: 0, x: 1.5, y: 1.5
-                )
-        }
-        .buttonStyle(.plain)
-        .accessibilityAddTraits(isActive ? .isSelected : [])
-    }
 }
 
 // MARK: - Saved

@@ -128,6 +128,15 @@ struct APSecondaryButtonStyle: ButtonStyle {
     }
 }
 
+/// Picks a style from an `APButtonKind`, so a caller can state the kind once (state panels do).
+struct APButtonStyleForKind: ButtonStyle {
+    let kind: APButtonKind
+
+    func makeBody(configuration: Configuration) -> some View {
+        APButtonStyleBody(configuration: configuration, kind: kind)
+    }
+}
+
 /// Filter chip: neutral fill, supporting type, hugs its label.
 struct APChipButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {

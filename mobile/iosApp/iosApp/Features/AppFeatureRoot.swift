@@ -151,7 +151,12 @@ struct AppFeatureRoot: View {
     private func tabRoot<Content: View>(@ViewBuilder content: () -> Content) -> some View {
         ZStack(alignment: .bottom) {
             content()
-            NeoDockTabBar(selection: $tab, activeTab: isSearchPresented ? nil : tab)
+            // Design B: the Search workspace is a full screen of its own, so the dock steps out of
+            // the way while it is up (`03-search-idle` has no dock). Every other tab keeps it.
+            if !isSearchPresented {
+                NeoDockTabBar(selection: $tab, activeTab: tab)
+                    .transition(.opacity)
+            }
         }
         // The dock floats at `bottom: 16pt + safe area` in the prototype, i.e. anchored to the
         // screen — not to the keyboard. Without this, the whole stack shrinks for the keyboard and

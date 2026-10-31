@@ -112,12 +112,22 @@ struct APStateWordRow: View {
     }
 }
 
-/// Full-screen/section empty state: raised card, glyph, title, copy and an optional action.
+/// How a state panel is mounted.
+enum APStateCardStyle {
+    /// Raised `surface` card (E1, radius 24) for surfaces that group the state with other content.
+    case card
+    /// Borderless, centred panel on the screen background, with the glyph on a tone tile — the
+    /// catalogue and Search state panels (artboards `02-poses-home-error`, `02-poses-home-no-matches`).
+    case plain
+}
+
+/// Empty state: glyph, title, copy and an optional action, as a raised card or a plain panel.
 struct APEmptyStateView: View {
     var title: String
     var message: String
     var actionTitle: String?
     var action: (() -> Void)?
+    var style: APStateCardStyle = .card
 
     var body: some View {
         APStateCard(
@@ -126,29 +136,35 @@ struct APEmptyStateView: View {
             title: title,
             message: message,
             actionTitle: actionTitle,
-            action: action
+            actionKind: .secondary,
+            action: action,
+            style: style
         )
     }
 }
 
-/// Recoverable error: same card, `errorSurface` inside, and a retry action. VoiceOver announces it
-/// because the state is the reason the screen is not showing content.
+/// Recoverable error: the error surface, a glyph + word, and the primary recovery action
+/// (`02-poses-home-error`: the pink "Try again" button). VoiceOver announces it because the state is
+/// the reason the screen is not showing content.
 struct APErrorStateView: View {
     var title: String
     var message: String
     var retryTitle: String = "Try again"
     var retry: (() -> Void)?
+    var style: APStateCardStyle = .card
 
     @State private var didAnnounce = false
 
     var body: some View {
         APStateCard(
             tone: .error,
-            showsWord: true,
+            showsWord: style == .card,
             title: title,
             message: message,
             actionTitle: retry == nil ? nil : retryTitle,
-            action: retry
+            actionKind: .primary,
+            action: retry,
+            style: style
         )
         .onAppear(perform: announceIfNeeded)
     }
@@ -161,22 +177,24 @@ struct APErrorStateView: View {
     }
 }
 
-/// The shared card behind the empty and error states. E1, radius 24, no resting border; the dark
-/// edge comes from the elevation modifier's `cardStroke` hairline.
+/// The shared panel behind the empty and error states.
+///
+/// `.card` is a raised `surface` block (E1, radius 24, no resting border; the dark edge is the
+/// elevation modifier's `cardStroke` hairline). `.plain` is the catalogue panel: no chrome at all, the
+/// glyph on a tone-coloured tile, centred copy and one action.
 private struct APStateCard: View {
     let tone: APStateTone
     let showsWord: Bool
     let title: String
     let message: String
     let actionTitle: String?
+    let actionKind: APButtonKind
     let action: (() -> Void)?
+    let style: APStateCardStyle
 
     var body: some View {
-        VStack(spacing: AP.Space.space12) {
-            Image(systemName: tone.glyph)
-                .font(.system(.largeTitle, design: .default))
-                .foregroundStyle(tone.glyphColor)
-                .accessibilityHidden(true)
+        VStack(spacing: style == .card ? AP.Space.space12 : AP.Space.space16) {
+            glyph
             if showsWord {
                 APStateWordRow(tone: tone, word: tone.word)
             }
@@ -192,18 +210,61 @@ private struct APStateCard: View {
                 .fixedSize(horizontal: false, vertical: true)
             if let actionTitle, let action {
                 Button(actionTitle, action: action)
-                    .buttonStyle(APSecondaryButtonStyle())
+                    .buttonStyle(actionStyle)
+                    .fixedSize(horizontal: style == .plain, vertical: false)
                     .padding(.top, AP.Space.space4)
             }
         }
-        .padding(AP.Space.space24)
-        .frame(maxWidth: .infinity)
-        .background(
+        .padding(chromePadding)
+        .frame(maxWidth: .infinity, maxHeight: style == .plain ? .infinity : nil)
+        .background(cardBackground)
+        .accessibilityElement(children: action == nil ? .combine : .contain)
+    }
+
+    @ViewBuilder private var glyph: some View {
+        switch style {
+        case .card:
+            Image(systemName: tone.glyph)
+                .font(.system(.largeTitle, design: .default))
+                .foregroundStyle(tone.glyphColor)
+                .accessibilityHidden(true)
+        case .plain:
+            Image(systemName: tone.glyph)
+                .font(.system(size: 30, weight: .semibold))
+                .foregroundStyle(tone.glyphColor)
+                .frame(width: 72, height: 72)
+                .background(
+                    RoundedRectangle(cornerRadius: AP.Radius.radius16, style: .continuous)
+                        .fill(tone.surface)
+                )
+                .accessibilityHidden(true)
+        }
+    }
+
+    private var actionStyle: APButtonStyleForKind {
+        APButtonStyleForKind(kind: actionKind)
+    }
+
+    private var chromePadding: EdgeInsets {
+        switch style {
+        case .card:
+            return EdgeInsets(top: AP.Space.space24, leading: AP.Space.space24,
+                              bottom: AP.Space.space24, trailing: AP.Space.space24)
+        case .plain:
+            return EdgeInsets(top: AP.Space.space24, leading: AP.Space.space32,
+                              bottom: AP.Space.space24, trailing: AP.Space.space32)
+        }
+    }
+
+    @ViewBuilder private var cardBackground: some View {
+        switch style {
+        case .card:
             RoundedRectangle(cornerRadius: AP.Radius.radius24, style: .continuous)
                 .fill(tone.surface)
-        )
-        .apElevation(.e1, cornerRadius: AP.Radius.radius24)
-        .accessibilityElement(children: action == nil ? .combine : .contain)
+                .apElevation(.e1, cornerRadius: AP.Radius.radius24)
+        case .plain:
+            Color.clear
+        }
     }
 }
 

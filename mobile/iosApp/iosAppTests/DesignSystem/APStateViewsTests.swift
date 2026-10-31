@@ -187,16 +187,17 @@ final class APStateViewsTests: XCTestCase {
         ), size: CGSize(width: 320, height: 460))
         defer { probe.tearDown() }
         let painted = probe.capture()
-        let buttonRows = painted.rows(paintedWith: 0xECE5D8)
+        // The error panel's recovery is the primary action, per `02-poses-home-error`.
+        let buttonRows = painted.rows(paintedWith: 0xE89CAE)
 
-        XCTAssertFalse(buttonRows.isEmpty, "the retry control must paint its controlFill pill")
+        XCTAssertFalse(buttonRows.isEmpty, "the retry control must paint its accent pill")
         XCTAssertGreaterThanOrEqual(
             buttonRows.count, 44,
             "the retry control must keep a 44 pt hit area, painted \(buttonRows.count) pt"
         )
         if let top = buttonRows.first, let bottom = buttonRows.last {
             XCTAssertGreaterThan(
-                painted.inkExtent(inRows: top..<(bottom + 1), background: APPixel(red: 236, green: 229, blue: 216, alpha: 255)),
+                painted.inkExtent(inRows: top..<(bottom + 1), background: APPixel(red: 232, green: 156, blue: 174, alpha: 255)),
                 0,
                 "the retry control must paint its label"
             )
@@ -205,7 +206,7 @@ final class APStateViewsTests: XCTestCase {
         let withoutRetry = probe.render(APErrorStateView(title: "Couldn't load poses", message: "Check your connection."))
         XCTAssertEqual(withoutRetry.width, 320)
         XCTAssertTrue(
-            withoutRetry.rows(paintedWith: 0xECE5D8).isEmpty,
+            withoutRetry.rows(paintedWith: 0xE89CAE).isEmpty,
             "no retry closure, no retry control"
         )
     }
