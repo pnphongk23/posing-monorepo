@@ -2,17 +2,15 @@
 
 Draft Maestro flows for the redesigned cases in [camera-guide.md](../../test-cases/camera-guide.md) and
 [capture-gallery.md](../../test-cases/capture-gallery.md). They are NOT in `mobile/iosApp/maestro/flows/`, so the
-traceability checker ignores them, and **nothing here has been run on a simulator yet** (the QA lead names the build
-first).
+traceability checker ignores them, and **nothing here has been run on a simulator yet**.
 
-They are here for two different reasons:
-
-- **Camera cases** — every id they use (`camera.pickerStripToggle`, `camera.poseStrip`, `camera.guideToggle`,
-  `camera.tools.done`, `camera.zoom.*`, `camera.permission`, `camera.status`) exists only in the redesign patch
-  (`/tmp/b-camera-parked.patch`), which is not committed yet. A flow that names an uncommitted id must not land in
-  `maestro/flows/`.
-- **TC-GAL-010** — its ids *are* committed (`gallery.filter.*`, `gallery.empty.filter`), but the case stays a draft
-  until a flow has run green on the lane-2 simulator.
+The camera ids these flows use are now **committed** (`b8878da`, `feat(ios): camera redesign with a collapsed picker
+strip`) — verified against the source at that sha: `camera.close`, `camera.choosePose`, `camera.guideToggle`,
+`camera.gallery`, `camera.flip`, `camera.pickerStripToggle`, `camera.poseStrip`, `camera.poseStrip.retry`,
+`camera.poseStrip.card.<poseId>`, `camera.zoom.<1x|2x|3x>`, `camera.status`, `camera.permission`, `camera.tools` +
+`camera.tools.*` + `camera.tools.done`, `camera.shutter`, `camera.poseGuide`, and `posePicker.search|searchClear|grid|
+state|close`. What is left is a **runnable build** (`/tmp/ai-pose-lane2-app-1.2/dev17/posing.app` arrives later) and a
+green run on lane 2 before any of them is promoted.
 
 Promotion checklist (same as `../jobs-add-pose/README.md`): flip the doc row from `pending —` to
 `automated: <file>`, keep `tags: [<TC-ID>, …]`, rewrite the `runFlow` paths from
@@ -21,22 +19,23 @@ one explicit pathspec.
 
 | Case | Draft | Blocked on |
 |---|---|---|
-| TC-CAM-006 | `flows/TC-CAM-006-permission-panel.yaml` | `camera.permission` + the panel's action id (request 2); only the *refused* branch is expressible on the Simulator |
-| TC-CAM-012 | `flows/TC-CAM-012-collapse-and-reopen-strip.yaml` | `camera.pickerStripToggle`, `camera.poseStrip` |
-| TC-CAM-013 | `flows/TC-CAM-013-guide-kept-while-collapsed.yaml` | the same ids; pose identity reuses the `camera.poseGuide` value idiom of TC-CAM-007 |
-| TC-CAM-014 | `flows/TC-CAM-014-topbar-eye-and-title.yaml` | `camera.guideToggle` (the rest exists: `camera.close`, `camera.choosePose`, `camera.tools`) |
-| TC-CAM-015 | `flows/TC-CAM-015-tools-panel-done.yaml` | `camera.tools.done` (+ `camera.tools.opacity` for the pose rows) |
-| TC-CAM-016 | `flows/TC-CAM-016-zoom-pills.yaml` | `camera.zoom.<label>` exists in the patch but carries no readable selected value, so half the case stays manual (request 1) |
-| TC-CAM-018 | `flows/TC-CAM-018-permission-hides-strip.yaml` | `camera.permission` + `camera.pickerStripToggle`; needs `permissions: camera: deny` (Maestro can force it) |
-| TC-CAM-019 | `flows/TC-CAM-019-collapse-survives-relaunch.yaml` | `camera.pickerStripToggle`, `camera.poseStrip` |
-| TC-GAL-010 | `flows/TC-GAL-010-filter-empty-state.yaml` | nothing — ids committed; promote as soon as a build is named |
+| TC-CAM-006 | `flows/TC-CAM-006-permission-panel.yaml` | a build to run it on. Only the *refused* branch is expressible on the Simulator (Maestro writes the TCC answer, so `.notDetermined` — and the "Allow Camera" button — is unreachable); the panel's action has no id (request 2), so it matches "Open Settings" by text |
+| TC-CAM-012 | `flows/TC-CAM-012-collapse-and-reopen-strip.yaml` | a build to run it on. Asserts the strip's presence *and* the control's state label ("Hide pose picker" ↔ "Show pose picker") |
+| TC-CAM-013 | `flows/TC-CAM-013-guide-kept-while-collapsed.yaml` | a build to run it on. Proves the guide is still drawn through the collapse; *which* pose is CAM-007/CAM-011's job |
+| TC-CAM-014 | `flows/TC-CAM-014-topbar-eye-and-title.yaml` | a build to run it on. Also asserts the eye's label flips to "Show pose guide" and that the title pill opens the sheet |
+| TC-CAM-015 | `flows/TC-CAM-015-tools-panel-done.yaml` | a build to run it on |
+| TC-CAM-016 | `flows/TC-CAM-016-zoom-pills.yaml` | a build to run it on; **half the case stays manual** — `camera.zoom.<label>` carries `.isSelected` but no accessibilityValue, so a flow cannot read which pill is current (request 1) |
+| TC-CAM-018 | `flows/TC-CAM-018-permission-hides-strip.yaml` | a build to run it on; needs `permissions: camera: deny`, whose effect on `CameraPermissionState` must be confirmed on the first run |
+| TC-CAM-019 | `flows/TC-CAM-019-collapse-survives-relaunch.yaml` | a build to run it on |
+| TC-CAM-021 | `flows/TC-CAM-021-picker-search-no-match.yaml` | a build to run it on; needs the live catalogue (it waits for `posePicker.grid` first), so it is network-dependent like the other catalogue flows |
+| TC-GAL-010 | `flows/TC-GAL-010-filter-empty-state.yaml` | a build to run it on (ids committed long before, no fixture needed — an empty gallery is the state under test) |
 
 Boards used: `/tmp/ds-261030/export-c/05-camera-collapsed.png`, `05-camera-collapsed-dark.png`,
 `07-gallery-grid-ax3.png`, `07-gallery-grid-dark.png`, plus `FEEDBACK-261031.md` (F3, F4, F5, F10, F12).
 
-Device-only cases (capture snackbar, permission recovery through iOS Settings, real photos) are not drafted here: they
-are walked through in [docs/qa/camera-device-checklist.md](../../camera-device-checklist.md) and cannot be a Simulator
-flow without the fixture seams listed in each doc's "Requests to Feature".
+Device-only cases (capture snackbar, the first-run "Allow Camera" branch, real photos) are not drafted here: they are
+walked through in [docs/qa/camera-device-checklist.md](../../camera-device-checklist.md) and cannot be a Simulator flow
+without the fixture seams listed in each doc's "Requests to Feature".
 
 Run one against the lane-2 simulator once the QA lead names the build:
 

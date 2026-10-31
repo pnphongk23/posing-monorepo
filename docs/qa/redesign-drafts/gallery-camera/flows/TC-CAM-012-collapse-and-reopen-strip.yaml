@@ -9,6 +9,8 @@ tags: [TC-CAM-012, p0]
     id: "camera.pickerStripToggle"
 - assertVisible:
     id: "camera.poseStrip"
+# The control names the action it will take: "Hide pose picker" while the strip is open.
+- assertVisible: "Hide pose picker"
 # 1. Collapse. The strip goes, the control that hid it does not.
 - tapOn:
     id: "camera.pickerStripToggle"
@@ -16,6 +18,9 @@ tags: [TC-CAM-012, p0]
     id: "camera.poseStrip"
 - assertVisible:
     id: "camera.pickerStripToggle"
+# The label flips with the state, so the way back is never a hidden gesture.
+- assertVisible: "Show pose picker"
+- assertNotVisible: "Hide pose picker"
 # 2. Collapsed is exactly thumbnail · shutter · flip on the bar…
 - assertVisible:
     id: "camera.gallery"
@@ -35,6 +40,6 @@ tags: [TC-CAM-012, p0]
     id: "camera.poseStrip"
 - assertVisible:
     id: "camera.shutter"
-# Nothing else moved: the collapsed-only way back must never hide behind the state that hid it.
+- assertVisible: "Hide pose picker"
 - assertVisible:
     id: "camera.pickerStripToggle"

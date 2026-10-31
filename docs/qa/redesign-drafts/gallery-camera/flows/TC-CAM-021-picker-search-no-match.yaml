@@ -1,0 +1,42 @@
+# TC-CAM-021 the pose sheet's search filters by name and its no-match state is the shared panel
+appId: ${APP_ID}
+tags: [TC-CAM-021, p1]
+---
+- runFlow: ../../../../mobile/iosApp/maestro/subflows/launch.yaml
+- runFlow: ../../../../mobile/iosApp/maestro/subflows/open-camera.yaml
+- tapOn:
+    id: "camera.choosePose"
+# Wait for the catalogue: the no-match claim below is only meaningful over a loaded grid.
+- extendedWaitUntil:
+    visible:
+      id: "posePicker.grid"
+    timeout: 20000
+# A query that cannot match any pose name empties the grid and shows the shared state panel instead.
+- tapOn:
+    id: "posePicker.search"
+- inputText: "zzzqx"
+- extendedWaitUntil:
+    visible:
+      id: "posePicker.state"
+    timeout: 10000
+- assertVisible: "No poses match"
+- assertNotVisible:
+    id: "posePicker.grid"
+# The clear control restores the full grid without refetching or closing the sheet.
+- tapOn:
+    id: "posePicker.searchClear"
+- extendedWaitUntil:
+    visible:
+      id: "posePicker.grid"
+    timeout: 10000
+- assertNotVisible:
+    id: "posePicker.state"
+# The camera is never left behind the sheet: Done closes it and the chrome is intact.
+- tapOn:
+    id: "posePicker.close"
+- assertNotVisible:
+    id: "posePicker.grid"
+- assertVisible:
+    id: "camera.shutter"
+- assertVisible:
+    id: "camera.pickerStripToggle"

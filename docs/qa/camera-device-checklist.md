@@ -200,7 +200,7 @@ pinned above the control bar on a rendered bitmap) and
 `mobile/iosApp/iosAppTests/Features/GalleryFeatureTests.swift` (grid geometry, date sections, state panels, delete
 success/failure, share preparation, AX layout) with `docs/qa/test-cases/camera-guide.md` (TC-CAM-012…020) and
 `docs/qa/test-cases/capture-gallery.md` (TC-GAL-002…017).
-Camera ids the new chrome gives flows (all in the redesign patch, not yet committed): `camera.close`, `camera.choosePose`
+Camera ids the new chrome gives flows (committed at `b8878da`): `camera.close`, `camera.choosePose`
 (the pose title, opens the sheet), `camera.guideToggle` (eye, only with a guide), `camera.tools` + `camera.tools.done`,
 `camera.zoom.1x|2x|3x`, `camera.status` (snackbar), `camera.permission` (the panel), `camera.pickerStripToggle`
 (glyph/label/value per state), `camera.poseStrip` + `camera.poseStrip.card.<pose id>` + `camera.poseStrip.retry`; the

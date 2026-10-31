@@ -13,31 +13,35 @@ tags: [TC-CAM-014, p0]
     id: "camera.tools"
 - assertNotVisible:
     id: "camera.guideToggle"
-# The title is the picker's entry point: it opens the sheet, not the strip.
+# The title pill is the picker's entry point: it opens the sheet.
 - tapOn:
     id: "camera.choosePose"
 - extendedWaitUntil:
     visible:
       id: "posePicker.grid"
     timeout: 20000
-# The sheet's grid has no per-cell ids yet (Requests to Feature), so a card is tapped by point.
+# The sheet's grid has no per-cell ids yet (Requests to Feature #3), so a card is tapped by point.
 - tapOn:
     point: "75%,75%"
 - extendedWaitUntil:
     visible:
       id: "camera.poseGuide"
     timeout: 10000
-# A pose is chosen, so the eye appears and owns the guide's visibility.
+# A pose is chosen, so the eye appears and owns the guide's visibility — its label is the action.
 - assertVisible:
     id: "camera.guideToggle"
+- assertVisible: "Hide pose guide"
 - tapOn:
     id: "camera.guideToggle"
 - assertNotVisible:
     id: "camera.poseGuide"
-# The title now names the pose (its text changed) and the eye toggles the guide back on.
+- assertVisible: "Show pose guide"
+# …and toggling it back draws the guide again without touching the title or the strip.
 - tapOn:
     id: "camera.guideToggle"
 - assertVisible:
     id: "camera.poseGuide"
 - assertVisible:
     id: "camera.choosePose"
+- assertVisible:
+    id: "camera.pickerStripToggle"
