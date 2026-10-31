@@ -1,14 +1,28 @@
-# Camera on a real device — product owner checklist
+# On a real device — camera and paywall (product owner checklist)
 
-The Simulator has no camera, so everything below must be done on a physical iPhone with the Dev build installed
-(`posing.camera.app`). Budget ~15 minutes. Record the screen (Control Centre → Screen Recording) for the whole run.
+The Simulator has no camera, so the camera sections below must be done on a physical iPhone with the Dev build
+installed (`posing.camera.app`). Section 1 (paywall) needs a **production / TestFlight** build: a Release build on a
+Simulator cannot resolve the real StoreKit products (see `docs/qa/prod-smoke` S-05 — the offering never loads and the
+paywall falls back to "Plans are temporarily unavailable"), so the plan cards and their prices can only be verified
+on device. Budget ~15 minutes. Record the screen (Control Centre → Screen Recording) for the whole run.
 
 **Before you start**
 - [ ] Close every other app; set brightness to ~70%; unlock rotation lock.
-- [ ] Have one pose open at least once so a pose guide exists (Home → tap any card → wait for the photo).
+- [ ] Have one pose open at least once so a pose guide exists (Home → tap any card → wait for the photo) — only needed for the camera sections.
 - [ ] Note your device model + iOS version + build number (Settings → About) at the top of your notes.
 
-## 1. Collapsed / reopened pose strip (F12)
+## 1. Paywall on device (TestFlight)
+Run this on the TestFlight (production) build — StoreKit products only resolve for a real TestFlight/App Store install.
+- [ ] Install the TestFlight build and sign in with a **real** account.
+- [ ] Open the paywall: tap the shutter while the gate is on, or go Settings → Premium.
+- [ ] **Expected:** **both** the annual and the monthly plan cards render, each with a **localized price** for your store
+  region and a purchase CTA. No "Plans are temporarily unavailable" message and no empty card.
+- [ ] Do **not** buy anything — skip the purchase unless you explicitly choose to run a sandbox purchase.
+- [ ] Tap **Restore purchases**.
+- [ ] **Expected:** it responds (either a success state or a "nothing to restore" message); no hang, no crash, the
+  paywall stays usable afterwards.
+
+## 2. Collapsed / reopened pose strip (F12)
 1. From Home, tap the camera button in the bottom dock. The camera opens **expanded**.
 - [ ] **Expected:** a horizontal strip of pose thumbnails sits above the bottom control bar, and a "Poses" control shows a **down** chevron with the label "Hide pose picker".
 2. Tap that "Poses" control.
@@ -18,7 +32,7 @@ The Simulator has no camera, so everything below must be done on a physical iPho
 4. Force-quit the app, reopen it, open the camera again.
 - [ ] **Expected:** the camera remembers the last state (if you left it collapsed, it opens collapsed).
 
-## 2. Pose guide drawn and kept while collapsed
+## 3. Pose guide drawn and kept while collapsed
 - [ ] With a pose guide on screen (line drawing over the preview), collapse the strip.
 - [ ] **Expected:** the guide stays exactly where it was — same size, position, opacity and colour; it does not blink, jump or disappear.
 - [ ] Reopen the strip.
@@ -26,18 +40,18 @@ The Simulator has no camera, so everything below must be done on a physical iPho
 - [ ] Move the opacity slider and change the line colour once, then collapse and reopen.
 - [ ] **Expected:** your opacity/colour choice is kept through the collapse.
 
-## 3. Shutter and capture snackbar
+## 4. Shutter and capture snackbar
 - [ ] Point at something with people in it and tap the shutter once.
 - [ ] **Expected:** the screen freezes for a moment, a captured image is saved, and a short message appears at the **bottom, directly above the control bar** — it never covers the shutter and never sits mid-screen.
 - [ ] **Expected:** if Photos access was granted the message reads "Saved"; if it was not granted it reads "Saved to gallery. Allow Photos access to also save to your library."
 - [ ] Wait ~3 seconds without touching anything.
 - [ ] **Expected:** the message disappears by itself. (Tapping it also dismisses it.)
 
-## 4. Flip camera
+## 5. Flip camera
 - [ ] Tap the flip-camera button.
 - [ ] **Expected:** the preview switches between the back and front camera within a second; the pose guide stays drawn in the same place; the shutter still works on the new camera.
 
-## 5. Camera permission denied — and recovery via Settings
+## 6. Camera permission denied — and recovery via Settings
 Do this on a fresh install, or reset it first (iOS Settings → the app → Camera → off is enough).
 - [ ] Open the camera with permission off.
 - [ ] **Expected:** no viewfinder; a panel titled "Camera access is off" with an "Open Settings" button and a short explanation. No crash, no blank black screen.
@@ -46,7 +60,7 @@ Do this on a fresh install, or reset it first (iOS Settings → the app → Came
 - [ ] Turn Camera **on** there, then return to the app.
 - [ ] **Expected:** the viewfinder comes alive on return (or after re-opening the camera) without reinstalling; capture then works.
 
-## 6. Photo saved to Gallery — grid, ordering, opening (F10)
+## 7. Photo saved to Gallery — grid, ordering, opening (F10)
 - [ ] After a capture, go to the Gallery tab.
 - [ ] **Expected:** the new photo is the **first** item, under today's date header; the grid is exactly **3 columns**; there is no list/dense toggle and no photo-count text.
 - [ ] **Expected:** the header shows only the Add pose (+) button (and nothing else).
@@ -55,7 +69,7 @@ Do this on a fresh install, or reset it first (iOS Settings → the app → Came
 - [ ] Repeat with three captures in a row.
 - [ ] **Expected:** the newest is always first, each appears exactly once, and the grid never switches to 1 or 2 columns.
 
-## 7. Close camera returns to the previous screen
+## 8. Close camera returns to the previous screen
 - [ ] Open a pose detail → "Use this pose" → camera → tap Close.
 - [ ] **Expected:** you are back on **that same pose detail** (same pose name, "Use this pose" visible), not on Home.
 - [ ] From Home, open the camera from the dock → Close.
@@ -63,10 +77,12 @@ Do this on a fresh install, or reset it first (iOS Settings → the app → Came
 - [ ] In the camera, tap the last-photo thumbnail on the bottom bar.
 - [ ] **Expected:** you land in Gallery with the newest photo in view. Going back to the camera with the dock camera button and then tapping Close returns to **Home** (the camera only returns to a pose detail when it was opened from one).
 
-## 8. One-line verdict
-- [ ] Everything above passed → reply "camera device pass".
+## 9. One-line verdict
+- [ ] Everything above passed → reply "device pass" (add "paywall ok" for section 1 if you ran it).
 - [ ] Something failed → reply with: the check number, what you saw, the screen recording, and the device/iOS/build line from the top of your notes.
 
 Notes for QA triage (not for the product owner): automated equivalents live in
 `mobile/iosApp/iosAppTests/Features/CameraFeatureTests.swift` (`CameraChromeTests`) and
 `docs/qa/test-cases/camera-guide.md` (TC-CAM-012/013 pending ids) / `capture-gallery.md` (TC-GAL-002 manual).
+The paywall section's simulator equivalent is `docs/qa/prod-smoke/flows/S-05b-paywall-signed-in.yaml`, which is
+BLOCKED-BY-ENV for the price assertion (S-05b) — that is exactly why section 1 is manual and on device.
