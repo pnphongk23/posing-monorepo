@@ -1,0 +1,45 @@
+# TC-CAM-027 the tools popover's Timer and Ratio rows set a value and keep it
+appId: ${APP_ID}
+tags: [TC-CAM-027, p0]
+---
+# Ids landed at 117b8bb; NOT in the 1.1 (17) app — run this draft on the 18 app (or later).
+# Timer / Ratio change what a capture does, and the Simulator has no camera: this flow proves the
+# controls, their values and their persistence; the capture itself is device-checklist §5 / §12.
+- runFlow: ../../../../mobile/iosApp/maestro/subflows/launch.yaml
+- runFlow: ../../../../mobile/iosApp/maestro/subflows/open-camera.yaml
+- tapOn:
+    id: "camera.tools"
+- assertVisible:
+    id: "camera.tools.timer"
+- assertVisible:
+    id: "camera.tools.ratio"
+# Off by default (mode 0 in the camera's own settings).
+- tapOn:
+    id: "camera.tools.timer.3s"
+- assertVisible:
+    id: "camera.tools.timer"
+# Ratio: 3:4 is the default; switch to a square and to a tall frame.
+- tapOn:
+    id: "camera.tools.ratio.1x1"
+- assertVisible:
+    id: "camera.tools.ratio"
+- tapOn:
+    id: "camera.tools.ratio.9x16"
+- assertVisible:
+    id: "camera.tools.ratio"
+# Dismissal is by tapping outside the popover (build 18 has no Done button).
+- tapOn:
+    point: "20%,45%"
+- assertNotVisible:
+    id: "camera.tools.timer"
+- assertVisible:
+    id: "camera.shutter"
+# Both settings persist like every other camera setting.
+- runFlow: ../../../../mobile/iosApp/maestro/subflows/relaunch-keep-state.yaml
+- runFlow: ../../../../mobile/iosApp/maestro/subflows/open-camera.yaml
+- tapOn:
+    id: "camera.tools"
+- assertVisible:
+    id: "camera.tools.timer"
+- assertVisible:
+    id: "camera.tools.ratio"
