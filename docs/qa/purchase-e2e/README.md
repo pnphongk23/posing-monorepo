@@ -38,19 +38,40 @@ or simulator yet — that is why no case row says `automated:` yet.
 
 ## Running (after GO + credentials)
 
+**Credentials live in a chmod 600 file outside the repo** — `/tmp/ai-pose-e2e.env`, keys `E2E_EMAIL`,
+`E2E_PASSWORD`, `E2E_EMAIL_B`, `E2E_PASSWORD_B` — passed to Maestro with `-e`. They never appear in a
+flow, a doc, a commit or a log line.
+
 ```bash
-# lane-2 simulator only, one flow at a time, credentials from the shell env (never in YAML)
-export E2E_EMAIL=...        # account A, supplied out of band
-export E2E_PASSWORD=...
-export E2E_EMAIL_B=...      # account B, only for TC-PAY-006
-export E2E_PASSWORD_B=...
+# lane-2 simulator only, one flow at a time
+set -a; . /tmp/ai-pose-e2e.env; set +a          # exports the four variables for this shell only
 maestro --device CF871F97-... test -e APP_ID=posing.camera.app \
   -e E2E_EMAIL -e E2E_PASSWORD -e E2E_EMAIL_B -e E2E_PASSWORD_B \
   docs/qa/purchase-e2e/flows/TC-PAY-004-purchase-annual-entitles.yaml
 ```
 
 A flow started without the credentials fails immediately at the `assertTrue` guard in
-`subflows/pay-sign-in.yaml` instead of tapping empty fields.
+`subflows/pay-sign-in.yaml` instead of tapping empty fields. Purchases in these flows go through the
+RevenueCat **Test Store** dialog only — never a real StoreKit purchase.
+
+## Where the two throwaway accounts come from (not in-app)
+
+A fresh account **cannot** be created inside the app: the email sheet is sign-in only, and the server
+has no sign-up route.
+
+| Layer | Evidence |
+|---|---|
+| App form is email + password + submit only — no "create account", no forgot-password, no verification-code field | `SignIn.swift:327-378` (`EmailSignInModel`), `:450-580` (fields + dock), ids `signin.email`/`signin.password`/`signin.submit` |
+| Client call is sign-in only | `APIClient.swift:107-110` → `POST /api/auth/email/signin` |
+| Server router has only Google start/callback, `/email/signin`, `/apple/signin`, `/session`, `/refresh` — no signup/register/invite route | `web/services/pose-extract-server/src/routes/accountAuthRoutes.ts:97,113,157,215,257,268`; mounted at `app.ts:205` |
+| `/email/signin` is a Supabase **password grant** (`/auth/v1/token?grant_type=password`): an unknown email answers `401 INVALID_CREDENTIALS`, it does not create the user | `accountAuthRoutes.ts:175-190`, `:13` |
+| An unconfirmed account answers `403 EMAIL_NOT_CONFIRMED` ("Confirm your email address.") | `accountAuthRoutes.ts:14,189-196`; copy `SignIn.swift:52-54` |
+| The Account row is created lazily on the first successful sign-in, i.e. only *after* Supabase already knows the user | `accountAuthRoutes.ts:208` (`accountStore.upsert`) |
+
+So `qa-e2e-a` / `qa-e2e-b` must be created **outside** the app — Supabase dashboard *Add user* (or the
+Admin API `POST /auth/v1/admin/users`) on the project behind the production server — with the email
+already confirmed (auto-confirm, or "email confirm" ticked), otherwise every sign-in returns the
+`EMAIL_NOT_CONFIRMED` copy above. Then hand the four values over via `/tmp/ai-pose-e2e.env`.
 
 ## Promotion (only after a pass on the simulator)
 
