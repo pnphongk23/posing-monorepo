@@ -71,7 +71,7 @@ mirroring, the capture snackbar — is device-checklist work (§5, §12).
 
 ## Run log — 1.1 (17), build at `a03d03a`, lane-2 CF871F97, 2026-11-01 00:3x
 Promoted and run (all **PASS**): TC-CAM-006, 012, 013, 016, 018, 019, 024 + TC-GAL-010 — 8 flows, screenshots in
-`/tmp/shots-cam/`. TC-CAM-016 failed on its first attempt at the relaunch step with "app crashed or stopped"; there is **no
+`/tmp/qa-cam-1.1-17/shots/` (kept under `/tmp/qa-*` per the lane-2 disk rule). TC-CAM-016 failed on its first attempt at the relaunch step with "app crashed or stopped"; there is **no
 `posing.camera.app` crash report**, and a SpringBoard crash lands at the same minute (00:30:52) — an environment hiccup, not
 the app: the rerun passed end to end. Everything else on this build (camera chrome, picker scopes, not-now, gallery empty/
 filter states) behaved as the cases expect.
