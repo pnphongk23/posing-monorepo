@@ -592,6 +592,51 @@ final class GalleryFeatureTests: XCTestCase {
         )
     }
 
+    /// `07-board12` is boarded at the default size: four actions, one row, board order.
+    func testGalleryDetailTrayKeepsOneRowAtTheDefaultSizes() {
+        for size in DynamicTypeSize.allCases where !size.isAccessibilitySize {
+            let rows = GalleryDetailTrayActions.rows(
+                hasAddPoseDestination: true,
+                stacks: GalleryDetailTrayActions.stacksRows(dynamicTypeSize: size)
+            )
+            XCTAssertEqual(rows, [[.share, .save, .addPose, .delete]], "\(size) keeps the single row")
+        }
+    }
+
+    /// Rendered proof at AX3 found the four labels breaking mid-word ("Sha / re", "Del / ete"). At the
+    /// Accessibility sizes the tray wraps to two per row; the order is unchanged and no action is lost.
+    func testGalleryDetailTrayWrapsTwoPerRowAtAccessibilitySizes() {
+        for size in DynamicTypeSize.allCases where size.isAccessibilitySize {
+            let rows = GalleryDetailTrayActions.rows(
+                hasAddPoseDestination: true,
+                stacks: GalleryDetailTrayActions.stacksRows(dynamicTypeSize: size)
+            )
+            XCTAssertEqual(rows, [[.share, .save], [.addPose, .delete]], "\(size)")
+            XCTAssertEqual(rows.flatMap { $0 }, GalleryDetailTrayActions.actions(hasAddPoseDestination: true))
+            XCTAssertEqual(GalleryDetailTrayActions.columnsPerRow(rows), 2)
+        }
+    }
+
+    /// A short last row keeps the full row's cell width instead of stretching one label across the bar.
+    func testGalleryDetailTrayPadsAShortLastRow() {
+        let rows = GalleryDetailTrayActions.rows(hasAddPoseDestination: false, stacks: true)
+        XCTAssertEqual(rows, [[.share, .save], [.delete]])
+        XCTAssertEqual(
+            GalleryDetailTrayActions.columnsPerRow(rows), 2,
+            "the second row is padded to the widest row, so Delete does not stretch"
+        )
+    }
+
+    func testGalleryDetailTrayStacksOnlyAtAccessibilitySizes() {
+        for size in DynamicTypeSize.allCases {
+            XCTAssertEqual(
+                GalleryDetailTrayActions.stacksRows(dynamicTypeSize: size),
+                size.isAccessibilitySize,
+                "\(size) must follow the Dynamic Type rule"
+            )
+        }
+    }
+
     /// The ids the existing flows drive must not move when Add pose joins the tray.
     func testGalleryDetailTrayKeepsTheExistingIdentifiers() {
         XCTAssertEqual(GalleryDetailTrayAction.share.identifier, "gallery.detail.share")

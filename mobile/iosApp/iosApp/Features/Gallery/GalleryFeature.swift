@@ -1165,6 +1165,28 @@ enum GalleryDetailTrayActions {
     static func actions(hasAddPoseDestination: Bool) -> [GalleryDetailTrayAction] {
         [.share, .save] + (hasAddPoseDestination ? [.addPose] : []) + [.delete]
     }
+
+    /// tokens.md wraps the tray at the Accessibility sizes: four glyph + word actions on one row broke
+    /// mid-word ("Sha / re", "Del / ete" at AX3), so the row splits to two per line. `07-board12` is
+    /// boarded at the default size only, which keeps the single row.
+    static func stacksRows(dynamicTypeSize: DynamicTypeSize) -> Bool {
+        dynamicTypeSize.isAccessibilitySize
+    }
+
+    /// The tray's rows, in board order.
+    static func rows(hasAddPoseDestination: Bool, stacks: Bool) -> [[GalleryDetailTrayAction]] {
+        let all = actions(hasAddPoseDestination: hasAddPoseDestination)
+        guard stacks else { return [all] }
+        return stride(from: 0, to: all.count, by: 2).map { start in
+            Array(all[start..<min(start + 2, all.count)])
+        }
+    }
+
+    /// Widest row, so a short last row is padded with empty cells of the same width instead of
+    /// stretching its one label across the bar.
+    static func columnsPerRow(_ rows: [[GalleryDetailTrayAction]]) -> Int {
+        rows.map(\.count).max() ?? 0
+    }
 }
 
 enum GalleryDetailPresentation {
@@ -1371,6 +1393,7 @@ struct GalleryDetailPager: View {
     @State private var isPreparingShare = false
     @State private var isSaving = false
     @State private var toast: GalleryToast?
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     init(
         items: [GalleryItem],
@@ -1476,24 +1499,40 @@ struct GalleryDetailPager: View {
         )
     }
 
-    /// `07-photo-detail`: a raised `surface` tray directly above the bottom safe area, one row of
-    /// glyph + word actions.
+    /// `07-photo-detail`: a raised `surface` tray directly above the bottom safe area — one row of
+    /// glyph + word actions at the default sizes, two per row at the Accessibility sizes.
     private var actionTray: some View {
-        HStack(spacing: AP.Space.space4) {
-            ForEach(
-                GalleryDetailTrayActions.actions(hasAddPoseDestination: onAddPose != nil),
-                id: \.self
-            ) { action in
-                trayAction(action)
+        trayRows
+            .padding(.horizontal, AP.Space.space16)
+            .padding(.vertical, AP.Space.space12)
+            // The bar carries the surface down behind the home indicator; the controls stay above it.
+            .background {
+                AP.Color.surface
+                    .ignoresSafeArea(edges: .bottom)
+                    .apElevation(.e1, cornerRadius: 0)
             }
-        }
-        .padding(.horizontal, AP.Space.space16)
-        .padding(.vertical, AP.Space.space12)
-        // The bar carries the surface down behind the home indicator; the controls stay above it.
-        .background {
-            AP.Color.surface
-                .ignoresSafeArea(edges: .bottom)
-                .apElevation(.e1, cornerRadius: 0)
+    }
+
+    private var trayRows: some View {
+        let rows = GalleryDetailTrayActions.rows(
+            hasAddPoseDestination: onAddPose != nil,
+            stacks: GalleryDetailTrayActions.stacksRows(dynamicTypeSize: dynamicTypeSize)
+        )
+        let columns = GalleryDetailTrayActions.columnsPerRow(rows)
+        return VStack(spacing: AP.Space.space4) {
+            ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                HStack(spacing: AP.Space.space4) {
+                    ForEach(0..<columns, id: \.self) { index in
+                        if index < row.count {
+                            trayAction(row[index])
+                        } else {
+                            Color.clear
+                                .frame(maxWidth: .infinity, maxHeight: 1)
+                                .accessibilityHidden(true)
+                        }
+                    }
+                }
+            }
         }
     }
 
