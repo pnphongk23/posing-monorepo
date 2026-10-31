@@ -43,7 +43,7 @@ struct JobsScreen<Service: JobsServing & ObservableObject>: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            NeoSubscreenHeader(title: "Jobs", onBack: { dismiss() })
+            APPageHeader(title: "Jobs", onBack: { dismiss() })
 
             tabSelector
 

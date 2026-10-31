@@ -59,13 +59,6 @@ struct APSavedSurface<Content: View>: View {
     }
 }
 
-/// The count under the Saved title ("5 poses" in the artboard), singular and plural.
-enum SavedCountCopy {
-    static func label(_ count: Int) -> String {
-        count == 1 ? "1 pose" : "\(count) poses"
-    }
-}
-
 /// Identifiers the saved rows keep from the shared grid they replaced, so the E2E lane's existing
 /// selectors still find a row.
 enum APSavedIdentifiers {

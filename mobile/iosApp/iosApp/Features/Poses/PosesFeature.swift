@@ -28,19 +28,6 @@ enum SearchResultsCopy {
         return trimmed.isEmpty ? "Results" : "Results for “\(trimmed)”"
     }
 
-    static func countLabel(for state: Loadable<[NativePose]>) -> String {
-        switch state {
-        case .idle, .loading:
-            return "Searching…"
-        case .empty:
-            return "0 poses"
-        case .failed:
-            return "Unavailable"
-        case .loaded(let poses):
-            return poses.count == 1 ? "1 pose" : "\(poses.count) poses"
-        }
-    }
-
     /// `app.js:777` — `searchSource === 'my-poses' ? 'My poses' : searchSource === 'community' ? 'Community' : ''`.
     /// `app.js:846` substitutes `this library` when that label is empty (the All source).
     static func sourceLabel(for filter: PoseLibraryFilter) -> String {
@@ -72,13 +59,6 @@ enum SearchResultsCopy {
     static func emptyRecoveryTitle(query: String, filter: PoseLibraryFilter) -> String? {
         guard trimmedQuery(query).isEmpty, filter != .all else { return nil }
         return "Show all poses"
-    }
-
-    /// `app.js:837` — `searchResultsCount.hidden = filtered.length === 0`; the reference
-    /// `search-no-match.png` renders the header without any count.
-    static func hidesCount(for state: Loadable<[NativePose]>) -> Bool {
-        if case .empty = state { return true }
-        return false
     }
 
     private static func trimmedQuery(_ query: String) -> String {
@@ -1048,41 +1028,18 @@ struct PosesScreen: View {
             }
             .accessibilityIdentifier("poses.open-search")
 
-            NavigationLink(destination: SettingsScreen(posesModel: model, onTryPose: onTryPose)) {
-                APHeaderActionGlyph(systemImage: "sun.max")
+            // F7: Add pose takes the theme button's place, and disappears when the remote flag is off.
+            if APHomeHeader.showsAddPose(
+                isExtractPoseEnabled: AppConfig.canExtractPose(isEnabled: AppConfig.shared.isExtractPoseEnabled)
+            ) {
+                APHeaderActionButton(systemImage: "plus", accessibilityLabel: "Add pose") {
+                    openAddPose()
+                }
+                .accessibilityIdentifier("poses.add-pose")
             }
-            .buttonStyle(APControlFillButtonStyle())
-            .accessibilityLabel("Open Settings")
-            .accessibilityIdentifier("poses.open-settings")
 
             moreButton
         }
-    }
-
-    /// The menu layer: full width and vertically scrollable at the Accessibility sizes, so a card that
-    /// is taller than the screen still reaches Add pose / Jobs / Saved.
-    @ViewBuilder private var moreMenuOverlay: some View {
-        Group {
-            if dynamicTypeSize.isAccessibilitySize {
-                ScrollView {
-                    moreMenuCard
-                        .padding(.top, menuTopInset)
-                }
-            } else {
-                moreMenuCard
-                    .padding(.top, menuTopInset)
-                    .frame(maxHeight: .infinity, alignment: .top)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .trailing)
-        .padding(.horizontal, AP.Space.space16)
-    }
-
-    /// Where the menu card starts: just under the header. The header's height follows the type size
-    /// (one line at the default sizes, title above the actions at AX), so the inset does too.
-    private var menuTopInset: CGFloat {
-        let titleHeight: CGFloat = dynamicTypeSize.isAccessibilitySize ? 62 : 41
-        return AP.Space.space8 + titleHeight + AP.Space.space12 + AP.HitTarget.minimum + AP.Space.space12
     }
 
     private var moreButton: some View {
@@ -1106,6 +1063,31 @@ struct PosesScreen: View {
 
     /// `01-nav-map` "More menu": the labelled card with Add pose, Jobs and Saved. The three entry
     /// identifiers are unchanged — they moved, they did not disappear.
+    /// The menu layer: full width and vertically scrollable at the Accessibility sizes, so a card that
+    /// is taller than the screen still reaches every row.
+    @ViewBuilder private var moreMenuOverlay: some View {
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                ScrollView {
+                    moreMenuCard
+                        .padding(.top, menuTopInset)
+                }
+            } else {
+                moreMenuCard
+                    .padding(.top, menuTopInset)
+                    .frame(maxHeight: .infinity, alignment: .top)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .trailing)
+        .padding(.horizontal, AP.Space.space16)
+    }
+
+    /// Where the menu card starts: just under the header.
+    private var menuTopInset: CGFloat {
+        let titleHeight: CGFloat = dynamicTypeSize.isAccessibilitySize ? 62 : 41
+        return AP.Space.space8 + titleHeight + AP.Space.space12 + AP.HitTarget.minimum + AP.Space.space12
+    }
+
     private var moreMenuCard: some View {
         APMoreMenu(
             jobsActiveCount: jobsService.activeCount,
@@ -1115,10 +1097,12 @@ struct PosesScreen: View {
             savedDestination: AppConfig.shared.isAccountFeatureEnabled
                 ? AnyView(SavedPosesScreen(model: model, onTryPose: onTryPose))
                 : nil,
+            settingsDestination: AnyView(SettingsScreen(posesModel: model, onTryPose: onTryPose)),
             maxWidth: dynamicTypeSize.isAccessibilitySize ? nil : 296,
             onAddPose: openAddPose,
             onJobs: openJobs,
-            onSavedTapped: { setShowsMoreMenu(false) }
+            onSavedTapped: { setShowsMoreMenu(false) },
+            onSettingsTapped: { setShowsMoreMenu(false) }
         )
     }
 
@@ -1792,27 +1776,14 @@ struct SearchScreen: View {
         if let onClose { onClose() } else { dismiss() }
     }
 
-    // MARK: header (`03-search-idle`: Back, then the large Search title)
+    // MARK: header (F1: back control and the inline title on one row)
 
     private var searchHeader: some View {
-        VStack(alignment: .leading, spacing: AP.Space.space12) {
-            Button(action: close) {
-                APHeaderActionGlyph(systemImage: "chevron.left")
-            }
-            .buttonStyle(APControlFillButtonStyle())
-            .accessibilityLabel("Back")
-            .accessibilityIdentifier("search.back")
-
-            Text(SearchResultsCopy.screenTitle)
-                .font(AP.Font.display)
-                .foregroundStyle(AP.Color.primaryText)
-                .fixedSize(horizontal: false, vertical: true)
-                .accessibilityAddTraits(.isHeader)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, AP.Space.space16)
-        .padding(.top, AP.Space.space8)
-        .padding(.bottom, AP.Space.space12)
+        APPageHeader(
+            title: SearchResultsCopy.screenTitle,
+            backIdentifier: "search.back",
+            onBack: close
+        )
     }
 
     // MARK: search field (`.nb-search-field` replaced)
@@ -1938,7 +1909,6 @@ struct SearchScreen: View {
 
         if case .grid = presentation {
             VStack(alignment: .leading, spacing: 0) {
-                resultsHeader
                 ScrollView {
                     sourceFilterRow
                     APPoseGrid(
@@ -2047,21 +2017,6 @@ struct SearchScreen: View {
         Task { await model.load() }
     }
 
-    /// `03-search-results`: the count and the grid, nothing else. The old kicker + heading block ate
-    /// the viewport at the AX sizes and is gone from the design; its two text identifiers
-    /// (`search-results-kicker`, `search-results-heading`) go with it and are reported to QA.
-    @ViewBuilder private var resultsHeader: some View {
-        if !SearchResultsCopy.hidesCount(for: model.state) {
-            Text(SearchResultsCopy.countLabel(for: model.state))
-                .font(AP.Font.supporting)
-                .foregroundStyle(AP.Color.secondaryText)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, AP.Space.space16)
-                .padding(.bottom, AP.Space.space8)
-                .accessibilityIdentifier("search-results-count")
-        }
-    }
-
     /// `03-search-no-results`: the same borderless panel as the catalogue, with the search copy.
     private var noMatchPanel: some View {
         APEmptyStateView(
@@ -2124,7 +2079,7 @@ struct SavedPosesScreen: View {
     var body: some View {
         if AppConfig.shared.isAccountFeatureEnabled {
             VStack(spacing: 0) {
-                header(for: stage)
+                header
                 body(by: stage)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -2139,32 +2094,14 @@ struct SavedPosesScreen: View {
         }
     }
 
-    // MARK: header (`06-saved-populated`: back, title, count)
+    // MARK: header (F1)
 
-    private func header(for stage: SavedSurfaceStage) -> some View {
-        VStack(alignment: .leading, spacing: AP.Space.space8) {
-            APBackButton { dismiss() }
-                .accessibilityIdentifier("saved.back")
-
-            Text("Saved")
-                .font(AP.Font.display)
-                .foregroundStyle(AP.Color.primaryText)
-                .fixedSize(horizontal: false, vertical: true)
-                .accessibilityAddTraits(.isHeader)
-
-            // The count only belongs to the signed-in collection: the gate must not show the
-            // catalogue's row count (the model still holds the Poses tab's list at this point).
-            if case .list = stage, case .loaded(let poses) = model.state, !poses.isEmpty {
-                Text(SavedCountCopy.label(poses.count))
-                    .font(AP.Font.supporting)
-                    .foregroundStyle(AP.Color.secondaryText)
-                    .accessibilityIdentifier("saved.count")
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, AP.Space.space16)
-        .padding(.top, AP.Space.space8)
-        .padding(.bottom, AP.Space.space12)
+    private var header: some View {
+        APPageHeader(
+            title: "Saved",
+            backIdentifier: "saved.back",
+            onBack: { dismiss() }
+        )
     }
 
     @ViewBuilder private func body(by stage: SavedSurfaceStage) -> some View {

@@ -57,16 +57,12 @@ final class FeatureStateTests: XCTestCase {
         guard case .loaded = model.state else { return XCTFail("Expected loaded after debounce") }
     }
 
-    /// Prototype `.nb-search-kicker` / `.nb-search-results-count` copy: no "Source" heading, and the
-    /// heading only carries the query once it is confirmed.
+    /// Search copy: the screen title and the confirmed-query heading (F3 removed the result count).
     func testSearchResultsCopyMatchesPrototype() {
         XCTAssertEqual(SearchResultsCopy.screenTitle, "Search")
         XCTAssertEqual(SearchResultsCopy.kicker, "YOUR MATCHES")
         XCTAssertEqual(SearchResultsCopy.heading(query: "   "), "Results")
         XCTAssertEqual(SearchResultsCopy.heading(query: "Warrior"), "Results for “Warrior”")
-        XCTAssertEqual(SearchResultsCopy.countLabel(for: .loaded([samplePose])), "1 pose")
-        XCTAssertEqual(SearchResultsCopy.countLabel(for: .loaded([samplePose, samplePose])), "2 poses")
-        XCTAssertEqual(SearchResultsCopy.countLabel(for: .empty), "0 poses")
     }
 
     func testPoseMasonryAssignsNextCardToShortestColumn() {

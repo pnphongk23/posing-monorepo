@@ -26,6 +26,8 @@ struct AppFeatureRoot: View {
     @State private var cameraEntry: CameraEntry = .home
     /// The detail the Poses tab has to re-push the moment its stack is rebuilt (one-shot).
     @State private var posesResume = PosesResumeSlot()
+    /// F7: the appearance preference lives in Settings now; the root is the one place that applies it.
+    @ObservedObject private var appearance = APAppearanceStore.shared
 
     init(
         poseService: any PoseServing,
@@ -53,6 +55,7 @@ struct AppFeatureRoot: View {
             // press that opened it is never re-fired: the user is back on the camera, nothing more.
             .onChange(of: premiumGate.entitlement) { _ in settlePaywall() }
             .onChange(of: premiumGate.isSignedIn) { _ in settlePaywall() }
+            .preferredColorScheme(appearance.appearance.colorScheme)
             .onChange(of: tab) { newTab in
                 if newTab != .camera {
                     pendingGuide = nil

@@ -12,11 +12,22 @@ struct APMoreMenu: View {
     var isJobsEnabled: Bool = true
     /// The account feature flag gates the Saved entry, exactly as it gated the header link.
     var savedDestination: AnyView?
+    /// Settings opens the existing Account/Settings screen (F8: the gear row).
+    var settingsDestination: AnyView?
     /// `nil` lets the card take the full available width (the AX sizes, where 296 pt would clip).
     var maxWidth: CGFloat? = 296
     var onAddPose: () -> Void = {}
     var onJobs: () -> Void = {}
     var onSavedTapped: () -> Void = {}
+    var onSettingsTapped: () -> Void = {}
+
+    private var rows: [APMoreMenuRowSpec] {
+        APMoreMenuSpec.rows(
+            isAddPoseEnabled: isAddPoseEnabled,
+            showsSaved: savedDestination != nil,
+            showsSettings: settingsDestination != nil
+        )
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -31,9 +42,13 @@ struct APMoreMenu: View {
             addPoseRow
             separator
             jobsRow
-            if let savedDestination {
+            if rows.contains(where: { $0.title == "Saved" }), let savedDestination {
                 separator
                 savedRow(destination: savedDestination)
+            }
+            if rows.contains(where: { $0.title == "Settings" }), let settingsDestination {
+                separator
+                settingsRow(destination: settingsDestination)
             }
         }
         // 296 pt on a 390 pt screen, and it shrinks instead of overflowing on a 320 pt one; at the AX
@@ -57,7 +72,7 @@ struct APMoreMenu: View {
             row(
                 systemImage: "plus.circle",
                 title: "Add pose",
-                subtitle: isAddPoseEnabled ? "Publish a new pose" : "Turned off while we review",
+                subtitle: isAddPoseEnabled ? "" : "Turned off while we review",
                 isEnabled: isAddPoseEnabled,
                 trailing: { lockIcon(isVisible: !isAddPoseEnabled) }
             )
@@ -75,7 +90,7 @@ struct APMoreMenu: View {
             row(
                 systemImage: "hourglass",
                 title: "Jobs",
-                subtitle: badge > 0 ? "\(badge) running" : "Processing and finished poses",
+                subtitle: "",
                 isEnabled: isJobsEnabled,
                 trailing: { jobsBadge(count: badge) }
             )
@@ -86,12 +101,28 @@ struct APMoreMenu: View {
         .accessibilityIdentifier("poses.jobs")
     }
 
+    private func settingsRow(destination: AnyView) -> some View {
+        NavigationLink(destination: destination) {
+            row(
+                systemImage: "gearshape",
+                title: "Settings",
+                subtitle: "",
+                isEnabled: true,
+                trailing: { chevronIcon }
+            )
+        }
+        .buttonStyle(.plain)
+        .simultaneousGesture(TapGesture().onEnded(onSettingsTapped))
+        .accessibilityLabel("Open Settings")
+        .accessibilityIdentifier("poses.menu.settings")
+    }
+
     private func savedRow(destination: AnyView) -> some View {
         NavigationLink(destination: destination) {
             row(
                 systemImage: "bookmark",
                 title: "Saved",
-                subtitle: "Your saved poses",
+                subtitle: "",
                 isEnabled: true,
                 trailing: { chevronIcon }
             )
@@ -120,10 +151,12 @@ struct APMoreMenu: View {
                     .font(AP.Font.heading)
                     .foregroundStyle(isEnabled ? AP.Color.primaryText : AP.Color.disabled)
                     .fixedSize(horizontal: false, vertical: true)
-                Text(subtitle)
-                    .font(AP.Font.caption)
-                    .foregroundStyle(AP.Color.secondaryText)
-                    .fixedSize(horizontal: false, vertical: true)
+                if !subtitle.isEmpty {
+                    Text(subtitle)
+                        .font(AP.Font.caption)
+                        .foregroundStyle(AP.Color.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             Spacer(minLength: AP.Space.space8)
             trailing()
@@ -137,7 +170,7 @@ struct APMoreMenu: View {
         Rectangle()
             .fill(AP.Color.separator)
             .frame(height: 1)
-            .padding(.leading, AP.Space.space48)
+            .padding(.horizontal, AP.Space.space16)
     }
 
     private func lockIcon(isVisible: Bool) -> some View {

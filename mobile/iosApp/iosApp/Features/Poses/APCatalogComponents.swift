@@ -505,14 +505,3 @@ struct APSearchStatePanel: View {
     }
 }
 
-extension View {
-    /// Applies an accessibility identifier only when the caller supplied one.
-    @ViewBuilder
-    func apIdentifier(_ identifier: String?) -> some View {
-        if let identifier {
-            accessibilityIdentifier(identifier)
-        } else {
-            self
-        }
-    }
-}

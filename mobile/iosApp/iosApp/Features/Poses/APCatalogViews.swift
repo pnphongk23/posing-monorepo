@@ -70,6 +70,42 @@ enum APGridLayout {
     }
 }
 
+// MARK: - Home header composition (F7)
+
+/// Which actions the Poses header offers. Add pose is a remote-flag action: the flag hides the control
+/// entirely instead of showing a disabled one.
+enum APHomeHeader {
+    static func showsAddPose(isExtractPoseEnabled: Bool) -> Bool {
+        isExtractPoseEnabled
+    }
+}
+
+// MARK: - More menu rows (F8)
+
+/// One row of the labelled More menu.
+struct APMoreMenuRowSpec: Equatable {
+    let title: String
+    let systemImage: String
+}
+
+enum APMoreMenuSpec {
+    /// Jobs carries the running-count badge (the only count the app still shows) and no subtitle;
+    /// Saved has no subtitle; Settings is the gear row that opens the existing Settings screen.
+    static func rows(isAddPoseEnabled: Bool, showsSaved: Bool, showsSettings: Bool) -> [APMoreMenuRowSpec] {
+        var rows = [
+            APMoreMenuRowSpec(title: "Add pose", systemImage: "plus.circle"),
+            APMoreMenuRowSpec(title: "Jobs", systemImage: "hourglass")
+        ]
+        if showsSaved {
+            rows.append(APMoreMenuRowSpec(title: "Saved", systemImage: "bookmark"))
+        }
+        if showsSettings {
+            rows.append(APMoreMenuRowSpec(title: "Settings", systemImage: "gearshape"))
+        }
+        return rows
+    }
+}
+
 // MARK: - Motion
 
 /// Catalogue motion: a low-intensity card/grid animation that Reduce Motion turns off entirely.
@@ -205,11 +241,19 @@ enum APPagingFooterPhase: Equatable {
 }
 
 enum APPagingFooterRule {
-    static let loadMore = "Load more"
     static let loading = "Loading more poses…"
     static let failed = "Couldn't load more poses."
     static let retry = "Retry"
     static let end = "You've reached the end"
+
+    /// F6: infinite scroll. A list with rows behind it never waits for a tap — the footer's
+    /// appearance fetches the next page (the model's own in-flight guard keeps it to one request).
+    static func autoLoads(_ phase: APPagingFooterPhase) -> Bool {
+        switch phase {
+        case .loading, .loadMore: return true
+        case .hidden, .failed, .end: return false
+        }
+    }
 
     static func phase(
         error: String?,
@@ -222,7 +266,4 @@ enum APPagingFooterRule {
         return hasRows ? .end : .hidden
     }
 
-    static func countLabel(_ count: Int) -> String {
-        count == 1 ? "Showing 1 pose" : "Showing \(count) poses"
-    }
 }

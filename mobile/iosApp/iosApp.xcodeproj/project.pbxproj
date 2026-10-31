@@ -38,6 +38,9 @@
 		A9D10C5700000000000000D3 /* APDetailSavedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D10C5700000000000000C0 /* APDetailSavedTests.swift */; };
 		A9D10C5700000000000000D4 /* APBackButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D10C5700000000000000F1 /* APBackButton.swift */; };
 		A9D10C5700000000000000D5 /* APSnackbar.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D10C5700000000000000F2 /* APSnackbar.swift */; };
+		A9D10C5700000000000000D6 /* APPageHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D10C5700000000000000F3 /* APPageHeader.swift */; };
+		A9D10C5700000000000000D7 /* APAppearance.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D10C5700000000000000F4 /* APAppearance.swift */; };
+		A9D10C5700000000000000D8 /* APShellTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D10C5700000000000000F5 /* APShellTests.swift */; };
 		A9D10C5700000000000000C8 /* APCatalogLogicTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D10C5700000000000000B9 /* APCatalogLogicTests.swift */; };
 		A9D10C5700000000000000CC /* APCatalogViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D10C5700000000000000BD /* APCatalogViewTests.swift */; };
 		A9D10C5700000000000000C4 /* APDesignTokensTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D10C5700000000000000B4 /* APDesignTokensTests.swift */; };
@@ -185,6 +188,9 @@
 		A9D10C5700000000000000C0 /* APDetailSavedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APDetailSavedTests.swift; sourceTree = "<group>"; };
 		A9D10C5700000000000000F1 /* APBackButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APBackButton.swift; sourceTree = "<group>"; };
 		A9D10C5700000000000000F2 /* APSnackbar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APSnackbar.swift; sourceTree = "<group>"; };
+		A9D10C5700000000000000F3 /* APPageHeader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APPageHeader.swift; sourceTree = "<group>"; };
+		A9D10C5700000000000000F4 /* APAppearance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APAppearance.swift; sourceTree = "<group>"; };
+		A9D10C5700000000000000F5 /* APShellTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APShellTests.swift; sourceTree = "<group>"; };
 		A9D10C5700000000000000B9 /* APCatalogLogicTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APCatalogLogicTests.swift; sourceTree = "<group>"; };
 		A9D10C5700000000000000BD /* APCatalogViewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APCatalogViewTests.swift; sourceTree = "<group>"; };
 		A9D10C5700000000000000B4 /* APDesignTokensTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APDesignTokensTests.swift; sourceTree = "<group>"; };
@@ -331,6 +337,8 @@
 				A9D10C5700000000000000B1 /* APDesignTokens.swift */,
 				A9D10C5700000000000000F1 /* APBackButton.swift */,
 				A9D10C5700000000000000F2 /* APSnackbar.swift */,
+				A9D10C5700000000000000F3 /* APPageHeader.swift */,
+				A9D10C5700000000000000F4 /* APAppearance.swift */,
 				A9D10C5700000000000000B2 /* APButtonStyles.swift */,
 				A9D10C5700000000000000B3 /* APStateViews.swift */,
 			);
@@ -493,6 +501,7 @@
 				A9D10C5700000000000000B9 /* APCatalogLogicTests.swift */,
 				A9D10C5700000000000000BD /* APCatalogViewTests.swift */,
 				A9D10C5700000000000000C0 /* APDetailSavedTests.swift */,
+				A9D10C5700000000000000F5 /* APShellTests.swift */,
 			);
 			path = DesignSystem;
 			sourceTree = "<group>";
@@ -775,6 +784,8 @@
 				A9D10C5700000000000000C1 /* APDesignTokens.swift in Sources */,
 				A9D10C5700000000000000D4 /* APBackButton.swift in Sources */,
 				A9D10C5700000000000000D5 /* APSnackbar.swift in Sources */,
+				A9D10C5700000000000000D6 /* APPageHeader.swift in Sources */,
+				A9D10C5700000000000000D7 /* APAppearance.swift in Sources */,
 				A9D10C5700000000000000C2 /* APButtonStyles.swift in Sources */,
 				A9D10C5700000000000000C3 /* APStateViews.swift in Sources */,
 				A9D10C5700000000000000C7 /* APCatalogViews.swift in Sources */,
@@ -864,6 +875,7 @@
 				A9D10C5700000000000000C8 /* APCatalogLogicTests.swift in Sources */,
 				A9D10C5700000000000000CC /* APCatalogViewTests.swift in Sources */,
 				A9D10C5700000000000000D3 /* APDetailSavedTests.swift in Sources */,
+				A9D10C5700000000000000D8 /* APShellTests.swift in Sources */,
 				5E2B44D1C4A9B540A480E0BA /* GalleryFeatureTests.swift in Sources */,
 				43B62A518E250A2D941976B5 /* GalleryPhotoDeletionTests.swift in Sources */,
 				1AB057FAC4D067898163B0C9 /* JobsFixtures.swift in Sources */,

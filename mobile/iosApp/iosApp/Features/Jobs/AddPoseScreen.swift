@@ -171,7 +171,7 @@ struct AddPoseScreen: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            NeoSubscreenHeader(
+            APPageHeader(
                 title: viewModel.submittedJobId == nil ? "Add Pose" : "Processing Pose",
                 onBack: { dismiss() }
             )

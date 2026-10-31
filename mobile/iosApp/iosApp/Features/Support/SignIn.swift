@@ -421,7 +421,7 @@ struct EmailSignInScreen: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            NeoSubscreenHeader(title: "Sign in with email", backLabel: "Back", onBack: cancel)
+            APPageHeader(title: "Sign in with email", backLabel: "Back", onBack: cancel)
             ScrollView {
                 VStack(alignment: .leading, spacing: AIPoseSpacing.md) {
                     Text(intentLine)

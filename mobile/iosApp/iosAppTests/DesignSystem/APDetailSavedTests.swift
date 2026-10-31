@@ -18,12 +18,6 @@ final class APDetailSavedTests: XCTestCase {
 
     // MARK: - Pure copy / tags
 
-    func testSavedCountCopyIsSingularAndPlural() {
-        XCTAssertEqual(SavedCountCopy.label(0), "0 poses")
-        XCTAssertEqual(SavedCountCopy.label(1), "1 pose")
-        XCTAssertEqual(SavedCountCopy.label(5), "5 poses")
-    }
-
     func testSavedRowKeepsTheGridIdentifiersItReplaced() {
         // The list used to be the shared grid; the E2E lane still targets those two ids.
         let rows = APGridLayout.columns(for: .large)

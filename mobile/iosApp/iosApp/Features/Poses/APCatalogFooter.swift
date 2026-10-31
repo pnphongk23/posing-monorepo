@@ -79,6 +79,7 @@ struct APPagingFooter: View {
             case .hidden:
                 EmptyView()
             case .loading:
+                // F6: reaching the end auto-loads; the footer is only a small spinner.
                 HStack(spacing: AP.Space.space8) {
                     Image(systemName: "circle.dashed")
                         .font(AP.Font.supporting)
@@ -93,14 +94,19 @@ struct APPagingFooter: View {
                 // Fires once per appearance; the model ignores it while a page is in flight.
                 .onAppear { Task { await model.loadMore() } }
             case .loadMore:
-                Text(APPagingFooterRule.countLabel(model.state.rows.count))
-                    .font(AP.Font.caption)
-                    .foregroundStyle(AP.Color.secondaryText)
-                Button(APPagingFooterRule.loadMore) {
-                    Task { await model.loadMoreResults() }
+                // No "Load more" button any more: the same appearance auto-fetches the next page.
+                HStack(spacing: AP.Space.space8) {
+                    Image(systemName: "circle.dashed")
+                        .font(AP.Font.supporting)
+                        .foregroundStyle(AP.Color.secondaryText)
+                        .accessibilityHidden(true)
+                    Text(APPagingFooterRule.loading)
+                        .font(AP.Font.supporting)
+                        .foregroundStyle(AP.Color.secondaryText)
                 }
-                .buttonStyle(APSecondaryButtonStyle())
-                .accessibilityIdentifier("poses.loadMore.button")
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel(APPagingFooterRule.loading)
+                .onAppear { Task { await model.loadMoreResults() } }
             case .failed:
                 Button {
                     Task { await model.loadMoreResults() }

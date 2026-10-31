@@ -200,20 +200,6 @@ final class PosesAdapterTests: XCTestCase {
         XCTAssertEqual(SearchResultsCopy.heading(query: "Dancing"), "Results for “Dancing”")
     }
 
-    func testSearchResultsCopyCountLabelMatchesLoadState() {
-        XCTAssertEqual(SearchResultsCopy.countLabel(for: .loaded([sampleNativePose])), "1 pose")
-        XCTAssertEqual(SearchResultsCopy.countLabel(for: .loaded([sampleNativePose, sampleNativePose])), "2 poses")
-        XCTAssertEqual(SearchResultsCopy.countLabel(for: .loaded([])), "0 poses")
-        XCTAssertEqual(SearchResultsCopy.countLabel(for: .empty), "0 poses")
-        XCTAssertEqual(SearchResultsCopy.countLabel(for: .idle), "Searching…")
-        XCTAssertEqual(SearchResultsCopy.countLabel(for: .loading), "Searching…")
-        XCTAssertEqual(SearchResultsCopy.countLabel(for: .failed("offline")), "Unavailable")
-    }
-
-    /// Strings are `app.js:845-849` verbatim. The old expectations pinned a native invention
-    /// (`No poses found` + a `clear the search` instruction) that the prototype never renders; the
-    /// reference `search-no-match.png` shows `No poses match “zzzz”` / `Try a different pose name.`
-    /// with no card action at all.
     func testSearchResultsCopyEmptyStateCopyIsContextAware() {
         // Query present: title embeds the query, short copy, and NO card action (`app.js:847`).
         XCTAssertEqual(SearchResultsCopy.emptyTitle(query: "Dancing", filter: .all), "No poses match “Dancing”")
@@ -237,21 +223,11 @@ final class PosesAdapterTests: XCTestCase {
         XCTAssertNil(SearchResultsCopy.emptyRecoveryTitle(query: "", filter: .all))
     }
 
-    /// `app.js:837` — `searchResultsCount.hidden = filtered.length === 0`.
-    func testSearchResultsCountIsHiddenWhenNothingMatches() {
-        XCTAssertTrue(SearchResultsCopy.hidesCount(for: .empty))
-        XCTAssertFalse(SearchResultsCopy.hidesCount(for: .loaded([sampleNativePose])))
-        XCTAssertFalse(SearchResultsCopy.hidesCount(for: .idle))
-        XCTAssertFalse(SearchResultsCopy.hidesCount(for: .loading))
-        XCTAssertFalse(SearchResultsCopy.hidesCount(for: .failed("offline")))
-    }
-
     @MainActor func testUnmatchedQueryProducesEmptyStateWithoutFabricatedResults() async {
         let model = PosesViewModel(service: StubPoseService(result: [sampleNativePose]))
         model.query = "Dancing"
         await model.load()
         guard case .empty = model.state else { return XCTFail("Expected empty when the service answers []") }
-        XCTAssertEqual(SearchResultsCopy.countLabel(for: model.state), "0 poses")
     }
 
     // MARK: - Search motion contract (SCR-003-02 "Motion and animation", D6)

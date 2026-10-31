@@ -107,7 +107,9 @@ struct AccountScreen: View {
             // 32pt bordered surface inside a 44pt transparent target, and a `ToolbarItem` renders
             // its content with the platform's own button chrome, which turns that surface into a
             // heavy black box. `NeoSubscreenHeader` is what every other sub-screen already uses.
-            NeoSubscreenHeader(title: "Account", onBack: { dismiss() }) {
+            // F1: the shared page header; the sign-out control rides in its trailing slot.
+            HStack(alignment: .center, spacing: AP.Space.space12) {
+                APPageHeader(title: "Account", onBack: { dismiss() })
                 // No sign-out while a deletion is in flight: switching accounts mid-deletion would let a
                 // reply land on the next session. See `AccountSessionModel.isSignOutAvailable`.
                 if model.isSignOutAvailable {
@@ -116,6 +118,7 @@ struct AccountScreen: View {
                         accessibilityLabel: "Sign out",
                         action: { model.signOut() }
                     )
+                    .padding(.trailing, AP.Space.space16)
                 }
             }
             ScrollView {
@@ -314,6 +317,8 @@ struct SettingsScreen: View {
     var onTryPose: (CameraPoseRequest) -> Void = { _ in }
     @Environment(\.openURL) private var openURL
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject private var appearance = APAppearanceStore.shared
     @State private var showsAboutSheet = false
     @State private var showsReplayOnboarding = false
     /// FEAT-011 placement: the user-initiated upgrade entry point (no crowns, no automatic paywall
@@ -325,8 +330,18 @@ struct SettingsScreen: View {
     private let buildNumber = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "42"
 
     var body: some View {
+        VStack(spacing: 0) {
+            APPageHeader(title: "Settings", onBack: { dismiss() })
+            settingsContent
+        }
+        .background(AIPoseColor.background)
+        .neoHiddenNavigationBar()
+    }
+
+    @ViewBuilder private var settingsContent: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: AIPoseSpacing.xl) {
+                appearanceGroup
                 if AppConfig.shared.isAccountFeatureEnabled {
                     settingsGroup(title: "Account") {
                         NavigationLink(destination: AccountScreen(posesModel: posesModel, onTryPose: onTryPose)) {
@@ -437,9 +452,7 @@ struct SettingsScreen: View {
             // About already owns the outer one.
             .sheet(isPresented: $showsPaywall) { PaywallScreen() }
         }
-        .background(AIPoseColor.background)
-        .navigationTitle("Settings")
-        .navigationBarTitleDisplayMode(.inline)
+
           .sheet(isPresented: $showsAboutSheet) { AboutPosingSheet(appVersion: appVersion, buildNumber: buildNumber) }
         .fullScreenCover(isPresented: $showsReplayOnboarding) {
             OnboardingScreen { showsReplayOnboarding = false }
@@ -448,6 +461,26 @@ struct SettingsScreen: View {
         // The user can flip the permission in iOS Settings and come back; re-read on foreground.
         .onChange(of: scenePhase) { phase in
             if phase == .active { cameraAccess = CameraAccessStatus.current() }
+        }
+    }
+
+    /// F7: the header's theme toggle moved here. Writes the one appearance preference the app reads.
+    private var appearanceGroup: some View {
+        settingsGroup(title: "Appearance") {
+            ForEach(APAppearance.allCases) { option in
+                Button { appearance.appearance = option } label: {
+                    SupportSettingsRow(
+                        icon: option == .system ? "circle.lefthalf.filled" : (option == .light ? "sun.max" : "moon"),
+                        iconColor: AIPoseColor.primary,
+                        title: option.title,
+                        description: "",
+                        trailing: appearance.appearance == option ? .value("Selected") : .chevron
+                    )
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(appearance.appearance == option ? .isSelected : [])
+                .accessibilityIdentifier("settings.appearance.\(option.rawValue)")
+            }
         }
     }
 
