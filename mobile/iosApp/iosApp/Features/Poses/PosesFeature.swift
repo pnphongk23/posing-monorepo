@@ -1439,18 +1439,14 @@ struct PoseDetailScreen: View {
             guard intent == .savePose else { return }
             Task { await toggleBookmark() }
         }
-        // Shared failure surface for an action that did not stick (same pattern as Jobs actions).
-        .alert(
-            "Couldn't update this pose",
-            isPresented: Binding(
-                get: { model.bookmarkError != nil },
-                set: { if !$0 { model.bookmarkError = nil } }
-            )
-        ) {
-            Button("OK", role: .cancel) { model.bookmarkError = nil }
-        } message: {
-            Text(model.bookmarkError ?? "")
-        }
+        // F5: a save/unsave failure is a bottom snackbar above the pinned bar, never mid-screen.
+        .apSnackbar(
+            model.bookmarkError,
+            tone: .error,
+            actionTitle: "Dismiss",
+            action: { model.bookmarkError = nil },
+            onDismiss: { model.bookmarkError = nil }
+        )
         .task {
             // §3.6: a detail route is only valid while the pose is still confirmed as published.
             // Private poses skip confirmPublished (D13)
@@ -1481,14 +1477,6 @@ struct PoseDetailScreen: View {
                             tagRow(tags)
                         }
 
-                        if AppConfig.shared.isAccountFeatureEnabled, !isPrivate {
-                            saveControl
-                        }
-
-                        if isSaved, AppConfig.shared.isAccountFeatureEnabled {
-                            APStatusBanner(tone: .success, title: PoseDetailCopy.savedBanner)
-                        }
-
                         if !pose.instructions.isEmpty {
                             Text(PoseDetailCopy.howToPose)
                                 .font(AP.Font.heading)
@@ -1514,30 +1502,22 @@ struct PoseDetailScreen: View {
             }
             // BUG-261029-06: the CTA is pinned below the content instead of living at the end of it.
             .safeAreaInset(edge: .bottom, spacing: 0) { usePoseBar }
+            // The hero reaches y = 0 (artboard `04-pose-detail-loaded`): the *scroll view* ignores the
+            // top safe area, so the artwork bleeds under the status bar while the floating back control
+            // below stays inside it.
+            .ignoresSafeArea(.container, edges: .top)
             backControl
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
-    /// The floating back control over the hero (artboard `04-pose-detail-loaded`): a radius-16
-    /// `surface` square, inside the safe area so the status bar never covers it.
+    /// The floating back control over the hero (F2: the one shared component, `surface` fill for
+    /// contrast on the photo), inside the safe area so the status bar never covers it.
     private var backControl: some View {
-        Button { dismiss() } label: {
-            Image(systemName: "chevron.left")
-                .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(AP.Color.primaryText)
-                .frame(width: AP.HitTarget.minimum, height: AP.HitTarget.minimum)
-                .background(
-                    RoundedRectangle(cornerRadius: AP.Radius.radius16, style: .continuous)
-                        .fill(AP.Color.surface)
-                )
-                .apElevation(.e1, cornerRadius: AP.Radius.radius16)
-        }
-        .buttonStyle(.plain)
-        .padding(.leading, AP.Space.space16)
-        .padding(.top, AP.Space.space8)
-        .accessibilityLabel(PoseDetailCopy.back)
-        .accessibilityIdentifier("poseDetail.back")
+        APBackButton(style: .overlay, accessibilityLabel: PoseDetailCopy.back) { dismiss() }
+            .padding(.leading, AP.Space.space16)
+            .padding(.top, AP.Space.space8)
+            .accessibilityIdentifier("poseDetail.back")
     }
 
     /// Tag chips wrap: one per row at the Accessibility sizes.
@@ -1596,29 +1576,60 @@ struct PoseDetailScreen: View {
     /// end up hidden behind it. The label wraps and the bar grows with Dynamic Type, and the content
     /// inset follows it automatically — so the CTA stays on screen at accessibility sizes too.
     private var usePoseBar: some View {
-        Button {
-            routeTryPoseToCamera(pose, isPrivate: isPrivate, onTryPose: onTryPose)
-        } label: {
-            HStack(spacing: AP.Space.space8) {
-                Image(systemName: "camera")
-                    .font(.system(size: 17, weight: .semibold))
-                    .accessibilityHidden(true)
-                Text(PoseDetailCopy.tryPose)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.8)
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
+        HStack(spacing: AP.Space.space8) {
+            if showsSaveControl {
+                saveBarButton
             }
+            Button {
+                routeTryPoseToCamera(pose, isPrivate: isPrivate, onTryPose: onTryPose)
+            } label: {
+                HStack(spacing: AP.Space.space8) {
+                    Image(systemName: "camera")
+                        .font(.system(size: 17, weight: .semibold))
+                        .accessibilityHidden(true)
+                    Text(PoseDetailCopy.tryPose)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.8)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .buttonStyle(APPrimaryButtonStyle())
+            // Stable E2E handle: the Maestro flows and the detail tests target this id.
+            .accessibilityIdentifier("poseDetail.use")
         }
-        .buttonStyle(APPrimaryButtonStyle())
-        // Stable E2E handle: the Maestro flows and the detail tests target this id.
-        .accessibilityIdentifier("poseDetail.use")
         .padding(.horizontal, AP.Space.space16)
         .padding(.top, AP.Space.space12)
         .padding(.bottom, AP.Space.space8)
         .frame(maxWidth: .infinity)
         // Continues under the home indicator instead of leaving a strip of screen behind it.
         .background(AP.Color.background.ignoresSafeArea(edges: .bottom))
+    }
+
+    private var showsSaveControl: Bool {
+        AppConfig.shared.isAccountFeatureEnabled && !isPrivate
+    }
+
+    /// F9: the square Save control, left of the primary action, same height and aligned. Saved shows
+    /// the filled bookmark on the selected fill.
+    private var saveBarButton: some View {
+        Button {
+            Task { await toggleBookmark() }
+        } label: {
+            Image(systemName: isSaved ? "bookmark.fill" : "bookmark")
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(isSaved ? AP.Color.selectedForeground : AP.Color.primaryText)
+                .frame(width: 52, height: 52)
+                .background(
+                    RoundedRectangle(cornerRadius: AP.Radius.radius16, style: .continuous)
+                        .fill(isSaved ? AP.Color.selectedBackground : AP.Color.controlFill)
+                )
+        }
+        .buttonStyle(APDockPressStyle())
+        .disabled(isSaving || model.bookmarkService == nil || !model.canSave(pose))
+        .accessibilityLabel(isSaved ? "Remove from saved" : "Save pose")
+        .accessibilityIdentifier("poseDetail.saveButton")
+        .accessibilityHint(bookmarkUnavailableHint)
     }
 
     /// `04-pose-detail-unavailable`: the shared error panel, a Retry, and the way back to the list.
@@ -1693,7 +1704,6 @@ struct PoseDetailScreen: View {
                 if heroDidFail { PoseHeroFailureFill() }
             }
             .clipped()
-            .ignoresSafeArea(edges: .top)
             // Reduce Motion: the one resize still happens, it just snaps instead of easing.
             .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: heroAspectRatio)
     }
@@ -2133,11 +2143,8 @@ struct SavedPosesScreen: View {
 
     private func header(for stage: SavedSurfaceStage) -> some View {
         VStack(alignment: .leading, spacing: AP.Space.space8) {
-            Button { dismiss() } label: {
-                APHeaderActionGlyph(systemImage: "chevron.left")
-            }
-            .buttonStyle(APControlFillButtonStyle())
-            .accessibilityLabel("Back")
+            APBackButton { dismiss() }
+                .accessibilityIdentifier("saved.back")
 
             Text("Saved")
                 .font(AP.Font.display)
@@ -2174,11 +2181,7 @@ struct SavedPosesScreen: View {
         case .signInRequired:
             savedSignInRequired
         case .list:
-            listBody
-                // Entering Saved always means the saved collection: select it and load it, whatever
-                // the panel currently shows (an empty Community model must not freeze the screen on
-                // "no saved poses" without ever asking the server).
-                .task { await APSavedEntry.prepare(model: model) }
+            APSavedSurface(model: model) { listBody }
         }
     }
 
@@ -2229,20 +2232,6 @@ struct SavedPosesScreen: View {
                 onTryPose: onTryPose,
                 onNearEnd: { Task { await model.loadMore() } }
             )
-            // An unsave that fails (offline, 401, gone) must say so instead of silently doing nothing.
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                if let banner = APSavedChrome.unsaveFailure(model.bookmarkError) {
-                    APStatusBanner(
-                        tone: .error,
-                        title: banner.title,
-                        message: banner.message,
-                        actionTitle: banner.actionTitle,
-                        action: { model.bookmarkError = nil }
-                    )
-                    .padding(.horizontal, AP.Space.space16)
-                    .padding(.bottom, AP.Space.space12)
-                }
-            }
         }
     }
 
@@ -2250,16 +2239,16 @@ struct SavedPosesScreen: View {
     /// presentation is the shared state panel with the account action below it. The gate keeps its
     /// existing semantics: the tap opens the same sign-in prompt (`SignInIntent.openSaved`).
     private var savedSignInRequired: some View {
-        APIllustratedStatePanel(
+        // F4: the one shared state panel — accent-tint circle, centred copy, wide action.
+        APEmptyStateView(
             title: PoseResultsStateCopy.savedSignInTitle,
             message: PoseResultsStateCopy.savedSignInMessage,
-            glyph: "bookmark",
             actionTitle: "Sign in",
-            actionKind: .primary,
-            action: { pendingSignIn = .openSaved }
+            action: { pendingSignIn = .openSaved },
+            style: .plain,
+            glyph: "bookmark"
         )
         .accessibilityIdentifier("saved.signIn")
-        .accessibilityElement(children: .contain)
     }
 }
 

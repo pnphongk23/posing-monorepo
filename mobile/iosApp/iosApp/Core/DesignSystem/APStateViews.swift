@@ -195,6 +195,9 @@ struct APErrorStateView: View {
 /// elevation modifier's `cardStroke` hairline). `.plain` is the catalogue panel: no chrome at all, the
 /// glyph on a tone-coloured tile, centred copy and one action.
 private struct APStateCard: View {
+    /// Width cap for a panel action: wide enough to read as the panel's primary control.
+    static let panelActionWidth: CGFloat = 260
+
     let tone: APStateTone
     /// Optional glyph override (Saved uses the bookmark, not the tray).
     let glyphOverride: String?
@@ -226,7 +229,8 @@ private struct APStateCard: View {
             if let actionTitle, let action {
                 Button(actionTitle, action: action)
                     .buttonStyle(actionStyle)
-                    .fixedSize(horizontal: style == .plain, vertical: false)
+                    // Panels carry a wide action; the card style keeps the inline-size button.
+                    .frame(maxWidth: style == .plain ? APStateCard.panelActionWidth : nil)
                     .padding(.top, AP.Space.space4)
             }
         }
@@ -247,14 +251,13 @@ private struct APStateCard: View {
                 .foregroundStyle(tone.glyphColor)
                 .accessibilityHidden(true)
         case .plain:
+            // Owner feedback F4: one clean, centred icon — a 72 pt circle in the subtle accent tint
+            // with the glyph in the accent ink. No stacked or offset tiles.
             Image(systemName: glyphOverride ?? tone.glyph)
-                .font(.system(size: 30, weight: .semibold))
-                .foregroundStyle(tone.glyphColor)
+                .font(.system(size: 28, weight: .semibold))
+                .foregroundStyle(AP.Color.selectedForeground)
                 .frame(width: 72, height: 72)
-                .background(
-                    RoundedRectangle(cornerRadius: AP.Radius.radius16, style: .continuous)
-                        .fill(tone.surface)
-                )
+                .background(Circle().fill(AP.Color.selectedBackground))
                 .accessibilityHidden(true)
         }
     }
@@ -373,50 +376,6 @@ struct APStatusBanner: View {
         )
         // No hand-written label: combining the children lets SwiftUI build the announcement from the
         // Text views that are actually drawn (word, then title, then copy).
-        .accessibilityElement(children: action == nil ? .combine : .contain)
-    }
-}
-
-/// The illustrated state panel (artboards `06-saved-signed-out`, `06-saved-empty`): the accent circle
-/// carries a white glyph, the copy is centred, and the action is a real button of constrained width —
-/// not a chip hugging its label. One component for every illustrated empty/gate panel.
-struct APIllustratedStatePanel: View {
-    var title: String
-    var message: String
-    var glyph: String = "bookmark"
-    var actionTitle: String?
-    var actionKind: APButtonKind = .primary
-    var action: (() -> Void)?
-    /// Width cap for the action; `nil` keeps it as wide as the panel allows.
-    var actionMaxWidth: CGFloat? = 260
-
-    var body: some View {
-        VStack(spacing: AP.Space.space16) {
-            Image(systemName: glyph)
-                .font(.system(size: 34, weight: .semibold))
-                .foregroundStyle(AP.Color.surface)
-                .frame(width: 104, height: 104)
-                .background(Circle().fill(AP.Color.accent))
-                .accessibilityHidden(true)
-            Text(title)
-                .font(AP.Font.title)
-                .foregroundStyle(AP.Color.primaryText)
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
-            Text(message)
-                .font(AP.Font.body)
-                .foregroundStyle(AP.Color.secondaryText)
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
-            if let actionTitle, let action {
-                Button(actionTitle, action: action)
-                    .buttonStyle(APButtonStyleForKind(kind: actionKind))
-                    .frame(maxWidth: actionMaxWidth)
-                    .padding(.top, AP.Space.space8)
-            }
-        }
-        .padding(.horizontal, AP.Space.space32)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         .accessibilityElement(children: action == nil ? .combine : .contain)
     }
 }

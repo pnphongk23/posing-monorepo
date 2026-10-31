@@ -34,6 +34,31 @@ enum APSavedChrome {
     }
 }
 
+/// The signed-in Saved surface: entering it loads the saved collection, and an unsave failure is
+/// reported above whatever panel is showing. One container for every branch, so a panel that is not
+/// the row list cannot lose the entry load or the error banner.
+@MainActor
+struct APSavedSurface<Content: View>: View {
+    @ObservedObject var model: PosesViewModel
+    @ViewBuilder var content: () -> Content
+
+    var body: some View {
+        content()
+            // Entering Saved always means the saved collection: select it and load it, whatever the
+            // panel currently shows (an empty Community model must not freeze on "no saved poses"
+            // without ever asking the server).
+            .task { await APSavedEntry.prepare(model: model) }
+            // F5: a failed unsave is a bottom snackbar, above the list's own footer.
+            .apSnackbar(
+                APSavedChrome.unsaveFailure(model.bookmarkError)?.message,
+                tone: .error,
+                actionTitle: APSavedChrome.unsaveFailure(model.bookmarkError)?.actionTitle,
+                action: { model.bookmarkError = nil },
+                onDismiss: { model.bookmarkError = nil }
+            )
+    }
+}
+
 /// The count under the Saved title ("5 poses" in the artboard), singular and plural.
 enum SavedCountCopy {
     static func label(_ count: Int) -> String {

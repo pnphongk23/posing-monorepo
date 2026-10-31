@@ -41,16 +41,25 @@ final class APDetailSavedTests: XCTestCase {
 
     // MARK: - Saved lifecycle
 
-    @MainActor func testEnteringSavedSelectsTheSavedFilterAndLoadsIt() async {
-        // The S2 defect: with an empty Community model the screen never selected `.saved` nor loaded,
-        // so it showed "no saved poses" without ever asking the server.
+    @MainActor func testHostedSavedSurfaceLoadsTheSavedCollectionOnEntry() async {
+        // Wire-level: the *screen's* container does the entry load, so deleting its `.task` (or
+        // restricting it to the row list) fails here instead of only in a unit call.
         let service = SavedFilterSpyService(rows: [])
         let model = PosesViewModel(service: service, bookmarkService: StubSavedBookmarkService())
         model.filter = .community
         await model.load()
-        XCTAssertEqual(model.state.rows.count, 0)
+        XCTAssertEqual(service.posesCalls, 1)
 
-        await APSavedEntry.prepare(model: model)
+        let probe = APViewProbe(
+            APSavedSurface(model: model) { Color.clear },
+            size: CGSize(width: 393, height: 400)
+        )
+        defer { probe.tearDown() }
+        probe.settle()
+        // The surface's `.task` runs on the main actor; give it a turn to complete.
+        await Task.yield()
+        probe.settle()
+        await Task.yield()
 
         XCTAssertEqual(model.filter, .saved, "entering Saved must select the saved collection")
         XCTAssertEqual(
@@ -59,56 +68,48 @@ final class APDetailSavedTests: XCTestCase {
         )
     }
 
-    func testUnsaveFailureBannerIsOnlyShownForARealError() {
-        XCTAssertNil(APSavedChrome.unsaveFailure(nil))
-        XCTAssertNil(APSavedChrome.unsaveFailure("   "))
-        let banner = APSavedChrome.unsaveFailure("You're offline. Try again.")
-        XCTAssertEqual(banner?.title, "Couldn't update this pose")
-        XCTAssertEqual(banner?.message, "You're offline. Try again.")
-        XCTAssertEqual(banner?.actionTitle, "Dismiss")
-    }
+    @MainActor func testHostedSavedSurfaceShowsTheUnsaveFailureOnAnEmptyPanel() {
+        // The banner is mounted around the whole signed-in surface, so a panel that is not the row
+        // list still reports a failed unsave.
+        let model = PosesViewModel(service: APEmptyPoseService(), bookmarkService: StubSavedBookmarkService())
+        model.state = .empty
+        model.bookmarkError = "You're offline. Try again."
 
-    // MARK: - Rendered: the illustrated gate
-
-    @MainActor func testIllustratedGatePaintsAnAccentCircleAndAConstrainedAction() {
         let probe = APViewProbe(
-            APIllustratedStatePanel(
-                title: "Sign in to view your saved poses",
-                message: "Your saved poses are tied to your account.",
-                glyph: "bookmark",
-                actionTitle: "Sign in",
-                actionKind: .primary,
-                action: {}
-            ),
+            APSavedSurface(model: model) {
+                APEmptyStateView(title: "No saved poses yet", message: "Save a pose.", style: .plain)
+            },
             size: CGSize(width: 393, height: 560)
         )
         defer { probe.tearDown() }
         let painted = probe.capture()
 
-        // The circle is the first accent artwork down the panel; the action button comes after it.
-        let firstAccentRow = (0..<painted.height).first { y in
-            (0..<painted.width).contains { x in
-                guard let pixel = painted.color(x: x, y: y) else { return false }
-                return abs(pixel.red - 232) <= 6 && abs(pixel.green - 156) <= 6 && abs(pixel.blue - 174) <= 6
-            }
-        }
-        guard let top = firstAccentRow,
-              let circle = largestRegion(of: 0xE89CAE, in: painted, rows: top..<(top + 140)) else {
-            return XCTFail("the illustrated panel must paint its accent circle")
-        }
-        XCTAssertGreaterThanOrEqual(circle.width, 90, "the accent circle is the illustration")
-        XCTAssertEqual(circle.width, circle.height, accuracy: 3, "the illustration is a circle")
-        XCTAssertEqual(CGFloat(circle.minX) + CGFloat(circle.width) / 2, 393 / 2, accuracy: 6,
-                       "the illustration is centred")
-
-        // The action is a real button of constrained width, not a chip hugging its label.
-        let narrowestAction = painted.width / 2
-        XCTAssertLessThanOrEqual(
-            circle.width, narrowestAction,
-            "sanity: the illustration is narrower than half the panel"
+        // The snackbar's error glyph is the one place the error ink is painted, so its rows prove
+        // where the snackbar sits: bottom third, never mid-screen.
+        let glyphRows = rowsSpanned(by: 0xC8302F, in: painted, minimumWidth: 2)
+        XCTAssertFalse(glyphRows.isEmpty, "a failed unsave must show its snackbar on the empty panel too")
+        XCTAssertGreaterThanOrEqual(
+            glyphRows.min() ?? 0, painted.height * 2 / 3,
+            "the snackbar sits at the bottom, above the bottom bar — never mid-screen"
         )
-        let buttonRows = rowsSpanned(by: 0xE89CAE, in: painted, minimumWidth: 150)
-        XCTAssertFalse(buttonRows.isEmpty, "the panel's action must paint a wide accent button")
+    }
+
+    // MARK: - The shared back button (F2)
+
+    @MainActor func testBackButtonIsOne44PointControlInBothFills() {
+        // Layout, not pixels: both fills must resolve to the same 44 pt control.
+        for style in [APBackButtonStyle.control, .overlay] {
+            let host = UIHostingController(rootView: APBackButton(style: style) {})
+            host.view.frame = CGRect(x: 0, y: 0, width: 200, height: 200)
+            host.view.layoutIfNeeded()
+            let size = host.view.systemLayoutSizeFitting(
+                CGSize(width: 200, height: 200),
+                withHorizontalFittingPriority: .required,
+                verticalFittingPriority: .fittingSizeLevel
+            )
+            XCTAssertEqual(size.width, 44, accuracy: 0.5, "the back button is a 44 pt target")
+            XCTAssertEqual(size.height, 44, accuracy: 0.5, "the back button is a 44 pt target")
+        }
     }
 
     // MARK: - Rendered: Saved rows

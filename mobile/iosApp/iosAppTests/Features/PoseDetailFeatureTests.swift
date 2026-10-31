@@ -82,6 +82,43 @@ final class PoseDetailFeatureTests: XCTestCase {
         try assertHeroFillsCard(photoWidth: 1200, photoHeight: 900)
     }
 
+    /// The hero reaches y = 0 (artboard `04-pose-detail-loaded`): the artwork bleeds under the status
+    /// bar instead of starting below it with a strip of page background.
+    @MainActor func testDetailHeroBleedsToTheTopOfTheScreen() throws {
+        AppImage.configure()
+        PoseAspectRatioCache.shared.resetForTesting()
+        defer { PoseAspectRatioCache.shared.resetForTesting() }
+        let url = try SolidPhotoFixture.write(width: 900, height: 1200)
+        defer { try? FileManager.default.removeItem(at: url) }
+        _ = try awaitLoad(url: url)
+
+        let poseID = "hero-bleed-\(UUID().uuidString)"
+        let pose = NativePose(
+            id: poseID,
+            name: "Bleeding Hero Pose",
+            category: "Standing",
+            imageURL: url,
+            instructions: ["Step one"],
+            isSaved: false
+        )
+        let screen = HeroHarness(pose: pose)
+        defer { screen.tearDown() }
+        XCTAssertNotNil(screen.awaitHeroRatio(of: poseID), "the hero never reported the loaded photo ratio")
+        XCTAssertTrue(
+            screen.awaitCondition { $0.greenBounds() != nil },
+            "the hero photo never painted"
+        )
+        let image = screen.capture()
+
+        // Top row, mid width: the photo, not the page background (#FBF6EF).
+        let top = try XCTUnwrap(image.color(x: image.width / 2, y: 1), "the top row must be readable")
+        let isPageBackground = abs(top.r - 251) <= 8 && abs(top.g - 246) <= 8 && abs(top.b - 239) <= 8
+        XCTAssertFalse(
+            isPageBackground,
+            "the hero must reach y = 0, found page background at the top row: \(top)"
+        )
+    }
+
     @MainActor func testDetailHeroPlaceholderSettlesOnFailedLoad() throws {
         AppImage.configure()
         PoseAspectRatioCache.shared.resetForTesting()
@@ -139,11 +176,12 @@ final class PoseDetailFeatureTests: XCTestCase {
             accuracy: 8
         )
 
-        // The box is filled with the placeholder token, not left as bare page background.
+        // The box is filled with the placeholder token, not left as bare page background. (The hero now
+        // bleeds to y = 0, so the page colour is compared by value rather than sampled at the corner.)
         let interior = try XCTUnwrap(first.color(x: Int(card.midX) + 40, y: Int(card.minY) + 20))
-        let page = try XCTUnwrap(first.color(x: 4, y: 4))
+        let pageGreen = 246 // AP.Color.background #FBF6EF
         XCTAssertLessThan(
-            interior.g, page.g - 10,
+            interior.g, pageGreen - 10,
             "the hero box must show the placeholder fill, not the page background"
         )
 

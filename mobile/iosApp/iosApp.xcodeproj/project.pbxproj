@@ -36,6 +36,8 @@
 		A9D10C5700000000000000D1 /* APPoseDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D10C5700000000000000BE /* APPoseDetail.swift */; };
 		A9D10C5700000000000000D2 /* APSavedList.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D10C5700000000000000BF /* APSavedList.swift */; };
 		A9D10C5700000000000000D3 /* APDetailSavedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D10C5700000000000000C0 /* APDetailSavedTests.swift */; };
+		A9D10C5700000000000000D4 /* APBackButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D10C5700000000000000F1 /* APBackButton.swift */; };
+		A9D10C5700000000000000D5 /* APSnackbar.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D10C5700000000000000F2 /* APSnackbar.swift */; };
 		A9D10C5700000000000000C8 /* APCatalogLogicTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D10C5700000000000000B9 /* APCatalogLogicTests.swift */; };
 		A9D10C5700000000000000CC /* APCatalogViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D10C5700000000000000BD /* APCatalogViewTests.swift */; };
 		A9D10C5700000000000000C4 /* APDesignTokensTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D10C5700000000000000B4 /* APDesignTokensTests.swift */; };
@@ -181,6 +183,8 @@
 		A9D10C5700000000000000BE /* APPoseDetail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APPoseDetail.swift; sourceTree = "<group>"; };
 		A9D10C5700000000000000BF /* APSavedList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APSavedList.swift; sourceTree = "<group>"; };
 		A9D10C5700000000000000C0 /* APDetailSavedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APDetailSavedTests.swift; sourceTree = "<group>"; };
+		A9D10C5700000000000000F1 /* APBackButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APBackButton.swift; sourceTree = "<group>"; };
+		A9D10C5700000000000000F2 /* APSnackbar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APSnackbar.swift; sourceTree = "<group>"; };
 		A9D10C5700000000000000B9 /* APCatalogLogicTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APCatalogLogicTests.swift; sourceTree = "<group>"; };
 		A9D10C5700000000000000BD /* APCatalogViewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APCatalogViewTests.swift; sourceTree = "<group>"; };
 		A9D10C5700000000000000B4 /* APDesignTokensTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APDesignTokensTests.swift; sourceTree = "<group>"; };
@@ -325,6 +329,8 @@
 				2EE0355F95175C0D3D140424 /* AIPoseDesignSystem.swift */,
 				567850A063D54AAE95B3BEC5 /* AIPoseNavigation.swift */,
 				A9D10C5700000000000000B1 /* APDesignTokens.swift */,
+				A9D10C5700000000000000F1 /* APBackButton.swift */,
+				A9D10C5700000000000000F2 /* APSnackbar.swift */,
 				A9D10C5700000000000000B2 /* APButtonStyles.swift */,
 				A9D10C5700000000000000B3 /* APStateViews.swift */,
 			);
@@ -767,6 +773,8 @@
 				9EB5A02FEC888536D54DF563 /* AIPoseDesignSystem.swift in Sources */,
 				616DE68C034960C7053F8E35 /* AIPoseNavigation.swift in Sources */,
 				A9D10C5700000000000000C1 /* APDesignTokens.swift in Sources */,
+				A9D10C5700000000000000D4 /* APBackButton.swift in Sources */,
+				A9D10C5700000000000000D5 /* APSnackbar.swift in Sources */,
 				A9D10C5700000000000000C2 /* APButtonStyles.swift in Sources */,
 				A9D10C5700000000000000C3 /* APStateViews.swift in Sources */,
 				A9D10C5700000000000000C7 /* APCatalogViews.swift in Sources */,
