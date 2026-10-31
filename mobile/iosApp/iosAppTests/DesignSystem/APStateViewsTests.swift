@@ -261,7 +261,170 @@ final class APStateViewsTests: XCTestCase {
         )
     }
 
+    // MARK: - The one empty-state look (F4)
+
+    @MainActor func testEveryEmptyStatePaintsOneCentredSeventyTwoPointCircle() {
+        // F4: one clean, centred icon — a 72 pt accent-tint circle with the glyph in the accent ink —
+        // and no second, offset tile behind it. Asserted on painted pixels for both panel styles, so
+        // a style that grew its own artwork again fails here instead of shipping.
+        XCTAssertEqual(APStateGlyph.diameter, 72, "F4 fixes the state circle at 72 pt")
+
+        func panel(_ style: APStateCardStyle) -> some View {
+            APEmptyStateView(
+                title: "No poses yet",
+                message: "Poses you save and extract land here.",
+                style: style
+            )
+        }
+
+        let probe = APViewProbe(panel(.card), size: CGSize(width: 393, height: 420), scale: 2)
+        defer { probe.tearDown() }
+
+        for (index, style) in [APStateCardStyle.card, .plain].enumerated() {
+            let painted = index == 0 ? probe.capture() : probe.render(panel(style))
+            guard let circle = paintedBounds(of: 0xFAE0E7, in: painted, scale: 2) else {
+                return XCTFail("\(style) panel must paint its accent-tint circle")
+            }
+            XCTAssertEqual(Double(circle.height), 72, accuracy: 2, "\(style): the circle is 72 pt tall")
+            XCTAssertEqual(Double(circle.width), 72, accuracy: 2, "\(style): the circle is 72 pt wide")
+
+            // One tile: the tint is a single contiguous band of rows, not two stacked or offset ones.
+            let tintRows = painted.rows(paintedWith: 0xFAE0E7)
+            XCTAssertEqual(
+                tintRows.count, Int(circle.height * 2), accuracy: 4,
+                "\(style): the tint must be one circle, not a stack of tiles"
+            )
+
+            guard let glyph = paintedBounds(of: 0x8C3350, in: painted, scale: 2) else {
+                return XCTFail("\(style) panel must paint its glyph")
+            }
+            XCTAssertTrue(
+                circle.contains(glyph),
+                "\(style): the glyph sits inside the circle (glyph \(glyph), circle \(circle))"
+            )
+            XCTAssertEqual(glyph.midX, circle.midX, accuracy: 2, "\(style): the glyph is centred horizontally")
+            XCTAssertEqual(glyph.midY, circle.midY, accuracy: 2, "\(style): the glyph is centred vertically")
+        }
+    }
+
+    @MainActor func testTheErrorStateUsesTheSameCircleAsTheEmptyState() {
+        // F4 is one illustration for every state, so the error panel cannot grow a different one.
+        let probe = APViewProbe(
+            APErrorStateView(title: "Couldn't load jobs", message: "Check your connection.", retry: {}),
+            size: CGSize(width: 393, height: 480),
+            scale: 2
+        )
+        defer { probe.tearDown() }
+        let painted = probe.capture()
+        guard let circle = paintedBounds(of: 0xFAE0E7, in: painted, scale: 2) else {
+            return XCTFail("the error panel must paint the shared accent-tint circle")
+        }
+        XCTAssertEqual(Double(circle.height), 72, accuracy: 2, "the error circle is the shared 72 pt")
+        XCTAssertEqual(Double(circle.width), 72, accuracy: 2, "the error circle is the shared 72 pt")
+    }
+
+    @MainActor func testTheFeatureStateCardDrawsTheSameCircleInsteadOfADifferentStateLook() {
+        // The surfaces that still render through `FeatureStateView` (Jobs offline, Add pose extraction
+        // states, the account screens) draw the F4 illustration too, instead of the prototype's
+        // icon-less bordered card.
+        let probe = APViewProbe(
+            FeatureStateView(tone: .error, title: "Couldn't add pose", message: "Try again in a moment."),
+            size: CGSize(width: 393, height: 420),
+            scale: 2
+        )
+        defer { probe.tearDown() }
+        let painted = probe.capture()
+        guard let circle = paintedBounds(of: 0xFAE0E7, in: painted, scale: 2) else {
+            return XCTFail("the feature state card must paint the shared accent-tint circle")
+        }
+        XCTAssertEqual(Double(circle.height), 72, accuracy: 2, "the card uses the shared 72 pt circle")
+        XCTAssertEqual(Double(circle.width), 72, accuracy: 2, "the card uses the shared 72 pt circle")
+    }
+
+    // MARK: - The snackbar rides the bottom chrome (F5)
+
+    @MainActor func testSnackbarSitsAboveThePinnedCallToActionInsteadOfMidScreen() {
+        // F5: the toast is a `.safeAreaInset` of the bottom edge, applied INSIDE the pinned bar's
+        // inset, so it lands directly above that bar. A screen that reorders the two would leave the
+        // toast mid-screen or under the bar, and this fails.
+        let probe = APViewProbe(snackbarOverPinnedBar(), size: CGSize(width: 393, height: 700))
+        defer { probe.tearDown() }
+        let painted = probe.capture()
+
+        let snackbarRows = painted.rows(paintedWith: 0xFFFFFF)
+        let barRows = painted.rows(paintedWith: 0xE89CAE)
+        guard let snackbarTop = snackbarRows.first, let snackbarBottom = snackbarRows.last,
+              let barTop = barRows.first, let barBottom = barRows.last else {
+            return XCTFail(
+                "both the snackbar (\(snackbarRows.count) rows) and the pinned control (\(barRows.count) rows) must be painted"
+            )
+        }
+
+        XCTAssertGreaterThan(
+            snackbarTop, painted.height / 2,
+            "F5: the snackbar belongs at the bottom, never mid-screen"
+        )
+        XCTAssertLessThan(snackbarBottom, barTop, "F5: the snackbar rides above the pinned call to action")
+        XCTAssertGreaterThanOrEqual(barBottom, painted.height - 14, "the pinned bar is the bottom-most chrome")
+    }
+
     // MARK: - Helpers
+
+    /// A screen with the shared snackbar and a pinned bottom bar, stacked the way the pose detail
+    /// stacks them: the snackbar inset inside the bar's inset.
+    @MainActor
+    private func snackbarOverPinnedBar() -> some View {
+        AP.Color.background
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .apSnackbar(
+                "Couldn't save this pose",
+                tone: .error,
+                actionTitle: "Dismiss",
+                action: {},
+                onDismiss: {}
+            )
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                Button("Try this pose") {}
+                    .buttonStyle(APPrimaryButtonStyle())
+                    .padding(.horizontal, AP.Space.space16)
+                    .padding(.vertical, AP.Space.space8)
+                    .frame(maxWidth: .infinity)
+                    .background(AP.Color.background)
+            }
+    }
+
+    /// Bounding box of the pixels painted with `hex`, in points.
+    private func paintedBounds(
+        of hex: UInt32,
+        in bitmap: APBitmap,
+        scale: CGFloat,
+        tolerance: Int = 6
+    ) -> CGRect? {
+        let target = (red: Int((hex >> 16) & 0xFF), green: Int((hex >> 8) & 0xFF), blue: Int(hex & 0xFF))
+        var minX = Int.max
+        var maxX = Int.min
+        var minY = Int.max
+        var maxY = Int.min
+        for y in 0..<bitmap.height {
+            for x in 0..<bitmap.width {
+                guard let pixel = bitmap.color(x: x, y: y), pixel.alpha > 200 else { continue }
+                guard abs(pixel.red - target.red) <= tolerance,
+                      abs(pixel.green - target.green) <= tolerance,
+                      abs(pixel.blue - target.blue) <= tolerance else { continue }
+                minX = min(minX, x)
+                maxX = max(maxX, x)
+                minY = min(minY, y)
+                maxY = max(maxY, y)
+            }
+        }
+        guard minX <= maxX else { return nil }
+        return CGRect(
+            x: CGFloat(minX) / scale,
+            y: CGFloat(minY) / scale,
+            width: CGFloat(maxX - minX + 1) / scale,
+            height: CGFloat(maxY - minY + 1) / scale
+        )
+    }
 
     /// Pins the content to the top-left so "row 0..40" is where the component is drawn.
     @MainActor
