@@ -4,6 +4,10 @@ tags: [TC-CAM-021, p1]
 ---
 - runFlow: ../../../../mobile/iosApp/maestro/subflows/launch.yaml
 - runFlow: ../../../../mobile/iosApp/maestro/subflows/open-camera.yaml
+# `camera.choosePose` is the strip's Browse card since d001b80 — the strip opens expanded, so the card is
+# on screen; the tap still opens the full picker sheet (search + All/Saved).
+- assertVisible:
+    id: "camera.poseStrip"
 - tapOn:
     id: "camera.choosePose"
 # Wait for the catalogue: the no-match claim below is only meaningful over a loaded grid.

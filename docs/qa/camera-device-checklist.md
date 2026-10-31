@@ -27,8 +27,8 @@ Run this on the TestFlight (production) build — StoreKit products only resolve
 
 ## 2. Collapsed / reopened pose strip (F12)
 The camera opens **expanded**: a strip of poses plus one clear control that both hides and re-opens it. There is no
-hidden gesture and no other way back. **Build 18:** that control moves to the right end of the zoom-pill row (same glyph,
-same word) — the strip itself and the two states do not change.
+hidden gesture and no other way back. **Build 18:** that control sits at the right end of the **scale row** above the bar (same glyph, same word) — the
+strip itself and the two states do not change.
 1. From Home, tap the camera button in the bottom dock.
 - [ ] **Expected:** in the rounded panel above the bottom control bar there is a horizontal strip of pose thumbnails with
   their names, and **one** control under it reading **Poses** with a **down** chevron (VoiceOver: "Hide pose picker",
@@ -66,14 +66,14 @@ chevron, the eye once a pose is chosen, and the tools control on the right.
 - [ ] **Expected (17):** the sheet closes, the title becomes that pose's name, and an **eye** control appears between the title
   and the tools control.
 
-**Build 18:** the top bar loses the pill.
+**Build 18 — the top bar has no pose pill any more.**
 - [ ] **Build 18:** look at the top bar.
-- [ ] **Expected:** there is **no "Choose a pose" pill** any more — only **X** (`camera.close`) on the left and the **tools**
-  button on the right. Nothing in the bar says "Choose a pose".
-- [ ] **Build 18:** pick a different pose without the pill.
-- [ ] **Expected:** picking still works and the guide switches to the new pose. **The exact path is not specified yet** (the
-  Poses button only opens the strip, so Feature has to confirm how the picker sheet is reached) — record what you tapped and
-  whether a pose could be picked; do **not** mark this a pass while no path is confirmed.
+- [ ] **Expected:** no "Choose a pose" pill — only **X** (`camera.close`) on the left and the **tools** button on the right,
+  plus the **eye** once a pose is chosen. Nothing in the bar says "Choose a pose".
+- [ ] **Build 18:** pick a different pose.
+- [ ] **Expected:** the pose picker is reached from the **strip's last card, "Browse"** (magnifier icon, VoiceOver "Browse all
+  poses"): the Poses control at the right end of the scale row expands the strip, **Browse** opens the full sheet (search +
+  **All / Saved**), picking a card switches the guide and closes the sheet. Nothing else in the top bar grew a pill.
 
 3. Tap the eye.
 - [ ] **Expected:** the guide disappears and the glyph becomes a crossed-out eye (VoiceOver: "Show pose guide", value
@@ -92,15 +92,15 @@ chevron, the eye once a pose is chosen, and the tools control on the right.
 - [ ] **Expected:** only the pose **overlay** flips; the camera image behind it, and the saved photo, are exactly as they
   were — the Mirror row never mirrors your capture. (Front-camera capture mirroring is a different thing, §12.3.)
 
-**Build 18:** the popover loses its title row and its Done button — settings apply immediately.
+**Build 18 — the popover starts at Flash, and settings apply immediately.**
 - [ ] **Build 18:** open the tools popover.
-- [ ] **Expected:** no title row and **no Done button**. Change **Flash**, **Grid**, **Mirror**, **Timer**, **Ratio** and
-  **Scale** one at a time.
+- [ ] **Expected:** it opens on its **first control (Flash)** — there is **no title row and no Done button** at all. Change
+  **Flash**, **Grid**, **Mirror**, **Timer**, **Ratio** and **Scale** one at a time.
 - [ ] **Expected:** each change takes effect **immediately** behind the popover (grid drawn, guide flipped / resized, the
-  timer / ratio value showing in its row) — there is nothing to confirm.
-- [ ] **Build 18:** tap outside the popover, then repeat with the VoiceOver escape gesture.
-- [ ] **Expected:** an outside tap dismisses it; the two-finger-scrub escape also dismisses it (or the popover's own Back
-  action does). No dark scrim is left behind and the camera stays usable.
+  timer / ratio value showing in its row) — there is nothing to confirm and no save step.
+- [ ] **Build 18:** tap outside the popover, then re-open it and repeat with the VoiceOver escape gesture.
+- [ ] **Expected:** an outside tap dismisses it; the two-finger-scrub escape dismisses it too. No dark scrim is left behind,
+  the camera stays usable, and re-opening lands on Flash again.
 
 5. Tap anywhere outside the panel.
 - [ ] **Expected:** it closes with no dark scrim left behind. **Done** also closes it (17 only — see the build 18 block). Turn
@@ -153,11 +153,12 @@ chevron, the eye once a pose is chosen, and the tools control on the right.
 - [ ] Force-quit, reopen the camera.
 - [ ] **Expected:** 2x is still the highlighted zoom.
 
-**Build 18:** the pill is compact, the row carries the Poses control, and the whole bottom bar turns translucent.
-- [ ] **Build 18:** look at the zoom pill and the bar it sits in.
-- [ ] **Expected:** the pill is **compact (about 32–36 pt visible) with no background container**, still at least a 44 pt touch
-  target, and the selected level is clearly visible without the container doing the work.
-- [ ] **Expected:** the **⌃ Poses** button sits at the **right end of the zoom-pill row**; the bottom bar itself is only
+**Build 18 — compact lens-aware zoom, the Poses control in that row, and a translucent bar.**
+- [ ] **Build 18:** look at the zoom row and the bar it sits in.
+- [ ] **Expected:** the zoom choices are **0.5x · 1x · 2x** (lens-aware — a phone whose lens cannot do 0.5x simply does not
+  offer it; every phone offers 1x and 2x), each **compact (about 32–36 pt visible) with no background container**, still at
+  least a 44 pt touch target, and the selected level is clearly visible without the container doing the work.
+- [ ] **Expected:** the **⌃ Poses** button sits at the **right end of that same scale row**; the bottom bar itself is only
   thumbnail · shutter · flip.
 - [ ] **Build 18:** point the camera at a **bright** scene (a white wall or a window) and read every control in the bottom
   bar.

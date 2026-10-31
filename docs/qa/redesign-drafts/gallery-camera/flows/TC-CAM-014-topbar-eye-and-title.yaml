@@ -14,6 +14,10 @@ tags: [TC-CAM-014, p0]
 - assertNotVisible:
     id: "camera.guideToggle"
 # The title pill is the picker's entry point: it opens the sheet.
+# `camera.choosePose` is the strip's Browse card since d001b80 — the strip opens expanded, so the card is
+# on screen; the tap still opens the full picker sheet (search + All/Saved).
+- assertVisible:
+    id: "camera.poseStrip"
 - tapOn:
     id: "camera.choosePose"
 - extendedWaitUntil:

@@ -32,7 +32,9 @@ tags: [TC-CAM-032, p1]
     id: "camera.tools.mirror.switch"
 - assertVisible: "Normal"
 - tapOn:
-    id: "camera.tools.done"
+    point: "20%,45%"
+- assertNotVisible:
+    id: "camera.tools.mirror"
 - assertVisible:
     id: "camera.poseGuide"
 - assertVisible:

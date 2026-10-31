@@ -4,13 +4,13 @@ tags: [TC-CAM-016, p1]
 ---
 - runFlow: ../subflows/launch.yaml
 - runFlow: ../subflows/open-camera.yaml
-# The row is three pills, not one cycling button.
+# Lens-aware presets: 0.5x / 1x / 2x, never one cycling button. The Simulator has no capture device, so
+# the app falls back to the 1...2x range and offers exactly 1x and 2x — 0.5x is a device-only check
+# (checklist §6, an ultra-wide iPhone), which is why the assertion below is 1x/2x.
 - assertVisible:
     id: "camera.zoom.1x"
 - assertVisible:
     id: "camera.zoom.2x"
-- assertVisible:
-    id: "camera.zoom.3x"
 # Tapping 2x stays on the camera (no cycling, no navigation) — the *selection* itself is not readable yet:
 # `camera.zoom.<label>` carries the `.isSelected` trait but no accessibilityValue, so this flow cannot prove
 # which pill became current (Requests to Feature #1 in camera-guide.md). That half stays manual until it does.
