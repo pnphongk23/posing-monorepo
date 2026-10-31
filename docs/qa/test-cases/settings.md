@@ -11,16 +11,16 @@ flows stay in `docs/qa/redesign-drafts/settings-account/`.
 | ID | Pri | Preconditions | Steps | Expected | Automation |
 |---|---|---|---|---|---|
 | TC-SET-001 | P0 | Clean install | 1. Launch. 2. Open Settings. 3. Tap About. 4. Close About | Settings opens (no dock, Back returns to Poses); About opens and closes back to Settings | automated: TC-SET-001-settings-about.yaml |
-| TC-SET-002 | P1 | Camera permission denied | Tap Camera access row | iOS Settings opens; status badge reflects state | out of scope 1.1 (17): the Camera-access row is gone from the hub; camera permission is surfaced by the camera's own denied state (`camera-guide.md`) |
+| TC-SET-002 | P1 | Camera permission denied | Tap Camera access row | iOS Settings opens; status badge reflects state | out of scope 1.1 (18): the Camera-access row is gone from the hub; camera permission is surfaced by the camera's own denied state (`camera-guide.md`) |
 | TC-SET-003 | P1 | Any | Tap Terms of Use / Privacy Policy (in About after the redesign) | Each opens the real browser document | manual (destinations unit-covered by `SupportDestinationsTests.testLegalAndSupportDestinationsResolveToHTTPSURLs`) |
 | TC-SET-004 | P2 | Any | Settings → HELP → Replay onboarding | Onboarding is presented again and dismissing it returns to Settings with the hub unchanged — no sign-out, no data loss | manual |
-| TC-SET-005 | P0 | accounts flag on, signed in | Open Settings from the Poses header (gear) | Profile card on top shows avatar initials, display name and email with a chevron into Account; sections read LIBRARY (Saved, Premium) then APPEARANCE then HELP (Replay onboarding, About); no count text anywhere; Settings is pushed from the header, so it has Back and no dock | pending (ids: `settings.accountCard`, `settings.saved.row`, `settings.premium.row`, `settings.appearance.system`, `settings.appearance.light`, `settings.appearance.dark`, `settings.replayOnboarding`, `settings.about`, `settings.back`) |
+| TC-SET-005 | P0 | accounts flag on, signed in | Open Settings from the Poses header (gear) | Profile card on top shows avatar initials, display name and email with a chevron into Account; sections read LIBRARY (Saved, Premium) then APPEARANCE then HELP (Replay onboarding, About); no count text anywhere; Settings is pushed from the header, so it has Back and no dock | automated: TC-SET-005-settings-hub-signed-in.yaml |
 | TC-SET-006 | P0 | accounts flag on, signed out | Open Settings | The profile card is replaced by a "Sign in to AI Pose" card (copy about keeping Saved poses and using Premium on every device) with a Sign in control; the Saved row reads "Sign in to view" and Premium reads "Not subscribed" — a signed-out user is never promised access | automated: TC-SET-006-settings-hub-signed-out.yaml |
 | TC-SET-007 | P0 | Any appearance | 1. Settings → APPEARANCE → Light. 2. Kill and relaunch keeping data. 3. Open Settings | The chosen option is still chosen: the preference is stored, not per-session. Selecting an option changes the app immediately without leaving Settings | automated: TC-SET-007-appearance-persists.yaml |
 | TC-SET-008 | P1 | Any appearance | Settings → APPEARANCE → System | The app follows the iPhone's light/dark setting instead of pinning one; the caption explains that System follows the iPhone and must not claim it while Light or Dark is chosen (board `10-settings-hub-dark` still shows it — copy defect) | automated: TC-SET-008-appearance-caption.yaml |
-| TC-SET-009 | P1 | Camera reachable | Settings → CAMERA → Camera grid | — | **out of scope 1.1 (17)** (not built): the gap table keeps camera grid and guide-line colour inside the camera UI and records that haptics does not exist in the app at all, so this hub section is out of scope. Camera-side coverage belongs to `camera-guide.md`, not here |
-| TC-SET-010 | P1 | Camera reachable | Settings → CAMERA → Haptics | — | **out of scope 1.1 (17)** (not built): no haptics model exists anywhere in the app (gap table) |
-| TC-SET-011 | P1 | Camera reachable | Settings → CAMERA → Guide line colour | — | **out of scope 1.1 (17)** (not built): the guide colour stays a camera-side control (gap table) |
+| TC-SET-009 | P1 | Camera reachable | Settings → CAMERA → Camera grid | — | **out of scope 1.1 (18)** (not built): the gap table keeps camera grid and guide-line colour inside the camera UI and records that haptics does not exist in the app at all, so this hub section is out of scope. Camera-side coverage belongs to `camera-guide.md`, not here |
+| TC-SET-010 | P1 | Camera reachable | Settings → CAMERA → Haptics | — | **out of scope 1.1 (18)** (not built): no haptics model exists anywhere in the app (gap table) |
+| TC-SET-011 | P1 | Camera reachable | Settings → CAMERA → Guide line colour | — | **out of scope 1.1 (18)** (not built): the guide colour stays a camera-side control (gap table) |
 | TC-SET-012 | P1 | Any | Read the Premium row signed out, then signed in with a live entitlement | Signed out it reads "Not subscribed"; entitled it carries an "Active" badge; tapping opens the Premium/paywall surface and Back returns to Settings with the row unchanged | automated: TC-SET-012-premium-status-paywall.yaml |
 | TC-SET-013 | P1 | Any | Settings → HELP → About | About is a sheet (Close or swipe down), not a push: it shows an "About" header with X, the app icon, name and version `x.y.z (build)`, and rows for Terms of Use, Privacy Policy and Open-source licences; the legal rows open the browser documents and licences opens in-app. **No "Contact support" row** — the board draws one but it contradicts the no-Support-row product fact | automated: TC-SET-013-about-sheet.yaml |
 | TC-SET-014 | P2 | Any | Settings → Replay onboarding (board places it under HELP) | The onboarding is presented again over Settings and dismissing it returns to Settings with the hub unchanged | pending (ids: `settings.replayOnboarding`, `onboarding.close`) |
@@ -42,7 +42,7 @@ TC-SET-017 (error/offline card) plus the Account screen's own states in `account
 - **In-app delete confirmation / delete error** (`10-board10/11`): overridden by the product fact that
   Delete account opens the web request form — see `account.md` TC-ACC-005.
 
-## Re-baseline when build 17 lands (existing green flows)
+## Re-baselined for build 18 (existing green flows)
 
 - **TC-SET-001** — asserts the text `"Privacy"` and `"Replay onboarding guide"`; the Privacy group
   disappears and About becomes a header+X sheet with new rows. New flow: drop the Privacy assert,
@@ -76,7 +76,7 @@ TC-SET-017 (error/offline card) plus the Account screen's own states in `account
   `AIPosePaywallEnabled: "NO"` in `launch.yaml`; paywall cases keep their explicit flags through
   `launch-paywall.yaml` / `pay-launch.yaml`.
 
-## Requests to Feature (build 17 ids — all unconfirmed)
+## Requests to Feature (ids landed in build 18; remaining asks)
 
 Hub: `settings.accountCard`, `settings.saved.row`, `settings.signIn.card`, `settings.signIn.button`,
 `settings.back`, `settings.premium.status` (`Active` / `Not subscribed`; the row id exists).

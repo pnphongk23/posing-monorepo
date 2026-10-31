@@ -1,0 +1,31 @@
+# TC-SET-005 signed-in hub: profile card on top, LIBRARY then APPEARANCE then HELP
+# e2e: signs in with the run-time QA account (E2E_EMAIL / E2E_PASSWORD), so it is skipped without credentials.
+appId: ${APP_ID}
+tags: [TC-SET-005, p0, e2e]
+---
+- runFlow: ../subflows/launch-accounts-on.yaml
+- runFlow: ../subflows/pay-sign-in.yaml
+- runFlow: ../subflows/open-settings.yaml
+# The identity card IS the Account entry, and it carries the real identity.
+- assertVisible:
+    id: "settings.accountCard"
+- assertVisible:
+    id: "settings.account.row"
+- assertNotVisible:
+    id: "settings.signIn.card"
+# Sections in board order below the card.
+- assertVisible:
+    id: "settings.saved.row"
+    below:
+      id: "settings.accountCard"
+- assertVisible:
+    id: "settings.appearance.system"
+    below:
+      id: "settings.saved.row"
+- scrollUntilVisible:
+    element:
+      id: "settings.about"
+    direction: DOWN
+    visibilityPercentage: 60
+- assertVisible:
+    id: "settings.replayOnboarding"

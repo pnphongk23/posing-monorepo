@@ -3,5 +3,11 @@ appId: ${APP_ID}
 ---
 - tapOn:
     id: "poses.more"
+# The menu is a popover that animates in: aiming at its row immediately after the tap lands while it is
+# still opening (seen right after a sign-in round trip), so wait for the row itself.
+- extendedWaitUntil:
+    visible:
+      id: "poses.menu.settings"
+    timeout: 10000
 - tapOn:
     id: "poses.menu.settings"

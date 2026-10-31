@@ -1,0 +1,35 @@
+# TC-ACC-014 signed-in Account: identity, PROFILE section and the stored plan
+# e2e: signs in with the run-time QA account (E2E_EMAIL / E2E_PASSWORD).
+appId: ${APP_ID}
+tags: [TC-ACC-014, p1, e2e]
+---
+- runFlow: ../subflows/launch-accounts-on.yaml
+- runFlow: ../subflows/pay-sign-in.yaml
+- runFlow: ../subflows/open-settings.yaml
+- tapOn:
+    id: "settings.account.row"
+- assertVisible:
+    id: "account.title"
+- assertVisible:
+    id: "account.avatar"
+- assertVisible:
+    id: "account.name"
+- assertVisible:
+    id: "account.email"
+- assertVisible:
+    id: "account.profile.email"
+- assertVisible:
+    id: "account.profile.method"
+# Premium carries a reading even without an entitlement; the Manage-subscription row appears only with
+# a live one (TC-ACC-028), so it is deliberately not asserted here.
+- assertVisible:
+    id: "account.plan"
+- assertVisible:
+    id: "account.delete"
+# Back to the hub with the same identity: no signed-out flash.
+- tapOn:
+    id: "account.back"
+- assertVisible:
+    id: "settings.accountCard"
+- assertNotVisible:
+    id: "settings.signIn.card"
