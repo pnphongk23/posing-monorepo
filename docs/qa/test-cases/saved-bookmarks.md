@@ -5,8 +5,8 @@ destination** (header with Back, no dock), reached from Settings → Library →
 menu. It is account-scoped: the list belongs to the signed-in account and only to it.
 
 Board source: `/tmp/ds-261030/export-c/06-board01..10.png`. Gap source: `/tmp/gap/05-06.md` §06. The board
-slice landed in `1925f5c` + `6eab7c9` (undo, offline rows, board copy) — **not** ancestors of the 1.1 (17)
-build `a03d03a`, so these cases run on **1.1 (18)**.
+slice landed in `1925f5c` + `6eab7c9` (undo, offline rows, board copy) — present in **1.1 (18)** but
+**not** in the 1.1 (17) build `a03d03a`, where they were a regression-only pass.
 
 Status legend: `automated:` = committed flow that passes, `draft:` = flow in
 `docs/qa/redesign-drafts/saved-paywall/` (not yet run), `unit:` = XCTest only, `pending` = blocked on an id
@@ -52,9 +52,8 @@ Agreed with the Feature lane for this slice — the flows must not assert agains
 
 ## Build gate
 
-None of this runs on 1.1 (17): `1925f5c`/`6eab7c9` are not ancestors of `a03d03a`, and the slice's ids
-(`saved.offlineBanner`) are absent there. Run on **1.1 (18)** after the integration, re-verifying the ids in
-committed source at that sha first.
+This runs on **1.1 (18)**, where `1925f5c`/`6eab7c9` are ancestors and `saved.offlineBanner` exists. (On
+1.1 (17) the slice's ids were absent, so only TC-SAV-001 ran there — see the drafts README for that run.)
 
 ## Requests to Feature (ids still worth adding)
 

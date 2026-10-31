@@ -1,4 +1,4 @@
-# Paywall and purchase (FEAT-011, redesigned build 17)
+# Paywall and purchase (FEAT-011, redesigned build 18)
 
 Business behaviour of the paid surface: what the user is offered, what the app may claim about it, and
 what happens while the App Store is talking. Premium unlocks **capture with the full pose camera** and
@@ -54,24 +54,29 @@ id or on data, `out of scope 1.1` = agreed out of this release.
 - Email-sign-in specifics (validation, submitting, wrong password, offline) and the "Forgot password?"
   link belong to the sign-in surface, not this doc; **password reset is out of scope 1.1**.
 
-## Re-baselining when build 17 lands
+## Re-baselining that landed with build 18
 
 Rows marked **re-baseline** above change their expected result or their copy, so their flows/assertions
 must be updated in the same commit that promotes them: TC-PAY-001, 003, 004, 006, 007, 008, 009, 010, 012,
 014, 015, 017, 018, 020. Unaffected: 002, 005, 011, 013, 016. New in 1.1: 019, 020, 021.
 
-## Build 1.1 (17) = regression only
+## Build 1.1 (17) — historical
 
-The build-17 app (`a03d03a`) has the support-screen split but **not** the paywall redesign (none of
-`paywall.benefit`, `paywall.offline`, `paywall.notice`, `paywall.signin.sheet`, `paywall.signin.close` is in
-it), so the 17 run verifies the eight existing flows (**TC-PAY-001/002/003/004/005/006/008/009**) as
-regressions and the drafts below wait for **1.1 (18)**.
+The build-17 app (`a03d03a`) had the support-screen split but **not** the paywall redesign, so the 17 run
+verified the eight existing flows as regressions (all PASS; see the drafts README for the run table). Those
+results are history: the redesign is in **1.1 (18)**, which is what the cases below now describe.
+
+## Build 1.1 (18) — first run against the redesign
+
+Re-baselined before the run (flow defects, not app bugs): `TC-PAY-003` and `TC-PAY-005` now assert the
+signed-out CTA label ("Sign in to subscribe") and open `paywall.signin.sheet`, and
+`subflows/pay-buy-monthly.yaml` asserts the single "Subscribe" CTA instead of "Continue with Monthly".
 
 ## Promotable at the 1.1 (18) run
 
 Verified against committed source at `a03d03a` (the paywall redesign had **not** landed there, and the
 redesign's new ids — `paywall.benefit`, `paywall.offline`, `paywall.notice`, `paywall.signin.sheet`,
-`paywall.signin.close` — are still pending commit, so nothing that depends on them is promoted; these run
+`paywall.signin.close` — are committed in build 18, so the drafts that use them are promoted with this run; these run
 against the current surface and their re-baseline notes stay open): `paywall.close`, `paywall.cta`,
 `paywall.plan.annual`, `paywall.plan.monthly`, `paywall.signin.apple`, `paywall.signin`, `paywall.status`,
 `signin.emailEntry`. So **TC-PAY-012, 013, 015, 017** are promoted with the run (012/013 need the Dev Test

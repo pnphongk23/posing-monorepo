@@ -1,4 +1,8 @@
 # TC-PAY-003 the paywall shown to a signed-out user asks them to sign in
+#
+# Redesigned build 18: the paywall keeps the offer on screen and the CTA answers "Sign in to subscribe",
+# which opens the sign-in sheet (`paywall.signin.sheet`). Asserting the sheet (not a bare button id) is what
+# proves the user is told *why* they must sign in before buying.
 appId: ${APP_ID}
 tags: [TC-PAY-003, p1]
 ---
@@ -11,5 +15,18 @@ tags: [TC-PAY-003, p1]
     id: "camera.shutter"
 - extendedWaitUntil:
     visible:
-      id: "paywall.signin"
-    timeout: 10000
+      id: "paywall.cta"
+    timeout: 20000
+- assertVisible: "Sign in to subscribe"
+- tapOn:
+    id: "paywall.cta"
+- extendedWaitUntil:
+    visible:
+      id: "paywall.signin.sheet"
+    timeout: 20000
+- assertVisible:
+    id: "paywall.signin.apple"
+- tapOn:
+    id: "paywall.signin.close"
+- assertNotVisible:
+    id: "paywall.signin.sheet"

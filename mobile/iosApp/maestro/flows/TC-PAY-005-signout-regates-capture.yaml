@@ -40,7 +40,18 @@ tags: [TC-PAY-005, p1, e2e]
     id: "camera.shutter"
 # Signed out is its own gate branch (PremiumGate G4), so this asserts the paywall returns; it cannot
 # by itself prove the entitlement was dropped — TC-PAY-006 is the carry-over check.
+# Redesigned build 18: signed out the paywall answers "Sign in to subscribe" and the ways in live in
+# `paywall.signin.sheet`, so the gate is asserted by opening it.
 - extendedWaitUntil:
     visible:
-      id: "paywall.signin"
+      id: "paywall.cta"
     timeout: 20000
+- assertVisible: "Sign in to subscribe"
+- tapOn:
+    id: "paywall.cta"
+- extendedWaitUntil:
+    visible:
+      id: "paywall.signin.sheet"
+    timeout: 20000
+- assertVisible:
+    id: "paywall.signin.apple"

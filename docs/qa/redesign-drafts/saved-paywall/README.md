@@ -1,4 +1,4 @@
-# Redesign drafts — Saved + Paywall (build 17)
+# Redesign drafts — Saved + Paywall (build 18)
 
 Cases live in [saved-bookmarks.md](../../test-cases/saved-bookmarks.md) and
 [paywall-purchase.md](../../test-cases/paywall-purchase.md). These flows are **drafts**: they stay outside
@@ -13,14 +13,14 @@ build. Nothing here has run yet — the QA lead has not named a build for the re
 | Saved | 15 | 1 (TC-SAV-001) | 9 (002, 003, 004, 006, 009, 010, 012, 013, 014) | 2 (TC-SAV-008 skeleton, TC-SAV-015 undo failure) | 3 (005, 007, 011) |
 | Paywall / purchase | 21 | 8 (001–006, 008, 009) | 5 (007, 012, 013, 015, 017) | 2 (TC-PAY-010 loading, 011 processing) | 6 (014 restore ids, 016 sign-in resume, 018 offering, 019 3.1.2 disclosure ids, 020 shutter-only claim, 021 identity line ids) |
 
-MUST-COVER items for build 17 land in these rows: **Saved Undo** (TC-SAV-010), **Saved offline cached
+MUST-COVER items for build 18 land in these rows: **Saved Undo** (TC-SAV-010), **Saved offline cached
 mode** (TC-SAV-006), **Paywall 3.1.2 disclosures** (TC-PAY-019), **shutter-only claim** (TC-PAY-020),
 and the F4 state component on both screens (TC-SAV-008/009/006 + TC-PAY-007/010/012).
 
 ## Re-baselining (cases written against the pre-redesign screen)
 
 The gap table (`/tmp/gap/05-06.md` §06, `/tmp/gap/09-11.md` §11) makes several of these cases *different*
-behaviour, not just different pixels. When build 17 lands, these must be updated in the same commit that
+behaviour, not just different pixels. They were updated in the commit that promotes them that
 promotes their flow, and their existing assertions re-checked:
 
 | Case | What changes |
@@ -110,7 +110,7 @@ df -h /    # require >= 3 GiB free; under that, do not start — tell the QA lea
 touch XCTest attachments at all, so both commands are manual on this lane. Never `simctl erase`. Keep bulky
 screenshots/logs under `/tmp/qa-*`; the evidence that matters is committed under `screens/`.
 
-## Build 1.1 (17) scope: regression only — redesign waits for 1.1 (18)
+## Build 1.1 (17) scope: regression only (historical — the redesign is in 18)
 
 `/tmp/ai-pose-lane2-app-1.1/dev17/posing.app` is built from `a03d03a`. Verified with
 `git merge-base --is-ancestor <sha> a03d03a`:

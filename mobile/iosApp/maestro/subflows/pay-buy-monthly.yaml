@@ -20,7 +20,9 @@ appId: ${APP_ID}
     id: "paywall.plan.annual"
 - tapOn:
     id: "paywall.plan.monthly"
-- assertVisible: "Continue with Monthly"
+# Redesigned build 18: one CTA for every plan, labelled "Subscribe" (it used to read
+# "Continue with Monthly"). The plan choice is proven by the card tap above and by the purchase below.
+- assertVisible: "Subscribe"
 - tapOn:
     id: "paywall.cta"
 # Test Store dialog (SDK-owned, in-process): "Test valid purchase" / "Test failed purchase" / "Cancel".
