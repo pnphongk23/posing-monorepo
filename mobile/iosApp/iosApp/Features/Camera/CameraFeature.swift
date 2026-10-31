@@ -1945,7 +1945,7 @@ struct CameraBottomBar: View {
         .frame(maxWidth: .infinity)
         .background(
             RoundedTopShape(radius: AP.Radius.radius24)
-                .fill(AP.Color.secondaryBackground)
+                .fill(Color.black.opacity(0.5))
         )
         .accessibilityElement(children: .contain)
     }
@@ -2103,31 +2103,35 @@ struct CameraBottomBar: View {
         .padding(.horizontal, AP.Space.space16)
     }
 
+    /// The zoom presets: compact (owner feedback), no container, the selection marked by its own small
+    /// chip plus weight — and still a 44 pt target per preset.
     private var zoomPill: some View {
         HStack(spacing: AP.Space.space4) {
             ForEach(zoomPresets) { preset in
+                let isActive = preset == activeZoomPreset
                 Button {
                     onZoomPreset(preset)
                 } label: {
                     Text(preset.rawValue)
-                        .font(AP.Font.caption.weight(.semibold))
-                        .foregroundStyle(preset == activeZoomPreset ? AP.Color.selectedForeground : AP.Color.secondaryText)
-                        .frame(minWidth: AP.HitTarget.minimum, minHeight: AP.HitTarget.minimum)
+                        .font(.system(size: 13, weight: isActive ? .semibold : .regular))
+                        .foregroundStyle(isActive ? AP.Color.primaryText : AP.Color.secondaryText)
+                        .frame(minWidth: AP.HitTarget.minimum)
+                        .frame(height: 36)
                         .background(
-                            RoundedRectangle(cornerRadius: AP.Radius.radius16, style: .continuous)
-                                .fill(preset == activeZoomPreset ? AP.Color.selectedBackground : .clear)
+                            Capsule().fill(isActive ? AP.Color.selectedBackground : .clear)
                         )
+                        .shadow(color: .black.opacity(0.35), radius: 2, y: 1)
                 }
                 .buttonStyle(.plain)
+                .contentShape(Rectangle())
+                .frame(minHeight: AP.HitTarget.minimum)
                 .disabled(!controlsEnabled)
                 .opacity(controlsEnabled ? 1 : 0.45)
                 .accessibilityLabel("Zoom \(preset.rawValue)")
-                .accessibilityAddTraits(preset == activeZoomPreset ? [.isSelected] : [])
+                .accessibilityAddTraits(isActive ? [.isSelected] : [])
                 .accessibilityIdentifier(preset.accessibilityIdentifier)
             }
         }
-        .padding(AP.Space.space4)
-        .background(Capsule().fill(AP.Color.controlFill))
         .accessibilityElement(children: .contain)
     }
 

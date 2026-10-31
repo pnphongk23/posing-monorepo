@@ -1303,7 +1303,7 @@ final class CameraChromeTests: XCTestCase {
                 size: size
             )
 
-            let panel = hex(APColorTokens.secondaryBackground, scheme)
+            let panel = barPanelHex(scheme)
             let expandedPanel = panelRows(expanded, hex: panel)
             let collapsedPanel = panelRows(collapsed, hex: panel)
             XCTAssertGreaterThan(
@@ -1365,7 +1365,7 @@ final class CameraChromeTests: XCTestCase {
             )
 
             // The panel is shorter by the whole strip + chip, so nothing of them was drawn.
-            let panel = hex(APColorTokens.secondaryBackground, scheme)
+            let panel = barPanelHex(scheme)
             XCTAssertGreaterThan(
                 panelRows(withPicker, hex: panel).count,
                 panelRows(noPicker, hex: panel).count + 100,
@@ -1495,6 +1495,15 @@ final class CameraChromeTests: XCTestCase {
             blue: Int(hex & 0xFF),
             alpha: 255
         )
+    }
+
+    /// The bottom bar's fill: black at 50% over the screen background (owner feedback, build 18).
+    private func barPanelHex(_ scheme: ColorScheme) -> UInt32 {
+        let background = hex(APColorTokens.background, scheme)
+        let red = ((background >> 16) & 0xFF) / 2
+        let green = ((background >> 8) & 0xFF) / 2
+        let blue = (background & 0xFF) / 2
+        return (red << 16) | (green << 8) | blue
     }
 
     /// The token's value in the scheme the renderer is pinned to.
