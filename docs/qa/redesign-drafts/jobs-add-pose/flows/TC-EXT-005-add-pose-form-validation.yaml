@@ -3,8 +3,8 @@ appId: ${APP_ID}
 tags: [TC-EXT-005, p0, e2e]
 ---
 # The CTA enables only for photo + name + at least one tag; the description stops at 200.
-- runFlow: ../../../../mobile/iosApp/maestro/subflows/ext-launch.yaml
-- runFlow: ../../../../mobile/iosApp/maestro/subflows/ext-sign-in.yaml
+- runFlow: ../subflows/rd-launch.yaml
+- runFlow: ../subflows/rd-sign-in.yaml
 - tapOn:
     id: "poses.add-pose"
 - tapOn:

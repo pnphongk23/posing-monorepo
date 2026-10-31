@@ -1,0 +1,35 @@
+# Sign in with the run-time E2E account and land back on the Poses home.
+# Credentials come from `maestro -e E2E_EMAIL=... -e E2E_PASSWORD=...`, never from the repo.
+appId: ${APP_ID}
+---
+- tapOn:
+    id: "poses.more"
+- tapOn:
+    id: "poses.menu.settings"
+- tapOn:
+    id: "settings.account.row"
+- tapOn:
+    id: "signin.emailEntry"
+- tapOn:
+    id: "signin.email"
+- inputText: ${E2E_EMAIL}
+- tapOn:
+    id: "signin.password"
+- inputText: ${E2E_PASSWORD}
+- tapOn:
+    id: "signin.submit"
+# Signed-in proof: the sign-in card (email entry) is replaced by the profile + Delete account row.
+- extendedWaitUntil:
+    notVisible:
+      id: "signin.emailEntry"
+    timeout: 30000
+- extendedWaitUntil:
+    visible: "Delete account"
+    timeout: 15000
+# Account -> Settings -> Poses home.
+- tapOn: "Back"
+- tapOn: "Back"
+- extendedWaitUntil:
+    visible:
+      id: "poses.open-search"
+    timeout: 10000

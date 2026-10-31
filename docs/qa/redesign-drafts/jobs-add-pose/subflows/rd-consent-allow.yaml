@@ -1,0 +1,14 @@
+# Tap Allow on the consent sheet (used where the sheet may or may not appear).
+appId: ${APP_ID}
+---
+- extendedWaitUntil:
+    visible:
+      id: "addPose.consent.allowButton"
+    timeout: 15000
+- assertVisible:
+    id: "addPose.consent.message"
+    text: '.*saved privately to your account until you delete your account.*'
+- tapOn:
+    id: "addPose.consent.allowButton"
+- assertNotVisible:
+    id: "addPose.consent.message"

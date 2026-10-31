@@ -2,8 +2,8 @@
 appId: ${APP_ID}
 tags: [TC-JOB-012, p0, e2e]
 ---
-- runFlow: ../../../../mobile/iosApp/maestro/subflows/ext-launch.yaml
-- runFlow: ../../../../mobile/iosApp/maestro/subflows/ext-sign-in.yaml
+- runFlow: ../subflows/rd-launch.yaml
+- runFlow: ../subflows/rd-sign-in.yaml
 - tapOn:
     id: "poses.more"
 - tapOn:

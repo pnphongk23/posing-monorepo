@@ -1,0 +1,37 @@
+# TC-EXT-008 incomplete submit explains what is missing and creates nothing
+appId: ${APP_ID}
+tags: [TC-EXT-008, p0, e2e]
+---
+- runFlow: ../subflows/rd-launch.yaml
+- runFlow: ../subflows/rd-sign-in.yaml
+- tapOn:
+    id: "poses.add-pose"
+- extendedWaitUntil:
+    visible:
+      id: "addPose.submitButton"
+    timeout: 15000
+# The CTA is enabled on an incomplete form: a tap must teach, not do nothing.
+- tapOn:
+    id: "addPose.submitButton"
+- assertVisible:
+    id: "addPose.submitHint"
+- assertVisible: "Choose a photo to continue."
+- assertNotVisible:
+    id: "addPose.consent.message"
+# With a photo but no name the hint still blocks the upload.
+- tapOn:
+    id: "addPose.photoPicker"
+- extendedWaitUntil:
+    visible: "Cancel"
+    timeout: 20000
+- tapOn:
+    point: "16%,25%"
+- extendedWaitUntil:
+    visible: "Change photo"
+    timeout: 20000
+- tapOn:
+    id: "addPose.submitButton"
+- assertVisible:
+    id: "addPose.submitHint"
+- assertNotVisible:
+    id: "addPose.consent.message"
