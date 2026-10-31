@@ -1,10 +1,8 @@
 # TC-SAV-012 back from Saved returns to where it was opened
 #
-# Saved is a pushed destination (header + Back, no dock), so Back must pop to Settings/the More menu that
-# opened it — not to Poses, and not out of the app.
-#
-# Entered from the Poses More menu because the Settings → Library → Saved row has no id yet
-# (`settings.saved.row` requested); the assertion itself is about Back, which is the same on both routes.
+# Saved is a pushed destination (header + Back, no dock). Entered from Settings -> Library -> Saved (the
+# board's route, and the first route whose row has an id: `settings.saved.row`, landed in the Settings
+# rebuild), Back must pop to Settings — not to Poses, and not out of the app.
 appId: ${APP_ID}
 tags: [TC-SAV-012, p1]
 ---
@@ -12,7 +10,13 @@ tags: [TC-SAV-012, p1]
 - tapOn:
     id: "poses.more"
 - tapOn:
-    id: "poses.header.saved"
+    id: "poses.menu.settings"
+- extendedWaitUntil:
+    visible:
+      id: "settings.saved.row"
+    timeout: 20000
+- tapOn:
+    id: "settings.saved.row"
 - extendedWaitUntil:
     visible:
       id: "saved.back"
@@ -22,9 +26,12 @@ tags: [TC-SAV-012, p1]
     id: "saved.signIn"
 - tapOn:
     id: "saved.back"
+# Back on Settings, one Screen from where we left it.
 - extendedWaitUntil:
     visible:
-      id: "poses.open-search"
+      id: "settings.saved.row"
     timeout: 15000
+- assertVisible:
+    id: "poses.menu.settings"
 - assertNotVisible:
     id: "saved.back"

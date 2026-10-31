@@ -24,7 +24,9 @@ tags: [TC-SAV-002, p1]
 - tapOn:
     id: "poses.more"
 - tapOn:
-    id: "poses.header.saved"
+    id: "poses.menu.settings"
+- tapOn:
+    id: "settings.saved.row"
 # The pose just saved is the list's first row, and the list is not empty.
 - extendedWaitUntil:
     visible:

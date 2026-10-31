@@ -63,6 +63,26 @@ pending row with the reason — no case is silently unowned.
 - **Credentials** come from the gitignored `mobile/iosApp/maestro/e2e.local.env` via `-e` and every
   credential-backed draft carries the `e2e` tag. The demo account is never used.
 
+## Promotion plan for the 1.1 (17) run
+
+Ids verified against committed source at `a03d03a` (not the dirty worktree). Promoted into
+`maestro/flows/` with the run, and the matching doc row flipped to `automated: <file>`:
+
+| Case | Flow | Note |
+|---|---|---|
+| TC-SAV-002 | `TC-SAV-002-saved-list-loaded.yaml` | save from detail → listed; needs `E2E_EMAIL` |
+| TC-SAV-003 | `TC-SAV-003-unsave-removes.yaml` | row unsave → empty after reload |
+| TC-SAV-004 | `TC-SAV-004-empty-browse.yaml` | empty state + Browse poses; needs an account with nothing saved |
+| TC-SAV-009 | `TC-SAV-009-load-error-retry.yaml` | error panel + Try again; uses the Debug `-AIPoseAPIBaseURL` relaunch seam |
+| TC-SAV-012 | `TC-SAV-012-back-to-settings.yaml` | Settings → Saved → Back → Settings (`settings.saved.row`) |
+| TC-SAV-013 | `TC-SAV-013-ax3-dark.yaml` | AX3 + dark; runner sets device state and restores it |
+| TC-PAY-012 | `TC-PAY-012-purchase-failed.yaml` | Test Store "Test failed purchase" |
+| TC-PAY-013 | `TC-PAY-013-purchase-cancelled.yaml` | Test Store "Cancel" |
+| TC-PAY-015 | `TC-PAY-015-legal-links.yaml` | legal links from the paywall |
+| TC-PAY-017 | `TC-PAY-017-ax3-dark.yaml` | AX3 + dark with plans loaded (signed in, nothing bought) |
+
+Stays a draft: **TC-PAY-007** (plans-unavailable/offline has no deterministic producer on a Test Store build).
+
 ## How to run a draft (after the QA lead names a build)
 
 ```bash

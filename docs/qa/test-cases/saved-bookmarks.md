@@ -26,7 +26,7 @@ or on data, `out of scope 1.1` = agreed out of this release.
 | TC-SAV-009 | P1 | signed in, Saved load fails | 1. Open Saved with the account API unreachable | `saved.retry`: "Couldn't load saved poses" with the reassurance that saved poses are safe, and one **Try again** that retries the load in place | draft (needs `saved.retry.button`): redesign-drafts/saved-paywall/flows/TC-SAV-009-load-error-retry.yaml |
 | TC-SAV-010 | P1 | signed in, list loaded | 1. Tap the unsave control on a row | MUST COVER in 1.1 (undo is new): the row disappears and a bottom snackbar says "Removed <pose name>" with **Undo**; Undo restores the row **and** the server state, and the snackbar is the app's one recovery path for a destructive tap in a list whose purpose is keeping poses | pending ids + Feature (undo is MISSING today): `saved.unsave.<poseID>`, `saved.snackbar`, `saved.snackbar.undo` |
 | TC-SAV-011 | P1 | signed in, a saved pose with a long name | 1. Open Saved | Long titles wrap to at most three lines and keep the row's unsave control on screen at full 44 pt target; the thumbnail and the control never overlap the text | pending-e2e (needs long-name data; no layout assertion in Maestro beyond both ids visible) |
-| TC-SAV-012 | P1 | signed in | 1. Settings → Library → Saved. 2. Tap Back (`saved.back`) | Returns to Settings, not to Poses: Saved is pushed from where it was opened | draft: redesign-drafts/saved-paywall/flows/TC-SAV-012-back-to-settings.yaml |
+| TC-SAV-012 | P1 | accounts on, signed in or out | 1. Settings → Library → Saved (`settings.saved.row`). 2. Tap Back (`saved.back`) | Returns to Settings, not to Poses, and not out of the app: Saved is pushed from where it was opened. Both ids exist since the Settings rebuild, so this is the boarded route for every Saved flow | draft: redesign-drafts/saved-paywall/flows/TC-SAV-012-back-to-settings.yaml (promote at the 1.1 (17) run) |
 | TC-SAV-013 | P2 | signed in, dark appearance and AX3 text | 1. Open Saved at accessibility text size in dark mode | Rows, the sign-in gate and the empty state stay usable: the title wraps instead of clipping, the unsave control keeps at least its 44 pt target (the board draws a larger tile and glyph — the requirement is a real target with the glyph scaling with the text), and the state panel's action stays a full-width target | draft: redesign-drafts/saved-paywall/flows/TC-SAV-013-ax3-dark.yaml — **re-baseline** (unsave tile sizing) |
 
 ## Assumptions
@@ -39,6 +39,14 @@ or on data, `out of scope 1.1` = agreed out of this release.
 - TC-SAV-008's skeleton is a timing state, so it is pinned at the pure-decision level rather than raced
   in a flow.
 
+## Promotable at the 1.1 (17) run
+
+Verified against committed source at `a03d03a`: `saved.back`, `saved.signIn`, `saved.browseCommunity`,
+`saved.retry`, `saved.loading`, `settings.saved.row`, `settings.back`, `poseDetail.saveButton`,
+`poses.header.saved` all exist. So **TC-SAV-002, 003, 004, 009, 012, 013** have a flow whose ids are real and
+are promoted with the run. Still blocked: **TC-SAV-006** (offline mode) and **TC-SAV-010** (Undo) — neither
+has a producer yet, so their ids below are genuine requests, not reminders.
+
 ## Requests to Feature (ids needed before the drafts can move into `maestro/flows`)
 
 | Id | Why | Used by |
@@ -48,6 +56,5 @@ or on data, `out of scope 1.1` = agreed out of this release.
 | `saved.offline` | the offline banner (no producer today) | TC-SAV-006 |
 | `saved.rowOffline.<poseID>` | the per-row "Not saved offline" mark | TC-SAV-006 |
 | `saved.retry.button` | `saved.retry` covers the error panel; the **Try again** button inside it needs its own id | TC-SAV-009 |
-| `settings.saved.row` | the Settings → Library → Saved row is only labelled "Open Saved poses" (needed for TC-SAV-012 to enter from Settings) | TC-SAV-012 |
 
 No Saved case is out of scope for 1.1.

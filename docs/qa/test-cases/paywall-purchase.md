@@ -60,6 +60,15 @@ Rows marked **re-baseline** above change their expected result or their copy, so
 must be updated in the same commit that promotes them: TC-PAY-001, 003, 004, 006, 007, 008, 009, 010, 012,
 014, 015, 017, 018, 020. Unaffected: 002, 005, 011, 013, 016. New in 1.1: 019, 020, 021.
 
+## Promotable at the 1.1 (17) run
+
+Verified against committed source at `a03d03a` (the paywall redesign had **not** landed there, so these
+run against the current surface and their re-baseline notes stay open): `paywall.close`, `paywall.cta`,
+`paywall.plan.annual`, `paywall.plan.monthly`, `paywall.signin.apple`, `paywall.signin`, `paywall.status`,
+`signin.emailEntry`. So **TC-PAY-012, 013, 015, 017** are promoted with the run (012/013 need the Dev Test
+Store key and the E2E account; 015 taps the code-owned labels "Terms of Use" / "Privacy Policy"). Still a
+draft: **TC-PAY-007** — the unavailable/offline offer has no deterministic producer on a Test Store build.
+
 ## Requests to Feature (ids needed before the drafts can move into `maestro/flows`)
 
 | Id | Why | Used by |

@@ -27,7 +27,9 @@ tags: [TC-SAV-009, p1]
 - tapOn:
     id: "poses.more"
 - tapOn:
-    id: "poses.header.saved"
+    id: "poses.menu.settings"
+- tapOn:
+    id: "settings.saved.row"
 - extendedWaitUntil:
     visible:
       id: "saved.retry"

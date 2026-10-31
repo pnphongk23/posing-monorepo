@@ -16,7 +16,9 @@ tags: [TC-SAV-003, p1]
 - tapOn:
     id: "poses.more"
 - tapOn:
-    id: "poses.header.saved"
+    id: "poses.menu.settings"
+- tapOn:
+    id: "settings.saved.row"
 - extendedWaitUntil:
     visible: "Remove from saved"
     timeout: 25000
@@ -31,7 +33,9 @@ tags: [TC-SAV-003, p1]
 - tapOn:
     id: "poses.more"
 - tapOn:
-    id: "poses.header.saved"
+    id: "poses.menu.settings"
+- tapOn:
+    id: "settings.saved.row"
 - extendedWaitUntil:
     visible:
       id: "saved.browseCommunity"
