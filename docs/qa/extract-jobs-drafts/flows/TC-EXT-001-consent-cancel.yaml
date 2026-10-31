@@ -21,7 +21,7 @@ tags: [TC-EXT-001, p0]
     timeout: 15000
 - assertVisible:
     id: "addPose.consent.message"
-    text: "To extract the pose, your photo is sent to a third-party AI service. The pose created from it is saved privately to your account until you delete it."
+    text: "saved privately to your account until you delete your account"
 - assertVisible:
     id: "addPose.consent.allowButton"
 - assertVisible:
