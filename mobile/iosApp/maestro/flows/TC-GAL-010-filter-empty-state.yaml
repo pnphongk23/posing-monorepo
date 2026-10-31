@@ -2,7 +2,7 @@
 appId: ${APP_ID}
 tags: [TC-GAL-010, p0]
 ---
-- runFlow: ../../../../mobile/iosApp/maestro/subflows/launch.yaml
+- runFlow: ../subflows/launch.yaml
 - tapOn: "Gallery"  # TODO(QA-261029-ID) dock.gallery
 - extendedWaitUntil:
     visible:

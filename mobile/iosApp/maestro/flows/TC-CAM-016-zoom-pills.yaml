@@ -2,8 +2,8 @@
 appId: ${APP_ID}
 tags: [TC-CAM-016, p1]
 ---
-- runFlow: ../../../../mobile/iosApp/maestro/subflows/launch.yaml
-- runFlow: ../../../../mobile/iosApp/maestro/subflows/open-camera.yaml
+- runFlow: ../subflows/launch.yaml
+- runFlow: ../subflows/open-camera.yaml
 # The row is three pills, not one cycling button.
 - assertVisible:
     id: "camera.zoom.1x"
@@ -21,8 +21,8 @@ tags: [TC-CAM-016, p1]
 - assertVisible:
     id: "camera.close"
 # The zoom choice is persisted like the other camera settings.
-- runFlow: ../../../../mobile/iosApp/maestro/subflows/relaunch-keep-state.yaml
-- runFlow: ../../../../mobile/iosApp/maestro/subflows/open-camera.yaml
+- runFlow: ../subflows/relaunch-keep-state.yaml
+- runFlow: ../subflows/open-camera.yaml
 - assertVisible:
     id: "camera.zoom.2x"
 - assertVisible:

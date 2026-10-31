@@ -2,8 +2,8 @@
 appId: ${APP_ID}
 tags: [TC-CAM-019, p1]
 ---
-- runFlow: ../../../../mobile/iosApp/maestro/subflows/launch.yaml
-- runFlow: ../../../../mobile/iosApp/maestro/subflows/open-camera.yaml
+- runFlow: ../subflows/launch.yaml
+- runFlow: ../subflows/open-camera.yaml
 - assertVisible:
     id: "camera.poseStrip"
 - tapOn:
@@ -11,8 +11,8 @@ tags: [TC-CAM-019, p1]
 - assertNotVisible:
     id: "camera.poseStrip"
 # Relaunch keeping the container: the collapsed state is one of the persisted camera settings.
-- runFlow: ../../../../mobile/iosApp/maestro/subflows/relaunch-keep-state.yaml
-- runFlow: ../../../../mobile/iosApp/maestro/subflows/open-camera.yaml
+- runFlow: ../subflows/relaunch-keep-state.yaml
+- runFlow: ../subflows/open-camera.yaml
 - assertNotVisible:
     id: "camera.poseStrip"
 - assertVisible:

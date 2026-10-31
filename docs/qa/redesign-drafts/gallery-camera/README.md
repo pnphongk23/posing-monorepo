@@ -67,6 +67,16 @@ The Simulator has **no camera feed**: the camera flows assert chrome, ids, label
 this build's redesign changed). Anything that needs a captured frame — ratio crop, zoom at capture, front-camera
 mirroring, the capture snackbar — is device-checklist work (§5, §12).
 
+## Run log — 1.1 (17), build at `a03d03a`, lane-2 CF871F97, 2026-11-01 00:3x
+Promoted and run (all **PASS**): TC-CAM-006, 012, 013, 016, 018, 019, 024 + TC-GAL-010 — 8 flows, screenshots in
+`/tmp/shots-cam/`. TC-CAM-016 failed on its first attempt at the relaunch step with "app crashed or stopped"; there is **no
+`posing.camera.app` crash report**, and a SpringBoard crash lands at the same minute (00:30:52) — an environment hiccup, not
+the app: the rerun passed end to end. Everything else on this build (camera chrome, picker scopes, not-now, gallery empty/
+filter states) behaved as the cases expect.
+
+Still drafts: TC-CAM-014, 015, 021, 022, 023, 032, 033 (held — they tap `camera.choosePose` / `camera.tools.done`, both
+removed in build 18) and the device-only cases (Gallery caption/offline/tray, Timer/Ratio/Scale, saved-image checks).
+
 ## Waiting on ids (cases written, no draft yet)
 Guide **mirror** is in committed source (`da61534`) and is drafted (`TC-CAM-032-guide-mirror.yaml`). Timer, Ratio and
 guide **Scale** are in scope for 1.1 but still unlanded, so these cases have no draft:

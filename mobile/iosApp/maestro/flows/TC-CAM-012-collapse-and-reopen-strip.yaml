@@ -2,8 +2,8 @@
 appId: ${APP_ID}
 tags: [TC-CAM-012, p0]
 ---
-- runFlow: ../../../../mobile/iosApp/maestro/subflows/launch.yaml
-- runFlow: ../../../../mobile/iosApp/maestro/subflows/open-camera.yaml
+- runFlow: ../subflows/launch.yaml
+- runFlow: ../subflows/open-camera.yaml
 # A clean install opens expanded: the strip is on screen and one control owns both states.
 - assertVisible:
     id: "camera.pickerStripToggle"
