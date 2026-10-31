@@ -29,6 +29,12 @@ Credentials come only from a `chmod 600` file outside the repo
 (`mobile/iosApp/maestro/e2e.local.env`, `E2E_EMAIL` / `E2E_PASSWORD` / `E2E_EMAIL_B` / `E2E_PASSWORD_B`),
 passed to maestro with `-e`; the file is gitignored and `chmod 600`, and is never read into a report,
 printed or committed, and no credential appears in a flow.
+
+Credential-dependent flows carry the extra `e2e` tag (`tags: [TC-EXT-001, p0, e2e]`), and `run.sh` honours
+it: with no `E2E_EMAIL` in the environment it passes `--exclude-tags=e2e`, so the default
+`./run.sh <udid>` stays green without credentials; with `set -a; . e2e.local.env; set +a` exported it
+forwards `-e E2E_EMAIL/E2E_PASSWORD` (and B) and the `e2e` flows run. TC-EXT-003 carries no `e2e` tag —
+it needs no backend and runs in the default suite.
 The flows also need a real photo pushed into the simulator library
 (`xcrun simctl addmedia <udid> /tmp/<photo>.jpg`, kept outside the repo). Flows fail fast when the
 credentials are missing. **Budget: at most 2 real extraction jobs per full run (AI cost)**: TC-EXT-002

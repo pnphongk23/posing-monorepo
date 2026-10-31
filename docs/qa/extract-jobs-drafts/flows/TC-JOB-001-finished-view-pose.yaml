@@ -1,6 +1,6 @@
 # TC-JOB-001 finished job -> View pose opens the private pose detail
 appId: ${APP_ID}
-tags: [TC-JOB-001, p0]
+tags: [TC-JOB-001, p0, e2e]
 ---
 - assertTrue:
     condition: ${E2E_EMAIL != null && E2E_EMAIL.length > 0 && E2E_PASSWORD != null && E2E_PASSWORD.length > 0}

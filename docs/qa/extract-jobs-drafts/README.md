@@ -18,6 +18,10 @@ ack), so neither needs a shared job and each stays 1 case = 1 flow. The "asked o
 of TC-EXT-002 is not re-tested here — a second submit would cost a second job; it belongs to Feature's
 ack unit test.
 
+Every flow here except TC-EXT-003 is tagged `e2e` in its header, and `mobile/iosApp/maestro/run.sh`
+excludes `e2e` flows unless `E2E_EMAIL` is exported (`--exclude-tags=e2e`), so the default suite stays
+green without credentials. Move the tag along with the flow.
+
 Subflows: `ext-launch.yaml` (extraction + accounts on, clean container), `ext-sign-in.yaml`
 (`${E2E_EMAIL}`/`${E2E_PASSWORD}`), `ext-add-pose-form.yaml` (photo from the simulator library,
 name/tags), `ext-consent-allow.yaml`.
