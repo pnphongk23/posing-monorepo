@@ -27,7 +27,7 @@ Credentials are never in this repo. The QA lead supplies `mobile/iosApp/maestro/
 `E2E_PASSWORD_B`); source it in the shell and pass the values with `-e`, so they never land in a
 command line you print or in a commit. Readiness check without printing anything:
 `[ -n "$E2E_PASSWORD" ]`. Only accounts A (`E2E_EMAIL`) and B (`E2E_EMAIL_B`) are used —
-the third production account (`tester003`) is reserved for the Apple review demo and must stay clean
+the App Review demo account (`tester.posing.003`) is reserved and must stay clean
 (no jobs, no purchases), so no flow, doc example or env file may point at it:
 
 ```

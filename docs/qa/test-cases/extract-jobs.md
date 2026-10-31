@@ -23,9 +23,9 @@ recorded ack. No consent-specific launch arg; the sheet needs `-AIPoseExtractPos
 accounts flag.
 
 Run model (QA lead, 2026-10-31): TC-EXT-001, TC-EXT-002 and TC-JOB-001 run against **production** with the
-two test accounts only — account A (`E2E_EMAIL`) and account B (`E2E_EMAIL_B`). A third account
-(`tester003`) is reserved for the Apple review demo and must stay clean: no flow, doc example or env file
-uses it. Credentials come only from a `chmod 600` file outside the repo
+two test accounts only — account A (`E2E_EMAIL`) and account B (`E2E_EMAIL_B`). The App Review demo
+account (`tester.posing.003`) is reserved and must stay clean: no flow, doc example or env file uses it.
+Credentials come only from a `chmod 600` file outside the repo
 (`mobile/iosApp/maestro/e2e.local.env`, `E2E_EMAIL` / `E2E_PASSWORD` / `E2E_EMAIL_B` / `E2E_PASSWORD_B`),
 passed to maestro with `-e`; the file is gitignored and `chmod 600`, and is never read into a report,
 printed or committed, and no credential appears in a flow.
