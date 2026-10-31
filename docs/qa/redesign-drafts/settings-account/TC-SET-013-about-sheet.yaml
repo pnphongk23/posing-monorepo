@@ -1,9 +1,13 @@
-# DRAFT (move to maestro/flows once the ids are committed) — TC-SET-013 About sheet content
+# TC-SET-013 About is a sheet with the app identity and the legal rows
 appId: ${APP_ID}
-tags: [TC-SET-013, p1, draft]
+tags: [TC-SET-013, p1]
 ---
 - runFlow: ../subflows/launch.yaml
 - runFlow: ../subflows/open-settings.yaml
+- scrollUntilVisible:
+    element:
+      id: "settings.about"
+    direction: DOWN
 - tapOn:
     id: "settings.about"
 - assertVisible:
@@ -14,11 +18,11 @@ tags: [TC-SET-013, p1, draft]
     id: "about.privacy"
 - assertVisible:
     id: "about.licences"
-- assertVisible:
+# The board's "Contact support" row is deliberately not built (no Support surface).
+- assertNotVisible:
     id: "about.contact"
-# A sheet closes back to the hub, it does not stack a second Settings push.
 - tapOn:
-    id: "about.close"          # exists
+    id: "about.close"
 - assertNotVisible:
     id: "about.version"
 - assertVisible:

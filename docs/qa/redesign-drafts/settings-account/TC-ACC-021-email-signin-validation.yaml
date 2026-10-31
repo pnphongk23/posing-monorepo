@@ -1,34 +1,40 @@
-# DRAFT (move to maestro/flows once the ids are committed) — TC-ACC-021/022 empty and malformed email are refused locally
+# TC-ACC-021 empty and malformed fields are refused locally, per field
 appId: ${APP_ID}
-tags: [TC-ACC-021, p0, draft]
+tags: [TC-ACC-021, p0]
 ---
 - runFlow: ../subflows/launch-accounts-on.yaml
 - runFlow: ../subflows/open-settings.yaml
 - tapOn:
-    id: "settings.accountCard"      # or settings.account.row on the pre-redesign build
+    id: "settings.account.row"
+# The Account screen's email button keeps the long-standing `signin.emailEntry` id; the sheet's email
+# field uses the same id, so this tap opens the form and the next one focuses the field.
 - tapOn:
-    id: "signin.email"
-# Empty fields: the user is told which field is wrong, in place.
+    id: "signin.emailEntry"
+- assertVisible:
+    id: "signin.password"
 - tapOn:
     id: "signin.submit"
 - assertVisible:
-    id: "signin.error.email"
+    id: "signin.email.error"
 - assertVisible:
-    id: "signin.error.password"
-# Malformed address: refused locally, still on the sheet.
+    id: "signin.password.error"
+# A malformed address is refused on its own field...
 - tapOn:
     id: "signin.emailEntry"
 - inputText: "maya@"
 - tapOn:
+    id: "signin.password"
+- inputText: "correct horse battery"
+- tapOn:
     id: "signin.submit"
 - assertVisible:
-    id: "signin.error.email"
+    id: "signin.email.error"
 - assertNotVisible:
-    id: "signin.error.password"
-# Correcting the field clears its own error without leaving the sheet.
+    id: "signin.password.error"
+# ...and correcting it clears the error without leaving the form.
 - tapOn:
     id: "signin.emailEntry"
 - eraseText
 - inputText: "maya@example.com"
 - assertNotVisible:
-    id: "signin.error.email"
+    id: "signin.email.error"

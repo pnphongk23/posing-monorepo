@@ -1,0 +1,14 @@
+# TC-ACC-008 with accounts off the hub advertises no identity at all
+appId: ${APP_ID}
+tags: [TC-ACC-008, p1]
+---
+- runFlow: ../subflows/launch-accounts-off.yaml
+- runFlow: ../subflows/open-settings.yaml
+- assertVisible:
+    id: "settings.saved.row"
+- assertNotVisible:
+    id: "settings.account.row"
+- assertNotVisible:
+    id: "settings.accountCard"
+- assertNotVisible:
+    id: "settings.signIn.card"

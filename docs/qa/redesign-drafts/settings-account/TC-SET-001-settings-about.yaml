@@ -1,0 +1,35 @@
+# TC-SET-001 Settings opens from the Poses More menu, lists the hub sections, and About round-trips
+appId: ${APP_ID}
+tags: [TC-SET-001, p0]
+---
+- runFlow: ../subflows/launch.yaml
+- runFlow: ../subflows/open-settings.yaml
+- assertVisible:
+    id: "settings.title"
+- assertVisible:
+    id: "settings.saved.row"
+- assertVisible:
+    id: "settings.appearance.system"
+- scrollUntilVisible:
+    element:
+      id: "settings.about"
+    direction: DOWN
+- assertVisible:
+    id: "settings.about"
+- tapOn:
+    id: "settings.about"
+- assertVisible:
+    id: "about.title"
+- tapOn:
+    id: "about.close"
+- assertNotVisible:
+    id: "about.title"
+# Back on the hub, not dropped into Poses by the sheet dismissal.
+- assertVisible:
+    id: "settings.saved.row"
+- tapOn:
+    id: "settings.back"
+- assertVisible:
+    id: "poses.more"
+- assertNotVisible:
+    id: "settings.saved.row"

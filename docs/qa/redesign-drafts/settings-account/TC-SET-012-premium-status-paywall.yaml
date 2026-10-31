@@ -1,0 +1,33 @@
+# TC-SET-012 the Premium row reports the real state and opens the paywall
+appId: ${APP_ID}
+tags: [TC-SET-012, p1]
+---
+- launchApp:
+    clearState: true
+    clearKeychain: true
+    permissions:
+      camera: allow
+      photos: allow
+    arguments:
+      AIPoseAccountsEnabled: "YES"
+      AIPosePaywallEnabled: "YES"
+- extendedWaitUntil:
+    visible:
+      id: "poses.open-search"
+    timeout: 30000
+- tapOn:
+    id: "poses.more"
+- tapOn:
+    id: "poses.menu.settings"
+# Signed out with no entitlement: the row must not imply access.
+- assertVisible:
+    id: "settings.premium.status"
+    text: "Not subscribed"
+- tapOn:
+    id: "settings.premium.row"
+- assertVisible:
+    id: "paywall.close"
+- tapOn:
+    id: "paywall.close"
+- assertVisible:
+    id: "settings.premium.row"

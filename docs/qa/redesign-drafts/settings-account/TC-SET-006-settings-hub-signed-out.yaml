@@ -1,13 +1,34 @@
-# DRAFT (move to maestro/flows once the ids are committed) — TC-SET-006 Settings hub, signed out
+# TC-SET-006 signed-out hub invites sign-in and promises nothing it cannot give
+# Paywall ON explicitly: the Premium row only exists while the kill switch is on, and a flow must not
+# depend on the remote value of the day.
 appId: ${APP_ID}
-tags: [TC-SET-006, p0, draft]
+tags: [TC-SET-006, p0]
 ---
-- runFlow: ../subflows/launch-accounts-on.yaml
-- runFlow: ../subflows/open-settings.yaml
-# Signed out the identity card is replaced by an invitation, with a real control.
+- launchApp:
+    clearState: true
+    clearKeychain: true
+    permissions:
+      camera: allow
+      photos: allow
+    arguments:
+      AIPoseAccountsEnabled: "YES"
+      AIPosePaywallEnabled: "YES"
+- extendedWaitUntil:
+    visible:
+      id: "poses.open-search"
+    timeout: 30000
+- tapOn:
+    id: "poses.more"
+- tapOn:
+    id: "poses.menu.settings"
 - assertVisible:
     id: "settings.signIn.card"
-- assertVisible:
-    id: "settings.signIn.button"
+# No identity card while signed out, but the way into Account is still one tap.
 - assertNotVisible:
     id: "settings.accountCard"
+- assertVisible:
+    id: "settings.account.row"
+- assertVisible:
+    id: "settings.saved.row"
+- assertVisible:
+    id: "settings.premium.row"
