@@ -8,5 +8,9 @@ ignores them, and nothing here has been run on a simulator.
   so a draft can be moved there unchanged once Feature commits the ids it uses.
 - Every id below is requested in the "Requests to Feature" section of its test-case doc. Ids that
   already exist in committed source are marked `exists` in the flow comments.
-- Two drafts need harness pieces that do not exist yet and are called out in their headers:
-  a signed-in launch subflow (credentials) and a way to force the offline state.
+- Three drafts need harness pieces that do not exist yet and are called out in their headers: a
+  signed-in launch subflow (credentials), a way to force the offline state, and the App Store URL
+  constant behind Manage subscription.
+- Not drafted on purpose (out of scope 1.2, ideas kept in the docs): in-app delete confirmation and
+  delete error (TC-ACC-016/017), the Settings Camera section (TC-SET-009/010/011), Forgot password
+  (TC-ACC-029).

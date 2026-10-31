@@ -1,0 +1,24 @@
+# DRAFT (move to maestro/flows once the ids are committed) — TC-ACC-024 the submit control cannot be double-fired
+appId: ${APP_ID}
+tags: [TC-ACC-024, p1, draft]
+---
+- runFlow: ../subflows/launch-accounts-on.yaml
+- runFlow: ../subflows/open-settings.yaml
+- tapOn:
+    id: "settings.accountCard"
+- tapOn:
+    id: "signin.email"
+- tapOn:
+    id: "signin.emailEntry"
+- inputText: "qa-account@example.invalid"
+- tapOn:
+    id: "signin.password"
+- inputText: "not-the-password"
+- tapOn:
+    id: "signin.submit"
+# While in flight the control reports progress...
+- assertVisible:
+    id: "signin.submitting"
+# ...and it is not a second submit target.
+- assertNotVisible:
+    id: "signin.submit"

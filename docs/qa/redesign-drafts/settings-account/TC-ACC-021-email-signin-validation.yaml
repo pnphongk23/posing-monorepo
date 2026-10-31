@@ -1,0 +1,34 @@
+# DRAFT (move to maestro/flows once the ids are committed) — TC-ACC-021/022 empty and malformed email are refused locally
+appId: ${APP_ID}
+tags: [TC-ACC-021, p0, draft]
+---
+- runFlow: ../subflows/launch-accounts-on.yaml
+- runFlow: ../subflows/open-settings.yaml
+- tapOn:
+    id: "settings.accountCard"      # or settings.account.row on the pre-redesign build
+- tapOn:
+    id: "signin.email"
+# Empty fields: the user is told which field is wrong, in place.
+- tapOn:
+    id: "signin.submit"
+- assertVisible:
+    id: "signin.error.email"
+- assertVisible:
+    id: "signin.error.password"
+# Malformed address: refused locally, still on the sheet.
+- tapOn:
+    id: "signin.emailEntry"
+- inputText: "maya@"
+- tapOn:
+    id: "signin.submit"
+- assertVisible:
+    id: "signin.error.email"
+- assertNotVisible:
+    id: "signin.error.password"
+# Correcting the field clears its own error without leaving the sheet.
+- tapOn:
+    id: "signin.emailEntry"
+- eraseText
+- inputText: "maya@example.com"
+- assertNotVisible:
+    id: "signin.error.email"

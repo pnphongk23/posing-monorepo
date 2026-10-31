@@ -1,0 +1,24 @@
+# DRAFT (move to maestro/flows once the ids are committed) — TC-SET-017 the profile card when the account read fails
+# Failure is forced with an unreachable API base: https://invalid.invalid passes EndpointPolicy.validate,
+# so the override sticks and DNS fails.
+appId: ${APP_ID}
+tags: [TC-SET-017, p1, draft]
+---
+- launchApp:
+    clearState: true
+    clearKeychain: true
+    arguments:
+      AIPoseAccountsEnabled: "YES"
+      AIPoseAPIBaseURL: "https://invalid.invalid"
+- tapOn:
+    id: "poses.more"
+- tapOn:
+    id: "poses.menu.settings"
+# The card must still be there and still be a way into Account.
+- assertVisible:
+    id: "settings.accountCard"
+# ...but it must not dress a failed read up as a fresh identity.
+- assertNotVisible:
+    id: "settings.accountCard.email"
+- assertVisible:
+    id: "settings.saved.row"

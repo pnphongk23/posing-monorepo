@@ -1,5 +1,5 @@
 # DRAFT (move to maestro/flows once the ids are committed) — TC-SET-005 Settings hub, signed in
-# Needs a signed-in launch: today's subflows only launch signed out (see the note in the doc).
+# Needs a signed-in launch: today's subflows only launch signed out (see the doc's Requests section).
 appId: ${APP_ID}
 tags: [TC-SET-005, p0, draft]
 ---
@@ -10,19 +10,15 @@ tags: [TC-SET-005, p0, draft]
 # A signed-in user is never asked to sign in.
 - assertNotVisible:
     id: "settings.signIn.button"
-# Sections in board order: LIBRARY -> CAMERA -> APPEARANCE -> HELP.
+# Board order: profile card -> LIBRARY -> APPEARANCE -> HELP. No Camera section (cut by the gap table).
 - assertVisible:
     id: "settings.saved.row"
     below:
       id: "settings.accountCard"
 - assertVisible:
-    id: "settings.camera.grid"
-    below:
-      id: "settings.premium.row"
-- assertVisible:
     id: "settings.appearance.system"
     below:
-      id: "settings.camera.guideColour"
+      id: "settings.premium.row"
 - assertVisible:
     id: "settings.about"
     below:
@@ -31,3 +27,5 @@ tags: [TC-SET-005, p0, draft]
     id: "settings.appearance.light"
 - assertVisible:
     id: "settings.appearance.dark"
+- assertNotVisible:
+    id: "settings.camera.grid"
