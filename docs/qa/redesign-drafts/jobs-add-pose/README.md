@@ -19,9 +19,9 @@ when `extractPoseEnabled` is off, F8 More menu).
 | TC-EXT-004 | `flows/TC-EXT-004-add-pose-empty-state.yaml` | `addPose.choosePhoto`, `addPose.empty.seeJobs` |
 | TC-EXT-005 | `flows/TC-EXT-005-add-pose-form-validation.yaml` | `addPose.tags.addTag`, `addPose.tags.chip.<tag>`, `addPose.form.helper` |
 | TC-EXT-006 | `flows/TC-EXT-006-add-pose-photo-error.yaml` | `addPose.error.title`, `addPose.error.message`, `addPose.changePhoto` + a fixture the server rejects |
-| TC-EXT-007 | `flows/TC-EXT-007-pose-preview-publish.yaml` | **out of scope 1.1 (17)** (publish flow has no API); draft kept for later |
-| TC-EXT-008 | `flows/TC-EXT-008-incomplete-submit.yaml` | ids landed (`addPose.submitHint`); needs the 1.1 (17) Add pose UI |
-| TC-EXT-009 | `flows/TC-EXT-009-processing-status.yaml` | ids landed (`addPose.stageStatus`, `viewJobsButton`, `doneButton`); needs the 1.1 (17) UI + one real job |
+| TC-EXT-007 | `flows/TC-EXT-007-pose-preview-publish.yaml` | **out of scope 1.1 (18)** (publish flow has no API); draft kept for later |
+| TC-EXT-008 | `flows/TC-EXT-008-incomplete-submit.yaml` | ids landed (`addPose.submitHint`); needs the 1.1 (18) Add pose UI |
+| TC-EXT-009 | `flows/TC-EXT-009-processing-status.yaml` | ids landed (`addPose.stageStatus`, `viewJobsButton`, `doneButton`); needs the 1.1 (18) UI + one real job |
 | TC-JOB-001 | `flows/TC-JOB-001-finished-view-pose.yaml` | 1.1 (18) copy: `Done · added to Poses` label **and** the `viewJobsButton` path (fix ee2a4c4). The 17 app needs Done + More, as in the committed flow |
 | TC-JOB-007 | `flows/TC-JOB-007-processing-filters.yaml` | `jobs.tab.processing.count`, `jobs.filter.queued`, `jobs.filter.processing` |
 | TC-JOB-008 | `flows/TC-JOB-008-finished-filters-retry.yaml` | `jobs.filter.done`, `jobs.filter.failed` |

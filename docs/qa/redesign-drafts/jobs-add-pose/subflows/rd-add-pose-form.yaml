@@ -1,4 +1,4 @@
-# Add pose form, 1.1 (17) copy: "Change photo" / inline Add tag field / "Add pose" CTA.
+# Add pose form, 1.1 (18) copy: "Change photo" / inline Add tag field / "Add pose" CTA.
 # Tags: `addPose.tagsField` is the inline Add tag field — a comma-separated value yields two chips,
 # and text without a comma commits on blur.
 appId: ${APP_ID}

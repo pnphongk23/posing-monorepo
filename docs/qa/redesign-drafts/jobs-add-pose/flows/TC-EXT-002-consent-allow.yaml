@@ -1,6 +1,6 @@
 # TC-EXT-002 consent Allow uploads once and the job appears in Jobs
 # 1.1 (18) variant: uses the View jobs fix ee2a4c4; the 1.2 (16)/1.1 (17) runs keep Done + More.
-# 1.1 (17) copy variant: needs one approved real job before it can replace the committed flow.
+# 1.1 (18) copy variant: needs one approved real job before it can replace the committed flow.
 appId: ${APP_ID}
 tags: [TC-EXT-002, p0, e2e]
 ---
