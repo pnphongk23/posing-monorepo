@@ -14,7 +14,7 @@ flows could run today still uses the pre-redesign screen; the rows below say whi
 
 Status legend: `automated:` = committed flow that passes, `draft:` = flow in
 `docs/qa/redesign-drafts/saved-paywall/` (not yet run), `unit:` = XCTest only, `pending` = blocked on an
-id or on data, `out of scope 1.2` = agreed out of this release.
+id or on data, `out of scope 1.1` = agreed out of this release.
 
 | ID | Pri | Preconditions | Steps | Expected | Automation |
 |---|---|---|---|---|---|
@@ -52,13 +52,13 @@ id or on data, `out of scope 1.2` = agreed out of this release.
   without hardcoding a price. `paywall.status` is the outcome banner (cancelled / failed / entitled /
   unavailable) and is absent in the ready state, which is how "no error shown" is asserted.
 - Email-sign-in specifics (validation, submitting, wrong password, offline) and the "Forgot password?"
-  link belong to the sign-in surface, not this doc; **password reset is out of scope 1.2**.
+  link belong to the sign-in surface, not this doc; **password reset is out of scope 1.1**.
 
 ## Re-baselining when build 17 lands
 
 Rows marked **re-baseline** above change their expected result or their copy, so their flows/assertions
 must be updated in the same commit that promotes them: TC-PAY-001, 003, 004, 006, 007, 008, 009, 010, 012,
-014, 015, 017, 018, 020. Unaffected: 002, 005, 011, 013, 016. New in 1.2: 019, 020, 021.
+014, 015, 017, 018, 020. Unaffected: 002, 005, 011, 013, 016. New in 1.1: 019, 020, 021.
 
 ## Requests to Feature (ids needed before the drafts can move into `maestro/flows`)
 

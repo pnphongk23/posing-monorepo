@@ -1,6 +1,7 @@
-# Prod-config simulator smoke (release 1.2) — flows and results
+# Prod-config simulator smoke (release 1.1) — flows and results
 
-Release 1.2 (`release/1.2` = `ab5c9fc`), **Prod-config simulator build**, driven through flows that use
+Release 1.1, from branch `release/1.2` = `ab5c9fc` (the artifact under test was the pre-bump
+`1.2 (16)` Prod build), **Prod-config simulator build**, driven through flows that use
 **no debug launch arguments**. A Release build compiles out every `-AIPose*` override
 (`Core/Network/AppConfig.swift`: the whole `DebugLaunchArgumentOverride` reader sits inside `#if DEBUG`),
 so what these flows exercise is the shipped path: behaviour comes from the Firestore `config/app`

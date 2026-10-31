@@ -39,7 +39,7 @@ Also re-baselined on the flow side (owned here): `mobile/iosApp/maestro/subflows
 asserts the label **"Continue with Monthly"**, which the redesign replaces with "Subscribe" — that
 assertion must change with the CTA copy, or TC-PAY-004/005/006 break for a copy reason.
 
-No Saved or Paywall case is out of scope for 1.2 (the out-of-scope list — publish flow, Gallery Star,
+No Saved or Paywall case is out of scope for 1.1 (the out-of-scope list — publish flow, Gallery Star,
 in-app delete confirm, Forgot password, camera Timer/Ratio/Scale/mirror — touches no case in these two
 docs; password reset is named in the paywall doc only to keep it away from this surface).
 
