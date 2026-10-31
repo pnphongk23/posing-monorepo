@@ -2,8 +2,8 @@
 appId: ${APP_ID}
 tags: [TC-EXT-008, p0, e2e]
 ---
-- runFlow: ../subflows/rd-launch.yaml
-- runFlow: ../subflows/rd-sign-in.yaml
+- runFlow: ../subflows/ext-launch.yaml
+- runFlow: ../subflows/ext-sign-in.yaml
 - tapOn:
     id: "poses.add-pose"
 - extendedWaitUntil:

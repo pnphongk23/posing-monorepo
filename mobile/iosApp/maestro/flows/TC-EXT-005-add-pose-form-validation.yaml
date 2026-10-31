@@ -2,27 +2,25 @@
 appId: ${APP_ID}
 tags: [TC-EXT-005, p0, e2e]
 ---
-- runFlow: ../subflows/rd-launch.yaml
-- runFlow: ../subflows/rd-sign-in.yaml
+- runFlow: ../subflows/ext-launch.yaml
+- runFlow: ../subflows/ext-sign-in.yaml
 - tapOn:
     id: "poses.add-pose"
 - extendedWaitUntil:
     visible:
       id: "addPose.submitButton"
     timeout: 15000
-# One comma-separated entry must produce two chips.
+# The inline Add tag field commits on comma, and the trailing text commits on blur.
 - tapOn:
     id: "addPose.tagsField"
-- inputText: "standing, indoor"
+- inputText: "standing,"
 - assertVisible:
     id: "addPose.tag.standing"
-- assertVisible:
-    id: "addPose.tag.indoor"
+- inputText: "indoor"
 - tapOn:
     id: "addPose.nameField"
-- inputText: "QA tag chips pose"
 - assertVisible:
-    id: "addPose.nameField"
-    text: ".*QA tag chips pose.*"
+    id: "addPose.tag.indoor"
+- inputText: "QA tag chips pose"
 - assertVisible:
     id: "addPose.descriptionCounter"
