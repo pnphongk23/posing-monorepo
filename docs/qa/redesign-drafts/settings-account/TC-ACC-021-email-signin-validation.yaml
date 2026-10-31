@@ -1,4 +1,5 @@
-# TC-ACC-021 empty and malformed fields are refused locally, per field
+# DRAFT (move to maestro/flows once it is green on 1.1 (17)) — TC-ACC-021 empty fields are answered in place
+# Copy is asserted verbatim from SignIn.swift at 0632361; a reworded message must fail this flow.
 appId: ${APP_ID}
 tags: [TC-ACC-021, p0]
 ---
@@ -6,35 +7,20 @@ tags: [TC-ACC-021, p0]
 - runFlow: ../subflows/open-settings.yaml
 - tapOn:
     id: "settings.account.row"
-# The Account screen's email button keeps the long-standing `signin.emailEntry` id; the sheet's email
-# field uses the same id, so this tap opens the form and the next one focuses the field.
+# The Account screen's email button carries `signin.emailEntry`; the sheet's email field reuses it.
 - tapOn:
     id: "signin.emailEntry"
 - assertVisible:
     id: "signin.password"
 - tapOn:
     id: "signin.submit"
+# One message per empty field...
+- assertVisible: "Enter a valid email address, like name@example.com"
+- assertVisible: "Enter your password"
+# ...and the tap itself is still answered by the shared region.
+- assertVisible: "Enter your email address and password."
+# The sheet must stay open: a refused submit is not a dismissal.
 - assertVisible:
-    id: "signin.email.error"
-- assertVisible:
-    id: "signin.password.error"
-# A malformed address is refused on its own field...
-- tapOn:
-    id: "signin.emailEntry"
-- inputText: "maya@"
-- tapOn:
-    id: "signin.password"
-- inputText: "correct horse battery"
-- tapOn:
     id: "signin.submit"
 - assertVisible:
-    id: "signin.email.error"
-- assertNotVisible:
-    id: "signin.password.error"
-# ...and correcting it clears the error without leaving the form.
-- tapOn:
     id: "signin.emailEntry"
-- eraseText
-- inputText: "maya@example.com"
-- assertNotVisible:
-    id: "signin.email.error"

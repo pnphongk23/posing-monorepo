@@ -31,12 +31,12 @@ per-field errors and no offline state.
 | TC-ACC-018 | P1 | Signed in with a long display name and email | Read Account at large and AX3 text sizes | The email wraps inside its row instead of truncating or escaping the card; avatar initials stay aligned; no row overlaps its neighbour | pending (ids: `account.email`, `account.avatar`) — visual wrap check, real risk is truncation |
 | TC-ACC-019 | P1 | Signed in, on Account | Press Back | Back returns to the hub with the profile card still showing the same identity (no flash to signed-out) and no dock of its own | pending (ids: `account.back`, `settings.accountCard`) |
 | TC-ACC-020 | P1 | accounts flag off (launch arg) | Launch with accounts off, open Settings | No profile card, no sign-in card and no Account entry exist anywhere in the hub | pending (ids: `settings.accountCard`, `settings.signIn.card`; TC-ACC-008 covers today's `settings.account.row`) |
-| TC-ACC-021 | P0 | Email sign-in sheet open, nothing typed | Tap the submit control | Nothing is submitted and the field(s) show their own inline error (empty email / empty password) instead of one shared error card; the control does not leave the sheet | pending (re-baselined flow drafted in `docs/qa/redesign-drafts/settings-account/`; promoted and committed only once it is green on 1.1 (17)) |
-| TC-ACC-022 | P0 | Email sign-in sheet open | Type a malformed address (`maya@`), then a valid one | The malformed address is refused locally with an inline error and no network call; correcting it clears the error and lets the submit proceed | pending (same ids as TC-ACC-021; behaviour unit-covered by `SignIn` model tests if added) |
-| TC-ACC-023 | P1 | Valid email entered, empty/short password | Fill password with 1 character | The password error explains the requirement locally; the request is not sent; once valid, the same control submits | pending (`signin.password`, `signin.error.password`) |
+| TC-ACC-021 | P0 | Email sign-in sheet open, nothing typed | Tap Sign in | Nothing is sent; each empty field states its own problem in place — email `Enter a valid email address, like name@example.com`, password `Enter your password` — and the shared error region answers the tap with `Enter your email address and password.` The control stays tappable and the sheet stays open | pending (re-baselined flow drafted in `docs/qa/redesign-drafts/settings-account/`; promoted and committed only once it is green on 1.1 (17)) |
+| TC-ACC-022 | P0 | Email sign-in sheet open | Type a malformed address (`maya@`), fill the password, submit; then correct the address | The malformed address is refused locally with `Enter a valid email address, like name@example.com` on the email field only (no password error, no request sent — the backend contract is `z.string().trim().email()`); correcting the address clears the message without leaving the sheet | pending (same promotion rule as TC-ACC-021) |
+| TC-ACC-023 | P1 | Email sign-in sheet open | Fill a valid email, then a single-character password | The client accepts it: the password rule is presence only, because the endpoint accepts any non-empty password (`z.string().min(1)`) — a stricter client rule would refuse credentials the server honours. No `signin.password.error` appears; erasing the password brings `Enter your password` back | pending (same promotion rule as TC-ACC-021) |
 | TC-ACC-024 | P1 | Email sign-in sheet open, request in flight | Submit and watch the control | The control reports progress ("Signing in…") and cannot be tapped twice; a second tap while in flight does not create a second request | pending (no deterministic in-flight hook: the submit label turns to "Signing in" only for the length of a real request; needs a `signin.submitting` id or an injectable delay) |
-| TC-ACC-025 | P1 | Email sign-in sheet open, wrong credentials | Submit with a wrong password | The shared error card names the failure, both fields keep what was typed, and resubmitting is possible without re-entering the email | pending (`signin.error`, `signin.emailEntry`, `signin.password`; server message unit-covered by `AccountSessionTests.testSignInFailureSurfacesPromptErrorAndStaysSignedOut`) |
-| TC-ACC-026 | P1 | Email sign-in sheet open, device offline | Submit | An offline banner/notice explains the app cannot reach the service and the sheet stays usable with the typed values intact (no silent failure) — the offline state does not exist today | pending (`signin.offline`, `signin.error`) |
+| TC-ACC-025 | P1 | Email sign-in sheet open, valid-format credentials that do not exist | Submit | The shared error region (`signin.error`) names the failure while both fields keep what was typed, so the user can retry without re-entering the email; the sheet does not close | pending (needs one real request to the auth endpoint with deliberately wrong credentials — no account is created; ask the lead before promoting) |
+| TC-ACC-026 | P1 | Email sign-in sheet open, device offline | Open the sheet and read it | The offline banner `You're offline. Connect to sign in.` (`signin.offline`) is shown and the Sign in control is disabled — a tap cannot start a request that must fail. The typed values survive going back online | pending (needs a supported way to reach the offline state; an unreachable base URL is not the same thing) |
 | TC-ACC-027 | P1 | Email sign-in sheet open | Toggle the password reveal control | The password is masked by default; the reveal control shows it and hides it again, and the field keeps its value | pending (`signin.password`, `signin.showPassword` — the toggle exists) |
 | TC-ACC-028 | P1 | Signed in with a live subscription | Account → tap Manage subscription | The App Store subscription-management page opens (`https://apps.apple.com/account/subscriptions`) and the app leaves the foreground; returning shows Account unchanged. The URL itself must be pinned by a unit test, not by the flow | pending (id: `account.manageSubscription`; flow can only assert the app lost the foreground; request: `SupportDestinations` constant + `SupportDestinationsTests` case for the exact URL) |
 | TC-ACC-029 | P2 | Email sign-in sheet open | Read the sheet for a password-reset path | — | **out of scope 1.1 (17)** (idea kept): the app has no password-reset path, so the board's "Forgot password?" link is not built; recording it here stops it being reported as a regression |
@@ -61,8 +61,11 @@ per-field errors and no offline state.
 - **A2 — Delete account** is the web form only (product fact); boards 10-10/10-11 are not built.
 - **A3 — Offline** keeps the cached identity readable: a cached read is not a failure and must not look
   like one, hence a separate case from TC-ACC-012.
-- **A4 — Email sign-in validation** is assumed to become per-field inline errors (board 11-17); today it
-  is one shared card, so TC-ACC-021/022/023 are pending that change.
+- **A4 — Email sign-in validation** is now per-field (0632361): each field owns its message
+  (`signin.email.error` / `signin.password.error`) and the shared region answers a submit tap that has
+  nothing to send. The password rule is presence-only on purpose, because the endpoint accepts any
+  non-empty password — TC-ACC-023 pins that, so a future "minimum 8 characters" client rule cannot
+  silently refuse credentials the server honours.
 - **A5 — Manage subscription** URL is `https://apps.apple.com/account/subscriptions`; the flow can only
   prove the app left the foreground, so the exact URL needs the unit test named in TC-ACC-028.
 
@@ -74,7 +77,9 @@ Account: `account.back`, `account.title`, `account.avatar`, `account.name`, `acc
 `account.signout`, `account.delete`, `account.delete.reason`.
 Email sign-in: `signin.error.email`, `signin.error.password`, `signin.submitting`, `signin.offline`
 (`signin.emailEntry`, `signin.password`, `signin.submit`, `signin.error`, `signin.showPassword`,
-`signin.apple`, `signin.google` already exist; `account.signin.apple` exists too).
+`signin.apple`, `signin.email.error`, `signin.password.error`, `signin.offline` and `account.signin.apple` all exist
+as of 0632361; **`signin.google` no longer exists** — the sheet dropped "Use Google instead", and no flow or
+subflow referenced it).
 Hub side used by these cases: `settings.accountCard`, `settings.signIn.card` (see `settings.md`).
 Test-side: a `SupportDestinations` constant for the App Store subscriptions URL plus a
 `SupportDestinationsTests` assertion on the exact string (TC-ACC-028 cannot be automated without it).
