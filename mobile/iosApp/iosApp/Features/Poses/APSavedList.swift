@@ -59,6 +59,47 @@ struct APSavedSurface<Content: View>: View {
     }
 }
 
+/// When the Saved rows ask for the next page (F6).
+///
+/// The rows are the trigger, but `LazyVStack` recycles them: every one of the last four rows
+/// appears — and re-appears each time it scrolls back into view — so a raw `onAppear` asked four
+/// times for the same page and only the model's in-flight guard kept that to one request. This gate
+/// keys an *opportunity* on the paging state instead: one page is one ask, and a page that settles
+/// (landed, failed or discarded) re-arms for the next one.
+///
+/// A failed page is not an opportunity: F6 gives that decision to the footer's compact retry, so a
+/// row must never re-ask on its own and turn one failure into a retry loop.
+@MainActor
+enum APNearEndRule {
+    /// Rows from the end of the list that ask for the next page.
+    static let lookahead = 4
+
+    static func isNearEnd(index: Int, count: Int) -> Bool {
+        guard count > 0, index >= 0 else { return false }
+        return index >= count - lookahead
+    }
+
+    /// Identity of one paging opportunity: the cursor the next window starts at, plus how many
+    /// attempts have settled. Both move when a page lands or is dropped, so the same rows
+    /// re-appearing inside one page cannot ask twice.
+    static func opportunity(nextOffset: Int, completedAttempts: Int) -> String {
+        "\(nextOffset)#\(completedAttempts)"
+    }
+
+    /// - Parameter canPage: `false` while the last attempt failed (`paging.error != nil`). The list
+    ///   keeps its rows and the footer offers Retry; nothing asks again behind the user's back.
+    static func shouldTrigger(
+        index: Int,
+        count: Int,
+        opportunity: String,
+        lastOpportunity: String?,
+        canPage: Bool
+    ) -> Bool {
+        guard canPage, isNearEnd(index: index, count: count) else { return false }
+        return opportunity != lastOpportunity
+    }
+}
+
 /// Identifiers the saved rows keep from the shared grid they replaced, so the E2E lane's existing
 /// selectors still find a row.
 enum APSavedIdentifiers {
@@ -142,6 +183,10 @@ struct APSavedList: View {
     var onTryPose: (CameraPoseRequest) -> Void = { _ in }
     var onNearEnd: (() -> Void)?
 
+    /// The last paging opportunity these rows asked for. Held by the list, not the row: the four
+    /// near-end rows share one page, so they have to share one answer.
+    @State private var lastNearEndOpportunity: String?
+
     var body: some View {
         ScrollView {
             LazyVStack(spacing: 0) {
@@ -178,10 +223,27 @@ struct APSavedList: View {
         .buttonStyle(.plain)
         // The list used to be the shared grid, so its identifiers stay for the E2E lane.
         .accessibilityIdentifier(APSavedIdentifiers.row(index: index, poseID: pose.id))
-        .onAppear {
-            guard index >= poses.count - 4 else { return }
-            onNearEnd?()
-        }
+        .onAppear { requestNextPage(at: index) }
+    }
+
+    /// Ask for the next page at most once per page. `canPage` is deliberately only "the last
+    /// attempt did not fail": the model's own guard owns `hasMore` and the auto-fetch budget, and a
+    /// list with nothing owed answers the call with a no-op.
+    private func requestNextPage(at index: Int) {
+        guard onNearEnd != nil else { return }
+        let opportunity = APNearEndRule.opportunity(
+            nextOffset: model.paging.nextOffset,
+            completedAttempts: model.paging.completedAttempts
+        )
+        guard APNearEndRule.shouldTrigger(
+            index: index,
+            count: poses.count,
+            opportunity: opportunity,
+            lastOpportunity: lastNearEndOpportunity,
+            canPage: model.paging.error == nil
+        ) else { return }
+        lastNearEndOpportunity = opportunity
+        onNearEnd?()
     }
 }
 
