@@ -1,8 +1,9 @@
 # Purchase E2E (TC-PAY-004/005/006/009) — promoted and passing
 
 **Status:** all four flows pass on the lane-2 simulator (CF871F97, iPhone 16 / iOS 26.1) against
-`/tmp/ai-pose-lane2-app-1.2/dev/posing.app` (Debug-Dev 1.2 build 16, Test Store key, entitlement
-`posing_pro`), purchases made only through the RevenueCat Test Store dialog. They now live in the
+`/tmp/ai-pose-lane2-app-1.2/dev/posing.app` (Debug-Dev build from `release/1.2`, versioned `1.2 (16)` at
+the time of the run — the release is now **1.1 (17)**; Test Store key, entitlement `posing_pro`),
+purchases made only through the RevenueCat Test Store dialog. They now live in the
 suite — see `mobile/iosApp/maestro/flows/TC-PAY-00{4,5,6,9}-*.yaml` and
 `mobile/iosApp/maestro/subflows/pay-*.yaml` — and this directory keeps the rationale, the
 account-provisioning facts and the run recipe.

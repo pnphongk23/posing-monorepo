@@ -1,7 +1,8 @@
 # Prod-config simulator smoke (release 1.1) — flows and results
 
-Release 1.1, from branch `release/1.2` = `ab5c9fc` (the artifact under test was the pre-bump
-`1.2 (16)` Prod build), **Prod-config simulator build**, driven through flows that use
+Release **1.1 (17)** (marketing 1.1, build 17; the version sweep landed with main `cf4726c`). The recorded
+run below was made on the older pre-bump `1.2 (16)` Prod binary and is labelled as such — **Prod-config
+simulator build**, driven through flows that use
 **no debug launch arguments**. A Release build compiles out every `-AIPose*` override
 (`Core/Network/AppConfig.swift`: the whole `DebugLaunchArgumentOverride` reader sits inside `#if DEBUG`),
 so what these flows exercise is the shipped path: behaviour comes from the Firestore `config/app`
@@ -43,6 +44,11 @@ maestro --device "$UDID" test -e APP_ID="$APP_ID" \
 Screenshots are written by the flows into `docs/qa/prod-smoke/screens/` (one per case, at the assertion
 that proves the case).
 
+**Which cases are red by design on an older artifact:** `S-06` asserts the version string of the build it
+runs on — `posing v1.1 (Build 17)` for this release. Run it against the old pre-bump `1.2 (16)` Prod
+binary and it fails on purpose; that is the case working. Re-point it only when the version actually
+changes, never loosen it to a wildcard, or the packet stops proving which binary produced its evidence.
+
 ## Cases
 
 | Case | What the flow proves (business behaviour) | Flow |
@@ -52,7 +58,7 @@ that proves the case).
 | ~~S-03~~ | N/A by design: the in-app Support & feedback row was removed on purpose in `54dda46`; the support form URL ships in App Store Connect only. Not a gap, not a blocker. | — |
 | S-04 | The third-party-AI disclosure is shown *before* any photo leaves the device, Cancel sends nothing and records no answer, so the next submit asks again. No upload is performed (no AI cost, no job). | `flows/S-04-consent-sheet-prod.yaml` |
 | S-05 | With `paywall_enabled` on, the paid action (shutter) opens the paywall: signed out it offers Apple/Google/email in that order (S-05a), signed in it sells the production offering (S-05b); the Settings Premium entry point reaches it (S-05c) and its legal links open the real documents (S-05d). No purchase is ever started. | `flows/S-05a-paywall-signed-out.yaml`, `flows/S-05b-paywall-signed-in.yaml`, `flows/S-05c-settings-premium-row.yaml`, `flows/S-05d-legal-links.yaml` |
-| S-06 | Settings → About reports the binary the run happened on: `posing v1.2 (Build 16)`, read from the bundle. | `flows/S-06-about-version.yaml` |
+| S-06 | Settings → About reports the binary the run happened on: `posing v1.1 (Build 17)` on this release (read from the bundle). Red by design on older `1.2 (16)` binaries. | `flows/S-06-about-version.yaml` |
 
 ## S-03 is N/A by design (not a gap)
 
@@ -64,8 +70,9 @@ assert, so the case is dropped from this packet; it is not blocked and no UI cha
 
 ## Results
 
-Run: lane-2 `CF871F97`, Prod-config Release build `1.2 (16)` from `release/1.2` `ab5c9fc`,
-`CFBundleIdentifier` `posing.camera.app` (read with `plutil` from the artifact). Every case ran on its own,
+History — run on `1.2 (16)`: lane-2 `CF871F97`, Prod-config Release build `1.2 (16)` from `release/1.2`
+`ab5c9fc`, `CFBundleIdentifier` `posing.camera.app` (read with `plutil` from the artifact). Re-running the
+packet on `1.1 (17)` keeps every result below except S-06, which is re-pointed at the new binary. Every case ran on its own,
 one at a time, with `maestro --device CF871F97-… test`. Firestore `config/app` was read *through the app*:
 the Add pose header entry (extract switch) and the Settings Premium row (paywall switch) are rendered by
 the same values the gates read, so their presence/absence is the flag state as the build sees it.
@@ -91,7 +98,7 @@ option order, signed-in paywall reached, kill-switch surface present, legal link
 | S-05b | **FAIL (BLOCKED-BY-ENV)** | — (failure artifact `.maestro/tests/2026-10-31_192431`) | the gate itself works: a signed-in, unentitled account's shutter opens the paywall with no error banner. But the production offering never loads on a simulator, so the cards/prices are missing: the paywall shows its honest retryable state, "Plans are temporarily unavailable. Retry to check again.", and hides the CTA (so no purchase can be started). A `Retry` press (`Retry loading Premium plans`) reproduces it, so it is structural: a Release build on a simulator has no StoreKit products to resolve (no `.storekit` file, app not installed from the App Store, live `appl_` key, no sandbox account). The app is behaving to contract — it refuses to fabricate plans — but the price assertion cannot pass in this environment |
 | S-05c | **PASS** | `screens/S-05c-settings-premium-row.png`, `screens/S-05c-premium-row-opens-paywall.png` | Settings → Premium row is present (the in-app proof that `paywall_enabled` reached the device) and opening it shows the paywall; closing returns to Settings |
 | S-05d | **PASS** | `screens/S-05d-terms-of-service.png`, `screens/S-05d-privacy-policy.png` | Terms of Service and Privacy Policy each open in Safari on the real documents (asserted on the pages' own text, not just "a URL opened") |
-| S-06 | **PASS** | `screens/S-06-about-version.png` | Settings → About reads `posing v1.2 (Build 16)`, i.e. the binary every other row above ran on |
+| S-06 | **PASS** (run on `1.2 (16)`) | `screens/S-06-about-version.png` | Settings → About reads `posing v1.2 (Build 16)`, i.e. the binary every other row above ran on. On `1.1 (17)` the same case must read `posing v1.1 (Build 17)` |
 
 No case reds. Four runs failed on **flow defects** before passing and are worth knowing for the next lane
 (none of them is an app bug, and all are fixed in the committed files):

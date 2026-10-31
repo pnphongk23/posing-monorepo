@@ -2,8 +2,10 @@
 #
 # The About sheet reads its two values from the bundle (`CFBundleShortVersionString` /
 # `CFBundleVersion`, `SupportScreens.swift:312-313`), so this is the one in-app claim about *which*
-# binary the other cases ran against: on the 1.2 artifact it must read "posing v1.2 (Build 16)".
+# binary the other cases ran against: on release 1.1 it must read "posing v1.1 (Build 17)".
 # A wrong value here means the smoke run's evidence does not describe the release build.
+# This assertion is RED by design on the older `1.2 (16)` Prod binaries (pre-publish version bump); that
+# is the point of the case — it names the binary, so it must be re-pointed, never loosened.
 appId: ${APP_ID}
 tags: [S-06, p1]
 ---
@@ -22,7 +24,7 @@ tags: [S-06, p1]
     visible:
       id: "about.close"
     timeout: 15000
-- assertVisible: "posing v1[.]2 [(]Build 16[)]"
+- assertVisible: "posing v1[.]1 [(]Build 17[)]"
 - takeScreenshot: docs/qa/prod-smoke/screens/S-06-about-version
 - tapOn:
     id: "about.close"

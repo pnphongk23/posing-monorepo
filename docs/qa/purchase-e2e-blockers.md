@@ -28,7 +28,7 @@ RevenueCat key is reported by prefix/status only.
 - **Not usable:** the Apple sandbox flow needs a sandbox tester signed in on the device plus a
   SpringBoard password sheet — first-run interactive, so it stays manual.
 
-## Result (2026-10-31, Debug-Dev 1.2 build 16 on CF871F97, iOS 26.1)
+## Result (2026-10-31, run on Debug-Dev `1.2 (16)` on CF871F97, iOS 26.1 — current target is 1.1 (17))
 
 TC-PAY-004, TC-PAY-005, TC-PAY-006 and TC-PAY-009 all pass and are promoted into
 `mobile/iosApp/maestro/flows` with their `pay-*` subflows. Nothing is blocked.
