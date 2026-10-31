@@ -4,12 +4,14 @@ The Simulator has no camera, so the camera sections below must be done on a phys
 installed (`posing.camera.app`). Section 1 (paywall) needs a **production / TestFlight** build: a Release build on a
 Simulator cannot resolve the real StoreKit products (see `docs/qa/prod-smoke` S-05 — the offering never loads and the
 paywall falls back to "Plans are temporarily unavailable"), so the plan cards and their prices can only be verified
-on device. Budget ~20 minutes. Record the screen (Control Centre → Screen Recording) for the whole run.
+on device. Budget ~30 minutes. Record the screen (Control Centre → Screen Recording) for the whole run.
 
 **Before you start**
 - [ ] Close every other app; set brightness to ~70%; unlock rotation lock.
 - [ ] Have one pose open at least once so a pose guide exists (Home → tap any card → wait for the photo) — only needed for the camera sections.
 - [ ] You will need at least two poses for the strip, so also save a second pose if the catalogue is empty.
+- [ ] The Gallery sections need photos: capture **three** (one that stays the newest), and ideally keep one older capture from another day
+  so the date headers and the 30-day filter show something. Delete exactly one of them in section 10 — that is the point of the deletion checks.
 - [ ] Note your device model + iOS version + build number (Settings → About) at the top of your notes.
 
 ## 1. Paywall on device (TestFlight)
@@ -77,8 +79,14 @@ The whole top chrome is one row. The eye only exists once a pose is chosen.
 - [ ] **Expected:** the top bar grows, the pose name wraps onto a second line instead of being cut off, and the tools panel
   still opens **below** the bar — nothing overlaps, nothing is clipped.
 
-## 4. Pose guide drawn and kept while collapsed
-- [ ] With a pose guide on screen (line drawing over the preview), collapse the strip with the **Poses** control.
+## 4. Pose guide: placing it, drawing it, and keeping it while collapsed
+- [ ] With a pose guide on screen, pinch to scale it, twist to rotate it and drag it somewhere else on the preview.
+- [ ] **Expected:** the guide follows your fingers 1:1 and stays within sane bounds; the top bar, the strip and the bar
+  underneath do not move while you do it.
+- [ ] Open the tools panel and drag the opacity slider, then pick the other line colour.
+- [ ] **Expected:** the guide updates live behind the panel (opacity and colour), the panel stays open, and the chosen
+  colour shows a tick (not only a different fill).
+- [ ] Collapse the strip with the **Poses** control.
 - [ ] **Expected:** the guide stays exactly where it was — same size, position, opacity and colour; it does not blink, jump
   or disappear. Collapsing the strip is not the same thing as hiding the guide.
 - [ ] Reopen the strip.
@@ -133,16 +141,47 @@ Two paths: the app has never asked for the camera, and the permission was refuse
 - [ ] **Expected:** the viewfinder comes alive on return (or after re-opening the camera) without reinstalling; capture
   then works.
 
-## 9. Photo saved to Gallery — grid, ordering, opening (F10)
+## 9. Gallery — grid, ordering, filters (F10)
 - [ ] After a capture, go to the Gallery tab.
 - [ ] **Expected:** the new photo is the **first** item, under today's date header; the grid is exactly **3 columns**; there is no list/dense toggle and no photo-count text.
 - [ ] **Expected:** the header shows only the Add pose (+) button (and nothing else).
-- [ ] Tap the new photo.
-- [ ] **Expected:** it opens full screen immediately, shows the photo (not a grey box), and swiping to the next photo works.
 - [ ] Repeat with three captures in a row.
 - [ ] **Expected:** the newest is always first, each appears exactly once, and the grid never switches to 1 or 2 columns.
+- [ ] Tap each filter chip in turn: **All · Today · 7 days · 30 days**.
+- [ ] **Expected:** the grid narrows to that window and is regrouped by day; the chip you tapped reads as the active one; no
+  count text appears anywhere. A window with no photos says "No photos in this filter" and offers **no** camera action
+  (the All filter does).
+- [ ] Read the section headers above the rows.
+- [ ] **Expected:** one header per day, "Today"/"Yesterday" for recent days and a date like "Oct 28" otherwise, with no
+  "n photos" count beside it.
+- [ ] Set a large text size (Settings → Accessibility → Display & Text Size → Larger Text) and reopen Gallery.
+- [ ] **Expected:** the grid is still 3 columns, the filter chips each take their own row, and the headers grow without
+  clipping.
 
-## 10. Close camera returns to the previous screen
+## 10. Photo detail — view, swipe, share, save, delete, back
+- [ ] Tap the newest photo in the grid.
+- [ ] **Expected:** it opens full screen with a one-row header: Back on the left, the photo's date as the title, and a
+  "…" options control on the right. The photo (not a grey box) fills the frame, and **no** "1 of 12" count line appears
+  anywhere.
+- [ ] Swipe left, then right.
+- [ ] **Expected:** each swipe shows the next/previous photo and the header date follows it; page dots appear only when
+  there is more than one photo.
+- [ ] Tap **Share**, wait, then dismiss the system sheet.
+- [ ] **Expected:** the tray action shows "Preparing…" first, then the system share sheet with the photo; dismissing it
+  returns to the same photo and the tray is usable again.
+- [ ] Tap **Save** (Photos access granted).
+- [ ] **Expected:** a snackbar directly above the action tray confirms the save; with Photos access denied the same
+  snackbar explains it instead of failing silently.
+- [ ] Tap **Delete**, then **Cancel**; then Delete → tap the dimmed background.
+- [ ] **Expected:** both keep the photo and close the centred dialog ("Delete this photo?" / "It will be removed from this
+  device. This can't be undone." with "Delete photo" first and "Cancel" under it).
+- [ ] Tap the "…" options control → **Delete photo**.
+- [ ] **Expected:** the same dialog opens from the menu; confirming **Delete photo** closes the viewer, the photo is gone
+  from the grid, and it does not come back after a relaunch.
+- [ ] Open another photo and tap **Back**.
+- [ ] **Expected:** you are back on the grid where you left it (same scroll), dock usable.
+
+## 11. Close camera returns to the previous screen
 - [ ] Open a pose detail → "Use this pose" → camera → tap Close.
 - [ ] **Expected:** you are back on **that same pose detail** (same pose name, "Use this pose" visible), not on Home.
 - [ ] From Home, open the camera from the dock → Close.
@@ -150,21 +189,28 @@ Two paths: the app has never asked for the camera, and the permission was refuse
 - [ ] In the camera, tap the last-photo thumbnail on the bottom bar.
 - [ ] **Expected:** you land in Gallery with the newest photo in view. Going back to the camera with the dock camera button and then tapping Close returns to **Home** (the camera only returns to a pose detail when it was opened from one).
 
-## 11. One-line verdict
+## 12. One-line verdict
 - [ ] Everything above passed → reply "device pass" (add "paywall ok" for section 1 if you ran it).
 - [ ] Something failed → reply with: the check number, what you saw, the screen recording, and the device/iOS/build line from the top of your notes.
 
 Notes for QA triage (not for the product owner): automated equivalents live in
 `mobile/iosApp/iosAppTests/Features/CameraFeatureTests.swift` (`CameraChromeTests`: the collapse/expand contract, the
 collapsed state's persistence, the strip's content per picker state, the shared 72 pt permission panel, and the snackbar
-pinned above the control bar on a rendered bitmap) and `docs/qa/test-cases/camera-guide.md` (TC-CAM-012/013 — the ids
-they were waiting on now ship: `camera.pickerStripToggle` (glyph/label/value per state), `camera.poseStrip` +
-`camera.poseStrip.card.<pose id>` + `camera.poseStrip.retry`) / `capture-gallery.md` (TC-GAL-002 manual).
-Other ids the new chrome gives flows: `camera.close`, `camera.choosePose` (the pose title, opens the sheet),
-`camera.guideToggle` (eye, only with a guide), `camera.tools` + `camera.tools.done`, `camera.zoom.1x|2x|3x`,
-`camera.status` (snackbar), `camera.permission` (the panel; the shutter, gallery thumbnail and flip keep their old
-`camera.shutter` / `camera.gallery` / `camera.flip`). Section numbers shifted with the redesign: the top bar is a new
-section 3 and the zoom pills a new section 6, so flip moved from 5 to 7 (the snackbar is still 5) — map any older device
-note to the new number before filing it.
+pinned above the control bar on a rendered bitmap) and
+`mobile/iosApp/iosAppTests/Features/GalleryFeatureTests.swift` (grid geometry, date sections, state panels, delete
+success/failure, share preparation, AX layout) with `docs/qa/test-cases/camera-guide.md` (TC-CAM-012…020) and
+`docs/qa/test-cases/capture-gallery.md` (TC-GAL-002…017).
+Camera ids the new chrome gives flows (all in the redesign patch, not yet committed): `camera.close`, `camera.choosePose`
+(the pose title, opens the sheet), `camera.guideToggle` (eye, only with a guide), `camera.tools` + `camera.tools.done`,
+`camera.zoom.1x|2x|3x`, `camera.status` (snackbar), `camera.permission` (the panel), `camera.pickerStripToggle`
+(glyph/label/value per state), `camera.poseStrip` + `camera.poseStrip.card.<pose id>` + `camera.poseStrip.retry`; the
+shutter, the gallery thumbnail and flip keep `camera.shutter` / `camera.gallery` / `camera.flip`.
+Gallery ids (committed): `gallery.title`, `gallery.add-pose`, `gallery.filter.all|today|week|month`,
+`gallery.empty.openCamera` + `.openCameraButton`, `gallery.empty.filter`, `gallery.error` + `.retry`,
+`gallery.detail.back|title|options|share|save|delete`, `gallery.detail.deleteConfirm` (+ `.delete` / `.cancel`),
+`gallery.detail.failed` + `.failedRetry`.
+Section numbers shifted with the redesign (twice): the top bar is section 3, the zoom pills section 6, the Gallery is
+section 9, photo detail is the new section 10 and Close moved 8 → 11. Map any older device note to the new number
+before filing it.
 The paywall section's simulator equivalent is `docs/qa/prod-smoke/flows/S-05b-paywall-signed-in.yaml`, which is
 BLOCKED-BY-ENV for the price assertion (S-05b) — that is exactly why section 1 is manual and on device.

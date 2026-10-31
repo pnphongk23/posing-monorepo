@@ -1,0 +1,31 @@
+# TC-CAM-013 collapsing the strip never hides the pose guide
+appId: ${APP_ID}
+tags: [TC-CAM-013, p1]
+---
+- runFlow: ../../../../mobile/iosApp/maestro/subflows/launch.yaml
+- runFlow: ../../../../mobile/iosApp/maestro/subflows/open-first-pose.yaml
+- tapOn:
+    id: "poseDetail.use"
+- extendedWaitUntil:
+    visible:
+      id: "camera.poseGuide"
+    timeout: 20000
+# A pose is chosen, so the guide's own eye control exists — that is what stays in charge of the guide.
+- assertVisible:
+    id: "camera.guideToggle"
+# Collapse: the strip goes away, the guide does not.
+- tapOn:
+    id: "camera.pickerStripToggle"
+- assertNotVisible:
+    id: "camera.poseStrip"
+- assertVisible:
+    id: "camera.poseGuide"
+- assertVisible:
+    id: "camera.guideToggle"
+# Re-open: still the same guide on screen (which pose it is, is CAM-007/CAM-011's job).
+- tapOn:
+    id: "camera.pickerStripToggle"
+- assertVisible:
+    id: "camera.poseGuide"
+- assertVisible:
+    id: "camera.pickerStripToggle"

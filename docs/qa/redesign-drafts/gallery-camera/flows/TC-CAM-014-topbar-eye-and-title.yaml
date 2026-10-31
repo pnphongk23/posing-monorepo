@@ -1,0 +1,43 @@
+# TC-CAM-014 the top bar: Close · pose title · eye · tools, and the eye only with a pose
+appId: ${APP_ID}
+tags: [TC-CAM-014, p0]
+---
+- runFlow: ../../../../mobile/iosApp/maestro/subflows/launch.yaml
+- runFlow: ../../../../mobile/iosApp/maestro/subflows/open-camera.yaml
+# One row, and no eye while no pose is chosen.
+- assertVisible:
+    id: "camera.close"
+- assertVisible:
+    id: "camera.choosePose"
+- assertVisible:
+    id: "camera.tools"
+- assertNotVisible:
+    id: "camera.guideToggle"
+# The title is the picker's entry point: it opens the sheet, not the strip.
+- tapOn:
+    id: "camera.choosePose"
+- extendedWaitUntil:
+    visible:
+      id: "posePicker.grid"
+    timeout: 20000
+# The sheet's grid has no per-cell ids yet (Requests to Feature), so a card is tapped by point.
+- tapOn:
+    point: "75%,75%"
+- extendedWaitUntil:
+    visible:
+      id: "camera.poseGuide"
+    timeout: 10000
+# A pose is chosen, so the eye appears and owns the guide's visibility.
+- assertVisible:
+    id: "camera.guideToggle"
+- tapOn:
+    id: "camera.guideToggle"
+- assertNotVisible:
+    id: "camera.poseGuide"
+# The title now names the pose (its text changed) and the eye toggles the guide back on.
+- tapOn:
+    id: "camera.guideToggle"
+- assertVisible:
+    id: "camera.poseGuide"
+- assertVisible:
+    id: "camera.choosePose"

@@ -1,0 +1,34 @@
+# TC-GAL-010 an empty gallery offers the camera, an empty time filter does not
+appId: ${APP_ID}
+tags: [TC-GAL-010, p0]
+---
+- runFlow: ../../../../mobile/iosApp/maestro/subflows/launch.yaml
+- tapOn: "Gallery"  # TODO(QA-261029-ID) dock.gallery
+- extendedWaitUntil:
+    visible:
+      id: "gallery.title"
+    timeout: 20000
+# No photos at all: the empty panel is the recovery, and its one action opens the camera.
+- assertVisible:
+    id: "gallery.empty.openCamera"
+- assertVisible:
+    id: "gallery.empty.openCameraButton"
+# A time window with nothing in it is a different state: it explains the filter and offers no camera action…
+- tapOn:
+    id: "gallery.filter.today"
+- assertVisible:
+    id: "gallery.empty.filter"
+- assertNotVisible:
+    id: "gallery.empty.openCamera"
+# …and the chips stay interactive, which is the only way out of it.
+- tapOn:
+    id: "gallery.filter.week"
+- assertVisible:
+    id: "gallery.empty.filter"
+# Back to All: the camera action returns.
+- tapOn:
+    id: "gallery.filter.all"
+- assertVisible:
+    id: "gallery.empty.openCamera"
+- assertVisible:
+    id: "gallery.empty.openCameraButton"

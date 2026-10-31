@@ -1,0 +1,33 @@
+# TC-CAM-018 a refused camera drops the strip and its control, and keeps the shutter reachable
+appId: ${APP_ID}
+tags: [TC-CAM-018, p1]
+---
+# Camera denied at launch: Maestro writes the TCC answer, so the app sees .denied without a system prompt.
+- launchApp:
+    clearState: true
+    clearKeychain: true
+    permissions:
+      camera: deny
+      photos: allow
+- extendedWaitUntil:
+    visible:
+      id: "poses.open-search"
+    timeout: 30000
+- tapOn:
+    id: "dock.camera"
+- extendedWaitUntil:
+    visible:
+      id: "camera.permission"
+    timeout: 20000
+# No camera means nothing to place a pose on: the strip and the one control that would re-open it are both gone.
+- assertNotVisible:
+    id: "camera.poseStrip"
+- assertNotVisible:
+    id: "camera.pickerStripToggle"
+# The bar itself stays, so the screen is never a dead end.
+- assertVisible:
+    id: "camera.shutter"
+- assertVisible:
+    id: "camera.flip"
+- assertVisible:
+    id: "camera.close"

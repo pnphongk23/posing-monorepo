@@ -1,0 +1,33 @@
+# TC-CAM-006 a refused camera shows the shared permission panel, not a blank viewfinder
+appId: ${APP_ID}
+tags: [TC-CAM-006, p1]
+---
+# Only the refused branch is expressible on the Simulator: Maestro writes the TCC answer, so the app never sees
+# .notDetermined and the "Allow Camera" button (and the system prompt behind it) cannot be reached here — that half
+# is device-only, checklist §8. Camera denied, not "restricted": iOS has no way to set that.
+- launchApp:
+    clearState: true
+    clearKeychain: true
+    permissions:
+      camera: deny
+      photos: allow
+- extendedWaitUntil:
+    visible:
+      id: "poses.open-search"
+    timeout: 30000
+- tapOn:
+    id: "dock.camera"
+- extendedWaitUntil:
+    visible:
+      id: "camera.permission"
+    timeout: 20000
+# One panel: the copy, and exactly one action — Open Settings, because the user already said no.
+- assertVisible: "Camera access is off"
+- assertVisible: "Open Settings"
+- assertNotVisible: "Allow Camera"
+# The camera is refused, so nothing pretends to be a viewfinder or a pose strip.
+- assertNotVisible:
+    id: "camera.poseStrip"
+# The panel is the only way forward, and the screen does not crash or go blank.
+- assertVisible:
+    id: "camera.permission"

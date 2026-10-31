@@ -1,0 +1,45 @@
+# TC-CAM-015 the tools panel is anchored under the bar and Done (or an outside tap) closes it
+appId: ${APP_ID}
+tags: [TC-CAM-015, p1]
+---
+- runFlow: ../../../../mobile/iosApp/maestro/subflows/launch.yaml
+- runFlow: ../../../../mobile/iosApp/maestro/subflows/open-first-pose.yaml
+- tapOn:
+    id: "poseDetail.use"
+- extendedWaitUntil:
+    visible:
+      id: "camera.shutter"
+    timeout: 20000
+- tapOn:
+    id: "camera.tools"
+# A pose is chosen, so every row the panel owns is present — Flash and Grid always, the pose rows with a guide.
+- assertVisible:
+    id: "camera.tools.done"
+- assertVisible:
+    id: "camera.tools.grid"
+- assertVisible:
+    id: "camera.tools.poseGuide"
+- assertVisible:
+    id: "camera.tools.opacity"
+- assertVisible:
+    id: "camera.tools.lineColor.black"
+# Done closes it and leaves the camera usable.
+- tapOn:
+    id: "camera.tools.done"
+- assertNotVisible:
+    id: "camera.tools.done"
+- assertVisible:
+    id: "camera.shutter"
+# Re-open, then tap the preview outside the panel: the panel closes and no scrim is left behind.
+- tapOn:
+    id: "camera.tools"
+- assertVisible:
+    id: "camera.tools.done"
+- tapOn:
+    point: "20%,45%"
+- assertNotVisible:
+    id: "camera.tools.done"
+- assertVisible:
+    id: "camera.close"
+- assertVisible:
+    id: "camera.shutter"

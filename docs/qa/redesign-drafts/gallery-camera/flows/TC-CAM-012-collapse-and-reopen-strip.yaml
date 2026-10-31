@@ -1,0 +1,40 @@
+# TC-CAM-012 the strip collapses behind one control and reopens from it
+appId: ${APP_ID}
+tags: [TC-CAM-012, p0]
+---
+- runFlow: ../../../../mobile/iosApp/maestro/subflows/launch.yaml
+- runFlow: ../../../../mobile/iosApp/maestro/subflows/open-camera.yaml
+# A clean install opens expanded: the strip is on screen and one control owns both states.
+- assertVisible:
+    id: "camera.pickerStripToggle"
+- assertVisible:
+    id: "camera.poseStrip"
+# 1. Collapse. The strip goes, the control that hid it does not.
+- tapOn:
+    id: "camera.pickerStripToggle"
+- assertNotVisible:
+    id: "camera.poseStrip"
+- assertVisible:
+    id: "camera.pickerStripToggle"
+# 2. Collapsed is exactly thumbnail · shutter · flip on the bar…
+- assertVisible:
+    id: "camera.gallery"
+- assertVisible:
+    id: "camera.shutter"
+- assertVisible:
+    id: "camera.flip"
+# …and the top chrome does not move while the strip is gone.
+- assertVisible:
+    id: "camera.close"
+- assertVisible:
+    id: "camera.tools"
+# 3. The same control re-opens it.
+- tapOn:
+    id: "camera.pickerStripToggle"
+- assertVisible:
+    id: "camera.poseStrip"
+- assertVisible:
+    id: "camera.shutter"
+# Nothing else moved: the collapsed-only way back must never hide behind the state that hid it.
+- assertVisible:
+    id: "camera.pickerStripToggle"
