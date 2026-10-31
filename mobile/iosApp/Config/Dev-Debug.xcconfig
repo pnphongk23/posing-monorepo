@@ -5,4 +5,9 @@ REVENUECAT_PUBLIC_SDK_KEY = REPLACE_WITH_DEV_PUBLIC_SDK_KEY
 DEVELOPMENT_TEAM = WZL67P53F2
 
 // The entitlement id shipped in this build. Must match the RevenueCat dashboard.
-REVENUECAT_ENTITLEMENT_ID = REPLACE_WITH_ENTITLEMENT_ID
+REVENUECAT_ENTITLEMENT_ID = posing_pro
+
+// Local, gitignored key override. Included last on purpose: it only ever wins here, in
+// Debug-Dev. The Release configurations must never include it — a RevenueCat Test Store key
+// must not reach a shipping build. See REVENUECAT_SETUP.md.
+#include? "Secrets.local.xcconfig"

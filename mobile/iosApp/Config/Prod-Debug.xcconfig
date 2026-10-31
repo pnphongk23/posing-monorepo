@@ -6,4 +6,4 @@ REVENUECAT_PUBLIC_SDK_KEY = appl_vpBiChlUAXmdZjklTDZQtSeYVIx
 DEVELOPMENT_TEAM = WZL67P53F2
 
 // The entitlement id shipped in this build. Must match the RevenueCat dashboard.
-REVENUECAT_ENTITLEMENT_ID = REPLACE_WITH_ENTITLEMENT_ID
+REVENUECAT_ENTITLEMENT_ID = posing_pro

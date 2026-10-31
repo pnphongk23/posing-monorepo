@@ -69,3 +69,8 @@ GoogleService-Info.plist
 .kotlin
 # Local runtime data — never commit
 .docker-data/
+
+# local-only xcconfig overrides (RevenueCat keys etc.), never commit
+mobile/iosApp/Config/*.local.xcconfig
+# local-only Maestro E2E credentials, never commit
+mobile/iosApp/maestro/*.local.env

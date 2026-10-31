@@ -349,3 +349,162 @@ private func flagsOutsideDebugOnlyBlocks(in source: String, flag: String) -> [St
         .filter { !$0.isDebugOnly && $0.text.contains(flag) }
         .map { "\($0.number): \($0.text)" }
 }
+
+// MARK: - Release safety: a RevenueCat Test Store key must never ship (RC-CONFIG)
+
+/// A RevenueCat **Test Store** key (`test_…`) is a fake store: a purchase succeeds and an
+/// entitlement flips without money moving. Shipping one to TestFlight would hand premium capture to
+/// anyone who taps Buy, so the real key lives in the gitignored `Secrets.local.xcconfig`, which only
+/// `Debug-Dev` includes — last, after the committed placeholder, so it wins.
+///
+/// Limit, stated on purpose: this reads the four committed `.xcconfig` files and `Info.plist`. A
+/// `REVENUECAT_PUBLIC_SDK_KEY=…` passed on the `xcodebuild` command line overrides all of it and is
+/// invisible to any in-tree test, so `ios-testflight-release` repeats the check on the archived
+/// plist before upload. The local file itself is never opened here: naming it is already the
+/// finding, and its contents have no business in a test process.
+final class RevenueCatConfigReleaseGuardTests: XCTestCase {
+    private static let debugDev = "Dev-Debug.xcconfig"
+    private static let configurations = [debugDev, "Dev-Release.xcconfig", "Prod-Debug.xcconfig", "Prod-Release.xcconfig"]
+    private static let sdkKeySetting = "REVENUECAT_PUBLIC_SDK_KEY"
+    private static let entitlementSetting = "REVENUECAT_ENTITLEMENT_ID"
+
+    /// The whole point of the split: the file that may hold a fake store's key is reachable from
+    /// exactly one configuration, and it is a Debug-Dev build — never a Release, never a PROD one.
+    func testOnlyDebugDevReachesALocalSecretFile() throws {
+        var offenders: [String] = []
+        for configuration in Self.configurations where configuration != Self.debugDev {
+            let locals = try Self.includeGraph(from: configuration).filter { $0.hasSuffix(".local.xcconfig") }
+            offenders += locals.map { "\(configuration) → \($0)" }
+        }
+
+        XCTAssertEqual(
+            offenders,
+            [],
+            "A local secret file may only be included by \(Self.debugDev); a Test Store key in any other configuration ships"
+        )
+
+        let debugDevGraph = try Self.includeGraph(from: Self.debugDev)
+        XCTAssertTrue(
+            debugDevGraph.contains("Secrets.local.xcconfig"),
+            "\(Self.debugDev) must include the gitignored key file, otherwise no build can reach the store"
+        )
+    }
+
+    /// xcconfig settings resolve top-down and the last assignment wins, so the optional include has
+    /// to be the final line — above it, the committed placeholder would win over the real key.
+    func testDebugDevIncludesTheLocalFileAfterThePlaceholderItOverrides() throws {
+        let lines = try Self.text(of: Self.debugDev)
+            .split(separator: "\n")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty && !$0.hasPrefix("//") }
+        XCTAssertEqual(lines.last, "#include? \"Secrets.local.xcconfig\"")
+
+        let keyLine = try XCTUnwrap(lines.firstIndex { $0.hasPrefix(Self.sdkKeySetting) })
+        XCTAssertLessThan(keyLine, lines.count - 1, "the include must follow the placeholder it overrides")
+    }
+
+    /// Committed values only: `testOnlyDebugDevReachesALocalSecretFile` has already proven no other
+    /// configuration can pull a key in from a file, so each file's own assignment is the whole story.
+    func testNoCommittedConfigurationCarriesATestStoreKey() throws {
+        var offenders: [String] = []
+        for configuration in Self.configurations {
+            let values = try Self.values(of: Self.sdkKeySetting, in: configuration)
+            XCTAssertEqual(values.count, 1, "\(configuration) must set \(Self.sdkKeySetting) exactly once")
+            offenders += values
+                .filter { $0.lowercased().hasPrefix("test_") }
+                .map { _ in "\(configuration): \(Self.sdkKeySetting) starts with \"test_\"" }
+        }
+
+        XCTAssertEqual(offenders, [], "A RevenueCat Test Store key must never be committed")
+    }
+
+    /// …and the archived plist is those settings verbatim, which is what makes the claim above a
+    /// claim about the shipped bundle rather than about a file nobody reads.
+    func testTheInfoPlistTakesItsRevenueCatValuesFromTheBuildSettings() throws {
+        let plist = try String(contentsOf: Self.infoPlist, encoding: .utf8)
+
+        XCTAssertEqual(Self.plistString(for: "RevenueCatPublicSDKKey", in: plist), "$(\(Self.sdkKeySetting))")
+        XCTAssertEqual(Self.plistString(for: "RevenueCatEntitlementID", in: plist), "$(\(Self.entitlementSetting))")
+    }
+
+    func testEveryConfigurationPinsTheDashboardEntitlementID() throws {
+        for configuration in Self.configurations {
+            let values = try Self.values(of: Self.entitlementSetting, in: configuration)
+            XCTAssertEqual(values, ["posing_pro"], "\(configuration) must ship the entitlement id the dashboard grants")
+        }
+
+        XCTAssertTrue(
+            AppConfigService.isValidIdentifier("posing_pro"),
+            "an id the adapter filters out as a placeholder would leave every build unconfigured"
+        )
+    }
+
+    /// The tree has to be green *without* the gitignored file: a fresh clone resolves `Debug-Dev` to
+    /// the committed placeholder, the adapter refuses it, `isConfigured` stays `false`, and the
+    /// capture gate fails open. Nothing in `ios-verify` may depend on a key that never ships.
+    func testAPlaceholderKeyLeavesTheStoreUnconfiguredInsteadOfAssumingAccess() {
+        XCTAssertFalse(AppConfigService.isValidRevenueCatKey("REPLACE_WITH_DEV_PUBLIC_SDK_KEY"))
+        XCTAssertFalse(AppConfigService.isValidRevenueCatKey("$(\(Self.sdkKeySetting))"))
+        XCTAssertTrue(AppConfigService.isValidRevenueCatKey("appl_ab12cd34ef56gh78"))
+    }
+
+    // MARK: - xcconfig reading
+
+    /// Configuration names reachable through `#include` / `#include?`, as paths relative to
+    /// `Config/`. A `*.local.xcconfig` is recorded but never opened.
+    private static func includeGraph(from configuration: String) throws -> [String] {
+        var seen: Set<String> = []
+        var pending = [configuration]
+        while let next = pending.popLast() {
+            guard seen.insert(next).inserted, !next.hasSuffix(".local.xcconfig") else { continue }
+            pending.append(contentsOf: includes(in: try text(of: next)))
+        }
+        return seen.sorted()
+    }
+
+    private static func includes(in text: String) -> [String] {
+        text.split(separator: "\n").compactMap { line in
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            guard trimmed.hasPrefix("#include"),
+                  let open = trimmed.firstIndex(of: "\""),
+                  let close = trimmed.lastIndex(of: "\""),
+                  open < close else { return nil }
+            return String(trimmed[trimmed.index(after: open)..<close])
+        }
+    }
+
+    /// Every assignment of one setting in a single file, in file order (last one wins).
+    private static func values(of setting: String, in configuration: String) throws -> [String] {
+        try text(of: configuration).split(separator: "\n").compactMap { line in
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            guard !trimmed.hasPrefix("//"), !trimmed.hasPrefix("#"), let separator = trimmed.firstIndex(of: "="),
+                  trimmed[..<separator].trimmingCharacters(in: .whitespaces) == setting else { return nil }
+            return trimmed[trimmed.index(after: separator)...].trimmingCharacters(in: .whitespaces)
+        }
+    }
+
+    private static func plistString(for key: String, in plist: String) -> String? {
+        guard let keyRange = plist.range(of: "<key>\(key)</key>") else { return nil }
+        let tail = plist[keyRange.upperBound...].prefix(200)
+        guard let open = tail.range(of: "<string>"), let close = tail.range(of: "</string>"),
+              open.upperBound <= close.lowerBound else { return nil }
+        return String(tail[open.upperBound..<close.lowerBound])
+    }
+
+    // MARK: - Paths
+
+    private static var projectDirectory: URL {
+        // …/iosAppTests/Services/<this file> → …/iosApp (the project directory holding Config/)
+        URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+    }
+
+    private static var configDirectory: URL { projectDirectory.appendingPathComponent("Config", isDirectory: true) }
+    private static var infoPlist: URL { projectDirectory.appendingPathComponent("iosApp/Info.plist") }
+
+    private static func text(of configuration: String) throws -> String {
+        try String(contentsOf: configDirectory.appendingPathComponent(configuration), encoding: .utf8)
+    }
+}

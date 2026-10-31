@@ -63,8 +63,9 @@ check free disk before archiving and hold if below 2 GB.
 
 Inspect the production Release configuration and report tester-visible
 behavior before upload: `SERVER_BASE_URL` and `ServiceLocator` base URL, remote
-feature-flag defaults, account/paywall state, purchase configuration, and
-whether release-only debug launch arguments are absent. Do not change
+feature-flag defaults, account/paywall state, purchase configuration (including
+the `posing_pro` entitlement and the archived RevenueCat key shape), and
+whether the four release-only debug launch arguments are absent. Do not change
 production config or deploy server changes. Probe production routes only with
 unauthenticated GET requests. Compare app calls with the deployed server and
 call out routes or parameters that are missing; never mutate production.
@@ -156,10 +157,45 @@ xcodebuild archive \
 
 If `CURRENT_PROJECT_VERSION` does not take effect, use a temporary copy of
 Info.plist and `INFOPLIST_FILE=/tmp/aipose-release/Info.plist`. Do not edit
-tracked files to set a release build number. Before export, inspect the
-archived Release binary with `strings`; these debug launch argument names must
-be absent: `-AIPosePaywallEnabled`, `-AIPoseAccountsEnabled`,
-`-AIPosePurchasesConfigured`. Stop if any is present.
+tracked files to set a release build number.
+
+Before export, run both must-be-absent checks below against the archive. Stop if
+any of them fails; do not work around a failure by editing the archive.
+
+1. Debug launch arguments. These names are compiled out of Release by `#if DEBUG`
+   (`AppConfig.swift`), and `AppConfigTests` proves it on the source — this check
+   proves it on the shipped bytes. All **four** must be absent from the binary:
+   `-AIPosePaywallEnabled`, `-AIPoseAccountsEnabled`, `-AIPosePurchasesConfigured`,
+   `-AIPosePagingFixture`.
+2. RevenueCat key provenance. The archived `Info.plist` `RevenueCatPublicSDKKey`
+   value must not start with `test_`: a RevenueCat Test Store key is a fake store
+   where purchases succeed and entitlements flip without money moving, and it is a
+   `Debug-Dev`-only key (`mobile/iosApp/Config/Secrets.local.xcconfig`, included
+   only by `Config/Dev-Debug.xcconfig`). The production value is the committed
+   App Store key. Report whether the value is a placeholder
+   (`REPLACE_WITH_…`/`$(…)`) — a placeholder archive ships unconfigured and is not
+   a releasable purchase build.
+
+The commands print verdicts only, never the archived key value:
+
+```bash
+ARCHIVE_APP=/tmp/aipose-release/iosApp-<marketing>-<build>.xcarchive/Products/Applications/posing.app
+
+for arg in -AIPosePaywallEnabled -AIPoseAccountsEnabled -AIPosePurchasesConfigured -AIPosePagingFixture; do
+  if strings -a "$ARCHIVE_APP/posing" | grep -qF -- "$arg"; then echo "STOP: $arg present in the Release binary"; fi
+done
+
+KEY_SHAPE="$(plutil -extract RevenueCatPublicSDKKey raw "$ARCHIVE_APP/Info.plist" \
+  | sed -e 's/^test_.*/TEST_STORE_KEY/' -e 's/^appl_.*/app_store_key/' \
+        -e 's/^REPLACE_WITH.*/PLACEHOLDER/' -e 's/^\$(.*/UNRESOLVED_SETTING/' \
+        -e 't' -e 's/.*/other/'))"
+echo "RevenueCatPublicSDKKey shape: $KEY_SHAPE"   # must be app_store_key
+plutil -extract RevenueCatEntitlementID raw "$ARCHIVE_APP/Info.plist"   # must be posing_pro
+```
+
+A `TEST_STORE_KEY` or `UNRESOLVED_SETTING` shape is a stop. `PLACEHOLDER` means no
+store on this build: record it in the report and treat the purchase matrix as
+unverified rather than passed.
 
 Use ExportOptions with method `app-store-connect`, team `WZL67P53F2`, automatic
 signing, and `uploadSymbols=false` unless symbol upload is available. Export
@@ -215,6 +251,8 @@ when instructed, clean dead containers only for the approved simulator.
 
 Report commit, marketing/build, test count and failures, IPA SHA-256, key ID
 only, Delivery UUID, validate/upload result, observed ASC processing state,
-tester-visible defaults, server compatibility gaps, scheme-diff verdict, and
+tester-visible defaults, the two archive checks (four debug arguments absent,
+RevenueCat key shape), server compatibility gaps, scheme-diff verdict, and
 free disk after cleanup. State any timeout or uncertainty plainly. Never
-include credentials, issuer value, JWT, or private-key contents.
+include credentials, issuer value, JWT, private-key contents, or the archived
+RevenueCat key value.
