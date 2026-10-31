@@ -2235,6 +2235,35 @@ private struct CameraFramingGrid: View {
     }
 }
 
+/// The camera tools popover's surface contract (owner feedback, build 18).
+///
+/// There is no title row and no Done action: every control applies and persists the moment it changes,
+/// and the popover is dismissed by tapping outside or with VoiceOver's escape. The identifiers below are
+/// the ones the rows expose, so "the Done handle is gone" is a unit-testable fact rather than a memory.
+enum CameraToolsLayout {
+    static let hasHeaderRow = false
+    /// Retired with the Done button; no row may expose it again.
+    static let retiredDoneIdentifier = "camera.tools.done"
+    static let controlIdentifiers = [
+        "camera.tools.flash",
+        "camera.tools.grid",
+        "camera.tools.mirror",
+        "camera.tools.timer",
+        "camera.tools.ratio",
+        "camera.tools.poseGuide",
+        "camera.tools.opacity",
+        "camera.tools.scale",
+        "camera.tools.lineColor.black",
+        "camera.tools.lineColor.white",
+    ]
+
+    /// Every change lands on the model directly (no commit step), so a setting is persisted while the
+    /// popover is still open.
+    static func persistsImmediately(identifier: String) -> Bool {
+        controlIdentifiers.contains(identifier)
+    }
+}
+
 // MARK: - Camera tools (AP tokens, forced dark)
 
 /// The camera's settings surface: an anchored popup under the tools control (no scrim, no handle, no
@@ -2300,8 +2329,6 @@ private struct CameraToolsPopup: View {
 
     private var content: some View {
         VStack(alignment: .leading, spacing: AP.Space.space8) {
-            header
-
             row(
                 systemImage: flashSetting.symbolName,
                 title: "Flash",
@@ -2339,21 +2366,6 @@ private struct CameraToolsPopup: View {
             }
         }
         .padding(AP.Space.space12)
-    }
-
-    private var header: some View {
-        HStack(spacing: AP.Space.space8) {
-            Text("Camera tools")
-                .font(AP.Font.heading)
-                .foregroundStyle(AP.Color.primaryText)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            Button("Done", action: onDismiss)
-                .buttonStyle(.plain)
-                .font(AP.Font.supporting.weight(.semibold))
-                .foregroundStyle(AP.Color.accentText)
-                .apMinimumHitTarget()
-                .accessibilityIdentifier("camera.tools.done")
-        }
     }
 
     /// One settings row: glyph + word on `controlFill`, 44 pt tall, pressed fill step.

@@ -1126,6 +1126,87 @@ final class CameraPickerAccessTests: XCTestCase {
     }
 }
 
+// MARK: - Camera tools popover (owner feedback: no title, no Done)
+
+@MainActor
+final class CameraToolsPopoverTests: XCTestCase {
+    /// Every control applies and persists on change — there is no Done to defer it, so the popover
+    /// being open must not hold a setting back.
+    func testAChangePersistsWhileThePopoverIsStillOpen() async throws {
+        let store = InMemoryCameraSettingsStore(seed: CameraSettings())
+        let model = CameraViewModel(settingsStore: store, saveDebounceNanoseconds: 1_000_000)
+        await waitUntil { model.initialMergeDone }
+        model.coordinator.onPermissionResult(.authorized)
+        model.openCameraTools()
+        XCTAssertTrue(model.showCameraTools, "the popover is open for the whole test")
+
+        model.cycleFlash()
+        model.toggleGrid()
+        model.toggleGuideMirror()
+        model.setTimerSetting(.threeSeconds)
+        model.setAspectRatio(.oneOne)
+        model.setGuideScale(1.5)
+
+        await waitUntil { await store.saved.last?.aspectRatio == .oneOne }
+        let writes = await store.saved
+        let saved = try XCTUnwrap(writes.last)
+        XCTAssertEqual(saved.flash, model.flashSetting)
+        XCTAssertTrue(saved.isGridVisible)
+        XCTAssertTrue(saved.guideFlipped, "Mirror persists on change")
+        XCTAssertEqual(saved.timer, .threeSeconds)
+        XCTAssertEqual(saved.aspectRatio, .oneOne)
+        XCTAssertEqual(saved.transform.placement.scale, 1.5, accuracy: 0.0001)
+        XCTAssertTrue(model.showCameraTools, "no dismiss step was needed to persist")
+    }
+
+    /// The popover dismisses by tapping outside or with VoiceOver's escape — both call this.
+    func testDismissalIsTheOnlyCommitFreeWayOut() {
+        let model = CameraViewModel()
+        model.coordinator.onPermissionResult(.authorized)
+        model.openCameraTools()
+        XCTAssertTrue(model.showCameraTools)
+
+        model.closeCameraTools()
+        XCTAssertFalse(model.showCameraTools, "the popover's own escape/outside-tap action dismisses it")
+
+        model.toggleCameraTools()
+        XCTAssertTrue(model.showCameraTools, "the tools control still opens it")
+        model.toggleCameraTools()
+        XCTAssertFalse(model.showCameraTools, "and closes it")
+    }
+
+    /// The title row and the Done action are gone from the surface's contract: no control exposes the
+    /// retired handle, and every remaining control is one that applies immediately.
+    func testThePopoverHasNoTitleOrDone() {
+        XCTAssertFalse(CameraToolsLayout.hasHeaderRow)
+        XCTAssertFalse(
+            CameraToolsLayout.controlIdentifiers.contains(CameraToolsLayout.retiredDoneIdentifier),
+            "the Done handle is retired"
+        )
+        for identifier in CameraToolsLayout.controlIdentifiers {
+            XCTAssertTrue(CameraToolsLayout.persistsImmediately(identifier: identifier))
+        }
+        XCTAssertTrue(CameraToolsLayout.controlIdentifiers.contains("camera.tools.timer"))
+        XCTAssertTrue(CameraToolsLayout.controlIdentifiers.contains("camera.tools.ratio"))
+    }
+
+    private func waitUntil(
+        timeout: TimeInterval = 3,
+        _ condition: @MainActor @escaping () async -> Bool,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) async {
+        let deadline = Date().addingTimeInterval(timeout)
+        while !(await condition()) {
+            if Date() > deadline {
+                XCTFail("condition not met within \(timeout)s", file: file, line: line)
+                return
+            }
+            try? await Task.sleep(nanoseconds: 2_000_000)
+        }
+    }
+}
+
 // MARK: - Camera chrome: F12 collapsed state, F4 state panels, F5 snackbar
 
 /// The redesign slice's own evidence: the collapse/expand contract, the strip's content mapping, the
