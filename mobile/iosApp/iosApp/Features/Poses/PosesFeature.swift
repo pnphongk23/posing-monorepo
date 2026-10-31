@@ -1351,6 +1351,16 @@ enum PoseDetailLayoutMetrics {
         CGSize(width: heroCardWidth, height: heroCardWidth / minimumDownsampleAspectRatio)
     }
 
+    /// Tallest the hero may draw: half the screen, so the title and the first instruction stay above
+    /// the fold on every phone.
+    @MainActor static var heroMaxHeight: CGFloat {
+        let screenHeight = UIScreen.main.bounds.height > 0 ? UIScreen.main.bounds.height : 844
+        return max(240, screenHeight * 0.5)
+    }
+
+    /// Extra room under the last instruction so the pinned CTA never covers it.
+    static let ctaClearance: CGFloat = AP.HitTarget.minimum + AP.Space.space24
+
     /// Card ratio for the hero: the photo's own ratio when known, otherwise the prototype card.
     /// One place for this rule so the card and its tests cannot disagree.
     static func heroAspectRatio(cachedPhotoRatio: CGFloat?) -> CGFloat {
@@ -1459,26 +1469,24 @@ struct PoseDetailScreen: View {
                         // `poseDetail.title` keeps its label (the pose name) and value (the pose id) so
                         // the E2E lane can prove which pose the screen came back to.
                         Text(pose.name)
-                            .font(AP.Font.title)
+                            .font(AP.Font.display)
                             .foregroundStyle(AP.Color.primaryText)
                             .fixedSize(horizontal: false, vertical: true)
                             .accessibilityAddTraits(.isHeader)
                             .accessibilityIdentifier("poseDetail.title")
                             .accessibilityValue(pose.id)
 
-                        if !AppConfig.shared.isAccountFeatureEnabled {
-                            EmptyView()
-                        } else if !isPrivate {
+                        let tags = PoseDetailTags.chips(for: pose)
+                        if !tags.isEmpty {
+                            tagRow(tags)
+                        }
+
+                        if AppConfig.shared.isAccountFeatureEnabled, !isPrivate {
                             saveControl
                         }
 
                         if isSaved, AppConfig.shared.isAccountFeatureEnabled {
                             APStatusBanner(tone: .success, title: PoseDetailCopy.savedBanner)
-                        }
-
-                        let tags = PoseDetailTags.chips(for: pose)
-                        if !tags.isEmpty {
-                            tagRow(tags)
                         }
 
                         if !pose.instructions.isEmpty {
@@ -1499,7 +1507,9 @@ struct PoseDetailScreen: View {
                     }
                     .padding(.horizontal, AP.Space.space16)
                     .padding(.top, AP.Space.space16)
-                    .padding(.bottom, AP.Space.space24)
+                    // The pinned CTA is a safe-area inset, but the hero's top bleed makes the scroll
+                    // view taller than the inset accounts for; this keeps the last step clear of it.
+                    .padding(.bottom, PoseDetailLayoutMetrics.ctaClearance)
                 }
             }
             // BUG-261029-06: the CTA is pinned below the content instead of living at the end of it.
@@ -1509,19 +1519,23 @@ struct PoseDetailScreen: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
-    /// The floating back control over the hero (artboard `04-pose-detail-loaded`).
+    /// The floating back control over the hero (artboard `04-pose-detail-loaded`): a radius-16
+    /// `surface` square, inside the safe area so the status bar never covers it.
     private var backControl: some View {
         Button { dismiss() } label: {
             Image(systemName: "chevron.left")
                 .font(.system(size: 17, weight: .semibold))
                 .foregroundStyle(AP.Color.primaryText)
                 .frame(width: AP.HitTarget.minimum, height: AP.HitTarget.minimum)
-                .background(Circle().fill(AP.Color.surface))
-                .apElevation(.e1, cornerRadius: AP.HitTarget.minimum / 2)
+                .background(
+                    RoundedRectangle(cornerRadius: AP.Radius.radius16, style: .continuous)
+                        .fill(AP.Color.surface)
+                )
+                .apElevation(.e1, cornerRadius: AP.Radius.radius16)
         }
         .buttonStyle(.plain)
         .padding(.leading, AP.Space.space16)
-        .padding(.top, AP.Space.space12)
+        .padding(.top, AP.Space.space8)
         .accessibilityLabel(PoseDetailCopy.back)
         .accessibilityIdentifier("poseDetail.back")
     }
@@ -1547,6 +1561,7 @@ struct PoseDetailScreen: View {
                 Task { await toggleBookmark() }
             }
             .disabled(isSaving)
+            .accessibilityLabel("Remove from saved")
             .accessibilityIdentifier("poseDetail.saveButton")
             .accessibilityHint(bookmarkUnavailableHint)
         } else {
@@ -1567,6 +1582,7 @@ struct PoseDetailScreen: View {
             // No bookmark service: nothing could confirm the save, so the control is inert rather
             // than silently lying about the pose's saved state.
             .disabled(isSaving || model.bookmarkService == nil || !model.canSave(pose))
+            .accessibilityLabel("Save pose")
             .accessibilityIdentifier("poseDetail.saveButton")
             .accessibilityHint(bookmarkUnavailableHint)
         }
@@ -1615,12 +1631,14 @@ struct PoseDetailScreen: View {
                 retry: { Task { await confirmAvailability() } },
                 style: .plain
             )
-            .accessibilityIdentifier("poseDetail.returnToPoses")
             Button(PoseDetailCopy.backToPoses) { dismiss() }
                 .buttonStyle(.plain)
                 .font(AP.Font.supporting.weight(.semibold))
                 .foregroundStyle(AP.Color.accentText)
                 .apMinimumHitTarget()
+                // The unavailable state's way out keeps its own handle (a single view can carry only
+                // one identifier; the floating control keeps `poseDetail.back`).
+                .accessibilityIdentifier("poseDetail.returnToPoses")
                 .padding(.bottom, AP.Space.space32)
         }
     }
@@ -1646,6 +1664,9 @@ struct PoseDetailScreen: View {
         Color.clear
             .frame(maxWidth: .infinity)
             .aspectRatio(heroAspectRatio, contentMode: .fit)
+            // A portrait photo must not eat the screen: the hero stops at half the screen height and
+            // the artwork fills that box instead of shrinking to fit it.
+            .frame(maxHeight: PoseDetailLayoutMetrics.heroMaxHeight)
             .overlay {
                 KFImage(pose.imageURL)
                     .setProcessor(AppImage.downsample(points: PoseDetailLayoutMetrics.heroArtworkPoints, contentMode: .fit))
@@ -1672,6 +1693,7 @@ struct PoseDetailScreen: View {
                 if heroDidFail { PoseHeroFailureFill() }
             }
             .clipped()
+            .ignoresSafeArea(edges: .top)
             // Reduce Motion: the one resize still happens, it just snaps instead of easing.
             .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: heroAspectRatio)
     }
@@ -2153,6 +2175,10 @@ struct SavedPosesScreen: View {
             savedSignInRequired
         case .list:
             listBody
+                // Entering Saved always means the saved collection: select it and load it, whatever
+                // the panel currently shows (an empty Community model must not freeze the screen on
+                // "no saved poses" without ever asking the server).
+                .task { await APSavedEntry.prepare(model: model) }
         }
     }
 
@@ -2171,24 +2197,31 @@ struct SavedPosesScreen: View {
             }
             .accessibilityIdentifier("saved.loading")
         case .failed:
-            APErrorStateView(
-                title: PoseResultsStateCopy.savedErrorTitle,
-                message: PoseResultsStateCopy.savedErrorMessage,
-                retryTitle: PoseResultsStateCopy.retryActionTitle,
-                retry: { Task { await model.load() } },
-                style: .plain
-            )
-            .accessibilityIdentifier("saved.retry")
+            VStack(spacing: 0) {
+                APErrorStateView(
+                    title: PoseResultsStateCopy.savedErrorTitle,
+                    message: PoseResultsStateCopy.savedErrorMessage,
+                    retryTitle: PoseResultsStateCopy.retryActionTitle,
+                    retry: { Task { await model.load() } },
+                    style: .plain
+                )
+                .accessibilityIdentifier("saved.retry")
+                // A failed page is not the end of the list: keep the paging footer reachable.
+                APPagingFooter(model: model, bottomInset: AP.Space.space16)
+            }
         case .empty, .noMatch:
-            APEmptyStateView(
-                title: PoseResultsStateCopy.savedEmptyTitle,
-                message: PoseResultsStateCopy.savedEmptyMessage,
-                actionTitle: PoseResultsStateCopy.browseCommunityActionTitle,
-                action: { dismiss() },
-                style: .plain,
-                glyph: "bookmark"
-            )
-            .accessibilityIdentifier("saved.browseCommunity")
+            VStack(spacing: 0) {
+                APEmptyStateView(
+                    title: PoseResultsStateCopy.savedEmptyTitle,
+                    message: PoseResultsStateCopy.savedEmptyMessage,
+                    actionTitle: PoseResultsStateCopy.browseCommunityActionTitle,
+                    action: { dismiss() },
+                    style: .plain,
+                    glyph: "bookmark"
+                )
+                .accessibilityIdentifier("saved.browseCommunity")
+                APPagingFooter(model: model, bottomInset: AP.Space.space16)
+            }
         case .grid:
             APSavedList(
                 poses: model.state.rows,
@@ -2196,8 +2229,19 @@ struct SavedPosesScreen: View {
                 onTryPose: onTryPose,
                 onNearEnd: { Task { await model.loadMore() } }
             )
-            .onAppear {
-                model.filter = .saved
+            // An unsave that fails (offline, 401, gone) must say so instead of silently doing nothing.
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if let banner = APSavedChrome.unsaveFailure(model.bookmarkError) {
+                    APStatusBanner(
+                        tone: .error,
+                        title: banner.title,
+                        message: banner.message,
+                        actionTitle: banner.actionTitle,
+                        action: { model.bookmarkError = nil }
+                    )
+                    .padding(.horizontal, AP.Space.space16)
+                    .padding(.bottom, AP.Space.space12)
+                }
             }
         }
     }
@@ -2206,22 +2250,15 @@ struct SavedPosesScreen: View {
     /// presentation is the shared state panel with the account action below it. The gate keeps its
     /// existing semantics: the tap opens the same sign-in prompt (`SignInIntent.openSaved`).
     private var savedSignInRequired: some View {
-        VStack(spacing: AP.Space.space16) {
-            Spacer(minLength: 0)
-            APEmptyStateView(
-                title: PoseResultsStateCopy.savedSignInTitle,
-                message: PoseResultsStateCopy.savedSignInMessage,
-                style: .plain,
-                glyph: "bookmark",
-                expandsVertically: false
-            )
-            Button("Sign in") { pendingSignIn = .openSaved }
-                .buttonStyle(APPrimaryButtonStyle())
-                .fixedSize(horizontal: true, vertical: false)
-                .accessibilityLabel("Sign in")
-                .accessibilityIdentifier("saved.signIn")
-            Spacer(minLength: 0)
-        }
+        APIllustratedStatePanel(
+            title: PoseResultsStateCopy.savedSignInTitle,
+            message: PoseResultsStateCopy.savedSignInMessage,
+            glyph: "bookmark",
+            actionTitle: "Sign in",
+            actionKind: .primary,
+            action: { pendingSignIn = .openSaved }
+        )
+        .accessibilityIdentifier("saved.signIn")
         .accessibilityElement(children: .contain)
     }
 }

@@ -568,9 +568,13 @@ final class PoseDetailFeatureTests: XCTestCase {
             screen.awaitHeroRatio(of: poseID),
             "the hero never reported the loaded photo ratio"
         )
-        // The card resizes once to the photo's box; wait for that final geometry instead of sleeping
-        // for it. A timeout here fails the test rather than measuring a half-grown card.
-        let expectedHeight = PoseDetailLayoutMetrics.heroCardWidth / photoRatio
+        // The card resizes once to the photo's box, capped at half the screen height so the title and
+        // the first instruction stay above the fold. Wait for that final geometry instead of sleeping
+        // for it; a timeout here fails the test rather than measuring a half-grown card.
+        let expectedHeight = min(
+            PoseDetailLayoutMetrics.heroCardWidth / photoRatio,
+            PoseDetailLayoutMetrics.heroMaxHeight
+        )
         XCTAssertTrue(
             screen.awaitCondition { bitmap in
                 guard let painted = bitmap.greenBounds() else { return false }
@@ -595,9 +599,9 @@ final class PoseDetailFeatureTests: XCTestCase {
         )
         XCTAssertEqual(
             bounds.height,
-            PoseDetailLayoutMetrics.heroCardWidth / photoRatio,
+            expectedHeight,
             accuracy: 8,
-            "the card height must follow the photo ratio"
+            "the hero height follows the photo ratio, capped at half the screen"
         )
         // Edge samples just inside the card border must be photo, not the card's white surface:
         // this is what an inset (padding) would break. The card corners are rounded (radius 14), so
@@ -645,6 +649,80 @@ final class PoseDetailFeatureTests: XCTestCase {
         }
         if let failure { throw failure }
         return try XCTUnwrap(loaded, "pre-seed load timed out")
+    }
+
+    @MainActor func testToggleSavedWithoutBookmarkServiceNeverShowsThePoseAsSaved() async {
+        // Signed out / account wiring unavailable: no request can be sent, so nothing may be shown
+        // as saved and the local list must be untouched.
+        let pose = sampleDetailPose
+        let model = PosesViewModel(service: StubPoseService(result: [pose]))
+        model.state = .loaded([pose])
+
+        let outcome = await model.toggleSaved(for: pose)
+
+        XCTAssertEqual(outcome, .unavailable)
+        guard case .loaded(let poses) = model.state else { return XCTFail("Expected loaded") }
+        XCTAssertFalse(poses[0].isSaved, "a pose must never appear saved unless the server confirmed it")
+        XCTAssertNil(model.bookmarkError)
+    }
+
+    @MainActor func testToggleSavedServerFailureLeavesThePoseUnsavedAndSurfacesTheError() async {
+        let pose = sampleDetailPose
+        let service = StubBookmarkService(shouldFail: true)
+        let model = PosesViewModel(service: StubPoseService(result: [pose]), bookmarkService: service)
+        model.state = .loaded([pose])
+
+        let outcome = await model.toggleSaved(for: pose)
+
+        guard case .failed(let message) = outcome else { return XCTFail("Expected .failed, got \(outcome)") }
+        XCTAssertFalse(message.isEmpty)
+        XCTAssertEqual(model.bookmarkError, message, "the failure must reach the shared error surface")
+        guard case .loaded(let poses) = model.state else {
+            return XCTFail("a failed save must not replace the list with an error state")
+        }
+        XCTAssertFalse(poses[0].isSaved, "a failed save must roll back to unsaved")
+        XCTAssertEqual(service.saveCallCount, 1)
+    }
+
+    @MainActor func testToggleSavedFlipsOnlyAfterTheServerConfirms() async {
+        let pose = sampleDetailPose
+        let service = GatedBookmarkService()
+        let model = PosesViewModel(service: StubPoseService(result: [pose]), bookmarkService: service)
+        model.state = .loaded([pose])
+
+        let save = Task { await model.toggleSaved(for: pose) }
+        await waitUntil("the save request never started") { service.saveCallCount == 1 }
+
+        // In flight: still not saved, exactly like the server has not said yes yet.
+        guard case .loaded(let inFlight) = model.state else { return XCTFail("Expected loaded") }
+        XCTAssertFalse(inFlight[0].isSaved, "the pose must not look saved while the request is in flight")
+
+        service.release()
+        guard let outcome = await awaitOutcome(save, "the save never completed") else { return }
+        XCTAssertEqual(outcome, .saved(true))
+        guard case .loaded(let settled) = model.state else { return XCTFail("Expected loaded") }
+        XCTAssertTrue(settled[0].isSaved)
+    }
+
+    @MainActor func testRapidDoubleTapSendsOneRequestAndEndsConsistent() async {
+        let pose = sampleDetailPose
+        let service = GatedBookmarkService()
+        let model = PosesViewModel(service: StubPoseService(result: [pose]), bookmarkService: service)
+        model.state = .loaded([pose])
+
+        let first = Task { await model.toggleSaved(for: pose) }
+        await waitUntil("the save request never started") { service.saveCallCount == 1 }
+        // Second tap while the first is still in flight: ignored, not queued.
+        let second = await model.toggleSaved(for: pose)
+        XCTAssertEqual(second, .inFlight)
+
+        service.release()
+        guard let firstOutcome = await awaitOutcome(first, "the save never completed") else { return }
+        XCTAssertEqual(firstOutcome, .saved(true))
+        XCTAssertEqual(service.saveCallCount, 1, "a double tap must not send two saves")
+        XCTAssertEqual(service.unsaveCallCount, 0)
+        guard case .loaded(let poses) = model.state else { return XCTFail("Expected loaded") }
+        XCTAssertTrue(poses[0].isSaved, "the pose must end up saved once, not flip-flopped")
     }
 }
 

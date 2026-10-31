@@ -376,3 +376,47 @@ struct APStatusBanner: View {
         .accessibilityElement(children: action == nil ? .combine : .contain)
     }
 }
+
+/// The illustrated state panel (artboards `06-saved-signed-out`, `06-saved-empty`): the accent circle
+/// carries a white glyph, the copy is centred, and the action is a real button of constrained width —
+/// not a chip hugging its label. One component for every illustrated empty/gate panel.
+struct APIllustratedStatePanel: View {
+    var title: String
+    var message: String
+    var glyph: String = "bookmark"
+    var actionTitle: String?
+    var actionKind: APButtonKind = .primary
+    var action: (() -> Void)?
+    /// Width cap for the action; `nil` keeps it as wide as the panel allows.
+    var actionMaxWidth: CGFloat? = 260
+
+    var body: some View {
+        VStack(spacing: AP.Space.space16) {
+            Image(systemName: glyph)
+                .font(.system(size: 34, weight: .semibold))
+                .foregroundStyle(AP.Color.surface)
+                .frame(width: 104, height: 104)
+                .background(Circle().fill(AP.Color.accent))
+                .accessibilityHidden(true)
+            Text(title)
+                .font(AP.Font.title)
+                .foregroundStyle(AP.Color.primaryText)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(message)
+                .font(AP.Font.body)
+                .foregroundStyle(AP.Color.secondaryText)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+            if let actionTitle, let action {
+                Button(actionTitle, action: action)
+                    .buttonStyle(APButtonStyleForKind(kind: actionKind))
+                    .frame(maxWidth: actionMaxWidth)
+                    .padding(.top, AP.Space.space8)
+            }
+        }
+        .padding(.horizontal, AP.Space.space32)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+        .accessibilityElement(children: action == nil ? .combine : .contain)
+    }
+}

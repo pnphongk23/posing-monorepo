@@ -4,6 +4,36 @@
 import Kingfisher
 import SwiftUI
 
+/// Entering Saved means the saved collection: select it and load it, whatever panel is showing.
+/// A signed-in screen that only switched the filter for a *loaded* list left an empty Community model
+/// on "no saved poses" without ever asking the server.
+@MainActor
+enum APSavedEntry {
+    static func prepare(model: PosesViewModel) async {
+        model.filter = .saved
+        await model.load()
+    }
+}
+
+/// Copy for the unsave failure banner. The model owns the attempt; this only turns its error into a
+/// banner a person can read and dismiss.
+enum APSavedChrome {
+    struct Banner: Equatable {
+        let title: String
+        let message: String
+        let actionTitle: String
+    }
+
+    static func unsaveFailure(_ error: String?) -> Banner? {
+        guard let error, !error.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        return Banner(
+            title: "Couldn't update this pose",
+            message: error,
+            actionTitle: "Dismiss"
+        )
+    }
+}
+
 /// The count under the Saved title ("5 poses" in the artboard), singular and plural.
 enum SavedCountCopy {
     static func label(_ count: Int) -> String {

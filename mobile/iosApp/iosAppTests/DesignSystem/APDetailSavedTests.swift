@@ -39,6 +39,78 @@ final class APDetailSavedTests: XCTestCase {
         XCTAssertEqual(PoseDetailTags.stepText("  Turn your shoulders.  "), "Turn your shoulders.")
     }
 
+    // MARK: - Saved lifecycle
+
+    @MainActor func testEnteringSavedSelectsTheSavedFilterAndLoadsIt() async {
+        // The S2 defect: with an empty Community model the screen never selected `.saved` nor loaded,
+        // so it showed "no saved poses" without ever asking the server.
+        let service = SavedFilterSpyService(rows: [])
+        let model = PosesViewModel(service: service, bookmarkService: StubSavedBookmarkService())
+        model.filter = .community
+        await model.load()
+        XCTAssertEqual(model.state.rows.count, 0)
+
+        await APSavedEntry.prepare(model: model)
+
+        XCTAssertEqual(model.filter, .saved, "entering Saved must select the saved collection")
+        XCTAssertEqual(
+            service.posesCalls, 2,
+            "entering Saved must load the saved collection, not just switch the chip"
+        )
+    }
+
+    func testUnsaveFailureBannerIsOnlyShownForARealError() {
+        XCTAssertNil(APSavedChrome.unsaveFailure(nil))
+        XCTAssertNil(APSavedChrome.unsaveFailure("   "))
+        let banner = APSavedChrome.unsaveFailure("You're offline. Try again.")
+        XCTAssertEqual(banner?.title, "Couldn't update this pose")
+        XCTAssertEqual(banner?.message, "You're offline. Try again.")
+        XCTAssertEqual(banner?.actionTitle, "Dismiss")
+    }
+
+    // MARK: - Rendered: the illustrated gate
+
+    @MainActor func testIllustratedGatePaintsAnAccentCircleAndAConstrainedAction() {
+        let probe = APViewProbe(
+            APIllustratedStatePanel(
+                title: "Sign in to view your saved poses",
+                message: "Your saved poses are tied to your account.",
+                glyph: "bookmark",
+                actionTitle: "Sign in",
+                actionKind: .primary,
+                action: {}
+            ),
+            size: CGSize(width: 393, height: 560)
+        )
+        defer { probe.tearDown() }
+        let painted = probe.capture()
+
+        // The circle is the first accent artwork down the panel; the action button comes after it.
+        let firstAccentRow = (0..<painted.height).first { y in
+            (0..<painted.width).contains { x in
+                guard let pixel = painted.color(x: x, y: y) else { return false }
+                return abs(pixel.red - 232) <= 6 && abs(pixel.green - 156) <= 6 && abs(pixel.blue - 174) <= 6
+            }
+        }
+        guard let top = firstAccentRow,
+              let circle = largestRegion(of: 0xE89CAE, in: painted, rows: top..<(top + 140)) else {
+            return XCTFail("the illustrated panel must paint its accent circle")
+        }
+        XCTAssertGreaterThanOrEqual(circle.width, 90, "the accent circle is the illustration")
+        XCTAssertEqual(circle.width, circle.height, accuracy: 3, "the illustration is a circle")
+        XCTAssertEqual(CGFloat(circle.minX) + CGFloat(circle.width) / 2, 393 / 2, accuracy: 6,
+                       "the illustration is centred")
+
+        // The action is a real button of constrained width, not a chip hugging its label.
+        let narrowestAction = painted.width / 2
+        XCTAssertLessThanOrEqual(
+            circle.width, narrowestAction,
+            "sanity: the illustration is narrower than half the panel"
+        )
+        let buttonRows = rowsSpanned(by: 0xE89CAE, in: painted, minimumWidth: 150)
+        XCTAssertFalse(buttonRows.isEmpty, "the panel's action must paint a wide accent button")
+    }
+
     // MARK: - Rendered: Saved rows
 
     @MainActor func testSavedRowPaintsItsUnsaveTargetAsASelectedSurface() {
@@ -134,13 +206,19 @@ final class APDetailSavedTests: XCTestCase {
     }
 
     /// The bounding box of every pixel painting `hex` (tolerance absorbs the renderer's rounding).
-    private func largestRegion(of hex: UInt32, in bitmap: APBitmap, tolerance: Int = 6) -> Region? {
+    private func largestRegion(
+        of hex: UInt32,
+        in bitmap: APBitmap,
+        rows: Range<Int>? = nil,
+        tolerance: Int = 6
+    ) -> Region? {
         let target = (red: Int((hex >> 16) & 0xFF), green: Int((hex >> 8) & 0xFF), blue: Int(hex & 0xFF))
         var minX = Int.max
         var maxX = Int.min
         var minY = Int.max
         var maxY = Int.min
-        for y in 0..<bitmap.height {
+        let band = rows ?? 0..<bitmap.height
+        for y in band where y < bitmap.height {
             for x in 0..<bitmap.width {
                 guard let pixel = bitmap.color(x: x, y: y), pixel.alpha > 200 else { continue }
                 let matches = abs(pixel.red - target.red) <= tolerance
@@ -186,4 +264,31 @@ final class APDetailSavedTests: XCTestCase {
 private struct APEmptyPoseService: PoseServing {
     func poses(query: String?) async throws -> [NativePose] { [] }
     func pose(id: String) async throws -> NativePose { throw PoseAdapterError.poseNotFound(id) }
+}
+
+/// Counts catalogue reads, so "entering Saved loads the saved collection" is observable rather than
+/// assumed.
+private final class SavedFilterSpyService: PoseServing, @unchecked Sendable {
+    let rows: [NativePose]
+    private(set) var posesCalls = 0
+
+    init(rows: [NativePose]) {
+        self.rows = rows
+    }
+
+    func poses(query: String?) async throws -> [NativePose] {
+        posesCalls += 1
+        return rows
+    }
+
+    func pose(id: String) async throws -> NativePose {
+        guard let match = rows.first(where: { $0.id == id }) else { throw PoseAdapterError.poseNotFound(id) }
+        return match
+    }
+}
+
+/// A bookmark service that always succeeds: the entry test only cares which collection was read.
+private struct StubSavedBookmarkService: PoseBookmarkServing {
+    func savePose(poseId: String) async throws {}
+    func unsavePose(poseId: String) async throws {}
 }
