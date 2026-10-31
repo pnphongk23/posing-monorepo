@@ -9,7 +9,7 @@ import SwiftUI
 enum AddPoseConsentCopy {
     static let title = "Before you upload"
 
-    static let message = "To extract the pose, your photo is sent to a third-party AI service. The pose created from it is saved privately to your account until you delete it."
+    static let message = "To extract the pose, your photo is sent to a third-party AI service. The pose created from it is saved privately to your account until you delete your account."
 
     static let allow = "Allow"
     static let cancel = "Cancel"

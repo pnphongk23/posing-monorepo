@@ -239,7 +239,7 @@ final class AddPoseConsentTests: XCTestCase {
     func testCopyConstantMatchesApprovedDisclosure() {
         XCTAssertEqual(
             AddPoseConsentCopy.message,
-            "To extract the pose, your photo is sent to a third-party AI service. The pose created from it is saved privately to your account until you delete it."
+            "To extract the pose, your photo is sent to a third-party AI service. The pose created from it is saved privately to your account until you delete your account."
         )
         // The copy describes the flow, never the vendor behind it.
         let forbidden = ["Higgsfield", "higgsfield", "OpenAI", "Gemini", "Replicate", "Fal", "vendor"]
