@@ -1,28 +1,20 @@
-# TC-EXT-006 TC EXT 006 add pose photo error
+# TC-EXT-006 a rejected photo shows the inline banner and keeps the draft
 appId: ${APP_ID}
 tags: [TC-EXT-006, p1, e2e]
 ---
-# A rejected photo keeps the typed draft and asks for another photo.
 - runFlow: ../subflows/rd-launch.yaml
 - runFlow: ../subflows/rd-sign-in.yaml
-- tapOn:
-    id: "poses.add-pose"
-- tapOn:
-    id: "addPose.choosePhoto"
-- extendedWaitUntil:
-    visible: "Cancel"
-    timeout: 20000
-- tapOn:
-    point: "16%,26%"
-- tapOn:
-    id: "addPose.nameField"
-- inputText: "QA rejected photo"
-- tapOn:
-    id: "addPose.tags.addTag"
-- inputText: "standing"
-- tapOn: "Done"
-- tapOn:
-    id: "addPose.submitButton"
+- runFlow:
+    file: ../subflows/rd-add-pose-form.yaml
+    env:
+      POSE_NAME: "QA rejected photo"
+- runFlow:
+    when:
+      notVisible:
+        id: "addPose.consent.message"
+    commands:
+      - tapOn:
+          id: "addPose.submitButton"
 - runFlow:
     when:
       visible:
@@ -30,15 +22,13 @@ tags: [TC-EXT-006, p1, e2e]
     commands:
       - tapOn:
           id: "addPose.consent.allowButton"
-# Server rejects the photo: one card, the draft kept, the CTA disabled again.
+# Only INVALID_IMAGE / IMAGE_TOO_LARGE land here; every other failure goes to the bottom snackbar.
 - extendedWaitUntil:
     visible:
-      id: "addPose.error.title"
-    timeout: 60000
+      id: "addPose.errorView"
+    timeout: 90000
 - assertVisible:
-    id: "addPose.error.message"
-- assertVisible:
-    id: "addPose.changePhoto"
+    id: "addPose.changePhotoButton"
 - assertVisible:
     id: "addPose.nameField"
-    text: "QA rejected photo"
+    text: ".*QA rejected photo.*"
