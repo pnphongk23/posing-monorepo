@@ -1,0 +1,25 @@
+# DRAFT (move to maestro/flows once the ids are committed) — TC-SET-013 About sheet content
+appId: ${APP_ID}
+tags: [TC-SET-013, p1, draft]
+---
+- runFlow: ../subflows/launch.yaml
+- runFlow: ../subflows/open-settings.yaml
+- tapOn:
+    id: "settings.about"
+- assertVisible:
+    id: "about.version"
+- assertVisible:
+    id: "about.terms"
+- assertVisible:
+    id: "about.privacy"
+- assertVisible:
+    id: "about.licences"
+- assertVisible:
+    id: "about.contact"
+# A sheet closes back to the hub, it does not stack a second Settings push.
+- tapOn:
+    id: "about.close"          # exists
+- assertNotVisible:
+    id: "about.version"
+- assertVisible:
+    id: "settings.about"

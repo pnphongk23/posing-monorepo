@@ -1,0 +1,13 @@
+# DRAFT (move to maestro/flows once the ids are committed) — TC-SET-006 Settings hub, signed out
+appId: ${APP_ID}
+tags: [TC-SET-006, p0, draft]
+---
+- runFlow: ../subflows/launch-accounts-on.yaml
+- runFlow: ../subflows/open-settings.yaml
+# Signed out the identity card is replaced by an invitation, with a real control.
+- assertVisible:
+    id: "settings.signIn.card"
+- assertVisible:
+    id: "settings.signIn.button"
+- assertNotVisible:
+    id: "settings.accountCard"

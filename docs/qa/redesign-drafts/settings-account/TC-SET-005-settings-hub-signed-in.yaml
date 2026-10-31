@@ -1,0 +1,33 @@
+# DRAFT (move to maestro/flows once the ids are committed) — TC-SET-005 Settings hub, signed in
+# Needs a signed-in launch: today's subflows only launch signed out (see the note in the doc).
+appId: ${APP_ID}
+tags: [TC-SET-005, p0, draft]
+---
+- runFlow: ../subflows/launch-accounts-on.yaml
+- runFlow: ../subflows/open-settings.yaml
+- assertVisible:
+    id: "settings.accountCard"
+# A signed-in user is never asked to sign in.
+- assertNotVisible:
+    id: "settings.signIn.button"
+# Sections in board order: LIBRARY -> CAMERA -> APPEARANCE -> HELP.
+- assertVisible:
+    id: "settings.saved.row"
+    below:
+      id: "settings.accountCard"
+- assertVisible:
+    id: "settings.camera.grid"
+    below:
+      id: "settings.premium.row"
+- assertVisible:
+    id: "settings.appearance.system"
+    below:
+      id: "settings.camera.guideColour"
+- assertVisible:
+    id: "settings.about"
+    below:
+      id: "settings.replayOnboarding"
+- assertVisible:
+    id: "settings.appearance.light"
+- assertVisible:
+    id: "settings.appearance.dark"

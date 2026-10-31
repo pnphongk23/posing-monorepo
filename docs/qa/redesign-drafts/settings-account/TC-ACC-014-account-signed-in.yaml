@@ -1,0 +1,26 @@
+# DRAFT (move to maestro/flows once the ids are committed) — TC-ACC-014 signed-in Account content
+# Needs a signed-in launch (credentials), like TC-SET-005.
+appId: ${APP_ID}
+tags: [TC-ACC-014, p1, draft]
+---
+- runFlow: ../subflows/launch-accounts-on.yaml
+- runFlow: ../subflows/open-settings.yaml
+- tapOn:
+    id: "settings.accountCard"
+- assertVisible:
+    id: "account.avatar"
+- assertVisible:
+    id: "account.profile.email"
+- assertVisible:
+    id: "account.profile.method"
+- assertVisible:
+    id: "account.manageSubscription"
+- assertVisible:
+    id: "account.delete"
+# Back returns to the hub with the same identity: no signed-out flash.
+- tapOn:
+    id: "account.back"
+- assertVisible:
+    id: "settings.accountCard"
+- assertNotVisible:
+    id: "settings.signIn.button"

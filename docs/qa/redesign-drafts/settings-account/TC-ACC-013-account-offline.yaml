@@ -1,0 +1,23 @@
+# DRAFT (move to maestro/flows once the ids are committed) — TC-ACC-013 offline account keeps details, blocks delete
+# BLOCKED: needs a supported way to reach "offline with cached details" (a debug launch argument or a
+# documented network kill), which is a request to Feature — a bad base URL gives an error, not a cache.
+appId: ${APP_ID}
+tags: [TC-ACC-013, p0, draft]
+---
+- runFlow: ../subflows/launch-accounts-on.yaml
+- runFlow: ../subflows/open-settings.yaml
+- tapOn:
+    id: "settings.accountCard"
+- assertVisible:
+    id: "account.email"
+- assertVisible:
+    id: "account.offline.banner"
+# Delete is the dangerous action here: offline it must be refused with the reason, not attempted.
+- assertVisible:
+    id: "account.delete.reason"
+- tapOn:
+    id: "account.delete"
+- assertNotVisible:
+    id: "account.delete.confirm"
+- assertVisible:
+    id: "account.signout"

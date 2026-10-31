@@ -1,0 +1,19 @@
+# DRAFT (move to maestro/flows once the selected state is readable) — TC-SET-007 appearance survives a relaunch
+# Needs each option to expose its state (accessibility value "Selected"/"Not selected"), because Maestro
+# cannot read the .isSelected trait the control sets.
+appId: ${APP_ID}
+tags: [TC-SET-007, p0, draft]
+---
+- runFlow: ../subflows/launch.yaml
+- runFlow: ../subflows/open-settings.yaml
+- tapOn:
+    id: "settings.appearance.dark"
+# Relaunch WITHOUT clearState: a stored preference must outlive the process.
+- runFlow: ../subflows/relaunch-keep-state.yaml
+- runFlow: ../subflows/open-settings.yaml
+- assertVisible:
+    id: "settings.appearance.dark"
+    text: "Selected"
+- assertVisible:
+    id: "settings.appearance.light"
+    text: "Not selected"

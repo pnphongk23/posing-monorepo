@@ -1,0 +1,26 @@
+# DRAFT (move to maestro/flows once the ids are committed) — TC-ACC-012 account read failure, then retry
+# Failure is forced with a deliberately unreachable API base, so this runs without server help:
+# https://invalid.invalid passes EndpointPolicy.validate (https + host) so the override sticks and DNS fails.
+# If the app classifies that as OFFLINE rather than ERROR, this draft has to switch to account.offline.banner.
+appId: ${APP_ID}
+tags: [TC-ACC-012, p0, draft]
+---
+- launchApp:
+    clearState: true
+    clearKeychain: true
+    arguments:
+      AIPoseAccountsEnabled: "YES"
+      AIPoseAPIBaseURL: "https://invalid.invalid"
+- tapOn:
+    id: "poses.more"
+- tapOn:
+    id: "poses.menu.settings"
+- tapOn:
+    id: "settings.accountCard"
+- assertVisible:
+    id: "account.error"
+- assertVisible:
+    id: "account.error.retry"
+# Saved poses are a local feature: the failure must say so rather than imply data loss.
+- assertNotVisible:
+    id: "account.plan"
