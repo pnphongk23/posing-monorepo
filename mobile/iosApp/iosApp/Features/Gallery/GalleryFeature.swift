@@ -234,6 +234,19 @@ enum GalleryStateKind: String, CaseIterable {
     case grid
 }
 
+extension GalleryStateKind {
+    /// The identifier the state panel's own control must carry, or `nil` when the state has no action.
+    /// The screen reads this, so a test asserting it exercises the production mapping instead of
+    /// rebuilding a panel with the expected string.
+    var actionIdentifier: String? {
+        switch self {
+        case .emptyAll: return GalleryStateCopy.openCameraButtonIdentifier
+        case .error: return GalleryStateCopy.retryButtonIdentifier
+        case .loading, .emptyFilter, .grid: return nil
+        }
+    }
+}
+
 enum GalleryStatePresentation {
     static func kind(for state: Loadable<[GalleryItem]>, timeFilter: GalleryTimeFilter) -> GalleryStateKind {
         switch state {
@@ -589,7 +602,7 @@ struct GalleryStateContent: View {
                 actionTitle: GalleryStateCopy.openCameraActionTitle,
                 action: onOpenCamera,
                 style: .plain,
-                actionIdentifier: GalleryStateCopy.openCameraButtonIdentifier
+                actionIdentifier: kind.actionIdentifier
             )
             // The panel keeps its own id (the flows assert on it); the button inside carries
             // `gallery.empty.openCameraButton`.
@@ -608,7 +621,7 @@ struct GalleryStateContent: View {
                 retryTitle: GalleryStateCopy.retryActionTitle,
                 retry: onRetry,
                 style: .plain,
-                actionIdentifier: GalleryStateCopy.retryButtonIdentifier
+                actionIdentifier: kind.actionIdentifier
             )
             .accessibilityIdentifier("gallery.error")
         case .grid:
@@ -847,33 +860,39 @@ struct GalleryPhotoCell: View {
     }
 
     private var media: some View {
-        ZStack {
-            AP.Color.controlFill
-            if phase == .failed {
-                VStack(spacing: AP.Space.space4) {
-                    Image(systemName: GalleryMediaGlyph.failed)
-                        .font(.system(size: 20, weight: .semibold))
-                    Text(GalleryDetailCopy.retryTitle)
-                        .font(AP.Font.caption)
-                }
-                .foregroundStyle(AP.Color.secondaryText)
-                .accessibilityHidden(true)
-            } else {
-                GalleryLocalImage(
-                    url: item.fileURL,
-                    contentMode: .fill,
-                    targetSize: GalleryGridContract.cellDrawSize,
-                    onFailure: markFailed,
-                    onSuccess: markLoaded
-                ) {
-                    Color.clear
-                }
-                // Reloading is a new identity: Kingfisher keeps the failed cache entry otherwise.
-                .id(retryToken)
+        // The tile is sized by the square `Rectangle`, and the photo is an overlay: an image drawn with
+        // `.fill` reports the size it covers, so letting it size the tile made cells (and the detail
+        // frame) outgrow the inset the grid gives them.
+        Rectangle()
+            .fill(AP.Color.controlFill)
+            .aspectRatio(1, contentMode: .fit)
+            .overlay { mediaContent }
+            .clipShape(RoundedRectangle(cornerRadius: GalleryGridContract.cornerRadius, style: .continuous))
+    }
+
+    @ViewBuilder private var mediaContent: some View {
+        if phase == .failed {
+            VStack(spacing: AP.Space.space4) {
+                Image(systemName: GalleryMediaGlyph.failed)
+                    .font(.system(size: 20, weight: .semibold))
+                Text(GalleryDetailCopy.retryTitle)
+                    .font(AP.Font.caption)
             }
+            .foregroundStyle(AP.Color.secondaryText)
+            .accessibilityHidden(true)
+        } else {
+            GalleryLocalImage(
+                url: item.fileURL,
+                contentMode: .fill,
+                targetSize: GalleryGridContract.cellDrawSize,
+                onFailure: markFailed,
+                onSuccess: markLoaded
+            ) {
+                Color.clear
+            }
+            // Reloading is a new identity: Kingfisher keeps the failed cache entry otherwise.
+            .id(retryToken)
         }
-        .aspectRatio(1, contentMode: .fit)
-        .clipShape(RoundedRectangle(cornerRadius: GalleryGridContract.cornerRadius, style: .continuous))
     }
 
     private func markFailed() {
@@ -935,31 +954,50 @@ enum GalleryDetailPresentation {
 /// panel with its own retry.
 struct GalleryDetailPhotoFrame: View {
     let item: GalleryItem
+    /// Test seam: production always starts at `.loading`, the rendered failure test starts at `.failed`.
+    var initialPhase: GalleryCellPhase = .loading
 
-    @State private var phase: GalleryCellPhase = .loading
+    @State private var phase: GalleryCellPhase
     @State private var retryToken = 0
 
+    init(item: GalleryItem, initialPhase: GalleryCellPhase = .loading) {
+        self.item = item
+        self.initialPhase = initialPhase
+        _phase = State(initialValue: initialPhase)
+    }
+
     var body: some View {
-        ZStack {
-            Rectangle().fill(AP.Color.controlFill)
-            switch phase {
-            case .failed:
-                failedPanel
-            case .loading, .loaded:
-                GalleryLocalImage(
-                    url: item.fileURL,
-                    contentMode: .fill,
-                    targetSize: FullScreenImageTarget.drawSize,
-                    onFailure: markFailed,
-                    onSuccess: markLoaded
-                ) {
-                    Color.clear
+        if phase == .failed {
+            // The failure state takes its natural height instead of the photo's fixed 3:4 box: at the
+            // Accessibility sizes the headline, the message and Retry together are taller than that
+            // box, and squeezing them into it clipped the control. The page itself scrolls.
+            failedPanel
+                .background(
+                    RoundedRectangle(cornerRadius: AP.Radius.radius24, style: .continuous)
+                        .fill(AP.Color.surface)
+                        .apElevation(.e1, cornerRadius: AP.Radius.radius24)
+                )
+                .clipShape(RoundedRectangle(cornerRadius: AP.Radius.radius24, style: .continuous))
+        } else {
+            // Sized by the 3:4 `Rectangle`, photo as an overlay: a `.fill` image reports the size it
+            // covers, so letting it size the tile made the photo outgrow the page inset.
+            Rectangle()
+                .fill(AP.Color.controlFill)
+                .aspectRatio(3 / 4, contentMode: .fit)
+                .overlay {
+                    GalleryLocalImage(
+                        url: item.fileURL,
+                        contentMode: .fill,
+                        targetSize: FullScreenImageTarget.drawSize,
+                        onFailure: markFailed,
+                        onSuccess: markLoaded
+                    ) {
+                        Color.clear
+                    }
+                    .id(retryToken)
                 }
-                .id(retryToken)
-            }
+                .clipShape(RoundedRectangle(cornerRadius: AP.Radius.radius24, style: .continuous))
         }
-        .aspectRatio(3 / 4, contentMode: .fit)
-        .clipShape(RoundedRectangle(cornerRadius: AP.Radius.radius24, style: .continuous))
     }
 
     private var failedPanel: some View {
@@ -983,7 +1021,7 @@ struct GalleryDetailPhotoFrame: View {
                 .accessibilityIdentifier(GalleryDetailAccessibility.failedRetryIdentifier)
         }
         .padding(AP.Space.space24)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .frame(maxWidth: .infinity)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier(GalleryDetailAccessibility.failedIdentifier)
     }
@@ -1007,6 +1045,45 @@ struct GalleryDetailPhotoFrame: View {
     private func retry() {
         phase = .loading
         retryToken += 1
+    }
+}
+
+/// F1 page header plus the screen's own Options control. The Options control is a **sibling** in the
+/// row, not an overlay: at 320 pt and the Accessibility sizes a wrapping date would otherwise run
+/// underneath it. (APPageHeader has no trailing slot, so the reservation lives here.)
+struct GalleryDetailHeader: View {
+    let title: String
+    var onBack: () -> Void = {}
+    var onDelete: () -> Void = {}
+
+    var body: some View {
+        HStack(alignment: .center, spacing: AP.Space.space8) {
+            APPageHeader(
+                title: title,
+                backLabel: "Back",
+                backStyle: .control,
+                backIdentifier: GalleryDetailAccessibility.backIdentifier,
+                titleIdentifier: GalleryDetailAccessibility.titleIdentifier,
+                onBack: onBack
+            )
+            Menu {
+                Button(role: .destructive, action: onDelete) {
+                    Label(GalleryDeleteConfirmSpec.confirmTitle, systemImage: "trash")
+                }
+            } label: {
+                APHeaderActionGlyph(systemImage: "ellipsis")
+                    .background(
+                        RoundedRectangle(cornerRadius: AP.Radius.radius16, style: .continuous)
+                            .fill(AP.Color.controlFill)
+                    )
+            }
+            // The menu's own tint would paint the glyph in system blue; the header control is AP ink.
+            .tint(AP.Color.primaryText)
+            .accessibilityLabel(GalleryDetailCopy.optionsTitle)
+            .accessibilityIdentifier(GalleryDetailAccessibility.optionsIdentifier)
+            .padding(.trailing, AP.Space.space16)
+        }
+        .frame(minHeight: AP.HitTarget.minimum)
     }
 }
 
@@ -1050,11 +1127,20 @@ struct GalleryDetailPager: View {
                 // F5: the snackbar rides directly above the action tray, never mid-screen.
                 TabView(selection: $page) {
                     ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-                        GalleryDetailPhotoFrame(item: item)
-                            .padding(.horizontal, AP.Space.space24)
-                            .padding(.top, AP.Space.space16)
-                            .tag(index)
-                            .accessibilityLabel(GalleryDetailAccessibility.mediaLabel)
+                        // Top-aligned and scrollable: the media sits right under the header, and a
+                        // failure panel that is taller than the screen (AX sizes) stays reachable.
+                        ScrollView(.vertical, showsIndicators: false) {
+                            VStack(spacing: 0) {
+                                GalleryDetailPhotoFrame(item: item)
+                                    .padding(.horizontal, AP.Space.space24)
+                                    .padding(.top, AP.Space.space16)
+                                Spacer(minLength: 0)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .top)
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                        .tag(index)
+                        .accessibilityLabel(GalleryDetailAccessibility.mediaLabel)
                     }
                 }
                 .tabViewStyle(.page(indexDisplayMode: items.count > 1 ? .automatic : .never))
@@ -1105,28 +1191,11 @@ struct GalleryDetailPager: View {
     /// F1/F2: the shared page header — back control and the inline date on one row — with the
     /// screen's own options control in the trailing slot. The old "3 of 12" line is gone (F3).
     private var topbar: some View {
-        APPageHeader(
+        GalleryDetailHeader(
             title: current.createdAt.formatted(date: .abbreviated, time: .omitted),
-            backLabel: "Back",
-            backStyle: .control,
-            backIdentifier: GalleryDetailAccessibility.backIdentifier,
-            titleIdentifier: GalleryDetailAccessibility.titleIdentifier,
-            onBack: onDismiss
+            onBack: onDismiss,
+            onDelete: { showsDeleteConfirm = true }
         )
-        .overlay(alignment: .trailing) {
-            Menu {
-                Button(role: .destructive) {
-                    showsDeleteConfirm = true
-                } label: {
-                    Label(GalleryDeleteConfirmSpec.confirmTitle, systemImage: "trash")
-                }
-            } label: {
-                APHeaderActionGlyph(systemImage: "ellipsis")
-            }
-            .accessibilityLabel(GalleryDetailCopy.optionsTitle)
-            .accessibilityIdentifier(GalleryDetailAccessibility.optionsIdentifier)
-            .padding(.trailing, AP.Space.space16)
-        }
     }
 
     /// `07-photo-detail`: a raised `surface` tray directly above the bottom safe area, one row of

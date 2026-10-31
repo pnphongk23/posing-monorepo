@@ -162,21 +162,110 @@ final class GalleryFeatureTests: XCTestCase {
         )
     }
 
-    /// QA's TC-GAL-001 taps the empty-state action by id, so the constant must reach the shared panel's
-    /// action control. Renaming it here (or dropping the argument) breaks this test.
-    @MainActor func testGalleryEmptyStateWiresTheQaActionIdentifier() {
+    /// QA's TC-GAL-001 taps the empty-state action by id. The assertion reads the **production** mapping
+    /// the screen uses (`GalleryStateKind.actionIdentifier`), so dropping `actionIdentifier:` from the
+    /// panel in `GalleryStateContent` turns this red instead of passing on a hand-built panel.
+    @MainActor func testGalleryStatePanelsCarryTheQaActionIdentifier() {
         XCTAssertEqual(GalleryStateCopy.openCameraButtonIdentifier, "gallery.empty.openCameraButton")
         XCTAssertEqual(GalleryStateCopy.retryButtonIdentifier, "gallery.error.retry")
 
+        let emptyAll = GalleryStatePresentation.kind(for: .empty, timeFilter: .all)
+        XCTAssertEqual(emptyAll, .emptyAll)
+        XCTAssertEqual(emptyAll.actionIdentifier, "gallery.empty.openCameraButton")
+        XCTAssertEqual(
+            GalleryStatePresentation.kind(for: .failed("boom"), timeFilter: .all).actionIdentifier,
+            "gallery.error.retry"
+        )
+        // The states without an action must not carry an identifier (a tap target that does nothing).
+        XCTAssertNil(GalleryStatePresentation.kind(for: .empty, timeFilter: .today).actionIdentifier)
+        XCTAssertNil(GalleryStatePresentation.kind(for: .loading, timeFilter: .all).actionIdentifier)
+        XCTAssertNil(
+            GalleryStatePresentation
+                .kind(for: .loaded([GalleryItem(id: 1, fileURL: URL(fileURLWithPath: "/tmp/a.jpg"), createdAt: .now)]), timeFilter: .all)
+                .actionIdentifier
+        )
+
+        // And the identifier the screen would pass is the one the shared panel puts on its control.
         let panel = APEmptyStateView(
             title: GalleryStateCopy.emptyAllTitle,
             message: GalleryStateCopy.emptyAllMessage,
             actionTitle: GalleryStateCopy.openCameraActionTitle,
             action: {},
             style: .plain,
-            actionIdentifier: GalleryStateCopy.openCameraButtonIdentifier
+            actionIdentifier: emptyAll.actionIdentifier
         )
-        XCTAssertEqual(panel.actionIdentifier, "gallery.empty.openCameraButton")
+        XCTAssertEqual(panel.actionIdentifier, emptyAll.actionIdentifier)
+    }
+
+    /// The empty gallery's actionable state is the one that opens the camera; the filter-empty state is
+    /// deliberately actionless, so QA can only drive the camera from the all-empty panel.
+    @MainActor func testOnlyTheAllEmptyStateOffersTheCameraAction() {
+        XCTAssertEqual(GalleryStateCopy.openCameraActionTitle, "Open Camera")
+        XCTAssertNotNil(GalleryStatePresentation.kind(for: .empty, timeFilter: .all).actionIdentifier)
+        XCTAssertNil(GalleryStatePresentation.kind(for: .empty, timeFilter: .month).actionIdentifier)
+    }
+
+    /// The detail failure panel is drawn at its natural height, not inside the photo's fixed 3:4 box: at
+    /// the largest Accessibility size the headline, the message and Retry are taller than that box, and
+    /// squeezing them into it clipped the control. Rendering at the box's width must still paint Retry.
+    @MainActor func testGalleryDetailFailurePanelKeepsRetryAtAccessibilitySizes() {
+        let item = GalleryItem(id: 1, fileURL: URL(fileURLWithPath: "/tmp/missing-photo.jpg"), createdAt: noonToday())
+        // 272 pt = the 3:4 media box on a 320 pt phone. The window is tall enough to hold the whole
+        // panel, so the only thing that can hide Retry is the app clipping it into the 3:4 box.
+        let size = CGSize(width: 272, height: 700)
+        let probe = APViewProbe(AP.Color.background, size: size, scale: 1)
+        defer { probe.tearDown() }
+
+        let bitmap = probe.render(
+            galleryHost(
+                GalleryDetailPhotoFrame(item: item, initialPhase: .failed)
+                    .environment(\.dynamicTypeSize, .accessibility5),
+                size: size,
+                topAligned: true
+            )
+        )
+        // The failure card is `surface` and Retry is the only `controlFill` control in it, so a painted
+        // controlFill row is the Retry button and nothing else.
+        let retryRows = rowsPainted(with: 0xECE5D8, in: bitmap, columns: 0..<bitmap.width)
+        XCTAssertFalse(
+            retryRows.isEmpty,
+            "Retry must be painted inside the failure state at AX5 (a 3:4 box clipped it)"
+        )
+        XCTAssertEqual(GalleryDetailCopy.failedTitle, "Couldn't load this photo")
+    }
+
+    /// The detail header reserves layout space for the Options control: at 320 pt with Accessibility 3
+    /// the date must not run underneath it. The gap immediately left of the control stays empty; with an
+    /// overlaid control the date's ink continues into it.
+    @MainActor func testGalleryDetailHeaderReservesSpaceForTheOptionsControl() {
+        let size = CGSize(width: 320, height: 220)
+        let probe = APViewProbe(AP.Color.background, size: size, scale: 1)
+        defer { probe.tearDown() }
+
+        let bitmap = probe.render(
+            galleryHost(
+                GalleryDetailHeader(title: "31 October 2026 at 15:07")
+                    .environment(\.dynamicTypeSize, .accessibility3),
+                size: size,
+                topAligned: true
+            )
+        )
+        let controlColumns = paintedColumnRuns(with: 0xECE5D8, in: bitmap)
+        guard let control = controlColumns.last else {
+            return XCTFail("the Options control must paint its 44 pt controlFill box")
+        }
+        XCTAssertEqual(Double(control.count), 44, accuracy: 3, "the Options control is a 44 pt target")
+        let gap = (control.lowerBound - 8)..<(control.lowerBound - 1)
+        XCTAssertEqual(
+            inkPixelCount(in: bitmap, columns: gap),
+            0,
+            "the date must stop short of the Options control, not run underneath it"
+        )
+        XCTAssertGreaterThan(
+            inkPixelCount(in: bitmap, columns: 0..<control.lowerBound),
+            0,
+            "the date is painted in its own region"
+        )
     }
 
     /// Rendered proof that every non-grid state uses the shared 72 pt accent-tint circle (F4) instead of
