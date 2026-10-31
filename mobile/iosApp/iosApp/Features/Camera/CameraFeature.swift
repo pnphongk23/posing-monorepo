@@ -274,6 +274,13 @@ final class CameraViewModel: ObservableObject {
         isPoseGuideVisible.toggle()
     }
 
+    /// Mirror: flips the pose reference horizontally. The reference is what the user lines up against,
+    /// so this mirrors the guide (the `guideFlipped` setting persisted since FEAT-012), never the photo.
+    func toggleGuideMirror() {
+        guard cameraControlsEnabled else { return }
+        guideFlipped.toggle()
+    }
+
     func setGuideLineColor(_ color: GuideLineColor) {
         guard cameraControlsEnabled else { return }
         guideLineColor = color
@@ -847,6 +854,7 @@ struct CameraScreen: View {
                             controlsEnabled: model.cameraControlsEnabled,
                             hasPose: guide != nil,
                             isPoseGuideVisible: model.isPoseGuideVisible,
+                            guideFlipped: model.guideFlipped,
                             guideOpacity: model.guideOpacity,
                             guideLineColor: model.guideLineColor,
                             popupWidth: min(CameraProto.popupWidth, size.width - CameraProto.controlInset * 2),
@@ -860,6 +868,7 @@ struct CameraScreen: View {
                             onFlashTap: { model.cycleFlash() },
                             onGridToggle: { model.toggleGrid() },
                             onPoseGuideVisibilityToggle: { model.togglePoseGuideVisibility() },
+                            onMirrorToggle: { model.toggleGuideMirror() },
                             onGuideOpacityChange: { model.setGuideOpacity($0) },
                             onGuideLineColorChange: { model.setGuideLineColor($0) },
                             onDismiss: { dismissCameraTools() }
@@ -1780,6 +1789,7 @@ private struct CameraToolsPopup: View {
     let controlsEnabled: Bool
     let hasPose: Bool
     let isPoseGuideVisible: Bool
+    let guideFlipped: Bool
     let guideOpacity: Double
     let guideLineColor: GuideLineColor
     let popupWidth: CGFloat
@@ -1787,6 +1797,7 @@ private struct CameraToolsPopup: View {
     let onFlashTap: () -> Void
     let onGridToggle: () -> Void
     let onPoseGuideVisibilityToggle: () -> Void
+    let onMirrorToggle: () -> Void
     let onGuideOpacityChange: (Double) -> Void
     let onGuideLineColorChange: (GuideLineColor) -> Void
     let onDismiss: () -> Void
@@ -1851,6 +1862,7 @@ private struct CameraToolsPopup: View {
                     identifier: "camera.tools.poseGuide",
                     action: onPoseGuideVisibilityToggle
                 )
+                mirrorRow
                 opacityRow
                 lineColorRow
             }
@@ -1962,6 +1974,58 @@ private struct CameraToolsPopup: View {
     }
 
     /// Opacity: label + value on the tone's ink, slider tinted with the accent.
+    /// Mirror: flips the pose reference (the guide), with a glyph and a word so the state is never
+    /// carried by the switch's own position.
+    private var mirrorRow: some View {
+        HStack(spacing: AP.Space.space8) {
+            Image(systemName: "arrow.left.and.right.righttriangle.left.righttriangle.right")
+                .font(AP.Font.body)
+                .foregroundStyle(AP.Color.primaryText)
+                .frame(width: 22)
+                .accessibilityHidden(true)
+            Text("Mirror guide")
+                .font(AP.Font.body)
+                .foregroundStyle(AP.Color.primaryText)
+            Spacer(minLength: AP.Space.space8)
+            Text(guideFlipped ? "Mirrored" : "Normal")
+                .font(AP.Font.body.weight(.semibold))
+                .foregroundStyle(AP.Color.accentText)
+            mirrorSwitch
+        }
+        .padding(.horizontal, AP.Space.space12)
+        .frame(maxWidth: .infinity, minHeight: AP.HitTarget.minimum, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: AP.Radius.radius16, style: .continuous)
+                .fill(AP.Color.controlFill)
+        )
+        .opacity(controlsEnabled ? 1 : 0.45)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("camera.tools.mirror")
+    }
+
+    private var mirrorSwitch: some View {
+        Button(action: onMirrorToggle) {
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(guideFlipped ? AP.Color.accent : AP.Color.controlFillPressed)
+                    .frame(width: 48, height: 28)
+                Circle()
+                    .fill(AP.Color.onAccent)
+                    .frame(width: 22, height: 22)
+                    .padding(.leading, 3)
+                    .offset(x: guideFlipped ? 20 : 0)
+            }
+            .animation(.easeOut(duration: 0.1), value: guideFlipped)
+        }
+        .buttonStyle(.plain)
+        .apMinimumHitTarget()
+        .disabled(!controlsEnabled)
+        .accessibilityLabel("Mirror pose guide")
+        .accessibilityValue(guideFlipped ? "Mirrored" : "Normal")
+        .accessibilityIdentifier("camera.tools.mirror.switch")
+        .accessibilityAddTraits(guideFlipped ? [.isSelected] : [])
+    }
+
     private var opacityRow: some View {
         VStack(alignment: .leading, spacing: AP.Space.space4) {
             HStack(spacing: AP.Space.space8) {

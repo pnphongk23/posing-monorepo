@@ -1769,3 +1769,36 @@ final class CameraChromeTests: XCTestCase {
         }
     }
 }
+
+// MARK: - Mirror (pose guide)
+
+@MainActor
+final class CameraGuideMirrorTests: XCTestCase {
+    /// Mirror flips the *pose guide* — the reference the user lines up against — because that is the
+    /// setting the camera has persisted since FEAT-012 without a control, and `tokens.md` pins the
+    /// guide flip's motion ("guide flip mirrors with a turn").
+    func testMirrorFlipsThePoseGuideAndIsGated() {
+        let model = CameraViewModel()
+        model.coordinator.onPermissionResult(.authorized)
+        XCTAssertFalse(model.guideFlipped, "the guide starts unmirrored")
+
+        model.toggleGuideMirror()
+        XCTAssertTrue(model.guideFlipped, "Mirror flips the pose reference")
+        model.toggleGuideMirror()
+        XCTAssertFalse(model.guideFlipped)
+
+        let denied = CameraViewModel()
+        denied.coordinator.onPermissionResult(.denied)
+        denied.toggleGuideMirror()
+        XCTAssertFalse(denied.guideFlipped, "a control the camera cannot serve does not move the state")
+    }
+
+    /// The flip is what the render path applies (`scaleEffect(x: guideFlipped ? -1 : 1)`), and it is
+    /// persisted with the other guide settings.
+    func testTheFlippedStateRoundTripsWithTheCameraSettings() throws {
+        var settings = CameraSettings()
+        settings.guideFlipped = true
+        let decoded = try XCTUnwrap(CameraSettings.decode(try settings.encodedJSON()))
+        XCTAssertTrue(decoded.guideFlipped)
+    }
+}
