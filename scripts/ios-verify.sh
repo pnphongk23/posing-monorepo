@@ -103,7 +103,13 @@ check_disk() {
 
 check_single_build() {
   local running
-  if running="$(pgrep -x xcodebuild)"; then
+  # A Maestro driver run is `test-without-building` against the QA simulator: it compiles nothing,
+  # so it is not a build and must not serialise the unit lane behind it (the L1 and L2 lanes use
+  # different simulators and different DerivedData roots).
+  running="$(pgrep -x xcodebuild | while read -r pid; do
+    ps -o command= -p "$pid" 2>/dev/null | grep -q 'maestro-driver' || echo "$pid"
+  done || true)"
+  if [[ -n "$running" ]]; then
     fail "another xcodebuild is already running (pid(s): $(echo "$running" | tr '\n' ' '))." \
       "One iOS build at a time machine-wide — wait for it (or stop it) and retry."
   fi
