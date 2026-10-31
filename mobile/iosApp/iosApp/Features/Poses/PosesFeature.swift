@@ -1092,14 +1092,12 @@ struct PosesScreen: View {
         APMoreMenu(
             jobsActiveCount: jobsService.activeCount,
             isSignedIn: session.isSignedIn,
-            isAddPoseEnabled: AppConfig.canExtractPose(isEnabled: AppConfig.shared.isExtractPoseEnabled),
             isJobsEnabled: JobsEntryPolicy.canOpen(extractPoseEnabled: AppConfig.shared.isExtractPoseEnabled),
             savedDestination: AppConfig.shared.isAccountFeatureEnabled
                 ? AnyView(SavedPosesScreen(model: model, onTryPose: onTryPose))
                 : nil,
             settingsDestination: AnyView(SettingsScreen(posesModel: model, onTryPose: onTryPose)),
             maxWidth: dynamicTypeSize.isAccessibilitySize ? nil : 296,
-            onAddPose: openAddPose,
             onJobs: openJobs,
             onSavedTapped: { setShowsMoreMenu(false) },
             onSettingsTapped: { setShowsMoreMenu(false) }

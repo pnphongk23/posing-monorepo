@@ -7,8 +7,6 @@ struct APMoreMenu: View {
     /// Jobs actively processing, shown as the pink badge on the Jobs row.
     var jobsActiveCount: Int = 0
     var isSignedIn: Bool = false
-    /// Add pose is off until the extract feature is enabled; the row says so and disables itself.
-    var isAddPoseEnabled: Bool = true
     var isJobsEnabled: Bool = true
     /// The account feature flag gates the Saved entry, exactly as it gated the header link.
     var savedDestination: AnyView?
@@ -16,14 +14,12 @@ struct APMoreMenu: View {
     var settingsDestination: AnyView?
     /// `nil` lets the card take the full available width (the AX sizes, where 296 pt would clip).
     var maxWidth: CGFloat? = 296
-    var onAddPose: () -> Void = {}
     var onJobs: () -> Void = {}
     var onSavedTapped: () -> Void = {}
     var onSettingsTapped: () -> Void = {}
 
     private var rows: [APMoreMenuRowSpec] {
         APMoreMenuSpec.rows(
-            isAddPoseEnabled: isAddPoseEnabled,
             showsSaved: savedDestination != nil,
             showsSettings: settingsDestination != nil
         )
@@ -31,16 +27,6 @@ struct APMoreMenu: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("MORE")
-                .font(AP.Font.caption.weight(.semibold))
-                .kerning(0.7)
-                .foregroundStyle(AP.Color.secondaryText)
-                .padding(.horizontal, AP.Space.space16)
-                .padding(.top, AP.Space.space12)
-                .padding(.bottom, AP.Space.space8)
-
-            addPoseRow
-            separator
             jobsRow
             if rows.contains(where: { $0.title == "Saved" }), let savedDestination {
                 separator
@@ -67,23 +53,6 @@ struct APMoreMenu: View {
         .accessibilityElement(children: .contain)
     }
 
-    private var addPoseRow: some View {
-        Button(action: onAddPose) {
-            row(
-                systemImage: "plus.circle",
-                title: "Add pose",
-                subtitle: isAddPoseEnabled ? "" : "Turned off while we review",
-                isEnabled: isAddPoseEnabled,
-                trailing: { lockIcon(isVisible: !isAddPoseEnabled) }
-            )
-        }
-        .buttonStyle(.plain)
-        .disabled(!isAddPoseEnabled)
-        .accessibilityLabel("Add pose")
-        .accessibilityHint(isAddPoseEnabled ? "" : "Turned off while we review")
-        .accessibilityIdentifier("poses.add-pose")
-    }
-
     private var jobsRow: some View {
         let badge = isSignedIn ? jobsActiveCount : 0
         return Button(action: onJobs) {
@@ -92,7 +61,12 @@ struct APMoreMenu: View {
                 title: "Jobs",
                 subtitle: "",
                 isEnabled: isJobsEnabled,
-                trailing: { jobsBadge(count: badge) }
+                trailing: {
+                    HStack(spacing: AP.Space.space8) {
+                        jobsBadge(count: badge)
+                        chevronIcon
+                    }
+                }
             )
         }
         .buttonStyle(.plain)

@@ -91,11 +91,8 @@ struct APMoreMenuRowSpec: Equatable {
 enum APMoreMenuSpec {
     /// Jobs carries the running-count badge (the only count the app still shows) and no subtitle;
     /// Saved has no subtitle; Settings is the gear row that opens the existing Settings screen.
-    static func rows(isAddPoseEnabled: Bool, showsSaved: Bool, showsSettings: Bool) -> [APMoreMenuRowSpec] {
-        var rows = [
-            APMoreMenuRowSpec(title: "Add pose", systemImage: "plus.circle"),
-            APMoreMenuRowSpec(title: "Jobs", systemImage: "hourglass")
-        ]
+    static func rows(showsSaved: Bool, showsSettings: Bool) -> [APMoreMenuRowSpec] {
+        var rows = [APMoreMenuRowSpec(title: "Jobs", systemImage: "hourglass")]
         if showsSaved {
             rows.append(APMoreMenuRowSpec(title: "Saved", systemImage: "bookmark"))
         }

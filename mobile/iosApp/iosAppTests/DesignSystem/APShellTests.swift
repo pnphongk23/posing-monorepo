@@ -43,8 +43,8 @@ final class APShellTests: XCTestCase {
     // MARK: - More menu (F8)
 
     func testMoreMenuRowsCarryNoSubtitleCounts() {
-        let rows = APMoreMenuSpec.rows(isAddPoseEnabled: true, showsSaved: true, showsSettings: true)
-        XCTAssertEqual(rows.map(\.title), ["Add pose", "Jobs", "Saved", "Settings"])
+        let rows = APMoreMenuSpec.rows(showsSaved: true, showsSettings: true)
+        XCTAssertEqual(rows.map(\.title), ["Jobs", "Saved", "Settings"])
         XCTAssertEqual(rows.last?.systemImage, "gearshape", "Settings is the gear row")
 
         // Only the Jobs badge may carry a number: no row title carries one.
@@ -55,8 +55,8 @@ final class APShellTests: XCTestCase {
             )
         }
         XCTAssertEqual(
-            APMoreMenuSpec.rows(isAddPoseEnabled: true, showsSaved: false, showsSettings: true).map(\.title),
-            ["Add pose", "Jobs", "Settings"],
+            APMoreMenuSpec.rows(showsSaved: false, showsSettings: true).map(\.title),
+            ["Jobs", "Settings"],
             "Saved is gated by the account flag"
         )
     }
