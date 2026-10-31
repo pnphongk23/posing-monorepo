@@ -30,7 +30,7 @@ mapping/geometry/copy behind those screens is asserted in `GalleryFeatureTests.s
 | TC-GAL-017 | P1 | Gallery in a failing state (store cannot open) | Open Gallery | One shared state panel under the header ("Couldn't load gallery" + the store's reason + "Try again"), chips stay interactive, and Retry re-runs the load | unit: GalleryFeatureTests (`testGalleryStatePresentationPicksOneSharedStatePerState`, `testGalleryStatePanelsCarryTheQaActionIdentifier`, `testGalleryStatePanelsDrawTheSeventyTwoPointAccentCircle`, `testGalleryLoadFailureSurfacesError`) |
 | TC-GAL-018 | P1 | Gallery with photos, device offline | Open Gallery with no network | The cached photos still render, an offline banner sits above the grid ("You're offline. Showing downloaded poses."), each photo whose file is not available offline is marked as such instead of showing a blank tile, and the state is recoverable — no count text, no dead screen | pending — ids: `gallery.offline.banner`, `gallery.cell.<id>.offline` (no `GalleryStateKind.offline` case exists yet; F4 requires an offline state on every screen) |
 | TC-GAL-019 | P1 | One photo open | Read the detail screen under the photo | A caption block under the frame: the photo's title, then the date, time and file size ("Today · 11:08 · 1.2 MB" style, size omitted when unknown). No "1 of 12" and no photo-count line anywhere; the caption never pushes the action tray off screen at large text sizes | pending — ids: `gallery.detail.caption`, `gallery.detail.caption.title`, `gallery.detail.caption.meta` (caption block not built yet) |
-| TC-GAL-020 | P1 | Photos in the gallery | Star a photo from the detail caption, then filter the grid by Starred | **Out of scope for 1.2.** The Star action and the Starred filter are design-only: no model field, no DB column, no service call, so nothing can be starred or filtered. Kept as the acceptance target for when it is built | out of scope 1.2 (no flow, no ids; do not delete the idea) |
+| TC-GAL-020 | P1 | Photos in the gallery | Star a photo from the detail caption, then filter the grid by Starred | **Out of scope for 1.1.** The Star action and the Starred filter are design-only: no model field, no DB column, no service call, so nothing can be starred or filtered. Kept as the acceptance target for when it is built | out of scope 1.1 (no flow, no ids; do not delete the idea) |
 
 Notes for triage:
 - **TC-GAL-006 replaced the old "favourites" case.** The redesign removed favourites: `GalleryTimeFilter` is
@@ -58,13 +58,13 @@ Notes for triage:
 - **TC-GAL-003** and **TC-GAL-013** — the detail header title is the photo's **date** and there is no caption block yet;
   when the caption block lands (TC-GAL-019) the header/caption split and the "no count" wording must be re-recorded.
 - **TC-GAL-006** — the shipped filter set is All / Today / 7 days / 30 days (boards show All / This week / **Starred**).
-  Stable unless Starred is built, which is out of scope 1.2.
+  Stable unless Starred is built, which is out of scope 1.1.
 - **TC-GAL-014** — the app replaces the whole frame with the failure panel + Retry, while the board keeps the tray muted;
   if the failed-photo presentation changes, this case's expected changes with it.
 
-## Out of scope for 1.2 (no flows; kept as acceptance targets)
+## Out of scope for 1.1 (no flows; kept as acceptance targets)
 - TC-GAL-020 Star action + Starred filter (no model, no DB column).
-- The Gallery tray's **Add pose** action (the tray ships Share / Save / Delete; Add pose publish is cut for 1.2 as well).
+- The Gallery tray's **Add pose** action (the tray ships Share / Save / Delete; Add pose publish is cut for 1.1 as well).
 
 ## Requests to Feature (via the QA lead)
 1. A Debug-only gallery fixture launch argument (for example `-AIPoseGalleryFixture 12` with a spread of

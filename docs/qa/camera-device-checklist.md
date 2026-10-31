@@ -1,10 +1,10 @@
 # On a real device — camera and paywall (product owner checklist)
 
-The Simulator has no camera, so the camera sections below must be done on a physical iPhone with the Dev build
-installed (`posing.camera.app`). Section 1 (paywall) needs a **production / TestFlight** build: a Release build on a
-Simulator cannot resolve the real StoreKit products (see `docs/qa/prod-smoke` S-05 — the offering never loads and the
-paywall falls back to "Plans are temporarily unavailable"), so the plan cards and their prices can only be verified
-on device. Budget ~30 minutes. Record the screen (Control Centre → Screen Recording) for the whole run.
+Release 1.1 (build 17). The Simulator has no camera, so the camera sections below must be done on a physical iPhone with
+the Dev build installed (`posing.camera.app`). Section 1 (paywall) needs a **production / TestFlight** build: a Release
+build on a Simulator cannot resolve the real StoreKit products (see `docs/qa/prod-smoke` S-05 — the offering never loads
+and the paywall falls back to "Plans are temporarily unavailable"), so the plan cards and their prices can only be
+verified on device. Budget ~35 minutes. Record the screen (Control Centre → Screen Recording) for the whole run.
 
 **Before you start**
 - [ ] Close every other app; set brightness to ~70%; unlock rotation lock.
@@ -69,8 +69,13 @@ The whole top chrome is one row. The eye only exists once a pose is chosen.
 4. Tap the tools control (three sliders).
 - [ ] **Expected:** a **Camera tools** panel opens **under the top bar, on the right** — not a bottom sheet, no dimmed
   background, no drag handle. It has a title row "Camera tools" with a **Done** button, then the rows: **Flash**,
-  **Grid**, a "Pose guide" section with an eye row reading **Shown**/**Hidden**, **Opacity** with a "%" value and a
-  slider, and **Line colour** with **Black** | **White** — the chosen colour carries a tick, not just a fill.
+  **Grid**, **Timer** (Off · 3s · 10s), **Ratio** (3:4 · 9:16 · 1:1), a "Pose guide" section with an eye row reading
+  **Shown**/**Hidden**, **Opacity** with a "%" value and a slider, **Scale** (a second slider — the guide grows and
+  shrinks about its centre), a **mirror** toggle for the guide, and **Line colour** with **Black** | **White** — the
+  chosen colour carries a tick, not just a fill.
+- [ ] Change **Timer**, **Ratio**, **Scale** and the guide **mirror** once each, then reopen the panel.
+- [ ] **Expected:** every row still reads the value you set (in words, not just a different colour), the guide visibly grows
+  / flips when you move Scale / mirror, and reopening the camera keeps all four.
 5. Tap anywhere outside the panel.
 - [ ] **Expected:** it closes with no dark scrim left behind. **Done** also closes it. Turn **Grid** on → the framing grid
   is drawn over the preview; the panel stays open.
@@ -109,6 +114,10 @@ The whole top chrome is one row. The eye only exists once a pose is chosen.
 - [ ] Capture again, wait ~5 seconds, then capture once more and tap the snackbar itself.
 - [ ] **Expected:** left alone it goes away after a few seconds; tapping it dismisses it immediately; a new capture
   replaces the old text instead of stacking a second snackbar.
+- [ ] Set **Timer → 3s** in the tools panel, then tap the shutter.
+- [ ] **Expected:** a countdown (3 · 2 · 1) runs over the preview and the photo is taken at zero — not immediately.
+- [ ] Repeat it and tap the countdown's cancel control before it reaches zero.
+- [ ] **Expected:** the countdown stops, the shutter returns to normal, and **no** new photo appears in the Gallery.
 
 ## 6. Zoom is three pills, not one cycling button
 - [ ] Look just above the strip (above the shutter bar when collapsed).
@@ -190,7 +199,30 @@ Two paths: the app has never asked for the camera, and the permission was refuse
 - [ ] In the camera, tap the last-photo thumbnail on the bottom bar.
 - [ ] **Expected:** you land in Gallery with the newest photo in view. Going back to the camera with the dock camera button and then tapping Close returns to **Home** (the camera only returns to a pose detail when it was opened from one).
 
-## 12. One-line verdict
+## 12. What lands in the saved photo — ratio, zoom, front-camera mirror, guide scale (TC-CAM-029/030/031/032)
+These four checks read the **photo file**, not the screen, so they are device-only. They prove the preview and the saved
+image agree.
+1. Ratio.
+- [ ] In the tools panel set **Ratio → 1:1**, frame a scene with obvious edges, capture, and open the photo in Gallery,
+  then in Photos.
+- [ ] **Expected:** the preview was masked to a square and the saved photo **is** square — the crop is real, with no black
+  bars baked into the image and no stretching. The Gallery cell shows it square too.
+- [ ] Repeat with **9:16** (tall) and **3:4** (portrait).
+- [ ] **Expected:** each saved photo matches the framing you saw when you pressed the shutter.
+2. Zoom.
+- [ ] Set **2x**, capture, then set **1x** and capture the same scene.
+- [ ] **Expected:** the 2x photo is visibly tighter than the 1x one — the saved result uses the zoom the preview showed, it
+  does not silently fall back to 1x.
+3. Front camera.
+- [ ] Switch to the front camera, hold something with text in view, capture, and read the saved photo.
+- [ ] **Expected:** the photo is upright, mirrored the way the preview showed it, and the pose guide is **not** baked into
+  the image.
+4. Guide Scale and mirror (screen only).
+- [ ] With a pose guide on screen, move **Scale**, then toggle the guide's **mirror** control.
+- [ ] **Expected:** the guide grows/shrinks about its centre and flips horizontally, the real preview behind it is
+  untouched, and both survive closing and reopening the camera.
+
+## 13. One-line verdict
 - [ ] Everything above passed → reply "device pass" (add "paywall ok" for section 1 if you ran it).
 - [ ] Something failed → reply with: the check number, what you saw, the screen recording, and the device/iOS/build line from the top of your notes.
 
@@ -199,8 +231,8 @@ Notes for QA triage (not for the product owner): automated equivalents live in
 collapsed state's persistence, the strip's content per picker state, the shared 72 pt permission panel, and the snackbar
 pinned above the control bar on a rendered bitmap) and
 `mobile/iosApp/iosAppTests/Features/GalleryFeatureTests.swift` (grid geometry, date sections, state panels, delete
-success/failure, share preparation, AX layout) with `docs/qa/test-cases/camera-guide.md` (TC-CAM-012…020) and
-`docs/qa/test-cases/capture-gallery.md` (TC-GAL-002…017).
+success/failure, share preparation, AX layout) with `docs/qa/test-cases/camera-guide.md` (TC-CAM-012…032) and
+`docs/qa/test-cases/capture-gallery.md` (TC-GAL-002…020).
 Camera ids the new chrome gives flows (committed at `b8878da`): `camera.close`, `camera.choosePose`
 (the pose title, opens the sheet), `camera.guideToggle` (eye, only with a guide), `camera.tools` + `camera.tools.done`,
 `camera.zoom.1x|2x|3x`, `camera.status` (snackbar), `camera.permission` (the panel), `camera.pickerStripToggle`
@@ -213,10 +245,11 @@ Gallery ids (committed): `gallery.title`, `gallery.add-pose`, `gallery.filter.al
 Not yet in the build (do not report as failures until Feature lands them; the cases exist and are named here so the two
 artifacts stay in step): the pose sheet's **All / Saved** scope chips + "No saved poses yet" (TC-CAM-022/023), the picker's
 **offline** banner and marked not-downloaded poses (TC-CAM-025), the Gallery **offline** banner + offline cells
-(TC-GAL-018) and the photo-detail **caption block** name / date · time · size (TC-GAL-019). Held by the owner for 1.2:
-Scale, mirror-guide, Timer, Ratio (TC-CAM-027) and the Gallery Star action + Starred filter (TC-GAL-020).
-Section numbers shifted with the redesign (twice): the top bar is section 3, the zoom pills section 6, the Gallery is
-section 9, photo detail is the new section 10 and Close moved 8 → 11. Map any older device note to the new number
-before filing it.
+(TC-GAL-018) and the photo-detail **caption block** name / date · time · size (TC-GAL-019), and the newly in-scope
+**Timer / Ratio / guide Scale / guide mirror** controls (TC-CAM-027/028/029/030/031/032 — sections 3, 5 and 12 above are
+written for the build that has them). Out of scope for 1.1 only: the Gallery Star action + Starred filter (TC-GAL-020).
+Section numbers shifted with the redesign: the top bar is section 3, the zoom pills section 6, the Gallery is section 9,
+photo detail is the new section 10, Close moved 8 → 11 and the saved-photo checks are the new section 12 (verdict is 13).
+Map any older device note to the new number before filing it.
 The paywall section's simulator equivalent is `docs/qa/prod-smoke/flows/S-05b-paywall-signed-in.yaml`, which is
 BLOCKED-BY-ENV for the price assertion (S-05b) — that is exactly why section 1 is manual and on device.

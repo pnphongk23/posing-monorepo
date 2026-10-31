@@ -1,4 +1,4 @@
-# Build 17 redesign — Gallery / photo detail + Camera drafts
+# Build 17 (release 1.1) redesign — Gallery / photo detail + Camera drafts
 
 Draft Maestro flows for the redesigned cases in [camera-guide.md](../../test-cases/camera-guide.md) and
 [capture-gallery.md](../../test-cases/capture-gallery.md). They are NOT in `mobile/iosApp/maestro/flows/`, so the
@@ -32,6 +32,19 @@ one explicit pathspec.
 
 Boards used: `/tmp/ds-261030/export-c/05-camera-collapsed.png`, `05-camera-collapsed-dark.png`,
 `07-gallery-grid-ax3.png`, `07-gallery-grid-dark.png`, plus `FEEDBACK-261031.md` (F3, F4, F5, F10, F12).
+
+## Waiting on ids (cases written, no draft yet)
+Timer, Ratio, guide Scale and guide mirror are **in scope for 1.1** (owner decision, 20:50) but are not in committed
+source, so these cases have no draft:
+
+| Case | Needs |
+|---|---|
+| TC-CAM-027 (Timer + Ratio rows) | `camera.tools.timer`, `camera.tools.ratio` + a readable value per row |
+| TC-CAM-028 (countdown + cancel) | `camera.timer.countdown`, `camera.timer.cancel` — the countdown UI may render without a feed, so this one is intended to become a draft flow |
+| TC-CAM-032 (guide Scale + mirror) | `camera.tools.scale`, `camera.tools.mirror` + readable values |
+
+TC-CAM-029/030/031 (saved-image crop, zoom and front-camera mirroring) can never be a flow — there is no capture on the
+Simulator — and live in [docs/qa/camera-device-checklist.md](../../camera-device-checklist.md) §12.
 
 Device-only cases (capture snackbar, the first-run "Allow Camera" branch, real photos) are not drafted here: they are
 walked through in [docs/qa/camera-device-checklist.md](../../camera-device-checklist.md) and cannot be a Simulator flow
