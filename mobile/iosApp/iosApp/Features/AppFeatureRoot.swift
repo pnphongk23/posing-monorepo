@@ -158,10 +158,11 @@ struct AppFeatureRoot: View {
                     .transition(.opacity)
             }
         }
-        // The dock floats at `bottom: 16pt + safe area` in the prototype, i.e. anchored to the
-        // screen — not to the keyboard. Without this, the whole stack shrinks for the keyboard and
-        // the dock ends up floating in the middle of the results grid while the user types.
-        .ignoresSafeArea([.container, .keyboard], edges: .bottom)
+        // The dock floats at `bottom: 16pt + safe area`, anchored to the screen — not to the
+        // keyboard, or it ends up floating in the middle of the results grid while the user types.
+        // Search is the exception: it hides the dock and its state panels must stay above the
+        // keyboard (`03-search-no-results`), so the keyboard inset is honoured there.
+        .ignoresSafeArea(isSearchPresented ? [.container] : [.container, .keyboard], edges: .bottom)
     }
 
     /// "Use this pose" from a pose detail: the explicit pose wins over the remembered one, it becomes
