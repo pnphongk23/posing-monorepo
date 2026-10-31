@@ -1,0 +1,38 @@
+# TC-PAY-005 an entitled account that signs out is gated again on the next capture
+appId: ${APP_ID}
+tags: [TC-PAY-005, p1]
+---
+- runFlow: ../subflows/pay-launch.yaml
+- runFlow: ../subflows/pay-sign-in.yaml
+# Buy first, so the sign-out below starts from a real entitlement.
+- runFlow: ../subflows/open-camera.yaml
+- tapOn:
+    id: "camera.shutter"
+- extendedWaitUntil:
+    visible:
+      id: "paywall.cta"
+    timeout: 20000
+- runFlow: ../subflows/pay-buy-monthly.yaml
+- tapOn:
+    id: "camera.close"
+- runFlow: ../subflows/open-settings.yaml
+- tapOn:
+    id: "settings.account.row"
+- tapOn: "Sign out"
+# The email entry only exists on the signed-out Account screen: the session really ended before the
+# capture below.
+- extendedWaitUntil:
+    visible:
+      id: "signin.emailEntry"
+    timeout: 30000
+- tapOn: "Back"
+- tapOn: "Back"
+- runFlow: ../subflows/open-camera.yaml
+- tapOn:
+    id: "camera.shutter"
+# Signed out is its own gate branch (PremiumGate G4), so this asserts the paywall returns; it cannot
+# by itself prove the entitlement was dropped — TC-PAY-006 is the carry-over check.
+- extendedWaitUntil:
+    visible:
+      id: "paywall.signin"
+    timeout: 20000

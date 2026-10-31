@@ -1,0 +1,38 @@
+# Buys the Monthly plan from an open paywall through the RevenueCat Test Store dialog. Preconditions:
+# paywall on screen, signed in, plans loaded (paywall.cta present, Annual preselected by
+# PaywallPlanCatalog.ordered). Ends on the camera: a confirmed entitlement closes the sheet by itself
+# (PremiumGate.swift:140-151), so the confirmation banner is deliberately NOT asserted here — it can
+# be gone before a selector could read it. Callers assert entitlement where it is stable instead.
+appId: ${APP_ID}
+---
+- extendedWaitUntil:
+    visible:
+      id: "paywall.cta"
+    timeout: 30000
+# Annual is the default selection; picking Monthly proves the picked plan is the one purchased.
+- tapOn: "Monthly plan, not selected.*"
+- assertVisible: "Continue with Monthly"
+- tapOn:
+    id: "paywall.cta"
+# Test Store dialog (SDK-owned, in-process): "Test valid purchase" / "Test failed purchase" / "Cancel".
+# A purchase that never reaches the store leaves this step waiting, which is the failure we want.
+- extendedWaitUntil:
+    visible: "Test valid purchase"
+    timeout: 30000
+- tapOn: "Test valid purchase"
+- extendedWaitUntil:
+    notVisible: "Test valid purchase"
+    timeout: 60000
+# Belt and braces: if the sheet is still up (a slower answer than this step), close it so every caller
+# continues from the camera. A failed/cancelled purchase keeps the paywall up with its error banner.
+- runFlow:
+    when:
+      visible:
+        id: "paywall.close"
+    commands:
+      - tapOn:
+          id: "paywall.close"
+- extendedWaitUntil:
+    visible:
+      id: "camera.shutter"
+    timeout: 20000

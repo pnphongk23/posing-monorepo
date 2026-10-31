@@ -1,0 +1,43 @@
+# Email sign-in for the purchase flows. Credentials arrive as ${E2E_EMAIL} / ${E2E_PASSWORD} from the
+# runner (`-e E2E_EMAIL=...` or the shell env); TC-PAY-006 injects the B pair under the same names via
+# `env:` on its runFlow. Nothing credential-shaped lives in this file, and an unset pair fails here
+# with a readable label instead of typing into empty fields.
+appId: ${APP_ID}
+---
+- assertTrue:
+    condition: ${E2E_EMAIL != null && E2E_EMAIL.length > 0}
+    label: "E2E_EMAIL is unset — run with -e E2E_EMAIL=... -e E2E_PASSWORD=..."
+- assertTrue:
+    condition: ${E2E_PASSWORD != null && E2E_PASSWORD.length > 0}
+    label: "E2E_PASSWORD is unset — run with -e E2E_EMAIL=... -e E2E_PASSWORD=..."
+- runFlow: open-settings.yaml
+- tapOn:
+    id: "settings.account.row"
+- tapOn:
+    id: "signin.emailEntry"
+- extendedWaitUntil:
+    visible:
+      id: "signin.email"
+    timeout: 10000
+- tapOn:
+    id: "signin.email"
+- inputText: ${E2E_EMAIL}
+- tapOn:
+    id: "signin.password"
+- inputText: ${E2E_PASSWORD}
+- tapOn:
+    id: "signin.submit"
+# "Delete account" only exists in the signed-in Account state, so this proves the session landed
+# before any purchase step runs (the server round-trip can be slow on a cold start).
+- extendedWaitUntil:
+    visible: "Delete account"
+    timeout: 60000
+- assertNotVisible:
+    id: "signin.emailEntry"
+# End on Home, so callers can continue with `open-camera` / `open-settings` from a known screen.
+- tapOn: "Back"
+- tapOn: "Back"
+- extendedWaitUntil:
+    visible:
+      id: "poses.open-search"
+    timeout: 20000

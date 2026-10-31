@@ -1,0 +1,18 @@
+# Clean launch for the paid-action flows: Debug-only paywall switch and accounts on, and NO
+# `AIPosePurchasesConfigured` override, so the RevenueCat key compiled into the build (Test Store
+# `test_…` on Debug-Dev) is what makes the paywall reachable. Firestore untouched.
+appId: ${APP_ID}
+---
+- launchApp:
+    clearState: true
+    clearKeychain: true
+    permissions:
+      camera: allow
+      photos: allow
+    arguments:
+      AIPosePaywallEnabled: "YES"
+      AIPoseAccountsEnabled: "YES"
+- extendedWaitUntil:
+    visible:
+      id: "poses.open-search"
+    timeout: 30000

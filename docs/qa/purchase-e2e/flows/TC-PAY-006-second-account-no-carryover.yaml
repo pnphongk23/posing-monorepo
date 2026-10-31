@@ -1,0 +1,47 @@
+# TC-PAY-006 a second account on the same device gets no entitlement from the first account's purchase
+appId: ${APP_ID}
+tags: [TC-PAY-006, p1]
+---
+- runFlow: ../subflows/pay-launch.yaml
+- runFlow: ../subflows/pay-sign-in.yaml
+# Account A buys, and the gate opens for it.
+- runFlow: ../subflows/open-camera.yaml
+- tapOn:
+    id: "camera.shutter"
+- extendedWaitUntil:
+    visible:
+      id: "paywall.cta"
+    timeout: 20000
+- runFlow: ../subflows/pay-buy-monthly.yaml
+- tapOn:
+    id: "camera.close"
+# Hand the device to account B.
+- runFlow: ../subflows/open-settings.yaml
+- tapOn:
+    id: "settings.account.row"
+- tapOn: "Sign out"
+- extendedWaitUntil:
+    visible:
+      id: "signin.emailEntry"
+    timeout: 30000
+- tapOn: "Back"
+- tapOn: "Back"
+- runFlow:
+    file: ../subflows/pay-sign-in.yaml
+    env:
+      E2E_EMAIL: ${E2E_EMAIL_B}
+      E2E_PASSWORD: ${E2E_PASSWORD_B}
+- runFlow: ../subflows/open-camera.yaml
+- tapOn:
+    id: "camera.shutter"
+# B is signed in and holds nothing: the gate must ask for Premium *without* the sign-in prompt, and
+# the paywall must not claim access. A carried-over entitlement would have skipped the paywall
+# altogether, so these assertions fail together on a leak.
+- extendedWaitUntil:
+    visible:
+      id: "paywall.cta"
+    timeout: 20000
+- assertVisible: "Continue with Annual"
+- assertNotVisible:
+    id: "paywall.signin"
+- assertNotVisible: ".*Premium access confirmed.*"
