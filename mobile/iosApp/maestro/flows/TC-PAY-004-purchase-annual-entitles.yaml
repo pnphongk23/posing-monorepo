@@ -1,6 +1,6 @@
 # TC-PAY-004 a signed-in account buys a plan through the Test Store and Premium un-gates capture
 appId: ${APP_ID}
-tags: [TC-PAY-004, p1]
+tags: [TC-PAY-004, p1, e2e]
 ---
 - runFlow: ../subflows/pay-launch.yaml
 - runFlow: ../subflows/pay-sign-in.yaml

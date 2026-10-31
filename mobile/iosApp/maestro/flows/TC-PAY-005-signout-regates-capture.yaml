@@ -1,6 +1,6 @@
 # TC-PAY-005 an entitled account that signs out is gated again on the next capture
 appId: ${APP_ID}
-tags: [TC-PAY-005, p1]
+tags: [TC-PAY-005, p1, e2e]
 ---
 - runFlow: ../subflows/pay-launch.yaml
 - runFlow: ../subflows/pay-sign-in.yaml
