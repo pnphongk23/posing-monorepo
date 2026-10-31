@@ -352,3 +352,318 @@ final class AccountSessionTests: XCTestCase {
         XCTAssertTrue(condition(), "Timed out waiting for \(description)", file: file, line: line)
     }
 }
+
+// MARK: - Build-17 support surface: identity claims, offline details, plan truth, hub rules
+
+/// Counts reachability readings so a test can prove the model wired the monitor it was given.
+@MainActor
+private final class FakeConnectivity: AccountConnectivityMonitoring {
+    var onChange: ((Bool) -> Void)?
+    private(set) var isStarted = false
+
+    func start() { isStarted = true }
+    func stop() { isStarted = false }
+
+    func emit(isOffline: Bool) { onChange?(isOffline) }
+}
+
+/// The Account screen's identity, plan and offline behaviour, plus the Settings hub's pure copy
+/// rules. Everything here is a claim the app makes to the user, so each one is asserted against the
+/// real input that produces it — never against a screenshot.
+@MainActor
+final class AccountSupportSurfaceTests: XCTestCase {
+    // MARK: - Session claims → AccountIdentity
+
+    func testIdentityReadsTheEmailAndProviderTheTokenCarries() {
+        let apple = SessionTokenClaims.identity(fromAccessToken: Self.token(
+            email: "maya@example.com",
+            provider: "apple"
+        ))
+        XCTAssertEqual(apple.email, "maya@example.com")
+        XCTAssertEqual(apple.signInMethod, "Apple")
+
+        XCTAssertEqual(
+            SessionTokenClaims.identity(fromAccessToken: Self.token(email: "maya@example.com", provider: "google")).signInMethod,
+            "Google"
+        )
+        XCTAssertEqual(
+            SessionTokenClaims.identity(fromAccessToken: Self.token(email: "maya@example.com", provider: "email")).signInMethod,
+            "Email"
+        )
+    }
+
+    /// Supabase puts password sign-in in `amr`, not in `app_metadata.provider`; both are read.
+    func testPasswordSignInIsReadFromTheAuthenticationMethodsList() {
+        let token = Self.token(payload: [
+            "email": "maya@example.com",
+            "amr": [["method": "password"]]
+        ])
+        XCTAssertEqual(SessionTokenClaims.identity(fromAccessToken: token).signInMethod, "Email")
+    }
+
+    /// An opaque token (or a provider the app cannot name) proves nothing, so nothing is rendered as
+    /// if it did. This is what keeps the Profile rows from inventing an address.
+    func testUnprovableIdentityIsEmptyInsteadOfInvented() {
+        XCTAssertEqual(SessionTokenClaims.identity(fromAccessToken: "access"), .unknown)
+        XCTAssertEqual(SessionTokenClaims.identity(fromAccessToken: ""), .unknown)
+        XCTAssertEqual(SessionTokenClaims.identity(fromAccessToken: "a.!!!.c"), .unknown)
+        XCTAssertTrue(SessionTokenClaims.identity(fromAccessToken: "access").isEmpty)
+
+        let unknownProvider = SessionTokenClaims.identity(fromAccessToken: Self.token(
+            email: "maya@example.com",
+            provider: "saml"
+        ))
+        XCTAssertNil(unknownProvider.signInMethod, "an unnameable provider is hidden, never labelled \"Other\"")
+        XCTAssertEqual(unknownProvider.email, "maya@example.com")
+
+        let notAnAddress = SessionTokenClaims.identity(fromAccessToken: Self.token(email: "maya", provider: "email"))
+        XCTAssertNil(notAnAddress.email, "a value that is not an address is not shown as one")
+    }
+
+    func testAvatarInitialsUseAtMostTwoWords() {
+        XCTAssertEqual(AccountAvatar.initials(for: "Maya Pham"), "MP")
+        XCTAssertEqual(AccountAvatar.initials(for: "maya pham nguyen"), "MP")
+        XCTAssertEqual(AccountAvatar.initials(for: "Phong"), "P")
+        XCTAssertEqual(AccountAvatar.initials(for: ""), "")
+        XCTAssertEqual(AccountAvatar.initials(for: "   "), "")
+    }
+
+    // MARK: - Offline (board 10-09 / TC-ACC-013)
+
+    func testOfflineDisablesTheDeletionRowAndKeepsSignOutAvailable() async {
+        let connectivity = FakeConnectivity()
+        let storage = InMemoryTokenStorage(credentials: storedCredentials)
+        let boundary = SessionBoundary(tokenStorage: storage)
+        let model = AccountSessionModel(
+            boundary: boundary,
+            readAccount: { account() },
+            signInHistory: FakeSignInHistory(hasSignedInBefore: true),
+            connectivity: connectivity
+        )
+
+        model.start()
+        XCTAssertTrue(connectivity.isStarted, "the screen's monitor is what decides the offline state")
+        await waitUntil("signed in") { model.state == .signedIn(account()) }
+        XCTAssertTrue(model.isAccountDeletionRequestAvailable)
+        XCTAssertNil(model.accountDeletionUnavailableReason)
+
+        connectivity.emit(isOffline: true)
+        await waitUntil("offline") { model.isOffline }
+
+        XCTAssertFalse(
+            model.isAccountDeletionRequestAvailable,
+            "the deletion form cannot be filled in without a connection"
+        )
+        XCTAssertEqual(model.accountDeletionUnavailableReason, "Connect to the internet to delete")
+        XCTAssertTrue(model.isSignOutAvailable, "signing out is local, so it stays available")
+
+        var opened: [URL] = []
+        XCTAssertNil(
+            model.openAccountDeletionRequest { opened.append($0) },
+            "an offline tap must not send the user to a form that cannot load"
+        )
+        XCTAssertTrue(opened.isEmpty)
+
+        model.stop()
+        XCTAssertFalse(connectivity.isStarted, "the monitor does not outlive the screen")
+    }
+
+    /// A failed read while the device has no network is not an error screen: the identity already on
+    /// this device is what the offline board shows.
+    func testOfflineReadFailureKeepsTheAlreadyProjectedIdentity() async {
+        let connectivity = FakeConnectivity()
+        let storage = InMemoryTokenStorage(credentials: storedCredentials)
+        let reads = ReadCounter()
+        let model = AccountSessionModel(
+            boundary: SessionBoundary(tokenStorage: storage),
+            readAccount: {
+                reads.increment()
+                if reads.value > 1 { throw URLError(.notConnectedToInternet) }
+                return account(name: "Maya Pham")
+            },
+            signInHistory: FakeSignInHistory(hasSignedInBefore: true),
+            connectivity: connectivity
+        )
+        model.start()
+        await waitUntil("signed in") { model.state == .signedIn(account(name: "Maya Pham")) }
+
+        connectivity.emit(isOffline: true)
+        model.retry()
+
+        await waitUntil("cached details") { model.isShowingCachedDetails }
+        XCTAssertEqual(model.state, .signedIn(account(name: "Maya Pham")))
+        XCTAssertTrue(model.isOffline)
+        XCTAssertFalse(model.isAccountDeletionRequestAvailable)
+    }
+
+    /// The same network failure *without* a previous read is a real error state, not an empty screen.
+    func testOfflineFailureWithoutCachedIdentityIsTheErrorState() async {
+        let model = AccountSessionModel(
+            boundary: SessionBoundary(tokenStorage: InMemoryTokenStorage(credentials: storedCredentials)),
+            readAccount: { throw URLError(.notConnectedToInternet) },
+            signInHistory: FakeSignInHistory(hasSignedInBefore: true)
+        )
+        model.start()
+        await waitUntil("failed") { if case .failed = model.state { return true }; return false }
+        XCTAssertFalse(model.isShowingCachedDetails)
+    }
+
+    // MARK: - Session changes drop the identity
+
+    func testSignOutDropsTheCachedIdentityAndTheClaims() async {
+        let storage = InMemoryTokenStorage(credentials: SessionCredentials(
+            accessToken: Self.token(email: "maya@example.com", provider: "apple"),
+            refreshToken: "refresh"
+        ))
+        let model = AccountSessionModel(
+            boundary: SessionBoundary(tokenStorage: storage),
+            readAccount: { account(name: "Maya Pham") },
+            signInHistory: FakeSignInHistory(hasSignedInBefore: true)
+        )
+        model.start()
+        await waitUntil("signed in") { model.state == .signedIn(account(name: "Maya Pham")) }
+        XCTAssertEqual(model.identity.email, "maya@example.com")
+
+        model.signOut()
+        await waitUntil("signed out") { model.state == .signedOut }
+
+        XCTAssertEqual(model.identity, .unknown, "no previous account's address survives a sign-out")
+        XCTAssertNil(model.cachedAccount)
+        XCTAssertFalse(model.isShowingCachedDetails)
+    }
+
+    // MARK: - Premium plan (board 10-05 / TC-ACC-014)
+
+    func testPlanIsClaimedOnlyFromAConfirmedEntitlement() {
+        XCTAssertEqual(AccountPremiumStatus.resolve(entitlement: .entitled, isSignedIn: true), .active)
+        XCTAssertEqual(AccountPremiumStatus.resolve(entitlement: .entitled, isSignedIn: false), .notSubscribed,
+                       "an entitlement with no session is not this user's plan")
+
+        for state in [PurchaseGatewayState.notEntitled, .billingRetry, .expired, .revoked, .unconfigured] {
+            XCTAssertEqual(AccountPremiumStatus.resolve(entitlement: state, isSignedIn: true), .notSubscribed,
+                           "\(state.rawValue) is a confirmed negative")
+        }
+        for state in [PurchaseGatewayState.loading, .noOffering, .purchasePending, .purchaseCancelled,
+                      .purchaseFailed, .signInRequired] {
+            XCTAssertEqual(AccountPremiumStatus.resolve(entitlement: state, isSignedIn: true), .unknown,
+                           "\(state.rawValue) proves nothing about access, so no plan is shown")
+        }
+        let everyState: [PurchaseGatewayState] = [
+            .loading, .unconfigured, .noOffering, .notEntitled, .entitled, .purchasePending,
+            .purchaseCancelled, .purchaseFailed, .billingRetry, .expired, .revoked, .signInRequired
+        ]
+        for state in everyState {
+            XCTAssertEqual(
+                AccountPremiumStatus.resolve(entitlement: state, isSignedIn: false),
+                .notSubscribed,
+                "signed out, \(state.rawValue) is never a plan"
+            )
+        }
+    }
+
+    func testOnlyAnActivePlanShowsAPlanValueAndManageSubscription() {
+        XCTAssertEqual(AccountPremiumStatus.active.planValue, "Premium")
+        XCTAssertEqual(AccountPremiumStatus.active.badge, "Active")
+        XCTAssertTrue(AccountPremiumStatus.active.showsManageSubscription)
+
+        XCTAssertEqual(AccountPremiumStatus.notSubscribed.planValue, "Not subscribed")
+        XCTAssertNil(AccountPremiumStatus.notSubscribed.badge, "only a live entitlement may say Active")
+        XCTAssertFalse(AccountPremiumStatus.notSubscribed.showsManageSubscription)
+
+        XCTAssertNil(AccountPremiumStatus.unknown.planValue)
+        XCTAssertNil(AccountPremiumStatus.unknown.badge)
+        XCTAssertFalse(AccountPremiumStatus.unknown.showsManageSubscription)
+    }
+
+    func testSubscriptionManagementOpensTheAppStorePage() throws {
+        XCTAssertEqual(
+            SubscriptionManagement.appStoreSubscriptions,
+            "https://apps.apple.com/account/subscriptions"
+        )
+        let url = try XCTUnwrap(SubscriptionManagement.appStoreSubscriptionsURL)
+        XCTAssertEqual(url.scheme, "https")
+        XCTAssertEqual(url.host, "apps.apple.com")
+    }
+
+    // MARK: - Settings hub rules (boards 10-01 / 10-02)
+
+    func testSystemCaptionOnlyExplainsSystem() {
+        XCTAssertEqual(SettingsHub.appearanceCaption(for: .system), "System follows your iPhone setting.")
+        XCTAssertNil(SettingsHub.appearanceCaption(for: .light), "it must not claim to follow the phone under Light")
+        XCTAssertNil(SettingsHub.appearanceCaption(for: .dark))
+    }
+
+    func testSignedOutHubCopyPromisesOnlyWhatExists() {
+        XCTAssertEqual(SettingsHub.savedValue(isSignedIn: false), "Sign in to view")
+        XCTAssertNil(SettingsHub.savedValue(isSignedIn: true))
+        XCTAssertEqual(SettingsHub.signInTitle(appName: "posing"), "Sign in to posing")
+        XCTAssertEqual(
+            SettingsHub.signInMessage,
+            "Keep your Saved poses with you and use Premium on every device."
+        )
+        // Premium unlocks the shutter only: the hub's copy must not promise anything else.
+        XCTAssertFalse(SettingsHub.signInMessage.lowercased().contains("unlimited"))
+    }
+
+    func testPremiumRowLabelCarriesTheSameStatusAsTheBadge() {
+        XCTAssertEqual(SettingsHub.premiumLabel(.active), "Premium, active. Opens premium")
+        XCTAssertEqual(SettingsHub.premiumLabel(.notSubscribed), "Premium, not subscribed. Opens premium")
+        XCTAssertEqual(SettingsHub.premiumLabel(.unknown), "Premium. Opens premium")
+    }
+
+    // MARK: - About → licences (board 10-12)
+
+    func testLicenceListNamesTheDependenciesTheBuildLinks() {
+        let licences = OpenSourceLicence.all
+        XCTAssertEqual(licences.map(\.name), [
+            "Firebase iOS SDK",
+            "RevenueCat purchases-ios",
+            "GRDB.swift",
+            "Kingfisher"
+        ])
+        XCTAssertEqual(Set(licences.map(\.id)).count, licences.count, "ids stay unique")
+        for licence in licences {
+            XCTAssertFalse(licence.licence.isEmpty, "\(licence.name) names the licence it publishes")
+            XCTAssertEqual(licence.url?.scheme, "https", "\(licence.name) links to a real https licence page")
+            XCTAssertNotNil(licence.url?.host)
+        }
+    }
+
+    // MARK: - helpers
+
+    /// A JWT-shaped token whose middle segment is `claims`. Nothing here is signed: the app only
+    /// projects claims from a token the server already verified.
+    static func token(email: String?, provider: String?) -> String {
+        var payload: [String: Any] = [:]
+        if let email { payload["email"] = email }
+        if let provider { payload["app_metadata"] = ["provider": provider] }
+        return token(payload: payload)
+    }
+
+    static func token(payload: [String: Any]) -> String {
+        func encode(_ string: String) -> String {
+            Data(string.utf8).base64EncodedString()
+                .replacingOccurrences(of: "+", with: "-")
+                .replacingOccurrences(of: "/", with: "_")
+                .replacingOccurrences(of: "=", with: "")
+        }
+        let header = encode(#"{"alg":"ES256","typ":"JWT"}"#)
+        let body = (try? JSONSerialization.data(withJSONObject: payload))
+            .map { encode(String(decoding: $0, as: UTF8.self)) } ?? encode("{}")
+        return "\(header).\(body).signature"
+    }
+
+    private func waitUntil(
+        _ description: String,
+        timeout: TimeInterval = 3,
+        file: StaticString = #filePath,
+        line: UInt = #line,
+        _ condition: () -> Bool
+    ) async {
+        let deadline = Date().addingTimeInterval(timeout)
+        while !condition() && Date() < deadline {
+            try? await Task.sleep(nanoseconds: 5_000_000)
+        }
+        XCTAssertTrue(condition(), "Timed out waiting for \(description)", file: file, line: line)
+    }
+}
