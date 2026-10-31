@@ -196,7 +196,10 @@ final class JobsServiceTests: XCTestCase {
         XCTAssertEqual(failedRow.action, .retry)
 
         let readyRow = JobRow(jobId: "4", name: "R", status: .succeeded, poseId: "p4")
-        XCTAssertEqual(readyRow.statusLabel, "Ready")
+        // Board copy for a finished job: "Done · added to Poses" (the earlier bare "Ready" word was
+        // replaced by the owner's board decision).
+        XCTAssertEqual(readyRow.statusLabel, "Done")
+        XCTAssertEqual(readyRow.statusText, "Done · added to Poses")
         XCTAssertEqual(readyRow.action, .viewPose)
     }
 

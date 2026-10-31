@@ -40,6 +40,43 @@ enum JobRowStatus: String, Sendable, Equatable {
     case succeeded
 }
 
+/// The words the boards fix for the Jobs surface. One place owns them so a row, its accessibility
+/// summary and a test cannot drift into three slightly different status lines.
+///
+/// Boards (`09-board03/06`): a finished row reads `Done · added to Poses`, a failed row reads
+/// `Failed · <server message>` and a queued row the poll cannot move reads
+/// `Queued · waiting for connection`. There is no percentage and no progress figure anywhere: the
+/// server reports a job's stage, not a number, so the row never invents one.
+enum JobsCopy {
+    static let queued = "Queued"
+    static let processing = "Processing"
+    static let failed = "Failed"
+    static let done = "Done"
+    /// The second half of a succeeded row's status line.
+    static let doneDetail = "added to Poses"
+    /// The second half of a queued row's status line while the list cannot reach the server.
+    static let waitingForConnection = "waiting for connection"
+    static let offlineBanner = "You're offline. Progress resumes when you reconnect."
+
+    /// Board separator between the stage and its detail.
+    static let statusSeparator = " · "
+
+    static func statusLine(label: String, detail: String?) -> String {
+        guard let detail, !detail.isEmpty else { return label }
+        return label + statusSeparator + detail
+    }
+
+    /// The server owns the failure phrase (`photo too dark`), so it is passed through — trimmed and
+    /// collapsed to one line, and dropped entirely when the server sent nothing usable.
+    static func failureDetail(_ message: String?) -> String? {
+        guard let message else { return nil }
+        let collapsed = message
+            .split(whereSeparator: { $0.isWhitespace })
+            .joined(separator: " ")
+        return collapsed.isEmpty ? nil : collapsed
+    }
+}
+
 enum JobRowAction: String, Sendable, Equatable {
     case none
     case retry = "Retry"
@@ -52,6 +89,9 @@ struct JobRow: Identifiable, Sendable, Equatable {
     let name: String
     let status: JobRowStatus
     let statusLabel: String
+    /// The second half of the status line: `added to Poses` for a succeeded job, the server's reason
+    /// for a failed one, `nil` while a job is only queued or processing.
+    let statusDetail: String?
     let action: JobRowAction
     let thumbnailUrl: String?
     let poseId: String?
@@ -77,18 +117,27 @@ struct JobRow: Identifiable, Sendable, Equatable {
 
         switch status {
         case .queued:
-            self.statusLabel = "Queued"
+            self.statusLabel = JobsCopy.queued
+            self.statusDetail = nil
             self.action = .none
         case .processing:
-            self.statusLabel = "Processing"
+            self.statusLabel = JobsCopy.processing
+            self.statusDetail = nil
             self.action = .none
         case .failed:
-            self.statusLabel = "Failed"
+            self.statusLabel = JobsCopy.failed
+            self.statusDetail = JobsCopy.failureDetail(errorMessage)
             self.action = .retry
         case .succeeded:
-            self.statusLabel = "Ready"
+            self.statusLabel = JobsCopy.done
+            self.statusDetail = JobsCopy.doneDetail
             self.action = .viewPose
         }
+    }
+
+    /// The row's status line, e.g. `Done · added to Poses` or plain `Processing`.
+    var statusText: String {
+        JobsCopy.statusLine(label: statusLabel, detail: statusDetail)
     }
 
     init(item: ExtractionJobListItem) {

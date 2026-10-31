@@ -128,9 +128,95 @@ final class JobsScreenModelTests: XCTestCase {
         let row = JobRow(jobId: "job_succ_1", name: "Tree Balance Pose", status: .succeeded, poseId: "p1")
         XCTAssertEqual(row.name, "Tree Balance Pose")
         XCTAssertEqual(row.status, .succeeded)
-        XCTAssertEqual(row.statusLabel, "Ready")
+        XCTAssertEqual(row.statusLabel, "Done")
+        XCTAssertEqual(row.statusText, "Done · added to Poses")
         XCTAssertEqual(row.action, .viewPose)
         XCTAssertEqual(row.action.rawValue, "View pose")
+    }
+
+    /// Boards `09-board03/06`: the status line is the stage plus what it means for this job. The reason
+    /// half of a failure is the server's phrase, trimmed to one line and never invented locally.
+    func testStatusLinePairsStageWithItsDetail() {
+        XCTAssertEqual(JobRow(jobId: "q", name: "Q", status: .queued).statusText, "Queued")
+        XCTAssertEqual(JobRow(jobId: "p", name: "P", status: .processing).statusText, "Processing")
+        XCTAssertEqual(JobRow(jobId: "s", name: "S", status: .succeeded).statusText, "Done · added to Poses")
+
+        let failed = JobRow(jobId: "f", name: "F", status: .failed, errorMessage: "  photo\n too   dark ")
+        XCTAssertEqual(failed.statusLabel, "Failed")
+        XCTAssertEqual(failed.statusDetail, "photo too dark")
+        XCTAssertEqual(failed.statusText, "Failed · photo too dark")
+
+        // No reason from the server means no dangling separator.
+        let failedWithoutReason = JobRow(jobId: "f2", name: "F2", status: .failed, errorMessage: "   ")
+        XCTAssertNil(failedWithoutReason.statusDetail)
+        XCTAssertEqual(failedWithoutReason.statusText, "Failed")
+        XCTAssertNil(JobsCopy.failureDetail(nil))
+    }
+
+    /// No percentage or progress figure exists anywhere on this surface: the server reports a stage.
+    func testStatusCopyCarriesNoProgressFigure() {
+        for status in [JobRowStatus.queued, .processing, .failed, .succeeded] {
+            let text = JobRow(jobId: "j", name: "J", status: status).statusText
+            XCTAssertFalse(text.contains("%"), "\(text) must not claim a progress percentage")
+            XCTAssertNil(text.range(of: "[0-9]+", options: .regularExpression), "\(text) must not carry a count")
+        }
+    }
+
+    /// Each segment owns its filter set, in board order, and each chip narrows the rows to its stage.
+    func testFilterSetsPerSegment() {
+        XCTAssertEqual(JobsFilter.filters(for: .processing), [.all, .queued, .processing])
+        XCTAssertEqual(JobsFilter.filters(for: .finish), [.all, .done, .failed])
+        XCTAssertEqual(JobsFilter.filters(for: .finish).map(\.title), ["All", "Done", "Failed"])
+        XCTAssertEqual(JobsFilter.filters(for: .processing).map(\.title), ["All", "Queued", "Processing"])
+
+        let queued = JobRow(jobId: "q", name: "Q", status: .queued)
+        let processing = JobRow(jobId: "p", name: "P", status: .processing)
+        let done = JobRow(jobId: "d", name: "D", status: .succeeded, poseId: "pose_d")
+        let failed = JobRow(jobId: "f", name: "F", status: .failed)
+        let all = [queued, processing, done, failed]
+
+        XCTAssertEqual(all.filter(JobsFilter.all.matches).count, 4)
+        XCTAssertEqual(all.filter(JobsFilter.queued.matches).map(\.jobId), ["q"])
+        XCTAssertEqual(all.filter(JobsFilter.processing.matches).map(\.jobId), ["p"])
+        XCTAssertEqual(all.filter(JobsFilter.done.matches).map(\.jobId), ["d"])
+        XCTAssertEqual(all.filter(JobsFilter.failed.matches).map(\.jobId), ["f"])
+    }
+
+    /// The filter chips keep the identifier suffixes QA's flows ask for.
+    func testFilterIdentifiers() {
+        XCTAssertEqual(JobsFilter.all.rawValue, "all")
+        XCTAssertEqual(JobsFilter.queued.rawValue, "queued")
+        XCTAssertEqual(JobsFilter.processing.rawValue, "processing")
+        XCTAssertEqual(JobsFilter.done.rawValue, "done")
+        XCTAssertEqual(JobsFilter.failed.rawValue, "failed")
+        // The segments keep the ids the committed flows already tap, while the label reads "Finished".
+        XCTAssertEqual(JobsTab.processing.identifier, "processing")
+        XCTAssertEqual(JobsTab.finish.identifier, "finish")
+        XCTAssertEqual(JobsTab.finish.title, "Finished")
+    }
+
+    /// One grouped card per segment: only its outer corners round, and every row but the last draws the
+    /// hairline that separates it from the next.
+    func testGroupedCardPositions() {
+        XCTAssertEqual(JobRowGroupPosition.position(at: 0, count: 1), .single)
+        XCTAssertEqual(JobRowGroupPosition.position(at: 0, count: 3), .first)
+        XCTAssertEqual(JobRowGroupPosition.position(at: 1, count: 3), .middle)
+        XCTAssertEqual(JobRowGroupPosition.position(at: 2, count: 3), .last)
+
+        XCTAssertEqual(JobRowGroupPosition.single.topRadius, AP.Radius.radius16)
+        XCTAssertEqual(JobRowGroupPosition.single.bottomRadius, AP.Radius.radius16)
+        XCTAssertEqual(JobRowGroupPosition.first.bottomRadius, 0)
+        XCTAssertEqual(JobRowGroupPosition.middle.topRadius, 0)
+        XCTAssertEqual(JobRowGroupPosition.last.bottomRadius, AP.Radius.radius16)
+        XCTAssertFalse(JobRowGroupPosition.last.drawsSeparator)
+        XCTAssertTrue(JobRowGroupPosition.first.drawsSeparator)
+    }
+
+    /// The indeterminate bar has no fill ratio to report, and Reduce Motion freezes rather than drops it.
+    func testIndeterminateBarHasNoPercentageAndRespectsReduceMotion() {
+        XCTAssertEqual(JobIndeterminateBar.period, JobIndeterminateBar.stripeWidth + JobIndeterminateBar.stripeGap)
+        let bar = JobIndeterminateBar()
+        XCTAssertFalse(String(describing: bar).contains("%"))
     }
 
     func testJobsScreenInitialStateWithSucceededStubRow() {
@@ -155,7 +241,7 @@ final class JobsScreenModelTests: XCTestCase {
 
         XCTAssertEqual(stub.finished.count, 1)
         XCTAssertEqual(stub.finished[0].name, "Tree Balance Pose")
-        XCTAssertEqual(stub.finished[0].statusLabel, "Ready")
+        XCTAssertEqual(stub.finished[0].statusLabel, "Done")
         XCTAssertEqual(stub.finished[0].action.rawValue, "View pose")
     }
 

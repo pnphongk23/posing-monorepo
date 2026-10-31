@@ -19,15 +19,42 @@ final class JobRowAccessibilityTests: XCTestCase {
     }
 
     /// The summary element keeps reading name, state and action, exactly as the pre-container row did.
+    /// The state now carries the board's detail half (`Done · added to Poses`) — the owner decision that
+    /// replaced the bare `Ready` word.
     func testRowSummaryStillNamesTheAction() {
         let failed = JobRow(jobId: "job_f", name: "Tree Pose", status: .failed)
         XCTAssertEqual(JobRowView.accessibilitySummary(for: failed), "Tree Pose, Failed, Retry")
 
+        let failedWithReason = JobRow(jobId: "job_fr", name: "City walk", status: .failed, errorMessage: "photo too dark")
+        XCTAssertEqual(JobRowView.accessibilitySummary(for: failedWithReason), "City walk, Failed · photo too dark, Retry")
+
         let succeeded = JobRow(jobId: "job_s", name: "Warrior Pose", status: .succeeded, poseId: "pose_1")
-        XCTAssertEqual(JobRowView.accessibilitySummary(for: succeeded), "Warrior Pose, Ready, View pose")
+        XCTAssertEqual(JobRowView.accessibilitySummary(for: succeeded), "Warrior Pose, Done · added to Poses, View pose")
 
         let processing = JobRow(jobId: "job_p", name: "Hero Pose", status: .processing)
         XCTAssertEqual(JobRowView.accessibilitySummary(for: processing), "Hero Pose, Processing")
+    }
+
+    /// A queued row the poll cannot move says so, with the icon the board pairs it with.
+    func testQueuedRowSpeaksTheConnectionWait() {
+        let queued = JobRow(jobId: "job_q", name: "Park group", status: .queued)
+        XCTAssertEqual(JobRowView.statusText(for: queued), "Queued")
+        XCTAssertEqual(
+            JobRowView.statusText(for: queued, waitingForConnection: true),
+            "Queued · waiting for connection"
+        )
+        // Only a queued row is waiting: a processing row is already on a worker.
+        let processing = JobRow(jobId: "job_p2", name: "City walk", status: .processing)
+        XCTAssertEqual(
+            JobRowView.statusText(for: processing, waitingForConnection: true),
+            "Processing"
+        )
+    }
+
+    /// The name element carries its own id so a flow can assert the name without matching a truncated
+    /// label (TC-JOB-010).
+    func testNameIdentifierKeepsTheJobId() {
+        XCTAssertEqual(JobRowView.nameIdentifier(jobId: "job_1"), "jobRow.name.job_1")
     }
 
     /// Source-level, because SwiftUI's accessibility tree is not materialised for a unit-test host.
@@ -66,17 +93,18 @@ final class JobRowAccessibilityTests: XCTestCase {
             "nothing may be chained onto the row container — the summary and Remove belong to the text group"
         )
         XCTAssertTrue(
-            lines[combined...container].joined(separator: "\n").contains(".accessibilityLabel(Self.accessibilitySummary(for: row))"),
+            lines[combined...container].joined(separator: "\n").contains(".accessibilityLabel(Self.accessibilitySummary(for: row"),
             "the combined text group carries the row summary"
         )
         XCTAssertTrue(
-            lines[combined...container].joined(separator: "\n").contains(".accessibilityAction(named: \"Remove\")"),
-            "the Remove affordance follows the summary element it belongs to"
+            lines[combined...container].joined(separator: "\n").contains(".accessibilityAction(named: \"Hide\")"),
+            "the Hide affordance (board 09-board05) follows the summary element it belongs to"
         )
     }
 
     /// The identifiers must sit on the buttons (via the helpers this test asserts above), inside the
-    /// container — not on the row, where they would collide with the summary element.
+    /// container — not on the row, where they would collide with the summary element. The third id is
+    /// the summary element's own `jobRow.name.<jobId>` handle.
     func testActionButtonsCarryTheirIdentifiers() throws {
         let source = try jobRowViewSource()
 
@@ -86,11 +114,15 @@ final class JobRowAccessibilityTests: XCTestCase {
         )
         XCTAssertTrue(
             source.contains(".accessibilityIdentifier(Self.viewPoseIdentifier(jobId: row.jobId))"),
-            "the View pose button carries jobRow.viewPose.<jobId>"
+            "the chevron button carries jobRow.viewPose.<jobId>"
+        )
+        XCTAssertTrue(
+            source.contains(".accessibilityIdentifier(Self.nameIdentifier(jobId: row.jobId))"),
+            "the summary element carries jobRow.name.<jobId>"
         )
         XCTAssertEqual(
-            source.components(separatedBy: ".accessibilityIdentifier(").count - 1, 2,
-            "only the two action buttons are addressable; the row summary is found by label"
+            source.components(separatedBy: ".accessibilityIdentifier(").count - 1, 3,
+            "only the two action buttons and the name summary are addressable"
         )
     }
 
