@@ -30,7 +30,7 @@ final class PaywallAppleSignInTests: XCTestCase {
     }
 
     func testEveryPaywallIdentifierIsDeclaredOnceAndRenderedFromTheConstants() throws {
-        let source = try supportScreensSource()
+        let source = try paywallSource()
         let identifiers = [
             PaywallAccessibilityID.close,
             PaywallAccessibilityID.signInApple,
@@ -149,12 +149,13 @@ final class PaywallAppleSignInTests: XCTestCase {
         )
     }
 
-    private func supportScreensSource() throws -> String {
+    /// The paywall lives in its own file since the Support split: the ids are declared once there.
+    private func paywallSource() throws -> String {
         let url = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent() // Features
             .deletingLastPathComponent() // iosAppTests
             .deletingLastPathComponent() // iosApp (project dir)
-            .appendingPathComponent("iosApp/Features/Support/SupportScreens.swift")
+            .appendingPathComponent("iosApp/Features/Support/PaywallScreen.swift")
         return try String(contentsOf: url, encoding: .utf8)
     }
 
