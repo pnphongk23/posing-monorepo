@@ -167,15 +167,24 @@ Two paths: the app has never asked for the camera, and the permission was refuse
 - [ ] Set a large text size (Settings → Accessibility → Display & Text Size → Larger Text) and reopen Gallery.
 - [ ] **Expected:** the grid is still 3 columns, the filter chips each take their own row, and the headers grow without
   clipping.
+- [ ] Turn Wi-Fi and mobile data off and reopen Gallery (Add pose has to be available, i.e. the extract flag on).
+- [ ] **Expected:** one offline banner **under the header, above the filter chips** — "You're offline. Add pose needs a
+  connection." / "Your photos are on this device and still open normally." It says the *banner* is the only thing that
+  needs the network: the grid is still there, every photo still opens, and nothing claims the photos failed. With Add
+  pose hidden (extract flag off) no banner appears at all.
 
-## 10. Photo detail — view, swipe, share, save, delete, back
+## 10. Photo detail — view, caption, swipe, share, save, delete, back
 - [ ] Tap the newest photo in the grid.
-- [ ] **Expected:** it opens full screen with a one-row header: Back on the left, the photo's date as the title, and a
-  "…" options control on the right. The photo (not a grey box) fills the frame, and **no** "1 of 12" count line appears
+- [ ] **Expected:** it opens full screen with a one-row header: Back on the left, **"Photo"** as the title, and a "…"
+  options control on the right. The photo (not a grey box) fills the frame, and **no** "1 of 12" count line appears
   anywhere.
+- [ ] Read the caption block directly under the photo.
+- [ ] **Expected:** the pose name on its own line (omitted for a capture without a name), then one line like
+  "Today · 11:08 · 1.2 MB" — a real local time and the real file size, with the size simply missing when the file cannot
+  be read. No invented numbers, no count.
 - [ ] Swipe left, then right.
-- [ ] **Expected:** each swipe shows the next/previous photo and the header date follows it; page dots appear only when
-  there is more than one photo.
+- [ ] **Expected:** each swipe shows the next/previous photo, and the caption follows it (name, time, size); page dots
+  appear only when there is more than one photo.
 - [ ] Tap **Share**, wait, then dismiss the system sheet.
 - [ ] **Expected:** the tray action shows "Preparing…" first, then the system share sheet with the photo; dismissing it
   returns to the same photo and the tray is usable again.
@@ -185,6 +194,11 @@ Two paths: the app has never asked for the camera, and the permission was refuse
 - [ ] Tap **Delete**, then **Cancel**; then Delete → tap the dimmed background.
 - [ ] **Expected:** both keep the photo and close the centred dialog ("Delete this photo?" / "It will be removed from this
   device. This can't be undone." with "Delete photo" first and "Cancel" under it).
+- [ ] Look at the action tray.
+- [ ] **Expected:** four actions in one row — **Share · Save · Add pose · Delete** — and no star/favourite anywhere (there
+  is no star in the caption either). If Add pose has no destination in this build it is absent rather than dead.
+- [ ] Tap **Add pose**.
+- [ ] **Expected:** the Add pose entry opens from this photo; coming back leaves the photo and its caption unchanged.
 - [ ] Tap the "…" options control → **Delete photo**.
 - [ ] **Expected:** the same dialog opens from the menu; confirming **Delete photo** closes the viewer, the photo is gone
   from the grid, and it does not come back after a relaunch.
@@ -232,7 +246,7 @@ collapsed state's persistence, the strip's content per picker state, the shared 
 pinned above the control bar on a rendered bitmap) and
 `mobile/iosApp/iosAppTests/Features/GalleryFeatureTests.swift` (grid geometry, date sections, state panels, delete
 success/failure, share preparation, AX layout) with `docs/qa/test-cases/camera-guide.md` (TC-CAM-012…032) and
-`docs/qa/test-cases/capture-gallery.md` (TC-GAL-002…020).
+`docs/qa/test-cases/capture-gallery.md` (TC-GAL-002…021).
 Camera ids the new chrome gives flows (committed at `b8878da`): `camera.close`, `camera.choosePose`
 (the pose title, opens the sheet), `camera.guideToggle` (eye, only with a guide), `camera.tools` + `camera.tools.done`,
 `camera.zoom.1x|2x|3x`, `camera.status` (snackbar), `camera.permission` (the panel), `camera.pickerStripToggle`
@@ -240,14 +254,16 @@ Camera ids the new chrome gives flows (committed at `b8878da`): `camera.close`, 
 shutter, the gallery thumbnail and flip keep `camera.shutter` / `camera.gallery` / `camera.flip`.
 Gallery ids (committed): `gallery.title`, `gallery.add-pose`, `gallery.filter.all|today|week|month`,
 `gallery.empty.openCamera` + `.openCameraButton`, `gallery.empty.filter`, `gallery.error` + `.retry`,
-`gallery.detail.back|title|options|share|save|delete`, `gallery.detail.deleteConfirm` (+ `.delete` / `.cancel`),
-`gallery.detail.failed` + `.failedRetry`.
+`gallery.detail.back|title|options|share|save|delete|addPose`, `gallery.detail.caption` (one combined element),
+`gallery.detail.deleteConfirm` (+ `.delete` / `.cancel`), `gallery.detail.failed` + `.failedRetry`,
+`gallery.offline.banner` (all landed at `4ac4ddc`).
 Not yet in the build (do not report as failures until Feature lands them; the cases exist and are named here so the two
 artifacts stay in step): the pose sheet's **All / Saved** scope chips + "No saved poses yet" (TC-CAM-022/023), the picker's
-**offline** banner and marked not-downloaded poses (TC-CAM-025), the Gallery **offline** banner + offline cells
-(TC-GAL-018) and the photo-detail **caption block** name / date · time · size (TC-GAL-019), and the newly in-scope
+**offline** banner and marked not-downloaded poses (TC-CAM-025), and the newly in-scope
 **Timer / Ratio / guide Scale / guide mirror** controls (TC-CAM-027/028/029/030/031/032 — sections 3, 5 and 12 above are
-written for the build that has them). Out of scope for 1.1 only: the Gallery Star action + Starred filter (TC-GAL-020).
+written for the build that has them). Landed and checkable now (`4ac4ddc`): the Gallery offline banner (TC-GAL-018) and
+the photo-detail caption block + Add pose tray action (TC-GAL-019/021). Out of scope for 1.1 only: the Gallery Star
+action + Starred filter (TC-GAL-020, cut — no model).
 Section numbers shifted with the redesign: the top bar is section 3, the zoom pills section 6, the Gallery is section 9,
 photo detail is the new section 10, Close moved 8 → 11 and the saved-photo checks are the new section 12 (verdict is 13).
 Map any older device note to the new number before filing it.

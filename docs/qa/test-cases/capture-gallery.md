@@ -13,7 +13,7 @@ mapping/geometry/copy behind those screens is asserted in `GalleryFeatureTests.s
 |---|---|---|---|---|---|
 | TC-GAL-001 | P0 | Clean install, no photos | 1. Launch. 2. Tap Gallery. 3. Tap the camera shortcut in the empty panel | An empty panel with one action ("Open Camera"); tapping it opens the camera | automated: TC-GAL-001-empty-gallery.yaml |
 | TC-GAL-002 | P0 | Device camera, capture allowed | Capture a photo, then open Gallery | The new photo is the first cell under today's date header, exactly once, and the grid is 3 columns | manual (device: checklist §9) |
-| TC-GAL-003 | P1 | Two or more photos | Open the newest photo, swipe forward and back | Each swipe shows the next/previous photo full frame; the header shows that photo's date and no "n of N" line; page dots only when there is more than one photo | manual (device: checklist §10; unit: GalleryFeatureTests `testGalleryDetailVoiceOverLabelsCarryNoCount`, `testGalleryDetailPresentationUsesTheBoardV3Contract`) |
+| TC-GAL-003 | P1 | Two or more photos | Open the newest photo, swipe forward and back | Each swipe shows the next/previous photo full frame; the header reads **"Photo"** (the screen's name) and the date/time/size live in the caption block under the frame; no "n of N" line; page dots only when there is more than one photo | manual (device: checklist §10; unit: GalleryFeatureTests `testGalleryDetailVoiceOverLabelsCarryNoCount`, `testGalleryDetailPresentationUsesTheBoardV3Contract`, `testGalleryDetailCaptionJoinsDayTimeAndSize`) |
 | TC-GAL-004 | P1 | Photo open | Tap Share, then dismiss the system sheet | The tray action shows "Preparing…" while a temporary copy is made, the system share sheet opens with that copy, and dismissing returns to the same photo with the tray usable | manual (device: checklist §10; unit: `testGallerySharePreparationCopiesIntoSystemTemporaryDirectory`, `testGallerySharePreparationReportsMissingSource`) |
 | TC-GAL-005 | P1 | At least one photo | Open a photo → Delete → confirm "Delete photo" | The dialog closes, the viewer dismisses, the photo is gone from the grid and its file is removed from disk (no orphan, no ghost row after a relaunch) | manual (device: checklist §10; unit: `testGalleryDeleteSuccessRemovesThePhotoAndRaisesNoToast`) |
 | TC-GAL-006 | P1 | Photos spread over more than a week | Tap each filter chip: All, Today, 7 days, 30 days | The grid narrows to the window and is re-bucketed by day; chips show which window is active; no count text appears anywhere | manual (device: checklist §9; unit: `testGalleryDateSectionsRespectTodayTimeFilter`, `testGalleryDateSectionsGroupByDayNewestFirstWithoutLoss`) |
@@ -28,9 +28,10 @@ mapping/geometry/copy behind those screens is asserted in `GalleryFeatureTests.s
 | TC-GAL-015 | P1 | Photo open, delete fails (store error) | Delete and confirm | The failure does not throw the grid away: the photos stay, a snackbar rises above the dock/tray explaining the failure, and it self-dismisses | unit: `testGalleryDeleteFailureKeepsTheGridAndRaisesAToast`; device visual: checklist §10 |
 | TC-GAL-016 | P1 | Photos in the gallery, Accessibility text size | Set a large text size (AX3) and reopen Gallery, then open a photo | The grid stays 3-up (cells are photos, not text), the filter chips stack one per row full width, the date headers scale, and the detail tray + delete dialog stay reachable without clipping | unit: GalleryFeatureTests (`testGalleryFilterBarStacksOnlyAtAccessibilitySizes`, `testGalleryFilterChipsStackFullWidthAtAccessibilitySizes`, `testGalleryDetailHeaderReservesSpaceForTheOptionsControl`); device visual: checklist §9–§10 |
 | TC-GAL-017 | P1 | Gallery in a failing state (store cannot open) | Open Gallery | One shared state panel under the header ("Couldn't load gallery" + the store's reason + "Try again"), chips stay interactive, and Retry re-runs the load | unit: GalleryFeatureTests (`testGalleryStatePresentationPicksOneSharedStatePerState`, `testGalleryStatePanelsCarryTheQaActionIdentifier`, `testGalleryStatePanelsDrawTheSeventyTwoPointAccentCircle`, `testGalleryLoadFailureSurfacesError`) |
-| TC-GAL-018 | P1 | Gallery with photos, device offline | Open Gallery with no network | The cached photos still render, an offline banner sits above the grid ("You're offline. Showing downloaded poses."), each photo whose file is not available offline is marked as such instead of showing a blank tile, and the state is recoverable — no count text, no dead screen | pending — ids: `gallery.offline.banner`, `gallery.cell.<id>.offline` (no `GalleryStateKind.offline` case exists yet; F4 requires an offline state on every screen) |
-| TC-GAL-019 | P1 | One photo open | Read the detail screen under the photo | A caption block under the frame: the photo's title, then the date, time and file size ("Today · 11:08 · 1.2 MB" style, size omitted when unknown). No "1 of 12" and no photo-count line anywhere; the caption never pushes the action tray off screen at large text sizes | pending — ids: `gallery.detail.caption`, `gallery.detail.caption.title`, `gallery.detail.caption.meta` (caption block not built yet) |
-| TC-GAL-020 | P1 | Photos in the gallery | Star a photo from the detail caption, then filter the grid by Starred | **Out of scope for 1.1.** The Star action and the Starred filter are design-only: no model field, no DB column, no service call, so nothing can be starred or filtered. Kept as the acceptance target for when it is built | out of scope 1.1 (no flow, no ids; do not delete the idea) |
+| TC-GAL-018 | P1 | Remote `extractPoseEnabled` on (Add pose visible), device offline | Open Gallery with no network, then repeat with the remote flag off | The offline notice is **honest and scoped**: it appears only because **Add pose** needs a connection — banner title "You're offline. Add pose needs a connection." and message "Your photos are on this device and still open normally." (`gallery.offline.banner`, above the filter chips). The grid is **not** replaced or emptied, every cached photo still opens, and with the flag off (no Add pose action) the banner **never** appears | unit: GalleryFeatureTests (`testGalleryOfflineBannerOnlyAppearsForANetworkBoundAction`, `testGalleryOfflineCopyDoesNotClaimLocalPhotosFail`, `testGalleryStatePresentationNeverReportsOffline`, `testGalleryOfflineBannerPaintsTheWarningSurface`); device visual: checklist §9 — no flow: reachability cannot be forced from Maestro (Requests 7) |
+| TC-GAL-019 | P1 | One photo open | Read the block under the framed photo | A caption block (`gallery.detail.caption`, one combined VoiceOver element) that shows the photo's name on its own line, then one meta line "Today · 11:08 · 1.2 MB" — day label relative (Today/Yesterday, else a short date), local time, and the real file size. An unnamed capture drops the name line (the header already says "Photo") and a missing file drops the size instead of inventing one. No photo count anywhere | unit: GalleryFeatureTests (`testGalleryDetailCaptionNamesOnlyNamedPhotos`, `testGalleryDetailCaptionJoinsDayTimeAndSize`, `testGalleryDetailCaptionOmitsAnUnknownSize`, `testGalleryDetailCaptionSizesAreHumanReadable`, `testGalleryDetailCaptionReadsTheRealFileSize`, `testGalleryDetailCaptionRendersNameAboveTheMetaLine`); device visual: checklist §10 — no flow: needs photos in the database (Requests 1) |
+| TC-GAL-021 | P1 | Photo open, Add pose available | Tap **Add pose** in the photo-detail tray | The tray (Share · Save · **Add pose** · Delete) opens the Add pose entry from the open photo; without an Add pose destination the tray hides that action instead of shipping a dead control. The publish flow itself is out of scope for 1.1 (TC-EXT-*) | unit: GalleryFeatureTests (`testGalleryDetailTrayCarriesShareSaveAddPoseAndDelete`, `testGalleryDetailTrayHidesAddPoseWithoutADestination`, `testGalleryDetailTrayKeepsTheExistingIdentifiers`); device visual: checklist §10 |
+| TC-GAL-020 | P1 | Photos in the gallery | Look for a Star action in the detail caption and a Starred filter chip | **Cut for 1.1** — no model field, no DB column, no service call: the caption draws no star and the filter row has no Starred chip (All / Today / 7 days / 30 days only). Kept as the acceptance target if it is ever built | out of scope 1.1 (cut, no ids; do not delete the idea) |
 
 Notes for triage:
 - **TC-GAL-006 replaced the old "favourites" case.** The redesign removed favourites: `GalleryTimeFilter` is
@@ -47,24 +48,27 @@ Notes for triage:
 | empty (no photos) | TC-GAL-001 (flow) |
 | empty (filter window) | TC-GAL-010 (draft flow) |
 | error | TC-GAL-017 (unit: panel/action ids, store failure copy) |
-| offline | TC-GAL-018 (new; no producer in code yet) |
+| offline (scoped to the network-bound Add pose action) | TC-GAL-018 (unit policy + copy tests; device visual) |
 | cell failed (per-photo) | TC-GAL-014 (unit + device) |
 | detail failed (per-photo) | TC-GAL-014 (unit + device) |
+| detail tray without an Add pose destination | TC-GAL-021 (unit) |
 
 ## Re-baseline when the build lands (existing cases whose expected outcome may change)
 - **TC-GAL-001** and **TC-GAL-010** — the app keeps the filter chip row visible on every state and the filter-empty
   panel has **no** action; the board hides the chips on empty/error and gives the filter-empty state a "Show all photos"
   action. If either lands, both cases change (and TC-GAL-010's flow gains a tap on that action).
-- **TC-GAL-003** and **TC-GAL-013** — the detail header title is the photo's **date** and there is no caption block yet;
-  when the caption block lands (TC-GAL-019) the header/caption split and the "no count" wording must be re-recorded.
+- **TC-GAL-003** and **TC-GAL-013** — **re-baselined at `4ac4ddc`**: the detail header now reads "Photo" (the screen's
+  name) and the date/time/size moved into the caption block, so the old "header shows the photo's date" expectation is
+  retired. Any device note written against the pre-`4ac4ddc` build is stale on this point.
 - **TC-GAL-006** — the shipped filter set is All / Today / 7 days / 30 days (boards show All / This week / **Starred**).
   Stable unless Starred is built, which is out of scope 1.1.
 - **TC-GAL-014** — the app replaces the whole frame with the failure panel + Retry, while the board keeps the tray muted;
   if the failed-photo presentation changes, this case's expected changes with it.
 
 ## Out of scope for 1.1 (no flows; kept as acceptance targets)
-- TC-GAL-020 Star action + Starred filter (no model, no DB column).
-- The Gallery tray's **Add pose** action (the tray ships Share / Save / Delete; Add pose publish is cut for 1.1 as well).
+- TC-GAL-020 Star action + Starred filter — **cut** (no model, no DB column, no service call). The tray ships
+  Share · Save · Add pose · Delete and the caption draws no star.
+- The **Add pose publish** flow behind the tray action (no publish API) — the tray action itself ships and is TC-GAL-021.
 
 ## Requests to Feature (via the QA lead)
 1. A Debug-only gallery fixture launch argument (for example `-AIPoseGalleryFixture 12` with a spread of
@@ -79,9 +83,12 @@ Notes for triage:
 5. Identifiers on the options-menu items (`gallery.detail.options.delete`), so the second path to the delete dialog is
    tappable without matching the "Delete photo" text that also exists on the tray and in the dialog.
 6. `dock.gallery` — the dock tab has a label but no identifier (already logged as `TODO(QA-261029-ID)`).
-7. The offline state needs ids: `gallery.offline.banner` and a per-cell offline marker (`gallery.cell.<id>.offline`),
-   plus a `GalleryStateKind.offline` case in the model (the banner alone is not a state).
-8. The detail caption block needs ids: `gallery.detail.caption` (container), `.caption.title`, `.caption.meta` — the
-   meta line is what proves the "date · time · size" content without matching a formatted string.
+7. Landed at `4ac4ddc`: `gallery.offline.banner`, `gallery.detail.caption`, `gallery.detail.addPose` (and the tray keeps
+   `gallery.detail.share/save/delete`; the empty/error ids are unchanged). Still needed for TC-GAL-018 to be a flow: a
+   Debug seam that forces the offline reading (the real one is `NWPathMonitor`, which Maestro cannot drive), e.g.
+   `-AIPoseForceOffline YES` on the Gallery's reachability model.
+8. The caption is one combined accessibility element, so a flow could assert it by id — but it still needs a photo in the
+   database (request 1). If the caption ever splits into a name line and a meta line as separate elements, give them
+   their own ids (`gallery.detail.caption.title` / `.meta`) instead of matching a formatted date string.
 9. If the filter-empty state gains the board's "Show all photos" action, it needs `gallery.empty.filter.showAll` (and
    TC-GAL-010 gets a second path).

@@ -9,8 +9,8 @@ strip`) — verified against the source at that sha: `camera.close`, `camera.cho
 `camera.gallery`, `camera.flip`, `camera.pickerStripToggle`, `camera.poseStrip`, `camera.poseStrip.retry`,
 `camera.poseStrip.card.<poseId>`, `camera.zoom.<1x|2x|3x>`, `camera.status`, `camera.permission`, `camera.tools` +
 `camera.tools.*` + `camera.tools.done`, `camera.shutter`, `camera.poseGuide`, and `posePicker.search|searchClear|grid|
-state|close`. What is left is a **runnable build** (`/tmp/ai-pose-lane2-app-1.2/dev17/posing.app` arrives later) and a
-green run on lane 2 before any of them is promoted.
+state|close`. What is left is a **runnable build** (`/tmp/ai-pose-lane2-app-1.1/dev17/posing.app` — release **1.1 (17)**, not 1.2;
+the path is confirmed by the QA lead) and a green run on lane 2 before any of them is promoted.
 
 Promotion checklist (same as `../jobs-add-pose/README.md`): flip the doc row from `pending —` to
 `automated: <file>`, keep `tags: [<TC-ID>, …]`, rewrite the `runFlow` paths from
@@ -29,6 +29,12 @@ one explicit pathspec.
 | TC-CAM-019 | `flows/TC-CAM-019-collapse-survives-relaunch.yaml` | a build to run it on |
 | TC-CAM-021 | `flows/TC-CAM-021-picker-search-no-match.yaml` | a build to run it on; needs the live catalogue (it waits for `posePicker.grid` first), so it is network-dependent like the other catalogue flows |
 | TC-GAL-010 | `flows/TC-GAL-010-filter-empty-state.yaml` | a build to run it on (ids committed long before, no fixture needed — an empty gallery is the state under test) |
+
+Gallery ids landed at `4ac4ddc` (`gallery.offline.banner`, `gallery.detail.caption`, `gallery.detail.addPose`, tray keeps
+`share/save/delete`). None of them yields a flow yet: the caption and the tray need a photo in the database, and the
+offline banner rides `NWPathMonitor`, which Maestro cannot drive. Those two cases (TC-GAL-018/019) and the tray action
+(TC-GAL-021) are proven by `GalleryFeatureTests` plus the device run, and would become flows with the fixture + offline
+seam asked for in `capture-gallery.md` "Requests to Feature" #1/#7.
 
 Boards used: `/tmp/ds-261030/export-c/05-camera-collapsed.png`, `05-camera-collapsed-dark.png`,
 `07-gallery-grid-ax3.png`, `07-gallery-grid-dark.png`, plus `FEEDBACK-261031.md` (F3, F4, F5, F10, F12).
