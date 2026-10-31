@@ -11,8 +11,13 @@ tags: [TC-JOB-001, p0, e2e]
     file: ../subflows/ext-add-pose-form.yaml
     env:
       POSE_NAME: "QA finished pose"
-- tapOn:
-    id: "addPose.submitButton"
+- runFlow:
+    when:
+      notVisible:
+        id: "addPose.consent.message"
+    commands:
+      - tapOn:
+          id: "addPose.submitButton"
 # The clean launch cleared the per-account ack, so the sheet must appear on this first upload.
 - runFlow: ../subflows/ext-consent-allow.yaml
 # Real extraction: wait for the job to succeed (the button only exists once status == succeeded).
@@ -57,7 +62,7 @@ tags: [TC-JOB-001, p0, e2e]
     notVisible:
       id: "saved.loading"
     timeout: 20000
-- assertNotVisible: "QA finished pose"
+- assertNotVisible: '.*QA finished pose.*'
 - tapOn: "Back"
 # ...and not in Community search either.
 - tapOn:

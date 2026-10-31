@@ -1,0 +1,39 @@
+# Open Add pose, take one photo from the simulator library and fill the required fields.
+# The photo comes from the simulator's own library (`xcrun simctl addmedia <udid> /tmp/<photo>.jpg`).
+# Tags are typed BEFORE the name on purpose: the first keyboard appearance shifts the form (keyboard
+# avoidance), and doing it once up front keeps the next field tap on stable coordinates.
+appId: ${APP_ID}
+---
+- tapOn:
+    id: "poses.add-pose"
+- extendedWaitUntil:
+    visible:
+      id: "addPose.photoPicker"
+    timeout: 15000
+- tapOn:
+    id: "addPose.photoPicker"
+# System photo picker: the sheet is UIKit, so the first cell is addressed by position.
+- extendedWaitUntil:
+    visible: "Cancel"
+    timeout: 20000
+- tapOn:
+    point: "16%,26%"
+- extendedWaitUntil:
+    visible: "Change Photo"
+    timeout: 20000
+- tapOn:
+    id: "addPose.tagsField"
+- inputText: "standing"
+# A missed focus would only surface later as a dead submit button, so pin each field's value now.
+- assertVisible:
+    id: "addPose.tagsField"
+    text: "standing"
+- tapOn:
+    id: "addPose.nameField"
+- inputText: ${POSE_NAME}
+- assertVisible:
+    id: "addPose.nameField"
+    text: ".*${POSE_NAME}.*"
+# Bring the submit button above the keyboard; no hideKeyboard (the form has no standard dismiss action).
+- scroll
+- scroll

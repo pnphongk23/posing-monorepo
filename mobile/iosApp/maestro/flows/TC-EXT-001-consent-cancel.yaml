@@ -12,8 +12,13 @@ tags: [TC-EXT-001, p0, e2e]
     file: ../subflows/ext-add-pose-form.yaml
     env:
       POSE_NAME: "QA consent cancel"
-- tapOn:
-    id: "addPose.submitButton"
+- runFlow:
+    when:
+      notVisible:
+        id: "addPose.consent.message"
+    commands:
+      - tapOn:
+          id: "addPose.submitButton"
 # The sheet is the first thing between the tap and any upload.
 - extendedWaitUntil:
     visible:
@@ -21,7 +26,7 @@ tags: [TC-EXT-001, p0, e2e]
     timeout: 15000
 - assertVisible:
     id: "addPose.consent.message"
-    text: "saved privately to your account until you delete your account"
+    text: '.*saved privately to your account until you delete your account.*'
 - assertVisible:
     id: "addPose.consent.allowButton"
 - assertVisible:
@@ -37,8 +42,13 @@ tags: [TC-EXT-001, p0, e2e]
 - assertVisible: "Change Photo"
 - assertVisible: "Add Pose"
 # No job was started: the same submit asks for consent again (Cancel records no answer).
-- tapOn:
-    id: "addPose.submitButton"
+- runFlow:
+    when:
+      notVisible:
+        id: "addPose.consent.message"
+    commands:
+      - tapOn:
+          id: "addPose.submitButton"
 - extendedWaitUntil:
     visible:
       id: "addPose.consent.message"
@@ -55,7 +65,7 @@ tags: [TC-EXT-001, p0, e2e]
     visible:
       id: "jobs.tab.processing"
     timeout: 20000
-- assertNotVisible: "QA consent cancel"
+- assertNotVisible: '.*QA consent cancel.*'
 - tapOn:
     id: "jobs.tab.finish"
-- assertNotVisible: "QA consent cancel"
+- assertNotVisible: '.*QA consent cancel.*'

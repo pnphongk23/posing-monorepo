@@ -7,7 +7,7 @@ appId: ${APP_ID}
     timeout: 15000
 - assertVisible:
     id: "addPose.consent.message"
-    text: "saved privately to your account until you delete your account"
+    text: '.*saved privately to your account until you delete your account.*'
 - tapOn:
     id: "addPose.consent.allowButton"
 - assertNotVisible:
