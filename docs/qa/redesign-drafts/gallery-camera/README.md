@@ -48,9 +48,16 @@ Boards used: `/tmp/ds-261030/export-c/05-camera-collapsed.png`, `05-camera-colla
 The Dev **1.1 (17)** Simulator app is built from `a03d03a`. A draft is promoted into `maestro/flows/` only when every id
 it names exists in the source at that sha (verified with `git grep` on the tree, dynamic ids checked as templates).
 
+**Build-18 hold (user device feedback, Feature wording):** build 18 removes the top "Choose a pose" pill
+(`camera.choosePose`) and the tools popover's title + Done (`camera.tools.done`), and moves the Poses control into the
+zoom-pill row. Every draft that taps those two ids is **held**: not promoted, not run, on any build, until Feature/seat B
+lands the change and the QA lead forwards the new ids. That is TC-CAM-014, 015, 021, 022, 023, 032, 033 here, plus the
+already-automated TC-CAM-001/004/011 (which stay in `flows/` but are excluded from this run).
+
 | Draft | Build 17 (`a03d03a`) | Why |
 |---|---|---|
-| TC-CAM-006, 012, 013, 014, 015, 016, 018, 019, 021, 022, 024, 033 · TC-GAL-010 | **promote + run** | every id is in `b8878da` / `a03d03a` / `4ac4ddc` |
+| TC-CAM-006, 012, 013, 016, 018, 019, 024 · TC-GAL-010 | **promote + run** | every id is in `b8878da` / `a03d03a` / `4ac4ddc` **and** none of them touches `camera.choosePose` / `camera.tools.done` |
+| TC-CAM-014, 015, 021, 022, 023, 033 | **held for build 18** | they tap the two ids build 18 removes (see the hold note above) |
 | TC-CAM-032 (guide mirror) | **run on 18** | `da61534` (Mirror) is not in `a03d03a` |
 | TC-CAM-023 (Saved scope empty) | stays a draft | needs a signed-in account with an empty saved collection; the assertion is guarded, so a credential-free run proves nothing |
 | TC-CAM-027 / 028 / 034 (Timer, Ratio, guide Scale) | run on 18 | ids not landed yet |

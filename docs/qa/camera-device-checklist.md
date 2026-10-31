@@ -27,7 +27,8 @@ Run this on the TestFlight (production) build — StoreKit products only resolve
 
 ## 2. Collapsed / reopened pose strip (F12)
 The camera opens **expanded**: a strip of poses plus one clear control that both hides and re-opens it. There is no
-hidden gesture and no other way back.
+hidden gesture and no other way back. **Build 18:** that control moves to the right end of the zoom-pill row (same glyph,
+same word) — the strip itself and the two states do not change.
 1. From Home, tap the camera button in the bottom dock.
 - [ ] **Expected:** in the rounded panel above the bottom control bar there is a horizontal strip of pose thumbnails with
   their names, and **one** control under it reading **Poses** with a **down** chevron (VoiceOver: "Hide pose picker",
@@ -53,16 +54,27 @@ hidden gesture and no other way back.
   it reads "No poses yet". Turn the network back on and tap **Try again** → the strip fills.
 
 ## 3. Top bar: Close · pose title · eye · tools
-The whole top chrome is one row. The eye only exists once a pose is chosen.
+**Build 17** (the build on your phone now): the whole top chrome is one row — Close on the left, the pose title with a down
+chevron, the eye once a pose is chosen, and the tools control on the right.
 1. Open the camera with no pose chosen.
-- [ ] **Expected:** a round **Close** (×) on the left, the title "Choose a pose" with a down chevron beside it, **no eye**,
+- [ ] **Expected (17):** a round **Close** (×) on the left, the title "Choose a pose" with a down chevron beside it, **no eye**,
   and the **tools** control (three sliders) on the right.
 2. Tap the title.
-- [ ] **Expected:** the "Choose a pose" sheet opens (search field + pose grid) with a **Done** button; nothing else on the
-  camera moves.
+- [ ] **Expected (17):** the "Choose a pose" sheet opens (search field + pose grid) with a **Done** button; nothing else on
+  the camera moves.
 - [ ] Pick a pose.
-- [ ] **Expected:** the sheet closes, the title becomes that pose's name, and an **eye** control appears between the title
+- [ ] **Expected (17):** the sheet closes, the title becomes that pose's name, and an **eye** control appears between the title
   and the tools control.
+
+**Build 18:** the top bar loses the pill.
+- [ ] **Build 18:** look at the top bar.
+- [ ] **Expected:** there is **no "Choose a pose" pill** any more — only **X** (`camera.close`) on the left and the **tools**
+  button on the right. Nothing in the bar says "Choose a pose".
+- [ ] **Build 18:** pick a different pose without the pill.
+- [ ] **Expected:** picking still works and the guide switches to the new pose. **The exact path is not specified yet** (the
+  Poses button only opens the strip, so Feature has to confirm how the picker sheet is reached) — record what you tapped and
+  whether a pose could be picked; do **not** mark this a pass while no path is confirmed.
+
 3. Tap the eye.
 - [ ] **Expected:** the guide disappears and the glyph becomes a crossed-out eye (VoiceOver: "Show pose guide", value
   "Hidden"). Tap it again → the guide returns in the same place, size and colour.
@@ -79,9 +91,20 @@ The whole top chrome is one row. The eye only exists once a pose is chosen.
 - [ ] **Mirror is the guide only.** With the guide mirrored, check the live preview and then take one photo.
 - [ ] **Expected:** only the pose **overlay** flips; the camera image behind it, and the saved photo, are exactly as they
   were — the Mirror row never mirrors your capture. (Front-camera capture mirroring is a different thing, §12.3.)
+
+**Build 18:** the popover loses its title row and its Done button — settings apply immediately.
+- [ ] **Build 18:** open the tools popover.
+- [ ] **Expected:** no title row and **no Done button**. Change **Flash**, **Grid**, **Mirror**, **Timer**, **Ratio** and
+  **Scale** one at a time.
+- [ ] **Expected:** each change takes effect **immediately** behind the popover (grid drawn, guide flipped / resized, the
+  timer / ratio value showing in its row) — there is nothing to confirm.
+- [ ] **Build 18:** tap outside the popover, then repeat with the VoiceOver escape gesture.
+- [ ] **Expected:** an outside tap dismisses it; the two-finger-scrub escape also dismisses it (or the popover's own Back
+  action does). No dark scrim is left behind and the camera stays usable.
+
 5. Tap anywhere outside the panel.
-- [ ] **Expected:** it closes with no dark scrim left behind. **Done** also closes it. Turn **Grid** on → the framing grid
-  is drawn over the preview; the panel stays open.
+- [ ] **Expected:** it closes with no dark scrim left behind. **Done** also closes it (17 only — see the build 18 block). Turn
+  **Grid** on → the framing grid is drawn over the preview; the panel stays open.
 6. Set the text size to a large one (Settings → Accessibility → Display & Text Size → Larger Text), then reopen the
   camera with a pose chosen.
 - [ ] **Expected:** the top bar grows, the pose name wraps onto a second line instead of being cut off, and the tools panel
@@ -129,6 +152,20 @@ The whole top chrome is one row. The eye only exists once a pose is chosen.
 - [ ] **Expected:** the preview zooms immediately on that tap; 2x becomes the highlighted pill (no cycling through 3x).
 - [ ] Force-quit, reopen the camera.
 - [ ] **Expected:** 2x is still the highlighted zoom.
+
+**Build 18:** the pill is compact, the row carries the Poses control, and the whole bottom bar turns translucent.
+- [ ] **Build 18:** look at the zoom pill and the bar it sits in.
+- [ ] **Expected:** the pill is **compact (about 32–36 pt visible) with no background container**, still at least a 44 pt touch
+  target, and the selected level is clearly visible without the container doing the work.
+- [ ] **Expected:** the **⌃ Poses** button sits at the **right end of the zoom-pill row**; the bottom bar itself is only
+  thumbnail · shutter · flip.
+- [ ] **Build 18:** point the camera at a **bright** scene (a white wall or a window) and read every control in the bottom
+  bar.
+- [ ] **Expected:** the bar is 50 % transparent over the preview and **all its text stays legible** — zoom labels, the Poses
+  label, and the shutter / thumbnail / flip glyphs are clearly visible, not washed out by the bright background.
+- [ ] **Build 18:** repeat over a **dark** scene (a shadowed corner or a dark object).
+- [ ] **Expected:** still legible — no control disappears into the preview in either direction, and each control still taps
+  on the first try (the translucent bar must not swallow touches).
 
 ## 7. Flip camera
 - [ ] Tap the flip-camera button.
