@@ -83,6 +83,10 @@ Ids verified against committed source at `a03d03a` (not the dirty worktree). Pro
 
 Stays a draft: **TC-PAY-007** (plans-unavailable/offline has no deterministic producer on a Test Store build).
 
+Paywall redesign ids (`paywall.benefit`, `paywall.offline`, `paywall.notice`, `paywall.signin.sheet`,
+`paywall.signin.close`) are **pending commit** — the drafts that would use them (TC-PAY-007/009/016/020) stay
+drafts until they are in committed source and verified there, per the QA lead.
+
 ## How to run a draft (after the QA lead names a build)
 
 ```bash
