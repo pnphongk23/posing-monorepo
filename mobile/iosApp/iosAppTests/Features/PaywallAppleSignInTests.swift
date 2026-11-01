@@ -39,6 +39,7 @@ final class PaywallAppleSignInTests: XCTestCase {
             PaywallAccessibilityID.planAnnual,
             PaywallAccessibilityID.planMonthly,
             PaywallAccessibilityID.status,
+            PaywallAccessibilityID.retry,
             PaywallAccessibilityID.cta,
             PaywallAccessibilityID.benefit,
             PaywallAccessibilityID.offline,

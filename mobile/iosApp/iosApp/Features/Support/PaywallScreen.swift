@@ -14,6 +14,8 @@ enum PaywallAccessibilityID {
     static let planAnnual = "paywall.plan.annual"
     static let planMonthly = "paywall.plan.monthly"
     static let status = "paywall.status"
+    /// The retry control on a card: the action that settles the state the card reports.
+    static let retry = "paywall.retry"
     static let cta = "paywall.cta"
     /// New on the redesign: the single benefit line, the offline banner, the error card and the
     /// sign-in sheet's own surface and close control.
@@ -93,8 +95,19 @@ struct PaywallScreen: View {
                         benefitRow
                         planSection
                         if let notice = model.notice, !model.isOffline {
-                            SupportNoticeCard(notice: notice, action: performNoticeAction)
-                                .accessibilityIdentifier(PaywallAccessibilityID.notice)
+                            // A failed purchase *is* the outcome: the card is the surface that reports
+                            // it, so its headline carries the banner id (`paywall.status`) and its
+                            // retry is id'd instead of only labelled. A store failure the user can
+                            // neither see reported nor answer is the defect this fixes.
+                            SupportNoticeCard(
+                                notice: notice,
+                                titleAccessibilityIdentifier: model.noticeIsSettledOutcome
+                                    ? PaywallAccessibilityID.status
+                                    : nil,
+                                actionAccessibilityIdentifier: PaywallAccessibilityID.retry,
+                                action: performNoticeAction
+                            )
+                            .accessibilityIdentifier(PaywallAccessibilityID.notice)
                         }
                         autoRenewCaption
                         if dynamicTypeSize.isAccessibilitySize {
@@ -370,6 +383,7 @@ struct PaywallScreen: View {
         case .retryLoad: Task { await model.retry() }
         case .retryRestore: Task { await model.restore() }
         case .retryGoogle: Task { await model.signIn() }
+        case .retryPurchase: Task { await model.purchase() }
         }
     }
 

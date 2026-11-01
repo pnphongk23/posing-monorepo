@@ -518,6 +518,8 @@ struct SupportNotice: Equatable {
         case retryLoad
         case retryRestore
         case retryGoogle
+        /// A settled purchase that did not go through: the card's own "Try again" re-runs the plan.
+        case retryPurchase
     }
 
     let title: String
@@ -559,6 +561,12 @@ struct SupportInlineBanner: View {
 /// it. One component for the paywall and for email sign-in.
 struct SupportNoticeCard: View {
     let notice: SupportNotice
+    /// The host surface's id for the headline, when the headline *is* that surface's outcome
+    /// (`paywall.status`). The card's own container keeps its notice id either way.
+    var titleAccessibilityIdentifier: String?
+    /// The host surface's own id for the retry control, so a flow can press it by id instead of
+    /// matching the "Try again" label.
+    var actionAccessibilityIdentifier: String?
     var action: (SupportNotice.Action) -> Void = { _ in }
 
     var body: some View {
@@ -572,6 +580,7 @@ struct SupportNoticeCard: View {
                     .font(AP.Font.heading)
                     .foregroundStyle(AP.Color.error)
                     .fixedSize(horizontal: false, vertical: true)
+                    .identified(by: titleAccessibilityIdentifier)
                 Text(notice.message)
                     .font(AP.Font.supporting)
                     .foregroundStyle(AP.Color.primaryText)
@@ -583,6 +592,7 @@ struct SupportNoticeCard: View {
                         .foregroundStyle(AP.Color.accentText)
                         .frame(minHeight: AP.HitTarget.minimum)
                         .accessibilityLabel(actionTitle)
+                        .identified(by: actionAccessibilityIdentifier)
                 }
             }
             Spacer(minLength: 0)
@@ -593,6 +603,19 @@ struct SupportNoticeCard: View {
                 .fill(AP.Color.errorSurface)
         )
         .accessibilityElement(children: .contain)
+    }
+}
+
+extension View {
+    /// Hosts an optional id: a control on a surface that publishes none keeps its plain label
+    /// instead of carrying an empty identifier that a query could match.
+    @ViewBuilder
+    func identified(by identifier: String?) -> some View {
+        if let identifier {
+            accessibilityIdentifier(identifier)
+        } else {
+            self
+        }
     }
 }
 

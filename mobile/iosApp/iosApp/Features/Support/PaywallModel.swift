@@ -448,7 +448,7 @@ final class PaywallModel: ObservableObject, SessionScoped {
             return SupportNotice(
                 title: "The purchase didn't go through",
                 message: purchaseFailureMessage,
-                action: nil
+                action: .retryPurchase
             )
         case .signInRequired:
             guard let authError else { return nil }
@@ -460,6 +460,14 @@ final class PaywallModel: ObservableObject, SessionScoped {
         case .loadingPlans, .ready, .processing, .purchaseCancelled, .entitled:
             return nil
         }
+    }
+
+    /// True when the card in the offer area *is* the settled outcome — a purchase that failed — so
+    /// the surface states it through the outcome banner QA reads (`paywall.status`) rather than
+    /// through the offer-area notice id. A failed restore and an unavailable offering stay notices:
+    /// their copy is about the offering, not about a purchase that did not complete.
+    var noticeIsSettledOutcome: Bool {
+        phase == .purchaseFailed && lastOperation == .purchase
     }
 
     private var purchaseFailureMessage: String {

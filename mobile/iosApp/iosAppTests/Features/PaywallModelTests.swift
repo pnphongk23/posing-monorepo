@@ -216,6 +216,66 @@ final class PaywallModelTests: XCTestCase {
         XCTAssertTrue(model.isCTAEnabled, "the retry is tappable, not a dead button")
     }
 
+    /// The store failed and the card said so, but there was nothing on it to act on: the reported
+    /// defect was a failure the user could not answer. The card owns the retry.
+    func testFailedPurchaseCarriesTheRetryThatSettlesIt() async {
+        let gateway = FakePurchaseGateway(
+            nextLoad: readyOffering,
+            nextPurchase: PurchaseSnapshot(state: .purchaseFailed, products: [monthly, annual], failure: .storeProblem)
+        )
+        let model = makeModel(gateway: gateway)
+        model.start()
+        await waitUntil("ready") { model.phase == .ready }
+
+        await model.purchase()
+
+        XCTAssertEqual(model.notice?.title, "The purchase didn't go through")
+        XCTAssertNotNil(model.notice?.action, "a failure with no action leaves the user nothing to retry")
+        XCTAssertEqual(model.notice?.actionTitle, "Try again")
+        XCTAssertEqual(model.statusMessage, "Purchase could not be completed. Try again.")
+        XCTAssertTrue(
+            model.noticeIsSettledOutcome,
+            "the failed purchase reports through the outcome banner the surface publishes, not as an offer-area note"
+        )
+    }
+
+    /// A cancel is the user's decision, not an error: it reports the outcome and offers no retry.
+    func testCancelledPurchaseIsAnOutcomeWithoutAnErrorCard() async {
+        let gateway = FakePurchaseGateway(
+            nextLoad: readyOffering,
+            nextPurchase: PurchaseSnapshot(state: .purchaseCancelled, products: [monthly, annual])
+        )
+        let model = makeModel(gateway: gateway)
+        model.start()
+        await waitUntil("ready") { model.phase == .ready }
+
+        await model.purchase()
+
+        XCTAssertEqual(model.phase, .purchaseCancelled)
+        XCTAssertEqual(model.statusMessage, "Purchase cancelled. No access was granted.")
+        XCTAssertNil(model.notice, "a cancel is not an error and gets no card")
+        XCTAssertFalse(model.noticeIsSettledOutcome)
+    }
+
+    /// A failed *restore* keeps its own copy and its own inline retry; it must not be reported as a
+    /// purchase that did not go through.
+    func testFailedRestoreKeepsItsOwnNoticeAndRetry() async {
+        let gateway = FakePurchaseGateway(
+            nextLoad: readyOffering,
+            nextRestore: PurchaseSnapshot(state: .purchaseFailed, products: [monthly, annual], failure: .network)
+        )
+        let model = makeModel(gateway: gateway)
+        model.start()
+        await waitUntil("ready") { model.phase == .ready }
+
+        await model.restore()
+
+        XCTAssertEqual(model.phase, .purchaseFailed)
+        XCTAssertEqual(model.notice?.title, "Couldn't restore purchases")
+        XCTAssertEqual(model.notice?.action, .retryRestore)
+        XCTAssertFalse(model.noticeIsSettledOutcome, "a restore failure is not the purchase outcome banner")
+    }
+
     func testUnconfiguredSdkIsTruthfulAndRetryable() async {
         let gateway = FakePurchaseGateway(nextLoad: PurchaseSnapshot(state: .unconfigured, products: []))
         let model = makeModel(gateway: gateway)
