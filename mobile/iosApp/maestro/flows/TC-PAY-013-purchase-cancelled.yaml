@@ -1,14 +1,16 @@
-# TC-PAY-013 a cancelled purchase grants nothing and reports nothing
+# TC-PAY-013 a cancelled purchase grants nothing and is reported, not punished
 #
-# Same Test Store harness as TC-PAY-012, with the dialog's Cancel. Cancelling is the user's own answer to
-# the store sheet, so the surface stays silent on purpose (Feature, 821bd71): no outcome banner, no card,
-# no retry — a "purchase cancelled" error would be scolding the user for a decision they just made. What
-# must hold is the *state*: no access, and the paywall is still the surface.
+# Same Test Store harness as TC-PAY-012, with the dialog's Cancel. Paywall C writes the outcome on the status
+# line ("Purchase cancelled. No access was granted.") but shows NO error card and NO retry: the user answered
+# their own store sheet, so there is nothing to retry and nothing to scold. What must also hold is the state:
+# no access, and the offer intact.
 appId: ${APP_ID}
 tags: [TC-PAY-013, p1, e2e]
 ---
+- assertTrue:
+    condition: ${E2E_EMAIL_B != null && E2E_EMAIL_B.length > 0 && E2E_PASSWORD_B != null && E2E_PASSWORD_B.length > 0}
+    label: "E2E_EMAIL_B / E2E_PASSWORD_B missing - this flow needs the second, never-entitled account"
 - runFlow: ../subflows/pay-launch.yaml
-# Account B: unentitled, and not turned entitled by an earlier TC-PAY-004 in the same suite run.
 - runFlow:
     file: ../subflows/pay-sign-in.yaml
     env:
@@ -27,21 +29,27 @@ tags: [TC-PAY-013, p1, e2e]
     visible: "Test failed purchase"
     timeout: 30000
 - tapOn: "Cancel"
-# Silence is the expectation: give the surface a moment to settle, then assert the *absence* of the
-# failure affordances that TC-PAY-012 proves do exist when a purchase really fails.
+# Reported …
 - extendedWaitUntil:
-    notVisible: "Test failed purchase"
-    timeout: 30000
-- assertNotVisible:
+    visible:
+      id: "paywall.status"
+    timeout: 60000
+- assertVisible:
     id: "paywall.status"
+    text: '.*Purchase cancelled. No access was granted.*'
+# … and not punished: no error card, no retry of either kind.
+- assertNotVisible:
+    id: "paywall.notice"
 - assertNotVisible:
     id: "paywall.retry"
-# No access was granted: still on the paywall, camera not behind it …
+- assertNotVisible:
+    id: "paywall.offer.retry"
+# No access was granted: still on the cover, camera not behind it, offer intact.
 - assertNotVisible:
     id: "camera.shutter"
-# … and the offer is intact, so the user can simply try again when they choose to.
 - assertVisible:
     id: "paywall.cta"
+- assertVisible: "Unlock the pose camera"
 - tapOn:
     id: "paywall.close"
 - assertVisible:

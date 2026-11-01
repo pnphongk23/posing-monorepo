@@ -1,4 +1,7 @@
 # TC-PAY-008 closing the paywall returns to the camera
+#
+# Paywall C is a full-screen cover whose only exit is the 44 pt X in the first frame (no swipe-away), so the
+# case is: X visible without scrolling, one tap, back on the camera with nothing bought.
 appId: ${APP_ID}
 tags: [TC-PAY-008, p1]
 ---
@@ -12,7 +15,9 @@ tags: [TC-PAY-008, p1]
 - extendedWaitUntil:
     visible:
       id: "paywall.close"
-    timeout: 10000
+    timeout: 20000
+- assertVisible:
+    id: "paywall.steps"
 - tapOn:
     id: "paywall.close"
 - assertNotVisible:

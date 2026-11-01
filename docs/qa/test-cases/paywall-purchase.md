@@ -87,8 +87,11 @@ out) / `Try again` (after a failed purchase) / `Plans unavailable` (offering unr
 
 ## Flows and subflows to re-point on the C build
 
-Files are untouched until the build lands; each needs its ids/copy checked against `PaywallScreen.swift` at
-that sha:
+**Re-pointed ahead of dev20** (ids verified in committed source at `1256c4f`; verification on the build is
+still pending, so treat them as staged, not proven): `TC-PAY-001`, `002`, `003`, `004`, `008`, `009`, `012`,
+`013`, `015`, `017`, `subflows/pay-buy-monthly.yaml` and `docs/qa/prod-smoke/flows/S-05b-paywall-signed-in.yaml`.
+`pay-launch.yaml` / `pay-sign-in.yaml` needed no change (the Debug switches and the Settings → Account →
+email route still hold). The table below is kept as the record of what moved:
 
 | File | What moves under paywall C |
 |---|---|

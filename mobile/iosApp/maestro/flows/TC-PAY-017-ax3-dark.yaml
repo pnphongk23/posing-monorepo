@@ -1,16 +1,17 @@
-# TC-PAY-017 the paywall is still usable at AX3 in dark mode
+# TC-PAY-017 the paywall survives small screens and the largest text (AX) in dark mode
 #
 # Runner setup (device state, restored afterwards):
 #   xcrun simctl ui <UDID> appearance dark
-#   xcrun simctl ui <UDID> content_size accessibility-extra-large
+#   xcrun simctl ui <UDID> content_size accessibility-extra-extra-extra-large     # AX5
 #   … run … then: appearance light, content_size large
 #
-# Board 11-04/11-05 (and 11-paywall-ax3-scrolled in the owner notes) require: prices and renewal terms
-# reachable by scrolling, and the pinned subscribe button with a clear inset — at AX3 the content is taller
-# than the screen, so the case is about reachability, not layout pixels.
+# Paywall C puts the CTA and helper line in a pinned purchase region, while below the Accessibility sizes the
+# legal row leaves the dock and moves INTO the scroll (accepted deviation). So at AX5 the case is: the X and
+# the CTA stay reachable, and the legal row is still reachable — by scrolling. The real SE frame, the notch
+# status bar and VoiceOver order stay device checks.
 #
-# Signed in on purpose: the plans (the tall part of the surface) only render for an account, and they are
-# what AX3 has to survive. Nothing is bought — the CTA is scrolled to and read, never tapped.
+# Signed in on purpose: the plan cards are the tall part of the surface and they only render with an
+# offering. Nothing is bought — the CTA is scrolled to and read, never tapped.
 appId: ${APP_ID}
 tags: [TC-PAY-017, p2, e2e]
 ---
@@ -18,9 +19,6 @@ tags: [TC-PAY-017, p2, e2e]
     condition: ${E2E_EMAIL_B != null && E2E_EMAIL_B.length > 0 && E2E_PASSWORD_B != null && E2E_PASSWORD_B.length > 0}
     label: "E2E_EMAIL_B / E2E_PASSWORD_B missing - this flow needs the second, never-entitled account"
 - runFlow: ../subflows/pay-launch.yaml
-# Account B on purpose: these cases need an *unentitled* account, and account A becomes entitled the
-# moment TC-PAY-004 buys (Test Store subscriptions persist on the RevenueCat customer). TC-PAY-006 uses
-# the same injection.
 - runFlow:
     file: ../subflows/pay-sign-in.yaml
     env:
@@ -31,14 +29,30 @@ tags: [TC-PAY-017, p2, e2e]
     id: "camera.shutter"
 - extendedWaitUntil:
     visible:
-      id: "paywall.plan.annual"
+      id: "paywall.close"
     timeout: 40000
-# The whole offer is reachable by scrolling at AX3, and the dock's CTA comes with it.
+# The purchase region is pinned: helper + CTA are on screen without scrolling, at any text size.
+- assertVisible:
+    id: "paywall.cta"
+- assertVisible:
+    id: "paywall.disclosure.selection"
 - scrollUntilVisible:
     element:
-      id: "paywall.cta"
+      id: "paywall.plan.monthly"
     direction: DOWN
     timeout: 25000
 - assertVisible:
+    id: "paywall.plan.annual"
+# The legal row moved into the scroll at AX — reachable, which is the requirement.
+- scrollUntilVisible:
+    element:
+      id: "paywall.privacy"
+    direction: DOWN
+    timeout: 25000
+- assertVisible:
+    id: "paywall.terms"
+- assertVisible:
+    id: "paywall.restore"
+- assertVisible:
     id: "paywall.close"
-- takeScreenshot: ../../../../docs/qa/redesign-drafts/saved-paywall/screens/TC-PAY-017-ax3-dark
+- takeScreenshot: ../../../../docs/qa/redesign-drafts/saved-paywall/screens/TC-PAY-017-ax5-dark

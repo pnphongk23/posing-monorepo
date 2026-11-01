@@ -1,4 +1,8 @@
 # TC-PAY-001 capture with the paywall on and signed out opens the paywall
+#
+# Paywall C replaced the body: this case proves the structure a signed-out press lands on — X in the first
+# frame, the numbered steps (step 3 is the only paid one), the plan cards with yearly preselected, the
+# renewal disclosure, the legal row and the signed-out CTA. No plan is bought.
 appId: ${APP_ID}
 tags: [TC-PAY-001, p0]
 ---
@@ -9,7 +13,29 @@ tags: [TC-PAY-001, p0]
 - runFlow: ../subflows/open-camera.yaml
 - tapOn:
     id: "camera.shutter"
+# The X is the first thing asserted: it must be on the first frame, never behind a scroll.
 - extendedWaitUntil:
     visible:
       id: "paywall.close"
-    timeout: 10000
+    timeout: 20000
+- assertVisible:
+    id: "paywall.steps"
+# The paid step is the third one, and it is the only claim Premium makes.
+- assertVisible:
+    id: "paywall.benefit"
+- assertVisible:
+    id: "paywall.plan.annual"
+- assertVisible:
+    id: "paywall.disclosure.selection"
+    text: '.*Yearly plan.*'
+- assertVisible:
+    id: "paywall.disclosure.autoRenew"
+    text: '.*Renews automatically until you cancel in Apple ID settings.*'
+# The legal row travels with the purchase region, signed out included.
+- assertVisible:
+    id: "paywall.restore"
+- assertVisible:
+    id: "paywall.terms"
+- assertVisible:
+    id: "paywall.privacy"
+- assertVisible: "Sign in to subscribe"

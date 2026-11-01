@@ -1,28 +1,36 @@
 # Buys the Monthly plan from an open paywall through the RevenueCat Test Store dialog. Preconditions:
-# paywall on screen, signed in, plans loaded. Ends on the camera: a confirmed entitlement closes the
-# sheet by itself (PremiumGate.swift:140-151), so the confirmation banner is deliberately NOT asserted
-# here — it can be gone before a selector could read it. Callers assert entitlement where it is stable.
+# paywall on screen, signed in, offering loaded. Ends on the camera: a confirmed entitlement closes the
+# cover by itself (PremiumGate.swift), so the confirmation banner is deliberately NOT asserted here.
+#
+# Paywall C: the yearly card is preselected (catalog order), so buying monthly requires an EXPLICIT tap on
+# `paywall.plan.monthly`, and the CTA reads "Unlock the pose camera". The selected plan is proven by the
+# helper line above the CTA (`paywall.disclosure.selection`), which follows the selection.
 appId: ${APP_ID}
 ---
 - extendedWaitUntil:
     visible:
       id: "paywall.cta"
     timeout: 30000
-# Both packages the offering must expose (stage-2 plan cards carry one id per package type, never a
-# price), then the Monthly card is picked. Annual is preselected; picking Monthly proves the choice
-# reaches the purchase.
+- assertVisible: "Unlock the pose camera"
+# Yearly is selected before anyone touches a card — the default the case is about.
+- assertVisible:
+    id: "paywall.plan.annual"
+- assertVisible:
+    id: "paywall.disclosure.selection"
+    text: '.*Yearly plan.*'
 - scrollUntilVisible:
     element:
       id: "paywall.plan.monthly"
     direction: DOWN
     timeout: 20000
-- assertVisible:
-    id: "paywall.plan.annual"
 - tapOn:
     id: "paywall.plan.monthly"
-# Redesigned build 18: one CTA for every plan, labelled "Subscribe" (it used to read
-# "Continue with Monthly"). The plan choice is proven by the card tap above and by the purchase below.
-- assertVisible: "Subscribe"
+# The selection is observable: the helper line now names the monthly plan.
+- extendedWaitUntil:
+    visible:
+      id: "paywall.disclosure.selection"
+      text: '.*Monthly plan.*'
+    timeout: 15000
 - tapOn:
     id: "paywall.cta"
 # Test Store dialog (SDK-owned, in-process): "Test valid purchase" / "Test failed purchase" / "Cancel".
@@ -34,8 +42,8 @@ appId: ${APP_ID}
 - extendedWaitUntil:
     notVisible: "Test valid purchase"
     timeout: 60000
-# Belt and braces: if the sheet is still up (a slower answer than this step), close it so every caller
-# continues from the camera. A failed/cancelled purchase keeps the paywall up with its error banner.
+# Belt and braces: if the cover is still up (a slower answer than this step), close it so every caller
+# continues from the camera. A failed/cancelled purchase keeps the paywall up with its own status.
 - runFlow:
     when:
       visible:

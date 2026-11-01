@@ -1,4 +1,8 @@
 # TC-PAY-002 capture with the paywall off does not open the paywall
+#
+# The switch is the only lever (`paywall_enabled`, default off) and it has to be a real rollback: the
+# shutter captures and the surface is not reachable from Settings either, so a stale or half-built paywall
+# cannot leak in behind the flag.
 appId: ${APP_ID}
 tags: [TC-PAY-002, p0]
 ---
@@ -11,5 +15,17 @@ tags: [TC-PAY-002, p0]
     id: "camera.shutter"
 - assertNotVisible:
     id: "paywall.close"
+- assertNotVisible:
+    id: "paywall.cta"
 - assertVisible:
     id: "camera.shutter"
+# The switch also hides the user-initiated route in Settings.
+- tapOn:
+    id: "camera.close"
+- runFlow: ../subflows/open-settings.yaml
+- assertVisible:
+    id: "settings.saved.row"
+- assertNotVisible:
+    id: "settings.premium.row"
+- assertNotVisible:
+    id: "paywall.cta"

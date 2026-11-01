@@ -1,16 +1,18 @@
 # TC-PAY-012 a purchase that fails grants nothing and says so
 #
-# Runs on the Debug-Dev build whose RevenueCat key is a Test Store key: the SDK's own dialog offers
-# "Test valid purchase" / "Test failed purchase" / "Cancel", so a failure is reproducible with no money
-# and no sandbox Apple ID. A real store failure cannot be provoked this way, which is why the provider's
-# failure path is also covered at unit level.
+# Debug-Dev build with a RevenueCat Test Store key: the SDK dialog offers "Test valid purchase" / "Test
+# failed purchase" / "Cancel", so a failure is reproducible with no money. Paywall C reports a failed
+# purchase as a settled outcome: the error card (`paywall.notice`) carries the retry (`paywall.retry`), the
+# status line states what happened, and the CTA itself becomes "Try again".
 appId: ${APP_ID}
 tags: [TC-PAY-012, p1, e2e]
 ---
+- assertTrue:
+    condition: ${E2E_EMAIL_B != null && E2E_EMAIL_B.length > 0 && E2E_PASSWORD_B != null && E2E_PASSWORD_B.length > 0}
+    label: "E2E_EMAIL_B / E2E_PASSWORD_B missing - this flow needs the second, never-entitled account"
 - runFlow: ../subflows/pay-launch.yaml
-# Account B on purpose: these cases need an *unentitled* account, and account A becomes entitled the
-# moment TC-PAY-004 buys (Test Store subscriptions persist on the RevenueCat customer). TC-PAY-006 uses
-# the same injection.
+# Account B: the cases that need an *unentitled* account, because account A becomes entitled the moment
+# TC-PAY-004 buys (Test Store subscriptions persist on the RevenueCat customer).
 - runFlow:
     file: ../subflows/pay-sign-in.yaml
     env:
@@ -29,22 +31,22 @@ tags: [TC-PAY-012, p1, e2e]
     visible: "Test failed purchase"
     timeout: 30000
 - tapOn: "Test failed purchase"
-# The settled outcome: the card reports the failure through the outcome banner QA reads
-# (`paywall.status`, "The purchase didn't go through") and carries the one action that answers it.
+# The settled outcome: card + retry + status line, and the CTA answers the failure.
 - extendedWaitUntil:
     visible:
-      id: "paywall.status"
+      id: "paywall.notice"
     timeout: 60000
 - assertVisible:
-    id: "paywall.status"
-    text: ".*purchase didn.t go through.*"
-- assertVisible:
     id: "paywall.retry"
-# No access: the paywall is still up, the camera is not behind it.
+- assertVisible:
+    id: "paywall.status"
+    text: '.*didn.t go through.*'
+- assertVisible: "Try again"
+# No access: the cover is still up, the camera is not behind it.
 - assertNotVisible:
     id: "camera.shutter"
-# The retry path: "Try again" starts a fresh store attempt (its dialog is the proof), and cancelling that
-# one leaves the user where they were — still unentitled, nothing bought.
+# The retry path: "Try again" starts a fresh store attempt (its dialog is the proof), and cancelling that one
+# leaves the user where they were — still unentitled, nothing bought.
 - tapOn:
     id: "paywall.retry"
 - extendedWaitUntil:

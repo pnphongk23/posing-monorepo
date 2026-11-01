@@ -13,6 +13,7 @@ tags: [TC-PAY-009, p1]
     visible:
       id: "paywall.cta"
     timeout: 20000
+- assertVisible: "Sign in to subscribe"
 - tapOn:
     id: "paywall.cta"
 - extendedWaitUntil:
