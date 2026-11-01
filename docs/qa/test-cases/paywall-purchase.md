@@ -1,110 +1,115 @@
-# Paywall and purchase (FEAT-011, redesigned build 18)
+# Paywall and purchase (FEAT-011) — **paywall C**, build 1.1 (20)
 
-Business behaviour of the paid surface: what the user is offered, what the app may claim about it, and
-what happens while the App Store is talking. Premium unlocks **capture with the full pose camera** and
-nothing else — no free tier, no quota, no offline pose library — and a purchase is account-bound, so a
-signed-out user is asked to sign in before buying.
+Business behaviour of the paid surface: what the user is offered, what the app may claim about it, and what
+happens while the App Store is talking. Premium unlocks **capture with the full pose camera** and nothing
+else — no free tier, no quota, no offline library — and a purchase is account-bound, so a signed-out user is
+asked to sign in before buying.
 
-Board source: `/tmp/ds-261030/export-c/11-board01..21.png`. Gap source: `/tmp/gap/09-11.md` §11 — the
-paywall is **PARTIAL and a different design** (no hero, extra benefits that contradict the shutter-only
-rule, "Annual/Recommended" vs "Yearly/Save 44%", "Continue with Annual" vs "Subscribe", `.sheet` vs
-full-screen cover, footnote text instead of error cards, no offline/AX3-scrolled pass). Everything the
-flows could run today still uses the pre-redesign screen; the rows below say which ones must be
-**re-baselined** against build 17.
+Build 20 replaces the shipped paywall with **paywall C**: real store prices, the yearly plan selected by
+default, per-month breakdown and saving computed from the two products, prices visible while signed out, an
+X close, the auto-renew disclosure, Restore/Terms/Privacy always reachable, and a legal row that survives
+iPhone SE at Dynamic Type AX5. Every row below is the same case id it was before — this is an in-place
+update, not a second set of cases.
 
-Status legend: `automated:` = committed flow that passes, `draft:` = flow in
-`docs/qa/redesign-drafts/saved-paywall/` (not yet run), `unit:` = XCTest only, `pending` = blocked on an
-id or on data, `out of scope 1.1` = agreed out of this release.
+**Id policy.** Where an id is not final, the row says `id TBD on dev20` instead of guessing; the source of
+truth is the committed `PaywallScreen.swift` at the dev20 sha, verified with `git grep` before any flow is
+re-pointed. Ids that exist today and are expected to survive: `paywall.close`, `paywall.cta`,
+`paywall.plan.annual`, `paywall.plan.monthly`, `paywall.status`, `paywall.retry`, `paywall.benefit`,
+`paywall.notice`, `paywall.offline`, `paywall.signin.sheet`, `paywall.signin.close`, `paywall.signin.apple`,
+`paywall.signin`, `signin.emailEntry`.
+
+**Two columns matter below:** *Sim* = provable on a Debug-Dev simulator build with the Test Store key
+(structure, wiring, state machines); *Device* = needs the TestFlight build or a physical SE, because a
+Release build on a simulator cannot resolve the real StoreKit products and the SE/AX5 geometry is hardware.
 
 | ID | Pri | Preconditions | Steps | Expected | Automation |
 |---|---|---|---|---|---|
-| TC-PAY-001 | P0 | paywall switch on, signed out | 1. Launch with the paywall on. 2. Open the camera, tap the shutter | The paywall opens over the app and the press does not capture. Presentation is the **full-screen cover** the redesign commits to (no sheet grabber, nothing of the camera interactive behind it) and the close control stays reachable | automated: TC-PAY-001-capture-gated.yaml — **re-baseline** (presentation: sheet → full-screen cover) |
-| TC-PAY-002 | P0 | paywall switch off | 1. Launch with the paywall off. 2. Camera → shutter | No paywall; the camera stays (the simulator has no capture device, so no photo is checked) | automated: TC-PAY-002-capture-ungated.yaml |
-| TC-PAY-003 | P1 | paywall switch on, signed out | 1. Camera → shutter. 2. Tap the CTA "Sign in to subscribe" | The signed-out paywall still shows **what is being sold** (plan cards, prices deferred) and one primary CTA that opens the sign-in sheet (`paywall.signin.sheet` at full height) — the offer is not hidden behind an auth wall, and the ways in are queryable (fixed: `BUG-PAY-18-01`, `33d4354`) | automated: TC-PAY-003-paywall-signin-prompt.yaml — **re-baselined + held for dev19** |
-| TC-PAY-004 | P1 | signed in by email; Debug-Dev build with the RevenueCat Test Store key | 1. Paywall open for an unentitled account. 2. Pick a plan, tap the CTA. 3. "Test valid purchase" | "Premium access confirmed"; reopening the paywall still reports it; the shutter no longer opens the paywall. CTA copy is **Subscribe** (not "Continue with <plan>") | automated: TC-PAY-004-purchase-annual-entitles.yaml (tagged `e2e`) — **re-baseline** (CTA copy, plan labels) |
-| TC-PAY-005 | P1 | entitled account | 1. Sign out. 2. Camera → shutter | The paywall is back and asks the signed-out user to sign in: access does not outlive the account | automated: TC-PAY-005-signout-regates-capture.yaml (tagged `e2e`) |
-| TC-PAY-006 | P1 | A entitled, B never purchased | 1. Sign out of A, sign in as B. 2. Camera → shutter | B gets the plans with no "Premium access confirmed": A's purchase is not carried over | automated: TC-PAY-006-second-account-no-carryover.yaml (tagged `e2e`) — **re-baseline** (CTA copy) |
-| TC-PAY-007 | P1 | paywall open, offering cannot load (offline or store failure) | 1. Open the paywall offline | The paywall keeps the offer's shape but tells the truth: an offline banner plus plan rows marked "Price unavailable offline", and the subscribe action disabled with the reason. No price is invented and no purchase is offered that cannot complete; **Retry** recovers in place once the offering loads | draft: redesign-drafts/saved-paywall/flows/TC-PAY-007-plans-unavailable-retry.yaml — **re-baseline** (banner + per-plan unavailable rows) |
-| TC-PAY-008 | P1 | paywall open (signed out) | 1. Close the paywall | The camera is visible again and the paywall is gone; no purchase state changed | automated: TC-PAY-008-close-paywall.yaml — **re-baseline** (full-screen cover) |
-| TC-PAY-009 | P1 | paywall switch on, signed out | 1. Camera → shutter. 2. Tap Sign in to subscribe | The sign-in options appear in their own sheet (`paywall.signin.sheet`) in App Review 4.8 order: Apple first — drawn with the system `SignInWithAppleButton` — then Google (`paywall.signin`), then email (`signin.emailEntry`); the sheet can be dismissed (`paywall.signin.close`) back to the paywall without buying or signing in | automated: TC-PAY-009-signin-apple-first.yaml — **re-baseline** (options move into a sheet; Apple becomes the system control; add the dismiss check) |
-| TC-PAY-010 | P1 | paywall open, offering still loading | 1. Open the paywall, look at the offer area and the dock | Loading keeps the offer's geometry — skeleton plan cards — and the subscribe action is present but disabled with helper copy ("Subscribe turns on when plans load"). No spinner row, no disappearing CTA | unit: `PaywallModel` phase `.loadingPlans`; **re-baseline** (skeleton cards + disabled CTA) |
-| TC-PAY-011 | P1 | purchase in flight | 1. Start a purchase and watch the paywall while the store sheet is up | The CTA reads "Processing…" and stays disabled, so a second purchase cannot be started from the same sheet | unit: `PaywallModel.phase == .processing` + `isBusy`; e2e observation pending |
-| TC-PAY-012 | P1 | Debug-Dev Test Store, paywall open with plans | 1. Continue with the selected plan. 2. "Test failed purchase" | The failure is reported as an error **card** (with a way to try again), not a footnote, and it says nothing was granted; no access is created | automated: TC-PAY-012-purchase-failed.yaml (tagged `e2e`) — **re-baseline** (error card + Try again) |
-| TC-PAY-013 | P1 | Debug-Dev Test Store, paywall open with plans | 1. Continue with the selected plan. 2. Cancel the store dialog | The app reports the cancellation and that no access was granted; the plans stay on screen so the user can start again when ready | automated: TC-PAY-013-purchase-cancelled.yaml (tagged `e2e`) |
-| TC-PAY-014 | P1 | paywall open; Test Store | 1. Tap Restore purchases. 2. Repeat with a store that cannot answer | A successful restore reports access confirmed; a failed restore says so in place ("Couldn't restore purchases") with its own **Try again** — the restore link must not leave the user with a silent failure | pending ids (`paywall.restore` + restore-error state) — **re-baseline** (inline retry, failure copy) |
-| TC-PAY-015 | P1 | paywall open in any state | 1. Tap Terms of Use. 2. Return, tap Privacy Policy | Both links open the real documents in the browser (asserted on the documents' own text), and the paywall is unchanged when the user comes back. Labels are the board's "Terms of Use" / "Privacy Policy" (today "Terms" / "Privacy") | automated: TC-PAY-015-legal-links.yaml — **re-baseline** (labels) |
-| TC-PAY-016 | P1 | paywall signed-out state, E2E account | 1. Tap Sign in. 2. Sign in from the sheet. 3. Return to the paywall | After a successful sign-in the paywall resumes on the plans for that account (no dead end, no second sign-in prompt) | pending-e2e |
-| TC-PAY-017 | P2 | dark appearance; AX3 text | 1. Open the paywall at accessibility text size, in dark mode. 2. Scroll to the bottom | The full disclosure is reachable by scrolling — plan prices, renewal terms, Restore, Terms and Privacy — and the pinned subscribe button keeps a clear inset above it, so nothing is clipped or covered by the dock (board `11-paywall-ax3-scrolled`) | automated: TC-PAY-017-ax3-dark.yaml — **re-baseline** (bottom inset, disclosure reachability) |
-| TC-PAY-018 | P1 | Test Store offering with yearly and monthly | 1. Open the paywall with plans loaded | The yearly card comes first and carries the store's own price and per-period breakdown, plus a saving badge whose percentage is **derived from the two prices** (12 × monthly vs yearly — the board's 44 % is an example, not a constant, so a different offering must show a different number); monthly follows. No hardcoded price and no invented discount, and the same numbers appear in the disclosure line above the CTA | e2e (Test Store) + unit: `PaywallPlanCatalog` — **re-baseline** ("Yearly" label, pricing-derived badge) |
-| TC-PAY-019 | P0 | paywall open with plans loaded (Test Store or a build whose offering resolves) | 1. Read the paywall from the offer to the dock; 2. Open Terms and Privacy from it | **App Store 3.1.2 disclosure, MUST COVER in 1.2**: the surface itself states the price, the billing period, that the subscription **auto-renews** until cancelled, and how to cancel (Apple ID settings), and both Terms of Use and Privacy Policy links are present and open. A paywall that sells without all five cannot ship | pending ids (`paywall.disclosure.price`, `paywall.disclosure.renewal`, `paywall.disclosure.cancel`) + draft follows them; the copy half is assertable by regex today |
-| TC-PAY-020 | P0 | paywall open, any state | 1. Read the benefit area and every claim on the surface | **Shutter-only claim (B5), MUST COVER**: Premium is described as capture with the full pose camera and nothing more — the redesign reduces the benefit list to **one** block (`paywall.benefit`), and no claim survives for free shots, a daily quota, a "full pose library" or offline poses (`09-11.md`: the current "Discover"/"Keep" benefits break this rule). A second benefit block is a regression even if its copy is harmless | draft asserts exactly one `paywall.benefit` element + unit: copy constants; **re-baseline** (app currently shows three benefits) |
-| TC-PAY-021 | P1 | signed in, paywall open | 1. Read the paywall header | The surface says which account the purchase will attach to ("Signed in as <email>" on the board). Buying Premium against an invisible account is the failure this prevents — the user must be able to see whose subscription this will be | pending id (`paywall.account.email`); **new behaviour** |
+| TC-PAY-001 | P0 | paywall switch on, signed out | 1. Launch with the paywall on. 2. Open the camera, tap the shutter | The paywall opens as a full-screen cover over the camera and the press captures nothing: hero, the single shutter-only benefit, the plan section with the **yearly card selected by default**, the X, and the disclosure/dock. Nothing of the camera is interactive behind it | automated: TC-PAY-001-capture-gated.yaml (automatable on sim; re-pointed for paywall C on dev20) |
+| TC-PAY-002 | P0 | `paywall_enabled` **off** | 1. Launch with the switch off. 2. Camera → shutter. 3. Settings → Library | No paywall anywhere: the shutter captures (simulator has no capture device, so the camera simply stays), there is **no Premium row** in Settings, and no route opens the surface. The kill switch is a real rollback, not a hidden screen | automated: TC-PAY-002-capture-ungated.yaml (automatable on sim; add the Settings-Premium-absence check) |
+| TC-PAY-003 | P1 | paywall switch on, signed out | 1. Camera → shutter. 2. Read the plan cards. 3. Tap the CTA | **Prices are visible while signed out** (paywall C), so the offer is honest before signing in; the CTA reads "Sign in to subscribe" and opens the sign-in sheet (full-height, Apple → Google → email). **Never tap the CTA on a prod-config build** — it is a purchase path there | automated: TC-PAY-003-paywall-signin-prompt.yaml (automatable on sim; re-pointed on dev20) |
+| TC-PAY-004 | P1 | account A signed in, Dev Test Store key | 1. Open the paywall. 2. Select monthly, tap Subscribe. 3. "Test valid purchase" | Access is granted ("Premium access confirmed"), the paywall closes itself, and the shutter stops opening it: the entitlement is real, not a UI flag. In paywall C the yearly card starts selected, so choosing monthly proves the selection reaches the purchase | automated: TC-PAY-004-purchase-annual-entitles.yaml (Test Store on Dev; real products device-only) |
+| TC-PAY-005 | P1 | account A entitled | 1. Sign out. 2. Camera → shutter. 3. Tap the CTA | The paywall is back and asks the signed-out user to sign in: access does not outlive the account | automated: TC-PAY-005-signout-regates-capture.yaml (automatable on sim) |
+| TC-PAY-006 | P1 | A entitled, B never purchased | 1. Sign out of A, sign in as B. 2. Camera → shutter | B gets the offer with real prices and no "Premium access confirmed": A's purchase is not carried over | automated: TC-PAY-006-second-account-no-carryover.yaml (automatable on sim; needs accounts A and B) |
+| TC-PAY-007 | P1 | paywall open, offering cannot load | 1. Open the paywall offline / with an unresolvable offering | The offer keeps its shape but tells the truth: an offline banner, plan rows marked unavailable with no price, and the subscribe action disabled with the reason ("Connect to the internet to subscribe"). **Retry** (`paywall.retry`, `id TBD on dev20` for the offer-area retry) recovers in place when the offering loads. No invented price, never a purchase that cannot complete | automatable (sim) once a seam exists; currently blocked — see *Gaps* |
+| TC-PAY-008 | P1 | paywall open | 1. Tap the **X** close | The paywall closes back to the camera and no purchase state changed. The X is the only control that must never be behind a scroll | automated: TC-PAY-008-close-paywall.yaml (automatable on sim) |
+| TC-PAY-009 | P1 | paywall switch on, signed out | 1. Camera → shutter. 2. Tap the CTA. 3. Read the sheet | The sign-in options are in their own full-height sheet in App Review 4.8 order: Apple (system button) first, then Google, then email; the sheet is dismissible without signing in or buying | automated: TC-PAY-009-signin-apple-first.yaml (automatable on sim) |
+| TC-PAY-010 | P1 | paywall open, offering still loading | 1. Open the paywall and watch the offer area | Skeleton plan cards keep the offer's geometry and the subscribe action is present but **disabled with helper copy** ("Subscribe turns on when plans load") — never a bare spinner and never a hidden CTA | unit + automatable (sim) — `PaywallModel.phase == .loadingPlans` |
+| TC-PAY-011 | P1 | purchase in flight | 1. Start a purchase, watch the surface | The CTA reads "Processing…" and stays disabled, so a second purchase cannot start from the same sheet | unit + automatable (sim) |
+| TC-PAY-012 | P1 | Dev Test Store key, account B (never entitled) | 1. Subscribe. 2. "Test failed purchase". 3. Tap **Try again**. 4. Cancel the second dialog | The failure is the settled outcome: `paywall.status` reads "The purchase didn't go through", the card carries `paywall.retry`, nothing is granted, and **Try again** starts a fresh store attempt (its dialog proves it) whose cancellation leaves the user unentitled with the offer intact | automated: TC-PAY-012-purchase-failed.yaml (Test Store on Dev; device-only for a real store failure) |
+| TC-PAY-013 | P1 | Dev Test Store key, account B | 1. Subscribe. 2. Cancel the store dialog | **Silence by design**: no outcome banner, no card, no retry (cancelling is the user's own answer), while the state stays true — no access, paywall still the surface, offer intact | automated: TC-PAY-013-purchase-cancelled.yaml (Test Store on Dev) |
+| TC-PAY-014 | P1 | paywall open, signed in, Test Store | 1. Tap **Restore purchases**. 2. Repeat with a store that cannot answer | Restore is always present and tappable (`paywall.restore`, `id TBD on dev20`). A successful restore confirms access; a failed one says so in place ("Couldn't restore purchases") with its own Try again, instead of doing nothing. Restore never grants access without the store's answer | automatable (sim) for the wiring; **device-only** for a real entitlement being restored (TestFlight) |
+| TC-PAY-015 | P1 | paywall open in any state | 1. Tap **Terms**. 2. Return, tap **Privacy** | Both are always present in the legal row and open the real documents in the browser (asserted on the documents' own text); the paywall is unchanged on return. Labels are the board's "Terms of Use" / "Privacy Policy" (`paywall.terms` / `paywall.privacy`, `id TBD on dev20`) | automated: TC-PAY-015-legal-links.yaml (automatable on sim) |
+| TC-PAY-016 | P1 | paywall signed-out state, E2E account | 1. Tap the CTA. 2. Sign in from the sheet. 3. Return | After a successful sign-in the paywall resumes on the offer for that account — no dead end, no second prompt | automatable (sim) |
+| TC-PAY-017 | P2 | **iPhone SE**, Dynamic Type **AX5**; and dark mode | 1. Open the paywall on an SE at AX5. 2. Scroll the offer. 3. Read the legal row | At AX5 on the smallest supported screen the plan cards, the disclosure and the **legal row (Restore · Terms · Privacy) are all reachable by scrolling and nothing is clipped or overlapped** by the pinned CTA; the X stays reachable. In dark mode every price, the saving badge and the disclosure stay legible against the surface | automated: TC-PAY-017-ax3-dark.yaml (sim-OK for reachability; device-only on a real SE at AX5) |
+| TC-PAY-018 | P0 | real products (TestFlight) or Test Store (sim) | 1. Open the paywall with the offering resolved. 2. Read the yearly card, then the monthly card | The **yearly card comes first and is selected by default**, showing the store's own price and period plus a per-month breakdown; the saving badge is **computed from the two product prices** (12 × monthly vs yearly) — a different offering must show a different percentage, so "Save 33 %" or "Save 44 %" are examples, never constants. Monthly follows with its own price/period. No hardcoded price and no invented discount | **device-only:** the price/period/saving values (TestFlight, real store); **sim-OK:** card order, default selection, per-month + percentage *present* and internally consistent (Test Store prices differ and that is expected) |
+| TC-PAY-019 | P0 | paywall open with an offering | 1. Read the surface from the plans to the dock. 2. Open Terms and Privacy | **App Store 3.1.2, still mandatory in paywall C:** the surface itself states the **price**, the **billing period**, that the subscription **auto-renews until cancelled**, and **how to cancel** (Apple ID settings), and both Terms of Use and Privacy Policy are present and open. All five on one surface — missing any one blocks shipping | automatable (sim) for presence/structure (`paywall.status`/disclosure ids, `id TBD on dev20`); **device-only** for the values matching the store listing |
+| TC-PAY-020 | P0 | paywall open, any state | 1. Read every claim on the surface | **Shutter-only claim:** Premium is described as capture with the full pose camera and nothing more — one benefit block (`paywall.benefit`), no free shots, no daily quota, no "full pose library", no offline poses, and no second benefit promising a feature the product does not gate | automatable (sim) + unit: copy constants |
+| TC-PAY-021 | P1 | signed in, paywall open | 1. Read the surface above the CTA | The app states which account the purchase will attach to (or, truthfully, that Premium follows the account) — buying against an invisible account is the failure this prevents. **`id TBD on dev20`** (`paywall.account.email` was requested and is not in source) | automatable (sim) once the id exists |
 
-## Accepted design deviation (GL, dev19)
+## Which claims are TestFlight/device-only, and why
 
-- **The sign-in sheet is full height (`.large`), the board draws a medium sheet.** Accepted: a medium detent
-  keeps the sheet's content out of the accessibility tree on iOS 16+/26 (that was `BUG-PAY-18-01`'s root
-  cause), so accessibility wins over the board here. The visual pass should expect a full-height sheet and
-  must not file it.
+- **Prices, per-month breakdown, saving percentage, period, and the store's localized currency** can only be
+  read from real StoreKit products. A **Release build on a simulator resolves no products** (that is exactly
+  what `docs/qa/prod-smoke` S-05b recorded as BLOCKED-BY-ENV), and a Debug-Dev Test Store build returns
+  synthetic prices — so in paywall C the *structure* is asserted on the simulator (yearly first, selected,
+  per-month + % shown and consistent) and the *values* are asserted on TestFlight per TC-PAY-018/019.
+- **iPhone SE at AX5 and dark-mode legibility** need the hardware for the final word; the simulator can
+  reproduce the content size and appearance, which is enough to prove reachability but not clipping/contrast.
+- **Restoring a real purchase** needs TestFlight; the Test Store can prove the restore wiring only.
+
+## Gaps that keep a case from being green (not app bugs)
+
+- `TC-PAY-007` (offer unavailable/offline): no seam forces the offering to fail on a Test Store build, so the
+  case is written and parked. A `-AIPosePaywallOfflineFixture`-style seam (or a TestFlight airplane-mode run)
+  would make it automatable.
+- `TC-PAY-014`, `TC-PAY-015`, `TC-PAY-019`, `TC-PAY-021` need ids still not in source (`paywall.restore`,
+  `paywall.terms`, `paywall.privacy`, `paywall.disclosure.*`/`paywall.account.email`) — recorded here as
+  `id TBD on dev20` so the flows are not built on labels that copy edits can move.
+
+## Flows and subflows that must be re-pointed when dev20 lands
+
+Existing files (kept untouched for now, as instructed); each needs its ids/copy checked against the committed
+`PaywallScreen.swift` at the dev20 sha before it is run:
+
+| File | What will move in paywall C |
+|---|---|
+| `flows/TC-PAY-001-capture-gated.yaml` | presentation (full-screen cover), presence of the X and of the disclosure line |
+| `flows/TC-PAY-002-capture-ungated.yaml` | add the Settings-Premium-row absence check (kill switch) |
+| `flows/TC-PAY-003-paywall-signin-prompt.yaml` | signed-out **prices now visible**; CTA → sign-in sheet; keep "never tap CTA on prod" |
+| `flows/TC-PAY-004-purchase-annual-entitles.yaml` | yearly preselected by default → the monthly pick must still reach the purchase |
+| `flows/TC-PAY-008-close-paywall.yaml` | X id/label (`paywall.close` expected to survive) |
+| `flows/TC-PAY-009-signin-apple-first.yaml` | sheet ids/order unchanged, sheet detent full height |
+| `flows/TC-PAY-012-purchase-failed.yaml` | `paywall.retry` + `paywall.status` copy |
+| `flows/TC-PAY-013-purchase-cancelled.yaml` | silence assertion (no status/retry) |
+| `flows/TC-PAY-015-legal-links.yaml` | `paywall.terms` / `paywall.privacy` once they exist |
+| `flows/TC-PAY-017-ax3-dark.yaml` | AX5 + SE-oriented reachability, legal row scroll |
+| `subflows/pay-buy-monthly.yaml` | CTA copy ("Subscribe") and the yearly-by-default selection step |
+| `subflows/pay-launch.yaml`, `subflows/pay-sign-in.yaml` | shared, owner 26ab1fba — only if the launch args or sign-in route change |
+| `docs/qa/prod-smoke/flows/S-05b-paywall-signed-in.yaml` | prod-config: prices/plan cards are BLOCKED-BY-ENV there; must stay CTA-untouched |
 
 ## Notes (how these run)
 
-- Purchases stay **Test Store only, on the Debug-Dev build** (`test_…` RevenueCat key; the SDK dialog is
-  app-process UI with stable labels, so no `.storekit` file and no sandbox Apple ID are needed). On the
-  **Prod-config build a purchase is never started**: that build carries the live key, so flows stop at
-  "plans visible" and never tap `paywall.cta`.
-- Credentials come only from the gitignored `mobile/iosApp/maestro/e2e.local.env` via `-e`; credential
-  flows carry the `e2e` tag so a plain run skips them. The App Review demo account is never used.
-- Prices live in the plan card's accessibility label, so a flow asserts a real currency amount by id
-  without hardcoding a price. `paywall.status` is the outcome banner (cancelled / failed / entitled /
-  unavailable) and is absent in the ready state, which is how "no error shown" is asserted.
-- Email-sign-in specifics (validation, submitting, wrong password, offline) and the "Forgot password?"
-  link belong to the sign-in surface, not this doc; **password reset is out of scope 1.1**.
+- Purchases stay **Test Store only on Dev builds**; on the **Prod-config build a purchase is never started** —
+  flows stop at "offer visible" and never tap `paywall.cta` (that build carries the live key).
+- Credentials come only from the gitignored `mobile/iosApp/maestro/e2e.local.env` via `-e`; credential flows
+  carry the `e2e` tag. The App Review demo account is never used. Account **B** is the unentitled one and is
+  required by TC-PAY-012/013 — account A becomes entitled as soon as TC-PAY-004 buys.
+- Prices live in the plan card's accessibility label, so a flow asserts a currency-shaped value by id without
+  hardcoding an amount; `paywall.status` is the outcome banner (failed / entitled) and is absent when nothing
+  failed, which is how "no error shown" and "cancel is silent" are asserted.
 
-## Re-baselining that landed with build 18
+## Accepted design deviation (GL)
 
-Rows marked **re-baseline** above change their expected result or their copy, so their flows/assertions
-must be updated in the same commit that promotes them: TC-PAY-001, 003, 004, 006, 007, 008, 009, 010, 012,
-014, 015, 017, 018, 020. Unaffected: 002, 005, 011, 013, 016. New in 1.1: 019, 020, 021.
+- **The sign-in sheet is full height (`.large`), the board draws a medium sheet.** Accepted: a medium detent
+  keeps a sheet's content out of the accessibility tree on iOS 16+/26 (that was `BUG-PAY-18-01`), so
+  accessibility wins over the board. The visual pass must expect a full-height sheet and not file it.
 
-## Build 1.1 (17) — historical
-
-The build-17 app (`a03d03a`) had the support-screen split but **not** the paywall redesign, so the 17 run
-verified the eight existing flows as regressions (all PASS; see the drafts README for the run table). Those
-results are history: the redesign is in **1.1 (18)**, which is what the cases below now describe.
-
-## Build 1.1 (18) — first run against the redesign
-
-Re-baselined before the run (flow defects, not app bugs): `TC-PAY-003` and `TC-PAY-005` now assert the
-signed-out CTA label ("Sign in to subscribe") and open `paywall.signin.sheet`, and
-`subflows/pay-buy-monthly.yaml` asserts the single "Subscribe" CTA instead of "Continue with Monthly".
-
-**Held for dev19** (prepared, not run): `TC-PAY-003`, `TC-PAY-009` (sheet is now queryable — `33d4354`), and
-`TC-PAY-012`, `TC-PAY-013` (failure → "Try again"; cancel → silence — `821bd71`), all on the Dev Test Store
-key with account B for the unentitled ones.
-
-## Promotable at the 1.1 (18) run
-
-Verified against committed source at `a03d03a` (the paywall redesign had **not** landed there, and the
-redesign's new ids — `paywall.benefit`, `paywall.offline`, `paywall.notice`, `paywall.signin.sheet`,
-`paywall.signin.close` — are committed in build 18, so the drafts that use them are promoted with this run; these run
-against the current surface and their re-baseline notes stay open): `paywall.close`, `paywall.cta`,
-`paywall.plan.annual`, `paywall.plan.monthly`, `paywall.signin.apple`, `paywall.signin`, `paywall.status`,
-`signin.emailEntry`. So **TC-PAY-012, 013, 015, 017** are promoted with the run (012/013 need the Dev Test
-Store key and the E2E account; 015 taps the code-owned labels "Terms of Use" / "Privacy Policy"). Still a
-draft: **TC-PAY-007** — the unavailable/offline offer has no deterministic producer on a Test Store build.
-
-## Requests to Feature (ids needed before the drafts can move into `maestro/flows`)
+## Requests to Feature (ids still worth adding)
 
 | Id | Why | Used by |
 |---|---|---|
-| `paywall.retry` | the unavailable state's Retry is only labelled "Retry loading Premium plans" (still not in the incoming id list) | TC-PAY-007 |
-| ~~`paywall.unavailable`~~ | superseded: Feature is committing `paywall.notice` (the note in the offer area) and `paywall.offline` (the offline banner). Drop this request once both land | TC-PAY-007 |
-| `paywall.restore` | the Restore purchases link has no id | TC-PAY-014 |
-| `paywall.terms`, `paywall.privacy` | legal links are only labelled "Terms of Use" / "Privacy Policy" | TC-PAY-015, TC-PAY-019 |
-| `paywall.disclosure.price`, `paywall.disclosure.renewal`, `paywall.disclosure.cancel` | 3.1.2 disclosure lines need stable anchors so the case cannot pass on partial copy | TC-PAY-019 |
-| `paywall.account.email` | "Signed in as <email>" line | TC-PAY-021 |
-| `paywall.signin.sheet`, `paywall.signin.close` | **confirmed incoming** (pending commit): the sheet and its dismiss control, so "the options are in the sheet, not inline" and "dismiss returns to the paywall" are assertable | TC-PAY-009, TC-PAY-016 |
-| `paywall.benefit` | **confirmed incoming** (pending commit): one block for the shutter-only claim, so "exactly one benefit" is assertable | TC-PAY-020 |
-| `paywall.notice`, `paywall.offline` | **confirmed incoming** (pending commit): the notice and the offline banner | TC-PAY-007 |
-| restore-failure state | boards show "Couldn't restore purchases … Try again"; the model has no such phase/copy | TC-PAY-014 |
+| `paywall.restore` | the Restore link is only labelled | TC-PAY-014 |
+| `paywall.terms`, `paywall.privacy` | legal links are label-only, and copy edits can move the label | TC-PAY-015, TC-PAY-019 |
+| `paywall.disclosure.price`, `paywall.disclosure.renewal`, `paywall.disclosure.cancel` | 3.1.2 lines need stable anchors so the case cannot pass on partial copy | TC-PAY-019 |
+| `paywall.offer.retry` | the offer-area Retry is only labelled "Retry loading Premium plans" | TC-PAY-007 |
+| `paywall.account.email` | the identity line | TC-PAY-021 |
