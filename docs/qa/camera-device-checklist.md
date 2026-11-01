@@ -12,6 +12,13 @@ not what you see, stop and report that step number.
 - [ ] Save a second pose, so the pose strip has something to switch to.
 - [ ] Capture two or three photos — sections 6, 7, 8 and 12 check what lands in the **saved file**, and section 12 deletes one.
 - [ ] Write down your model + iOS version + build number (Settings → About) at the top of your notes.
+- [ ] **Launch the app with a non-English device language and a non-US region** (Settings → General → Language & Region:
+  pick any other language and a region outside the US), then open it.
+- [ ] **Expected:** the app **launches and stays up**, the Poses home renders and stays on screen, and nothing crashes —
+  leave it running for a minute before switching back.
+- [ ] Note for QA, not the product owner: on dev19 a **Debug** build launched with
+  `-AppleLanguages (en) -AppleLocale en_US` **terminated about a second after launch** (cause not triaged yet). Treat any
+  launch that dies on a locale/language change as a **potential release blocker** until Feature has triaged it.
 
 ## 1. Paywall on device — paywall C, 1.1 (20) (TestFlight)
 A Simulator cannot resolve real StoreKit products, so this section is the only place the real prices can be read. Cases:
@@ -38,6 +45,14 @@ TC-PAY-017/018/019 (and TC-PAY-014 for Restore) in `docs/qa/test-cases/paywall-p
 - [ ] Switch the device to **dark mode** and read the same screen.
 - [ ] **Expected:** every price, the saving badge and the disclosure stay legible against the surface — no grey-on-grey
   small print, no badge that disappears (TC-PAY-017).
+- [ ] **Purchase-failure path — needs a sandbox account** (sign in to a Sandbox tester in Settings → App Store, or use a
+  TestFlight build's sandbox purchase): open the paywall, start a purchase and let it **fail** (cancel the sheet, or use a
+  sandbox card that is declined).
+- [ ] **Expected:** the failure is a settled state, not a dead screen — `paywall.status` says the purchase didn't go through,
+  the plan card carries a **working retry** (`paywall.retry`) that starts a fresh store attempt, and **no premium is
+  granted** (the shutter still opens the paywall) (TC-PAY-012).
+- [ ] Note for QA: this case is **BLOCKED (env) on the Simulator** — a simulator build shows no purchasable offering, so the
+  failure path can only be walked here (TC-PAY-012 lives in `docs/qa/test-cases/paywall-purchase.md`).
 
 ## 2. Camera chrome — what changed in 18
 - [ ] Open the camera from the dock and read the **top row**.
