@@ -25,6 +25,28 @@ enum PaywallAccessibilityID {
     static let signInSheet = "paywall.signin.sheet"
     static let signInClose = "paywall.signin.close"
 
+    /// The 3.1.2 links and the auto-renew disclosure each get their own id, so a flow asserts the
+    /// destination instead of matching a label (the handoff and TC-PAY-015 both ask for this).
+    static let restore = "paywall.restore"
+    static let terms = "paywall.terms"
+    static let privacy = "paywall.privacy"
+    static let autoRenewDisclosure = "paywall.disclosure.autoRenew"
+    /// The line above the CTA when it is about the purchase (the selected plan and today's charge,
+    /// or why it cannot be bought yet).
+    static let selectedPlanLine = "paywall.disclosure.selection"
+    /// The line above the CTA when it is about the account ("Signed in…" / "Sign in first…").
+    /// It carries no email: the account payload has none and the paywall never prints one.
+    static let accountStatus = "paywall.account.status"
+    /// The retry control of an offering that could not be read, distinct from the purchase retry.
+    static let offerRetry = "paywall.offer.retry"
+    /// The how-it-works block, and the paid step in it (which keeps the old benefit id).
+    static let steps = "paywall.steps"
+    /// The derived annual figures, so a flow can read the per-month breakdown and the saving badge
+    /// without matching the card's combined label. The card ids stay `paywall.plan.annual` /
+    /// `paywall.plan.monthly` because Maestro already drives those.
+    static let planAnnualPerMonth = "paywall.plan.yearly.permonth"
+    static let planAnnualSavings = "paywall.plan.yearly.savings"
+
     /// A plan card's id follows the package type the catalog sells, never the store product id.
     static func plan(_ product: PurchaseProduct) -> String {
         PaywallPlanCatalog.isAnnual(product) ? planAnnual : planMonthly
@@ -55,10 +77,11 @@ enum PaywallSignInOption: String, CaseIterable, Identifiable {
 /// offering through `PurchaseGateway`; every derived figure (per-month breakdown, saving badge) is
 /// computed from those packages by `PaywallMoney`, so no price is ever typed into the UI.
 ///
-/// Layout follows the page-11 boards: a hero, the single shutter benefit (Premium unlocks capture
-/// with the full pose camera and nothing else), two plan cards, the auto-renew disclosure, a pinned
-/// CTA and the 3.1.2 links. Every state — loading, offline, purchase error, restore error, signed
-/// out — keeps those disclosures on screen.
+/// Layout is the approved CRO variant C: a full-bleed hero with the status-bar scrim, the
+/// "Pick a pose. Match it. Shoot." headline, the three free/free/paid steps, the two plan cards, the
+/// auto-renew disclosure and a pinned purchase region (helper line, CTA, Restore/Terms/Privacy).
+/// Every state — loading, offline, purchase error, restore error, signed out — keeps those
+/// disclosures on screen.
 struct PaywallScreen: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
@@ -68,6 +91,9 @@ struct PaywallScreen: View {
     @StateObject private var emailSignIn = EmailSignInModel()
     @State private var showsSignInSheet = false
     @State private var showsEmailSignIn = false
+    /// Where the presentation came from, forwarded to the model before `start()` so every event
+    /// carries it.
+    private let trigger: PaywallTrigger
 
     /// The detents the sign-in sheet is presented with.
     ///
@@ -81,59 +107,73 @@ struct PaywallScreen: View {
     @available(iOS 16.0, *)
     static let signInSheetDetents: Set<PresentationDetent> = [.large]
 
-    init(model: @autoclosure @escaping () -> PaywallModel = PaywallModel()) {
+    init(
+        model: @autoclosure @escaping () -> PaywallModel = PaywallModel(),
+        trigger: PaywallTrigger = .shutter
+    ) {
         _model = StateObject(wrappedValue: model())
+        self.trigger = trigger
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    PaywallHero()
-                    VStack(alignment: .leading, spacing: AP.Space.space16) {
-                        titleBlock
-                        benefitRow
-                        planSection
-                        if let notice = model.notice, !model.isOffline {
-                            // A failed purchase *is* the outcome: the card is the surface that reports
-                            // it, so its headline carries the banner id (`paywall.status`) and its
-                            // retry is id'd instead of only labelled. A store failure the user can
-                            // neither see reported nor answer is the defect this fixes.
-                            SupportNoticeCard(
-                                notice: notice,
-                                titleAccessibilityIdentifier: model.noticeIsSettledOutcome
-                                    ? PaywallAccessibilityID.status
-                                    : nil,
-                                actionAccessibilityIdentifier: PaywallAccessibilityID.retry,
-                                action: performNoticeAction
-                            )
-                            .accessibilityIdentifier(PaywallAccessibilityID.notice)
+        GeometryReader { proxy in
+            VStack(spacing: 0) {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        PaywallCHero(height: PaywallHeroMetrics.height(for: proxy.size.height))
+                        VStack(alignment: .leading, spacing: AP.Space.space24) {
+                            headline
+                            stepsBlock
+                            planSection
+                            if let notice = model.notice, !model.isOffline {
+                                // A failed purchase *is* the outcome: the card is the surface that reports
+                                // it, so its headline carries the banner id (`paywall.status`) and its
+                                // retry is id'd instead of only labelled. A store failure the user can
+                                // neither see reported nor answer is the defect this fixes.
+                                SupportNoticeCard(
+                                    notice: notice,
+                                    titleAccessibilityIdentifier: model.noticeIsSettledOutcome
+                                        ? PaywallAccessibilityID.status
+                                        : nil,
+                                    actionAccessibilityIdentifier: notice.action == .retryLoad
+                                        ? PaywallAccessibilityID.offerRetry
+                                        : PaywallAccessibilityID.retry,
+                                    action: performNoticeAction
+                                )
+                                .accessibilityIdentifier(PaywallAccessibilityID.notice)
+                            }
+                            autoRenewCaption
+                            if !PaywallScreen.pinsLegalRow(at: dynamicTypeSize) {
+                                legalRow
+                            }
+                            if let status = model.statusMessage, model.notice == nil, !model.isOffline {
+                                Text(status)
+                                    .font(AP.Font.caption)
+                                    .foregroundStyle(AP.Color.secondaryText)
+                                    .frame(maxWidth: .infinity, alignment: .center)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .accessibilityIdentifier(PaywallAccessibilityID.status)
+                            }
                         }
-                        autoRenewCaption
-                        if dynamicTypeSize.isAccessibilitySize {
-                            legalRow
-                        }
-                        if let status = model.statusMessage, model.notice == nil, !model.isOffline {
-                            Text(status)
-                                .font(AP.Font.caption)
-                                .foregroundStyle(AP.Color.secondaryText)
-                                .frame(maxWidth: .infinity, alignment: .center)
-                                .fixedSize(horizontal: false, vertical: true)
-                                .accessibilityIdentifier(PaywallAccessibilityID.status)
-                        }
+                        .padding(.horizontal, AP.Space.space16)
+                        // The headline starts over the hero's fade, exactly as the mockup draws it.
+                        .padding(.top, -AP.Space.space24)
+                        .padding(.bottom, AP.Space.space24)
                     }
-                    .padding(.horizontal, AP.Space.space16)
-                    .padding(.top, AP.Space.space24)
-                    .padding(.bottom, AP.Space.space24)
                 }
+                // The hero runs under the status bar; the close control and the footer keep their insets.
+                .ignoresSafeArea(edges: .top)
+                footer
             }
-            // The hero runs under the status bar; the close control and the footer keep their insets.
-            .ignoresSafeArea(edges: .top)
-            footer
+            // Painted edge to edge: the hero runs under the status bar and the footer under the
+            // home indicator, so a colour that stopped at the safe area would show through as a band.
+            .background(AP.Color.background.ignoresSafeArea())
+            .overlay(alignment: .topTrailing) { closeButton }
         }
-        .background(AP.Color.background)
-        .overlay(alignment: .topTrailing) { closeButton }
-        .task { model.start() }
+        .task {
+            model.trigger = trigger
+            model.start()
+        }
         // Email sign-in as a peer of Google (PLAN §4): same `EmailSignInModel`/`APIClient` path,
         // landing in the same isSignedIn/loadPlans() outcome via the call-site seam.
         .emailSignInSheet(
@@ -156,36 +196,60 @@ struct PaywallScreen: View {
 
     // MARK: - Body
 
-    private var titleBlock: some View {
-        VStack(alignment: .leading, spacing: AP.Space.space8) {
-            Text("Full pose camera")
-                .font(AP.Font.display)
+    /// The handoff's headline, drawn as the two fragments the mockup shows: the promise in ink and
+    /// the action in the accent ink on its own line. Splitting it here is what guarantees no
+    /// one-word orphan at 375 pt ("Shoot." can never end up alone on line two).
+    private var headline: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(PaywallPlanCopy.headlineLines[0])
                 .foregroundStyle(AP.Color.primaryText)
-                .fixedSize(horizontal: false, vertical: true)
-                .accessibilityAddTraits(.isHeader)
-            Text("Shoot with the guide on every capture.")
-                .font(AP.Font.body)
-                .foregroundStyle(AP.Color.secondaryText)
-                .fixedSize(horizontal: false, vertical: true)
+            Text(PaywallPlanCopy.headlineLines[1])
+                .foregroundStyle(AP.Color.accentText)
         }
+        .font(AP.Font.display)
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(PaywallPlanCopy.headlineLines.joined(separator: " "))
+        .accessibilityAddTraits(.isHeader)
     }
 
-    /// Premium gates one thing: capturing with the full pose camera. The three-up benefit panel the
-    /// old paywall drew claimed discovery and saving too, which the entitlement never granted.
-    private var benefitRow: some View {
-        HStack(alignment: .firstTextBaseline, spacing: AP.Space.space8) {
-            Image(systemName: "checkmark")
-                .font(AP.Font.heading)
-                .foregroundStyle(AP.Color.accentText)
-                .accessibilityHidden(true)
-            Text(PaywallPlanCopy.benefit)
-                .font(AP.Font.body)
-                .foregroundStyle(AP.Color.primaryText)
-                .fixedSize(horizontal: false, vertical: true)
+    /// Steps 1–2 are free and step 3 is paid, which is exactly what the gate does: the live guide is
+    /// free, only the shutter needs Premium. No copy may imply the guide itself is paid.
+    private var stepsBlock: some View {
+        VStack(alignment: .leading, spacing: AP.Space.space16) {
+            ForEach(PaywallPlanCopy.steps) { step in
+                HStack(alignment: .top, spacing: AP.Space.space12) {
+                    stepBadge(step)
+                    VStack(alignment: .leading, spacing: AP.Space.space4) {
+                        Text(step.title)
+                            .font(AP.Font.heading)
+                            .foregroundStyle(AP.Color.primaryText)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Text(step.detail)
+                            .font(AP.Font.supporting)
+                            .foregroundStyle(AP.Color.secondaryText)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("\(step.id). \(step.title). \(step.detail)")
+                .apIdentifier(step.isPremium ? PaywallAccessibilityID.benefit : nil)
+            }
         }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("Premium: \(PaywallPlanCopy.benefit)")
-        .accessibilityIdentifier(PaywallAccessibilityID.benefit)
+        .accessibilityIdentifier(PaywallAccessibilityID.steps)
+    }
+
+    private func stepBadge(_ step: PaywallPlanCopy.Step) -> some View {
+        Text("\(step.id)")
+            .font(AP.Font.caption.weight(.bold))
+            .foregroundStyle(step.isPremium ? AP.Color.background : AP.Color.accentText)
+            .frame(width: 28, height: 28)
+            .background(
+                Circle().fill(step.isPremium ? AP.Color.accentText : AP.Color.selectedBackground)
+            )
+            .accessibilityHidden(true)
     }
 
     @ViewBuilder
@@ -263,10 +327,15 @@ struct PaywallScreen: View {
             .multilineTextAlignment(.center)
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity)
+            .accessibilityIdentifier(PaywallAccessibilityID.autoRenewDisclosure)
     }
 
     private var closeButton: some View {
-        Button { dismiss() } label: {
+        Button {
+            // One dismissal is one close event, whatever happens to the cover afterwards.
+            model.noteDismissed()
+            dismiss()
+        } label: {
             Image(systemName: "xmark")
                 .font(.system(size: 17, weight: .semibold))
                 .foregroundStyle(AP.Color.primaryText)
@@ -292,12 +361,13 @@ struct PaywallScreen: View {
     private var footer: some View {
         VStack(spacing: AP.Space.space12) {
             if let line = footerLine {
-                Text(line)
+                Text(line.text)
                     .font(AP.Font.caption)
                     .foregroundStyle(AP.Color.secondaryText)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity)
+                    .accessibilityIdentifier(line.id)
             }
             Button(action: primaryAction) {
                 HStack(spacing: AP.Space.space8) {
@@ -311,7 +381,7 @@ struct PaywallScreen: View {
             .disabled(!model.isCTAEnabled)
             .accessibilityLabel(model.ctaTitle)
             .accessibilityIdentifier(PaywallAccessibilityID.cta)
-            if !dynamicTypeSize.isAccessibilitySize {
+            if PaywallScreen.pinsLegalRow(at: dynamicTypeSize) {
                 legalRow
             }
         }
@@ -322,9 +392,30 @@ struct PaywallScreen: View {
         .background(AP.Color.background)
     }
 
-    private var footerLine: String? {
-        if let helper = model.ctaHelper { return helper }
-        return model.isSignedIn ? PaywallModel.signedInLine : nil
+    /// The one line above the CTA, and the id that says what it is about: the purchase (the selected
+    /// plan and today's charge, or why it cannot be bought yet) or the account. A blocker that
+    /// belongs to the network wins over the price, because the price cannot be charged while offline.
+    private var footerLine: (text: String, id: String)? {
+        if model.isOffline, let helper = model.ctaHelper {
+            return (helper, PaywallAccessibilityID.selectedPlanLine)
+        }
+        if let summary = model.purchaseSummary {
+            return (summary, PaywallAccessibilityID.selectedPlanLine)
+        }
+        if let helper = model.ctaHelper {
+            let id = model.phase == .signInRequired
+                ? PaywallAccessibilityID.accountStatus
+                : PaywallAccessibilityID.selectedPlanLine
+            return (helper, id)
+        }
+        return model.isSignedIn ? (PaywallModel.signedInLine, PaywallAccessibilityID.accountStatus) : nil
+    }
+
+    /// The 3.1.2 links live in the pinned dock below the Accessibility sizes and move into the scroll
+    /// content at them (today's behaviour, and the plan's recorded deviation): they are always
+    /// reachable, and never truncated or painted over.
+    static func pinsLegalRow(at size: DynamicTypeSize) -> Bool {
+        !size.isAccessibilitySize
     }
 
     @ViewBuilder
@@ -342,12 +433,29 @@ struct PaywallScreen: View {
 
     @ViewBuilder
     private var legalLinks: some View {
-        paywallLegalLink("Restore purchases", action: { Task { await model.restore() } })
-        paywallLegalLink("Terms of Use", url: SupportDestinations.termsOfServiceURL)
-        paywallLegalLink("Privacy Policy", url: SupportDestinations.privacyPolicyURL)
+        paywallLegalLink(
+            "Restore purchases",
+            identifier: PaywallAccessibilityID.restore,
+            action: { Task { await model.restore() } }
+        )
+        paywallLegalLink(
+            "Terms of Use",
+            identifier: PaywallAccessibilityID.terms,
+            url: SupportDestinations.termsOfServiceURL
+        )
+        paywallLegalLink(
+            "Privacy Policy",
+            identifier: PaywallAccessibilityID.privacy,
+            url: SupportDestinations.privacyPolicyURL
+        )
     }
 
-    private func paywallLegalLink(_ title: String, url: URL? = nil, action: (() -> Void)? = nil) -> some View {
+    private func paywallLegalLink(
+        _ title: String,
+        identifier: String,
+        url: URL? = nil,
+        action: (() -> Void)? = nil
+    ) -> some View {
         Button {
             if let action { action() } else if let url { openURL(url) }
         } label: {
@@ -365,17 +473,19 @@ struct PaywallScreen: View {
         .buttonStyle(.plain)
         .disabled(model.isBusy)
         .accessibilityLabel(title)
+        .accessibilityIdentifier(identifier)
     }
 
     // MARK: - Actions
 
     private func primaryAction() {
-        guard model.isCTAEnabled else { return }
-        guard model.isSignedIn else {
-            showsSignInSheet = true
-            return
+        // The outcome is decided in the model (and is therefore testable): signed out the CTA opens
+        // the sign-in sheet and never starts a guest purchase, which is the build-18 regression.
+        switch model.tapPrimary() {
+        case .signIn: showsSignInSheet = true
+        case .purchase: Task { await model.purchase() }
+        case .blocked: break
         }
-        Task { await model.purchase() }
     }
 
     private func performNoticeAction(_ action: SupportNotice.Action) {
@@ -405,25 +515,70 @@ struct PaywallScreen: View {
     }
 }
 
-/// Board 11-01: the paywall opens on imagery. The bundle ships no photo asset (the app draws every
-/// pose from the remote catalog), so the hero is drawn from the design tokens — a soft accent wash
-/// with the pose figure — instead of shipping a stock photo.
-struct PaywallHero: View {
+/// Hero metrics for the CRO layout, in one place so the view and the measurements agree
+/// (`handoff-1.2.md` §1: ~210–312 pt tall on a 6.7" phone, and never the whole viewport).
+enum PaywallHeroMetrics {
+    /// 28 % of the container: 261 pt on a 932 pt phone, 187 pt on an SE, clamped to 180–312.
+    static let heightRatio: CGFloat = 0.28
+    static let minHeight: CGFloat = 180
+    static let maxHeight: CGFloat = 312
+    /// The status-bar scrim: the top of the hero is washed toward the `background` token, which in
+    /// light mode is a cream wash under dark status glyphs and in dark mode near-black under white
+    /// glyphs. The wash holds ≥0.68 alpha across the whole status-bar band (0–57 pt) and fades out by
+    /// 76 pt, so the clock and battery clear 4.5:1 over the brightest pixel of the hero in both
+    /// schemes (`PaywallScreenLayoutTests` measures it on the rendered frame).
+    static let topScrimHeight: CGFloat = 76
+    static let topScrimOpacity: Double = 0.72
+    static let topScrimFloorOpacity: Double = 0.68
+    /// Fraction of the scrim height where the floor opacity ends and the fade to clear begins (57 pt).
+    static let topScrimFloorLocation: CGFloat = 0.75
+    /// The hero fades into the page background over its bottom half, so the headline can start on it.
+    static let fadeRatio: CGFloat = 0.55
+
+    static func height(for containerHeight: CGFloat) -> CGFloat {
+        min(max(containerHeight * heightRatio, minHeight), maxHeight)
+    }
+}
+
+/// The C hero: the bundled pose photo, full bleed under the status bar, with the status-bar scrim on
+/// top and the background fade at the bottom. No motion, so Reduce Motion changes nothing.
+struct PaywallCHero: View {
+    let height: CGFloat
+
     var body: some View {
-        ZStack {
-            LinearGradient(
-                colors: [AP.Color.selectedBackground, AP.Color.secondaryBackground],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            Image(systemName: "figure.stand")
-                .font(.system(size: 96, weight: .regular))
-                .foregroundStyle(AP.Color.accentText.opacity(0.9))
-        }
-        .frame(maxWidth: .infinity)
-        .frame(height: 200)
-        .clipped()
-        .accessibilityHidden(true)
+        Image("paywallHeroC")
+            .resizable()
+            .scaledToFill()
+            .frame(maxWidth: .infinity)
+            .frame(height: height)
+            .clipped()
+            .overlay(alignment: .top) {
+                LinearGradient(
+                    stops: [
+                        .init(
+                            color: AP.Color.background.opacity(PaywallHeroMetrics.topScrimOpacity),
+                            location: 0
+                        ),
+                        .init(
+                            color: AP.Color.background.opacity(PaywallHeroMetrics.topScrimFloorOpacity),
+                            location: PaywallHeroMetrics.topScrimFloorLocation
+                        ),
+                        .init(color: AP.Color.background.opacity(0), location: 1),
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .frame(height: PaywallHeroMetrics.topScrimHeight)
+            }
+            .overlay(alignment: .bottom) {
+                LinearGradient(
+                    colors: [AP.Color.background.opacity(0), AP.Color.background],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .frame(height: height * PaywallHeroMetrics.fadeRatio)
+            }
+            .accessibilityHidden(true)
     }
 }
 
@@ -447,7 +602,9 @@ struct PaywallPlanRow: View {
                             Text(plan.title).font(AP.Font.heading)
                         }
                         badge
-                        Text(plan.detail).font(AP.Font.caption)
+                        Text(plan.detail)
+                            .font(AP.Font.caption)
+                            .apIdentifier(plan.isAnnual ? PaywallAccessibilityID.planAnnualPerMonth : nil)
                         Text(plan.price).font(AP.Font.data)
                     }
                 } else {
@@ -458,7 +615,9 @@ struct PaywallPlanRow: View {
                                 Text(plan.title).font(AP.Font.heading)
                                 badge
                             }
-                            Text(plan.detail).font(AP.Font.caption)
+                            Text(plan.detail)
+                                .font(AP.Font.caption)
+                                .apIdentifier(plan.isAnnual ? PaywallAccessibilityID.planAnnualPerMonth : nil)
                         }
                         Spacer(minLength: AP.Space.space8)
                         Text(plan.price).font(AP.Font.data)
@@ -476,8 +635,10 @@ struct PaywallPlanRow: View {
         }
         .buttonStyle(.plain)
         .disabled(!isSelectable)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(plan.accessibilityLabel)
+        // A container, so the per-month breakdown and the saving badge can be located on their own
+        // (QA's ids) while the card keeps one tappable element with an observable selection state.
+        .accessibilityElement(children: .contain)
+        .accessibilityValue(plan.isSelected ? "selected" : "not selected")
         .accessibilityAddTraits(plan.isSelected ? [.isButton, .isSelected] : [.isButton])
     }
 
@@ -497,6 +658,7 @@ struct PaywallPlanRow: View {
             .accessibilityHidden(true)
     }
 
+    /// "Save N%" only when the two store prices make the claim computable (never a typed figure).
     @ViewBuilder
     private var badge: some View {
         if let badge = plan.badge {
@@ -507,7 +669,7 @@ struct PaywallPlanRow: View {
                 .padding(.vertical, AP.Space.space4)
                 .background(AP.Color.surface, in: Capsule())
                 .fixedSize()
-                .accessibilityHidden(true)
+                .apIdentifier(plan.isAnnual ? PaywallAccessibilityID.planAnnualSavings : nil)
         }
     }
 }
@@ -643,7 +805,11 @@ struct PaywallSignInSheet: View {
 extension View {
     /// Board 11-01: the paywall is a full-screen cover with a Close control, not a sheet. Call sites
     /// that present `PaywallScreen` use this instead of `.sheet`, so the presentation is decided once.
-    func paywallCover(isPresented: Binding<Bool>) -> some View {
-        fullScreenCover(isPresented: isPresented) { PaywallScreen() }
+    /// `trigger` names the entry point so every funnel event carries it.
+    func paywallCover(
+        isPresented: Binding<Bool>,
+        trigger: PaywallTrigger = .shutter
+    ) -> some View {
+        fullScreenCover(isPresented: isPresented) { PaywallScreen(trigger: trigger) }
     }
 }

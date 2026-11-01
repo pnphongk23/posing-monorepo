@@ -126,13 +126,23 @@ final class PaywallModelTests: XCTestCase {
         )
     }
 
-    func testSignedOutTriggerAsksForSignInBeforeAnyPurchase() async {
+    /// Signed out, the store is still asked for the offering so the cards show the real price
+    /// (owner decision for build 20). Nothing about that makes a guest purchase possible: the phase
+    /// stays `.signInRequired` and the gateway is never asked to buy.
+    func testSignedOutReadsTheOfferingForPricesButNeverPurchases() async {
         let gateway = FakePurchaseGateway(nextLoad: readyOffering)
         let model = makeModel(gateway: gateway, storage: InMemoryTokenStorage())
 
         model.start()
-        await waitUntil("sign in required") { model.phase == .signInRequired }
-        XCTAssertEqual(gateway.loadCount, 0, "No offering load before the Account-bound purchase can start")
+        await waitUntil("prices adopted") { model.selectedProductID == annual.identifier }
+
+        XCTAssertEqual(model.phase, .signInRequired, "a guest state is never purchasable")
+        XCTAssertEqual(gateway.loadCount, 1, "one read, for the price only")
+        XCTAssertEqual(model.plans.map(\.identifier), [annual.identifier, monthly.identifier])
+        XCTAssertEqual(model.planPresentations.map(\.price), ["$39.99", "$5.99"])
+        XCTAssertEqual(model.ctaTitle, "Sign in to subscribe")
+        XCTAssertTrue(gateway.purchasedPackageIDs.isEmpty)
+        XCTAssertEqual(model.tapPrimary(), .signIn, "the CTA opens sign-in, never a guest purchase")
         XCTAssertTrue(gateway.purchasedPackageIDs.isEmpty)
     }
 
@@ -145,10 +155,67 @@ final class PaywallModelTests: XCTestCase {
         XCTAssertEqual(gateway.loadCount, 1)
         XCTAssertEqual(model.plans.map(\.identifier), [annual.identifier, monthly.identifier])
         XCTAssertEqual(model.selectedProductID, annual.identifier, "Yearly is the highlighted default")
-        // Board 11-01: the primary action is "Subscribe"; the selected plan is shown by the card,
-        // not by the button's label.
-        XCTAssertEqual(model.ctaTitle, "Subscribe")
+        // The primary action names the gated control; the selected plan is shown by the card.
+        XCTAssertEqual(model.ctaTitle, PaywallPlanCopy.purchaseCTA)
         XCTAssertTrue(model.isCTAEnabled)
+    }
+
+    /// The build-18 HIGH App Review blocker, end to end at the model level: signed out the CTA is
+    /// sign-in, and after that sign-in lands the very same CTA buys the selected package.
+    func testSignedOutCTASignsInThenBuysTheSelectedPlan() async {
+        let storage = InMemoryTokenStorage()
+        let boundary = SessionBoundary(tokenStorage: storage)
+        let gateway = FakePurchaseGateway(
+            nextLoad: readyOffering,
+            nextPurchase: PurchaseSnapshot(state: .entitled, products: [annual, monthly])
+        )
+        let model = PaywallModel(
+            gateway: gateway,
+            boundary: boundary,
+            signInAction: SignInAction(start: { await boundary.saveCredentials(session) })
+        )
+
+        model.start()
+        await waitUntil("prices") { model.selectedProductID == annual.identifier }
+        XCTAssertEqual(model.phase, .signInRequired)
+        XCTAssertEqual(model.tapPrimary(), .signIn, "the CTA opens the sign-in sheet")
+        XCTAssertTrue(gateway.purchasedPackageIDs.isEmpty, "nothing is bought before the account step")
+
+        await model.signIn()
+        await waitUntil("ready") { model.phase == .ready }
+        XCTAssertTrue(model.isSignedIn)
+        XCTAssertEqual(model.tapPrimary(), .purchase, "the same CTA now buys")
+
+        await model.purchase()
+        XCTAssertEqual(gateway.purchasedPackageIDs, [annual.identifier])
+        XCTAssertEqual(model.phase, .entitled)
+    }
+
+    /// Prices are the store's, never typed: a fake offering with 7.77 / 59.99 must render exactly
+    /// those figures plus the figures derived from them (per-month and saving).
+    func testFakeStorePricesDriveEveryRenderedFigure() async {
+        let oddAnnual = PurchaseProduct(
+            identifier: "annual", packageType: .annual, localizedPrice: "$59.99", period: "year"
+        )
+        let oddMonthly = PurchaseProduct(
+            identifier: "monthly", packageType: .monthly, localizedPrice: "$7.77", period: "month"
+        )
+        let gateway = FakePurchaseGateway(
+            nextLoad: PurchaseSnapshot(state: .notEntitled, products: [oddMonthly, oddAnnual])
+        )
+        let model = makeModel(gateway: gateway)
+        model.start()
+        await waitUntil("ready") { model.phase == .ready }
+
+        let cards = model.planPresentations
+        XCTAssertEqual(cards.map(\.price), ["$59.99", "$7.77"])
+        // 59.99 / 12 = 4.999… → $5.00 in the store's own format;
+        // (7.77 × 12 − 59.99) / 93.24 = 35.67 % → 36 %.
+        XCTAssertEqual(cards.first?.detail, "$5.00 per month, billed $59.99 yearly")
+        XCTAssertEqual(cards.first?.badge, "Save 36%")
+        XCTAssertEqual(model.purchaseSummary, "Yearly plan · $59.99 billed today")
+        XCTAssertEqual(cards.last?.detail, "Billed monthly")
+        XCTAssertNil(cards.last?.badge, "only the annual card carries a saving claim")
     }
 
     func testSelectingMonthlyChangesTheSelectedPlanAndSummary() async {
@@ -158,7 +225,12 @@ final class PaywallModelTests: XCTestCase {
         await waitUntil("ready") { model.phase == .ready }
 
         model.select(monthly.identifier)
-        XCTAssertEqual(model.ctaTitle, "Subscribe")
+        XCTAssertEqual(model.ctaTitle, PaywallPlanCopy.purchaseCTA)
+        XCTAssertEqual(
+            model.purchaseSummary,
+            "Monthly plan · $5.99 billed today",
+            "the helper line follows the selection and prints the store's price"
+        )
         XCTAssertEqual(
             model.planPresentations.first { $0.isSelected }?.title,
             "Monthly",
@@ -322,7 +394,7 @@ final class PaywallModelTests: XCTestCase {
         let model = makeModel(gateway: gateway)
         model.start()
         await waitUntil("ready") { model.phase == .ready }
-        XCTAssertEqual(model.ctaTitle, "Subscribe")
+        XCTAssertEqual(model.ctaTitle, PaywallPlanCopy.purchaseCTA)
     }
 
     func testSignInFailureSurfacesErrorAndKeepsRequiringSignIn() async {
@@ -339,7 +411,7 @@ final class PaywallModelTests: XCTestCase {
         XCTAssertEqual(model.authError, "Unable to start Google sign-in.")
         XCTAssertEqual(model.phase, .signInRequired)
         XCTAssertFalse(model.isAuthenticating)
-        XCTAssertEqual(gateway.loadCount, 0)
+        XCTAssertEqual(gateway.loadCount, 1, "only the price read the signed-out cards need")
     }
 
     func testSignInSuccessResumesIntoPlans() async {
@@ -359,7 +431,7 @@ final class PaywallModelTests: XCTestCase {
         await waitUntil("ready") { model.phase == .ready }
         XCTAssertTrue(model.isSignedIn)
         XCTAssertNil(model.authError)
-        XCTAssertEqual(gateway.loadCount, 1)
+        XCTAssertEqual(gateway.loadCount, 2, "one offering read for the signed-out prices, one after sign-in")
     }
 
     /// Email sign-in seam (PLAN §4): the sheet signed in through `SessionBoundary`, so re-checking
@@ -383,7 +455,7 @@ final class PaywallModelTests: XCTestCase {
         await waitUntil("ready") { model.phase == .ready }
         XCTAssertTrue(model.isSignedIn)
         XCTAssertNil(model.authError)
-        XCTAssertEqual(gateway.loadCount, 1)
+        XCTAssertEqual(gateway.loadCount, 2, "the signed-out price read, then the signed-in one")
     }
 
     /// Cancelling the sheet without signing in leaves the gate exactly as it was.
@@ -397,7 +469,7 @@ final class PaywallModelTests: XCTestCase {
 
         XCTAssertEqual(model.phase, .signInRequired)
         XCTAssertFalse(model.isSignedIn)
-        XCTAssertEqual(gateway.loadCount, 0)
+        XCTAssertEqual(gateway.loadCount, 1, "cancelling the sheet changes nothing the prices already loaded")
     }
 
     /// M2 defence in depth: the adapter refuses a store call without a linked Account, and the
@@ -768,14 +840,14 @@ final class PaywallPlanCopyTests: XCTestCase {
 
     /// Before the offering can be read the rows keep their shape and say so: no invented price.
     func testPlaceholdersNeverShowAPrice() {
-        for placeholders in [PaywallPlanCopy.offlinePlaceholders, PaywallPlanCopy.signedOutPlaceholders] {
+        for placeholders in [PaywallPlanCopy.offlinePlaceholders, PaywallPlanCopy.priceUnavailablePlaceholders] {
             XCTAssertEqual(placeholders.count, 2)
             XCTAssertEqual(placeholders.map(\.title), ["Yearly", "Monthly"])
             XCTAssertTrue(placeholders.allSatisfy { $0.price == "—" })
             XCTAssertTrue(placeholders.allSatisfy { $0.badge == nil })
         }
         XCTAssertEqual(PaywallPlanCopy.offlinePlaceholders.first?.detail, "Price unavailable offline")
-        XCTAssertEqual(PaywallPlanCopy.signedOutPlaceholders.first?.detail, "Price shown after you sign in")
+        XCTAssertEqual(PaywallPlanCopy.priceUnavailablePlaceholders.first?.detail, "Price unavailable")
     }
 }
 
@@ -815,18 +887,22 @@ final class PaywallStateCopyTests: XCTestCase {
             connectivity: connectivity
         )
     }
-    func testSignedOutKeepsThePlanRowsAndAsksForSignInFirst() async {
+    /// Signed out, the card prices are the store's own (read before the account step) and the
+    /// purchase action is still sign-in: showing a price never makes a guest purchase possible.
+    func testSignedOutShowsTheRealPricesAndAsksForSignInFirst() async {
         let gateway = FakePurchaseGateway(nextLoad: readyOffering)
         let model = makeModel(gateway: gateway, storage: InMemoryTokenStorage())
         model.start()
-        await waitUntil("sign in required") { model.phase == .signInRequired }
+        await waitUntil("prices adopted") { model.selectedProductID == annual.identifier }
 
+        XCTAssertEqual(model.phase, .signInRequired, "a price is not an entitlement")
         XCTAssertEqual(model.ctaTitle, "Sign in to subscribe")
         XCTAssertTrue(model.isCTAEnabled, "the primary action opens the sign-in sheet")
         XCTAssertEqual(model.ctaHelper, "Sign in first so Premium follows you.")
-        XCTAssertEqual(model.planPresentations, [], "no offering is read before sign-in")
-        XCTAssertEqual(model.placeholderPlans, PaywallPlanCopy.signedOutPlaceholders)
-        XCTAssertTrue(model.placeholderPlans.allSatisfy { $0.price == "—" }, "no price is invented")
+        XCTAssertEqual(model.planPresentations.map(\.price), ["$39.99", "$5.99"])
+        XCTAssertEqual(model.planPresentations.first?.badge, "Save 44%")
+        XCTAssertEqual(model.purchaseSummary, "Yearly plan · $39.99 billed today")
+        XCTAssertEqual(model.tapPrimary(), .signIn)
     }
 
     func testLoadingPlansKeepsTheCTAOnScreenDisabled() async {
@@ -841,7 +917,7 @@ final class PaywallStateCopyTests: XCTestCase {
         await started.wait()
 
         XCTAssertEqual(model.phase, .loadingPlans)
-        XCTAssertEqual(model.ctaTitle, "Subscribe")
+        XCTAssertEqual(model.ctaTitle, PaywallPlanCopy.purchaseCTA)
         XCTAssertFalse(model.isCTAEnabled, "there is nothing to buy yet")
         XCTAssertEqual(model.ctaHelper, "Subscribe turns on when plans load.")
 
@@ -902,7 +978,7 @@ final class PaywallStateCopyTests: XCTestCase {
         XCTAssertEqual(model.notice?.action, .retryPurchase, "the card carries the retry that settles the failure")
     }
 
-    /// Board 11-09: a failed restore keeps "Subscribe" as the primary action and retries inline.
+    /// Board 11-09: a failed restore keeps the primary action as the purchase and retries inline.
     func testRestoreFailureKeepsSubscribeAndRetriesInline() async {
         let gateway = FakePurchaseGateway(
             nextLoad: readyOffering,
@@ -914,7 +990,7 @@ final class PaywallStateCopyTests: XCTestCase {
 
         await model.restore()
 
-        XCTAssertEqual(model.ctaTitle, "Subscribe")
+        XCTAssertEqual(model.ctaTitle, PaywallPlanCopy.purchaseCTA)
         XCTAssertEqual(model.notice?.title, "Couldn't restore purchases")
         XCTAssertEqual(model.notice?.action, .retryRestore)
         XCTAssertEqual(model.notice?.actionTitle, "Try again")
@@ -972,7 +1048,7 @@ final class PaywallStateCopyTests: XCTestCase {
 
         XCTAssertNil(model.notice)
         XCTAssertEqual(model.statusMessage, "Purchase cancelled. No access was granted.")
-        XCTAssertEqual(model.ctaTitle, "Subscribe")
+        XCTAssertEqual(model.ctaTitle, PaywallPlanCopy.purchaseCTA)
         XCTAssertTrue(model.isCTAEnabled)
     }
 

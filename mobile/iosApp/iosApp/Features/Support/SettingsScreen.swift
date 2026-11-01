@@ -70,7 +70,7 @@ struct SettingsScreen: View {
         }
         // Its own host: two sheets on one view is where SwiftUI's presentation gets flaky, and About
         // already owns the outer one.
-        .paywallCover(isPresented: $showsPaywall)
+        .paywallCover(isPresented: $showsPaywall, trigger: .settings)
         .task {
             session.start()
             account.start()

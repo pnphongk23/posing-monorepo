@@ -201,6 +201,29 @@ enum PaywallPlanCopy {
     static let autoRenewCaption = "Renews automatically until you cancel in Apple ID settings."
     static let monthlyDetail = "Billed monthly"
 
+    /// The two headline fragments, in draw order. The mockup gives the second one its own line in
+    /// the accent ink, which is also what keeps a one-word orphan off the first line at 375 pt.
+    static let headlineLines = ["Pick a pose.", "Match it. Shoot."]
+    /// The approved CTA copy, from `mockups/variant-c-v2.png`. (A short-lived backlog note suggested
+    /// "Unlock the shutter" because only the shutter is gated; the owner kept the mockup's wording, and
+    /// step 3 says "Premium unlocks the shutter with the full pose camera", so the claim stays exact.)
+    static let purchaseCTA = "Unlock the pose camera"
+
+    /// One "free / free / paid" step of the how-it-works block. The order is the funnel order and
+    /// the copy is verbatim from the CRO handoff (`handoff-1.2.md` §3), including which step is paid.
+    struct Step: Equatable, Identifiable {
+        let id: Int
+        let title: String
+        let detail: String
+        let isPremium: Bool
+    }
+
+    static let steps: [Step] = [
+        Step(id: 1, title: "Pick a pose", detail: "Browse and save poses for free.", isPremium: false),
+        Step(id: 2, title: "Match the outline", detail: "The guide shows on your live camera.", isPremium: false),
+        Step(id: 3, title: "Shoot", detail: "Premium unlocks the shutter with the full pose camera.", isPremium: true),
+    ]
+
     static func savingsBadge(annual: PurchaseProduct, monthly: PurchaseProduct?) -> String? {
         guard let monthly,
               let annualTotal = PaywallMoney.amount(from: annual.localizedPrice),
@@ -272,7 +295,9 @@ enum PaywallPlanCopy {
     }
 
     static let offlinePlaceholders = placeholderPlans(detail: "Price unavailable offline")
-    static let signedOutPlaceholders = placeholderPlans(detail: "Price shown after you sign in")
+    /// The prices are read before sign-in, so "shown after you sign in" is no longer true: when the
+    /// offering cannot be read the card says exactly that and nothing about the account step.
+    static let priceUnavailablePlaceholders = placeholderPlans(detail: "Price unavailable")
 }
 
 /// Paywall presentation state.
@@ -324,8 +349,18 @@ final class PaywallModel: ObservableObject, SessionScoped {
     /// Apple implementation; it only decides what a resolved attempt means for its phase.
     private let appleSignInAction: AppleSignInAction
     private let connectivity: ConnectivityReporting
+    private let analytics: PaywallAnalyticsSink
     private let scope: SessionScope
     private var hasStarted = false
+    /// One presentation, one `paywall_view`: a re-entrant `start()` cannot double-count the funnel.
+    private var hasEmittedView = false
+    private var hasNotedDismissal = false
+    /// True while this presentation shows store prices without an Account. The offering is a store
+    /// fact, not account state, so a signed-out provider push must not blank the price cards.
+    private var showsPreSignInPrices = false
+    /// Where this presentation came from. Owned by the model so every event carries it instead of
+    /// each call site inventing one; the two triggers are `.shutter` and `.settings`.
+    var trigger: PaywallTrigger = .shutter
     private var connectivityCancellable: AnyCancellable?
     /// Bumped on every session change so a result that crosses a sign-out or account switch is
     /// dropped instead of being painted into the paywall.
@@ -344,13 +379,15 @@ final class PaywallModel: ObservableObject, SessionScoped {
         boundary: SessionBoundary = ServiceLocator.sessionBoundary,
         signInAction: SignInAction = SignInAction(),
         appleSignInAction: AppleSignInAction = AppleSignInAction(),
-        connectivity: ConnectivityReporting = NetworkConnectivityMonitor.shared
+        connectivity: ConnectivityReporting = NetworkConnectivityMonitor.shared,
+        analytics: @escaping PaywallAnalyticsSink = PaywallAnalytics.production
     ) {
         self.gateway = gateway
         self.boundary = boundary
         self.signInAction = signInAction
         self.appleSignInAction = appleSignInAction
         self.connectivity = connectivity
+        self.analytics = analytics
         self.isOffline = connectivity.isOffline
         self.scope = SessionScope.of(boundary)
         observeGateway()
@@ -371,8 +408,16 @@ final class PaywallModel: ObservableObject, SessionScoped {
         case .signInRequired: return "Sign in to subscribe"
         case .purchaseFailed where lastOperation == .purchase: return "Try again"
         case .unavailable: return "Plans unavailable"
-        default: return "Subscribe"
+        default: return PaywallPlanCopy.purchaseCTA
         }
+    }
+
+    /// The line above the CTA (handoff §6): what today's charge would be for the selected plan, read
+    /// out of the store package. Nil until a real plan is loaded, so no price is ever invented and
+    /// the line follows the selection instead of being a rendered constant.
+    var purchaseSummary: String? {
+        guard let plan = selectedPlan else { return nil }
+        return "\(PaywallPlanCatalog.label(for: plan)) plan · \(plan.localizedPrice) billed today"
     }
 
     /// The CTA is always on screen — a state without a usable action still shows the action that is
@@ -417,7 +462,7 @@ final class PaywallModel: ObservableObject, SessionScoped {
     var placeholderPlans: [PaywallPlanCopy.Plan] {
         guard plans.isEmpty else { return [] }
         if isOffline { return PaywallPlanCopy.offlinePlaceholders }
-        if !isSignedIn { return PaywallPlanCopy.signedOutPlaceholders }
+        if !isSignedIn { return PaywallPlanCopy.priceUnavailablePlaceholders }
         return []
     }
 
@@ -512,10 +557,18 @@ final class PaywallModel: ObservableObject, SessionScoped {
             guard let self else { return }
             guard await self.boundary.hasStoredSession() else {
                 self.phase = .signInRequired
+                self.showsPreSignInPrices = true
+                self.emitView()
+                // Prices before sign-in (owner decision, 1.1 (20)): the offering is read without an
+                // Account and only the packages are adopted, so the cards show the store's real
+                // price and saving before the account step.
+                await self.loadSignedOutPrices()
                 return
             }
+            self.showsPreSignInPrices = false
             self.isSignedIn = true
             await self.loadPlans()
+            self.emitView()
         }
     }
 
@@ -568,6 +621,7 @@ final class PaywallModel: ObservableObject, SessionScoped {
     private func adoptSignedInSession() async {
         isSignedIn = await boundary.hasStoredSession()
         if isSignedIn {
+            showsPreSignInPrices = false
             await loadPlans()
         } else {
             phase = .signInRequired
@@ -575,9 +629,28 @@ final class PaywallModel: ObservableObject, SessionScoped {
     }
 
     func loadPlans() async {
+        await loadOffering(keepingPhase: false)
+    }
+
+    /// Signed out, the offering is read for display only. The phase stays `.signInRequired` because a
+    /// purchase is Account-bound (`RevenueCatAdapter.purchase` refuses a guest) and no guest state may
+    /// ever look purchasable; adopting the packages cannot grant anything, it only un-blanks the
+    /// prices.
+    private func loadSignedOutPrices() async {
+        await loadOffering(keepingPhase: true)
+    }
+
+    private func loadOffering(keepingPhase: Bool) async {
         let epoch = sessionEpoch
-        phase = .loadingPlans
+        if !keepingPhase { phase = .loadingPlans }
         let snapshot = await gateway.loadOffering()
+        if keepingPhase {
+            // The prices are account-agnostic, so a session event does not invalidate them; a
+            // sign-in that landed while they loaded owns the state from here on.
+            guard !isSignedIn else { return }
+            adoptPreviewPlans(from: snapshot)
+            return
+        }
         guard epoch == sessionEpoch else { return }
         guard await boundary.hasStoredSession() else {
             invalidateAccountState()
@@ -588,6 +661,19 @@ final class PaywallModel: ObservableObject, SessionScoped {
         // establish (and it must never own the busy phase).
         guard snapshot.state != .loading, snapshot.state != .purchasePending else { return }
         apply(snapshot)
+    }
+
+    /// Packages only: a signed-out snapshot is `.notEntitled` (a guest is granted nothing), so its
+    /// state must not decide the phase here.
+    private func adoptPreviewPlans(from snapshot: PurchaseSnapshot) {
+        let products = PaywallPlanCatalog.ordered(snapshot.products)
+        guard !products.isEmpty else { return }
+        plans = products
+        if let selectedProductID, products.contains(where: { $0.identifier == selectedProductID }) {
+            return
+        }
+        selectedProductID = products.first(where: PaywallPlanCatalog.isAnnual)?.identifier
+            ?? products.first?.identifier
     }
 
     func retry() async {
@@ -617,6 +703,7 @@ final class PaywallModel: ObservableObject, SessionScoped {
 
     func restore() async {
         guard phase != .processing else { return }
+        emit(PaywallEvent.restoreTap, accountParameters)
         let epoch = sessionEpoch
         let operation = beginOperation()
         lastOperation = .restore
@@ -634,6 +721,73 @@ final class PaywallModel: ObservableObject, SessionScoped {
 
     func select(_ productID: String) {
         selectedProductID = productID
+        guard plans.contains(where: { $0.identifier == productID }) else { return }
+        emit(PaywallEvent.planSelect, accountParameters.merging(["plan": planKey]) { _, new in new })
+    }
+
+    // MARK: - Primary action and the funnel seam
+
+    /// What the one primary button does in the current state. The decision lives here, not in a
+    /// `View` body, because the build-18 HIGH blocker was a signed-out CTA that did nothing and no
+    /// test could reach a decision made inside `body`.
+    enum PaywallPrimaryAction: Equatable {
+        case purchase
+        case signIn
+        case blocked
+    }
+
+    func tapPrimary() -> PaywallPrimaryAction {
+        guard isCTAEnabled else { return .blocked }
+        let action: PaywallPrimaryAction = isSignedIn ? .purchase : .signIn
+        var parameters = accountParameters
+        parameters["action"] = action == .purchase ? "purchase" : "sign_in"
+        parameters["plan"] = planKey
+        emit(PaywallEvent.ctaTap, parameters)
+        return action
+    }
+
+    /// The cover is gone (the X, or the platform dismissing it). Called by the presentation, guarded
+    /// so one dismissal is one event.
+    func noteDismissed() {
+        guard !hasNotedDismissal else { return }
+        hasNotedDismissal = true
+        var parameters = accountParameters
+        parameters["entitled"] = phase == .entitled ? "true" : "false"
+        emit(PaywallEvent.close, parameters)
+    }
+
+    /// The parameters every paywall event carries. Enumerated strings only: no account id, no email,
+    /// no app user id, no token and no price.
+    private var accountParameters: [String: String] {
+        ["trigger": trigger.rawValue, "signed_in": isSignedIn ? "true" : "false"]
+    }
+
+    private var planKey: String {
+        guard let plan = selectedPlan else { return "none" }
+        return PaywallPlanCatalog.isAnnual(plan) ? "annual" : "monthly"
+    }
+
+    /// `plans_state` reports what the sheet actually shows at the moment the view event fires.
+    private var plansState: String {
+        if isOffline { return "offline" }
+        switch phase {
+        case .signInRequired: return "signin"
+        case .loadingPlans: return "loading"
+        case .unavailable: return "unavailable"
+        case .ready, .processing, .purchaseCancelled, .purchaseFailed, .entitled: return "ready"
+        }
+    }
+
+    private func emitView() {
+        guard !hasEmittedView else { return }
+        hasEmittedView = true
+        var parameters = accountParameters
+        parameters["plans_state"] = plansState
+        emit(PaywallEvent.view, parameters)
+    }
+
+    private func emit(_ name: String, _ parameters: [String: String]) {
+        analytics(name, parameters)
     }
 
     // MARK: - ownership of account-dependent state
@@ -673,6 +827,10 @@ final class PaywallModel: ObservableObject, SessionScoped {
     func resetForSessionChange(_ event: SessionEvent) {
         switch event {
         case .signedOut, .signInRequired:
+            // A model that is already signed out holds nothing account-bound to drop, and clearing
+            // it here would race the price preview (the session probe fires this event right after
+            // `start()`). A live session is still invalidated, sheet open or not.
+            guard isSignedIn else { return }
             invalidateAccountState()
         case .signedIn:
             break
@@ -712,8 +870,12 @@ final class PaywallModel: ObservableObject, SessionScoped {
         sessionEpoch &+= 1
         activeOperation = nil
         isSignedIn = false
-        plans = []
-        selectedProductID = nil
+        // Prices are a store fact, not account state: a guest view keeps the cards it read before
+        // sign-in instead of blanking to "—" on every provider push.
+        if !showsPreSignInPrices {
+            plans = []
+            selectedProductID = nil
+        }
         authError = nil
         authProvider = nil
         failure = nil

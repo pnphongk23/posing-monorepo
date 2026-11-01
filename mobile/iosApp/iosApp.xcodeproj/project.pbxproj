@@ -9,9 +9,11 @@
 /* Begin PBXBuildFile section */
 		01C8648C27A168928A11377E /* AppConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = B200B349F72BE4E46078D085 /* AppConfig.swift */; };
 		04DCE91D0145EDCBD19822AB /* APStateViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84F88CDE9ADAD57F2AA600A5 /* APStateViews.swift */; };
+		06712E8A9DE264A6196F317C /* PaywallAnalyticsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C215B7599A994960E59A8FD0 /* PaywallAnalyticsTests.swift */; };
 		0E456DAEAD3275ED61424B4C /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5B35EABCB9F1E49AA085E03 /* APIClient.swift */; };
 		0EDBF62D8BA38CBAB2E4FE3B /* legacy-aipose-database-v1.sqlite in Resources */ = {isa = PBXBuildFile; fileRef = EA2BE22C3F2AC2544865BC8E /* legacy-aipose-database-v1.sqlite */; };
 		0F7D38959BDB335D3F00BFDC /* APShellTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FFFE7C7B356335E133906C94 /* APShellTests.swift */; };
+		102C7135EB964ACCC00A8814 /* PaywallAnalytics.swift in Sources */ = {isa = PBXBuildFile; fileRef = C06A58D84A92AE388C5F42D0 /* PaywallAnalytics.swift */; };
 		11B9984E70568CD67C74DCC6 /* APCatalogFooter.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3FDC6936D2A159D375009CC /* APCatalogFooter.swift */; };
 		1275D2285640DA503385706D /* DatabaseRepositories.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A0206C27EFC1CCEA91C3945 /* DatabaseRepositories.swift */; };
 		140D3458C1B7EC1E712941F8 /* PoseServiceAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1213B5B3C3CD0B6F383CF19 /* PoseServiceAdapter.swift */; };
@@ -53,6 +55,7 @@
 		478C69833C0D2273DC31B2F0 /* CaptureImageStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8333C84AE77479FB130F3F70 /* CaptureImageStorage.swift */; };
 		47A55AA5F9180EFD72FD0412 /* APIClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E26C008F7E8079D880FD29E /* APIClientTests.swift */; };
 		4AE96C48F63042D2F97D83CA /* PremiumGateModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 924B617A4F8686E1770DE2FA /* PremiumGateModelTests.swift */; };
+		4D621117422AE16693D7F9F4 /* PaywallScreenLayoutTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85B6CFDE0D1743699C87FA77 /* PaywallScreenLayoutTests.swift */; };
 		4E0CF73E9CCBAF52450EB28E /* CameraPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4697D3F5282E542C071A863 /* CameraPreview.swift */; };
 		50440106D7977FFD6AE12145 /* APDesignTokens.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0EC92F0C140A7146ECED28B6 /* APDesignTokens.swift */; };
 		52427AE21B1A7E6E8EDF1CA5 /* SupportDestinationsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45864E41E850EBD2CD84515E /* SupportDestinationsTests.swift */; };
@@ -241,6 +244,7 @@
 		811A9C4FB4A1C31DF47FACC7 /* GalleryFeature.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalleryFeature.swift; sourceTree = "<group>"; };
 		8333C84AE77479FB130F3F70 /* CaptureImageStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureImageStorage.swift; sourceTree = "<group>"; };
 		84F88CDE9ADAD57F2AA600A5 /* APStateViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APStateViews.swift; sourceTree = "<group>"; };
+		85B6CFDE0D1743699C87FA77 /* PaywallScreenLayoutTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaywallScreenLayoutTests.swift; sourceTree = "<group>"; };
 		85E9E22C9FF4C823A8898A3F /* SessionCredentials.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionCredentials.swift; sourceTree = "<group>"; };
 		86038AE1032E284E79B32AD6 /* iosApp.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = iosApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		86C8472C23144F2FED1429A9 /* APIModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIModels.swift; sourceTree = "<group>"; };
@@ -272,8 +276,10 @@
 		B6A0C48173DC401944D4A9DA /* CameraCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraCoordinatorTests.swift; sourceTree = "<group>"; };
 		B719EE2E7F62C33D73EBA475 /* CameraCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraCoordinator.swift; sourceTree = "<group>"; };
 		BC8A0A5B4EA5107C4FB93BF9 /* APSavedList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APSavedList.swift; sourceTree = "<group>"; };
+		C06A58D84A92AE388C5F42D0 /* PaywallAnalytics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaywallAnalytics.swift; sourceTree = "<group>"; };
 		C117AD187833E2513BD2F553 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		C19705914F5CE32D4BC5F22B /* GalleryPhotoDeletionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalleryPhotoDeletionTests.swift; sourceTree = "<group>"; };
+		C215B7599A994960E59A8FD0 /* PaywallAnalyticsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaywallAnalyticsTests.swift; sourceTree = "<group>"; };
 		C254D42661B28636ECF42B71 /* CameraTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraTypes.swift; sourceTree = "<group>"; };
 		C3FDC6936D2A159D375009CC /* APCatalogFooter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APCatalogFooter.swift; sourceTree = "<group>"; };
 		C49B0B02429FBBC9F867DDE1 /* iosApp.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = iosApp.entitlements; sourceTree = "<group>"; };
@@ -615,8 +621,10 @@
 				8E2CC10B44F2FF3A38B280E4 /* JobsServiceSessionTests.swift */,
 				CC83325E304D6775FCFDB8BE /* JobsServiceTests.swift */,
 				8EFFAC61B95377D854D3B20D /* JobsSnapshotTests.swift */,
+				C215B7599A994960E59A8FD0 /* PaywallAnalyticsTests.swift */,
 				FCBD6D5934AC5F92B2A5E06C /* PaywallAppleSignInTests.swift */,
 				FFFEB0B6B2E4DD10BBAD259C /* PaywallModelTests.swift */,
+				85B6CFDE0D1743699C87FA77 /* PaywallScreenLayoutTests.swift */,
 				E683518697C7CD04E17A0D94 /* PoseDetailFeatureTests.swift */,
 				1D33F377EAE99AD4407CC35B /* PosePickerViewModelTests.swift */,
 				AFAF36860E03C97F64302597 /* PosesAdapterTests.swift */,
@@ -652,6 +660,7 @@
 				774F0BEF6D21D830B0D53125 /* AccountScreen.swift */,
 				D9D716AFFCACC5FB9D732D15 /* AccountSessionModel.swift */,
 				E62EEBF4311843B030F88E58 /* AppleSignIn.swift */,
+				C06A58D84A92AE388C5F42D0 /* PaywallAnalytics.swift */,
 				9DEBB823DA597A76F4FC272E /* PaywallModel.swift */,
 				3E891060E288E2CF2F245B31 /* PaywallScreen.swift */,
 				95302400E9B8AF24B57EB65E /* PremiumGate.swift */,
@@ -889,6 +898,7 @@
 				E5B3C01E57B6DF2944D11522 /* JobsService.swift in Sources */,
 				BD09F8EEF0ABCB6770B7BD3A /* KeychainTokenStorage.swift in Sources */,
 				7D3B733594872CA7A26DBE84 /* OAuthHandoff.swift in Sources */,
+				102C7135EB964ACCC00A8814 /* PaywallAnalytics.swift in Sources */,
 				151A7D9A08B4411FA954B565 /* PaywallModel.swift in Sources */,
 				744458125F1BAC3B240A6A9F /* PaywallScreen.swift in Sources */,
 				C398D217D9ECDC9E4E3D9F15 /* PhotoLibraryPicker.swift in Sources */,
@@ -952,8 +962,10 @@
 				5B98FB97C8ECE7DD2F2497D4 /* JobsSnapshotTests.swift in Sources */,
 				6431F9D53B5E03561AB351B3 /* LegacyDatabaseCompatibilityTests.swift in Sources */,
 				C862DA62FE077F181481D5AC /* OAuthCallbackParserTests.swift in Sources */,
+				06712E8A9DE264A6196F317C /* PaywallAnalyticsTests.swift in Sources */,
 				FAAD6F97CCD22F71016239E2 /* PaywallAppleSignInTests.swift in Sources */,
 				918893F6A3A4D3B860741BEC /* PaywallModelTests.swift in Sources */,
+				4D621117422AE16693D7F9F4 /* PaywallScreenLayoutTests.swift in Sources */,
 				AA92157B0E277FD36C849306 /* PerformanceBaselineTests.swift in Sources */,
 				1E0244096A7F89E47C305A09 /* PoseDetailFeatureTests.swift in Sources */,
 				73919AF6C09FD6F4B94E56C1 /* PosePickerViewModelTests.swift in Sources */,

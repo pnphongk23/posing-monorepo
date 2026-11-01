@@ -150,6 +150,39 @@ secret keys. StoreKit/RevenueCat localized metadata is authoritative for display
 RevenueCat owns purchase callbacks and transaction handling; no second StoreKit
 listener or finish path is allowed.
 
+## Paywall prices before sign-in (1.1 (20))
+
+The paywall reads the `default` offering **without an Account** so a signed-out user sees the real
+price and saving before the account step (`PaywallModel.start()` → `loadSignedOutPrices()`; the phase
+stays `signInRequired`).
+
+Why this is safe with the current identity flow:
+
+- `RevenueCatAdapter.loadOffering()` has no account check. It reads `provider.packages()` — a price
+  catalogue, not an entitlement — and then `refreshSnapshot()`, which for an unlinked identity takes
+  the existing `ownedAccountID == nil` branch: `.notEntitled` **with** the products, plus a reconcile
+  back to the anonymous identity. Nothing is granted, so no guest can become entitled by seeing a
+  price.
+- No anonymous transaction can start: `purchase(packageID:)` and `restore()` require
+  `transactionIdentity()` (a linked Account that is also the provider app user id) and fail closed to
+  `.signInRequired` otherwise (M2). The signed-out CTA opens the sign-in sheet; that whole path is
+  pinned by `PaywallModelTests.testSignedOutCTASignsInThenBuysTheSelectedPlan`.
+- The RevenueCat alias the anonymous id gets at `logIn(accountID)` is unchanged: the link still happens
+  at sign-in, before any transaction. A price read creates no purchase, transfer or second identity.
+- Residual risk (accepted, worth one sandbox pass): one extra `offerings` fetch per signed-out
+  presentation, and it publishes a `.notEntitled` snapshot. On a signed-out device that is already the
+  state, and the model keeps the prices across that push (`showsPreSignInPrices`) so the cards never
+  blank to “—”.
+
+## Paywall funnel events
+
+`paywall_view`, `paywall_plan_select`, `paywall_cta_tap`, `paywall_close` and `paywall_restore_tap`
+are emitted from `PaywallModel` through `PaywallAnalytics` with enumerated parameters only
+(`trigger`, `signed_in`, `plans_state`, `plan`, `action`, `entitled`) — no account id, email, app user
+id or price. The sink is a closure (`PaywallAnalyticsSink`), so tests record it instead of mocking a
+protocol, and it is a no-op when Firebase is not configured. Collection itself is unchanged; the
+Privacy Policy and the App Privacy labels must keep declaring Firebase Analytics.
+
 ## Deterministic local matrix
 
 `AIPOSE_BYPASS_PREMIUM=1` is a local capability only when both conditions hold:

@@ -46,6 +46,16 @@ final class PaywallAppleSignInTests: XCTestCase {
             PaywallAccessibilityID.notice,
             PaywallAccessibilityID.signInSheet,
             PaywallAccessibilityID.signInClose,
+            PaywallAccessibilityID.restore,
+            PaywallAccessibilityID.terms,
+            PaywallAccessibilityID.privacy,
+            PaywallAccessibilityID.autoRenewDisclosure,
+            PaywallAccessibilityID.selectedPlanLine,
+            PaywallAccessibilityID.accountStatus,
+            PaywallAccessibilityID.offerRetry,
+            PaywallAccessibilityID.steps,
+            PaywallAccessibilityID.planAnnualPerMonth,
+            PaywallAccessibilityID.planAnnualSavings,
         ]
 
         for identifier in identifiers {
@@ -106,7 +116,11 @@ final class PaywallAppleSignInTests: XCTestCase {
 
         XCTAssertNil(model.authError, "a completed sign-in is not an error")
         XCTAssertTrue(model.isSignedIn)
-        XCTAssertEqual(gateway.loadCount, 1, "the paywall continues to plans, exactly like the Google path")
+        XCTAssertEqual(
+            gateway.loadCount,
+            2,
+            "the signed-out price read, then the plans the account-bound purchase needs"
+        )
         XCTAssertEqual(model.phase, .ready)
         XCTAssertEqual(model.plans.map(\.identifier), ["annual", "monthly"])
         XCTAssertFalse(model.isAuthenticating)
@@ -124,12 +138,13 @@ final class PaywallAppleSignInTests: XCTestCase {
 
         model.start()
         await waitUntil("sign in required") { model.phase == .signInRequired }
+        await waitUntil("prices read") { gateway.loadCount == 1 }
 
         await model.signInWithApple()
 
         XCTAssertNil(model.authError, "cancelling is not an error the user has to dismiss")
         XCTAssertEqual(model.phase, .signInRequired)
-        XCTAssertEqual(gateway.loadCount, 0)
+        XCTAssertEqual(gateway.loadCount, 1, "a cancelled handoff reads nothing new")
         XCTAssertFalse(model.isAuthenticating)
     }
 
@@ -144,12 +159,13 @@ final class PaywallAppleSignInTests: XCTestCase {
 
         model.start()
         await waitUntil("sign in required") { model.phase == .signInRequired }
+        await waitUntil("prices read") { gateway.loadCount == 1 }
 
         await model.signInWithApple()
 
         XCTAssertEqual(model.authError, PaywallAppleTestError.backendText)
         XCTAssertEqual(model.phase, .signInRequired)
-        XCTAssertEqual(gateway.loadCount, 0, "a failed handoff never loads plans")
+        XCTAssertEqual(gateway.loadCount, 1, "a failed handoff never loads plans")
         XCTAssertFalse(model.isAuthenticating)
     }
 
