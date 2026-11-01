@@ -61,6 +61,12 @@ Every flow and draft below was reworked in the same pass (Done → outside tap; 
 TC-CAM-001/004/011 keep their flows, TC-CAM-014/015/021/022/023/032/033 are now drafts against these ids and are run on
 the 18 app. Their automation cells say so.
 
+## Fix status (all six camera defects have a fix on main, none verified yet)
+`7153c95` duplicate Poses control · `17fdd9f` Browse card leads the strip (the 7 red flows) · `22c9c83` Timer/Ratio option
+ids · `2bf15e7` popover safe area (the clipped guide rows, TC-CAM-032) · `48c1222` front-lens capture saved as previewed
+(TC-CAM-035) · `4cde9d9` Gallery Add pose no longer prompts a signed-in user (TC-GAL-022/023). Verification is the dev19 run
+(and the device run for the capture/orientation items); nothing below is marked fixed on the strength of the commit alone.
+
 ## Run on 1.1 (18) — red flows are an app defect, not a flow defect
 dev18 run (2026-11-01, lane-2): **7 flows are red for one app bug** — the Browse card that replaced the top pill is off
 screen and absent from the accessibility tree, so the pose picker sheet has no reachable entry point

@@ -14,3 +14,10 @@
   the panel copy should have been removed when the control moved to the scale row.
 - **Flows affected:** TC-CAM-012 / TC-CAM-019 still pass (they tap the first match, both toggle the same state), so this is
   a visual/a11y defect rather than a functional one.
+
+## Status
+- **Fix on main:** `7153c95` (fix(ios): draw the camera's Poses control once, on the scale row) — **not yet verified**: needs the dev19 run (and, for the capture/guide
+  defects, the device run).
+- **Evidence:** the screenshots/hierarchy dumps quoted above were captured under `/tmp/qa-cam-1.1-18/`, which the
+  2026-11-01 reboot wiped. The path strings are kept as the historical record; from dev19 on, artefacts that must
+  survive a reboot live in `docs/qa/redesign-drafts/gallery-camera/evidence/` (repo) instead of `/tmp`.

@@ -11,3 +11,10 @@
   nodes, no per-option ids); failure log in `/Users/phamnhuphong/.maestro/tests/2026-11-01_030720/`.
 - **Impact / workaround:** TC-CAM-027 now selects the choices by their words (`Timer 3 s`, `1:1`, `9:16`) and passes; the
   device checklist is unaffected. Restore the per-option ids and the flow can go back to ids.
+
+## Status
+- **Fix on main:** `22c9c83` (fix(ios): keep the Timer and Ratio choices as their own accessibility elements) — **not yet verified**: needs the dev19 run (and, for the capture/guide
+  defects, the device run).
+- **Evidence:** the screenshots/hierarchy dumps quoted above were captured under `/tmp/qa-cam-1.1-18/`, which the
+  2026-11-01 reboot wiped. The path strings are kept as the historical record; from dev19 on, artefacts that must
+  survive a reboot live in `docs/qa/redesign-drafts/gallery-camera/evidence/` (repo) instead of `/tmp`.

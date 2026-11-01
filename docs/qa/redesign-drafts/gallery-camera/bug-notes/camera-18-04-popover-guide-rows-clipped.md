@@ -20,3 +20,10 @@
 - **Open question for Feature:** is scrolling inside the panel intended to bring the guide section into view? A human swipe
   inside the panel was not verifiable in this run (the follow-up probe lost focus to the springboard), so it is untested
   rather than disproven — but the a11y tree exposing un-hittable rows is a defect either way.
+
+## Status
+- **Fix on main:** `2bf15e7` (fix(ios): let the camera tools popover use the safe area it sits in) — **not yet verified**: needs the dev19 run (and, for the capture/guide
+  defects, the device run).
+- **Evidence:** the screenshots/hierarchy dumps quoted above were captured under `/tmp/qa-cam-1.1-18/`, which the
+  2026-11-01 reboot wiped. The path strings are kept as the historical record; from dev19 on, artefacts that must
+  survive a reboot live in `docs/qa/redesign-drafts/gallery-camera/evidence/` (repo) instead of `/tmp`.

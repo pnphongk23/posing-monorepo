@@ -86,6 +86,20 @@ TC-CAM-032 (clipped pose-guide rows). TC-CAM-016 and TC-CAM-018 each failed once
 zustand of the shared sim, no app crash report). Bugs filed in `bug-notes/` (4 files). Evidence:
 `/tmp/qa-cam-1.1-18/shots/` + the probe screenshots and hierarchy dumps beside it.
 
+## Fix status for the six filed defects (verification pending dev19)
+| Bug | Fix on main | Verifies with |
+|---|---|---|
+| camera-18-01 duplicate Poses control | `7153c95` | TC-CAM-012/019 (and the checklist "exactly one Poses" step) |
+| camera-18-02 picker sheet unreachable | `17fdd9f` | TC-CAM-001/004/011/014/021/022/033 |
+| camera-18-03 Timer/Ratio option ids | `22c9c83` | TC-CAM-027 (back on ids) |
+| camera-18-04 popover guide rows clipped | `2bf15e7` | TC-CAM-032 (+ TC-CAM-003/034 on device) |
+| camera-18-05 front capture flipped | `48c1222` | TC-CAM-035 (device) |
+| camera-18-06 Gallery Add pose sign-in prompt | `4cde9d9` | TC-GAL-022/023 (drafts), TC-GAL-024 (signed-out stays) |
+
+**Evidence policy (after the 2026-11-01 reboot wiped `/tmp`):** screenshots and hierarchy dumps for future runs go to
+`docs/qa/redesign-drafts/gallery-camera/evidence/<build>/` in the repo; the older `/tmp/qa-cam-1.1-18/` paths quoted in the
+bug notes and the 1.1 (18) run log are historical only and no longer resolve.
+
 ## Waiting on ids (cases written, no draft yet)
 Guide **mirror** is in committed source (`da61534`) and is drafted (`TC-CAM-032-guide-mirror.yaml`). Timer, Ratio and
 guide **Scale** are in scope for 1.1 but still unlanded, so these cases have no draft:

@@ -18,3 +18,10 @@
   TC-CAM-022, TC-CAM-033 — every one fails at `assertVisible/tapOn camera.choosePose`.
 - **Suggested fix (for Feature, not QA):** pin the Browse card outside the scroll content (a fixed trailing card), or
   scroll the strip to it on first appearance — and make sure it is exposed to accessibility even when it is off-screen.
+
+## Status
+- **Fix on main:** `17fdd9f` (fix(ios): lead the camera pose strip with its Browse card) — **not yet verified**: needs the dev19 run (and, for the capture/guide
+  defects, the device run).
+- **Evidence:** the screenshots/hierarchy dumps quoted above were captured under `/tmp/qa-cam-1.1-18/`, which the
+  2026-11-01 reboot wiped. The path strings are kept as the historical record; from dev19 on, artefacts that must
+  survive a reboot live in `docs/qa/redesign-drafts/gallery-camera/evidence/` (repo) instead of `/tmp`.

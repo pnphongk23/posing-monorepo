@@ -13,16 +13,19 @@ tags: [TC-CAM-027, p0]
     id: "camera.tools.timer"
 - assertVisible:
     id: "camera.tools.ratio"
-# The per-option ids are NOT exposed at runtime on dev18 (every Timer/Ratio choice reports the row id
-# `camera.tools.timer` / `camera.tools.ratio` — bug note camera-18-03), so the option is chosen by its word.
-- tapOn: ".*Timer 3 s.*"
+# Per-option ids (camera.tools.timer.3s / .ratio.1x1 …) were missing at runtime on dev18 and are restored in
+# 22c9c83, so the flow is back on ids rather than on the option words.
+- tapOn:
+    id: "camera.tools.timer.3s"
 - assertVisible:
     id: "camera.tools.timer"
 # Ratio: 3:4 is the default; switch to a square and to a tall frame.
-- tapOn: ".*1:1.*"
+- tapOn:
+    id: "camera.tools.ratio.1x1"
 - assertVisible:
     id: "camera.tools.ratio"
-- tapOn: ".*9:16.*"
+- tapOn:
+    id: "camera.tools.ratio.9x16"
 - assertVisible:
     id: "camera.tools.ratio"
 # Dismissal is by tapping outside the popover (build 18 has no Done button).

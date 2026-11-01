@@ -22,3 +22,10 @@
   `TC-GAL-022-gallery-add-pose-signed-in.yaml` (header entry),
   `TC-GAL-023-photo-detail-add-pose-signed-in.yaml` (tray entry — needs a photo in the gallery, which the Simulator cannot
   produce, so it is seed/device-dependent), and `TC-GAL-024-gallery-add-pose-signed-out.yaml` (the prompt is expected).
+
+## Status
+- **Fix on main:** `4cde9d9` (fix(ios): stop the gallery Add pose entry prompting a signed-in user to sign in) — **not yet verified**: needs the dev19 run (and, for the capture/guide
+  defects, the device run).
+- **Evidence:** the screenshots/hierarchy dumps quoted above were captured under `/tmp/qa-cam-1.1-18/`, which the
+  2026-11-01 reboot wiped. The path strings are kept as the historical record; from dev19 on, artefacts that must
+  survive a reboot live in `docs/qa/redesign-drafts/gallery-camera/evidence/` (repo) instead of `/tmp`.

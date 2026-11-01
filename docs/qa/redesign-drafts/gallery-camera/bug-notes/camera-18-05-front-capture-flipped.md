@@ -22,3 +22,10 @@
   image-orientation step (front vs rear), asserted on a known asymmetric fixture instead of a device.
 - **Note:** this is a *capture* defect. It is unrelated to the tools' **Mirror** row (`camera.tools.mirror.switch`), which
   flips the pose guide overlay only — see the checklist §8 wording and camera-18-04.
+
+## Status
+- **Fix on main:** `48c1222` (fix(ios): save the front lens the way its preview is mirrored) — **not yet verified**: needs the dev19 run (and, for the capture/guide
+  defects, the device run).
+- **Evidence:** the screenshots/hierarchy dumps quoted above were captured under `/tmp/qa-cam-1.1-18/`, which the
+  2026-11-01 reboot wiped. The path strings are kept as the historical record; from dev19 on, artefacts that must
+  survive a reboot live in `docs/qa/redesign-drafts/gallery-camera/evidence/` (repo) instead of `/tmp`.
