@@ -1,4 +1,4 @@
-# Screenshots Runbook — posing 1.0
+# Screenshots Runbook — posing 1.1
 
 **Quy tắc #1: Chỉ dùng màn hình app native.** Chụp app `posing.camera.app` đang chạy trên iOS Simulator hoặc thiết bị thật. Marketing frame được phép thêm headline và viền thiết kế bên ngoài; ảnh màn hình bên trong phải lấy trực tiếp từ app.
 
@@ -12,7 +12,7 @@
 
 | Tên hiển thị | Kích thước (px) | Thiết bị gợi ý chụp | Bắt buộc? |
 | --- | --- | --- | --- |
-| 6.9" Display | **1290 × 2796** (`1290x2796/`) | iPhone 17 Pro Max simulator captures at 1320 × 2868 | Dùng nếu ASC hiển thị slot 6.9"; Apple also accepts 1320 × 2868 and 1260 × 2736 |
+| 6.9" Display | **1290 × 2796** (`1290x2796/`) | iPhone 15 Pro Max simulator (native 1290 × 2796) | Dùng nếu ASC hiển thị slot 6.9"; Apple also accepts 1320 × 2868 (iPhone 16/17 Pro Max) and 1260 × 2736 |
 | 6.5" Display | **1284 × 2778** (`1284x2778/`) hoặc **1242 × 2688** (`1242x2688/`) | iPhone 14 Plus / 11 Pro Max | ASC slot requires one of these portrait sizes |
 | 6.3" | 1179 × 2556 hoặc 1206 × 2622 | iPhone 17 Pro / 16 Pro | Optional |
 | 6.1" | 1170 × 2532 | iPhone 14 / 13 | Optional |
@@ -22,7 +22,7 @@
 
 | Tên hiển thị | Kích thước (px) | Thiết bị gợi ý chụp | Bắt buộc? |
 | --- | --- | --- | --- |
-| 13" | **2048 × 2732** (`2048x2732/`) hoặc 2064 × 2752 | iPad Pro 13" | **Bắt buộc** (cỡ lớn nhất hỗ trợ) |
+| 13" | **2048 × 2732** (`2048x2732/`) hoặc 2064 × 2752 | iPad Pro 12.9" (6th gen) simulator cho 2048 × 2732; iPad Pro 13" M4/M5 cho 2064 × 2752 | **Bắt buộc** (cỡ lớn nhất hỗ trợ) |
 | 11" | 1668 × 2388 hoặc 1668 × 2420 | iPad Pro 11" | Khuyến nghị |
 
 > Nếu không cung cấp bộ iPad, ASC sẽ báo lỗi khi app hỗ trợ iPad family → **bắt buộc chụp ít nhất 13"**.
@@ -33,7 +33,7 @@
 
 ## 2. Nguồn chụp
 
-Capture từ build Dev trên iPhone 17 Pro Max Simulator. Dùng `xcrun simctl status_bar` để đặt status bar hệ thống ở 9:41, Wi-Fi 3 vạch, cellular 4 vạch và pin đầy. Maestro chỉ điều hướng giữa các màn hình; file PNG của Maestro là nội dung app native, không phải ảnh prototype.
+Capture từ build Dev trên iPhone 15 Pro Max Simulator (1290 × 2796 native; iPhone 16/17 Pro Max cho 1320 × 2868, ASC cũng nhận). Dùng `xcrun simctl status_bar` để đặt status bar hệ thống ở 9:41, Wi-Fi 3 vạch, cellular 4 vạch và pin đầy. Maestro chỉ điều hướng giữa các màn hình; ảnh chụp bằng `xcrun simctl io <udid> screenshot` là nội dung app native, không phải ảnh prototype.
 
 Marketing frame tool nhận các PNG này trong `public/native-screenshots/`. Chế độ native dùng `object-contain`, giữ nguyên toàn bộ ảnh app và status bar; tool chỉ scale đồng đều để đặt ảnh trong khung thiết kế. Chế độ prototype cũ vẫn dùng lệnh `npm run export` riêng.
 
@@ -43,21 +43,27 @@ Sau khi export, **verify pixel** bằng `sips -g pixelWidth -g pixelHeight <file
 
 ---
 
-## 3. Danh sách màn hình cần chụp (tối đa 10 ảnh/thiết bị; đề xuất 5)
+## 3. Danh sách màn hình cần chụp (tối đa 10 ảnh/thiết bị; đề xuất 8)
 
-| # | Màn hình app | Nội dung thể hiện | Caption gợi ý (không bắt buộc) |
-| --- | --- | --- | --- |
-| 1 | **Poses list** (`PosesScreen`) | Grid pose cộng đồng thật từ catalog hiện tại | "Explore the community pose library" |
-| 2 | **Pose detail + Use this pose** (`PoseDetailScreen`) | Ảnh guide thật, mô tả pose và action mở camera | "Open a pose and try it in camera" |
-| 3 | **Search results** (`SearchScreen`) | Kết quả thật từ API live cho query `Pose` | "Find a pose for your next shot" |
-| 4 | **Gallery** (`GalleryScreen`) | Trạng thái hiện tại của gallery local; chỉ dùng ảnh đã chụp thật | "Your gallery" |
-| 5 | **Camera live + guides** (`CameraScreen`) | Chụp trên thiết bị thật để có camera feed. Simulator hiện chỉ có viewfinder đen; không dùng ảnh đó cho marketing. | Chụp lại trên thiết bị thật trước khi thêm vào bộ chính |
+Bộ 1.1 có nav mới: Saved và Settings nằm trong menu **More** ở header Poses; Jobs cũng trong More. Chụp đủ 8 màn hình dưới đây, giữ đúng thứ tự file `NN-name.png`.
+
+| # | Màn hình app | Đường vào | Nội dung thể hiện | Caption gợi ý (không bắt buộc) |
+| --- | --- | --- | --- | --- |
+| 1 | **Poses / Community** (`PosesScreen`) | tab Poses | Grid pose cộng đồng thật từ catalog hiện tại | "Explore the community pose library" |
+| 2 | **Pose detail** (`PoseDetailScreen`) | mở card đầu tiên | Ảnh guide thật, tag, How to pose, `Try this pose` | "Open a pose and try it in camera" |
+| 3 | **Saved** (`SavedPosesScreen`) | More → Saved | Danh sách pose đã lưu thật của tài khoản demo | "Keep the poses you love in one place" |
+| 4 | **Jobs — Finished** (`JobsScreen`) | More → Jobs → tab Finished | Job thật đã `Done · added to Poses`; filter **All**; ẩn các row QA cũ trước khi chụp | "Add your own pose and let us extract it" |
+| 5 | **Add pose** (`AddPoseScreen`) | `+` ở header Poses | Form thật (photo picker, Name, Tags, Description, CTA) | "Add a pose to the library" |
+| 6 | **Gallery** (`GalleryScreen`) | tab Gallery | Trạng thái gallery thật của máy chụp; simulator không có camera nên chỉ có empty state | "All your captures in one gallery" |
+| 7 | **Settings** (`SettingsScreen`) | More → Settings | Tài khoản demo đang đăng nhập, Premium, Appearance, About/version | "Tune the app to your taste" |
+| 8 | **Paywall** (`PaywallScreen`) | Settings → Premium | Bảng plan thật từ Test Store (Yearly/Monthly). **KHÔNG mua**, không chụp màn hình xác nhận thanh toán | "Unlock the full pose camera" |
+| — | **Camera live + guides** (`CameraScreen`) | tab camera | Cần thiết bị thật để có camera feed. Simulator chỉ có viewfinder đen; **để trống slot này**, không dùng ảnh simulator cho marketing. | Chụp trên thiết bị thật trước khi thêm vào bộ chính |
 
 ---
 
 ## 4. Checklist điều kiện đẹp
 
-- [ ] **Dữ liệu thật**: community poses đã load; gallery có 4-6 ảnh chụp thật đẹp.
+- [ ] **Dữ liệu thật**: community poses đã load; Saved/Jobs là dữ liệu thật của tài khoản demo; ẩn các row QA cũ ("QA …") khỏi Jobs trước khi chụp.
 - [ ] **Không chứa thông tin cá nhân/riêng tư**: mặt người phải có consent; không ảnh chứa thẻ/địa chỉ/biển số.
 - [ ] **Không đạo cụ không liên quan**: tránh giấy tờ, màn hình thông báo, banner lỗi.
 - [ ] **Camera shot**: ánh sáng đủ, người mẫu tạo dáng đúng pose, background sạch.
@@ -70,32 +76,34 @@ Sau khi export, **verify pixel** bằng `sips -g pixelWidth -g pixelHeight <file
 
 ## 5. Quy trình thực hiện & upload
 
-1. Build Dev scheme cho simulator và khởi động iPhone 17 Pro Max:
+1. Dùng build Dev sẵn có do Feature lead cung cấp — **không build lại** trên lane chụp:
 
    ```sh
-   xcodebuild -workspace mobile/iosApp/iosApp.xcworkspace -scheme Dev \
-     -destination 'platform=iOS Simulator,name=posing-asc-iphone17promax' \
-     -derivedDataPath /tmp/posing-asc-derived build CODE_SIGNING_ALLOWED=NO
+   xcrun simctl install "$SIM_UDID" /tmp/<lane>/dev<NN>/posing.app
    ```
 
-2. Boot simulator, đặt `SIM_UDID`, cài build, cấp quyền camera và áp dụng status bar:
+2. Tạo/boot simulator (iPhone 15 Pro Max → 1290 × 2796), bật light mode, đặt status bar và cài build:
 
    ```sh
-   SIM_UDID="<iPhone 17 Pro Max UDID>"
+   SIM_UDID="<iPhone 15 Pro Max UDID>"
    xcrun simctl boot "$SIM_UDID"
    xcrun simctl bootstatus "$SIM_UDID" -b
+   xcrun simctl ui "$SIM_UDID" appearance light
    xcrun simctl status_bar "$SIM_UDID" override --time 9:41 --dataNetwork wifi \
      --wifiBars 3 --cellularMode active --cellularBars 4 --batteryState charged --batteryLevel 100
    xcrun simctl privacy "$SIM_UDID" grant camera posing.camera.app
-   xcrun simctl install "$SIM_UDID" /tmp/posing-asc-derived/Build/Products/Debug-Dev-iphonesimulator/posing.app
+   xcrun simctl privacy "$SIM_UDID" grant photos posing.camera.app
+   xcrun simctl addmedia "$SIM_UDID" <ảnh người mẫu hợp lệ>   # cho photo picker của Add pose
+   xcrun simctl install "$SIM_UDID" <posing.app>
    ```
 
-3. Chạy luồng chụp đã lưu; Community/Search lấy pose thật từ API. Gallery phản ánh dữ liệu local thật:
+3. Dùng Maestro chỉ để điều hướng (flow tạm đặt ngoài repo, không commit) rồi chụp từng màn hình bằng
+   `xcrun simctl io "$SIM_UDID" screenshot /tmp/shots-1.1/iphone-69/NN-name.png`. Mỗi bước kết thúc ở
+   màn hình cần chụp, không để keyboard/alert/sheet che nội dung. Tài khoản demo lấy credential từ
+   `mobile/iosApp/maestro/e2e.local.env` và truyền qua `maestro -e`, không in ra log.
 
-   ```sh
-   ~/.maestro/bin/maestro test scripts/maestro/app-store-screenshots.yaml \
-     --device "$SIM_UDID" --test-output-dir /tmp/posing-app-store
-   ```
+   > Bộ nguồn 1.1 gồm 8 ảnh (mục 3). Các lệnh `cp` ở bước 4–5 bên dưới vẫn là bộ 4 ảnh của 1.0 —
+   > cập nhật danh sách file khi export marketing frame cho 1.1.
 
 4. Copy các ảnh nguồn không chỉnh sửa vào marketing-frame tool:
 
@@ -145,6 +153,6 @@ Sau khi export, **verify pixel** bằng `sips -g pixelWidth -g pixelHeight <file
 
 ## 6. Ghi chú & nguyên tắc nội dung
 
-- **Pricing**: Release này miễn phí toàn bộ tính năng, không có paywall hoặc IAP. Không đưa màn hình/giá mua hàng vào screenshots.
-- **Camera simulator**: iOS Simulator không cung cấp camera feed cho build hiện tại. Dùng Search results làm ảnh thay thế cho bộ marketing; chụp camera trên thiết bị thật nếu cần giới thiệu viewfinder/pose overlay.
+- **Pricing**: 1.1 có Premium (paywall thật, plan lấy từ RevenueCat Test Store trên build Dev). Được chụp màn hình paywall với giá thật của Test Store, nhưng **không mua**, không chụp sheet xác nhận thanh toán/hoá đơn, và bộ cuối phải chụp lại khi giá store thật đã sẵn sàng.
+- **Camera simulator**: iOS Simulator không cung cấp camera feed cho build hiện tại, nên không có ảnh camera trong bộ simulator. Chụp camera trên thiết bị thật nếu cần giới thiệu viewfinder/pose overlay.
 - **Không claim tính năng chưa có**: Chỉ chụp các tính năng và màn hình có sẵn trong app thật; không ghép camera feed hoặc overlay vào ảnh simulator.
