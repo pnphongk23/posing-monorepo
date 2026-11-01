@@ -2,8 +2,8 @@
 appId: ${APP_ID}
 tags: [TC-CAM-032, p1]
 ---
-- runFlow: ../../../../mobile/iosApp/maestro/subflows/launch.yaml
-- runFlow: ../../../../mobile/iosApp/maestro/subflows/open-first-pose.yaml
+- runFlow: ../../../../../mobile/iosApp/maestro/subflows/launch.yaml
+- runFlow: ../../../../../mobile/iosApp/maestro/subflows/open-first-pose.yaml
 - tapOn:
     id: "poseDetail.use"
 - extendedWaitUntil:

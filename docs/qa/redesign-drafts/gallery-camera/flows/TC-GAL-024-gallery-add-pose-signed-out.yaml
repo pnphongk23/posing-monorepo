@@ -3,7 +3,7 @@ appId: ${APP_ID}
 tags: [TC-GAL-024, p1]
 ---
 # Held for dev19. Signed out is the clean-launch state: launch.yaml clears the keychain, no credentials needed.
-- runFlow: ../../../../mobile/iosApp/maestro/subflows/launch.yaml
+- runFlow: ../../../../../mobile/iosApp/maestro/subflows/launch.yaml
 - tapOn: "Gallery"
 - extendedWaitUntil:
     visible:

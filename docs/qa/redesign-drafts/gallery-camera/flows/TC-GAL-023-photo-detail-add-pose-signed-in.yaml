@@ -5,8 +5,8 @@ tags: [TC-GAL-023, p1, e2e]
 # Held for dev19 AND seed-dependent: this needs at least one photo in the gallery. The app has no
 # gallery seed (photos only come from a real capture, and the Simulator has no camera), so on the
 # Simulator this flow can only run after a capture fixture is added — otherwise it is device-only.
-- runFlow: ../../../../mobile/iosApp/maestro/subflows/ext-launch.yaml
-- runFlow: ../../../../mobile/iosApp/maestro/subflows/ext-sign-in.yaml
+- runFlow: ../../../../../mobile/iosApp/maestro/subflows/ext-launch.yaml
+- runFlow: ../../../../../mobile/iosApp/maestro/subflows/ext-sign-in.yaml
 - tapOn: "Gallery"
 - extendedWaitUntil:
     visible:

@@ -2,10 +2,11 @@
 appId: ${APP_ID}
 tags: [TC-GAL-022, p1, e2e]
 ---
-# Held for dev19: on build 18 this flow reproduces camera-18-06 (the sign-in prompt appears although the
-# user is signed in). Credentials come from the runner (`-e E2E_EMAIL=... -e E2E_PASSWORD=...`).
-- runFlow: ../../../../mobile/iosApp/maestro/subflows/ext-launch.yaml
-- runFlow: ../../../../mobile/iosApp/maestro/subflows/ext-sign-in.yaml
+# Promoted after the dev19 probe: signed in, Gallery → Add pose opens the form with no sign-in prompt
+# (build 18 reproduced camera-18-06 instead). Credentials come from the runner
+# (`-e E2E_EMAIL=... -e E2E_PASSWORD=...`; the flow is e2e-tagged and needs them).
+- runFlow: ../subflows/ext-launch.yaml
+- runFlow: ../subflows/ext-sign-in.yaml
 # Gallery tab (TODO(QA-261029-ID) dock.gallery — the dock item still has a label only).
 - tapOn: "Gallery"
 - extendedWaitUntil:

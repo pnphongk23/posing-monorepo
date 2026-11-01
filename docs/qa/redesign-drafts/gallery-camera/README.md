@@ -96,6 +96,14 @@ zustand of the shared sim, no app crash report). Bugs filed in `bug-notes/` (4 f
 | camera-18-05 front capture flipped | `48c1222` | TC-CAM-035 (device) |
 | camera-18-06 Gallery Add pose sign-in prompt | `4cde9d9` | TC-GAL-022/023 (drafts), TC-GAL-024 (signed-out stays) |
 
+**Paths in these drafts:** every `runFlow` must climb **five** levels to the repo root
+(`../../../../../mobile/iosApp/maestro/subflows/…`) — four climbs landed on `docs/` and broke every draft (fixed in
+`TC-GAL-022`'s wake; on promotion the path becomes `../subflows/…`).
+
+**Promoted after a dev19 PASS:** `TC-GAL-022-gallery-add-pose-signed-in.yaml` now lives in
+`mobile/iosApp/maestro/flows/` (e2e-tagged, needs `E2E_EMAIL`/`E2E_PASSWORD`); its case row is `automated:`. `TC-GAL-023`
+(tray entry, seed-dependent) and `TC-GAL-024` (signed-out prompt) stay drafts.
+
 **Evidence policy (after the 2026-11-01 reboot wiped `/tmp`):** screenshots and hierarchy dumps for future runs go to
 `docs/qa/redesign-drafts/gallery-camera/evidence/<build>/` in the repo; the older `/tmp/qa-cam-1.1-18/` paths quoted in the
 bug notes and the 1.1 (18) run log are historical only and no longer resolve.

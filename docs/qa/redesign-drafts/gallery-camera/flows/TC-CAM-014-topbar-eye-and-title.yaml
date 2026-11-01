@@ -2,8 +2,8 @@
 appId: ${APP_ID}
 tags: [TC-CAM-014, p0]
 ---
-- runFlow: ../../../../mobile/iosApp/maestro/subflows/launch.yaml
-- runFlow: ../../../../mobile/iosApp/maestro/subflows/open-camera.yaml
+- runFlow: ../../../../../mobile/iosApp/maestro/subflows/launch.yaml
+- runFlow: ../../../../../mobile/iosApp/maestro/subflows/open-camera.yaml
 # One row, and no eye while no pose is chosen.
 - assertVisible:
     id: "camera.close"
