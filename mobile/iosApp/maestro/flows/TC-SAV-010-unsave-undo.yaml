@@ -1,10 +1,9 @@
 # TC-SAV-010 unsave is server-confirmed and reversible: "Removed <pose>" + Undo puts the row back
 #
-# The snackbar has no accessibility id (requested: saved.snackbar + saved.snackbar.undo), and the row
-# control only says "Remove from saved" (requested: saved.unsave.<poseID>). Until those exist the flow can
-# only read text, so it checks the shortest-lived signal FIRST and on the very next command — the Undo
-# control — before the longer "Removed <pose>" line. A bounded wait makes "no snackbar at all" fail as a
-# behaviour defect instead of a timing race.
+# Ids are authoritative (0df8024): the row tile is `saved.unsave.<poseID>`, the bar `saved.snackbar` and the
+# reversible offer `saved.snackbar.undo`. The bar lives ~4 s (APSnackbar.swift:24), so the wait starts on the
+# command right after the tap and is bounded to that window — "the bar never appeared" is then a finding,
+# not a guess about which of several "Remove from saved" labels was tapped.
 #
 # Needs an account with at least two saved poses (TC-SAV-002 leaves one; seed a second by saving another
 # pose before this flow, or run it against an account that already has some).
@@ -29,20 +28,24 @@ tags: [TC-SAV-010, p1, e2e]
 # Remember what the first row is, so "restored at its previous index" is checkable.
 - copyTextFrom:
     id: "poses.first-card"
-# The first row's unsave control (the only "Remove from saved" on screen at that position).
-- tapOn: "Remove from saved"
-# Undo is the distinctive control of the snackbar; five seconds is well inside the auto-dismiss window.
+# The first row's unsave tile, by id — not by the shared "Remove from saved" label.
+- tapOn:
+    id: 'saved\.unsave\..*'
+    index: 0
+# The bar is up for ~4 s: wait inside that window, for the bar itself.
 - extendedWaitUntil:
-    visible: "Undo"
-    timeout: 5000
-- assertVisible: "Removed .*"
-# The row is gone from the list while the offer to restore it is up.
+    visible:
+      id: "saved.snackbar"
+    timeout: 4000
+# The row is gone from the list while the offer to restore it is up. One hierarchy read, deliberately
+# before the tap: the bar only lives ~4 s, so nothing slow may sit between the wait and the Undo tap.
 - assertNotVisible:
     text: ${maestro.copiedText}
     below:
       id: "saved.back"
-# Undo restores it — the same pose, back at the top.
-- tapOn: "Undo"
+# Tapping the Undo id both acts and proves only the reversible offer carries it.
+- tapOn:
+    id: "saved.snackbar.undo"
 - extendedWaitUntil:
     visible:
       id: "poses.first-card"
@@ -50,7 +53,8 @@ tags: [TC-SAV-010, p1, e2e]
 - assertVisible:
     id: "poses.first-card"
     text: ${maestro.copiedText}
-- assertNotVisible: "Undo"
+- assertNotVisible:
+    id: "saved.snackbar.undo"
 # Still the Saved list (nothing navigated away), and not an empty or failed state.
 - assertNotVisible:
     id: "saved.browseCommunity"

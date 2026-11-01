@@ -7,8 +7,9 @@
 # one pose, so the flow unsaves until the empty state appears. `repeat` is bounded: a list that will not
 # empty fails here instead of looping forever.
 #
-# TODO(saved.unsave.<poseID>): the row control is only labelled "Remove from saved" today, which is
-# ambiguous with several rows; the label is used until the id exists.
+# The row tile is addressed by `saved.unsave.<poseID>` (0df8024), so the flow cannot accidentally tap a
+# different row's control. The tile is painted enabled while a request is in flight, so each removal is
+# followed by an animation wait before the next tap.
 appId: ${APP_ID}
 tags: [TC-SAV-003, p1]
 ---
@@ -24,7 +25,8 @@ tags: [TC-SAV-003, p1]
 - tapOn:
     id: "settings.saved.row"
 - extendedWaitUntil:
-    visible: "Remove from saved"
+    visible:
+      id: 'saved\.unsave\..*'
     timeout: 25000
 # Unsave every row until the empty state owns the screen (bounded: at most 8 removals).
 - repeat:
@@ -33,7 +35,9 @@ tags: [TC-SAV-003, p1]
         id: "saved.browseCommunity"
     times: 8
     commands:
-      - tapOn: "Remove from saved"
+      - tapOn:
+          id: 'saved\.unsave\..*'
+          index: 0
       - waitForAnimationToEnd:
           timeout: 8000
 - extendedWaitUntil:
