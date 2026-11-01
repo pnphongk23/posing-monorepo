@@ -13,6 +13,13 @@ appId: ${APP_ID}
 - runFlow: open-settings.yaml
 - tapOn:
     id: "settings.account.row"
+# At accessibility text sizes the Account card fills the screen and the email entry sits below the fold:
+# scroll to it instead of assuming the layout.
+- scrollUntilVisible:
+    element:
+      id: "signin.emailEntry"
+    direction: DOWN
+    timeout: 15000
 - tapOn:
     id: "signin.emailEntry"
 - extendedWaitUntil:

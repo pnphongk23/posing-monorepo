@@ -47,6 +47,12 @@ tags: [TC-PAY-012, p1, e2e]
     id: "camera.shutter"
 # The retry path: "Try again" starts a fresh store attempt (its dialog is the proof), and cancelling that one
 # leaves the user where they were — still unentitled, nothing bought.
+#
+# dev20 observation (2026-11-02 00:35 run): the FIRST "Test failed purchase" dialog was found and tapped, the
+# outcome card/status/retry all rendered — the failure was this second wait, i.e. the store dialog never came
+# back within 30 s after tapping `paywall.retry`. The label is therefore not in question here; whether the
+# retry really re-enters a purchase (`PaywallScreen.swift:496` → `model.purchase()`) needs a screenshot +
+# hierarchy right after that tap. Left un-mechanised on purpose until that evidence exists.
 - tapOn:
     id: "paywall.retry"
 - extendedWaitUntil:

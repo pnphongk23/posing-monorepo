@@ -18,9 +18,14 @@ tags: [TC-PAY-001, p0]
     visible:
       id: "paywall.close"
     timeout: 20000
-- assertVisible:
-    id: "paywall.steps"
-# The paid step is the third one, and it is the only claim Premium makes.
+# The steps block is part of the scrolling content (README layout #4), so on a gated capture it can sit
+# below the fold: reachability is the assertion, not first-frame presence.
+- scrollUntilVisible:
+    element:
+      id: "paywall.steps"
+    direction: DOWN
+    timeout: 15000
+# The paid step is the third one, and it is the only claim Premium makes (`paywall.benefit` sits on it).
 - assertVisible:
     id: "paywall.benefit"
 - assertVisible:

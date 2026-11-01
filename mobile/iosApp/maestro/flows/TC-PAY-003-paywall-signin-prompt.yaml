@@ -21,9 +21,12 @@ tags: [TC-PAY-003, p1]
 # has not landed yet — the structure is what this case asserts, the values are a TestFlight case).
 - assertVisible:
     id: "paywall.plan.monthly"
+# `paywall.account.status` only exists when the footer line is about the ACCOUNT. Signed out with a price
+# known, the footer line is the selected plan instead (`footerLine` → purchaseSummary → selectedPlanLine),
+# so the signed-out surface is asserted through the helper line and the CTA.
 - assertVisible:
-    id: "paywall.account.status"
-    text: '.*Sign in first so Premium follows you.*'
+    id: "paywall.disclosure.selection"
+    text: '.*plan .* billed today.*'
 - extendedWaitUntil:
     visible:
       id: "paywall.cta"
