@@ -57,6 +57,20 @@ final class PaywallAppleSignInTests: XCTestCase {
         XCTAssertEqual(Set(identifiers).count, identifiers.count, "no id may be reused for two elements")
     }
 
+    /// A sample of the accessibility contract the sign-in sheet owes the user: the options must be
+    /// *reachable*, not just drawn. Presenting this sheet at a medium detent kept every element in it
+    /// out of the accessibility tree — the sheet appeared on screen and `paywall.signin.apple` could
+    /// not be found, so VoiceOver announced nothing and the signed-out CTA looked dead. Measured on
+    /// 1.1 (18); the fix is the `.large` detent the email sheet already uses.
+    func testTheSignInSheetIsOnlyPresentedAtADetentThatStaysAccessible() throws {
+        guard #available(iOS 16.0, *) else { throw XCTSkip("detents are iOS 16+") }
+        XCTAssertEqual(
+            PaywallScreen.signInSheetDetents,
+            [.large],
+            "a smaller detent draws the sheet but hides its content from VoiceOver and from every query"
+        )
+    }
+
     func testPlanCardIdentifiersFollowThePackageTypeNotTheStoreID() {
         let annual = PurchaseProduct(identifier: "premium_annual_store", packageType: .annual, localizedPrice: "$39.99", period: "year")
         let monthly = PurchaseProduct(identifier: "premium_monthly_store", packageType: .monthly, localizedPrice: "$5.99", period: "month")

@@ -67,6 +67,18 @@ struct PaywallScreen: View {
     @State private var showsSignInSheet = false
     @State private var showsEmailSignIn = false
 
+    /// The detents the sign-in sheet is presented with.
+    ///
+    /// `.large` and nothing smaller, on purpose: a medium-detent sheet is drawn on screen but its
+    /// content never reaches the accessibility tree (measured on 1.1 (18), iOS 26 simulator: after
+    /// tapping the signed-out CTA the sheet is visible in a screenshot while `paywall.signin.sheet`,
+    /// `paywall.signin.apple` and every other element inside it are absent from the hierarchy). The
+    /// surface therefore reads as empty to VoiceOver and to any UI-automation query, which is how the
+    /// signed-out purchase path came to look like a dead CTA. The email sheet already presents at
+    /// `.large` and stays queryable, so the sign-in sheet matches it.
+    @available(iOS 16.0, *)
+    static let signInSheetDetents: Set<PresentationDetent> = [.large]
+
     init(model: @autoclosure @escaping () -> PaywallModel = PaywallModel()) {
         _model = StateObject(wrappedValue: model())
     }
@@ -121,7 +133,7 @@ struct PaywallScreen: View {
         .sheet(isPresented: $showsSignInSheet) {
             if #available(iOS 16.0, *) {
                 signInSheet
-                    .presentationDetents([.medium, .large])
+                    .presentationDetents(PaywallScreen.signInSheetDetents)
                     .presentationDragIndicator(.visible)
             } else {
                 signInSheet
