@@ -122,6 +122,18 @@ enum APSavedUndoRule {
     }
 }
 
+extension APSavedSnackbarSpec {
+    /// The bar is always `saved.snackbar`; only the reversible offer earns `saved.snackbar.undo`.
+    /// A failure bar's action is a Dismiss, and a flow that tapped it through the Undo id would be
+    /// asserting the wrong thing about the wrong bar.
+    var identifiers: APSnackbarIdentifiers {
+        APSnackbarIdentifiers(
+            bar: APSnackbarIdentifiers.saved.bar,
+            action: kind == .undo ? APSnackbarIdentifiers.saved.action : nil
+        )
+    }
+}
+
 /// Holds the one removal that can still be undone and performs it against the server.
 ///
 /// The offer is **Account state**: it names a pose that left this Account's saved collection, so the
@@ -280,7 +292,8 @@ struct APSavedSurface<Content: View>: View {
             onDismiss: {
                 model.bookmarkError = nil
                 undo.dismiss()
-            }
+            },
+            identifiers: snackbar?.identifiers
         )
     }
 
@@ -514,6 +527,16 @@ enum APSavedIdentifiers {
     static func row(index: Int, poseID: String) -> String {
         index == 0 ? "poses.first-card" : "poses.card.\(poseID)"
     }
+
+    /// The row's unsave control, addressed per pose.
+    ///
+    /// The control's only other handle is its label ("Remove from saved"), which is identical on
+    /// every row: a flow that taps it can never say *which* row it removed, so "the list lost the
+    /// right row" and "the tap went to the wrong row" are the same report. The pose id is the pose's
+    /// stable identity, so the id survives a reload or a reorder.
+    static func unsave(poseID: String) -> String {
+        "saved.unsave.\(poseID)"
+    }
 }
 
 /// Copy for one saved row. Pure: the row, its accessibility text and the tests read the same rule.
@@ -550,6 +573,8 @@ struct APSavedPoseRow: View {
     /// dimmed, its category line becomes "Not saved offline", and it offers no unsave request —
     /// nothing can be sent to a server the device cannot reach.
     var isAvailableOffline: Bool = true
+    /// `saved.unsave.<poseID>` for the row's own control.
+    var unsaveIdentifier: String? = nil
     var onUnsave: () -> Void = {}
 
     var body: some View {
@@ -560,6 +585,7 @@ struct APSavedPoseRow: View {
                 isUnsaving: isUnsaving,
                 isEnabled: isEnabled,
                 isAvailableOffline: isAvailableOffline,
+                identifier: unsaveIdentifier,
                 onUnsave: onUnsave
             )
         }
@@ -639,6 +665,8 @@ struct APSavedUnsaveTile: View {
     var isUnsaving: Bool = false
     var isEnabled: Bool = true
     var isAvailableOffline: Bool = true
+    /// `saved.unsave.<poseID>` when the row knows its pose; the label stays the accessible name.
+    var identifier: String? = nil
     var onUnsave: () -> Void = {}
 
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -662,6 +690,7 @@ struct APSavedUnsaveTile: View {
         .disabled(!offersUnsave || isUnsaving)
         .accessibilityLabel("Remove from saved")
         .accessibilityHint(isAvailableOffline ? "" : APSavedStateCopy.notSavedOffline)
+        .apIdentifier(identifier)
     }
 }
 
@@ -726,6 +755,7 @@ struct APSavedList: View {
                 isUnsaving: model.isBookmarkInFlight(pose.id),
                 isEnabled: model.canSave(pose) && model.bookmarkService != nil,
                 isAvailableOffline: offlineMode.isAvailableOffline(pose),
+                identifier: APSavedIdentifiers.unsave(poseID: pose.id),
                 onUnsave: { Task { await unsave(pose, at: index) } }
             )
         }

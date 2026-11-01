@@ -36,7 +36,9 @@ or on data, `out of scope 1.1` = agreed out of this release.
 on unsaving — **TC-SAV-003**, **TC-SAV-004** (its setup empties the list), **TC-SAV-014** — are held until the
 dev19 app is installed, then re-run. The fix also changed what the row ids mean: `poses.first-card` /
 `poses.card.<id>` now sit on the open-pose link (thumbnail + copy), not on the whole row, so the trailing
-unsave tile is addressed by `"Remove from saved"` and never by a row coordinate.
+unsave tile is addressed by `saved.unsave.<poseID>` (or, by text, `"Remove from saved"`) and never by a
+row coordinate. The removal bar and its Undo action carry `saved.snackbar` / `saved.snackbar.undo`, so a
+flow no longer has to race the four-second auto-dismiss with a text match alone.
 
 ## Accepted cosmetic deltas (do not raise as bugs)
 
@@ -55,8 +57,11 @@ Agreed with the Feature lane for this slice — the flows must not assert agains
   `docs/qa/redesign-drafts/saved-paywall/subflows/saved-launch-offline.yaml` (first n rows cached). The
   real network-loss behaviour is unit/XCTest-mapped, because the simulator cannot cut the network for one
   app — it is compiled out of Release, so these cases run on a Debug build only.
-- The snackbar and its Undo action deliberately have **no ids**: the flows find them by their
-  code-owned text ("Removed …", "Undo").
+- The snackbar and its Undo action now carry ids — `saved.snackbar` on the bar, `saved.snackbar.undo` on
+  the reversible action **only** (a failure bar's action is a Dismiss and has no Undo id), and the row's
+  unsave control is `saved.unsave.<poseID>`. The flows may still read the code-owned text ("Removed …",
+  "Undo"); the ids are what makes "the bar never appeared" a finding instead of a guess about which of
+  several "Remove from saved" labels was tapped.
 
 ## Build gate
 
@@ -67,9 +72,10 @@ This runs on **1.1 (18)**, where `1925f5c`/`6eab7c9` are ancestors and `saved.of
 
 | Id | Why | Used by |
 |---|---|---|
-| `saved.unsave.<poseID>` | the row control is still only labelled "Remove from saved", so with several rows a flow can only address the first match | TC-SAV-003, TC-SAV-010, TC-SAV-014 |
 | `saved.retry.button` | `saved.retry` covers the panel; the **Try again** button inside it would be nicer to address by id than by text | TC-SAV-009 |
 
 Already delivered or superseded, kept for the record: `saved.offlineBanner` (delivered), `settings.saved.row`
-and `settings.back` (delivered with the Settings rebuild), `saved.offline` / `saved.rowOffline.<poseID>` /
-`saved.snackbar` / `saved.snackbar.undo` (superseded: the banner id plus code-owned text cover them).
+and `settings.back` (delivered with the Settings rebuild), `saved.unsave.<poseID>`, `saved.snackbar` and
+`saved.snackbar.undo` (delivered: the bar id, the Undo action id and the per-pose unsave id).
+`saved.offline` / `saved.rowOffline.<poseID>` are superseded — the banner id plus code-owned text cover
+them.

@@ -514,6 +514,104 @@ final class APSavedListTests: XCTestCase {
         )
     }
 
+    // MARK: - Ids the flows address (TC-SAV-003 / TC-SAV-010 / TC-SAV-014)
+
+    /// The row control's only other handle is the label "Remove from saved", which every row shares: a
+    /// flow that taps it cannot say which row it removed, so a wrong-row tap and a dead tap read the
+    /// same. The id carries the pose's stable id, so it survives a reload or a reorder.
+    ///
+    /// Mutation target: drop the pose id from `APSavedIdentifiers.unsave(poseID:)` (or return the row
+    /// id) and this goes red.
+    func testUnsaveIdentifierKeepsThePoseId() {
+        XCTAssertEqual(APSavedIdentifiers.unsave(poseID: "pose_1"), "saved.unsave.pose_1")
+        XCTAssertEqual(
+            APSavedIdentifiers.unsave(poseID: "b067ba28-5aa5-4a70-8f0c-8e892e1d978f"),
+            "saved.unsave.b067ba28-5aa5-4a70-8f0c-8e892e1d978f",
+            "the pose's own id is the suffix, not a row index"
+        )
+
+        // The ids the E2E lane already uses on a saved row are unchanged: the new one is additive.
+        XCTAssertEqual(APSavedIdentifiers.row(index: 0, poseID: "pose_1"), "poses.first-card")
+        XCTAssertEqual(APSavedIdentifiers.row(index: 3, poseID: "pose_1"), "poses.card.pose_1")
+        XCTAssertNotEqual(
+            APSavedIdentifiers.unsave(poseID: "pose_1"),
+            APSavedIdentifiers.row(index: 3, poseID: "pose_1"),
+            "the control and the link that opens the pose are separate elements, not one id"
+        )
+    }
+
+    /// The removal bar is found by id, so "the snackbar never appeared" stops being a guess about a
+    /// four-second window (`APSnackbar.autoDismissDelay`) and the pose name inside the copy.
+    @MainActor func testRemovalSnackbarCarriesTheFlowsIds() {
+        let offer = APSavedSnackbarRule.resolve(removedPoseName: "Pose a", canUndo: true, failure: nil)
+        XCTAssertEqual(offer?.identifiers.bar, "saved.snackbar")
+        XCTAssertEqual(offer?.identifiers.action, "saved.snackbar.undo")
+        XCTAssertEqual(APSnackbarIdentifiers.saved.bar, "saved.snackbar")
+        XCTAssertEqual(APSnackbarIdentifiers.saved.action, "saved.snackbar.undo")
+
+        // A failure bar is not the reversible offer: its action is a Dismiss, so it must never answer
+        // to the Undo id — a flow tapping it through `saved.snackbar.undo` would be exercising the
+        // wrong control.
+        let failure = APSavedSnackbarRule.resolve(
+            removedPoseName: nil,
+            canUndo: false,
+            failure: SavedMutationCopy.offline
+        )
+        XCTAssertEqual(failure?.kind, .dismiss)
+        XCTAssertEqual(failure?.identifiers.bar, "saved.snackbar", "the bar keeps its id on a failure")
+        XCTAssertNil(failure?.identifiers.action, "no Undo offer, no Undo id")
+
+        // A failed Undo keeps its retry offer, so it keeps the action id as well.
+        let retry = APSavedSnackbarRule.resolve(
+            removedPoseName: "Pose a",
+            canUndo: true,
+            failure: SavedMutationCopy.offline
+        )
+        XCTAssertEqual(retry?.kind, .undo)
+        XCTAssertEqual(retry?.identifiers.action, "saved.snackbar.undo")
+    }
+
+    /// Source-level, like the composition pin above: a hosted SwiftUI view materialises no
+    /// accessibility tree in this test host, so the wiring that puts the ids on the elements is what
+    /// is checked — the rows mount the per-pose id, the surface hands the bar its ids, and both
+    /// components actually apply them.
+    ///
+    /// Mutation target: remove `.apIdentifier(identifier)` from the tile, `.apIdentifier(identifiers?.bar)`
+    /// from the bar, `.apIdentifier(identifiers?.action)` from its action, or stop passing
+    /// `identifiers:` from `APSavedSurface` — each turns exactly one assertion below red.
+    func testIdsAreWiredFromTheRowAndTheBarToTheElements() throws {
+        let saved = try savedListSource()
+
+        let row = try XCTUnwrap(
+            Self.braceMatchedBlock("private func row(for pose: NativePose, index: Int)", in: saved)
+        )
+        XCTAssertTrue(
+            row.contains("identifier: APSavedIdentifiers.unsave(poseID: pose.id)"),
+            "the row's unsave control is addressed per pose, not by its shared label"
+        )
+
+        let tile = try XCTUnwrap(Self.braceMatchedBlock("struct APSavedUnsaveTile", in: saved))
+        XCTAssertTrue(tile.contains(".apIdentifier(identifier)"), "the tile applies the id it is given")
+        XCTAssertTrue(
+            tile.contains(".accessibilityLabel(\"Remove from saved\")"),
+            "the id is additive: the accessible name the flows read by text stays"
+        )
+
+        let surface = try XCTUnwrap(Self.braceMatchedBlock("struct APSavedSurface", in: saved))
+        XCTAssertTrue(
+            surface.contains("identifiers: snackbar?.identifiers"),
+            "the surface hands the bar the ids of the bar it is actually showing"
+        )
+
+        let snackbar = try snackbarSource()
+        let bar = try XCTUnwrap(Self.braceMatchedBlock("struct APSnackbar: View", in: snackbar))
+        XCTAssertTrue(bar.contains(".apIdentifier(identifiers?.bar)"), "the bar carries `saved.snackbar`")
+        XCTAssertTrue(
+            bar.contains(".apIdentifier(identifiers?.action)"),
+            "the action carries `saved.snackbar.undo`"
+        )
+    }
+
     // MARK: - Fixtures and helpers
 
     /// Reads the Saved list's own source: the composition a tap depends on is not observable at runtime
@@ -525,6 +623,19 @@ final class APSavedListTests: XCTestCase {
                 .deletingLastPathComponent() // iosAppTests
                 .deletingLastPathComponent() // iosApp (project dir)
                 .appendingPathComponent("iosApp/Features/Poses/APSavedList.swift"),
+            encoding: .utf8
+        )
+    }
+
+    /// The bar's own source: its ids are applied inside `APSnackbar`, which a unit test cannot mount
+    /// into an accessibility tree.
+    private func snackbarSource() throws -> String {
+        try String(
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent() // Features
+                .deletingLastPathComponent() // iosAppTests
+                .deletingLastPathComponent() // iosApp (project dir)
+                .appendingPathComponent("iosApp/Core/DesignSystem/APSnackbar.swift"),
             encoding: .utf8
         )
     }

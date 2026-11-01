@@ -3,6 +3,22 @@
 
 import SwiftUI
 
+/// The accessibility ids a snackbar can expose to a UI test: one for the bar, one for its action.
+///
+/// The bar's copy is code-owned and carries a name ("Removed <pose>"), so a flow that reads it by
+/// text has to know the name *and* catch it inside the four-second window. The Saved removal bar is
+/// the only one a flow has to address without reading that copy, so its ids are named where the
+/// flows name them — and the action's id is the action's, never the bar's.
+struct APSnackbarIdentifiers: Equatable {
+    /// The bar itself.
+    var bar: String
+    /// The bar's action control, when it has one.
+    var action: String?
+
+    /// `saved.snackbar` / `saved.snackbar.undo`: the Saved surface's removal and its Undo offer.
+    static let saved = APSnackbarIdentifiers(bar: "saved.snackbar", action: "saved.snackbar.undo")
+}
+
 struct APSnackbar: View {
     /// How long a snackbar stays before it dismisses itself (F5: it never parks on screen).
     static let autoDismissDelay: TimeInterval = 4
@@ -12,6 +28,9 @@ struct APSnackbar: View {
     var actionTitle: String?
     var action: (() -> Void)?
     var onDismiss: (() -> Void)?
+    /// Ids for the flows that have to find this bar; `nil` keeps a label-only bar, which is what the
+    /// surfaces without a flow of their own still use.
+    var identifiers: APSnackbarIdentifiers?
     /// Overridable so a test does not have to wait four seconds.
     var autoDismissAfter: TimeInterval = APSnackbar.autoDismissDelay
 
@@ -32,6 +51,7 @@ struct APSnackbar: View {
                     .font(AP.Font.supporting.weight(.semibold))
                     .foregroundStyle(AP.Color.accentText)
                     .apMinimumHitTarget()
+                    .apIdentifier(identifiers?.action)
             }
         }
         .padding(.horizontal, AP.Space.space16)
@@ -43,6 +63,7 @@ struct APSnackbar: View {
         .apElevation(.e1, cornerRadius: AP.Radius.radius16)
         .accessibilityElement(children: action == nil ? .combine : .contain)
         .accessibilityLabel(message)
+        .apIdentifier(identifiers?.bar)
         .onTapGesture { onDismiss?() }
         // Announced once, then dismissed: the task id is the message, so a new snackbar restarts the
         // clock and a disappearing one cancels it.
@@ -65,7 +86,8 @@ extension View {
         tone: APStateTone = .error,
         actionTitle: String? = nil,
         action: (() -> Void)? = nil,
-        onDismiss: (() -> Void)? = nil
+        onDismiss: (() -> Void)? = nil,
+        identifiers: APSnackbarIdentifiers? = nil
     ) -> some View {
         safeAreaInset(edge: .bottom, spacing: 0) {
             if let message, !message.isEmpty {
@@ -74,7 +96,8 @@ extension View {
                     message: message,
                     actionTitle: actionTitle,
                     action: action,
-                    onDismiss: onDismiss
+                    onDismiss: onDismiss,
+                    identifiers: identifiers
                 )
                 .padding(.horizontal, AP.Space.space16)
                 .padding(.bottom, AP.Space.space12)
