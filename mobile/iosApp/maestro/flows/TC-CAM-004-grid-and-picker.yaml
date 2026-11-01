@@ -8,6 +8,14 @@ tags: [TC-CAM-004, p0]
     id: "camera.tools"
 - tapOn:
     id: "camera.tools.grid"
+# Build 18+: `cameraToolsPopup` is the last child of the camera's root ZStack and lays a full-screen
+# `Color.clear` catcher over everything, bottom bar included (CameraFeature.swift, cameraToolsPopup).
+# Leaving the popover open therefore swallows the next tap: it dismisses the popover instead of
+# opening the sheet. Dismiss it explicitly, and prove it went away.
+- tapOn:
+    point: "20%,45%"
+- assertNotVisible:
+    id: "camera.tools.flash"
 # The Browse card is the strip's last card and only exists once the catalogue has loaded, so wait for
 # it instead of assuming it: a clean launch may still be showing skeleton cards.
 - extendedWaitUntil:
@@ -16,7 +24,17 @@ tags: [TC-CAM-004, p0]
     timeout: 20000
 - tapOn:
     id: "camera.choosePose"
-- assertVisible:
-    id: "posePicker.search"
+# The sheet is an in-place overlay: its search field and grid are there as soon as it opens.
+- extendedWaitUntil:
+    visible:
+      id: "posePicker.search"
+    timeout: 15000
 - assertVisible:
     id: "posePicker.grid"
+- tapOn:
+    id: "posePicker.close"
+- assertNotVisible:
+    id: "posePicker.grid"
+# The framing grid the tools toggle just switched on stays on behind the sheet.
+- assertVisible:
+    id: "camera.tools"

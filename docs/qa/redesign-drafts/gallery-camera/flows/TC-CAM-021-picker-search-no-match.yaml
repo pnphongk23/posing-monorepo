@@ -1,4 +1,10 @@
 # TC-CAM-021 the pose sheet's search filters by name and its no-match state is the shared panel
+#
+# PARKED (doc/flow only, not in maestro/flows): on dev20 this flow hung the suite for ~10 minutes after
+# `- inputText: "zzzqx"`. Nothing in the flow waits without a timeout — every extendedWaitUntil has one —
+# so the block is Maestro's typing step waiting for a software keyboard that never appears on a Simulator
+# with a hardware keyboard attached (XCTest typeText). Promote it again only with a keyboard-safe step
+# (or after the picker gains a query fixture), otherwise it can stall the whole default suite.
 appId: ${APP_ID}
 tags: [TC-CAM-021, p1]
 ---
@@ -8,6 +14,11 @@ tags: [TC-CAM-021, p1]
 # on screen; the tap still opens the full picker sheet (search + All/Saved).
 - assertVisible:
     id: "camera.poseStrip"
+# The Browse card is the strip's last card and only exists once the catalogue has loaded.
+- extendedWaitUntil:
+    visible:
+      id: "camera.choosePose"
+    timeout: 20000
 - tapOn:
     id: "camera.choosePose"
 # Wait for the catalogue: the no-match claim below is only meaningful over a loaded grid.
@@ -16,8 +27,11 @@ tags: [TC-CAM-021, p1]
       id: "posePicker.grid"
     timeout: 20000
 # A query that cannot match any pose name empties the grid and shows the shared state panel instead.
+- assertVisible:
+    id: "posePicker.search"
 - tapOn:
     id: "posePicker.search"
+# Keyboard-dependent: this is the step that hung on the Simulator (see the header note).
 - inputText: "zzzqx"
 - extendedWaitUntil:
     visible:
