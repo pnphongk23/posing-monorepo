@@ -255,3 +255,47 @@ struct APAddPoseDelivery: ViewModifier {
         content.onAppear { request.deliver() }
     }
 }
+
+// MARK: - The Add pose entry's session gate
+
+/// The session gate every Add pose entry runs through: the Poses header `+`, the More menu row, the
+/// Gallery header `+` and the Gallery detail's Add pose.
+///
+/// The Gallery entries hand their request to the Poses tab, which rebuilds `PosesScreen` — and with it
+/// the `SessionPresenceModel` — so the request arrives before the session has been read back from
+/// storage. Answering at that instant treats a signed-in user as signed out and shows the sign-in
+/// prompt. A request that lands before the first read is therefore held, not answered: the prompt
+/// only appears once the session is known, and a restored session opens the flow instead.
+struct APAddPoseGate {
+    enum Step: Equatable {
+        /// The session is signed in: open the Add pose flow.
+        case open
+        /// The session is signed out: ask the user to sign in.
+        case askSignIn
+        /// The session has not been read yet: hold the request and show nothing.
+        case waitForSession
+    }
+
+    /// The answer for the session state right now.
+    static func step(isResolved: Bool, isSignedIn: Bool) -> Step {
+        guard isResolved else { return .waitForSession }
+        return isSignedIn ? .open : .askSignIn
+    }
+
+    /// `true` while a request waits for the first session read.
+    private(set) var isHolding = false
+
+    /// An Add pose entry was used.
+    mutating func request(isResolved: Bool, isSignedIn: Bool) -> Step {
+        let step = Self.step(isResolved: isResolved, isSignedIn: isSignedIn)
+        isHolding = step == .waitForSession
+        return step
+    }
+
+    /// The session was read: answer the held request now, exactly once.
+    mutating func sessionRead(isSignedIn: Bool) -> Step? {
+        guard isHolding else { return nil }
+        isHolding = false
+        return Self.step(isResolved: true, isSignedIn: isSignedIn)
+    }
+}

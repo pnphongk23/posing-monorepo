@@ -864,6 +864,9 @@ struct PosesScreen: View {
     @State private var showsSearch = false
     @State private var pendingSignIn: SignInIntent?
     @State private var route: PosesRoute?
+    /// Holds an Add pose request that landed before this rebuilt screen read the session, so a
+    /// signed-in user is not shown the sign-in prompt (see `APAddPoseGate`).
+    @State private var addPoseGate = APAddPoseGate()
     /// The pose detail being restored after a camera visit; `nil` whenever nothing has to be re-pushed.
     @State private var resumedPose: CameraPoseRequest?
 
@@ -912,6 +915,12 @@ struct PosesScreen: View {
             onResumeHandled()
         }
         .onChange(of: model.filter) { _ in Task { await model.load() } }
+        // The session read finishes a moment after this rebuilt screen appears; a request that arrived
+        // before it is answered here instead of being treated as signed out.
+        .onChange(of: session.isResolved) { resolved in
+            guard resolved, let step = addPoseGate.sessionRead(isSignedIn: session.isSignedIn) else { return }
+            applyAddPoseStep(step)
+        }
         .onChange(of: addPoseRequest) { _ in
             guard APAddPoseSignal.shouldOpen(
                 canExtract: AppConfig.canExtractPose(isEnabled: AppConfig.shared.isExtractPoseEnabled),
@@ -1144,10 +1153,20 @@ struct PosesScreen: View {
     private func openAddPose() {
         guard AppConfig.canExtractPose(isEnabled: AppConfig.shared.isExtractPoseEnabled) else { return }
         setShowsMoreMenu(false)
-        if session.isSignedIn {
-            route = .addPose
-        } else {
+        applyAddPoseStep(addPoseGate.request(isResolved: session.isResolved, isSignedIn: session.isSignedIn))
+    }
+
+    /// The Add pose entry's answer: open the flow, ask for a session, or wait for the session read.
+    private func applyAddPoseStep(_ step: APAddPoseGate.Step) {
+        switch step {
+        case .open:
+            // A held request that resolves while another route is already up is dropped: the user is
+            // looking at that route now.
+            if route == nil { route = .addPose }
+        case .askSignIn:
             pendingSignIn = .addPose
+        case .waitForSession:
+            break
         }
     }
 
