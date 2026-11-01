@@ -2580,6 +2580,9 @@ private struct CameraToolsPopup: View {
         )
         .disabled(!controlsEnabled)
         .opacity(controlsEnabled ? 1 : 0.45)
+        // A container, not a single element: each Ratio choice keeps its own identifier
+        // (`camera.tools.ratio.*`) while the row keeps `camera.tools.ratio`.
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("camera.tools.ratio")
     }
 
@@ -2636,6 +2639,9 @@ private struct CameraToolsPopup: View {
         )
         .disabled(!controlsEnabled)
         .opacity(controlsEnabled ? 1 : 0.45)
+        // A container, not a single element: each Timer choice keeps its own identifier
+        // (`camera.tools.timer.*`) while the row keeps `camera.tools.timer`.
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("camera.tools.timer")
     }
 
