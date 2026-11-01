@@ -515,9 +515,10 @@ final class CameraFeatureTests: XCTestCase {
         XCTAssertEqual(AP.HitTarget.minimum, 44, "the anchor is the bar's 44 pt control plus 8 pt")
     }
 
-    func testPopupKeepsItsWidthAndHeightCap() {
+    /// The width is the prototype's fixed 264; the height is not a constant any more — it is the safe
+    /// area the popover is given (`CameraChromeContractTests.testTheToolsPopoverUsesTheHeightItsSafeAreaHas`).
+    func testPopupKeepsItsWidth() {
         XCTAssertEqual(CameraProto.popupWidth, 264)
-        XCTAssertEqual(CameraProto.popupMaxHeight, 420)
     }
 
     // MARK: Pose picker stick figures
@@ -2146,6 +2147,121 @@ final class CameraChromeContractTests: XCTestCase {
         XCTAssertEqual(CameraTimerSetting.threeSeconds.accessibilityIdentifier, "camera.tools.timer.3s")
         XCTAssertEqual(CameraTimerSetting.tenSeconds.accessibilityIdentifier, "camera.tools.timer.10s")
         XCTAssertEqual(CameraAspectRatio.threeFour.accessibilityIdentifier, "camera.tools.ratio.3x4")
+    }
+
+    // MARK: The popover, rendered
+
+    /// What the fix is for, measured on a rendered frame: with a pose guide up the popover paints every
+    /// one of its control blocks down to the line-colour row. Before, the card stopped at the Ratio row
+    /// (the viewport band) and the four guide rows were laid out past the clip, where a tap landed on
+    /// nothing.
+    func testTheToolsPopoverPaintsItsGuideRowsInsideTheSafeArea() throws {
+        var guide: NativePose? = NativePose(
+            id: "p1",
+            name: "Warrior II",
+            category: "Yoga",
+            imageURL: nil,
+            instructions: [],
+            isSaved: false
+        )
+        let model = CameraViewModel()
+        model.coordinator.onPermissionResult(.authorized)
+        // The chrome is not the subject: the popover gets the screen, the strip stays collapsed.
+        model.collapsePickerStrip()
+        model.openCameraTools()
+
+        let screen = CameraScreen(
+            guide: Binding(get: { guide }, set: { guide = $0 }),
+            poseService: PreviewPoseService(),
+            model: model
+        )
+        let size = CGSize(width: 393, height: 852)
+        let bitmap = try XCTUnwrap(render(screen, size: size))
+
+        // One column inside the popover's rows: the pills start 12 pt in from the card's edge, and the
+        // column sits left of every glyph and label, so it samples the row's fill only.
+        let bands = controlFillBands(bitmap, column: 130)
+        XCTAssertGreaterThanOrEqual(
+            bands.count, 9,
+            "flash · grid · timer · ratio · pose guide · mirror · opacity · scale · line colour"
+        )
+
+        let last = try XCTUnwrap(bands.last)
+        XCTAssertGreaterThan(
+            last.upperBound, 760,
+            "the line-colour row is painted at the bottom of the safe area, not clipped at the Ratio row"
+        )
+        XCTAssertLessThan(last.upperBound, Int(size.height) - 8, "and it stays inside the screen")
+    }
+
+    /// The rows that paint `controlFill` at one x, as contiguous bands.
+    private func controlFillBands(_ bitmap: APBitmap, column: Int) -> [ClosedRange<Int>] {
+        let fill = APColorTokens.controlFill.spec(for: .dark).hex ?? 0
+        let target = (red: Int((fill >> 16) & 0xFF), green: Int((fill >> 8) & 0xFF), blue: Int(fill & 0xFF))
+        var bands: [ClosedRange<Int>] = []
+        var start: Int?
+        for y in 0..<bitmap.height {
+            let pixel = bitmap.color(x: column, y: y)
+            let isFill = pixel.map { pixel in
+                pixel.alpha > 200
+                    && abs(pixel.red - target.red) <= 6
+                    && abs(pixel.green - target.green) <= 6
+                    && abs(pixel.blue - target.blue) <= 6
+            } ?? false
+            if isFill, start == nil {
+                start = y
+            } else if !isFill, let opened = start {
+                bands.append(opened...(y - 1))
+                start = nil
+            }
+        }
+        if let opened = start { bands.append(opened...(bitmap.height - 1)) }
+        return bands
+    }
+
+    /// Deterministic dark render of a screen, as the guide-tint evidence does it.
+    private func render<Content: View>(_ view: Content, size: CGSize) -> APBitmap? {
+        let host = UIHostingController(rootView: view)
+        host.overrideUserInterfaceStyle = .dark
+        host.view.frame = CGRect(origin: .zero, size: size)
+        host.view.backgroundColor = .clear
+        host.view.isOpaque = false
+        host.view.layoutIfNeeded()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.08))
+        host.view.setNeedsLayout()
+        host.view.layoutIfNeeded()
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = 1
+        format.opaque = false
+        let image = UIGraphicsImageRenderer(size: size, format: format).image { _ in
+            host.view.drawHierarchy(in: CGRect(origin: .zero, size: size), afterScreenUpdates: true)
+        }
+        return APBitmap(image: image)
+    }
+
+    // MARK: The tools popover's height
+
+    /// The popover may use the whole safe area under the top bar. A fixed cap is shorter than the
+    /// menu's own content once a pose guide is in place, which is how Mirror / Opacity / Scale / Line
+    /// colour ended up outside the popover's clip — in the accessibility tree, hittable by nobody.
+    func testTheToolsPopoverUsesTheHeightItsSafeAreaHas() {
+        // 393×852 phone, bottom safe area 34: 818 pt of safe height, top bar under-side at 62 + 44 + 8.
+        let phone = CameraToolsPopupMetrics.maxHeight(available: 818, topBarBottom: 114)
+        XCTAssertGreaterThan(phone, 420, "no fixed 420 cap: the guide rows need the space that exists")
+        XCTAssertEqual(phone, 818 - 114 - AP.Space.space16, accuracy: 0.001)
+        XCTAssertLessThanOrEqual(phone, 818 - 114, "the popover never leaves the safe area it was given")
+
+        let short = CameraToolsPopupMetrics.maxHeight(available: 260, topBarBottom: 200)
+        XCTAssertEqual(short, CameraToolsPopupMetrics.minHeight, "a cramped screen keeps a scrollable window")
+    }
+
+    /// The view must ask the metric, so the fixed cap cannot come back as a constant.
+    func testThePopoverHeightIsComputedFromTheSafeArea() throws {
+        let source = try cameraFeatureSource()
+        XCTAssertTrue(
+            source.contains("CameraToolsPopupMetrics.maxHeight("),
+            "the popover's cap is computed from the space that exists"
+        )
     }
 
     // MARK: - Source helpers

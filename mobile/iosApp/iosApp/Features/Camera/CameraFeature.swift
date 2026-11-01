@@ -1125,6 +1125,8 @@ struct CameraScreen: View {
                 )
                 .zIndex(2)
             }
+
+            cameraToolsPopup
         }
         .animation(reduceMotion ? nil : .easeOut(duration: 0.25), value: model.showPosePicker)
         .animation(reduceMotion ? nil : .easeOut(duration: 0.1), value: model.showCameraTools)
@@ -1188,62 +1190,7 @@ struct CameraScreen: View {
 
     private var viewport: some View {
         GeometryReader { proxy in
-            let size = proxy.size
-            ZStack(alignment: .bottomTrailing) {
-                cameraCanvas(size: size)
-
-                // `.nb-camera-tools-menu` — anchored popup: below the tools control, no scrim, no
-                // handle, no app-bar Close.
-                if model.showCameraTools {
-                    // Outside tap dismisses without a visible scrim.
-                    Color.clear
-                        .contentShape(Rectangle())
-                        .onTapGesture { dismissCameraTools() }
-                        .accessibilityHidden(true)
-
-                    VStack(spacing: 0) {
-                        CameraToolsPopup(
-                            flashSetting: model.flashSetting,
-                            isGridVisible: model.isGridVisible,
-                            controlsEnabled: model.cameraControlsEnabled,
-                            hasPose: guide != nil,
-                            isPoseGuideVisible: model.isPoseGuideVisible,
-                            guideFlipped: model.guideFlipped,
-                            timerSetting: model.timerSetting,
-                            aspectRatio: model.aspectRatio,
-                            guideOpacity: model.guideOpacity,
-                            guideScale: model.guideTransform.scale,
-                            guideLineColor: model.guideLineColor,
-                            popupWidth: min(CameraProto.popupWidth, size.width - CameraProto.controlInset * 2),
-                            popupMaxHeight: max(
-                                AP.Space.space48,
-                                min(
-                                    size.height - CameraProto.topControlsTop - topBarHeight - AP.Space.space16,
-                                    CameraProto.popupMaxHeight
-                                )
-                            ),
-                            onFlashTap: { model.cycleFlash() },
-                            onGridToggle: { model.toggleGrid() },
-                            onPoseGuideVisibilityToggle: { model.togglePoseGuideVisibility() },
-                            onMirrorToggle: { model.toggleGuideMirror() },
-                            onTimerChange: { model.setTimerSetting($0) },
-                            onAspectRatioChange: { model.setAspectRatio($0) },
-                            onGuideScaleChange: { model.setGuideScale($0) },
-                            onGuideScaleReset: { model.resetGuideTransform() },
-                            onGuideOpacityChange: { model.setGuideOpacity($0) },
-                            onGuideLineColorChange: { model.setGuideLineColor($0) },
-                            onDismiss: { dismissCameraTools() }
-                        )
-                        .padding(.top, CameraProto.topControlsTop + topBarHeight + AP.Space.space8)
-                        .padding(.trailing, CameraProto.controlInset)
-                        Spacer(minLength: 0)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .trailing)
-                    .transition(.opacity
-                        .combined(with: .offset(y: -AP.Space.space8))
-                        .combined(with: .scale(scale: 0.98, anchor: .topTrailing)))
-                }
-            }
+            cameraCanvas(size: proxy.size)
         }
         .overlay(alignment: .top) {
             topControls
@@ -1301,6 +1248,61 @@ struct CameraScreen: View {
         model.closeCameraTools()
         // Focus returns to the More control (`guide-picker.js` `setOpen(false)` → `openButton.focus()`).
         isToolsButtonFocused = true
+    }
+
+    /// `.nb-camera-tools-menu` — the anchored popup: below the tools control, no scrim, no handle, no
+    /// app-bar Close. It is hosted above the bottom chrome rather than inside the viewport so it can use
+    /// the whole safe area it sits in: with a pose guide up the menu carries eleven rows, and a cap
+    /// shorter than that content clipped the guide rows inside the popover's own scroll view — present in
+    /// the accessibility tree, hittable by nobody.
+    @ViewBuilder private var cameraToolsPopup: some View {
+        if model.showCameraTools {
+            GeometryReader { proxy in
+                let popupTop = CameraProto.topControlsTop + topBarHeight + AP.Space.space8
+                ZStack(alignment: .topTrailing) {
+                    // Outside tap dismisses without a visible scrim.
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onTapGesture { dismissCameraTools() }
+                        .accessibilityHidden(true)
+
+                    CameraToolsPopup(
+                        flashSetting: model.flashSetting,
+                        isGridVisible: model.isGridVisible,
+                        controlsEnabled: model.cameraControlsEnabled,
+                        hasPose: guide != nil,
+                        isPoseGuideVisible: model.isPoseGuideVisible,
+                        guideFlipped: model.guideFlipped,
+                        timerSetting: model.timerSetting,
+                        aspectRatio: model.aspectRatio,
+                        guideOpacity: model.guideOpacity,
+                        guideScale: model.guideTransform.scale,
+                        guideLineColor: model.guideLineColor,
+                        popupWidth: min(CameraProto.popupWidth, proxy.size.width - CameraProto.controlInset * 2),
+                        popupMaxHeight: CameraToolsPopupMetrics.maxHeight(
+                            available: proxy.size.height,
+                            topBarBottom: popupTop
+                        ),
+                        onFlashTap: { model.cycleFlash() },
+                        onGridToggle: { model.toggleGrid() },
+                        onPoseGuideVisibilityToggle: { model.togglePoseGuideVisibility() },
+                        onMirrorToggle: { model.toggleGuideMirror() },
+                        onTimerChange: { model.setTimerSetting($0) },
+                        onAspectRatioChange: { model.setAspectRatio($0) },
+                        onGuideScaleChange: { model.setGuideScale($0) },
+                        onGuideScaleReset: { model.resetGuideTransform() },
+                        onGuideOpacityChange: { model.setGuideOpacity($0) },
+                        onGuideLineColorChange: { model.setGuideLineColor($0) },
+                        onDismiss: { dismissCameraTools() }
+                    )
+                    .padding(.top, popupTop)
+                    .padding(.trailing, CameraProto.controlInset)
+                    .transition(.opacity
+                        .combined(with: .offset(y: -AP.Space.space8))
+                        .combined(with: .scale(scale: 0.98, anchor: .topTrailing)))
+                }
+            }
+        }
     }
 
     private func cameraCanvas(size: CGSize) -> some View {
@@ -1513,7 +1515,6 @@ enum CameraProto {
 
     // `.nb-camera-tools-menu`
     static let popupWidth: CGFloat = 264
-    static let popupMaxHeight: CGFloat = 420
 
     // `.nb-pose-picker-panel`
     static let pickerMaxHeight: CGFloat = 700
@@ -1524,6 +1525,23 @@ enum CameraProto {
     static let railInset: CGFloat = 24
     static let railControl: CGFloat = 48
     static let shutterSize: CGFloat = 72
+}
+
+/// `.nb-camera-tools-menu` height: the prototype's `max-height` is a cap, not a target. The menu carries
+/// eleven rows once a pose guide is in place, and on a phone that content is taller than a fixed cap — so
+/// the guide rows were clipped inside the popover's own scroll view: present in the accessibility tree,
+/// hittable by nobody. The popover may use the whole safe area it is given instead.
+enum CameraToolsPopupMetrics {
+    /// Floor: a cramped screen still gets a scrollable window rather than a sliver.
+    static let minHeight = AP.Space.space48
+
+    static func maxHeight(
+        available: CGFloat,
+        topBarBottom: CGFloat,
+        bottomMargin: CGFloat = AP.Space.space16
+    ) -> CGFloat {
+        max(minHeight, available - topBarBottom - bottomMargin)
+    }
 }
 
 // MARK: - Camera chrome (AP tokens, forced dark)
@@ -2327,8 +2345,10 @@ private struct CameraToolsPopup: View {
         .accessibilityAction(.escape) { onDismiss() }
     }
 
+    /// A four-point rhythm: the menu carries eleven rows once a pose guide is up, and at the row spacing
+    /// of the rest of the chrome the guide section fell below the fold of the safe area it is given.
     private var content: some View {
-        VStack(alignment: .leading, spacing: AP.Space.space8) {
+        VStack(alignment: .leading, spacing: AP.Space.space4) {
             row(
                 systemImage: flashSetting.symbolName,
                 title: "Flash",
