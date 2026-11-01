@@ -40,6 +40,11 @@ yarn-error.log*
 # env files (can opt-in for committing if needed)
 .env*
 
+# iOS build-time secrets: the RevenueCat public SDK key lives here, untracked.
+# Only the tracked template is allowed through.
+mobile/.env
+!mobile/.env.example
+
 # vercel
 .vercel
 

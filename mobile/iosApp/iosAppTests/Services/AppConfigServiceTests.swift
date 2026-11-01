@@ -386,6 +386,7 @@ final class AppConfigServiceTests: XCTestCase {
 
     func testRejectsPlaceholderRevenueCatKey() {
         XCTAssertFalse(AppConfigService.isValidRevenueCatKey("REPLACE_WITH_DEV_PUBLIC_SDK_KEY"))
+        XCTAssertFalse(AppConfigService.isValidRevenueCatKey("REPLACE_WITH_PROD_PUBLIC_SDK_KEY"))
         XCTAssertFalse(AppConfigService.isValidRevenueCatKey("$(REVENUECAT_PUBLIC_SDK_KEY)"))
         XCTAssertFalse(AppConfigService.isValidRevenueCatKey("example_key"))
         XCTAssertFalse(AppConfigService.isValidRevenueCatKey(nil))

@@ -695,6 +695,7 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = 29DCA9F0B3A40325067EB163 /* Build configuration list for PBXNativeTarget "iosApp" */;
 			buildPhases = (
+				8DFDB928CCF3908BEE7606BC /* RevenueCat key provenance (Release-Prod) */,
 				297B59D9CE634556D6007C40 /* Sources */,
 				1623B02D10928C8101C1F806 /* Resources */,
 				EF8A6E9BFD470986D9D5C9B5 /* Frameworks */,
@@ -805,6 +806,29 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		8DFDB928CCF3908BEE7606BC /* RevenueCat key provenance (Release-Prod) */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "RevenueCat key provenance (Release-Prod)";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "if [ \"${CONFIGURATION}\" != \"Release-Prod\" ]; then\n  exit 0\nfi\n\nkey=\"${REVENUECAT_PUBLIC_SDK_KEY:-}\"\nenv_file=\"$(cd \"$SRCROOT/..\" && pwd)/.env\"\n\n# Never print the value: classify its shape only.\nshape=other\ncase \"$key\" in\n  '') shape=unset ;;\n  appl_*) shape=app_store_key ;;\n  test_*) shape=test_store_key ;;\n  REPLACE_WITH* | '$(REVENUECAT_PUBLIC_SDK_KEY)') shape=placeholder ;;\nesac\n\nif [ \"$shape\" = app_store_key ]; then\n  exit 0\nfi\n\necho \"error: Release-Prod needs the RevenueCat App Store public SDK key (appl_…).\" >&2\necho \"error: REVENUECAT_PUBLIC_SDK_KEY resolved to $shape.\" >&2\nif [ -f \"$env_file\" ]; then\n  echo \"error: $env_file exists; check its REVENUECAT_PUBLIC_SDK_KEY line.\" >&2\nelse\n  echo \"error: $env_file is missing. This worktree is untracked-key-free by design:\" >&2\n  echo \"error: copy mobile/.env from the main checkout (template: mobile/.env.example) before archiving.\" >&2\nfi\nexit 1\n";
+			showEnvVarsInLog = 0;
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		297B59D9CE634556D6007C40 /* Sources */ = {

@@ -19,34 +19,63 @@ builds stay unconfigured on purpose until a local file supplies one.
 `posing_pro`, which must be the entitlement identifier in the RevenueCat
 dashboard, character for character.
 
-`REVENUECAT_PUBLIC_SDK_KEY` is not committed. The real key — including a
-RevenueCat **Test Store** key (`test_…`) — goes into
-`mobile/iosApp/Config/Secrets.local.xcconfig`, which is gitignored
-(`mobile/iosApp/Config/*.local.xcconfig`) and must never be added to a commit.
+`REVENUECAT_PUBLIC_SDK_KEY` is not committed either. The real App Store key
+(`appl_…`) lives in `mobile/.env`, which is gitignored, and every
+`Config/*.xcconfig` reads it with an optional include placed **after** its own
+placeholder line:
 
-Only `Config/Dev-Debug.xcconfig` includes it, and only as its **last** line:
+```
+#include? "../../.env"
+```
+
+- `mobile/.env.example` is the tracked template: copy it to `mobile/.env` and
+  fill in the key. One `KEY=VALUE` per line and `//` comments only — the file is
+  included by xcconfig, where a `#` line other than an `#include` is a parse
+  error.
+- The include is optional and last, so xcconfig's last-assignment-wins order
+  makes the real key override the committed placeholder. Without the file the
+  build resolves the placeholder, `isValidRevenueCatKey` rejects it, and the app
+  stays unconfigured (capture fails open) — which is why `scripts/ios-verify.sh`
+  is green on a tree without any local key file.
+- `Release-Prod` refuses to build without it: the target's first build phase,
+  "RevenueCat key provenance (Release-Prod)", fails with
+  `error: Release-Prod needs the RevenueCat App Store public SDK key (appl_…)`
+  when the resolved value is unset, a `REPLACE_WITH_…` placeholder, or a `test_…`
+  key. Other configurations exit that phase immediately.
+- The key is public and shippable — it is compiled into the app bundle — so
+  keeping it out of the repository is tidiness and release hygiene, not secrecy.
+  It is present in older commits; do not rewrite history for it.
+- Release worktrees are clean checkouts and therefore have no `mobile/.env`:
+  copy it in **before** archiving (e.g. `cp /path/to/main/checkout/mobile/.env
+  mobile/.env` in `/tmp/rel-1.1`). `/tmp` is wiped on reboot, so the main
+  checkout's copy is the one to keep, and a worktree's `.env` goes away with the
+  worktree.
+
+A RevenueCat **Test Store** key (`test_…`) is a different thing: it points at a
+fake store, so it goes into `mobile/iosApp/Config/Secrets.local.xcconfig`
+(gitignored via `mobile/iosApp/Config/*.local.xcconfig`), and only
+`Config/Dev-Debug.xcconfig` includes it, as its **last** line:
 
 ```
 #include? "Secrets.local.xcconfig"
 ```
 
-- `#include?` is optional, so a tree without the file still builds: `Debug-Dev`
-  resolves to the committed placeholder and the app is unconfigured, which is why
-  `scripts/ios-verify.sh` is green without the secret.
-- It sits last because xcconfig settings resolve top-down and the last assignment
-  wins; above the placeholder it would have no effect.
+- It sits after both the placeholder and the `mobile/.env` include because
+  xcconfig settings resolve top-down and the last assignment wins; above them it
+  would have no effect. That also means a `Debug-Dev` build with both files uses
+  the Test Store key.
 - `Dev-Release`, `Prod-Debug` and `Prod-Release` must never include it. A Test
   Store key points at a fake store, where purchases succeed and entitlements flip
-  without money moving — so it belongs in a Debug-Dev build and nowhere else. The
-  `Debug-Prod`/`Release-Prod` configurations keep the committed App Store key
-  (`appl_…`, public and shippable).
+  without money moving — so it belongs in a Debug-Dev build and nowhere else.
 - `RevenueCatConfigReleaseGuardTests` in
   `mobile/iosApp/iosAppTests/Services/AppConfigTests.swift` fails the Dev test run
   if any other configuration can reach a `*.local.xcconfig`, if any committed
   `REVENUECAT_PUBLIC_SDK_KEY` starts with `test_`, if `Dev-Debug` stops including
-  the file last, or if a configuration stops shipping `posing_pro`. It reads the
-  committed `.xcconfig` files and `Info.plist` only, and never opens the local
-  file.
+  the file last, if a configuration stops including `mobile/.env` after its
+  placeholder, if `mobile/.env.example` ever holds a usable key, or if a
+  configuration stops shipping `posing_pro`. It reads the committed `.xcconfig`
+  files, `.env.example` and `Info.plist` only, and never opens the local key
+  files.
 - The release gate repeats the key check on the archived bundle, because a
   `REVENUECAT_PUBLIC_SDK_KEY=…` on the `xcodebuild` line overrides the
   configurations and is invisible to any in-tree test. See
@@ -71,7 +100,8 @@ External dependencies, supplied outside this repository:
 
 - the public SDK key for each environment: the RevenueCat **Test Store** key for
   the local `Debug-Dev` lane, kept in `Config/Secrets.local.xcconfig` as described
-  above, and the committed App Store key for the PROD configurations;
+  above, and the App Store key (`appl_…`) for the PROD configurations, kept in
+  `mobile/.env` (template: `mobile/.env.example`) and never committed;
 - the dashboard entitlement `posing_pro`, already pinned in all four
   `Config/*.xcconfig` files. Renaming it in the dashboard means editing those four
   lines in the same change, or the paywall reports `unavailable`;
@@ -95,7 +125,9 @@ External dependencies, supplied outside this repository:
    localized price.
 3. The archived `Info.plist` value of `RevenueCatPublicSDKKey` does not start with
    `test_` (the check is in the TestFlight skill; a Test Store key is a
-   Debug-Dev-only key).
+   Debug-Dev-only key), and the `Release-Prod` build did not have to be forced
+   through the "RevenueCat key provenance" phase — that phase failing means
+   `mobile/.env` was missing from the worktree.
 4. A sandbox purchase shows the entitlement as active; a second account on the
    same device stays unentitled.
 5. Sign out, sign in again: the entitlement returns without tapping Restore.

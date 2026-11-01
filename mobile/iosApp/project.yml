@@ -67,6 +67,44 @@ targets:
       Release-Dev: Config/Dev-Release.xcconfig
       Debug-Prod: Config/Prod-Debug.xcconfig
       Release-Prod: Config/Prod-Release.xcconfig
+    preBuildScripts:
+      - name: RevenueCat key provenance (Release-Prod)
+        # The PROD public SDK key lives in the untracked mobile/.env, included by
+        # Config/Prod-Release.xcconfig. A clean release worktree without it would archive an
+        # unconfigured purchase build, so this fails the build instead. Every other configuration
+        # exits immediately; a placeholder there is a supported state (the adapter fail-opens).
+        basedOnDependencyAnalysis: false
+        showEnvVars: false
+        script: |
+          if [ "${CONFIGURATION}" != "Release-Prod" ]; then
+            exit 0
+          fi
+
+          key="${REVENUECAT_PUBLIC_SDK_KEY:-}"
+          env_file="$(cd "$SRCROOT/.." && pwd)/.env"
+
+          # Never print the value: classify its shape only.
+          shape=other
+          case "$key" in
+            '') shape=unset ;;
+            appl_*) shape=app_store_key ;;
+            test_*) shape=test_store_key ;;
+            REPLACE_WITH* | '$(REVENUECAT_PUBLIC_SDK_KEY)') shape=placeholder ;;
+          esac
+
+          if [ "$shape" = app_store_key ]; then
+            exit 0
+          fi
+
+          echo "error: Release-Prod needs the RevenueCat App Store public SDK key (appl_…)." >&2
+          echo "error: REVENUECAT_PUBLIC_SDK_KEY resolved to $shape." >&2
+          if [ -f "$env_file" ]; then
+            echo "error: $env_file exists; check its REVENUECAT_PUBLIC_SDK_KEY line." >&2
+          else
+            echo "error: $env_file is missing. This worktree is untracked-key-free by design:" >&2
+            echo "error: copy mobile/.env from the main checkout (template: mobile/.env.example) before archiving." >&2
+          fi
+          exit 1
   iosAppTests:
     type: bundle.unit-test
     platform: iOS

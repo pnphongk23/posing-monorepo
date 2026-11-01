@@ -144,6 +144,20 @@ ExportOptions outside the repository. Preserve marketing version and set a
 unique build via a temporary Info.plist or build override, then verify the
 archive plist before export.
 
+Copy `mobile/.env` into the worktree **before** archiving. It holds
+`REVENUECAT_PUBLIC_SDK_KEY`, is gitignored, and is therefore absent from any
+clean checkout — including `/tmp/rel-*` worktrees such as `/tmp/rel-1.1`;
+`Release-Prod` fails the "RevenueCat key provenance (Release-Prod)" build phase
+with `error: Release-Prod needs the RevenueCat App Store public SDK key (appl_…)`
+when it is missing. Copy it in and rebuild rather than working around the phase.
+`/tmp` is wiped on reboot, so the copy in the main checkout is the only one to
+keep; a `/tmp` worktree's `.env` is disposable and must be deleted with it.
+
+```bash
+[ -f mobile/.env ] || { echo "STOP: mobile/.env missing in $(pwd)"; exit 1; }
+# in a throwaway worktree: cp /path/to/main/checkout/mobile/.env mobile/.env
+```
+
 ```bash
 xcodebuild archive \
   -workspace mobile/iosApp/iosApp.xcworkspace \
@@ -171,10 +185,12 @@ any of them fails; do not work around a failure by editing the archive.
    value must not start with `test_`: a RevenueCat Test Store key is a fake store
    where purchases succeed and entitlements flip without money moving, and it is a
    `Debug-Dev`-only key (`mobile/iosApp/Config/Secrets.local.xcconfig`, included
-   only by `Config/Dev-Debug.xcconfig`). The production value is the committed
-   App Store key. Report whether the value is a placeholder
-   (`REPLACE_WITH_…`/`$(…)`) — a placeholder archive ships unconfigured and is not
-   a releasable purchase build.
+   only by `Config/Dev-Debug.xcconfig`). The App Store value is not committed: it
+   comes from the gitignored `mobile/.env`, which every `Config/*.xcconfig`
+   includes — a build that could not read it never reached the archive, because
+   the `Release-Prod` provenance phase fails first. Report whether the value is a
+   placeholder (`REPLACE_WITH_…`/`$(…)`) — a placeholder archive ships
+   unconfigured and is not a releasable purchase build.
 
 The commands print verdicts only, never the archived key value:
 

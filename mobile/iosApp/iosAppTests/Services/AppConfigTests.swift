@@ -354,8 +354,14 @@ private func flagsOutsideDebugOnlyBlocks(in source: String, flag: String) -> [St
 
 /// A RevenueCat **Test Store** key (`test_…`) is a fake store: a purchase succeeds and an
 /// entitlement flips without money moving. Shipping one to TestFlight would hand premium capture to
-/// anyone who taps Buy, so the real key lives in the gitignored `Secrets.local.xcconfig`, which only
-/// `Debug-Dev` includes — last, after the committed placeholder, so it wins.
+/// anyone who taps Buy, so the Test Store key lives in the gitignored `Secrets.local.xcconfig`,
+/// which only `Debug-Dev` includes — last, after the committed placeholder, so it wins.
+///
+/// The App Store key (`appl_…`) is not committed either: every configuration reads it from the
+/// gitignored `mobile/.env`, included after the placeholder, so a clean checkout resolves the
+/// placeholder (unconfigured, capture fail-open) while a release worktree copies `.env` in. A
+/// `Release-Prod` build that still resolves a placeholder is failed by the project's
+/// "RevenueCat key provenance" build phase, not by a test.
 ///
 /// Limit, stated on purpose: this reads the four committed `.xcconfig` files and `Info.plist`. A
 /// `REVENUECAT_PUBLIC_SDK_KEY=…` passed on the `xcodebuild` command line overrides all of it and is
@@ -390,21 +396,56 @@ final class RevenueCatConfigReleaseGuardTests: XCTestCase {
         )
     }
 
-    /// xcconfig settings resolve top-down and the last assignment wins, so the optional include has
-    /// to be the final line — above it, the committed placeholder would win over the real key.
+    /// xcconfig settings resolve top-down and the last assignment wins, so the optional Test Store
+    /// include has to be the final line — above it, the committed placeholder or the `mobile/.env`
+    /// App Store key would win over the Test Store key.
     func testDebugDevIncludesTheLocalFileAfterThePlaceholderItOverrides() throws {
-        let lines = try Self.text(of: Self.debugDev)
-            .split(separator: "\n")
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty && !$0.hasPrefix("//") }
+        let lines = try Self.settingsLines(of: Self.debugDev)
         XCTAssertEqual(lines.last, "#include? \"Secrets.local.xcconfig\"")
 
         let keyLine = try XCTUnwrap(lines.firstIndex { $0.hasPrefix(Self.sdkKeySetting) })
         XCTAssertLessThan(keyLine, lines.count - 1, "the include must follow the placeholder it overrides")
     }
 
-    /// Committed values only: `testOnlyDebugDevReachesALocalSecretFile` has already proven no other
-    /// configuration can pull a key in from a file, so each file's own assignment is the whole story.
+    /// Every configuration takes its real key from the same untracked `mobile/.env`, included after
+    /// the committed placeholder so the env value wins. That is what makes the App Store key a
+    /// one-line, one-place setup — and why a release worktree without `mobile/.env` archives an
+    /// unconfigured build instead of failing silently.
+    func testEveryConfigurationIncludesTheUntrackedEnvFileAfterItsPlaceholder() throws {
+        let include = "#include? \"../../.env\""
+        for configuration in Self.configurations {
+            let lines = try Self.settingsLines(of: configuration)
+            let envLine = try XCTUnwrap(
+                lines.firstIndex(of: include),
+                "\(configuration) must read mobile/.env, otherwise no build can reach the store"
+            )
+            let keyLine = try XCTUnwrap(lines.firstIndex { $0.hasPrefix(Self.sdkKeySetting) })
+            XCTAssertLessThan(keyLine, envLine, "the include must follow the placeholder it overrides")
+        }
+    }
+
+    /// The one file that is allowed to carry a real key is the untracked one the four committed
+    /// configurations point at, and it is a template, not a key. It stays a valid xcconfig fragment
+    /// — `//` comments only — so copying it to `mobile/.env` cannot break the build with a stray `#`.
+    func testTheTrackedEnvFileIsATemplateNotAKey() throws {
+        let template = try String(contentsOf: Self.envTemplate, encoding: .utf8)
+        let values = template.split(separator: "\n").compactMap { line -> String? in
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            guard !trimmed.hasPrefix("//"), !trimmed.hasPrefix("#"),
+                  let separator = trimmed.firstIndex(of: "=") else { return nil }
+            return String(trimmed[trimmed.index(after: separator)...]).trimmingCharacters(in: .whitespaces)
+        }
+
+        XCTAssertEqual(values.count, 1, "mobile/.env.example must define \(Self.sdkKeySetting) exactly once")
+        XCTAssertFalse(
+            AppConfigService.isValidRevenueCatKey(values.first),
+            "the tracked template must never hold a usable key"
+        )
+    }
+
+    /// Committed values only: the four files each carry a placeholder, and the `mobile/.env` they
+    /// include is untracked, so no `test_…` key can be committed through them. The include itself
+    /// is checked by `testEveryConfigurationIncludesTheUntrackedEnvFileAfterItsPlaceholder`.
     func testNoCommittedConfigurationCarriesATestStoreKey() throws {
         var offenders: [String] = []
         for configuration in Self.configurations {
@@ -451,15 +492,26 @@ final class RevenueCatConfigReleaseGuardTests: XCTestCase {
     // MARK: - xcconfig reading
 
     /// Configuration names reachable through `#include` / `#include?`, as paths relative to
-    /// `Config/`. A `*.local.xcconfig` is recorded but never opened.
+    /// `Config/`. A `*.local.xcconfig` is recorded but never opened, and an optional include of a
+    /// file that is absent here (a fresh clone has no `mobile/.env`) is recorded without being
+    /// opened either.
     private static func includeGraph(from configuration: String) throws -> [String] {
         var seen: Set<String> = []
         var pending = [configuration]
         while let next = pending.popLast() {
-            guard seen.insert(next).inserted, !next.hasSuffix(".local.xcconfig") else { continue }
-            pending.append(contentsOf: includes(in: try text(of: next)))
+            guard seen.insert(next).inserted else { continue }
+            guard !next.hasSuffix(".local.xcconfig"), let contents = try? text(of: next) else { continue }
+            pending.append(contentsOf: includes(in: contents))
         }
         return seen.sorted()
+    }
+
+    /// The meaningful, non-comment lines of a configuration file, in file order.
+    private static func settingsLines(of configuration: String) throws -> [String] {
+        try text(of: configuration)
+            .split(separator: "\n")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty && !$0.hasPrefix("//") }
     }
 
     private static func includes(in text: String) -> [String] {
@@ -503,6 +555,10 @@ final class RevenueCatConfigReleaseGuardTests: XCTestCase {
 
     private static var configDirectory: URL { projectDirectory.appendingPathComponent("Config", isDirectory: true) }
     private static var infoPlist: URL { projectDirectory.appendingPathComponent("iosApp/Info.plist") }
+    /// `mobile/.env.example` — two levels above the project directory.
+    private static var envTemplate: URL {
+        projectDirectory.deletingLastPathComponent().appendingPathComponent(".env.example")
+    }
 
     private static func text(of configuration: String) throws -> String {
         try String(contentsOf: configDirectory.appendingPathComponent(configuration), encoding: .utf8)
