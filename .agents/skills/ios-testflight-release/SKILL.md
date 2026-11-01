@@ -19,15 +19,19 @@ API tokens, issuer values, or private-key contents.
 - Bundle ID: `posing.camera.app`; team: `WZL67P53F2`.
 - Marketing version is `CFBundleShortVersionString` in
   `mobile/iosApp/iosApp/Info.plist`; current source version is `1.1`.
-  `CFBundleVersion` is also in that plist and is currently `14`; prior release
+  `CFBundleVersion` is also in that plist and is currently `19`; prior release
   used a temporary plist/override to ship build `4`. Discover the next unique
   build from App Store Connect before archiving; never assume the source build
   number equals the next available number.
-- Latest accepted build: `1.1 (4)`, processing state `VALID`,
-  `usesNonExemptEncryption=false`. The previous latest build was `1.0 (15)`;
-  older notes claiming build 3 are stale. The `1.0` train is closed. For a new
-  train, choose a marketing version greater than `1.1`; to add a build to an
-  open train, use a new unique build number.
+- Latest accepted build: `1.1 (19)`, processing state `VALID`,
+  `usesNonExemptEncryption=false`, Delivery UUID
+  `e987863e-e8ed-4e46-9df6-937b7e8d59f8`, uploaded once, and assigned to the
+  internal tester group `test`. The archive was cut from release commit
+  `1ae7734` on `release/1.1`; the build-number bump is on `main` as `5fef9bd`.
+  Previously recorded latest builds were `1.1 (4)` and `1.0 (15)`; older notes
+  claiming build 3 are stale. The `1.0` train is closed. For a new train,
+  choose a marketing version greater than `1.1`; to add a build to an open
+  train, use a new unique build number.
 - Apple’s Paid Applications Agreement (PLA) must be accepted before export
   with cloud signing. If Apple reports an agreement error, stop until the
   agreement is accepted and the change has propagated.
@@ -136,26 +140,54 @@ query above (or App Store Connect) and report the state actually observed.
 
 ## Archive and export
 
-Create a temporary work directory under `/tmp/aipose-release`. Use
-`-derivedDataPath /tmp/dd-shared`; reuse resolved packages with
+Keep every release artefact under `~/ai-pose-release/`: the archive, the export
+directory, `logs/`, `profiles/`, and `ExportOptions.plist`. Never use
+`/tmp/aipose-release` for them — `/tmp` is wiped on reboot, which would discard
+the archive, the IPA, the archive/export logs, the `ExportOptions.plist` and the
+fetched provisioning profiles, and the release evidence with them. Only
+`-derivedDataPath /tmp/dd-shared` stays in `/tmp`, because that is disposable
+build cache. Reuse resolved packages with
 `-clonedSourcePackagesDirPath /tmp/dd-shared/SourcePackages` and
 `-disableAutomaticPackageResolution` when needed. Keep temporary plist and
 ExportOptions outside the repository. Preserve marketing version and set a
 unique build via a temporary Info.plist or build override, then verify the
 archive plist before export.
 
-Copy `mobile/.env` into the worktree **before** archiving. It holds
-`REVENUECAT_PUBLIC_SDK_KEY`, is gitignored, and is therefore absent from any
-clean checkout — including `/tmp/rel-*` worktrees such as `/tmp/rel-1.1`;
-`Release-Prod` fails the "RevenueCat key provenance (Release-Prod)" build phase
-with `error: Release-Prod needs the RevenueCat App Store public SDK key (appl_…)`
-when it is missing. Copy it in and rebuild rather than working around the phase.
-`/tmp` is wiped on reboot, so the copy in the main checkout is the only one to
-keep; a `/tmp` worktree's `.env` is disposable and must be deleted with it.
+Name the artefacts per build, as build 19 did:
+`iosApp-<marketing>-<build>.xcarchive`, `export-<marketing>-<build>/` holding
+`posing.ipa`, `logs/archive-<marketing>-<build>.log`,
+`logs/export-<marketing>-<build>.log`,
+`profiles/posing.camera.app-testflight-<marketing>-<build>.mobileprovision`, and
+the shared `ExportOptions.plist`.
+
+A clean worktree — such as `/tmp/rel-<ver>` — is missing every gitignored build
+input. Copy each one in **before** archiving with `cp -p` (preserve mode and
+timestamps), and never print or echo the contents:
+
+- `mobile/iosApp/iosApp/GoogleService-Info.plist` — gitignored, but listed in the
+  `iosApp` target's Resources phase, so the archive fails without it.
+- `mobile/.env` — holds `REVENUECAT_PUBLIC_SDK_KEY`. Needed only on branches at
+  or after `70787d1` (KEY-ENV); before that commit, for example
+  `release/1.1@1ae7734`, the key still sits in the tracked `Config/*.xcconfig`
+  and no `.env` is involved.
+
+On a KEY-ENV branch the worktree `Release-Prod` fails the "RevenueCat key
+provenance (Release-Prod)" build phase with
+`error: Release-Prod needs the RevenueCat App Store public SDK key (appl_…)`
+when `.env` is missing. Copy it in and rebuild rather than working around the
+phase. `/tmp` is wiped on reboot, so the copies in the main checkout are the
+only ones to keep; a `/tmp` worktree's copies are disposable and must be deleted
+with it.
 
 ```bash
-[ -f mobile/.env ] || { echo "STOP: mobile/.env missing in $(pwd)"; exit 1; }
-# in a throwaway worktree: cp /path/to/main/checkout/mobile/.env mobile/.env
+SRC=/path/to/main/checkout
+[ -f "$SRC/mobile/iosApp/iosApp/GoogleService-Info.plist" ] \
+  || { echo "STOP: GoogleService-Info.plist missing in $SRC"; exit 1; }
+cp -p "$SRC/mobile/iosApp/iosApp/GoogleService-Info.plist" mobile/iosApp/iosApp/GoogleService-Info.plist
+
+# branches at or after 70787d1 only; copy, never print, never echo
+[ -f "$SRC/mobile/.env" ] || { echo "STOP: mobile/.env missing in $SRC"; exit 1; }
+cp -p "$SRC/mobile/.env" mobile/.env
 ```
 
 ```bash
@@ -165,12 +197,12 @@ xcodebuild archive \
   -configuration Release-Prod \
   -destination 'generic/platform=iOS' \
   -derivedDataPath /tmp/dd-shared \
-  -archivePath /tmp/aipose-release/iosApp-<marketing>-<build>.xcarchive \
+  -archivePath ~/ai-pose-release/iosApp-<marketing>-<build>.xcarchive \
   CURRENT_PROJECT_VERSION=<build>
 ```
 
 If `CURRENT_PROJECT_VERSION` does not take effect, use a temporary copy of
-Info.plist and `INFOPLIST_FILE=/tmp/aipose-release/Info.plist`. Do not edit
+Info.plist and `INFOPLIST_FILE=$HOME/ai-pose-release/Info.plist`. Do not edit
 tracked files to set a release build number.
 
 Before export, run both must-be-absent checks below against the archive. Stop if
@@ -195,7 +227,7 @@ any of them fails; do not work around a failure by editing the archive.
 The commands print verdicts only, never the archived key value:
 
 ```bash
-ARCHIVE_APP=/tmp/aipose-release/iosApp-<marketing>-<build>.xcarchive/Products/Applications/posing.app
+ARCHIVE_APP=~/ai-pose-release/iosApp-<marketing>-<build>.xcarchive/Products/Applications/posing.app
 
 for arg in -AIPosePaywallEnabled -AIPoseAccountsEnabled -AIPosePurchasesConfigured -AIPosePagingFixture; do
   if strings -a "$ARCHIVE_APP/posing" | grep -qF -- "$arg"; then echo "STOP: $arg present in the Release binary"; fi
@@ -220,9 +252,9 @@ with the API key that has cloud-signing access:
 ```bash
 ISSUER="$(cat ~/.config/camerapose/asc-issuer-id)"
 xcodebuild -exportArchive \
-  -archivePath /tmp/aipose-release/iosApp-<marketing>-<build>.xcarchive \
-  -exportPath /tmp/aipose-release/export \
-  -exportOptionsPlist /tmp/aipose-release/ExportOptions.plist \
+  -archivePath ~/ai-pose-release/iosApp-<marketing>-<build>.xcarchive \
+  -exportPath ~/ai-pose-release/export-<marketing>-<build> \
+  -exportOptionsPlist ~/ai-pose-release/ExportOptions.plist \
   -allowProvisioningUpdates \
   -authenticationKeyPath ~/.appstoreconnect/private_keys/AuthKey_S2MHQL347V.p8 \
   -authenticationKeyID S2MHQL347V \
@@ -241,9 +273,9 @@ After local inspection, run one bounded API-key validation (up to 120 seconds)
 and upload exactly once (up to 300 seconds):
 
 ```bash
-xcrun altool --validate-app -f /tmp/aipose-release/export/iosApp.ipa -t ios \
+xcrun altool --validate-app -f ~/ai-pose-release/export-<marketing>-<build>/posing.ipa -t ios \
   --api-key S2MHQL347V --api-issuer "$ISSUER"
-xcrun altool --upload-app -f /tmp/aipose-release/export/iosApp.ipa -t ios \
+xcrun altool --upload-app -f ~/ai-pose-release/export-<marketing>-<build>/posing.ipa -t ios \
   --api-key S2MHQL347V --api-issuer "$ISSUER"
 ```
 
@@ -258,9 +290,9 @@ status times out after connecting, do not retry repeatedly; report the timeout
 and confirm through the API/App Store Connect. Report `VALID`, `PROCESSING`,
 or other state only when observed.
 
-After upload and status are verified, remove the archive and export under
-`/tmp/aipose-release` if requested by the release task, while retaining the IPA
-SHA-256. Check free disk afterward. Never delete unrelated simulator data;
+After upload and status are verified, remove the archive and export directory
+under `~/ai-pose-release/` if requested by the release task, while retaining the
+IPA SHA-256. Check free disk afterward. Never delete unrelated simulator data;
 when instructed, clean dead containers only for the approved simulator.
 
 ## Final report
