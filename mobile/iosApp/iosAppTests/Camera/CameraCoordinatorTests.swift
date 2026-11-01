@@ -299,3 +299,53 @@ final class CameraCoordinatorTests: XCTestCase {
         XCTAssertEqual(model.guideOpacity, 0.2, accuracy: 0.001)
     }
 }
+
+// MARK: - Front-lens mirroring (the saved photo is the frame the preview showed)
+
+/// The preview layer mirrors the front camera (AVFoundation's own default), so the photo connection has to
+/// mirror as well. Without it a selfie is saved flipped against the frame — and the pose guide — the user
+/// lined up on screen.
+@MainActor
+final class CameraCaptureMirroringTests: XCTestCase {
+    /// Stands in for `AVCaptureConnection`, which cannot be built without a real capture device (the
+    /// simulator has none).
+    private final class FakeConnection: VideoMirroringConnection {
+        var isVideoMirroringSupported = true
+        var automaticallyAdjustsVideoMirroring = true
+        var isVideoMirrored = false
+    }
+
+    func testTheFrontLensSavesTheMirrorThePreviewShows() {
+        XCTAssertTrue(CameraCaptureMirroring.isMirrored(facing: .front))
+        XCTAssertFalse(
+            CameraCaptureMirroring.isMirrored(facing: .back),
+            "the back lens is saved exactly as the sensor delivers it"
+        )
+
+        let front = FakeConnection()
+        CameraCaptureMirroring.configure(front, facing: .front)
+        XCTAssertTrue(front.isVideoMirrored)
+        XCTAssertFalse(
+            front.automaticallyAdjustsVideoMirroring,
+            "the decision is ours: AVFoundation may not re-adjust it behind the app"
+        )
+
+        let back = FakeConnection()
+        CameraCaptureMirroring.configure(back, facing: .back)
+        XCTAssertFalse(back.isVideoMirrored)
+        XCTAssertFalse(back.automaticallyAdjustsVideoMirroring)
+
+        // Switching lenses re-decides the mirror instead of stacking another one.
+        CameraCaptureMirroring.configure(front, facing: .back)
+        XCTAssertFalse(front.isVideoMirrored, "no double flip after a switch back to the rear lens")
+    }
+
+    /// A connection that cannot mirror is left alone rather than told to.
+    func testAnUnsupportedConnectionKeepsItsOwnMirroring() {
+        let connection = FakeConnection()
+        connection.isVideoMirroringSupported = false
+        CameraCaptureMirroring.configure(connection, facing: .front)
+        XCTAssertTrue(connection.automaticallyAdjustsVideoMirroring)
+        XCTAssertFalse(connection.isVideoMirrored)
+    }
+}

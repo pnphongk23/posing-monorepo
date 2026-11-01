@@ -47,22 +47,34 @@ private final class CameraSessionBox: @unchecked Sendable {
         }
         let input = try AVCaptureDeviceInput(device: device)
         session.beginConfiguration()
-        defer { session.commitConfiguration() }
         session.inputs.forEach(session.removeInput)
         if session.outputs.isEmpty, session.canAddOutput(output) {
             session.addOutput(output)
         }
-        guard session.canAddInput(input) else { throw CameraFailure.unavailable }
+        guard session.canAddInput(input) else {
+            session.commitConfiguration()
+            throw CameraFailure.unavailable
+        }
         session.addInput(input)
         deviceInput = input
         facing = position == .back ? .back : .front
+        // The photo connection only exists once the configuration is committed.
+        session.commitConfiguration()
+        applyPhotoMirroringOnQueue()
         applyTorchOnQueue()
+    }
+
+    /// WYSIWYG: the saved frame carries the same mirror the preview shows (front) or none (back).
+    func applyPhotoMirroringOnQueue() {
+        CameraCaptureMirroring.configure(output.connection(with: .video), facing: facing)
     }
 
     func startRunningOnQueue() {
         logged("startRunning") {
             if !session.isRunning { session.startRunning() }
         }
+        // The video connection is live by now; re-assert the mirror for the lens that ended up running.
+        applyPhotoMirroringOnQueue()
     }
 
     func stopRunningOnQueue() {
@@ -124,6 +136,35 @@ private final class CameraSessionBox: @unchecked Sendable {
         #endif
     }
 }
+
+/// The mirroring the *saved* photo carries.
+///
+/// WYSIWYG selfie: `AVCaptureVideoPreviewLayer` mirrors the front camera (AVFoundation's own default), so the
+/// photo connection has to mirror too — otherwise the frame the user lined up against the guide is saved
+/// flipped, and the gallery shows the opposite of what the shutter froze. The back camera is left exactly as
+/// the sensor delivers it. The tool popover's Mirror switch is unrelated: it flips the pose reference only
+/// (`CameraViewModel.toggleGuideMirror`) and never reaches the capture pipeline.
+enum CameraCaptureMirroring {
+    static func isMirrored(facing: CameraFacing) -> Bool { facing == .front }
+
+    /// Takes the decision away from AVFoundation (`automaticallyAdjustsVideoMirroring = false`) and applies
+    /// it, so nothing re-adjusts the mirror when the input is swapped or the session restarts.
+    static func configure(_ connection: VideoMirroringConnection?, facing: CameraFacing) {
+        guard let connection, connection.isVideoMirroringSupported else { return }
+        connection.automaticallyAdjustsVideoMirroring = false
+        connection.isVideoMirrored = isMirrored(facing: facing)
+    }
+}
+
+/// The two flags `CameraCaptureMirroring` owns, so the decision stays unit-testable without a capture
+/// device: the simulator has none, and `AVCaptureConnection` cannot be constructed by hand.
+protocol VideoMirroringConnection: AnyObject {
+    var isVideoMirroringSupported: Bool { get }
+    var automaticallyAdjustsVideoMirroring: Bool { get set }
+    var isVideoMirrored: Bool { get set }
+}
+
+extension AVCaptureConnection: VideoMirroringConnection {}
 
 /// Lets a `sessionQueue` closure hand a result back to the main-actor controller without capturing
 /// the controller itself (which is not `Sendable`) inside a `@Sendable` closure.
