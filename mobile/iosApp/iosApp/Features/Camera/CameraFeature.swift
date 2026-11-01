@@ -1974,10 +1974,12 @@ struct CameraBottomBar: View {
         case .poses(let poses):
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: AP.Space.space8) {
-                    ForEach(poses) { pose in stripCard(pose) }
+                    // The Browse card leads the strip. As the trailing card it left the viewport as soon
+                    // as the catalogue filled the row, and the sheet had no other entry point.
                     if showsPicker {
                         browseAllCard
                     }
+                    ForEach(poses) { pose in stripCard(pose) }
                 }
                 .padding(.horizontal, AP.Space.space16)
             }
@@ -2014,9 +2016,10 @@ struct CameraBottomBar: View {
         }
     }
 
-    /// The strip's last card opens the full picker (search + All/Saved scopes). It keeps the
+    /// The strip's leading card opens the full picker (search + All/Saved scopes). It keeps the
     /// `camera.choosePose` handle the old top pill had, so the existing E2E path still reaches
-    /// `posePicker.search` and `posePicker.grid`.
+    /// `posePicker.search` and `posePicker.grid`. It sits *first* so a full catalogue can never push the
+    /// sheet's only entry off screen.
     private var browseAllCard: some View {
         Button(action: onBrowse) {
             VStack(spacing: AP.Space.space4) {
