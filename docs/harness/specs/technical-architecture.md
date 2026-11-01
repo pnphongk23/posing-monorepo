@@ -249,21 +249,45 @@ ln -sf ../../scripts/git-hooks/pre-commit .git/hooks/pre-commit && chmod +x .git
 > Commit bằng pathspec tường minh — `git commit -m "..." -- <path>…` — **không bao giờ** `git commit`
 trần: nhiều lane cùng làm trên một working tree, và index dùng chung sẽ nuốt file đã stage của lane khác.
 
-Script lo hết phần dễ sai: chặn khi `/` còn dưới 1.5 GB, chặn khi đã có `xcodebuild` khác chạy
-(một build tại một thời điểm, toàn máy), dùng simulator test chung
-`7CC9393C-88FC-4AE6-88D3-AC68A2E266B7` (override `IOS_VERIFY_SIM`), `-derivedDataPath /tmp/dd-shared`
-(override `IOS_VERIFY_DD` khi cần hai lane build song song; mặc định không đổi),
-`build-for-testing` rồi `test-without-building` với scheme `Dev`, bọc `perl alarm` 1400s, in một
-dòng `executed/failures`. Chỉ nhận thêm `-only-testing:`/`-skip-testing:`. Selector là bundle-relative
-và **không** kèm thư mục nguồn: `iosAppTests/AppConfigTests` (đúng), không phải
+Script lo hết phần dễ sai: **xếp hàng** cho một trong 2 build slot thay vì fail khi có build khác
+đang chạy. Slot 1 = simulator `7CC9393C-88FC-4AE6-88D3-AC68A2E266B7` (override `IOS_VERIFY_SIM`) +
+`/tmp/dd-shared` (override `IOS_VERIFY_DD`); slot 2 = simulator trong `IOS_VERIFY_SIM_2` +
+`/tmp/dd-shared-2`, và chỉ mở khi `IOS_VERIFY_SIM_2` được set. Lock là `/tmp/ai-pose-slot-{1,2}`
+tạo bằng `mkdir` (atomic); lock có holder PID đã chết hoặc cũ hơn 90 phút được thu hồi; script in
+thời gian đã chờ. Slot được trả khi `EXIT`/`INT`/`TERM` nên kill một lần chạy là slot tự do.
+Tối đa 2 slot, **không bao giờ 3** (16 GB RAM). `IOS_VERIFY_SLOT=1|2` buộc slot (slot 2 thiếu
+`IOS_VERIFY_SIM_2` thì fail rõ ràng). Đường release/archive là đường riêng và **không** lấy slot
+trừ khi nó build trên sim. Không worker nào tự viết vòng sleep/pgrep/lock riêng.
+
+Đĩa: khi `/` dưới 3 GB script tự purge **đúng** danh sách user đã duyệt (R2) — attachments
+testmanagerd của mọi simulator không bị slot nào giữ (giữ file mới hơn 10 phút, bỏ qua
+"iPhone 16" `CF871F97…` và sim của slot đang chạy), `$TMPDIR/maestro_xctestrunner_*` cũ hơn
+10 phút, và `/tmp/dd-*` mà không slot sống và không `xcodebuild` nào đang dùng — rồi đọc lại dung
+lượng và chỉ từ chối khi vẫn dưới 1.5 GB. Mỗi mục purge log kèm số byte giải phóng. Không bao giờ
+chạm QuanLyLop, `/tmp/qlh-*`, `marketing/`, simulator "iPhone 16", hay DerivedData của slot đang
+giữ. Archive/export đã upload **không** được purge (chưa có quy ước marker `uploaded`); đường
+archive dùng ngưỡng 5 GB (`MIN_FREE_ARCHIVE_KB`). `IOS_VERIFY_FAKE_FREE_KB` giả lập số dung lượng
+trống để test đường purge/refuse mà không phải làm đầy đĩa.
+
+Vòng lặp hẹp (R3): `IOS_VERIFY_ONLY_TESTING=AppConfigTests,SessionScopeCoordinatorTests` biến mỗi
+entry thành một `-only-testing:iosAppTests/<entry>` (entry đã có prefix target thì giữ nguyên);
+không set = chạy full suite. Chạy full **một lần** trước khi commit.
+
+Script `build-for-testing` rồi `test-without-building` với scheme `Dev`, bọc `perl alarm` 1400s, in
+một dòng `executed/failures`. Chỉ nhận thêm `-only-testing:`/`-skip-testing:`. Selector là
+bundle-relative và **không** kèm thư mục nguồn: `iosAppTests/AppConfigTests` (đúng), không phải
 `iosAppTests/Services/AppConfigTests` (chọn 0 test). Script fail non-zero khi chọn/chạy 0 test —
-xanh với 0 test là false pass. Muốn kiểm môi trường không build: `scripts/ios-verify.sh --check-env`.
+xanh với 0 test là false pass. Muốn kiểm môi trường (đĩa, slot, simulator) mà không build:
+`scripts/ios-verify.sh --check-env`.
 
 Bước cuối của **mọi** lần chạy (xanh hay đỏ, trap `EXIT`): script xoá **nội dung**
-`$HOME/Library/Developer/CoreSimulator/Devices/7CC9393C-88FC-4AE6-88D3-AC68A2E266B7/data/Library/Caches/com.apple.containermanagerd/Dead/`
-— container app chết do mỗi lần cài lại app — rồi in một dòng số byte giải phóng. Chỉ đúng UDID
-thiết bị test chung đó (không bao giờ `CF871F97…`, không theo `IOS_VERIFY_SIM`), chỉ thư mục `Dead/`
-và chỉ khi nó tồn tại; dọn dẹp **không** đổi exit code của lần verify.
+`$HOME/Library/Developer/CoreSimulator/Devices/<slot-sim>/data/Library/Caches/com.apple.containermanagerd/Dead/`
+— container app chết do mỗi lần cài lại app — rồi in một dòng số byte giải phóng. Chỉ đúng
+simulator của slot vừa dùng (không bao giờ `CF871F97…`), chỉ thư mục `Dead/` và chỉ khi nó tồn
+tại; dọn dẹp **không** đổi exit code của lần verify.
+
+Mẫu dòng brief cho worker (slots, `-only-testing`, purge, env) nằm ở
+[docs/ios-verify-worker-brief.md](../../ios-verify-worker-brief.md).
 
 Server lane không nằm trong packet này: gate static duy nhất hiện có là
 `npm --prefix web/services/pose-extract-server run lint` (`tsc --noEmit -p tsconfig.json`);
@@ -392,8 +416,9 @@ npm run build
 (cd mobile/iosApp && xcodegen generate)
 
 # iOS: xem VERIFY RULE ở "iOS app architecture and conventions"
-scripts/ios-verify.sh                 # build-for-testing + toàn bộ unit test, in 1 dòng summary
-scripts/ios-verify.sh --check-env     # chỉ kiểm disk / build lock / simulator
+scripts/ios-verify.sh                 # xếp hàng 1 trong 2 build slot, rồi build-for-testing + toàn bộ unit test
+IOS_VERIFY_ONLY_TESTING=AppConfigTests scripts/ios-verify.sh   # chỉ class vừa sửa (vòng lặp hẹp)
+scripts/ios-verify.sh --check-env     # chỉ kiểm disk / slot / simulator (không build)
 swiftlint lint --quiet
 swiftformat --lint mobile/iosApp/iosApp mobile/iosApp/iosAppTests
 
