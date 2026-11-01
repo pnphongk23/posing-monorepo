@@ -33,7 +33,11 @@ Rules that come with the block:
   `IOS_VERIFY_ONLY_TESTING` entries are auto-prefixed with the target, so a bare `AppConfigTests` is
   enough and a full `iosAppTests/AppConfigTests/testFoo` form is passed through unchanged.
 - A green run with `executed=0` is a false pass and exits non-zero.
-- Feature workers do not run Maestro; QA runs one batch per integration commit.
+- **One Maestro run per host (R4).** Maestro's iOS driver port `127.0.0.1:7001` is host-global, so two
+  runs — even on different simulators — kill each other's driver. Only QA runs it; Feature workers never
+  run Maestro in any form (including `maestro hierarchy`/`studio`) and never use
+  `xcrun simctl launch --console-pty` (killing that console host SIGTERMs the app ~1 s after launch — it
+  looks like a crash, but is not). `ios-verify.sh` itself uses `xcodebuild test`, so it is unaffected.
 - Release/archive is a separate path and takes no build slot unless it builds on the simulator; its
   disk floor is 5 GB (`MIN_FREE_ARCHIVE_KB` in the script), not 1.5 GB.
 - Release artefacts must not live under `/tmp` (a reboot wipes it). The release skill still points

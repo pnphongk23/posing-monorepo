@@ -63,6 +63,12 @@
 # (.../com.apple.containermanagerd/Dead/*) and prints the bytes freed. That path is built from the
 # slot's own UDID only, never CF871F97, and the cleanup keeps the exit code.
 #
+# Host rule (R4) — exactly ONE Maestro run may exist on this host at any time: Maestro's iOS driver
+# port 127.0.0.1:7001 is host-global, so two runs (even on different sims) kill each other's driver.
+# Only the QA lane runs Maestro; Feature workers never do (not even `maestro hierarchy`/`studio`) and
+# never use `xcrun simctl launch --console-pty` (killing that console host SIGTERMs the app ~1 s after
+# launch — it looks like a crash, but is not one). This script uses `xcodebuild test`, not Maestro.
+#
 # Why the perl wrapper: this Mac has no `timeout` binary. `alarm` survives exec, so the
 # xcodebuild child gets the signal and is killed instead of hanging a lane forever.
 #
