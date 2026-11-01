@@ -23,8 +23,13 @@ run and again after every batch:
 find ~/Library/Developer/CoreSimulator/Devices/CF871F97-1789-4490-B3E3-0B5EFA39F23F/data/Containers/Data/InternalDaemon/*/Attachments \
   -type f -mmin +10 -delete
 rm -rf ~/Library/Developer/CoreSimulator/Devices/CF871F97-1789-4490-B3E3-0B5EFA39F23F/data/Library/Caches/com.apple.containermanagerd/Dead/*
-df -h /    # require >= 3 GiB free; under that, do not start — tell the QA lead
+find "$TMPDIR" -maxdepth 1 -name 'maestro_xctestrunner_*' -mmin +10 -exec rm -rf {} + 2>/dev/null
+ls -d /tmp/dd-* 2>/dev/null      # unused derived-data dirs: remove the ones no build is using
+df -h /    # require >= 3 GiB free before AND after a batch; under that, stop and tell the QA lead
 ```
+
+One Maestro batch per integration commit, and artefacts that must survive a reboot stay outside `/tmp`
+(committed under `screens/`, or the ledger folder) — a reboot wiped `/tmp` once already.
 
 `run.sh` cannot do this for us: its `cleanup_dead_containers` deliberately skips `CF871F97*`, and it does not
 touch XCTest attachments at all, so both commands are manual on this lane. Never `simctl erase`. Keep bulky

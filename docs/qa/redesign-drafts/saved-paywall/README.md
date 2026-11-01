@@ -91,6 +91,11 @@ Build `/tmp/ai-pose-lane2-app-1.1/dev18/posing.app` (`1.1`/`18`, Debug-Dev @ `da
 | TC-PAY-012 purchase-failed | **FAIL — app bug** | `BUG-PAY-18-02`: a failed Test Store purchase shows no banner at all |
 | TC-PAY-017 ax3-dark | **FAIL — flow defect** | at AX3 the email-sheet text entry did not land; the app correctly validated it ("Enter your password") and the flow stopped there. Same case passes at light/large. |
 
+The screenshots above are the durable evidence: the run's `/tmp` artefacts (per-flow shot dump, suite log,
+probe flows) and the raw Maestro debug dirs were lost when the machine rebooted and `/tmp` was wiped. Nothing
+needed to reproduce a result lived only there — the failing ids and reasons are quoted in this table and in
+the two bug notes.
+
 Deliberately demoted back to drafts after running (no producer on this build, so they cannot be green
 instead of wrong): **TC-SAV-006** and **TC-SAV-014** (the `-AIPoseSavedOfflineFixture` seam did not render
 the offline board — the fixture applies only once the list is already `.loaded`), **TC-SAV-009** (a dead
@@ -147,8 +152,13 @@ run and again after every batch:
 find ~/Library/Developer/CoreSimulator/Devices/CF871F97-1789-4490-B3E3-0B5EFA39F23F/data/Containers/Data/InternalDaemon/*/Attachments \
   -type f -mmin +10 -delete
 rm -rf ~/Library/Developer/CoreSimulator/Devices/CF871F97-1789-4490-B3E3-0B5EFA39F23F/data/Library/Caches/com.apple.containermanagerd/Dead/*
-df -h /    # require >= 3 GiB free; under that, do not start — tell the QA lead
+find "$TMPDIR" -maxdepth 1 -name 'maestro_xctestrunner_*' -mmin +10 -exec rm -rf {} + 2>/dev/null
+ls -d /tmp/dd-* 2>/dev/null      # unused derived-data dirs: remove the ones no build is using
+df -h /    # require >= 3 GiB free before AND after a batch; under that, stop and tell the QA lead
 ```
+
+One Maestro batch per integration commit, and artefacts that must survive a reboot stay outside `/tmp`
+(committed under `screens/`, or the ledger folder) — a reboot wiped `/tmp` once already.
 
 `run.sh` cannot do this for us: its `cleanup_dead_containers` deliberately skips `CF871F97*`, and it does not
 touch XCTest attachments at all, so both commands are manual on this lane. Never `simctl erase`. Keep bulky
