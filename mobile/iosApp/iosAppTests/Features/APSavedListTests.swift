@@ -444,7 +444,110 @@ final class APSavedListTests: XCTestCase {
         )
     }
 
+    // MARK: - The unsave tile is its own hit area (BUG-SAVED-18-01)
+
+    /// A `Button` inside a `NavigationLink` label never receives the tap: the link owns the whole
+    /// label's hit area. The list wrapped the entire row — tile included — in the link, so a tap on the
+    /// bookmark-slash tile unsaved nothing, offered no Undo, and did not open the pose either.
+    ///
+    /// Source-level, for the same reason `JobRowAccessibilityTests` reads its view instead of tapping it:
+    /// a hosted SwiftUI view exposes neither hit testing nor an accessibility tree to a unit test. What a
+    /// tap can reach is decided by this composition, so that is what is pinned.
+    ///
+    /// Mutation target: mount `APSavedPoseRow` as the `NavigationLink`'s label again and this goes red —
+    /// the tile carries the button, so the label would carry a control.
+    func testRowLinkDoesNotContainTheUnsaveTile() throws {
+        let source = try savedListSource()
+
+        let row = try XCTUnwrap(
+            Self.braceMatchedBlock("private func row(for pose: NativePose, index: Int)", in: source),
+            "APSavedList.row(for:index:) is where the list composes one saved row"
+        )
+        XCTAssertTrue(row.contains("NavigationLink("), "the row still opens the pose detail")
+        XCTAssertTrue(row.contains("APSavedUnsaveTile("), "the row still mounts its unsave control")
+        XCTAssertTrue(row.contains("APSavedPoseRowContent("), "the link's label is the content-only view")
+        XCTAssertFalse(
+            row.contains("APSavedPoseRow("),
+            "APSavedPoseRow carries the tile: as the link's label it nests the control inside the link"
+        )
+
+        // The invariant behind that: whatever the link's label is, it carries no control.
+        let label = try XCTUnwrap(Self.braceMatchedBlock("struct APSavedPoseRowContent", in: source))
+        XCTAssertFalse(label.contains("Button("), "a tap inside the link's label must always open the pose")
+        XCTAssertFalse(label.contains("APSavedUnsaveTile"), "the unsave control is not part of the label")
+
+        // And the control is still a real button, with the label the QA flows tap.
+        let tile = try XCTUnwrap(Self.braceMatchedBlock("struct APSavedUnsaveTile", in: source))
+        XCTAssertTrue(tile.contains("Button(action: onUnsave)"), "the tile sends its own unsave request")
+        XCTAssertTrue(tile.contains("\"Remove from saved\""), "the tile keeps the label its flows target")
+    }
+
+    /// The list's own row — link and tile as neighbours — still paints both, in the places the tap now
+    /// lands: the tile on the trailing edge at its 44 pt target, the pose copy to its left.
+    @MainActor func testListRowDrawsTheContentAndItsTileSideBySide() {
+        let rows = [savedPose("a")]
+        let model = PosesViewModel(service: SavedListPoseService(rows: rows), bookmarkService: UndoBookmarkService())
+        model.filter = .saved
+        model.state = .loaded(rows)
+        model.setPagingForTesting(hasMore: false)
+
+        // A navigation container on purpose, as in the offline-surface test: a link outside one draws
+        // disabled, which would wash out the accent fill this measures.
+        let probe = APViewProbe(
+            NavigationView { APSavedList(poses: rows, model: model) },
+            size: CGSize(width: 393, height: 300)
+        )
+        defer { probe.tearDown() }
+        let painted = probe.capture()
+
+        let tileColumn = (painted.width - 80)..<(painted.width - 20)
+        let tiles = bands(of: 0xFAE0E7, in: painted, xRange: tileColumn).filter { $0.height >= 20 }
+        XCTAssertEqual(tiles.count, 1, "one saved row, one unsave tile")
+        guard let tile = tiles.first else { return XCTFail("the list row must draw its unsave tile") }
+        XCTAssertGreaterThan(tile.minX, painted.width / 2, "the tile sits on the trailing edge, beside the copy")
+        XCTAssertEqual(Double(tile.height), 44, accuracy: 2, "the tile keeps its 44 pt target")
+
+        // The link's own label keeps the pose copy (artwork + name) on the row it opens.
+        XCTAssertFalse(
+            inkedBands(in: painted, xRange: 12..<(painted.width / 2)).isEmpty,
+            "the row's copy is still painted left of the tile, inside the link"
+        )
+    }
+
     // MARK: - Fixtures and helpers
+
+    /// Reads the Saved list's own source: the composition a tap depends on is not observable at runtime
+    /// in this test host.
+    private func savedListSource() throws -> String {
+        try String(
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent() // Features
+                .deletingLastPathComponent() // iosAppTests
+                .deletingLastPathComponent() // iosApp (project dir)
+                .appendingPathComponent("iosApp/Features/Poses/APSavedList.swift"),
+            encoding: .utf8
+        )
+    }
+
+    /// The brace-matched body of the first declaration after `marker`, so a test can read one function or
+    /// one struct without caring how long the file around it is.
+    private static func braceMatchedBlock(_ marker: String, in source: String) -> String? {
+        guard let markerRange = source.range(of: marker),
+              let open = source.range(of: "{", range: markerRange.upperBound..<source.endIndex) else { return nil }
+        var depth = 0
+        var index = open.lowerBound
+        while index < source.endIndex {
+            switch source[index] {
+            case "{": depth += 1
+            case "}":
+                depth -= 1
+                if depth == 0 { return String(source[open.lowerBound...index]) }
+            default: break
+            }
+            index = source.index(after: index)
+        }
+        return nil
+    }
 
     private func savedPose(_ id: String) -> NativePose {
         NativePose(

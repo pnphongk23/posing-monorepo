@@ -540,8 +540,8 @@ enum APSavedRowMetrics {
 
 /// One saved pose row: 64 pt thumbnail, name + category, trailing unsave control.
 ///
-/// The row is a link to the pose detail; the unsave control is its own button so a tap on the
-/// bookmark never opens the pose.
+/// The row is a link to the pose detail; the unsave control is its own button next to that link (see
+/// `APSavedRowLayout`), so a tap on the bookmark never opens the pose.
 struct APSavedPoseRow: View {
     let pose: NativePose
     var isUnsaving: Bool = false
@@ -552,7 +552,46 @@ struct APSavedPoseRow: View {
     var isAvailableOffline: Bool = true
     var onUnsave: () -> Void = {}
 
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    var body: some View {
+        APSavedRowLayout {
+            APSavedPoseRowContent(pose: pose, isAvailableOffline: isAvailableOffline)
+        } trailing: {
+            APSavedUnsaveTile(
+                isUnsaving: isUnsaving,
+                isEnabled: isEnabled,
+                isAvailableOffline: isAvailableOffline,
+                onUnsave: onUnsave
+            )
+        }
+    }
+}
+
+/// The chrome of a saved row: one row of two deliberately **separate hit areas** — the content that
+/// opens the pose, and the unsave control.
+///
+/// They are siblings, never nested: a `Button` inside a `NavigationLink` label never receives the tap,
+/// because the link owns the whole label's hit area. That is why the Saved tile rendered its enabled
+/// style and did nothing at all: the open-the-pose link swallowed every tap on it.
+struct APSavedRowLayout<Content: View, Trailing: View>: View {
+    @ViewBuilder var content: () -> Content
+    @ViewBuilder var trailing: () -> Trailing
+
+    var body: some View {
+        HStack(spacing: AP.Space.space12) {
+            content()
+            trailing()
+        }
+        .padding(.horizontal, AP.Space.space12)
+        .padding(.vertical, AP.Space.space12)
+    }
+}
+
+/// What a row says about its pose: artwork, name and category line, as one area that can be wrapped in
+/// the link that opens the pose.
+struct APSavedPoseRowContent: View {
+    let pose: NativePose
+    /// `false` while offline for a pose the device does not hold: the artwork and the name dim.
+    var isAvailableOffline: Bool = true
 
     var body: some View {
         HStack(spacing: AP.Space.space12) {
@@ -573,11 +612,7 @@ struct APSavedPoseRow: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            unsaveButton
         }
-        .padding(.horizontal, AP.Space.space12)
-        .padding(.vertical, AP.Space.space12)
-        .contentShape(Rectangle())
     }
 
     private var thumbnail: some View {
@@ -594,12 +629,25 @@ struct APSavedPoseRow: View {
             .opacity(isAvailableOffline ? 1 : 0.4)
             .accessibilityHidden(true)
     }
+}
+
+/// The row's trailing unsave control.
+///
+/// Its own view, so the Saved list can lay it out *beside* the link that opens the pose instead of
+/// inside it: as a sibling the tile keeps its own hit area and the tap reaches it.
+struct APSavedUnsaveTile: View {
+    var isUnsaving: Bool = false
+    var isEnabled: Bool = true
+    var isAvailableOffline: Bool = true
+    var onUnsave: () -> Void = {}
+
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     private var offersUnsave: Bool { isEnabled && isAvailableOffline }
 
     private var unsaveTileSide: CGFloat { APSavedRowMetrics.unsaveTileSide(for: dynamicTypeSize) }
 
-    private var unsaveButton: some View {
+    var body: some View {
         Button(action: onUnsave) {
             Image(systemName: "bookmark.slash")
                 .font(.system(size: APSavedRowMetrics.unsaveGlyphSize(for: dynamicTypeSize), weight: .semibold))
@@ -655,20 +703,32 @@ struct APSavedList: View {
     }
 
     private func row(for pose: NativePose, index: Int) -> some View {
-        NavigationLink(
-            destination: PoseDetailScreen(pose: pose, model: model, onTryPose: onTryPose)
-        ) {
-            APSavedPoseRow(
-                pose: pose,
+        // The link and the unsave tile are siblings, not a link wrapped around the whole row: a control
+        // nested in a link's label never gets the tap, which left the tile dead on an enabled-looking
+        // button and Undo without a producer on this surface.
+        APSavedRowLayout {
+            NavigationLink(
+                destination: PoseDetailScreen(pose: pose, model: model, onTryPose: onTryPose)
+            ) {
+                APSavedPoseRowContent(
+                    pose: pose,
+                    isAvailableOffline: offlineMode.isAvailableOffline(pose)
+                )
+            }
+            .buttonStyle(.plain)
+            // The label's own shape is not filled, so the link needs the whole rect as its hit area
+            // for the empty space beside the text to open the pose, as it did when it wrapped the row.
+            .contentShape(Rectangle())
+            // The list used to be the shared grid, so its identifiers stay for the E2E lane.
+            .accessibilityIdentifier(APSavedIdentifiers.row(index: index, poseID: pose.id))
+        } trailing: {
+            APSavedUnsaveTile(
                 isUnsaving: model.isBookmarkInFlight(pose.id),
                 isEnabled: model.canSave(pose) && model.bookmarkService != nil,
                 isAvailableOffline: offlineMode.isAvailableOffline(pose),
                 onUnsave: { Task { await unsave(pose, at: index) } }
             )
         }
-        .buttonStyle(.plain)
-        // The list used to be the shared grid, so its identifiers stay for the E2E lane.
-        .accessibilityIdentifier(APSavedIdentifiers.row(index: index, poseID: pose.id))
         .onAppear { requestNextPage(at: index) }
     }
 
