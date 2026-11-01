@@ -899,7 +899,7 @@ final class PaywallStateCopyTests: XCTestCase {
         XCTAssertEqual(model.ctaTitle, "Try again")
         XCTAssertEqual(model.notice?.title, "The purchase didn't go through")
         XCTAssertEqual(model.notice?.message, "Check your connection and try again.")
-        XCTAssertNil(model.notice?.action, "the retry is the primary action here")
+        XCTAssertEqual(model.notice?.action, .retryPurchase, "the card carries the retry that settles the failure")
     }
 
     /// Board 11-09: a failed restore keeps "Subscribe" as the primary action and retries inline.
