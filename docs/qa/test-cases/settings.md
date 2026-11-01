@@ -1,6 +1,6 @@
 # Settings (FEAT-015)
 
-Build-17 redesign (per `/tmp/gap/GAP-AND-OWNERSHIP.md`, page 10): the Settings hub gains a **profile
+Build 18 redesign (per the page-10 gap table, 2026-10-31 review; that gap table was a `/tmp` artifact and no longer exists): the Settings hub gains a **profile
 card** (avatar initials + name + email → Account), **Library grouping**, an **Appearance segmented
 control** and an **Active badge** on Premium; it loses the **Privacy group** (legal moves into About)
 and never gains a Camera section. Today's screen is PARTIAL: no profile card, no Library grouping,

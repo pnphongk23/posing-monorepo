@@ -18,11 +18,15 @@ if [ "${free_gb:-0}" -lt "$min_free_gb" ]; then
        "~/Library/Developer/CoreSimulator/Devices/<udid>/data/Containers/Data/InternalDaemon/*/Attachments."
   exit 3
 fi
-# Lane 2 only: drop XCTest attachments older than ten minutes (never another simulator, never erase).
+# Disk hygiene, lane 2 only (never another simulator, never erase). Two sizes matter: XCTest
+# attachments inside the device, and the per-run xctestrunner build in $TMPDIR. Shared DerivedData
+# (/tmp/dd-*) is deliberately NOT deleted here — it belongs to builds other workers are using, and a
+# test run must not pull it out from under them.
 purge_attachments() {
   case "$udid" in CF871F97*) ;; *) return 0 ;; esac
   find "$HOME/Library/Developer/CoreSimulator/Devices/$udid/data/Containers/Data/InternalDaemon/"*/Attachments \
     -type f -mmin +10 -delete 2>/dev/null || true
+  find "${TMPDIR:-/tmp}" -maxdepth 1 -name 'maestro_xctestrunner_*' -mmin +10 -exec rm -rf {} + 2>/dev/null || true
 }
 purge_attachments
 ./check-traceability.sh

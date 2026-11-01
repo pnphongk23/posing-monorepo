@@ -1,6 +1,6 @@
 # Account: sign in, sign out, delete (FEAT-014)
 
-Build-17 redesign (per `/tmp/gap/GAP-AND-OWNERSHIP.md`, page 10): Account gains **PROFILE** (email,
+Build 18 redesign (per the page-10 gap table, 2026-10-31 review; that gap table was a `/tmp` artifact and no longer exists): Account gains **PROFILE** (email,
 sign-in method) and **PREMIUM** (plan, renewal, Manage subscription) sections plus an in-list **Sign out**
 row, an initials avatar with email, a row skeleton while loading, the F4 error state and a new **offline**
 state. Today: identity is an SF glyph + "Signed in", no email, no PROFILE/PREMIUM, Sign out is a header
