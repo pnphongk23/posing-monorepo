@@ -14,11 +14,12 @@ not what you see, stop and report that step number.
 - [ ] Write down your model + iOS version + build number (Settings → About) at the top of your notes.
 - [ ] **Launch the app with a non-English device language and a non-US region** (Settings → General → Language & Region:
   pick any other language and a region outside the US), then open it.
-- [ ] **Expected:** the app **launches and stays up**, the Poses home renders and stays on screen, and nothing crashes —
+- [ ] **Expected:** the app **launches and stays up**, the Poses home renders and stays on screen — a plain sanity check,
   leave it running for a minute before switching back.
-- [ ] Note for QA, not the product owner: on dev19 a **Debug** build launched with
-  `-AppleLanguages (en) -AppleLocale en_US` **terminated about a second after launch** (cause not triaged yet). Treat any
-  launch that dies on a locale/language change as a **potential release blocker** until Feature has triaged it.
+- [ ] Note for QA (not the product owner): if a launch ever dies, **check `log show` for
+  "termination reported by launchd (2, 15, 15)" before filing a crash** — that is SIGTERM, not an app fault (a killed or
+  timed-out `simctl launch --console` / `--console-pty` host process produces exactly this). Never launch through
+  `simctl launch --console-pty` without keeping its host process alive for the whole session.
 
 ## 1. Paywall on device — paywall C, 1.1 (20) (TestFlight)
 A Simulator cannot resolve real StoreKit products, so this section is the only place the real prices can be read. Cases:
