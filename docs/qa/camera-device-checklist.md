@@ -1,6 +1,6 @@
-# On a real device — camera, gallery and paywall · release 1.1 (build 18)
+# On a real device — camera, gallery and paywall · release 1.1 (build 20)
 
-The Simulator has no camera, so everything below has to be done on a physical iPhone with the **1.1 (18)** build installed.
+The Simulator has no camera, so everything below has to be done on a physical iPhone with the **1.1 (20)** build installed.
 Section 1 (paywall) needs the **TestFlight** build: a Release build on a Simulator cannot resolve the real StoreKit
 products, so plan cards and prices can only be checked on a real install. Budget ~35 minutes and record the screen
 (Control Centre → Screen Recording) for the whole run. Every step is one action and one result line — if a result line is
@@ -13,16 +13,31 @@ not what you see, stop and report that step number.
 - [ ] Capture two or three photos — sections 6, 7, 8 and 12 check what lands in the **saved file**, and section 12 deletes one.
 - [ ] Write down your model + iOS version + build number (Settings → About) at the top of your notes.
 
-## 1. Paywall on device (TestFlight)
-- [ ] Install the TestFlight build for **1.1 (18)** and sign in with a real account.
+## 1. Paywall on device — paywall C, 1.1 (20) (TestFlight)
+A Simulator cannot resolve real StoreKit products, so this section is the only place the real prices can be read. Cases:
+TC-PAY-017/018/019 (and TC-PAY-014 for Restore) in `docs/qa/test-cases/paywall-purchase.md`.
+- [ ] Install the **TestFlight 1.1 (20)** build and sign in with a real account.
 - [ ] Open the paywall: tap the shutter while the gate is on, or Settings → Premium.
-- [ ] **Expected:** the annual and the monthly card both render with a **localized price** for your store region and a
-  purchase button — no "Plans are temporarily unavailable", no empty card.
-- [ ] Read the purchase screen's small print.
-- [ ] **Expected:** the price **and** the period (year/month), the auto-renew sentence, the cancel instructions and the
-  **Terms** and **Privacy** links are all present and tappable.
+- [ ] **Expected:** the paywall opens with the **yearly card first and already selected**, and the monthly card under it —
+  no "Plans are temporarily unavailable", no empty card, no spinner left behind (TC-PAY-018).
+- [ ] Read both cards.
+- [ ] **Expected:** each shows the store's **real localized price and period** for your region; the yearly card adds a
+  **per-month breakdown**, and the saving badge is **computed from the two prices** (so it changes with the offering — a
+  fixed "Save 33 %" on every store would be wrong). Nothing hardcoded, no invented discount (TC-PAY-018).
+- [ ] Read the disclosure and the legal row without scrolling past them.
+- [ ] **Expected:** all five mandatory points sit on this one surface — **price**, **billing period**, **auto-renews until
+  cancelled**, **how to cancel** (Apple ID settings) — and **Terms of Use** and **Privacy Policy** both open when tapped
+  (TC-PAY-019). If any one is missing or unreadable, that alone blocks shipping.
 - [ ] Tap **Restore purchases** (do **not** buy unless you deliberately run a sandbox purchase).
-- [ ] **Expected:** it responds — success or "nothing to restore" — and the paywall stays usable.
+- [ ] **Expected:** it answers — a previous real purchase restores access, otherwise it says there is nothing to restore —
+  and the paywall stays usable (TC-PAY-014).
+- [ ] On an **iPhone SE** (or the smallest screen you have), set Dynamic Type to **AX5** and open the paywall, then scroll it.
+- [ ] **Expected:** plan cards, per-month line, saving badge, disclosure and the legal row (**Restore · Terms · Privacy**) are
+  **all reachable by scrolling**, nothing is clipped or hidden under the pinned purchase button, and the **X** stays
+  reachable (TC-PAY-017).
+- [ ] Switch the device to **dark mode** and read the same screen.
+- [ ] **Expected:** every price, the saving badge and the disclosure stay legible against the surface — no grey-on-grey
+  small print, no badge that disappears (TC-PAY-017).
 
 ## 2. Camera chrome — what changed in 18
 - [ ] Open the camera from the dock and read the **top row**.
