@@ -1935,9 +1935,6 @@ struct CameraBottomBar: View {
             if CameraChromeLayout.showsStrip(isPickerExpanded: isPickerExpanded, showsPicker: showsPicker) {
                 stripView
             }
-            if CameraChromeLayout.showsStripToggle(showsPicker: showsPicker) {
-                stripToggle
-            }
             rail
         }
         .padding(.top, AP.Space.space12)

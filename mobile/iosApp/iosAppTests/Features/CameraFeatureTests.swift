@@ -2072,3 +2072,115 @@ final class CameraGuideScaleModelTests: XCTestCase {
         XCTAssertEqual(model.activeZoomPreset, .one, "a preset the lens cannot serve clamps to its minimum")
     }
 }
+
+// MARK: - Camera chrome contracts (one host per control · a strip entry on screen · addressable option rows · a popover inside its safe area)
+
+/// The camera chrome's own contracts, kept next to the screens they describe.
+///
+/// The assertions that need the *rendered* accessibility tree are source-level: SwiftUI does not
+/// materialise that tree for a unit-test host (the same reason `JobRowAccessibilityTests` reads its
+/// view source). Everything else is the pure layout logic the views are wired to.
+@MainActor
+final class CameraChromeContractTests: XCTestCase {
+    // MARK: One Poses control
+
+    /// The Poses control belongs to the scale row only. It used to be drawn in the bottom panel as
+    /// well, so the collapsed camera offered two identical buttons and VoiceOver read the strip
+    /// toggle twice.
+    func testTheChromeDrawsThePosesControlInOnePlace() throws {
+        let source = try cameraFeatureSource()
+        let panel = try viewBody(named: "panel", in: source)
+        let scaleRow = try viewBody(named: "scaleRow", in: source)
+
+        XCTAssertFalse(
+            panel.contains("stripToggle"),
+            "the panel no longer hosts the Poses control: the scale row is its one home"
+        )
+        XCTAssertEqual(
+            scaleRow.components(separatedBy: "stripToggle").count - 1, 1,
+            "the scale row draws exactly one Poses control"
+        )
+        XCTAssertEqual(
+            source.components(separatedBy: .newlines)
+                .filter { $0.trimmingCharacters(in: .whitespaces) == "stripToggle" }
+                .count,
+            1,
+            "one render site for the control: the declaration is not a second one"
+        )
+    }
+
+    // MARK: The strip's way into the full picker
+
+    /// `camera.choosePose` is the only entry to the picker sheet (search + All/Saved scopes). As the
+    /// strip's *last* card it sat outside the viewport as soon as the catalogue filled the row, and
+    /// neither a tap nor VoiceOver could reach it. It leads the strip instead.
+    func testTheStripLeadsWithTheBrowseEntry() throws {
+        let source = try cameraFeatureSource()
+        let strip = try viewBody(named: "stripView", in: source)
+
+        let browse = try XCTUnwrap(strip.range(of: "browseAllCard")?.lowerBound, "the strip draws the Browse card")
+        let cards = try XCTUnwrap(strip.range(of: "ForEach(poses)")?.lowerBound, "the strip draws the pose cards")
+        XCTAssertLessThan(
+            browse, cards,
+            "Browse comes first: a trailing card scrolls out of the viewport and takes the sheet with it"
+        )
+    }
+
+    // MARK: Timer / Ratio option ids
+
+    /// Each Timer and Ratio choice is its own accessibility element with its own id. The row id used to
+    /// be applied to the row's *content*, so every option reported `camera.tools.timer` /
+    /// `camera.tools.ratio` and the documented per-option ids never reached the tree.
+    func testTheTimerAndRatioChoicesKeepTheirOwnIdentifiers() throws {
+        let source = try cameraFeatureSource()
+        for row in ["timerRow", "ratioRow"] {
+            let body = try viewBody(named: row, in: source)
+            XCTAssertTrue(
+                body.contains(".accessibilityElement(children: .contain)"),
+                "\(row) is a container, so its choices stay separate elements with their own ids"
+            )
+        }
+
+        // The ids themselves are the QA contract and stay unchanged.
+        XCTAssertEqual(CameraTimerSetting.off.accessibilityIdentifier, "camera.tools.timer.off")
+        XCTAssertEqual(CameraTimerSetting.threeSeconds.accessibilityIdentifier, "camera.tools.timer.3s")
+        XCTAssertEqual(CameraTimerSetting.tenSeconds.accessibilityIdentifier, "camera.tools.timer.10s")
+        XCTAssertEqual(CameraAspectRatio.threeFour.accessibilityIdentifier, "camera.tools.ratio.3x4")
+    }
+
+    // MARK: - Source helpers
+
+    private func cameraFeatureSource() throws -> String {
+        try String(
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent() // Features
+                .deletingLastPathComponent() // iosAppTests
+                .deletingLastPathComponent() // iosApp (project dir)
+                .appendingPathComponent("iosApp/Features/Camera/CameraFeature.swift"),
+            encoding: .utf8
+        )
+    }
+
+    /// The body of `private var <name>: some View { … }`, found by brace counting.
+    private func viewBody(named name: String, in source: String) throws -> String {
+        let marker = "var \(name): some View {"
+        let start = try XCTUnwrap(
+            source.range(of: marker)?.upperBound,
+            "no declaration for \(name)"
+        )
+        var depth = 1
+        var index = start
+        while index < source.endIndex {
+            let character = source[index]
+            if character == "{" {
+                depth += 1
+            } else if character == "}" {
+                depth -= 1
+                if depth == 0 { return String(source[start..<index]) }
+            }
+            index = source.index(after: index)
+        }
+        XCTFail("unterminated body for \(name)")
+        return ""
+    }
+}
