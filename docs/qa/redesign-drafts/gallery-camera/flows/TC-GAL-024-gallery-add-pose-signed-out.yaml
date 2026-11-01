@@ -1,0 +1,22 @@
+# TC-GAL-024 signed out, Gallery → Add pose asks for a sign-in (and only then)
+appId: ${APP_ID}
+tags: [TC-GAL-024, p1]
+---
+# Held for dev19. Signed out is the clean-launch state: launch.yaml clears the keychain, no credentials needed.
+- runFlow: ../../../../mobile/iosApp/maestro/subflows/launch.yaml
+- tapOn: "Gallery"
+- extendedWaitUntil:
+    visible:
+      id: "gallery.title"
+    timeout: 20000
+- tapOn:
+    id: "gallery.add-pose"
+# Signed out, the prompt is the correct answer: a sign-in affordance appears and the form does not.
+- extendedWaitUntil:
+    visible:
+      id: "signin.emailEntry"
+    timeout: 20000
+- assertVisible:
+    id: "signin.apple"
+- assertNotVisible:
+    id: "addPose.photoPicker"

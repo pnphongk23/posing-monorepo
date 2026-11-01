@@ -1,0 +1,28 @@
+# TC-GAL-022 signed in, Gallery → Add pose opens the Add pose form (no sign-in prompt)
+appId: ${APP_ID}
+tags: [TC-GAL-022, p1, e2e]
+---
+# Held for dev19: on build 18 this flow reproduces camera-18-06 (the sign-in prompt appears although the
+# user is signed in). Credentials come from the runner (`-e E2E_EMAIL=... -e E2E_PASSWORD=...`).
+- runFlow: ../../../../mobile/iosApp/maestro/subflows/ext-launch.yaml
+- runFlow: ../../../../mobile/iosApp/maestro/subflows/ext-sign-in.yaml
+# Gallery tab (TODO(QA-261029-ID) dock.gallery — the dock item still has a label only).
+- tapOn: "Gallery"
+- extendedWaitUntil:
+    visible:
+      id: "gallery.title"
+    timeout: 20000
+- tapOn:
+    id: "gallery.add-pose"
+# The form is the destination — not a sign-in prompt.
+- extendedWaitUntil:
+    visible:
+      id: "addPose.photoPicker"
+    timeout: 20000
+- assertVisible:
+    id: "addPose.title"
+- assertNotVisible:
+    id: "signin.emailEntry"
+- assertNotVisible:
+    id: "signin.apple"
+- assertNotVisible: "Sign in"

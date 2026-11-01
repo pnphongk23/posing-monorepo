@@ -1,0 +1,36 @@
+# TC-GAL-023 signed in, photo detail → Add pose opens the Add pose form (no sign-in prompt)
+appId: ${APP_ID}
+tags: [TC-GAL-023, p1, e2e]
+---
+# Held for dev19 AND seed-dependent: this needs at least one photo in the gallery. The app has no
+# gallery seed (photos only come from a real capture, and the Simulator has no camera), so on the
+# Simulator this flow can only run after a capture fixture is added — otherwise it is device-only.
+- runFlow: ../../../../mobile/iosApp/maestro/subflows/ext-launch.yaml
+- runFlow: ../../../../mobile/iosApp/maestro/subflows/ext-sign-in.yaml
+- tapOn: "Gallery"
+- extendedWaitUntil:
+    visible:
+      id: "gallery.title"
+    timeout: 20000
+# A photo cell carries only a VoiceOver label (no id), so the first cell is tapped by point.
+- assertNotVisible:
+    id: "gallery.empty.openCamera"
+- tapOn:
+    point: "20%,40%"
+- extendedWaitUntil:
+    visible:
+      id: "gallery.detail.addPose"
+    timeout: 20000
+- tapOn:
+    id: "gallery.detail.addPose"
+- extendedWaitUntil:
+    visible:
+      id: "addPose.photoPicker"
+    timeout: 20000
+- assertVisible:
+    id: "addPose.title"
+- assertNotVisible:
+    id: "signin.emailEntry"
+- assertNotVisible:
+    id: "signin.apple"
+- assertNotVisible: "Sign in"

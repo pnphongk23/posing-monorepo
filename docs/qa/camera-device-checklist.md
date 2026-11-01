@@ -127,9 +127,16 @@ The **Mirror** row flips the pose guide only. A front-camera **photo** is a sepa
 - [ ] In the tools panel turn **Mirror** on, then capture one photo and open it.
 - [ ] **Expected (guide only):** only the pose **overlay** flipped — the camera preview and the saved photo are unchanged,
   and the guide is not baked into the photo at all.
-- [ ] Switch to the **front camera**, hold something with text in view, and capture.
-- [ ] **Expected (saved image):** the photo is upright, mirrored the way the preview showed you, never upside-down or
-  double-flipped.
+- [ ] Switch to the **front camera** and hold something obviously asymmetric — write `HELLO` on paper, or raise one hand
+  on one side — so the first letter / your hand sits on a definite side of the frame.
+- [ ] Look at the preview and note which side that is (the selfie preview shows you mirrored, like a mirror).
+- [ ] Capture, then open the photo in **Gallery**, and in **Photos** as well if Photos access is on.
+- [ ] **Expected (front camera, what-you-see-is-what-you-get):** the **saved photo has the same orientation as the
+  preview** — the word reads the same way round and your hand is on the same side in the preview, in Gallery and in
+  Photos. Nothing is flipped vertically, and the in-app copy and the Photos copy agree with each other.
+- [ ] Switch back to the **rear camera** and shoot the same subject.
+- [ ] **Expected (rear camera unchanged):** the saved photo keeps the real-world orientation — this is the control case, and
+  the front-camera fix must not mirror it.
 - [ ] Turn **Mirror** off (or **Reset** the guide) before you finish.
 
 ## 9. Shutter and the capture snackbar
