@@ -1,7 +1,11 @@
 # TC-SAV-003 unsaving removes the pose from Saved
 #
-# Starts from the list (TC-SAV-002 guarantees a saved row), unsaves by the row's own control, and proves the
-# removal by reloading the screen: an optimistic animation is not evidence that the server heard it.
+# Starts from the list (TC-SAV-002 guarantees a saved row), empties it, and proves the removal by reloading
+# the screen: an optimistic animation is not evidence that the server heard it.
+#
+# The case's expected result is the EMPTY collection, while the QA account is not guaranteed to hold exactly
+# one pose, so the flow unsaves until the empty state appears. `repeat` is bounded: a list that will not
+# empty fails here instead of looping forever.
 #
 # TODO(saved.unsave.<poseID>): the row control is only labelled "Remove from saved" today, which is
 # ambiguous with several rows; the label is used until the id exists.
@@ -22,7 +26,16 @@ tags: [TC-SAV-003, p1]
 - extendedWaitUntil:
     visible: "Remove from saved"
     timeout: 25000
-- tapOn: "Remove from saved"
+# Unsave every row until the empty state owns the screen (bounded: at most 8 removals).
+- repeat:
+    while:
+      notVisible:
+        id: "saved.browseCommunity"
+    times: 8
+    commands:
+      - tapOn: "Remove from saved"
+      - waitForAnimationToEnd:
+          timeout: 8000
 - extendedWaitUntil:
     visible:
       id: "saved.browseCommunity"

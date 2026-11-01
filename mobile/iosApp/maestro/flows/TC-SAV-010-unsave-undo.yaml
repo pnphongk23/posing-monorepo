@@ -1,8 +1,10 @@
 # TC-SAV-010 unsave is server-confirmed and reversible: "Removed <pose>" + Undo puts the row back
 #
-# The snackbar has no id of its own (by design), so the flow reads it by its text — "Undo" and the
-# "Removed …" line — and proves the recovery, not just the message: the pose that was there first is the
-# first row again after Undo, i.e. it returned to its previous index through the real bookmark service.
+# The snackbar has no accessibility id (requested: saved.snackbar + saved.snackbar.undo), and the row
+# control only says "Remove from saved" (requested: saved.unsave.<poseID>). Until those exist the flow can
+# only read text, so it checks the shortest-lived signal FIRST and on the very next command — the Undo
+# control — before the longer "Removed <pose>" line. A bounded wait makes "no snackbar at all" fail as a
+# behaviour defect instead of a timing race.
 #
 # Needs an account with at least two saved poses (TC-SAV-002 leaves one; seed a second by saving another
 # pose before this flow, or run it against an account that already has some).
@@ -29,10 +31,11 @@ tags: [TC-SAV-010, p1, e2e]
     id: "poses.first-card"
 # The first row's unsave control (the only "Remove from saved" on screen at that position).
 - tapOn: "Remove from saved"
+# Undo is the distinctive control of the snackbar; five seconds is well inside the auto-dismiss window.
 - extendedWaitUntil:
-    visible: "Removed .*"
-    timeout: 15000
-- assertVisible: "Undo"
+    visible: "Undo"
+    timeout: 5000
+- assertVisible: "Removed .*"
 # The row is gone from the list while the offer to restore it is up.
 - assertNotVisible:
     text: ${maestro.copiedText}
