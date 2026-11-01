@@ -7,13 +7,25 @@ tags: [TC-PAY-009, p1]
 - runFlow: ../subflows/open-camera.yaml
 - tapOn:
     id: "camera.shutter"
+# The options are not on the paywall body: the signed-out CTA ("Sign in to subscribe") opens the sign-in
+# sheet, and only then is there an order to check. Tapping it is part of the case, not setup.
+- extendedWaitUntil:
+    visible:
+      id: "paywall.cta"
+    timeout: 20000
+- tapOn:
+    id: "paywall.cta"
+- extendedWaitUntil:
+    visible:
+      id: "paywall.signin.sheet"
+    timeout: 20000
 - extendedWaitUntil:
     visible:
       id: "paywall.signin.apple"
-    timeout: 20000
-# Apple is the first option in the column, so Google (its peer) must sit below it on screen. This is
-# the ordering half of guideline 4.8; "equal prominence" is geometry (shared NeoButtonStyle size and
-# full width, pinned by PaywallAppleSignInTests), which no Maestro selector can measure.
+    timeout: 15000
+# Apple is first in the column, so Google (its peer) sits below it, and email below that. This is the
+# ordering half of guideline 4.8; "equal prominence" is geometry (system Apple button + shared styling,
+# pinned by PaywallAppleSignInTests), which no Maestro selector can measure.
 - assertVisible:
     id: "paywall.signin"
     below:
@@ -22,3 +34,8 @@ tags: [TC-PAY-009, p1]
     id: "signin.emailEntry"
     below:
       id: "paywall.signin"
+# The sheet is dismissible back to the offer without signing in or buying.
+- tapOn:
+    id: "paywall.signin.close"
+- assertNotVisible:
+    id: "paywall.signin.sheet"

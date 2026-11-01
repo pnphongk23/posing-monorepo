@@ -1,14 +1,14 @@
-# TC-PAY-013 a cancelled purchase grants nothing and says so
+# TC-PAY-013 a cancelled purchase grants nothing and reports nothing
 #
-# Same Test Store harness as TC-PAY-012, with the dialog's Cancel: the app must report the cancellation
-# and keep the paywall up, and the capture gate must still be closed afterwards.
+# Same Test Store harness as TC-PAY-012, with the dialog's Cancel. Cancelling is the user's own answer to
+# the store sheet, so the surface stays silent on purpose (Feature, 821bd71): no outcome banner, no card,
+# no retry — a "purchase cancelled" error would be scolding the user for a decision they just made. What
+# must hold is the *state*: no access, and the paywall is still the surface.
 appId: ${APP_ID}
 tags: [TC-PAY-013, p1, e2e]
 ---
 - runFlow: ../subflows/pay-launch.yaml
-# Account B on purpose: these cases need an *unentitled* account, and account A becomes entitled the
-# moment TC-PAY-004 buys (Test Store subscriptions persist on the RevenueCat customer). TC-PAY-006 uses
-# the same injection.
+# Account B: unentitled, and not turned entitled by an earlier TC-PAY-004 in the same suite run.
 - runFlow:
     file: ../subflows/pay-sign-in.yaml
     env:
@@ -27,15 +27,21 @@ tags: [TC-PAY-013, p1, e2e]
     visible: "Test failed purchase"
     timeout: 30000
 - tapOn: "Cancel"
+# Silence is the expectation: give the surface a moment to settle, then assert the *absence* of the
+# failure affordances that TC-PAY-012 proves do exist when a purchase really fails.
 - extendedWaitUntil:
-    visible:
-      id: "paywall.status"
-    timeout: 60000
-- assertVisible:
+    notVisible: "Test failed purchase"
+    timeout: 30000
+- assertNotVisible:
     id: "paywall.status"
-    text: ".*[Cc]ancel.*"
+- assertNotVisible:
+    id: "paywall.retry"
+# No access was granted: still on the paywall, camera not behind it …
 - assertNotVisible:
     id: "camera.shutter"
+# … and the offer is intact, so the user can simply try again when they choose to.
+- assertVisible:
+    id: "paywall.cta"
 - tapOn:
     id: "paywall.close"
 - assertVisible:

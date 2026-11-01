@@ -1,5 +1,15 @@
 # BUG-PAY-18-01 (high) — signed out, the paywall's "Sign in to subscribe" CTA does nothing
 
+> **Status: FIXED in `33d4354`** — root cause was presentation, not wiring: the sign-in sheet *was* drawn,
+> but `.presentationDetents([.medium, .large])` keeps a medium sheet's content out of the accessibility tree
+> on iOS 16+/26, so `paywall.signin.sheet`, `.apple`, `.signin`, `.close` and `signin.emailEntry` were all
+> unqueryable and the CTA read as dead (to VoiceOver as well as to automation). The sheet now presents at
+> **`.large` only**, and a test pins that choice. **Verify on dev19** with TC-PAY-003 and TC-PAY-009.
+>
+> Note for the visual pass: the sheet is **full height** where the board draws a medium sheet — GL has
+> accepted this deviation (accessibility beats the board here); it is recorded as accepted in
+> `../../../test-cases/paywall-purchase.md`, not as a bug.
+
 **Build:** 1.1 (18), Debug-Dev, lane-2 `CF871F97`.
 **Screen:** paywall, opened from the camera shutter while signed out (`-AIPosePaywallEnabled YES`, no session).
 **Flows that hit it:** `TC-PAY-003-paywall-signin-prompt`, `TC-PAY-009-signin-apple-first` (both red).

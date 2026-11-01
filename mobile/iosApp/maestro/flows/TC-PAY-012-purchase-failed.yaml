@@ -29,22 +29,33 @@ tags: [TC-PAY-012, p1, e2e]
     visible: "Test failed purchase"
     timeout: 30000
 - tapOn: "Test failed purchase"
-# The banner is the only thing allowed to report the outcome, and the paywall must stay up: a dismissal
-# would look like success.
+# The settled outcome: the card reports the failure through the outcome banner QA reads
+# (`paywall.status`, "The purchase didn't go through") and carries the one action that answers it.
 - extendedWaitUntil:
     visible:
       id: "paywall.status"
     timeout: 60000
 - assertVisible:
     id: "paywall.status"
-    text: ".*[Pp]urchase.*"
+    text: ".*purchase didn.t go through.*"
+- assertVisible:
+    id: "paywall.retry"
+# No access: the paywall is still up, the camera is not behind it.
 - assertNotVisible:
     id: "camera.shutter"
-# No access: the capture gate is still closed, i.e. the same press asks again rather than capturing.
+# The retry path: "Try again" starts a fresh store attempt (its dialog is the proof), and cancelling that
+# one leaves the user where they were — still unentitled, nothing bought.
+- tapOn:
+    id: "paywall.retry"
+- extendedWaitUntil:
+    visible: "Test failed purchase"
+    timeout: 30000
+- tapOn: "Cancel"
 - tapOn:
     id: "paywall.close"
 - assertVisible:
     id: "camera.shutter"
+# The gate is unchanged: the same press asks again instead of capturing.
 - tapOn:
     id: "camera.shutter"
 - extendedWaitUntil:

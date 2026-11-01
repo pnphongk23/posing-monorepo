@@ -1,5 +1,11 @@
 # BUG-PAY-18-02 (medium) — a failed purchase leaves the paywall silent
 
+> **Status: FIXED in `821bd71`** — a failed purchase now renders the notice card as the settled outcome:
+> its headline carries `paywall.status` ("The purchase didn't go through") and its **Try again** is
+> `paywall.retry` (wired to the same purchase); a failed *restore* keeps its own copy and inline retry, and a
+> **cancelled** purchase stays deliberately silent — no card, no retry. **Verify on dev19** with
+> TC-PAY-012 (failure → Try again → fresh attempt) and TC-PAY-013 (cancel → silence, no access).
+
 **Build:** 1.1 (18), Debug-Dev, lane-2 `CF871F97`, account B (never entitled), Test Store dialog.
 **Screen:** paywall, plans loaded (real prices: "US$6,67 per month, billed US$79,99 yearly", "Save 33%").
 **Flow:** `TC-PAY-012-purchase-failed`.

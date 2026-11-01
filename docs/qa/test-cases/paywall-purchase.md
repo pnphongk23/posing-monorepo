@@ -20,7 +20,7 @@ id or on data, `out of scope 1.1` = agreed out of this release.
 |---|---|---|---|---|---|
 | TC-PAY-001 | P0 | paywall switch on, signed out | 1. Launch with the paywall on. 2. Open the camera, tap the shutter | The paywall opens over the app and the press does not capture. Presentation is the **full-screen cover** the redesign commits to (no sheet grabber, nothing of the camera interactive behind it) and the close control stays reachable | automated: TC-PAY-001-capture-gated.yaml — **re-baseline** (presentation: sheet → full-screen cover) |
 | TC-PAY-002 | P0 | paywall switch off | 1. Launch with the paywall off. 2. Camera → shutter | No paywall; the camera stays (the simulator has no capture device, so no photo is checked) | automated: TC-PAY-002-capture-ungated.yaml |
-| TC-PAY-003 | P1 | paywall switch on, signed out | 1. Camera → shutter | The signed-out paywall still shows **what is being sold** (the plans, with prices) and one primary **Sign in to subscribe** action that explains why: the purchase is tied to the account. It does not hide the offer behind an auth wall | automated: TC-PAY-003-paywall-signin-prompt.yaml — **re-baseline** (today the app replaces the cards with a notice + three buttons) |
+| TC-PAY-003 | P1 | paywall switch on, signed out | 1. Camera → shutter. 2. Tap the CTA "Sign in to subscribe" | The signed-out paywall still shows **what is being sold** (plan cards, prices deferred) and one primary CTA that opens the sign-in sheet (`paywall.signin.sheet` at full height) — the offer is not hidden behind an auth wall, and the ways in are queryable (fixed: `BUG-PAY-18-01`, `33d4354`) | automated: TC-PAY-003-paywall-signin-prompt.yaml — **re-baselined + held for dev19** |
 | TC-PAY-004 | P1 | signed in by email; Debug-Dev build with the RevenueCat Test Store key | 1. Paywall open for an unentitled account. 2. Pick a plan, tap the CTA. 3. "Test valid purchase" | "Premium access confirmed"; reopening the paywall still reports it; the shutter no longer opens the paywall. CTA copy is **Subscribe** (not "Continue with <plan>") | automated: TC-PAY-004-purchase-annual-entitles.yaml (tagged `e2e`) — **re-baseline** (CTA copy, plan labels) |
 | TC-PAY-005 | P1 | entitled account | 1. Sign out. 2. Camera → shutter | The paywall is back and asks the signed-out user to sign in: access does not outlive the account | automated: TC-PAY-005-signout-regates-capture.yaml (tagged `e2e`) |
 | TC-PAY-006 | P1 | A entitled, B never purchased | 1. Sign out of A, sign in as B. 2. Camera → shutter | B gets the plans with no "Premium access confirmed": A's purchase is not carried over | automated: TC-PAY-006-second-account-no-carryover.yaml (tagged `e2e`) — **re-baseline** (CTA copy) |
@@ -39,6 +39,13 @@ id or on data, `out of scope 1.1` = agreed out of this release.
 | TC-PAY-019 | P0 | paywall open with plans loaded (Test Store or a build whose offering resolves) | 1. Read the paywall from the offer to the dock; 2. Open Terms and Privacy from it | **App Store 3.1.2 disclosure, MUST COVER in 1.2**: the surface itself states the price, the billing period, that the subscription **auto-renews** until cancelled, and how to cancel (Apple ID settings), and both Terms of Use and Privacy Policy links are present and open. A paywall that sells without all five cannot ship | pending ids (`paywall.disclosure.price`, `paywall.disclosure.renewal`, `paywall.disclosure.cancel`) + draft follows them; the copy half is assertable by regex today |
 | TC-PAY-020 | P0 | paywall open, any state | 1. Read the benefit area and every claim on the surface | **Shutter-only claim (B5), MUST COVER**: Premium is described as capture with the full pose camera and nothing more — the redesign reduces the benefit list to **one** block (`paywall.benefit`), and no claim survives for free shots, a daily quota, a "full pose library" or offline poses (`09-11.md`: the current "Discover"/"Keep" benefits break this rule). A second benefit block is a regression even if its copy is harmless | draft asserts exactly one `paywall.benefit` element + unit: copy constants; **re-baseline** (app currently shows three benefits) |
 | TC-PAY-021 | P1 | signed in, paywall open | 1. Read the paywall header | The surface says which account the purchase will attach to ("Signed in as <email>" on the board). Buying Premium against an invisible account is the failure this prevents — the user must be able to see whose subscription this will be | pending id (`paywall.account.email`); **new behaviour** |
+
+## Accepted design deviation (GL, dev19)
+
+- **The sign-in sheet is full height (`.large`), the board draws a medium sheet.** Accepted: a medium detent
+  keeps the sheet's content out of the accessibility tree on iOS 16+/26 (that was `BUG-PAY-18-01`'s root
+  cause), so accessibility wins over the board here. The visual pass should expect a full-height sheet and
+  must not file it.
 
 ## Notes (how these run)
 
@@ -71,6 +78,10 @@ results are history: the redesign is in **1.1 (18)**, which is what the cases be
 Re-baselined before the run (flow defects, not app bugs): `TC-PAY-003` and `TC-PAY-005` now assert the
 signed-out CTA label ("Sign in to subscribe") and open `paywall.signin.sheet`, and
 `subflows/pay-buy-monthly.yaml` asserts the single "Subscribe" CTA instead of "Continue with Monthly".
+
+**Held for dev19** (prepared, not run): `TC-PAY-003`, `TC-PAY-009` (sheet is now queryable — `33d4354`), and
+`TC-PAY-012`, `TC-PAY-013` (failure → "Try again"; cancel → silence — `821bd71`), all on the Dev Test Store
+key with account B for the unentitled ones.
 
 ## Promotable at the 1.1 (18) run
 
