@@ -1,4 +1,9 @@
 # TC-CAM-021 the pose sheet's search filters by name and its no-match state is the shared panel
+#
+# dev20: PASS with this flow (the earlier "10-minute hang" report was retracted — a killed wrapper, not
+# this flow). `inputText` still needs a software keyboard, which some Simulators do not show while a
+# hardware keyboard is attached: if a run ever stalls on that step, prefer hiding the hardware keyboard
+# (Simulator ▸ Keyboard ▸ Connect Hardware Keyboard off) over treating it as an app defect.
 appId: ${APP_ID}
 tags: [TC-CAM-021, p1]
 ---
@@ -21,8 +26,11 @@ tags: [TC-CAM-021, p1]
       id: "posePicker.grid"
     timeout: 20000
 # A query that cannot match any pose name empties the grid and shows the shared state panel instead.
+- assertVisible:
+    id: "posePicker.search"
 - tapOn:
     id: "posePicker.search"
+# `inputText` needs a software keyboard — the one step to watch if a batch ever stalls (header note).
 - inputText: "zzzqx"
 - extendedWaitUntil:
     visible:

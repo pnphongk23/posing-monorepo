@@ -26,7 +26,7 @@ owner feedback of 2026-10-31. The camera chrome (top bar, strip, zoom pills, sna
 | TC-CAM-018 | P1 | Camera refused in iOS Settings | Open the camera and read the bottom bar | The strip and the "Poses" control are gone (nothing to place a pose on); shutter and flip remain; flip / zoom / tools are greyed out; the permission panel is the only action | automated: TC-CAM-018-permission-hides-strip.yaml |
 | TC-CAM-019 | P1 | Camera, strip expanded | Collapse the strip, relaunch the app keeping its data, reopen the camera | The camera opens collapsed (no strip, "Poses" control still there) — the collapsed state is persisted like the other camera settings; a fresh install opens expanded | automated: TC-CAM-019-collapse-survives-relaunch.yaml |
 | TC-CAM-020 | P1 | Camera, pose catalogue unreachable / empty | Open the camera expanded with no network, then with a catalogue that has no poses | The strip is never a blank row: placeholder cards while loading, "Couldn't load poses" + Try again on failure, "No poses yet" for an empty catalogue | unit: CameraFeatureTests.CameraChromeTests (`testStripContentFollowsEveryPickerState`); device visual: checklist §3 |
-| TC-CAM-021 | P1 | Camera, catalogue loaded | 1. Open the pose title sheet. 2. Type a term no pose name contains. 3. Tap the search field's clear control | The sheet's search filters the grid by pose name; a query that matches nothing replaces the grid with the shared state panel ("No poses match “<term>”") and clearing restores the full grid without a refetch | manual (device: checklist §3) — **parked flow:** docs/qa/redesign-drafts/gallery-camera/flows/TC-CAM-021-picker-search-no-match.yaml. On dev20 the flow stalled the suite ~10 min in `inputText` (no software keyboard on the Simulator; every wait in it has a timeout, so the typing step is the blocker). `run.sh` only excludes the `e2e` tag, so a `device-only` tag would not keep it out — it stays parked until the picker gains a query fixture or a keyboard-safe path |
+| TC-CAM-021 | P1 | Camera, catalogue loaded | 1. Open the pose title sheet. 2. Type a term no pose name contains. 3. Tap the search field's clear control | The sheet's search filters the grid by pose name; a query that matches nothing replaces the grid with the shared state panel ("No poses match “<term>”") and clearing restores the full grid without a refetch | automated: TC-CAM-021-picker-search-no-match.yaml |
 | TC-CAM-022 | P0 | Camera, catalogue loaded, signed in | 1. Open the pose title sheet. 2. Switch the scope chips All → Saved → All | The sheet offers a two-chip scope under the title: **All** ("All poses") and **Saved** ("Saved poses"); the active chip carries a check glyph and reports value **Selected**, switching re-filters the grid in place without closing the sheet, and the search text keeps applying inside the chosen scope | automated: TC-CAM-022-picker-scope-chips.yaml |
 | TC-CAM-023 | P1 | Camera, signed in, no saved poses | Open the sheet, switch to Saved | The Saved scope with nothing in it draws the Saved screen's own empty copy — "No saved poses yet" / "Save poses from Community to find them here." — instead of an empty grid, and the All chip still gets back to the catalogue in one tap | **reworked at `d001b80`** (the sheet opens from the strip's Browse card); run on the 18 app.  pending — draft: docs/qa/redesign-drafts/gallery-camera/TC-CAM-023-saved-scope-empty.yaml (id `posePicker.saved.empty`, landed at `a03d03a`; the flow needs a signed-in account with zero saved poses) |
 | TC-CAM-033 | P1 | Camera, signed out | Open the sheet, switch to Saved | Signed out, the Saved scope explains itself with the Saved screen's copy — "Sign in to view your saved poses" / "Your saved poses are tied to your account. Sign in to keep them synced." — and shows **no** pose rows and no error; All keeps working offline of the account | automated: TC-CAM-033-saved-scope-signed-out.yaml |
@@ -61,17 +61,19 @@ Every flow and draft below was reworked in the same pass (Done → outside tap; 
 TC-CAM-001/004/011 keep their flows, TC-CAM-014/015/021/022/023/032/033 are now drafts against these ids and are run on
 the 18 app. Their automation cells say so.
 
-## Flow hazards found on dev20 (docs/flows only)
-- **TC-CAM-004** was failing at `posePicker.search` for a stale premise: build 18+ draws `cameraToolsPopup` as the last
-  child of the camera's root ZStack with a **full-screen** `Color.clear` tap catcher, so tapping the strip's Browse card
-  while the popover is open just dismisses the popover. The flow now dismisses the popover (outside tap + assert) before
-  opening the sheet, and waits for `posePicker.search` instead of asserting it instantly.
-- **TC-CAM-021** is parked: its only unbounded risk is `inputText` waiting on a software keyboard that a Simulator with a
-  hardware keyboard never shows (every `extendedWaitUntil` in it has a timeout). A `device-only` tag would not help —
-  `run.sh` excludes only `e2e`.
-- **Cases that need a real camera** and therefore have no flow at all (device-only by design): TC-CAM-002, 003, 005, 008,
-  017, 026, 029, 030, 031, 035. Nothing in `maestro/flows/` taps the shutter for a capture except the paywall lane's
-  TC-PAY-001/002 — those assert gate behaviour, not a saved photo.
+## Flow hazards to watch (found while triaging dev20)
+- **TC-CAM-004** failed on dev20 at `posePicker.search` for a **stale premise**, not an app bug: build 18+ draws
+  `cameraToolsPopup` as the last child of the camera's root ZStack with a **full-screen** `Color.clear` tap catcher, so a tap
+  on the strip's Browse card while the popover is open only dismisses the popover. The flow now dismisses the popover
+  (outside tap + assert) before opening the sheet and waits for `posePicker.search` instead of asserting it instantly.
+- **`inputText` and the software keyboard** — a Magento step that types (`inputText`) needs a software keyboard; a Simulator
+  with **Connect Hardware Keyboard** on shows none, and XCTest's `typeText` can then look stalled. This is a **hazard to
+  watch, not a confirmed defect**: dev20 ran **TC-CAM-021 to a PASS** with its `inputText`. If a batch does stall there, turn
+  the hardware keyboard off before filing anything. TC-CAM-021 also keeps a fast-fail `assertVisible: posePicker.search`
+  before the tap so a missing sheet fails in seconds.
+- **Real-camera cases have no flow at all** (device-only by design): TC-CAM-002, 003, 005, 008, 017, 026, 029, 030, 031,
+  035. Nothing in `maestro/flows/` taps the shutter expecting a saved photo; the only shutter taps in the suite are the
+  paywall lane's TC-PAY-001/002, which assert gate behaviour.
 
 ## Fix status (all six camera defects have a fix on main, none verified yet)
 `7153c95` duplicate Poses control · `17fdd9f` Browse card leads the strip (the 7 red flows) · `22c9c83` Timer/Ratio option
