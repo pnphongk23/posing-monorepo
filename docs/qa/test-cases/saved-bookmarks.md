@@ -30,6 +30,14 @@ or on data, `out of scope 1.1` = agreed out of this release.
 | TC-SAV-014 | P1 | signed in, device offline | 1. Open Saved offline (`-AIPoseSavedOfflineFixture 0`, so no row is cached) | No row offers **Remove from saved**, and the reason is stated on screen (banner + "Not saved offline"). Offering the destructive action offline would either fail silently or look successful while the server never heard it | draft: redesign-drafts/saved-paywall/flows/TC-SAV-014-no-unsave-offline.yaml |
 | TC-SAV-015 | P1 | signed in, at least two saved poses | 1. Unsave a row. 2. Tap **Undo** while the restore cannot reach the server | The pose is **not** added back (no optimistic ghost row in the list) and the Undo action stays available so the user can retry; a failure never leaves the list claiming a pose is saved when it is not | unit: undo-failure path (no flow: there is no seam that makes only the re-save fail; the server must stay reachable for the list itself) |
 
+## Held for dev19 (the unsave fix)
+
+`BUG-SAVED-18-01` (unsave tile unreachable) is fixed in `0cb55d1`; **TC-SAV-010** and the flows that depend
+on unsaving — **TC-SAV-003**, **TC-SAV-004** (its setup empties the list), **TC-SAV-014** — are held until the
+dev19 app is installed, then re-run. The fix also changed what the row ids mean: `poses.first-card` /
+`poses.card.<id>` now sit on the open-pose link (thumbnail + copy), not on the whole row, so the trailing
+unsave tile is addressed by `"Remove from saved"` and never by a row coordinate.
+
 ## Accepted cosmetic deltas (do not raise as bugs)
 
 Agreed with the Feature lane for this slice — the flows must not assert against these:

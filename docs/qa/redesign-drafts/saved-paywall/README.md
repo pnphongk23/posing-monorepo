@@ -97,6 +97,12 @@ the offline board — the fixture applies only once the list is already `.loaded
 `-AIPoseAPIBaseURL` relaunch no longer forces the error state: the saved collection is served from the local
 store). Reasons recorded in each file header.
 
+**Fixed and waiting for dev19:** `BUG-SAVED-18-01` is fixed in `0cb55d1` (the unsave tile is a sibling of the
+open-pose link). `TC-SAV-010`, `TC-SAV-003`, `TC-SAV-004` and `TC-SAV-014` are held until that build is
+installed — and note the side effect of the fix: `poses.first-card` / `poses.card.<id>` now mark the link
+(thumbnail + copy), not the whole row, so the unsave tile is pressed by `"Remove from saved"`, never by a row
+coordinate.
+
 **Order dependency learned:** TC-PAY-012/013/017 need an *unentitled* account, and account A becomes
 entitled as soon as TC-PAY-004 buys. They now sign in as account B (the TC-PAY-006 injection) instead of
 depending on where they sit in the suite.

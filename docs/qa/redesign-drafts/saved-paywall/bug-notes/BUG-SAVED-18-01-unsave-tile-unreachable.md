@@ -1,5 +1,17 @@
 # BUG-SAVED-18-01 (high) — the Saved row's unsave tile does nothing, so Saved can only grow
 
+> **Status: FIXED in `0cb55d1`** (Feature: the unsave tile is now a *sibling* of the open-pose
+> `NavigationLink` instead of a child of its label; unit suite 22/0 at the time; device-checked on lane 1).
+> **Verify on dev19** with TC-SAV-010, and re-run TC-SAV-003 / TC-SAV-004 / TC-SAV-014, which are held for
+> that build.
+>
+> **Changed contract to re-check in every flow that touches a saved row:** `poses.first-card` and
+> `poses.card.<id>` now identify the *link* (thumbnail + title/category), **not the whole row** — the
+> trailing unsave tile is outside those ids. Selector taps on those ids still open the pose; coordinate taps
+> aimed at the row's trailing area must be re-checked, and `"Remove from saved"` is the supported way to
+> press the tile (by id or label). Previous coordinate-based attempts in this note were evidence for the
+> bug, not a recipe.
+
 **Build:** 1.1 (18), Debug-Dev, `/tmp/ai-pose-lane2-app-1.1/dev18/posing.app` (`a03d03a` + integration,
 HEAD `da7c019`), lane-2 `CF871F97`.
 **Screen:** Saved list (Settings → Library → Saved), signed in with the E2E account.
