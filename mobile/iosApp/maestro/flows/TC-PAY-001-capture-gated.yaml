@@ -21,13 +21,11 @@ tags: [TC-PAY-001, p0]
     timeout: 20000
 - assertVisible:
     id: "paywall.steps"
-# The paid step carries the only benefit Premium claims. It sits inside the steps block, which can end up
-# below the fold, so its presence is proven by scrolling to it.
-- scrollUntilVisible:
-    element:
-      id: "paywall.benefit"
-    direction: DOWN
-    timeout: 15000
+# The paid step carries the only benefit Premium claims. It is asserted by its verbatim copy, not by
+# `paywall.benefit`: on build 21 that id is not in the accessibility tree at all — all three step rows expose
+# `paywall.steps` (measured in the dev21 hierarchy, 2026-11-03_022617: zero `paywall.benefit` nodes), so
+# scrolling to it can never succeed. The step-3 sentence is the code-owned copy and proves the same claim.
+- assertVisible: '3\. Shoot\. Premium unlocks the shutter with the full pose camera\.'
 # Build 21: both cards are on the first screen, each stating its own amount and period.
 - assertVisible:
     id: "paywall.plan.annual"

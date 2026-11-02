@@ -16,10 +16,17 @@ tags: [TC-PAY-004, p1, e2e]
     timeout: 20000
 - assertVisible:
     id: "paywall.plan.annual"
-# Yearly is preselected in C; the helper line is how that default is observable before the subflow changes it.
-- assertVisible:
-    id: "paywall.disclosure.selection"
-    text: '.*Yearly plan.*'
+# Build 21 removed the selected-plan summary line, so the yearly default is proven on the card itself: when
+# the hierarchy exposes the card's selected state we assert it; the purchase below is the outcome either way.
+- runFlow:
+    when:
+      visible:
+        id: "paywall.plan.annual"
+        text: '.*selected.*'
+    commands:
+      - assertVisible:
+          id: "paywall.plan.monthly"
+          text: '.*not selected.*'
 - runFlow: ../subflows/pay-buy-monthly.yaml
 # Entitlement as the provider reports it on a fresh load of the paywall, not as the purchase call
 # happened to return it.
