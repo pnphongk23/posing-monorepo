@@ -291,6 +291,13 @@ final class CameraViewModel: ObservableObject {
         aspectRatio = ratio
     }
 
+    /// The framing the ratio setting defines: the largest rect of `aspectRatio` that fits `container`,
+    /// centred. The preview, the grid and the pose reference all live inside it, and the capture crop
+    /// (`CameraImagePostProcess`) uses the same ratio — so the saved photo keeps what the user framed.
+    func viewportFrame(in container: CGSize) -> CGRect {
+        CameraViewportFrame.rect(for: aspectRatio, in: container)
+    }
+
     /// Setting the timer while a countdown runs cancels it: the new value applies to the next press.
     func setTimerSetting(_ setting: CameraTimerSetting) {
         guard cameraControlsEnabled else { return }
@@ -877,6 +884,47 @@ enum CameraAspectCrop {
     }
 }
 
+/// Where the ratio setting is *visible*: the largest rect of the selected ratio that fits the viewport,
+/// centred. Before this, the ratio only reached `CameraAspectCrop`, so choosing 1:1 or 9:16 cropped the
+/// saved file while the preview stayed full-bleed — the framing the user saw was never the framing that
+/// was saved. Pure, so "the preview really is 1:1" is a unit test instead of a device observation.
+enum CameraViewportFrame {
+    /// The framing rect, in the container's coordinate space.
+    static func rect(for ratio: CameraAspectRatio, in container: CGSize) -> CGRect {
+        guard container.width > 0, container.height > 0 else { return .zero }
+        let target = ratio.widthOverHeight
+        let current = container.width / container.height
+        if abs(current - target) <= CameraAspectCrop.matchTolerance {
+            return CGRect(origin: .zero, size: container)
+        }
+        if current > target {
+            // The container is wider than the ratio: the sides give way, the full height is kept.
+            let width = container.height * target
+            return CGRect(x: (container.width - width) / 2, y: 0, width: width, height: container.height)
+        }
+        // Taller than the ratio: the height gives way, the full width is kept.
+        let height = container.width / target
+        return CGRect(x: 0, y: (container.height - height) / 2, width: container.width, height: height)
+    }
+
+    /// The pose reference's placement inside that framing rect. The four insets are the prototype's
+    /// `.nb-camera-pose-reference` fractions, but they are taken of the **frame**, not of the screen: a
+    /// 9:16 frame is shorter than the viewport, and a guide measured against the screen would spill out
+    /// of the photo it is supposed to line up with.
+    static func guideRect(in frame: CGRect) -> CGRect {
+        guard frame.width > 0, frame.height > 0 else { return .zero }
+        let horizontalInset = CameraProto.poseReferenceHorizontalInset
+        let topInset = CameraProto.poseReferenceTopInset
+        let bottomInset = CameraProto.poseReferenceBottomInset
+        return CGRect(
+            x: frame.minX + frame.width * horizontalInset,
+            y: frame.minY + frame.height * topInset,
+            width: frame.width * (1 - horizontalInset * 2),
+            height: frame.height * (1 - topInset - bottomInset)
+        )
+    }
+}
+
 /// Saved-photo post-processing for the ratio: the file behind the gallery row is cropped to the aspect
 /// the user framed with, so the saved dimensions match the preview (and are asserted in tests).
 enum CameraImagePostProcess {
@@ -1306,28 +1354,31 @@ struct CameraScreen: View {
     }
 
     private func cameraCanvas(size: CGSize) -> some View {
-        ZStack {
+        // The ratio setting is framing, not only a crop: everything that is *the photo* — the live
+        // preview, the thirds grid and the pose reference — lives inside this rect, and the area
+        // outside it is the dark background. The capture path crops to the same ratio, so what the
+        // user framed is what is saved.
+        let frame = model.viewportFrame(in: size)
+        let guideFrame = CameraViewportFrame.guideRect(in: frame)
+
+        return ZStack {
             AP.Color.background
 
             if isAuthorized {
                 CameraPreview(session: model.camera.session)
+                    .frame(width: frame.width, height: frame.height)
+                    .clipped()
+                    .position(x: frame.midX, y: frame.midY)
             }
 
             verticalScrims
 
-            // `.nb-camera-pose-reference` — `top:16%; right:18%; bottom:14%; left:18%`.
-            // The static four-corner framing overlay is gone (report §3.2).
+            // `.nb-camera-pose-reference` — `top:16%; right:18%; bottom:14%; left:18%`, measured of the
+            // framing rect. The static four-corner framing overlay is gone (report §3.2).
             if let guide, model.isPoseGuideVisible {
                 guideOverlay(for: guide)
-                    .frame(
-                        width: size.width * (1 - CameraProto.poseReferenceHorizontalInset * 2),
-                        height: size.height * (1 - CameraProto.poseReferenceTopInset - CameraProto.poseReferenceBottomInset)
-                    )
-                    .position(
-                        x: size.width / 2,
-                        y: size.height * CameraProto.poseReferenceTopInset
-                            + size.height * (1 - CameraProto.poseReferenceTopInset - CameraProto.poseReferenceBottomInset) / 2
-                    )
+                    .frame(width: guideFrame.width, height: guideFrame.height)
+                    .position(x: guideFrame.midX, y: guideFrame.midY)
                     // E2E handle (`QA-261029-ID`): the only way a flow can prove a guide is drawn and
                     // say *which* pose it is. Built only when a visible guide exists, so a missing id
                     // is "no pose guide on screen" (no pose, or the guide toggle is off).
@@ -1339,6 +1390,8 @@ struct CameraScreen: View {
 
             if model.isGridVisible {
                 CameraFramingGrid()
+                    .frame(width: frame.width, height: frame.height)
+                    .position(x: frame.midX, y: frame.midY)
             }
 
             // Pinch / twist / drag anywhere on the preview places the pose reference; the reference
