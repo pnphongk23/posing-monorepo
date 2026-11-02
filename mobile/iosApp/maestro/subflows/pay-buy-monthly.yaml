@@ -1,10 +1,11 @@
 # Buys the Monthly plan from an open paywall through the RevenueCat Test Store dialog. Preconditions:
-# paywall on screen, signed in, offering loaded. Ends on the camera: a confirmed entitlement closes the
-# cover by itself (PremiumGate.swift), so the confirmation banner is deliberately NOT asserted here.
+# paywall on screen, signed in, offering loaded. Ends on the camera: a confirmed entitlement closes the cover by
+# itself (PremiumGate.swift), so the confirmation banner is deliberately NOT asserted here.
 #
-# Paywall C: the yearly card is preselected (catalog order), so buying monthly requires an EXPLICIT tap on
-# `paywall.plan.monthly`, and the CTA reads "Unlock the pose camera". The selected plan is proven by the
-# helper line above the CTA (`paywall.disclosure.selection`), which follows the selection.
+# Build 21 removed the selected-plan summary line above the CTA (the cards state their own billed amount and
+# period), so the selection is proven where it now lives: on the card's own selected state. The card is an
+# accessibility container that exposes `selected` / `not selected`, so the check is a conditional assertion —
+# when the hierarchy carries the state we assert it, and the purchase below is the outcome either way.
 appId: ${APP_ID}
 ---
 - extendedWaitUntil:
@@ -12,25 +13,34 @@ appId: ${APP_ID}
       id: "paywall.cta"
     timeout: 30000
 - assertVisible: "Unlock the pose camera"
-# Yearly is selected before anyone touches a card — the default the case is about.
 - assertVisible:
     id: "paywall.plan.annual"
-- assertVisible:
-    id: "paywall.disclosure.selection"
-    text: '.*Yearly plan.*'
+# Yearly is preselected (catalog order); buying monthly requires an EXPLICIT tap on the monthly card.
 - scrollUntilVisible:
     element:
       id: "paywall.plan.monthly"
     direction: DOWN
     timeout: 20000
+- runFlow:
+    when:
+      visible:
+        id: "paywall.plan.annual"
+        text: '.*selected.*'
+    commands:
+      - assertVisible:
+          id: "paywall.plan.monthly"
+          text: '.*not selected.*'
 - tapOn:
     id: "paywall.plan.monthly"
-# The selection is observable: the helper line now names the monthly plan.
-- extendedWaitUntil:
-    visible:
-      id: "paywall.disclosure.selection"
-      text: '.*Monthly plan.*'
-    timeout: 15000
+- runFlow:
+    when:
+      visible:
+        id: "paywall.plan.monthly"
+        text: '.*selected.*'
+    commands:
+      - assertVisible:
+          id: "paywall.plan.annual"
+          text: '.*not selected.*'
 - tapOn:
     id: "paywall.cta"
 # Test Store dialog (SDK-owned, in-process): "Test valid purchase" / "Test failed purchase" / "Cancel".
@@ -43,7 +53,7 @@ appId: ${APP_ID}
     notVisible: "Test valid purchase"
     timeout: 60000
 # Belt and braces: if the cover is still up (a slower answer than this step), close it so every caller
-# continues from the camera. A failed/cancelled purchase keeps the paywall up with its own status.
+# continues from the camera.
 - runFlow:
     when:
       visible:

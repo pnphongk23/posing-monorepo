@@ -1,8 +1,9 @@
 # TC-PAY-003 the paywall shown to a signed-out user asks them to sign in
 #
-# Paywall C shows the real prices before sign-in (the offering is read before the session), and the CTA
-# answers "Sign in to subscribe", which opens the full-height sign-in sheet. A purchase is Account-bound, so
-# there is no guest path. Never tap this CTA on a prod-config build — there it is a live purchase path.
+# Paywall C shows the real prices before sign-in (the offering is read before the session) and the line above the
+# CTA asks for the account — "Sign in first so Premium follows you." — because a purchase is Account-bound. The
+# CTA answers "Sign in to subscribe" and opens the full-height sign-in sheet; there is no guest path.
+# Never tap this CTA on a prod-config build: there it is a live purchase path.
 appId: ${APP_ID}
 tags: [TC-PAY-003, p1]
 ---
@@ -17,16 +18,13 @@ tags: [TC-PAY-003, p1]
     visible:
       id: "paywall.plan.annual"
     timeout: 30000
-# Signed out, the cards still render both plans (with a real price, or "Price unavailable" if the offering
-# has not landed yet — the structure is what this case asserts, the values are a TestFlight case).
+# Signed out, both cards render. A real price, or "Price unavailable" if the offering has not landed yet —
+# the structure is what this case asserts; the values are a TestFlight case (TC-PAY-018/019).
 - assertVisible:
     id: "paywall.plan.monthly"
-# `paywall.account.status` only exists when the footer line is about the ACCOUNT. Signed out with a price
-# known, the footer line is the selected plan instead (`footerLine` → purchaseSummary → selectedPlanLine),
-# so the signed-out surface is asserted through the helper line and the CTA.
 - assertVisible:
-    id: "paywall.disclosure.selection"
-    text: '.*plan .* billed today.*'
+    id: "paywall.account.status"
+    text: '.*Sign in first so Premium follows you.*'
 - extendedWaitUntil:
     visible:
       id: "paywall.cta"

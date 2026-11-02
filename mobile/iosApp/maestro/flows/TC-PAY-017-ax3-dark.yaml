@@ -5,13 +5,13 @@
 #   xcrun simctl ui <UDID> content_size accessibility-extra-extra-extra-large     # AX5
 #   … run … then: appearance light, content_size large
 #
-# Paywall C puts the CTA and helper line in a pinned purchase region, while below the Accessibility sizes the
-# legal row leaves the dock and moves INTO the scroll (accepted deviation). So at AX5 the case is: the X and
-# the CTA stay reachable, and the legal row is still reachable — by scrolling. The real SE frame, the notch
-# status bar and VoiceOver order stay device checks.
+# At AX the compact build-21 layout stops fitting one screen: the steps and the plan cards move into the scroll
+# and the legal row leaves the dock for the scroll content (accepted deviation). What must hold is the purchase
+# region — account line, CTA — plus the X, and everything else must stay REACHABLE by scrolling. That is the
+# case; the real SE frame, the notch status bar and VoiceOver order stay device checks.
 #
-# Signed in on purpose: the plan cards are the tall part of the surface and they only render with an
-# offering. Nothing is bought — the CTA is scrolled to and read, never tapped.
+# Signed in on purpose: the plan cards are the part that has to survive AX. Nothing is bought — the CTA is
+# scrolled to and read, never tapped.
 appId: ${APP_ID}
 tags: [TC-PAY-017, p2, e2e]
 ---
@@ -31,11 +31,13 @@ tags: [TC-PAY-017, p2, e2e]
     visible:
       id: "paywall.close"
     timeout: 40000
-# The purchase region is pinned: helper + CTA are on screen without scrolling, at any text size.
+# The pinned purchase region and the X must be there without any scrolling.
 - assertVisible:
     id: "paywall.cta"
+- assertVisible: "Unlock the pose camera"
 - assertVisible:
-    id: "paywall.disclosure.selection"
+    id: "paywall.account.status"
+# Everything above the region is reachable by scrolling at AX5 — that is the requirement, not first-frame.
 - scrollUntilVisible:
     element:
       id: "paywall.plan.monthly"
@@ -43,7 +45,12 @@ tags: [TC-PAY-017, p2, e2e]
     timeout: 25000
 - assertVisible:
     id: "paywall.plan.annual"
-# The legal row moved into the scroll at AX — reachable, which is the requirement.
+- scrollUntilVisible:
+    element:
+      id: "paywall.disclosure.autoRenew"
+    direction: DOWN
+    timeout: 25000
+# The legal row moved out of the dock into the scroll: still reachable, never truncated.
 - scrollUntilVisible:
     element:
       id: "paywall.privacy"
@@ -53,6 +60,4 @@ tags: [TC-PAY-017, p2, e2e]
     id: "paywall.terms"
 - assertVisible:
     id: "paywall.restore"
-- assertVisible:
-    id: "paywall.close"
 - takeScreenshot: ../../../../docs/qa/redesign-drafts/saved-paywall/screens/TC-PAY-017-ax5-dark
