@@ -8,8 +8,9 @@
 # empty fails here instead of looping forever.
 #
 # The row tile is addressed by `saved.unsave.<poseID>` (0df8024), so the flow cannot accidentally tap a
-# different row's control. The tile is painted enabled while a request is in flight, so each removal is
-# followed by an animation wait before the next tap.
+# different row's control. Each removal is server-confirmed before the row leaves the list
+# (PosesFeature.swift:583-616), so every press is followed by a settle window sized for a slow round trip
+# rather than an animation. dev21 adds an in-progress tile state; nothing here depends on it.
 appId: ${APP_ID}
 tags: [TC-SAV-003, p1]
 ---
@@ -38,8 +39,9 @@ tags: [TC-SAV-003, p1]
       - tapOn:
           id: 'saved\.unsave\..*'
           index: 0
+      # Not an animation wait: the list only changes once the server answers.
       - waitForAnimationToEnd:
-          timeout: 8000
+          timeout: 15000
 - extendedWaitUntil:
     visible:
       id: "saved.browseCommunity"

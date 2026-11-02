@@ -1,9 +1,13 @@
 # TC-SAV-010 unsave is server-confirmed and reversible: "Removed <pose>" + Undo puts the row back
 #
 # Ids are authoritative (0df8024): the row tile is `saved.unsave.<poseID>`, the bar `saved.snackbar` and the
-# reversible offer `saved.snackbar.undo`. The bar lives ~4 s (APSnackbar.swift:24), so the wait starts on the
-# command right after the tap and is bounded to that window — "the bar never appeared" is then a finding,
-# not a guess about which of several "Remove from saved" labels was tapped.
+# reversible offer `saved.snackbar.undo`.
+#
+# The removal is server-confirmed before the row leaves the list (PosesFeature.swift:583-616), so the gap
+# between the tap and the bar is a network round trip, not an animation: a 4 s bound was a test defect, not a
+# product one. The wait is 15 s and the bar's own ~4 s life (APSnackbar.swift:24) starts when it appears, so
+# the Undo tap is the very next command. The measured latency is printed into the Maestro log as
+# SNACKBAR_LATENCY_MS so a slow server is visible in the evidence instead of being guessed at.
 #
 # Needs an account with at least two saved poses (TC-SAV-002 leaves one; seed a second by saving another
 # pose before this flow, or run it against an account that already has some).
@@ -29,14 +33,16 @@ tags: [TC-SAV-010, p1, e2e]
 - copyTextFrom:
     id: "poses.first-card"
 # The first row's unsave tile, by id — not by the shared "Remove from saved" label.
+- evalScript: ${output.unsaveT0 = Date.now()}
 - tapOn:
     id: 'saved\.unsave\..*'
     index: 0
-# The bar is up for ~4 s: wait inside that window, for the bar itself.
+# Server-confirmed removal: allow a slow round trip, the bar's own life only starts once it is up.
 - extendedWaitUntil:
     visible:
       id: "saved.snackbar"
-    timeout: 4000
+    timeout: 15000
+- evalScript: ${console.log("SNACKBAR_LATENCY_MS=" + (Date.now() - output.unsaveT0))}
 # The row is gone from the list while the offer to restore it is up. One hierarchy read, deliberately
 # before the tap: the bar only lives ~4 s, so nothing slow may sit between the wait and the Undo tap.
 - assertNotVisible:
