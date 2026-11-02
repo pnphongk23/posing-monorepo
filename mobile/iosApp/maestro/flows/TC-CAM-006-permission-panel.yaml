@@ -22,12 +22,17 @@ tags: [TC-CAM-006, p1]
       id: "camera.permission"
     timeout: 20000
 # One panel: the copy, and exactly one action — Open Settings, because the user already said no.
-- assertVisible: "Camera access is off"
-- assertVisible: "Open Settings"
-- assertNotVisible: "Allow Camera"
-# The camera is refused, so nothing pretends to be a viewfinder or a pose strip.
+- assertVisible: '.*Camera access is off.*'
+- assertVisible: '.*Open Settings.*'
+- assertNotVisible: '.*Allow Camera.*'
+# With no camera there is no picker either: the Poses chip (the sheet's only entry) is gone, so no sheet can open.
 - assertNotVisible:
-    id: "camera.poseStrip"
-# The panel is the only way forward, and the screen does not crash or go blank.
+    id: "camera.choosePose"
+- assertNotVisible:
+    id: "posePicker.search"
+# The bar itself stays, so the screen is never a dead end.
 - assertVisible:
-    id: "camera.permission"
+    id: "camera.shutter"
+- assertVisible:
+    id: "camera.close"
+- takeScreenshot: permission-panel-refused

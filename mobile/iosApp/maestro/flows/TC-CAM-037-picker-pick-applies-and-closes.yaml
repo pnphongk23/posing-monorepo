@@ -1,0 +1,26 @@
+# TC-CAM-037 picking a pose applies it and the sheet closes by itself
+appId: ${APP_ID}
+tags: [TC-CAM-037, p0]
+---
+- runFlow: ../subflows/launch.yaml
+- runFlow: ../subflows/open-camera.yaml
+- assertNotVisible:
+    id: "camera.poseGuide"
+- runFlow: ../subflows/camera-open-picker.yaml
+- extendedWaitUntil:
+    visible:
+      id: "posePicker.grid"
+    timeout: 20000
+# The rows expose only their label, so the pick is by that label's shape — never a coordinate.
+- tapOn: '.*Use .* pose.*'
+# No Done step: the selection itself closes the sheet.
+- extendedWaitUntil:
+    notVisible:
+      id: "posePicker.search"
+    timeout: 15000
+- assertVisible:
+    id: "camera.poseGuide"
+- assertVisible:
+    id: "camera.shutter"
+- assertVisible: '.*Change pose.*'
+- takeScreenshot: sheet-pose-applied

@@ -1,6 +1,9 @@
 # TC-CAM-019 the collapsed strip is remembered across a relaunch
+# OBSOLETE ON MERGE of feat/camera-pose-popup: the inline strip (and its collapsed state) is gone, so this
+# flow describes a screen that no longer exists. Kept — not deleted — until the branch merges, and it WILL FAIL on
+# that build: `run.sh` excludes only the `e2e` tag, so `obsolete-on-merge` is a marker for humans, not a filter.
 appId: ${APP_ID}
-tags: [TC-CAM-019, p1]
+tags: [TC-CAM-019, obsolete-on-merge, p1]
 ---
 - runFlow: ../subflows/launch.yaml
 - runFlow: ../subflows/open-camera.yaml

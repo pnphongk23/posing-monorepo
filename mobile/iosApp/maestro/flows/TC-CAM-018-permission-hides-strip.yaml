@@ -1,8 +1,7 @@
-# TC-CAM-018 a refused camera drops the strip and its control, and keeps the shutter reachable
+# TC-CAM-018 a refused camera drops the pose picker, and keeps the shutter reachable
 appId: ${APP_ID}
 tags: [TC-CAM-018, p1]
 ---
-# Camera denied at launch: Maestro writes the TCC answer, so the app sees .denied without a system prompt.
 - launchApp:
     clearState: true
     clearKeychain: true
@@ -19,11 +18,13 @@ tags: [TC-CAM-018, p1]
     visible:
       id: "camera.permission"
     timeout: 20000
-# No camera means nothing to place a pose on: the strip and the one control that would re-open it are both gone.
+# No camera means nothing to place a pose on: no Poses chip and no sheet.
 - assertNotVisible:
-    id: "camera.poseStrip"
+    id: "camera.choosePose"
 - assertNotVisible:
-    id: "camera.pickerStripToggle"
+    id: "posePicker.search"
+- assertNotVisible:
+    id: "camera.poseGuide"
 # The bar itself stays, so the screen is never a dead end.
 - assertVisible:
     id: "camera.shutter"
@@ -31,3 +32,4 @@ tags: [TC-CAM-018, p1]
     id: "camera.flip"
 - assertVisible:
     id: "camera.close"
+- takeScreenshot: permission-refused-chrome

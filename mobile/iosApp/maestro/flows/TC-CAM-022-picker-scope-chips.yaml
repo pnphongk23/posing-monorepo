@@ -1,50 +1,30 @@
-# TC-CAM-022 the picker's All / Saved scope chips refilter the grid in place
-# dev20 note: this flow was reported FAIL at "Run ../subflows/open-camera.yaml", which is the shared
-# launch → dock camera → shutter path. Five sibling flows that use the very same subflow
-# (TC-CAM-006/012/013/018/019/024) went green in that batch, and every flow after this one came out
-# NOT-RUN, so the dev20 failure is an interrupted-run artefact, not a stale premise here: the entry path
-# and the scope-chip steps below are unchanged. If it recurs in a clean batch, look at the dock tap race
-# (dock.camera tapped while the tab switch is still animating) before changing this flow.
+# TC-CAM-022 the sheet's All / Saved chips switch the collection in place
 appId: ${APP_ID}
 tags: [TC-CAM-022, p0]
 ---
 - runFlow: ../subflows/launch.yaml
 - runFlow: ../subflows/open-camera.yaml
-# `camera.choosePose` is the strip's Browse card since d001b80 — the strip opens expanded, so the card is
-# on screen; the tap still opens the full picker sheet (search + All/Saved).
-- assertVisible:
-    id: "camera.poseStrip"
-# The Browse card is the strip's last card and only exists once the catalogue has loaded.
-- extendedWaitUntil:
-    visible:
-      id: "camera.choosePose"
-    timeout: 20000
-- tapOn:
-    id: "camera.choosePose"
-- extendedWaitUntil:
-    visible:
-      id: "posePicker.grid"
-    timeout: 20000
-# Two chips, one container, and the active one reports itself as selected (a readable value, not colour).
+- runFlow: ../subflows/camera-open-picker.yaml
+# The chips sit under the search field (handle → header → search → scopes → results), so they exist as soon as
+# the sheet is up — no sign-in or catalogue condition.
 - assertVisible:
     id: "posePicker.scope"
-- assertVisible:
-    id: "posePicker.scope.all"
-- assertVisible:
-    id: "posePicker.scope.saved"
-- assertVisible: "All poses"
-- assertVisible: "Saved poses"
-# Switching scope re-filters the same sheet — it does not close it and does not leave the camera behind.
-- tapOn:
-    id: "posePicker.scope.saved"
 - extendedWaitUntil:
     visible:
       id: "posePicker.scope.saved"
-    timeout: 10000
+    timeout: 15000
 - assertVisible:
-    id: "posePicker.scope"
+    id: "posePicker.scope.all"
+- assertVisible: '.*Saved poses.*'
+- assertVisible: '.*All poses.*'
+# Switching scope re-filters the same sheet — it does not close it and the camera stays where it was.
+- tapOn:
+    id: "posePicker.scope.saved"
+- assertVisible:
+    id: "posePicker.search"
 - assertVisible:
     id: "posePicker.close"
+- takeScreenshot: sheet-scopes
 # Back to All: the catalogue grid is reachable again in one tap.
 - tapOn:
     id: "posePicker.scope.all"
@@ -54,5 +34,9 @@ tags: [TC-CAM-022, p0]
     timeout: 20000
 - tapOn:
     id: "posePicker.close"
+- extendedWaitUntil:
+    notVisible:
+      id: "posePicker.search"
+    timeout: 15000
 - assertVisible:
     id: "camera.shutter"

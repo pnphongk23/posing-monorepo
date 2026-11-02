@@ -1,0 +1,68 @@
+# TC-CAM-039 the ratio chips reshape the preview frame (3:4 / 1:1 / 9:16)
+appId: ${APP_ID}
+tags: [TC-CAM-039, p0]
+---
+- runFlow: ../subflows/launch.yaml
+- runFlow: ../subflows/open-camera.yaml
+- tapOn:
+    id: "camera.tools"
+- extendedWaitUntil:
+    visible:
+      id: "camera.tools.ratio"
+    timeout: 15000
+# The chips are all present and read as words (never colour alone).
+- assertVisible:
+    id: "camera.tools.ratio.3x4"
+- assertVisible:
+    id: "camera.tools.ratio.1x1"
+- assertVisible:
+    id: "camera.tools.ratio.9x16"
+- takeScreenshot: tools-popover-ratio-chips
+# 1:1 — the popover closes by tapping its own control again (the popover's catcher owns the rest of the screen, so
+# no coordinates are used anywhere in this flow).
+- tapOn:
+    id: "camera.tools.ratio.1x1"
+- tapOn:
+    id: "camera.tools"
+- extendedWaitUntil:
+    notVisible:
+      id: "camera.tools.ratio"
+    timeout: 15000
+- assertVisible:
+    id: "camera.shutter"
+# The viewport change is visual: the screenshot is the assertion the sim can give.
+- takeScreenshot: camera-1x1
+# 9:16
+- tapOn:
+    id: "camera.tools"
+- extendedWaitUntil:
+    visible:
+      id: "camera.tools.ratio.9x16"
+    timeout: 15000
+- tapOn:
+    id: "camera.tools.ratio.9x16"
+- tapOn:
+    id: "camera.tools"
+- extendedWaitUntil:
+    notVisible:
+      id: "camera.tools.ratio"
+    timeout: 15000
+- takeScreenshot: camera-9x16
+# 3:4 — the portrait default, and the state the rest of the run expects.
+- tapOn:
+    id: "camera.tools"
+- extendedWaitUntil:
+    visible:
+      id: "camera.tools.ratio.3x4"
+    timeout: 15000
+- tapOn:
+    id: "camera.tools.ratio.3x4"
+- tapOn:
+    id: "camera.tools"
+- extendedWaitUntil:
+    notVisible:
+      id: "camera.tools.ratio"
+    timeout: 15000
+- takeScreenshot: camera-3x4
+- assertVisible:
+    id: "camera.choosePose"

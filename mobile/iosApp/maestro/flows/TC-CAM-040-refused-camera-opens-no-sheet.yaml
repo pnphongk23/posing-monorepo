@@ -1,0 +1,35 @@
+# TC-CAM-040 with the camera refused, the Poses chip must not open an empty sheet
+appId: ${APP_ID}
+tags: [TC-CAM-040, p1]
+---
+- launchApp:
+    clearState: true
+    clearKeychain: true
+    permissions:
+      camera: deny
+      photos: allow
+- extendedWaitUntil:
+    visible:
+      id: "poses.open-search"
+    timeout: 30000
+- tapOn:
+    id: "dock.camera"
+- extendedWaitUntil:
+    visible:
+      id: "camera.permission"
+    timeout: 20000
+# The chip is the sheet's only entry, and with no camera it is not offered at all — so there is nothing to tap
+# and no way to end up in an empty sheet.
+- assertNotVisible:
+    id: "camera.choosePose"
+- assertNotVisible:
+    id: "posePicker.search"
+- assertNotVisible:
+    id: "posePicker.grid"
+# The permission panel is the only action, and the bar keeps its escape routes.
+- assertVisible: '.*Camera access is off.*'
+- assertVisible:
+    id: "camera.permission.notNow"
+- assertVisible:
+    id: "camera.shutter"
+- takeScreenshot: refused-camera-no-sheet

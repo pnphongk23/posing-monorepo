@@ -1,0 +1,42 @@
+# TC-CAM-036 the Poses chip opens the sheet on a cold launch and again with a pose already applied
+appId: ${APP_ID}
+tags: [TC-CAM-036, p0]
+---
+- runFlow: ../subflows/launch.yaml
+- runFlow: ../subflows/open-camera.yaml
+# 1. Cold launch, no pose chosen: the chip still opens the sheet.
+- runFlow: ../subflows/camera-open-picker.yaml
+- assertVisible:
+    id: "posePicker.grid"
+- takeScreenshot: sheet-cold-launch
+- tapOn:
+    id: "posePicker.close"
+- extendedWaitUntil:
+    notVisible:
+      id: "posePicker.search"
+    timeout: 15000
+# 2. Same screen with a pose applied, reached from a pose detail.
+- runFlow: ../subflows/open-first-pose.yaml
+- tapOn:
+    id: "poseDetail.use"
+- extendedWaitUntil:
+    visible:
+      id: "camera.poseGuide"
+    timeout: 20000
+- assertVisible: '.*Change pose.*'
+# The chip's label changes with a pose applied, but the id does not: the sheet must open again.
+- runFlow: ../subflows/camera-open-picker.yaml
+- assertVisible:
+    id: "posePicker.grid"
+- takeScreenshot: sheet-with-pose-applied
+- tapOn:
+    id: "posePicker.close"
+- extendedWaitUntil:
+    notVisible:
+      id: "posePicker.search"
+    timeout: 15000
+# Closing the sheet never disturbs the camera: the guide and the chrome are as they were.
+- assertVisible:
+    id: "camera.poseGuide"
+- assertVisible:
+    id: "camera.shutter"
