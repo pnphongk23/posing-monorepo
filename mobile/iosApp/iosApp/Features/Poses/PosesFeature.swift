@@ -2173,6 +2173,9 @@ struct SavedPosesScreen: View {
     @State private var pendingSignIn: SignInIntent?
     @Environment(\.dismiss) private var dismiss
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    /// The app root's "show the Poses catalogue" action (TC-SAV-004). `nil` outside the app, where the
+    /// panel falls back to dismissing this screen.
+    @Environment(\.apBrowsePoses) private var browsePoses
 
     private var stage: SavedSurfaceStage {
         SavedSurfaceStage.resolve(isSessionResolved: session.isResolved, isSignedIn: session.isSignedIn)
@@ -2248,8 +2251,10 @@ struct SavedPosesScreen: View {
             }
         case .empty, .noMatch:
             VStack(spacing: 0) {
-                // Board `06-board06`: one instruction and the way back to the poses.
-                APSavedEmptyPanel(onBrowse: { dismiss() })
+                // Board `06-board06`: one instruction and the way back to the poses. "Back to the
+                // poses" is the catalogue, not the previous screen: Saved is pushed from Settings, so a
+                // plain dismiss lands on Settings (TC-SAV-004).
+                APSavedEmptyPanel(onBrowse: APBrowsePosesRule.browse(action: browsePoses, fallback: { dismiss() }))
                 APPagingFooter(model: model, bottomInset: AP.Space.space16)
             }
         case .grid:

@@ -17,7 +17,7 @@ or on data, `out of scope 1.1` = agreed out of this release.
 | TC-SAV-001 | P0 | accounts on, signed out | 1. Launch. 2. Open the Poses More menu, tap Saved | The gate, not a fake list: `saved.signIn` with "Sign in to see saved poses" / "Your saved poses sync across your devices." and one **Sign in** action. No rows, no spinner, no error | automated: TC-SAV-001-saved-signed-out.yaml (runs on 17 and 18) |
 | TC-SAV-002 | P1 | signed in, pose not yet saved | 1. Open any pose. 2. Tap Save (`poseDetail.saveButton`). 3. Settings → Library → Saved | The pose is listed (`poses.first-card` for the first row): "saved" and "listed" are the same fact | automated: TC-SAV-002-saved-list-loaded.yaml |
 | TC-SAV-003 | P1 | signed in, at least one saved pose (the flow removes them all) | 1. Settings → Saved. 2. Unsave from the row. 3. Leave and re-enter Saved | Gone after the reload, with the empty state shown — a removal that survived a fresh load, not a local hide | automated: TC-SAV-003-unsave-removes.yaml |
-| TC-SAV-004 | P1 | signed in, nothing saved | 1. Settings → Library → Saved | "No saved poses yet" / "Tap Save on any pose to keep it here." and one **Browse poses** (`saved.browseCommunity`) that returns to Poses. No error styling, no count text | automated: TC-SAV-004-empty-browse.yaml |
+| TC-SAV-004 | P1 | signed in, nothing saved | 1. Settings → Library → Saved | "No saved poses yet" / "Tap Save on any pose to keep it here." and one **Browse poses** (`saved.browseCommunity`) that lands on the **Poses tab at its root** (`poses.open-search` / `poses.category.all` visible, `saved.back` gone, Settings not showing). No error styling, no count text | automated: TC-SAV-004-empty-browse.yaml |
 | TC-SAV-005 | P1 | signed in, one saved pose | 1. Tap the saved pose. 2. Tap "Try this pose" (`poseDetail.use`) | The detail opens (`poseDetail.title`) and its Try action opens the camera with that pose; the row is a link, so a tap outside the unsave control never removes anything | pending-e2e |
 | TC-SAV-006 | P1 | signed in, saved poses, device offline | 1. Open Saved offline (evidence run: `-AIPoseSavedOfflineFixture 2`) | `saved.offlineBanner` "You're offline. Changes will sync when you're back online." above the rows; the first rows stay usable, rows the cache cannot serve are dimmed and labelled "Not saved offline". Neither the empty state nor the failure panel appears: offline is its own state | draft: redesign-drafts/saved-paywall/flows/TC-SAV-006-offline-banner-rows.yaml + unit: offline index / presentation rules (real network loss cannot be simulated per app) |
 | TC-SAV-007 | P1 | A has saved poses, B has none | 1. As A, open Saved. 2. Sign out. 3. Sign in as B. 4. Open Saved | B sees B's list only, with no flash of A's data during the switch; signing out clears the list instead of leaving it readable | pending-e2e (needs `E2E_EMAIL` and `E2E_EMAIL_B`) |
@@ -60,6 +60,20 @@ observable change QA can use:
   `controlFill` tile when it cannot;
 - every outcome of that tap now shows a bottom bar: the removal (`saved.snackbar` + **Undo**), the failure
   (reason as the message, action **Dismiss**), or `Couldn't remove this pose.` when nothing was removed.
+
+## dev21 finding: "Browse poses" landed on Settings (fixed app-side)
+
+TC-SAV-004's panel button ran `dismiss()`, which pops one screen. Saved is pushed from Settings, so the tap
+landed on Settings — the button promises the catalogue and delivered a settings list (QA's dev21 pass). The
+tap now goes through the app root (`APBrowsePosesRule` → the root's own tab state + its Poses stack identity),
+so it selects the **Poses tab** and lands at the **Poses root**: Saved and Settings are gone, the catalogue is
+showing. Reached from the Poses More menu (one push away instead of two) the same tap shows the same Poses
+root, and from another tab it just selects Poses (that stack is mounted fresh at its root).
+
+What QA should see on dev22: tapping `saved.browseCommunity` leaves Saved for the Poses tab at its root —
+`poses.open-search` and `poses.category.all` are visible, `saved.back` is not, and no Settings row
+(`settings.account.row`) is on screen. The catalogue reloads (a fresh first window), the same thing a dock tab
+switch does.
 
 ## Accepted cosmetic deltas (do not raise as bugs)
 
