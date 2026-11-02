@@ -31,9 +31,28 @@ appId: ${APP_ID}
 - inputText: ${E2E_EMAIL}
 - tapOn:
     id: "signin.password"
+# Let the field take focus before typing: a tap that lands while the keyboard is still animating types
+# nothing, and the form then answers with its own "Enter your password" instead of a server error.
+- extendedWaitUntil:
+    visible:
+      id: "signin.password"
+    timeout: 5000
 - inputText: ${E2E_PASSWORD}
 - tapOn:
     id: "signin.submit"
+# Self-heal the field-focus race once: if the form rejects the empty password rather than the credentials,
+# retype and submit again. Anything else (a real auth error) is left to the flow that owns the assertion.
+- runFlow:
+    when:
+      visible:
+        id: "signin.password.error"
+    commands:
+      - tapOn:
+          id: "signin.password"
+      - eraseText
+      - inputText: ${E2E_PASSWORD}
+      - tapOn:
+          id: "signin.submit"
 # "Delete account" only exists in the signed-in Account state, so this proves the session landed
 # before any purchase step runs (the server round-trip can be slow on a cold start).
 - extendedWaitUntil:
