@@ -612,6 +612,63 @@ final class APSavedListTests: XCTestCase {
         )
     }
 
+    /// The row's tap and the tests that check it run the same code, and the control only offers a
+    /// removal for a pose the model holds as saved.
+    ///
+    /// Why source-level: a hosted SwiftUI view in this test host is painted, not hit-tested, so the
+    /// composition is the only thing a unit test can hold still. The behaviour behind it is driven for
+    /// real in `APSavedUnsavePathTests`.
+    ///
+    /// Mutation target: inline the tap again (`Task { await model.toggleSaved(...) }` in the row) and
+    /// the first assertion goes red; drop `model.savedState(for: pose)` from `isEnabled` and the
+    /// second does — with that term gone, a row that is not actually saved offers "Remove from saved"
+    /// and the request it sends is a **save**, which the surface has nothing to report (the silent tap
+    /// of TC-SAV-010).
+    func testTheRowsTapRunsTheSharedUnsaveRuleForASavedPoseOnly() throws {
+        let saved = try savedListSource()
+
+        let row = try XCTUnwrap(
+            Self.braceMatchedBlock("private func row(for pose: NativePose, index: Int)", in: saved)
+        )
+        XCTAssertTrue(
+            row.contains("onUnsave: { Task { await unsave(pose, at: index) } }"),
+            "the tile's closure is the list's own unsave, not a second copy of the logic"
+        )
+        XCTAssertTrue(
+            row.contains("model.savedState(for: pose)"),
+            "a row the model does not hold as saved cannot offer a removal"
+        )
+
+        let list = try XCTUnwrap(Self.braceMatchedBlock("struct APSavedList", in: saved))
+        let tap = try XCTUnwrap(
+            Self.braceMatchedBlock("private func unsave(_ pose: NativePose, at index: Int)", in: list)
+        )
+        XCTAssertTrue(
+            tap.contains("await APSavedRowUnsave.perform(pose, at: index, in: model, undo: undo)"),
+            "the tap's outcomes are decided in one place the tests drive"
+        )
+
+        let rule = try XCTUnwrap(Self.braceMatchedBlock("enum APSavedRowUnsave", in: saved))
+        XCTAssertTrue(rule.contains("APSavedUndoRule.offersUndo(for: outcome)"), "a confirmed removal offers Undo")
+        XCTAssertTrue(
+            rule.contains("model.bookmarkError = APSavedStateCopy.removeFailed"),
+            "an outcome that removed nothing still says so instead of going silent"
+        )
+
+        // The surface puts the library filter back on the way out: the filter is the route the shared
+        // pose service reads by, so leaving it on `.saved` would route the next catalogue read to the
+        // saved collection.
+        let surface = try XCTUnwrap(Self.braceMatchedBlock("struct APSavedSurface", in: saved))
+        XCTAssertTrue(
+            surface.contains("entryFilter = model.filter"),
+            "the surface remembers the collection it replaced"
+        )
+        XCTAssertTrue(
+            surface.contains("if let entryFilter, model.filter == .saved { model.filter = entryFilter }"),
+            "leaving Saved restores the collection the Poses tab was showing"
+        )
+    }
+
     // MARK: - A tap that is waiting on the server (pending unsave)
 
     /// The tile's one rule: which state it is in, whether it takes a tap, and what it says.
@@ -824,6 +881,263 @@ final class APSavedListTests: XCTestCase {
             list.contains("isUnsaving: model.isBookmarkInFlight(pose.id)"),
             "the row's pending state is the model's in-flight claim, not a local guess"
         )
+    }
+
+    // MARK: - The tap path (TC-SAV-010 on 1.1 (20))
+
+    /// The app's own wiring, one line short of the fix: the adapter holds a filter slot the model is
+    /// never given. Entering Saved has to read the saved collection anyway.
+    ///
+    /// The defect this pins: `AppFeatureRoot` builds
+    /// `PosesViewModel(service:bookmarkService:boundary:)` without the bundle's `PoseFilterState`, and
+    /// that slot was the only thing telling `PoseAPIServiceAdapter` which feed to read. So the Saved
+    /// screen asked for `/api/community/poses` and drew the community rows as saved rows; tapping
+    /// "Remove from saved" on one of them was a *save* (the model's saved state for that pose was
+    /// `false`), which this surface reports nowhere — the tap looked dead.
+    ///
+    /// Mutation target: keep only `filterState?.filter` in `PosesViewModel.selectRoute(_:)` and this
+    /// test reads `fetchCommunity` with zero saved reads and no rows.
+    @MainActor func testSavedEntryReadsTheSavedCollectionWithoutTheBundleSlot() async throws {
+        let remote = RecordingPoseRemote()
+        remote.savedItems = [try savedRouteRemotePose("mine-1", name: "Mine")]
+        // The bundle's slot, exactly as `PoseServiceBootstrap.make` builds it. The model is built the
+        // way `AppFeatureRoot` builds it: without it.
+        let slot = PoseFilterState()
+        let adapter = PoseAPIServiceAdapter(remote: remote, baseURL: "https://api.example.com", filterState: slot)
+        let model = PosesViewModel(service: adapter, bookmarkService: UndoBookmarkService())
+
+        await APSavedEntry.prepare(model: model)
+
+        XCTAssertEqual(remote.savedCallCount, 1, "Saved must read /api/me/saved")
+        XCTAssertEqual(remote.communityCallCount, 0, "the community feed is not the saved collection")
+        XCTAssertEqual(slot.filter, .saved, "the route follows the list the screen shows")
+        XCTAssertEqual(model.state.rows.map(\.id), ["mine-1"], "and the rows are the saved ones")
+        XCTAssertTrue(model.savedState(for: savedPose("mine-1")), "so the row's tile removes, never saves")
+    }
+
+    /// The filter is the route, and it is process-wide: leaving Saved has to put back the collection the
+    /// Poses tab (and the camera's picker, which reads the same catalogue service) was showing.
+    ///
+    /// Mutation target: drop `filter`'s `didSet` (route only written inside `load()`) and the slot stays
+    /// `.saved` after the restore — a Saved visit would then route the next catalogue read to the saved
+    /// collection.
+    @MainActor func testLeavingSavedPutsTheLibraryFilterAndItsRouteBack() async throws {
+        let remote = RecordingPoseRemote()
+        remote.savedItems = [try savedRouteRemotePose("mine-1", name: "Mine")]
+        let slot = PoseFilterState()
+        let adapter = PoseAPIServiceAdapter(remote: remote, baseURL: "https://api.example.com", filterState: slot)
+        let model = PosesViewModel(service: adapter, bookmarkService: UndoBookmarkService())
+
+        let replaced = await APSavedEntry.prepare(model: model)
+        XCTAssertEqual(replaced, .community, "entering Saved replaced the community collection")
+        XCTAssertEqual(slot.filter, .saved)
+
+        // What `APSavedSurface.onDisappear` does with the value `prepare` returned.
+        model.filter = replaced
+        XCTAssertEqual(model.filter, .community)
+        XCTAssertEqual(slot.filter, .community, "the route the catalogue is read by is restored")
+    }
+
+    /// A tap on a saved row: one unsave, no save, the row leaves, and the bar that offers it back is
+    /// the one the flows address. Driven through `APSavedRowUnsave`, which is the code the row's
+    /// closure runs — a hosted SwiftUI view cannot be tapped in this test host, so the behaviour is
+    /// driven here and the composition is pinned at source level above.
+    @MainActor func testTapUnsavesOnceRemovesTheRowAndOffersUndoUnderItsIds() async {
+        let bookmarks = UndoBookmarkService()
+        let rows = [savedPose("a"), savedPose("b"), savedPose("c")]
+        let model = PosesViewModel(service: SavedListPoseService(rows: rows), bookmarkService: bookmarks)
+        model.filter = .saved
+        model.state = .loaded(rows)
+        let undo = APSavedUndo()
+
+        let outcome = await APSavedRowUnsave.perform(rows[1], at: 1, in: model, undo: undo)
+
+        XCTAssertEqual(outcome, .saved(false))
+        XCTAssertEqual(bookmarks.unsaveCallCount, 1, "the tap sends the removal exactly once")
+        XCTAssertEqual(bookmarks.saveCallCount, 0, "and never the opposite request")
+        XCTAssertEqual(model.state.rows.map(\.id), ["a", "c"], "the confirmed removal takes the row")
+        XCTAssertEqual(undo.removal?.pose.id, "b")
+        XCTAssertEqual(undo.removal?.index, 1, "where it was, not appended")
+
+        let spec = APSavedSnackbarRule.resolve(
+            removedPoseName: undo.removal?.pose.name,
+            canUndo: undo.removal.map { model.canSave($0.pose) } ?? false,
+            failure: model.bookmarkError
+        )
+        XCTAssertEqual(spec?.message, "Removed Pose b")
+        XCTAssertEqual(spec?.tone, .success)
+        XCTAssertEqual(spec?.actionTitle, "Undo")
+        XCTAssertEqual(spec?.identifiers.bar, "saved.snackbar", "the flows find the bar by this id")
+        XCTAssertEqual(spec?.identifiers.action, "saved.snackbar.undo", "and its action by this one")
+    }
+
+    /// A failed removal is the error bar, and that bar has no Undo id: a flow must never tap the Undo
+    /// id of a bar that cannot undo.
+    @MainActor func testTapFailureIsTheErrorBarAndKeepsTheRow() async {
+        let bookmarks = UndoBookmarkService()
+        bookmarks.unsaveError = URLError(.notConnectedToInternet)
+        let rows = [savedPose("a")]
+        let model = PosesViewModel(service: SavedListPoseService(rows: rows), bookmarkService: bookmarks)
+        model.filter = .saved
+        model.state = .loaded(rows)
+        let undo = APSavedUndo()
+
+        let outcome = await APSavedRowUnsave.perform(rows[0], at: 0, in: model, undo: undo)
+
+        XCTAssertEqual(outcome, .failed(SavedMutationCopy.offline))
+        XCTAssertNil(undo.removal, "nothing left the collection, so there is nothing to undo")
+        XCTAssertEqual(model.state.rows.map(\.id), ["a"], "the row stays")
+        let spec = APSavedSnackbarRule.resolve(
+            removedPoseName: nil,
+            canUndo: false,
+            failure: model.bookmarkError
+        )
+        XCTAssertEqual(spec?.message, SavedMutationCopy.offline)
+        XCTAssertEqual(spec?.tone, .error)
+        XCTAssertEqual(spec?.identifiers.bar, "saved.snackbar")
+        XCTAssertNil(spec?.identifiers.action, "a failure bar's action is Dismiss, not Undo")
+    }
+
+    /// The silent outcome the device report ended on: the row was not saved after all, so the tap
+    /// saved it. The collection keeps the row and, without this line, the tap reported nothing at all.
+    @MainActor func testTapOnARowThatWasNotSavedSaysSoInsteadOfGoingSilent() async {
+        let bookmarks = UndoBookmarkService()
+        let unsaved = savedPose("community-1").withSavedValue(false)
+        let model = PosesViewModel(service: SavedListPoseService(rows: [unsaved]), bookmarkService: bookmarks)
+        model.filter = .saved
+        model.state = .loaded([unsaved])
+        let undo = APSavedUndo()
+
+        // Before the tap the row is not saved, so the control offers no removal at all: the wrong
+        // request cannot be sent from a resting tile in the first place.
+        XCTAssertFalse(model.savedState(for: unsaved), "the row is not saved")
+        XCTAssertEqual(
+            APSavedUnsaveTileRule.state(
+                isUnsaving: false,
+                isEnabled: model.canSave(unsaved)
+                    && model.savedState(for: unsaved)
+                    && model.bookmarkService != nil,
+                isAvailableOffline: true
+            ),
+            .unavailable,
+            "an unsaved row's tile is unavailable, not a removal that saves"
+        )
+
+        // Driving the advice anyway (a stale row, or a second screen): the outcome still has to be
+        // visible instead of silent.
+        let outcome = await APSavedRowUnsave.perform(unsaved, at: 0, in: model, undo: undo)
+
+        XCTAssertEqual(outcome, .saved(true), "the request the model actually sent was a save")
+        XCTAssertEqual(bookmarks.saveCallCount, 1)
+        XCTAssertEqual(bookmarks.unsaveCallCount, 0)
+        XCTAssertNil(undo.removal, "nothing was removed")
+        XCTAssertEqual(
+            model.bookmarkError, APSavedStateCopy.removeFailed,
+            "the tap has to say that the removal did not happen"
+        )
+        let spec = APSavedSnackbarRule.resolve(
+            removedPoseName: nil,
+            canUndo: false,
+            failure: model.bookmarkError
+        )
+        XCTAssertEqual(spec?.message, "Couldn't remove this pose.")
+        XCTAssertEqual(spec?.identifiers.bar, "saved.snackbar", "it is still a bar the flows can find")
+        XCTAssertEqual(spec?.kind, .dismiss)
+        XCTAssertTrue(model.savedState(for: unsaved), "the pose the server confirmed is saved from now on")
+    }
+
+    /// A second tap while the first request is out is refused by the model and shows no second bar:
+    /// the attempt already out owns the visible outcome.
+    @MainActor func testSecondTapWhileTheRequestIsOutIsIgnoredAndTheFirstOwnsTheBar() async {
+        let bookmarks = HeldBookmarkService()
+        let rows = [savedPose("a")]
+        let model = PosesViewModel(service: SavedListPoseService(rows: rows), bookmarkService: bookmarks)
+        model.filter = .saved
+        model.state = .loaded(rows)
+        let undo = APSavedUndo()
+
+        let first = Task { await APSavedRowUnsave.perform(rows[0], at: 0, in: model, undo: undo) }
+        await bookmarks.waitUntilUnsaving()
+        await waitUntil("the model to publish the claim") { model.isBookmarkInFlight("a") }
+
+        XCTAssertEqual(
+            APSavedUnsaveTileRule.state(
+                isUnsaving: model.isBookmarkInFlight("a"),
+                isEnabled: model.canSave(rows[0]) && model.savedState(for: rows[0]),
+                isAvailableOffline: true
+            ),
+            .inFlight
+        )
+        XCTAssertFalse(APSavedUnsaveTileRule.acceptsTap(.inFlight), "a resting tile cannot produce this")
+
+        let second = await APSavedRowUnsave.perform(rows[0], at: 0, in: model, undo: undo)
+        XCTAssertEqual(second, .inFlight)
+        XCTAssertEqual(bookmarks.unsaveCallCount, 1, "the refused tap sends nothing")
+        XCTAssertNil(undo.removal, "and shows nothing of its own")
+
+        bookmarks.releaseUnsaving()
+        let firstOutcome = await first.value
+        XCTAssertEqual(firstOutcome, .saved(false), "the attempt already out settles visibly")
+        XCTAssertEqual(undo.removal?.pose.id, "a")
+    }
+
+    /// A session change under the tap: the request is discarded and the screen itself is what changes
+    /// (the gate, or a fresh load), so no bar is added on top of it.
+    @MainActor func testSessionChangeUnderTheTapIsDiscardedAndTheCollectionIsDropped() async {
+        let boundary = SessionBoundary(tokenStorage: SignedInTokenStorage())
+        let bookmarks = HeldBookmarkService()
+        let rows = [savedPose("a")]
+        let model = PosesViewModel(
+            service: SavedListPoseService(rows: rows),
+            bookmarkService: bookmarks,
+            boundary: boundary
+        )
+        model.filter = .saved
+        model.state = .loaded(rows)
+        let undo = APSavedUndo(boundary: boundary)
+
+        let tap = Task { await APSavedRowUnsave.perform(rows[0], at: 0, in: model, undo: undo) }
+        await bookmarks.waitUntilUnsaving()
+        await waitUntil("the model to publish the claim") { model.isBookmarkInFlight("a") }
+
+        await boundary.signOut()
+        await waitUntil("the saved collection to be dropped for the new session") {
+            if case .idle = model.state { return true }
+            return false
+        }
+
+        bookmarks.releaseUnsaving()
+        let outcome = await tap.value
+        XCTAssertEqual(outcome, .discarded, "the answer belongs to the previous session")
+        XCTAssertNil(undo.removal, "an offer for the previous Account's row would be a lie")
+        XCTAssertNil(model.bookmarkError, "and so would an error about it")
+        guard case .idle = model.state else {
+            return XCTFail("the dropped collection is the visible consequence of this outcome")
+        }
+    }
+
+    /// With no bookmark service the tile is unavailable and takes no tap, so `.unavailable` cannot be
+    /// produced by a person pressing a resting control.
+    @MainActor func testTapWithoutABookmarkServiceIsNotReachableFromTheTile() async {
+        let rows = [savedPose("a")]
+        let model = PosesViewModel(service: SavedListPoseService(rows: rows), bookmarkService: nil)
+        model.filter = .saved
+        model.state = .loaded(rows)
+
+        XCTAssertEqual(
+            APSavedUnsaveTileRule.state(
+                isUnsaving: false,
+                isEnabled: model.canSave(rows[0])
+                    && model.savedState(for: rows[0])
+                    && model.bookmarkService != nil,
+                isAvailableOffline: true
+            ),
+            .unavailable
+        )
+        XCTAssertFalse(APSavedUnsaveTileRule.acceptsTap(.unavailable), "the tile is disabled, not silent")
+        let outcome = await APSavedRowUnsave.perform(rows[0], at: 0, in: model, undo: APSavedUndo())
+        XCTAssertEqual(outcome, .unavailable, "and the model agrees nothing was sent")
+        XCTAssertNil(model.bookmarkError)
     }
 
     // MARK: - Fixtures and helpers
@@ -1097,8 +1411,8 @@ final class APSavedListTests: XCTestCase {
     }
 }
 
-/// A bookmark service a test can fail on one side only, and count: the proof that Undo really goes
-/// back to the server instead of flipping a flag.
+/// A pose service a test can fail on one side only, and count: the proof that Undo really goes back
+/// to the server instead of flipping a flag.
 private final class UndoBookmarkService: PoseBookmarkServing, @unchecked Sendable {
     private let lock = NSLock()
     private var saves = 0
@@ -1153,13 +1467,18 @@ private final class HeldBookmarkService: PoseBookmarkServing, @unchecked Sendabl
     private var startWaiters: [CheckedContinuation<Void, Never>] = []
     private var releaseWaiter: CheckedContinuation<Void, Never>?
     private var isReleased = false
+    private var unsaves = 0
 
     init(unsaveFailure: Error? = nil) { self.unsaveFailure = unsaveFailure }
+
+    /// How many unsaves really reached the service: a refused second tap must not add one.
+    var unsaveCallCount: Int { locked { unsaves } }
 
     func savePose(poseId: String) async throws {}
 
     func unsavePose(poseId: String) async throws {
         let waiters: [CheckedContinuation<Void, Never>] = locked {
+            unsaves += 1
             hasStarted = true
             let waiters = startWaiters
             startWaiters = []
@@ -1243,3 +1562,41 @@ private struct SavedListPoseService: PoseServing {
     }
 }
 
+
+/// A pose remote that records which feed the adapter asked for. The Saved screen's whole defect was a
+/// right-looking list read from the wrong collection, so the feed is the assertion, not the rows.
+private final class RecordingPoseRemote: PoseRemoteFetching, @unchecked Sendable {
+    var communityItems: [CommunityPose] = []
+    var savedItems: [CommunityPose] = []
+    private(set) var communityCallCount = 0
+    private(set) var savedCallCount = 0
+
+    func fetchCommunity(page: Int, limit: Int, query: String?) async throws -> PoseRemotePage {
+        communityCallCount += 1
+        return PoseRemotePage(poses: communityItems, total: communityItems.count)
+    }
+
+    func fetchSaved(page: Int, limit: Int) async throws -> PoseRemotePage {
+        savedCallCount += 1
+        return PoseRemotePage(poses: savedItems, total: savedItems.count)
+    }
+}
+
+/// One wire-shaped pose, the way the server answers the saved route.
+private func savedRouteRemotePose(_ id: String, name: String) throws -> CommunityPose {
+    try JSONDecoder().decode(CommunityPose.self, from: Data("""
+    {"poseId":"\(id)","name":"\(name)","skeletonUrl":"/s.png","thumbnailUrl":"/t.jpg","status":"published"}
+    """.utf8))
+}
+
+/// A boundary that starts signed in, for the "the session changed under the tap" case.
+private final class SignedInTokenStorage: TokenStoring, @unchecked Sendable {
+    private var credentials: SessionCredentials? = SessionCredentials(
+        accessToken: "access",
+        refreshToken: "refresh"
+    )
+
+    func saveCredentials(_ credentials: SessionCredentials) { self.credentials = credentials }
+    func loadCredentials() -> SessionCredentials? { credentials }
+    func clearCredentials() { credentials = nil }
+}

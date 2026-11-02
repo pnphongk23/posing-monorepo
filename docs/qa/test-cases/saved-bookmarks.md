@@ -41,6 +41,26 @@ unsave tile is addressed by `saved.unsave.<poseID>` (or, by text, `"Remove from 
 row coordinate. The removal bar and its Undo action carry `saved.snackbar` / `saved.snackbar.undo`, so a
 flow no longer has to race the four-second auto-dismiss with a text match alone.
 
+## dev20 finding: the tap was a *save*, not a removal (fixed app-side)
+
+TC-SAV-010 still failed on 1.1 (20) with the ids in place: the row stayed, the tile went back to its
+enabled look, and there was neither `saved.snackbar` nor an error. The tap did reach the control — the
+request it sent was the wrong one. `AppFeatureRoot` builds `PosesViewModel(service:bookmarkService:boundary:)`
+without the bundle's `PoseFilterState`, and that slot was the only thing telling `PoseAPIServiceAdapter`
+which feed to read, so the Saved screen read `/api/community/poses`, drew the community rows as saved
+rows, and tapping "Remove from saved" on one of them saved it (`savedState == false` → the model sends a
+save). A save from this surface had nothing to report, so the tap looked dead. The fix (model routes the
+service by the filter it shows, plus a bar for an outcome that removed nothing) is in the Feature lane; the
+observable change QA can use:
+
+- the Saved list is the account's saved collection again, so an account with nothing saved reaches
+  `saved.browseCommunity` (TC-SAV-004 is meaningful again) and an account with one saved pose shows one
+  row, not the community feed's first window;
+- a row's tile only offers a removal for a pose the model holds as saved, and renders the muted
+  `controlFill` tile when it cannot;
+- every outcome of that tap now shows a bottom bar: the removal (`saved.snackbar` + **Undo**), the failure
+  (reason as the message, action **Dismiss**), or `Couldn't remove this pose.` when nothing was removed.
+
 ## Accepted cosmetic deltas (do not raise as bugs)
 
 Agreed with the Feature lane for this slice — the flows must not assert against these:
