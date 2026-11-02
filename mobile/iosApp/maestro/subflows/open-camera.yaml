@@ -1,8 +1,27 @@
 # Open the camera from the dock and wait for the shutter.
+#
+# The dock item can swallow a tap while the tab transition is still settling (seen after returning from a
+# sheet), so one guarded retry is allowed before the flow gives up. The retry only runs when the shutter did
+# not appear, so a fast path costs nothing.
 appId: ${APP_ID}
 ---
+- extendedWaitUntil:
+    visible:
+      id: "dock.camera"
+    timeout: 10000
 - tapOn:
     id: "dock.camera"
+- runFlow:
+    when:
+      notVisible:
+        id: "camera.shutter"
+    commands:
+      - extendedWaitUntil:
+          visible:
+            id: "dock.camera"
+          timeout: 5000
+      - tapOn:
+          id: "dock.camera"
 - extendedWaitUntil:
     visible:
       id: "camera.shutter"

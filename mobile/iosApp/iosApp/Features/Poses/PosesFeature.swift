@@ -180,10 +180,40 @@ private extension URLError {
     }
 }
 
+/// A pose service whose reads are routed by the library filter the caller is showing.
+///
+/// `PoseAPIServiceAdapter` answers `Community`, `My poses` and `All poses` from three different
+/// endpoints, chosen by the filter slot it holds. A model that shows a filter without telling the
+/// service reads the community feed and draws it as Saved: every row is a real pose but none of them
+/// is saved, so the row's "Remove from saved" control sends a **save** instead — and the Saved
+/// surface has nothing to report for a save, so the tap looks dead (no row change, no bar, no error).
+///
+/// The route is part of the request, so the model reads the slot from the service it was handed
+/// instead of trusting the composition to also pass the bundle's slot. `AppFeatureRoot` builds
+/// `PosesViewModel(service:bookmarkService:boundary:)` without one, so before this the Saved screen
+/// listed the community feed.
+protocol PoseRouteSelecting {
+    /// The slot this service routes its reads by; `nil` when it has a single route.
+    var routeFilterSlot: PoseFilterState? { get }
+}
+
+extension PoseAPIServiceAdapter: PoseRouteSelecting {
+    var routeFilterSlot: PoseFilterState? { filterState }
+}
+
 @MainActor final class PosesViewModel: ObservableObject, SessionScoped {
     @Published var state: Loadable<[NativePose]> = .idle
     @Published var query = ""
-    @Published var filter: PoseLibraryFilter = .community
+    /// The collection the screen is showing. It is also the route the service reads by, so a change
+    /// here moves the route as well: entering Saved selects the saved collection, and leaving it has
+    /// to put the previous one back (the slot is process-wide, and the camera's picker reads the same
+    /// catalogue service).
+    @Published var filter: PoseLibraryFilter = .community {
+        didSet {
+            guard filter != oldValue else { return }
+            selectRoute(filter)
+        }
+    }
     /// Where the next window of the current list comes from. Kept beside `state` instead of inside it
     /// because a failed page must not cost the rows already on screen, which `Loadable.failed`
     /// cannot express.
@@ -336,7 +366,7 @@ private extension URLError {
         paging = Paging()
         let ticket = await beginSessionRequest()
         guard generation == listGeneration else { return }
-        filterState?.filter = filter
+        selectRoute(filter)
         do {
             let page = try await service.posesPage(query: normalizedQuery, offset: 0, limit: Paging.pageSize)
             // A session change while this request was in flight makes the answer belong to the
@@ -453,6 +483,20 @@ private extension URLError {
 
     private var normalizedQuery: String? {
         query.isEmpty ? nil : query
+    }
+
+    /// Every slot the reads of this list are routed by: the bundle's, when the composition passed
+    /// one, and the service's own.
+    private var routeSlots: [PoseFilterState] {
+        [filterState, (service as? PoseRouteSelecting)?.routeFilterSlot].compactMap { $0 }
+    }
+
+    /// Makes the request follow the list the screen is showing. Both slots are written (they are the
+    /// same instance in the normal bundle wiring), so a filter the user selected can never be read
+    /// from a different collection: `.saved` must ask for the saved collection, not the community
+    /// feed with the same rows filtered afterwards.
+    private func selectRoute(_ filter: PoseLibraryFilter) {
+        for slot in routeSlots { slot.filter = filter }
     }
 
     /// Captures the ticket for a request that is about to start. `nil` (no boundary, or no scope)
@@ -2129,6 +2173,9 @@ struct SavedPosesScreen: View {
     @State private var pendingSignIn: SignInIntent?
     @Environment(\.dismiss) private var dismiss
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    /// The app root's "show the Poses catalogue" action (TC-SAV-004). `nil` outside the app, where the
+    /// panel falls back to dismissing this screen.
+    @Environment(\.apBrowsePoses) private var browsePoses
 
     private var stage: SavedSurfaceStage {
         SavedSurfaceStage.resolve(isSessionResolved: session.isResolved, isSignedIn: session.isSignedIn)
@@ -2204,8 +2251,10 @@ struct SavedPosesScreen: View {
             }
         case .empty, .noMatch:
             VStack(spacing: 0) {
-                // Board `06-board06`: one instruction and the way back to the poses.
-                APSavedEmptyPanel(onBrowse: { dismiss() })
+                // Board `06-board06`: one instruction and the way back to the poses. "Back to the
+                // poses" is the catalogue, not the previous screen: Saved is pushed from Settings, so a
+                // plain dismiss lands on Settings (TC-SAV-004).
+                APSavedEmptyPanel(onBrowse: APBrowsePosesRule.browse(action: browsePoses, fallback: { dismiss() }))
                 APPagingFooter(model: model, bottomInset: AP.Space.space16)
             }
         case .grid:

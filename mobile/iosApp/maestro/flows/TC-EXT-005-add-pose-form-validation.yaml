@@ -4,23 +4,42 @@ tags: [TC-EXT-005, p0, e2e]
 ---
 - runFlow: ../subflows/ext-launch.yaml
 - runFlow: ../subflows/ext-sign-in.yaml
-- tapOn:
-    id: "poses.add-pose"
 - extendedWaitUntil:
     visible:
-      id: "addPose.submitButton"
+      id: "poses.add-pose"
+    timeout: 15000
+- tapOn:
+    id: "poses.add-pose"
+# Fast-fail on a build without the restyle: the hint and the tag chips only exist from 1.1 (18).
+- extendedWaitUntil:
+    visible:
+      id: "addPose.submitHint"
+    timeout: 15000
+- extendedWaitUntil:
+    visible:
+      id: "addPose.tagsField"
     timeout: 15000
 # The inline Add tag field commits on comma, and the trailing text commits on blur.
 - tapOn:
     id: "addPose.tagsField"
 - inputText: "standing,"
-- assertVisible:
-    id: "addPose.tag.standing"
+- extendedWaitUntil:
+    visible:
+      id: "addPose.tag.standing"
+    timeout: 10000
 - inputText: "indoor"
+- extendedWaitUntil:
+    visible:
+      id: "addPose.nameField"
+    timeout: 10000
 - tapOn:
     id: "addPose.nameField"
-- assertVisible:
-    id: "addPose.tag.indoor"
+- extendedWaitUntil:
+    visible:
+      id: "addPose.tag.indoor"
+    timeout: 10000
 - inputText: "QA tag chips pose"
-- assertVisible:
-    id: "addPose.descriptionCounter"
+- extendedWaitUntil:
+    visible:
+      id: "addPose.descriptionCounter"
+    timeout: 10000

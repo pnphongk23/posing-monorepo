@@ -1,8 +1,9 @@
 # TC-PAY-001 capture with the paywall on and signed out opens the paywall
 #
-# Paywall C replaced the body: this case proves the structure a signed-out press lands on — X in the first
-# frame, the numbered steps (step 3 is the only paid one), the plan cards with yearly preselected, the
-# renewal disclosure, the legal row and the signed-out CTA. No plan is bought.
+# Build 21 compacted the surface: hero, X, headline, the three one-line steps, BOTH plan cards, the auto-renew
+# sentence and the dock (account line → CTA → legal row) fit one screen, and the selected-plan summary line was
+# removed. So what this case asserts is the structure of the signed-out surface, with the paid step reached by
+# scrolling when the device is shorter than the layout assumes — never assumed to be on screen.
 appId: ${APP_ID}
 tags: [TC-PAY-001, p0]
 ---
@@ -13,30 +14,31 @@ tags: [TC-PAY-001, p0]
 - runFlow: ../subflows/open-camera.yaml
 - tapOn:
     id: "camera.shutter"
-# The X is the first thing asserted: it must be on the first frame, never behind a scroll.
+# The X is asserted first: it lives on the first frame and is the only way out of the cover.
 - extendedWaitUntil:
     visible:
       id: "paywall.close"
     timeout: 20000
-# The steps block is part of the scrolling content (README layout #4), so on a gated capture it can sit
-# below the fold: reachability is the assertion, not first-frame presence.
-- scrollUntilVisible:
-    element:
-      id: "paywall.steps"
-    direction: DOWN
-    timeout: 15000
-# The paid step is the third one, and it is the only claim Premium makes (`paywall.benefit` sits on it).
 - assertVisible:
-    id: "paywall.benefit"
+    id: "paywall.steps"
+# The paid step carries the only benefit Premium claims. It is asserted by its verbatim copy, not by
+# `paywall.benefit`: on build 21 that id is not in the accessibility tree at all — all three step rows expose
+# `paywall.steps` (measured in the dev21 hierarchy, 2026-11-03_022617: zero `paywall.benefit` nodes), so
+# scrolling to it can never succeed. The step-3 sentence is the code-owned copy and proves the same claim.
+- assertVisible: '3\. Shoot\. Premium unlocks the shutter with the full pose camera\.'
+# Build 21: both cards are on the first screen, each stating its own amount and period.
 - assertVisible:
     id: "paywall.plan.annual"
 - assertVisible:
-    id: "paywall.disclosure.selection"
-    text: '.*Yearly plan.*'
+    id: "paywall.plan.monthly"
 - assertVisible:
     id: "paywall.disclosure.autoRenew"
     text: '.*Renews automatically until you cancel in Apple ID settings.*'
-# The legal row travels with the purchase region, signed out included.
+# Signed out, the line above the CTA is about the account (build 21 removed the selected-plan summary).
+- assertVisible:
+    id: "paywall.account.status"
+    text: '.*Sign in first so Premium follows you.*'
+# The legal row travels in the dock with the purchase region.
 - assertVisible:
     id: "paywall.restore"
 - assertVisible:

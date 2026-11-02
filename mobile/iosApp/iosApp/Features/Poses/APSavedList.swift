@@ -10,9 +10,14 @@ import SwiftUI
 /// on "no saved poses" without ever asking the server.
 @MainActor
 enum APSavedEntry {
-    static func prepare(model: PosesViewModel) async {
+    /// - Returns: the library filter the surface replaced, so leaving Saved can put it back. The filter
+    ///   is the route the shared pose service reads by, and leaving it on `.saved` would route the next
+    ///   Poses or camera-picker read to the saved collection.
+    @discardableResult
+    static func prepare(model: PosesViewModel) async -> PoseLibraryFilter {        let previous = model.filter
         model.filter = .saved
         await model.load()
+        return previous
     }
 }
 
@@ -28,6 +33,14 @@ enum APSavedStateCopy {
         let trimmed = poseName.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? "Removed pose" : "Removed \(trimmed)"
     }
+    /// The unsave control's value while its request is out: the second tap is ignored, so the control
+    /// has to say why it is inert instead of looking enabled and doing nothing.
+    static let unsaveInFlight = "In progress"
+
+    /// The tap asked to remove a row that the server does not have saved, so the request saved it
+    /// instead. Nothing left the collection and nothing failed — but silence is indistinguishable from
+    /// a tap nobody received, so the bar says the removal did not happen.
+    static let removeFailed = "Couldn't remove this pose."
 
     // Offline (`06-board07`)
     static let offlineBanner = "You're offline. Changes will sync when you're back online."
@@ -248,6 +261,8 @@ struct APSavedSurface<Content: View>: View {
 
     @StateObject private var undo = APSavedUndo()
     @StateObject private var offline: APSavedOfflineModel
+    /// The filter this surface replaced with `.saved`, put back when it goes away (see `APSavedEntry`).
+    @State private var entryFilter: PoseLibraryFilter?
 
     init(
         model: PosesViewModel,
@@ -274,13 +289,22 @@ struct APSavedSurface<Content: View>: View {
         // panel currently shows (an empty Community model must not freeze on "no saved poses"
         // without ever asking the server).
         .task {
+            // Captured before the surface forces `.saved`: this is the collection the Poses tab was
+            // showing, and the one the surface puts back when it goes away.
+            entryFilter = model.filter
             await APSavedEntry.prepare(model: model)
             #if DEBUG
             applyOfflineFixtureIfRequested()
             #endif
         }
         .onAppear { offline.start() }
-        .onDisappear { offline.stop() }
+        .onDisappear {
+            // Leaving the surface restores the collection the Poses tab was showing: the filter is the
+            // route, and a Saved visit must not route the next read of the catalogue to the saved
+            // collection. `.task` re-runs on the next appearance and re-selects `.saved`.
+            if let entryFilter, model.filter == .saved { model.filter = entryFilter }
+            offline.stop()
+        }
         .environment(\.apSavedUndo, undo)
         .environment(\.apSavedOfflineMode, offline.mode)
         // F5: the snackbar is the bottom inset, above the dock and above the list's own footer.
@@ -561,6 +585,116 @@ enum APSavedRowMetrics {
     }
 }
 
+/// What the row's unsave control is doing, as one value. The tile reads this instead of combining its
+/// three flags in the body, so "the request is out" has a single definition the screen and its tests
+/// can agree on.
+enum APSavedUnsaveTileState: Equatable {
+    /// The request can be sent from here.
+    case idle
+    /// A request for this pose is out: the tile shows it, and a second tap is ignored.
+    case inFlight
+    /// Nothing can be sent: offline for a pose the device does not hold, no bookmark service wired, or
+    /// a pose the server already reported gone.
+    case unavailable
+}
+
+/// One rule for the unsave tile: which state it is in, whether it takes a tap, what it announces and
+/// whether it is allowed to move.
+///
+/// Why it exists: the tile was already disabled while the request was out, but it was painted exactly
+/// like the enabled one. With a slow server that reads as "I tapped and nothing happened", and the
+/// second tap the model correctly refused had no visible cause. The state is derived once, so the
+/// pixels, the hit area and the accessibility value cannot drift apart.
+enum APSavedUnsaveTileRule {
+    /// In flight outranks the other inputs: the tap the person already made has to stay visible even if
+    /// the row's own flags change under it.
+    static func state(
+        isUnsaving: Bool,
+        isEnabled: Bool,
+        isAvailableOffline: Bool
+    ) -> APSavedUnsaveTileState {
+        if isUnsaving { return .inFlight }
+        return isEnabled && isAvailableOffline ? .idle : .unavailable
+    }
+
+    /// Only the resting tile takes a tap. The model refuses a second request for the same pose anyway;
+    /// this is what turns that refusal into a state the screen shows.
+    static func acceptsTap(_ state: APSavedUnsaveTileState) -> Bool {
+        state == .idle
+    }
+
+    /// What assistive technology reads. The tile is also `disabled` while it works, so this is the part
+    /// that says *why*; the accessible name stays "Remove from saved", which the flows tap by text.
+    static func accessibilityValue(for state: APSavedUnsaveTileState) -> String {
+        state == .inFlight ? APSavedStateCopy.unsaveInFlight : ""
+    }
+
+    /// A spinner is motion, so Reduce Motion gets the still tile: the muted fill, the disabled control
+    /// and the accessibility value already carry the busy state.
+    static func showsSpinner(_ state: APSavedUnsaveTileState, reduceMotion: Bool) -> Bool {
+        state == .inFlight && !reduceMotion
+    }
+}
+
+/// What one tap on a saved row's unsave control does, and what it therefore has to show.
+///
+/// Extracted from the row's closure so the tap can be driven in a test — a hosted SwiftUI view cannot
+/// be tapped in this test host — and so the outcome table has one home. The surface's bar is built from
+/// `undo.removal` and `model.bookmarkError`, so "make this outcome visible" is exactly "set one of
+/// those two": a tap never ends in a state the person cannot see.
+@MainActor
+enum APSavedRowUnsave {
+    /// The action the row's unsave tile is bound to: exactly the closure `APSavedUnsaveTile` hands to
+    /// its `Button`, so a test can invoke it without a touch and prove the whole path (the tap → the
+    /// model → the bookmark service) instead of only the model.
+    static func action(
+        _ pose: NativePose,
+        at index: Int,
+        in model: PosesViewModel,
+        undo: APSavedUndo?
+    ) -> () -> Void {
+        { Task { await perform(pose, at: index, in: model, undo: undo) } }
+    }
+
+    /// - Returns: the model's answer, so a test can assert which path the tap took.
+    @discardableResult
+    static func perform(
+        _ pose: NativePose,
+        at index: Int,
+        in model: PosesViewModel,
+        undo: APSavedUndo?
+    ) async -> PosesViewModel.BookmarkOutcome {
+        let outcome = await model.toggleSaved(for: pose.withSavedValue(true))
+        switch outcome {
+        case .saved(false):
+            // Server-confirmed removal: the row left and the bar offers to put it back
+            // (`saved.snackbar` / `saved.snackbar.undo`). Whether an outcome earns that offer stays
+            // `APSavedUndoRule`'s call — the one definition the tap and its tests share.
+            if APSavedUndoRule.offersUndo(for: outcome) { undo?.offer(pose, at: index) }
+        case .saved(true):
+            // The row was not saved after all, so this request saved it instead of removing it. The
+            // collection keeps the row and nothing failed, which used to be a completely silent tap.
+            model.bookmarkError = APSavedStateCopy.removeFailed
+        case .failed:
+            // The model already published the reason in `bookmarkError`, which is the error bar.
+            break
+        case .inFlight:
+            // Another request for this pose is out, and *that* request owns the visible outcome; a
+            // second bar would describe the same attempt twice. Not reachable from one tap on a
+            // resting tile: the claim puts the tile in `.inFlight`, which takes no tap.
+            break
+        case .discarded:
+            // The session changed under the request, so this surface is being replaced (the sign-in
+            // gate or a fresh load). Nothing truthful can be said about the previous Account's row.
+            break
+        case .unavailable:
+            // No bookmark service is wired, so the tile is `.unavailable` and never sends the tap.
+            break
+        }
+        return outcome
+    }
+}
+
 /// One saved pose row: 64 pt thumbnail, name + category, trailing unsave control.
 ///
 /// The row is a link to the pose detail; the unsave control is its own button next to that link (see
@@ -670,27 +804,61 @@ struct APSavedUnsaveTile: View {
     var onUnsave: () -> Void = {}
 
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    private var offersUnsave: Bool { isEnabled && isAvailableOffline }
+    private var state: APSavedUnsaveTileState {
+        APSavedUnsaveTileRule.state(
+            isUnsaving: isUnsaving,
+            isEnabled: isEnabled,
+            isAvailableOffline: isAvailableOffline
+        )
+    }
 
     private var unsaveTileSide: CGFloat { APSavedRowMetrics.unsaveTileSide(for: dynamicTypeSize) }
 
+    /// The enabled tile is the accent one; every other state is the muted `controlFill`, so a tap that
+    /// is waiting on the server never looks like a tap nobody received.
+    private var tileFill: SwiftUI.Color {
+        state == .idle ? AP.Color.selectedBackground : AP.Color.controlFill
+    }
+
+    private var markColor: SwiftUI.Color {
+        switch state {
+        case .idle: return AP.Color.selectedForeground
+        case .inFlight: return AP.Color.disabled
+        case .unavailable: return AP.Color.secondaryText
+        }
+    }
+
     var body: some View {
         Button(action: onUnsave) {
-            Image(systemName: "bookmark.slash")
-                .font(.system(size: APSavedRowMetrics.unsaveGlyphSize(for: dynamicTypeSize), weight: .semibold))
-                .foregroundStyle(offersUnsave ? AP.Color.selectedForeground : AP.Color.secondaryText)
-                .frame(width: unsaveTileSide, height: unsaveTileSide)
-                .background(
-                    RoundedRectangle(cornerRadius: AP.Radius.radius16, style: .continuous)
-                        .fill(offersUnsave ? AP.Color.selectedBackground : AP.Color.controlFill)
-                )
+            ZStack {
+                RoundedRectangle(cornerRadius: AP.Radius.radius16, style: .continuous)
+                    .fill(tileFill)
+                mark
+            }
+            .frame(width: unsaveTileSide, height: unsaveTileSide)
         }
         .buttonStyle(.plain)
-        .disabled(!offersUnsave || isUnsaving)
+        .disabled(!APSavedUnsaveTileRule.acceptsTap(state))
         .accessibilityLabel("Remove from saved")
+        .accessibilityValue(APSavedUnsaveTileRule.accessibilityValue(for: state))
         .accessibilityHint(isAvailableOffline ? "" : APSavedStateCopy.notSavedOffline)
         .apIdentifier(identifier)
+    }
+
+    /// The bookmark-slash while it can be tapped, the same glyph in the disabled colour while it
+    /// cannot, and a spinner while the request is out (a still glyph under Reduce Motion).
+    @ViewBuilder
+    private var mark: some View {
+        if APSavedUnsaveTileRule.showsSpinner(state, reduceMotion: reduceMotion) {
+            ProgressView()
+                .tint(AP.Color.secondaryText)
+        } else {
+            Image(systemName: "bookmark.slash")
+                .font(.system(size: APSavedRowMetrics.unsaveGlyphSize(for: dynamicTypeSize), weight: .semibold))
+                .foregroundStyle(markColor)
+        }
     }
 }
 
@@ -752,22 +920,19 @@ struct APSavedList: View {
             .accessibilityIdentifier(APSavedIdentifiers.row(index: index, poseID: pose.id))
         } trailing: {
             APSavedUnsaveTile(
+                // `savedState` is part of "can this control act": a row the model does not hold as
+                // saved cannot be removed, and offering the control would send the opposite request
+                // (a save) that this surface has nothing to report.
                 isUnsaving: model.isBookmarkInFlight(pose.id),
-                isEnabled: model.canSave(pose) && model.bookmarkService != nil,
+                isEnabled: model.canSave(pose)
+                    && model.savedState(for: pose)
+                    && model.bookmarkService != nil,
                 isAvailableOffline: offlineMode.isAvailableOffline(pose),
                 identifier: APSavedIdentifiers.unsave(poseID: pose.id),
-                onUnsave: { Task { await unsave(pose, at: index) } }
+                onUnsave: APSavedRowUnsave.action(pose, at: index, in: model, undo: undo)
             )
         }
         .onAppear { requestNextPage(at: index) }
-    }
-
-    /// One unsave. The model owns the request; the surface only offers Undo for a removal the server
-    /// actually confirmed.
-    private func unsave(_ pose: NativePose, at index: Int) async {
-        let outcome = await model.toggleSaved(for: pose.withSavedValue(true))
-        guard APSavedUndoRule.offersUndo(for: outcome) else { return }
-        undo?.offer(pose, at: index)
     }
 
     /// Ask for the next page at most once per page. `canPage` is deliberately only "the last

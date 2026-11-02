@@ -19,10 +19,9 @@ tags: [TC-SAV-003, p1]
     label: "E2E_EMAIL / E2E_PASSWORD missing - run with -e E2E_EMAIL=... -e E2E_PASSWORD=..."
 - runFlow: ../subflows/launch-accounts-on.yaml
 - runFlow: ../subflows/pay-sign-in.yaml
-- tapOn:
-    id: "poses.more"
-- tapOn:
-    id: "poses.menu.settings"
+# The hardened subflow waits for the popped-over row before tapping it; the inline pair this replaced raced the
+# menu's opening animation and failed 3/3 on dev21.
+- runFlow: ../subflows/open-settings.yaml
 - tapOn:
     id: "settings.saved.row"
 - extendedWaitUntil:
@@ -47,12 +46,14 @@ tags: [TC-SAV-003, p1]
       id: "saved.browseCommunity"
     timeout: 25000
 # Leave and come back: the removal survived a fresh load, so it was a write and not a local hide.
+# Saved is pushed from Settings, so Back lands on Settings — not on the Poses home, where `poses.more` lives
+# (that wrong assumption is what failed on dev21 at the second `poses.more`).
 - tapOn:
     id: "saved.back"
-- tapOn:
-    id: "poses.more"
-- tapOn:
-    id: "poses.menu.settings"
+- extendedWaitUntil:
+    visible:
+      id: "settings.saved.row"
+    timeout: 15000
 - tapOn:
     id: "settings.saved.row"
 - extendedWaitUntil:

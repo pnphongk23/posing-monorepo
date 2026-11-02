@@ -125,8 +125,16 @@ TC-PAY-017/018/019 (and TC-PAY-014 for Restore) in `docs/qa/test-cases/paywall-p
 - [ ] Set **Timer → Off** and tap the shutter.
 - [ ] **Expected:** the photo is taken instantly, with no countdown.
 
-## 6. Ratio — the crop lands in the saved file
-The saved file is what matters here, not the preview.
+## 6. Ratio — the preview frame and the crop in the saved file
+Build 20+: choosing a ratio **also reshapes the live preview viewport**, so check both halves — the frame you see and the
+file you get. (Planned follow-up: the camera lane's pose-popup branch keeps this behaviour but sources the ratio from a
+sheet — ids `TBD on build`, see `camera-guide.md` "Planned change".)
+- [ ] Set **Ratio → 1:1** and look at the preview without capturing.
+- [ ] **Expected (preview frame):** the live image is **square and masked** to that shape — no stretched faces, no letterbox
+  bars inside a still-portrait frame — and the pose guide is not cropped or squashed by the change.
+- [ ] Repeat for **9:16** and **3:4** and confirm the frame changes shape each time, then set **3:4** again.
+- [ ] **Expected:** each ratio visibly changes the viewport; the choice survives leaving and reopening the camera.
+The saved file is the second half of this section.
 1. **1:1 (square).**
 - [ ] Set **Ratio → 1:1**, frame a scene with obvious edges, capture.
 - [ ] **Expected:** the preview was masked to a square and the saved photo **is** square — open the Gallery photo and its

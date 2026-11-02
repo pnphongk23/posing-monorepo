@@ -29,15 +29,45 @@ appId: ${APP_ID}
 - tapOn:
     id: "signin.email"
 - inputText: ${E2E_EMAIL}
+# The password field can sit under the keyboard at AX sizes: scroll it into view before tapping, so the tap
+# lands on the field and not on the keyboard.
+- scrollUntilVisible:
+    element:
+      id: "signin.password"
+    direction: DOWN
+    timeout: 15000
 - tapOn:
     id: "signin.password"
+# Let the field take focus before typing: a tap that lands while the keyboard is still animating types
+# nothing, and the form then answers with its own "Enter your password" instead of a server error.
+- extendedWaitUntil:
+    visible:
+      id: "signin.password"
+    timeout: 5000
 - inputText: ${E2E_PASSWORD}
 - tapOn:
     id: "signin.submit"
-# "Delete account" only exists in the signed-in Account state, so this proves the session landed
-# before any purchase step runs (the server round-trip can be slow on a cold start).
-- extendedWaitUntil:
-    visible: "Delete account"
+# Self-heal the field-focus race once: if the form rejects the empty password rather than the credentials,
+# retype and submit again. Anything else (a real auth error) is left to the flow that owns the assertion.
+- runFlow:
+    when:
+      visible:
+        id: "signin.password.error"
+    commands:
+      - tapOn:
+          id: "signin.password"
+      - eraseText
+      - inputText: ${E2E_PASSWORD}
+      - tapOn:
+          id: "signin.submit"
+# "Delete account" only exists in the signed-in Account state, so this proves the session landed before any
+# purchase step runs (the server round-trip can be slow on a cold start). At AX sizes the Account card is
+# taller than the screen and the row starts below the fold, so reach it by scrolling — asserting it in place
+# is what failed at AX5 on build 21 even though the sign-in itself had succeeded.
+- scrollUntilVisible:
+    element:
+      text: "Delete account"
+    direction: DOWN
     timeout: 60000
 - assertNotVisible:
     id: "signin.emailEntry"

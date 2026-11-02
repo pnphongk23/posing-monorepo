@@ -22,18 +22,32 @@ tags: [TC-EXT-003, p0]
     id: "poses.add-pose"
 - assertVisible:
     id: "poses.more"
-# 2. More menu: the Jobs row exists but is disabled, so the tap cannot leave the home screen.
+# 2. More menu: Settings proves the menu opened; Jobs must not be a usable entry with extraction off.
 - tapOn:
     id: "poses.more"
-- assertVisible:
-    id: "poses.jobs"
-- tapOn:
-    id: "poses.jobs"
+- extendedWaitUntil:
+    visible:
+      id: "poses.menu.settings"
+    timeout: 10000
+# The redesign renders the Jobs row disabled (or drops it from the accessibility tree entirely), so the
+# tap is conditional: either way the Jobs screen must stay unreachable.
+- runFlow:
+    when:
+      visible:
+        id: "poses.jobs"
+    commands:
+      - tapOn:
+          id: "poses.jobs"
+- extendedWaitUntil:
+    notVisible:
+      id: "jobs.tab.processing"
+    timeout: 10000
 - assertVisible:
     id: "poses.open-search"
-- assertNotVisible:
-    id: "jobs.tab.processing"
 # 3. Gallery header: Add pose is flag-gated there too.
+- extendedWaitUntil:
+    visible: "Gallery"
+    timeout: 15000
 - tapOn: "Gallery"  # TODO(QA-261029-ID) dock.gallery
 - extendedWaitUntil:
     visible:

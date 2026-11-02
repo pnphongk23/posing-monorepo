@@ -81,6 +81,32 @@ Every flow and draft below was reworked in the same pass (Done → outside tap; 
 TC-CAM-001/004/011 keep their flows, TC-CAM-014/015/021/022/023/032/033 are now drafts against these ids and are run on
 the 18 app. Their automation cells say so.
 
+
+## Planned change — the inline pose strip is removed (camera lane `feat/camera-pose-popup`)
+Status: **planning only, not merged.** As of this commit the branch `feat/camera-pose-popup` has no commits ahead of `main`
+(its worktree is clean), so **no new id could be read from source** — every id below is `id TBD on build`. What the lane
+describes: the inline strip goes away, the **Poses control always opens a slide-up sheet with search on top**, and the
+**Ratio control changes the preview viewport** (3:4 / 1:1 / 9:16).
+
+### Existing cases
+- **Obsolete once merged:** TC-CAM-012, TC-CAM-013, TC-CAM-019 (collapse / re-open / collapsed-state persistence). Kept —
+  with their flows — until the branch lands, then retired together in one commit.
+- **Re-point to the sheet:** TC-CAM-006, TC-CAM-014, TC-CAM-018, TC-CAM-021, TC-CAM-022, TC-CAM-033 (inline notes on those
+  rows say exactly what to swap).
+
+### New cases (new ids continue the sequence; no flow is written until the ids exist)
+| ID | Pri | Preconditions | Steps | Expected | Automation |
+|---|---|---|---|---|---|
+
+### Ids to request from the camera lane (all `id TBD on build`)
+slide-up sheet container · sheet close/dismiss control · sheet search field (+ its clear control) · sheet result grid /
+list · a pose row inside the sheet · the "No poses match" panel · the **Poses** control (does it keep
+`camera.pickerStripToggle`, or is there a new id?) · the All/Saved scope chips inside the sheet (keep
+`posePicker.scope.all|saved`?) · the **Ratio** control and its options (keep `camera.tools.ratio.3x4|1x1|9x16`?) ·
+whether `camera.poseStrip` / `camera.poseStrip.card.<id>` / `camera.poseStrip.retry` disappear entirely (that decides
+whether the strip's ids are retired or re-used). Also: does the sheet still carry `posePicker.search` and
+`posePicker.state`, or are they renamed? That single answer decides whether TC-CAM-021 keeps its flow or gets a rewrite.
+
 ## Flow hazards to watch (found while triaging dev20)
 - **TC-CAM-004** failed on dev20 at `posePicker.search` for a **stale premise**, not an app bug: build 18+ draws
   `cameraToolsPopup` as the last child of the camera's root ZStack with a **full-screen** `Color.clear` tap catcher, so a tap
@@ -91,6 +117,11 @@ the 18 app. Their automation cells say so.
   watch, not a confirmed defect**: dev20 ran **TC-CAM-021 to a PASS** with its `inputText`. If a batch does stall there, turn
   the hardware keyboard off before filing anything. TC-CAM-021 also keeps a fast-fail `assertVisible: posePicker.search`
   before the tap so a missing sheet fails in seconds.
+- **TC-CAM-033** (signed-out Saved scope) failed on dev20 pass 5 at `posePicker.scope.saved` for a **flow** reason, not
+  an app one: the chips are unconditional in the sheet (`handle → header → scopeChips → searchField → content`), and the
+  flow tapped one the moment the grid appeared — while the sheet was still animating in. It now asserts the
+  `posePicker.scope` container and `extendedWaitUntil`s each chip (15 s) before tapping. Note it is **not** e2e-tagged and
+  needs no credentials; a run that skips it as "needs E2E_EMAIL" is mis-classifying it.
 - **Real-camera cases have no flow at all** (device-only by design): TC-CAM-002, 003, 005, 008, 017, 026, 029, 030, 031,
   035. Nothing in `maestro/flows/` taps the shutter expecting a saved photo; the only shutter taps in the suite are the
   paywall lane's TC-PAY-001/002, which assert gate behaviour.

@@ -192,6 +192,107 @@ final class FeatureStateTests: XCTestCase {
         XCTAssertEqual(tab, .camera)
     }
 
+    // MARK: - "Browse poses" leaves Saved for the catalogue (TC-SAV-004)
+
+    /// Saved is pushed from Settings, which is pushed from the Poses tab, so the panel's previous
+    /// `dismiss()` landed on Settings: the button promises the catalogue and delivered a settings list.
+    /// The tap now goes through the app root, which selects its tab and — because the tab is already
+    /// Poses — rebuilds that stack from its root.
+    ///
+    /// Mutation target: make `step(from:)` return a step without the rebuild and the first assertion
+    /// goes red (Saved/Settings would stay pushed); send the other tabs to `.gallery` and the second
+    /// one does.
+    func testBrowsePosesLandsOnThePosesRootFromEveryTab() {
+        let fromPoses = APBrowsePosesRule.step(from: .poses)
+        XCTAssertEqual(fromPoses.tab, .poses, "the Poses tab is selected")
+        XCTAssertTrue(
+            fromPoses.resetsPosesRoot,
+            "and its stack is rebuilt, because Settings → Saved is pushed on it and selecting the already-selected tab pops nothing"
+        )
+
+        for tab in [AppTab.camera, AppTab.gallery] {
+            let step = APBrowsePosesRule.step(from: tab)
+            XCTAssertEqual(step.tab, .poses, "from \(tab) the tap selects Poses")
+            XCTAssertFalse(
+                step.resetsPosesRoot,
+                "the Poses stack is not mounted from \(tab), so it comes up at its root already"
+            )
+        }
+    }
+
+    /// The panel's Browse runs the app root's action when the app provided one, and the screen's own
+    /// dismiss when it did not (a preview, or a test that mounts the surface alone). Anything else is a
+    /// dead button in one of the two cases.
+    ///
+    /// Mutation target: return `fallback` unconditionally and the first two assertions go red; return the
+    /// action unconditionally and the last one does.
+    @MainActor func testBrowsePosesPrefersTheAppRootAndKeepsADismissFallback() {
+        final class Counter: @unchecked Sendable { var calls = 0 }
+        let root = Counter()
+        let fallback = Counter()
+
+        APBrowsePosesRule.browse(action: APBrowsePosesAction { root.calls += 1 }, fallback: { fallback.calls += 1 })()
+        XCTAssertEqual(root.calls, 1, "the app root's action is what the panel runs")
+        XCTAssertEqual(fallback.calls, 0, "and the fallback is not also run")
+
+        APBrowsePosesRule.browse(action: nil, fallback: { fallback.calls += 1 })()
+        XCTAssertEqual(fallback.calls, 1, "a surface mounted outside the app still closes")
+        XCTAssertEqual(root.calls, 1)
+    }
+
+    /// Source-level, like the other view-wiring pins in this suite: a hosted SwiftUI view cannot be
+    /// tapped here, so what is checked is the wiring that makes the tap reach the root — the root owns
+    /// the tab and the stack's identity, the action is provided through the environment, and the Saved
+    /// panel consumes it instead of dismissing itself.
+    ///
+    /// Mutation target: drop `.id(posesRootGeneration)` from the Poses tab, stop providing
+    /// `\.apBrowsePoses`, or go back to `onBrowse: { dismiss() }` — each turns one assertion below red.
+    func testBrowsePosesWiringRunsThroughTheAppRoot() throws {
+        let root = try source("Features/AppFeatureRoot.swift")
+        XCTAssertTrue(
+            root.contains("screenContent\n            .environment(\\.apBrowsePoses, APBrowsePosesAction { showPosesCatalogue() })"),
+            "the app root provides the action to every tab"
+        )
+        XCTAssertTrue(
+            root.contains("private func showPosesCatalogue() {"),
+            "and owns the one place that writes the route"
+        )
+        XCTAssertTrue(root.contains("tab = step.tab"), "selecting the tab comes from the rule")
+        XCTAssertTrue(
+            root.contains("if step.resetsPosesRoot { posesRootGeneration &+= 1 }"),
+            "and so does rebuilding the stack to its root"
+        )
+        XCTAssertTrue(
+            root.contains(".id(posesRootGeneration)"),
+            "the Poses tab's navigation container is keyed by that generation"
+        )
+
+        let poses = try source("Features/Poses/PosesFeature.swift")
+        XCTAssertTrue(
+            poses.contains("APSavedEmptyPanel(onBrowse: APBrowsePosesRule.browse(action: browsePoses, fallback: { dismiss() }))"),
+            "Browse runs the app root's action, with dismiss only as the fallback"
+        )
+        XCTAssertFalse(
+            poses.contains("APSavedEmptyPanel(onBrowse: { dismiss() })"),
+            "the panel must not pop Saved onto Settings any more"
+        )
+        XCTAssertTrue(
+            poses.contains("@Environment(\\.apBrowsePoses) private var browsePoses"),
+            "the Saved screen reads the action from the environment"
+        )
+    }
+
+    private func source(_ path: String) throws -> String {
+        try String(
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent() // Features
+                .deletingLastPathComponent() // iosAppTests
+                .deletingLastPathComponent() // iosApp (project dir)
+                .appendingPathComponent("iosApp/\(path)"),
+            encoding: .utf8
+        )
+    }
+
     @MainActor func testGalleryTimeFilterToday() async {
         let store = StubGalleryStore(items: [
             GalleryItem(id: 1, fileURL: URL(fileURLWithPath: "/tmp/a.jpg"), createdAt: .now),

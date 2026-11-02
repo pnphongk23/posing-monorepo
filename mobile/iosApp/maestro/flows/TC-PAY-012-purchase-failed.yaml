@@ -48,16 +48,14 @@ tags: [TC-PAY-012, p1, e2e]
 # The retry path: "Try again" starts a fresh store attempt (its dialog is the proof), and cancelling that one
 # leaves the user where they were — still unentitled, nothing bought.
 #
-# dev20 observation (2026-11-02 00:35 run): the FIRST "Test failed purchase" dialog was found and tapped, the
-# outcome card/status/retry all rendered — the failure was this second wait, i.e. the store dialog never came
-# back within 30 s after tapping `paywall.retry`. The label is therefore not in question here; whether the
-# retry really re-enters a purchase (`PaywallScreen.swift:496` → `model.purchase()`) needs a screenshot +
-# hierarchy right after that tap. Left un-mechanised on purpose until that evidence exists.
+# Retry diagnostic (26ab1fba, dev20, `qa-dev20/diag/pay012-retry-t2.yaml`): after tapping `paywall.retry` the
+# store dialog is back in ~2 s, so the retry does re-enter a purchase. This flow therefore waits for that dialog
+# with a margin over the measured 2 s instead of the old 30 s guess.
 - tapOn:
     id: "paywall.retry"
 - extendedWaitUntil:
     visible: "Test failed purchase"
-    timeout: 30000
+    timeout: 15000
 - tapOn: "Cancel"
 - tapOn:
     id: "paywall.close"

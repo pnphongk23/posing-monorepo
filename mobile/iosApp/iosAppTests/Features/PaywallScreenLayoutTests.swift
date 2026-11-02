@@ -12,7 +12,17 @@ import XCTest
 final class PaywallScreenLayoutTests: XCTestCase {
     private let se = CGSize(width: 375, height: 667)
     private let phone = CGSize(width: 430, height: 932)
+    /// A standard 6.1" notched phone (iPhone 15/16), the second frame the build-21 feedback names.
+    private let standard = CGSize(width: 393, height: 852)
     private let scale: CGFloat = 2
+
+    /// The two frames the build-21 feedback names. The probe draws into a real key window, so it
+    /// carries the host simulator's insets (59 pt of status bar, 0–34 pt of home indicator): the SE
+    /// frame is therefore *stricter* than the phone it is named after, which has a 20 pt status bar
+    /// and no home indicator, and the assertions subtract the bottom inset they measure.
+    private var purchaseRegionFrames: [(name: String, size: CGSize)] {
+        [("iPhone SE", se), ("6.1\" phone", standard)]
+    }
 
     // MARK: - Fixtures
 
@@ -47,10 +57,19 @@ final class PaywallScreenLayoutTests: XCTestCase {
         PurchaseSnapshot(state: .notEntitled, products: [monthly, annual])
     }
 
+    /// A second offering for the "no price above the CTA" measurement: different amounts, the same
+    /// card geometry (a saving badge on both cards), so only the printed money can change pixels.
+    private var dearOffering: PurchaseSnapshot {
+        PurchaseSnapshot(state: .notEntitled, products: [
+            PurchaseProduct(identifier: "monthly", packageType: .monthly, localizedPrice: "$9.99", period: "month"),
+            PurchaseProduct(identifier: "annual", packageType: .annual, localizedPrice: "$79.99", period: "year"),
+        ])
+    }
+
     /// A model that already settled on a real offering, so the captured frame is a final state.
-    private func signedInModel() async -> PaywallModel {
+    private func signedInModel(offering: PurchaseSnapshot? = nil) async -> PaywallModel {
         let model = PaywallModel(
-            gateway: Gateway(nextLoad: offering),
+            gateway: Gateway(nextLoad: offering ?? self.offering),
             boundary: SessionBoundary(
                 tokenStorage: PaywallLayoutTokenStorage(
                     credentials: SessionCredentials(accessToken: "access", refreshToken: "refresh")
@@ -65,6 +84,23 @@ final class PaywallScreenLayoutTests: XCTestCase {
             try? await Task.sleep(nanoseconds: 5_000_000)
         }
         XCTAssertEqual(model.phase, .ready)
+        return model
+    }
+
+    /// The same offering, no session: the cards still show the store's prices and the CTA is sign-in.
+    private func signedOutModel() async -> PaywallModel {
+        let model = PaywallModel(
+            gateway: Gateway(nextLoad: offering),
+            boundary: SessionBoundary(tokenStorage: PaywallLayoutTokenStorage()),
+            signInAction: SignInAction(start: {}),
+            connectivity: PaywallLayoutConnectivity()
+        )
+        model.start()
+        let deadline = Date().addingTimeInterval(3)
+        while model.phase != .signInRequired && Date() < deadline {
+            try? await Task.sleep(nanoseconds: 5_000_000)
+        }
+        XCTAssertEqual(model.phase, .signInRequired)
         return model
     }
 
@@ -94,11 +130,23 @@ final class PaywallScreenLayoutTests: XCTestCase {
     // MARK: - Hero metrics
 
     func testHeroHeightIsClampedOnSmallAndLargePhones() {
-        XCTAssertEqual(PaywallHeroMetrics.height(for: 667), 187, accuracy: 0.5, "iPhone SE keeps room for the steps")
-        XCTAssertEqual(PaywallHeroMetrics.height(for: 932), 261, accuracy: 0.5, "6.7\" phone: ~261 pt")
-        XCTAssertEqual(PaywallHeroMetrics.height(for: 480), 180, "never smaller than the 180 pt floor")
-        XCTAssertEqual(PaywallHeroMetrics.height(for: 1400), 312, "never taller than the 312 pt ceiling")
-        XCTAssertLessThan(PaywallHeroMetrics.height(for: 667), 667 * 0.4, "the hero never eats the viewport")
+        XCTAssertEqual(
+            PaywallHeroMetrics.height(for: 667), 140, accuracy: 0.5,
+            "an SE container: what is left once the purchase region has its floor"
+        )
+        XCTAssertEqual(PaywallHeroMetrics.height(for: 932), 261, accuracy: 0.5, "a 6.7\" container keeps the 28 %")
+        XCTAssertEqual(PaywallHeroMetrics.height(for: 480), 118, "never smaller than the 118 pt floor")
+        XCTAssertEqual(PaywallHeroMetrics.height(for: 1800), 312, "never taller than the 312 pt ceiling")
+
+        // The invariant the feedback is about: wherever the hero takes its share, everything that has
+        // to stay on screen still fits under it.
+        for containerHeight in [663.0, 667, 759, 852, 932] {
+            XCTAssertLessThanOrEqual(
+                PaywallHeroMetrics.height(for: containerHeight) + PaywallHeroMetrics.purchaseRegionFloor,
+                containerHeight,
+                "at \(containerHeight) pt the hero leaves the purchase region its whole height"
+            )
+        }
     }
 
     // MARK: - iPhone SE: purchase region and escape hatch
@@ -159,6 +207,199 @@ final class PaywallScreenLayoutTests: XCTestCase {
         }
         XCTAssertTrue(PaywallScreen.pinsLegalRow(at: .large))
         XCTAssertTrue(PaywallScreen.pinsLegalRow(at: .xxxLarge))
+    }
+
+    // MARK: - Plan cards inside the first screen (build 21)
+
+    /// The reported defect: the Monthly card sat under the dock with its price half hidden. Everything
+    /// here is measured on the rendered frame — where the plate is, how wide it paints on its own
+    /// first and last rows, and what sits between it and the CTA — so a card that the dock covers
+    /// fails on geometry instead of on a snapshot diff.
+    func testBothPlanCardsAreFullyVisibleAboveTheDockOnSEAndA61InchPhone() async throws {
+        let model = await signedInModel()
+
+        for frame in purchaseRegionFrames {
+            let bitmap = render(model, size: frame.size)
+            let cards = try cardBands(in: bitmap, frame: frame.name)
+            let cta = try ctaBand(in: bitmap, frame: frame.name)
+
+            XCTAssertLessThan(cards.annual.upperBound, cards.monthly.lowerBound, "\(frame.name): Yearly sits above Monthly")
+            XCTAssertLessThan(
+                cards.monthly.upperBound, cta.lowerBound,
+                "\(frame.name): both cards end above the CTA, so neither runs under the dock"
+            )
+
+            // A card the dock covers loses its bottom edge: the last painted row would be a straight
+            // cut at the dock's edge instead of the card's own rounded corner.
+            for (name, band, fill) in [
+                ("Yearly", cards.annual, APColorTokens.selectedBackground),
+                ("Monthly", cards.monthly, APColorTokens.controlFill),
+            ] {
+                let middle = plateWidth(in: bitmap, row: band.lowerBound + band.count / 2, fill: fill)
+                let topEdge = plateWidth(in: bitmap, row: band.lowerBound + 1, fill: fill)
+                let bottomEdge = plateWidth(in: bitmap, row: band.upperBound - 1, fill: fill)
+                XCTAssertGreaterThan(points(middle), 300, "\(frame.name), \(name): the card paints a full-width plate")
+                XCTAssertLessThan(
+                    points(topEdge), points(middle) - 8,
+                    "\(frame.name), \(name): the card's top edge is its own rounded corner"
+                )
+                XCTAssertLessThan(
+                    points(bottomEdge), points(middle) - 8,
+                    "\(frame.name), \(name): the card's bottom edge is painted, so the dock does not cut it off"
+                )
+                XCTAssertGreaterThan(
+                    points(bottomEdge), points(middle) * 0.8,
+                    "\(frame.name), \(name): and the bottom row is the card's edge, not a sliver of it"
+                )
+            }
+
+            // The trim below the CTA is the legal row plus the dock's own insets — no extra padding.
+            let belowTheCta = points(bitmap.height - cta.upperBound - 1) - windowInsets().bottom
+            XCTAssertGreaterThanOrEqual(
+                belowTheCta, AP.HitTarget.minimum,
+                "\(frame.name): the legal row keeps a 44 pt target below the CTA"
+            )
+            XCTAssertLessThanOrEqual(
+                belowTheCta, 60,
+                "\(frame.name): no excess padding under the CTA and the legal row (measured \(belowTheCta) pt)"
+            )
+
+            // The three 3.1.2 links are painted in that trimmed dock.
+            let legal = bitmap.rows(paintedWith: 0x8C3350).filter { $0 > cta.upperBound }
+            XCTAssertFalse(legal.isEmpty, "\(frame.name): Restore/Terms/Privacy stay on the first screen")
+            XCTAssertLessThan(legal.max()!, bitmap.height - 1, "\(frame.name): the legal row is never pushed off")
+        }
+    }
+
+    /// App Store 3.1.2 asks for the billed amount *and* the period on the card the user can buy, so
+    /// both cards state it, and both figures come out of the store packages (two offerings, so no
+    /// constant can be the source).
+    func testBothPlanCardsCarryTheBilledAmountAndThePeriod() async throws {
+        let yearly = PaywallPlanCopy.plan(annual, monthly: monthly, isSelected: true)
+        let monthlyCard = PaywallPlanCopy.plan(monthly, monthly: monthly, isSelected: false)
+        XCTAssertEqual(yearly.detail, "$3.33 per month, billed $39.99 yearly")
+        XCTAssertEqual(monthlyCard.detail, "Billed $5.99 monthly")
+        XCTAssertEqual(yearly.price, "$39.99")
+        XCTAssertEqual(monthlyCard.price, "$5.99")
+        for card in [yearly, monthlyCard] {
+            XCTAssertTrue(card.detail.lowercased().contains("billed"), "\(card.title): the card states the billing amount")
+            XCTAssertTrue(card.detail.contains(card.price), "\(card.title): the amount is the store's own")
+        }
+        XCTAssertTrue(yearly.detail.contains("yearly"), "the Yearly card states its period")
+        XCTAssertTrue(monthlyCard.detail.contains("monthly"), "the Monthly card states its period")
+
+        // A second offering moves both strings: nothing is typed into the card copy.
+        let dongAnnual = PurchaseProduct(
+            identifier: "a", packageType: .annual, localizedPrice: "₫999.000", period: "year"
+        )
+        let dongMonthly = PurchaseProduct(
+            identifier: "m", packageType: .monthly, localizedPrice: "₫199.000", period: "month"
+        )
+        XCTAssertEqual(PaywallPlanCopy.detail(for: dongAnnual), "₫83.250 per month, billed ₫999.000 yearly")
+        XCTAssertEqual(PaywallPlanCopy.detail(for: dongMonthly), "Billed ₫199.000 monthly")
+
+        // And each rendered card paints its billing line in the lower part of its plate, so the line
+        // is on screen and not the one the dock used to cut.
+        let bitmap = render(await signedInModel(), size: se)
+        let cards = try cardBands(in: bitmap, frame: "iPhone SE")
+        for (name, band, fill) in [
+            ("Yearly", cards.annual, APColorTokens.selectedBackground),
+            ("Monthly", cards.monthly, APColorTokens.controlFill),
+        ] {
+            let lowerRows = (band.lowerBound + band.count * 3 / 5)..<(band.upperBound - 2)
+            let lines = inkRowBands(in: bitmap, rows: lowerRows, columns: cardInterior(width: se.width), fill: fill)
+            let billingLine = try XCTUnwrap(lines.last, "\(name): no billing line is painted under the title")
+            XCTAssertGreaterThan(
+                points(bitmap.inkExtent(inRows: billingLine, background: UIColor.tokenPixel(fill.light.uiColor))),
+                points(Int(60 * scale)),
+                "\(name): the billing line is a full line of copy, not a truncated fragment"
+            )
+        }
+    }
+
+    /// The compliance sentence: one auto-renew disclosure, painted in both account states. It is the
+    /// same sentence in both, so its pixels have to agree — which is what proves it is the static
+    /// disclosure and not a per-state line.
+    func testAutoRenewDisclosureIsPaintedInBothAccountStates() async throws {
+        let signedIn = render(await signedInModel(), size: se)
+        let signedOut = render(await signedOutModel(), size: se)
+
+        var disclosed: [Range<Int>] = []
+        for (name, bitmap) in [("signed in", signedIn), ("signed out", signedOut)] {
+            let cards = try cardBands(in: bitmap, frame: "iPhone SE, \(name)")
+            let cta = try ctaBand(in: bitmap, frame: "iPhone SE, \(name)")
+            let between = (cards.monthly.upperBound + 1)..<max(cards.monthly.upperBound + 2, cta.lowerBound - 2)
+            // Lines closer than 12 pt are the same paragraph; the dock's own line sits further away.
+            let blocks = inkRowBands(
+                in: bitmap, rows: between, fill: APColorTokens.background, mergeGap: Int(12 * scale)
+            )
+            XCTAssertEqual(
+                blocks.count, 2,
+                "\(name): the scroll ends with the disclosure and the dock starts with its own line"
+            )
+            let disclosure = try XCTUnwrap(
+                blocks.first, "no auto-renew disclosure between the cards and the dock when \(name)"
+            )
+            let width = bitmap.inkExtent(
+                inRows: disclosure,
+                background: UIColor.tokenPixel(APColorTokens.background.light.uiColor)
+            )
+            XCTAssertGreaterThan(
+                points(width), 200,
+                "\(name): the disclosure is a full sentence near the legal row, not a word"
+            )
+            XCTAssertGreaterThan(
+                points(disclosure.count), 20,
+                "\(name): both lines of the sentence are painted, so the dock neither clips nor covers them"
+            )
+            disclosed.append(disclosure)
+        }
+
+        XCTAssertFalse(
+            signedIn.differs(from: signedOut, inRows: disclosed[0]),
+            "the disclosure is painted identically in both states: same sentence, same place"
+        )
+    }
+
+    /// The dock used to restate the selected plan and today's charge above the CTA. It is gone: two
+    /// offerings whose amounts differ, with the same card geometry, must paint the same pixels above
+    /// the CTA — which cannot happen if a "… billed today" line is still drawn there.
+    func testTheDockNoLongerRestatesTheSelectedPlanPrice() async throws {
+        let cheap = render(await signedInModel(), size: se)
+        let dear = render(await signedInModel(offering: dearOffering), size: se)
+
+        let cheapCta = try ctaBand(in: cheap, frame: "iPhone SE, $39.99").lowerBound
+        let dearCta = try ctaBand(in: dear, frame: "iPhone SE, $79.99").lowerBound
+        XCTAssertEqual(cheapCta, dearCta, "both offerings keep the same card heights and the same dock")
+
+        // The dock's own line: the footer is pinned, so nothing inside the scroll can move it. A
+        // "… billed today" line would print a different amount here.
+        let dockLine = max(0, cheapCta - Int(30 * scale))..<(cheapCta - 1)
+        XCTAssertFalse(
+            cheap.differs(from: dear, inRows: dockLine),
+            "nothing above the CTA carries a price any more: the amount lives on the cards only"
+        )
+
+        let source = try paywallViewSource()
+        XCTAssertFalse(source.contains("purchaseSummary"), "the summary line is not rendered from the model")
+        XCTAssertFalse(source.contains("billed today"), "and its copy is gone from the view")
+    }
+
+    /// The dock's links are one step smaller than the caption they used to use, and keep their targets.
+    func testLegalLinksUseTheCompactTypeAtTheirFullTarget() throws {
+        let footnote = UIFont.preferredFont(forTextStyle: .footnote).pointSize
+        let compact = UIFont.preferredFont(forTextStyle: .caption2).pointSize
+        XCTAssertLessThanOrEqual(
+            compact / footnote, 0.9,
+            "the legal row is ~20 % smaller than a footnote link (\(compact) vs \(footnote) pt)"
+        )
+        XCTAssertGreaterThanOrEqual(compact, 10, "and still legible")
+        let source = try paywallViewSource()
+        XCTAssertTrue(source.contains("PaywallLegalType.link"), "the row is drawn with the compact type")
+        XCTAssertTrue(
+            source.contains("frame(minHeight: AP.HitTarget.minimum)"),
+            "every link keeps its 44 pt target"
+        )
     }
 
     // MARK: - Status-bar contrast over the hero
@@ -255,6 +496,149 @@ final class PaywallScreenLayoutTests: XCTestCase {
     }
 
     // MARK: - Helpers
+
+    /// Pixels to points, so an assertion reads in the unit it documents.
+    private func points(_ pixels: Int) -> Double { Double(pixels) / Double(scale) }
+
+    /// The insets the probe's window carries for the frame it last rendered: the home indicator is
+    /// part of the dock's space but not part of its padding.
+    private func windowInsets() -> UIEdgeInsets {
+        UIApplication.shared.windows.first(where: \.isKeyWindow)?.safeAreaInsets ?? .zero
+    }
+
+    /// A plan card, located by the fill token it paints across its width: `selectedBackground` for the
+    /// selected Yearly card, `controlFill` for the unselected Monthly one. The step badge paints a
+    /// 20 pt dot of `selectedBackground`, so a band has to cover a third of the frame to count.
+    private func cardBands(
+        in bitmap: APBitmap,
+        frame: String
+    ) throws -> (annual: Range<Int>, monthly: Range<Int>) {
+        let annual = filledBands(in: bitmap, token: APColorTokens.selectedBackground)
+        let monthly = filledBands(in: bitmap, token: APColorTokens.controlFill)
+        XCTAssertEqual(annual.count, 1, "\(frame): exactly one Yearly card is painted")
+        XCTAssertEqual(monthly.count, 1, "\(frame): exactly one Monthly card is painted")
+        return (
+            try XCTUnwrap(annual.first, "\(frame): no Yearly card (selectedBackground fill) is painted"),
+            try XCTUnwrap(monthly.first, "\(frame): no Monthly card (controlFill) is painted")
+        )
+    }
+
+    /// The columns inside a card's plate, where a corner cannot be mistaken for ink.
+    private func cardInterior(width: CGFloat) -> Range<Int> {
+        Int(36 * scale)..<Int((width - 36) * scale)
+    }
+
+    /// How wide the card's plate paints on one row, from its first to its last painted pixel. The
+    /// card's own top and bottom rows are narrower than its middle (a rounded plate), while a card
+    /// cut off by the dock ends on a full-width row.
+    private func plateWidth(in bitmap: APBitmap, row: Int, fill: APColorToken, tolerance: Int = 4) -> Int {
+        let target = UIColor.tokenPixel(fill.light.uiColor)
+        var first: Int?
+        var last: Int?
+        for x in 0..<bitmap.width {
+            guard let pixel = bitmap.color(x: x, y: row), pixel.alpha > 200,
+                  abs(pixel.red - target.red) <= tolerance,
+                  abs(pixel.green - target.green) <= tolerance,
+                  abs(pixel.blue - target.blue) <= tolerance
+            else { continue }
+            first = first ?? x
+            last = x
+        }
+        guard let first, let last else { return 0 }
+        return last - first + 1
+    }
+
+    /// The pinned CTA, located by its accent fill: the anchor the cards have to stay above.
+    private func ctaBand(in bitmap: APBitmap, frame: String) throws -> Range<Int> {
+        let rows = bitmap.rows(paintedWith: 0xE89CAE)
+        guard let first = rows.min(), let last = rows.max() else {
+            XCTFail("\(frame): no CTA is painted")
+            return 0..<0
+        }
+        XCTAssertGreaterThanOrEqual(
+            points(last - first + 1), AP.HitTarget.minimum, "\(frame): the CTA keeps its 48 pt height"
+        )
+        return first..<(last + 1)
+    }
+
+    /// Contiguous rows where a fill token paints at least `minimumWidthRatio` of the frame's width.
+    private func filledBands(
+        in bitmap: APBitmap,
+        token: APColorToken,
+        minimumWidthRatio: Double = 0.35,
+        tolerance: Int = 4
+    ) -> [Range<Int>] {
+        let target = UIColor.tokenPixel(token.light.uiColor)
+        let minimumPixels = Int(Double(bitmap.width) * minimumWidthRatio)
+        var bands: [Range<Int>] = []
+        var start: Int?
+        for y in 0..<bitmap.height {
+            var painted = 0
+            for x in 0..<bitmap.width {
+                guard let pixel = bitmap.color(x: x, y: y), pixel.alpha > 200 else { continue }
+                if abs(pixel.red - target.red) <= tolerance,
+                   abs(pixel.green - target.green) <= tolerance,
+                   abs(pixel.blue - target.blue) <= tolerance {
+                    painted += 1
+                }
+            }
+            if painted >= minimumPixels {
+                start = start ?? y
+            } else if let open = start {
+                bands.append(open..<y)
+                start = nil
+            }
+        }
+        if let open = start { bands.append(open..<bitmap.height) }
+        return bands
+    }
+
+    /// Row bands inside `rows`, over `columns`, that paint anything but `fill`: one band per painted
+    /// line, so a line of copy that lost its row (clipped, or replaced by nothing) cannot hide inside
+    /// another one. `mergeGap` joins bands separated by less than that many pixels, which is how a
+    /// two-line sentence becomes one block and two separate elements stay two.
+    private func inkRowBands(
+        in bitmap: APBitmap,
+        rows: Range<Int>,
+        columns: Range<Int>? = nil,
+        fill: APColorToken,
+        mergeGap: Int = 0
+    ) -> [Range<Int>] {
+        let target = UIColor.tokenPixel(fill.light.uiColor)
+        let scanned = max(columns?.lowerBound ?? 0, 0)..<min(columns?.upperBound ?? bitmap.width, bitmap.width)
+        var bands: [Range<Int>] = []
+        var start: Int?
+        for y in rows where y >= 0 && y < bitmap.height {
+            var inked = false
+            for x in scanned {
+                guard let pixel = bitmap.color(x: x, y: y), pixel.alpha > 200 else { continue }
+                if abs(pixel.red - target.red) > 12
+                    || abs(pixel.green - target.green) > 12
+                    || abs(pixel.blue - target.blue) > 12 {
+                    inked = true
+                    break
+                }
+            }
+            if inked {
+                start = start ?? y
+            } else if let open = start {
+                bands.append(open..<y)
+                start = nil
+            }
+        }
+        if let open = start { bands.append(open..<bitmap.height) }
+
+        guard mergeGap > 0 else { return bands }
+        var merged: [Range<Int>] = []
+        for band in bands {
+            if let last = merged.last, band.lowerBound - last.upperBound <= mergeGap {
+                merged[merged.count - 1] = last.lowerBound..<band.upperBound
+            } else {
+                merged.append(band)
+            }
+        }
+        return merged
+    }
 
     private enum Reference {
         case black
@@ -353,6 +737,71 @@ final class PaywallScreenLayoutTests: XCTestCase {
         XCTAssertEqual(pixel.red, expected.red, accuracy: 3, message)
         XCTAssertEqual(pixel.green, expected.green, accuracy: 3, message)
         XCTAssertEqual(pixel.blue, expected.blue, accuracy: 3, message)
+    }
+
+    // MARK: - The runtime accessibility tree QA reads
+
+    /// The how-it-works block is a **container**: the block keeps `paywall.steps` and the paid step keeps
+    /// its own `paywall.benefit`.
+    ///
+    /// Measured on 1.1 (21): an identifier set on the block alone is inherited by every row, so all three
+    /// rows answered to `paywall.steps` (three elements) and `paywall.benefit` was missing from the tree
+    /// even though the code declared it. `.accessibilityElement(children: .contain)` is what stops the
+    /// block's id from flattening its children onto itself.
+    ///
+    /// Mutation target: drop the `children: .contain` line and the assertion goes red; move it after the
+    /// identifier and the ordering assertion does (the container has to exist before it is named).
+    func testStepsBlockKeepsThePaidStepsOwnId() throws {
+        let source = try paywallViewSource()
+        let start = try XCTUnwrap(source.range(of: "private var stepsBlock: some View")?.lowerBound)
+        let block = String(source[start...].prefix(2_000))
+
+        XCTAssertTrue(
+            block.contains(".apIdentifier(step.isPremium ? PaywallAccessibilityID.benefit : nil)"),
+            "the paid step is still addressed by paywall.benefit"
+        )
+        let container = try XCTUnwrap(block.range(of: ".accessibilityElement(children: .contain)"))
+        let identifier = try XCTUnwrap(block.range(of: ".accessibilityIdentifier(PaywallAccessibilityID.steps)"))
+        XCTAssertLessThan(
+            container.lowerBound, identifier.lowerBound,
+            "the block becomes a container before it is named, so the name lands on the container"
+        )
+    }
+
+    /// Both plan cards expose their selection to assistive technology, and the derived figures stay
+    /// locatable inside the card.
+    ///
+    /// Measured on 1.1 (21): `paywall.plan.annual` carries `value: selected` and the selected state, and
+    /// `paywall.plan.monthly` carries `not selected` — this test is the regression pin for both, since a
+    /// card that loses them silently reads as "no plan chosen".
+    ///
+    /// Mutation target: drop either modifier from `PaywallPlanRow` and one assertion goes red; drop
+    /// `children: .contain` and the per-month breakdown can no longer be located on its own.
+    func testPlanCardsExposeTheirSelectedStateAndKeepTheirFiguresLocatable() throws {
+        let source = try paywallViewSource()
+        let start = try XCTUnwrap(source.range(of: "struct PaywallPlanRow: View")?.lowerBound)
+        let card = String(source[start...].prefix(6_000))
+
+        XCTAssertTrue(
+            card.contains(".accessibilityValue(plan.isSelected ? \"selected\" : \"not selected\")"),
+            "the card's selection is spoken and queryable"
+        )
+        XCTAssertTrue(
+            card.contains(".accessibilityAddTraits(plan.isSelected ? [.isButton, .isSelected] : [.isButton])"),
+            "and the selected card carries the selected trait, not only a word in its label"
+        )
+        XCTAssertTrue(
+            card.contains(".accessibilityElement(children: .contain)"),
+            "a container, so the per-month and savings ids stay their own elements"
+        )
+        XCTAssertTrue(
+            card.contains(".apIdentifier(plan.isAnnual ? PaywallAccessibilityID.planAnnualPerMonth : nil)"),
+            "the yearly breakdown is still addressed by its own id"
+        )
+        XCTAssertTrue(
+            source.contains("PaywallAccessibilityID.plan(plan)") || source.contains("identifier(for: plan)"),
+            "the card keeps the id Maestro taps (`paywall.plan.annual` / `.monthly`)"
+        )
     }
 
     private func paywallViewSource() throws -> String {

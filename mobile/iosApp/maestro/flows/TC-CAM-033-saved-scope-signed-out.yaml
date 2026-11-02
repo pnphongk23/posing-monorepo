@@ -2,11 +2,17 @@
 appId: ${APP_ID}
 tags: [TC-CAM-033, p1]
 ---
-# Signed out is the clean-launch state, so this flow is credential-free and is NOT e2e-tagged: it must never be
-# skipped for "needs E2E_EMAIL".
+# Signed out is the clean-launch state, so this flow is credential-free and is NOT e2e-tagged: it must
+# never be skipped for "needs E2E_EMAIL" (a pass-5 run classified it that way, which is wrong — check the
+# runner, not this file).
 - runFlow: ../subflows/launch.yaml
 - runFlow: ../subflows/open-camera.yaml
 - runFlow: ../subflows/camera-open-picker.yaml
+# The chips sit under the title and above the results (CameraFeature.swift, panel:
+# handle → header → search → scopes → content). Wait for the container and then the chip itself: the sheet
+# still animates in when the grid first reports visible, so tapping straight away races the animation.
+- assertVisible:
+    id: "posePicker.scope"
 - extendedWaitUntil:
     visible:
       id: "posePicker.scope.saved"

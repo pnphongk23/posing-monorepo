@@ -1,5 +1,69 @@
 import SwiftUI
 
+/// The app root's "show the Poses catalogue" action, handed to screens that are not the Poses root
+/// itself (the Saved empty panel's Browse, TC-SAV-004).
+///
+/// `nil` outside the app root — a preview, or a test that mounts one screen alone — so such a surface
+/// keeps its own dismiss instead of doing nothing.
+///
+/// `@unchecked Sendable` on purpose: the box only holds the root's routing closure, and it is only ever
+/// called from the main actor (a Button action), which is the actor that owns the state it writes. The
+/// environment needs the conformance for its `defaultValue`.
+struct APBrowsePosesAction: @unchecked Sendable {
+    private let perform: () -> Void
+
+    init(_ perform: @escaping () -> Void) { self.perform = perform }
+
+    func callAsFunction() { perform() }
+}
+
+private struct APBrowsePosesKey: EnvironmentKey {
+    static let defaultValue: APBrowsePosesAction? = nil
+}
+
+extension EnvironmentValues {
+    /// What "Browse poses" does when a surface offers it: select the Poses tab and land at its root.
+    var apBrowsePoses: APBrowsePosesAction? {
+        get { self[APBrowsePosesKey.self] }
+        set { self[APBrowsePosesKey.self] = newValue }
+    }
+}
+
+/// What "Browse poses" has to do to app routing. Pure, so what the button promises is assertable
+/// without a screen.
+///
+/// The bug this exists for: Saved is pushed from Settings, which is itself pushed from the Poses tab, so
+/// dismissing one screen lands on Settings — not on the catalogue the button promises. Selecting the
+/// tab is the app root's own `tab` state; a stack that is already mounted only goes back to its root
+/// when its navigation container is rebuilt, which is what the root's identity token does (the same
+/// rebuild a tab switch performs).
+enum APBrowsePosesRule {
+    struct Step: Equatable {
+        let tab: AppTab
+        /// `true` when the Poses stack is only reachable by rebuilding it: the tab is already selected,
+        /// so selecting it again changes nothing and Settings/Saved would stay pushed.
+        let resetsPosesRoot: Bool
+    }
+
+    static func step(from tab: AppTab) -> Step {
+        switch tab {
+        case .poses:
+            return Step(tab: .poses, resetsPosesRoot: true)
+        case .camera, .gallery:
+            // Another tab is showing, so the Poses stack is not mounted at all: selecting the tab mounts
+            // it fresh at its root, and nothing has to be rebuilt.
+            return Step(tab: .poses, resetsPosesRoot: false)
+        }
+    }
+
+    /// The action the empty panel's Browse runs: the app root's action when there is one, otherwise the
+    /// caller's own dismiss, so a surface mounted outside the app still closes instead of doing nothing.
+    static func browse(action: APBrowsePosesAction?, fallback: @escaping () -> Void) -> () -> Void {
+        guard let action else { return fallback }
+        return { action() }
+    }
+}
+
 struct AppFeatureRoot: View {
     let poseService: any PoseServing
     var bookmarkService: (any PoseBookmarkServing)?
@@ -26,6 +90,10 @@ struct AppFeatureRoot: View {
     @State private var cameraEntry: CameraEntry = .home
     /// The detail the Poses tab has to re-push the moment its stack is rebuilt (one-shot).
     @State private var posesResume = PosesResumeSlot()
+    /// TC-SAV-004: the identity of the Poses tab's navigation container. Bumping it rebuilds the stack
+    /// from its root, which is how "Browse poses" on the Saved empty panel lands on the catalogue
+    /// instead of on Settings (Saved is pushed from Settings, which is pushed from the Poses tab).
+    @State private var posesRootGeneration = 0
     /// The Gallery `+` has no destination of its own: it asks the Poses tab to open Add pose, the same
     /// flow the Poses header `+` runs. Latched rather than delivered straight through, because the
     /// Poses tab (and the `onChange` watching this signal) is rebuilt when the tab changes.
@@ -47,6 +115,7 @@ struct AppFeatureRoot: View {
 
     var body: some View {
         screenContent
+            .environment(\.apBrowsePoses, APBrowsePosesAction { showPosesCatalogue() })
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(AIPoseColor.background.ignoresSafeArea())
             .onAppear { premiumGate.start() }
@@ -99,6 +168,10 @@ struct AppFeatureRoot: View {
                     .modifier(APAddPoseDelivery(request: $addPoseRequest))
                 }
             }
+            // Selects the tab when it is not showing, and rebuilds the stack to its root when it is
+            // (TC-SAV-004): a pushed Settings → Saved pair cannot be popped by selecting a tab that is
+            // already selected.
+            .id(posesRootGeneration)
         case .camera:
             RootNavigation {
                 CameraScreen(
@@ -198,6 +271,14 @@ struct AppFeatureRoot: View {
         cameraEntry = .home
         pendingGuide = nil
         tab = .poses
+    }
+
+    /// "Browse poses" (Saved's empty panel, TC-SAV-004). The decision is `APBrowsePosesRule`; this is
+    /// the only place that writes it, because `tab` and the Poses stack's identity belong to this view.
+    private func showPosesCatalogue() {
+        let step = APBrowsePosesRule.step(from: tab)
+        tab = step.tab
+        if step.resetsPosesRoot { posesRootGeneration &+= 1 }
     }
 
     private var paywallSheetBinding: Binding<Bool> {
