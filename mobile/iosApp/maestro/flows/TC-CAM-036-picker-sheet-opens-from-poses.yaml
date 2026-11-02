@@ -4,17 +4,26 @@ tags: [TC-CAM-036, p0]
 ---
 - runFlow: ../subflows/launch.yaml
 - runFlow: ../subflows/open-camera.yaml
-# 1. Cold launch, no pose chosen: the chip still opens the sheet.
+# 1. Cold launch, no pose chosen: the chip still opens the sheet. The container has its own id, so "the sheet
+# is open" is asserted on the sheet itself, not on one of its children.
 - runFlow: ../subflows/camera-open-picker.yaml
 - assertVisible:
+    id: "posePicker.sheet"
+- assertVisible:
     id: "posePicker.grid"
+# Rows carry `posePicker.row.<poseID>`; the catalogue ids come from the server, so the exact id is asserted by
+# pattern here (one row at minimum) rather than by inventing a pose id.
+- assertVisible:
+    id: 'posePicker\.row\..*'
 - takeScreenshot: sheet-cold-launch
 - tapOn:
     id: "posePicker.close"
 - extendedWaitUntil:
     notVisible:
-      id: "posePicker.search"
+      id: "posePicker.sheet"
     timeout: 15000
+- assertNotVisible:
+    id: "posePicker.search"
 # 2. Same screen with a pose applied, reached from a pose detail.
 - runFlow: ../subflows/open-first-pose.yaml
 - tapOn:
@@ -24,17 +33,24 @@ tags: [TC-CAM-036, p0]
       id: "camera.poseGuide"
     timeout: 20000
 - assertVisible: '.*Change pose.*'
-# The chip's label changes with a pose applied, but the id does not: the sheet must open again.
+# The chip's label changes with a pose applied, but the id does not: the sheet must open again — same container,
+# same rows.
 - runFlow: ../subflows/camera-open-picker.yaml
 - assertVisible:
+    id: "posePicker.sheet"
+- assertVisible:
     id: "posePicker.grid"
+- assertVisible:
+    id: 'posePicker\.row\..*'
 - takeScreenshot: sheet-with-pose-applied
 - tapOn:
     id: "posePicker.close"
 - extendedWaitUntil:
     notVisible:
-      id: "posePicker.search"
+      id: "posePicker.sheet"
     timeout: 15000
+- assertNotVisible:
+    id: "posePicker.search"
 # Closing the sheet never disturbs the camera: the guide and the chrome are as they were.
 - assertVisible:
     id: "camera.poseGuide"

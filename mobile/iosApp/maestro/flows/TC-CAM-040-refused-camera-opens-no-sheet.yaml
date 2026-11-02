@@ -22,10 +22,15 @@ tags: [TC-CAM-040, p1]
 # and no way to end up in an empty sheet.
 - assertNotVisible:
     id: "camera.choosePose"
+# "No sheet" is asserted on the sheet's own container id, not only on its children.
+- assertNotVisible:
+    id: "posePicker.sheet"
 - assertNotVisible:
     id: "posePicker.search"
 - assertNotVisible:
     id: "posePicker.grid"
+- assertNotVisible:
+    id: 'posePicker\.row\..*'
 # The permission panel is the only action, and the bar keeps its escape routes.
 - assertVisible: '.*Camera access is off.*'
 - assertVisible:

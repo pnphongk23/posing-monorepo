@@ -7,8 +7,12 @@ tags: [TC-CAM-038, p1]
 - runFlow: ../subflows/camera-open-picker.yaml
 - extendedWaitUntil:
     visible:
-      id: "posePicker.grid"
+      id: "posePicker.sheet"
     timeout: 20000
+- assertVisible:
+    id: "posePicker.grid"
+- assertVisible:
+    id: 'posePicker\.row\..*'
 - tapOn:
     id: "posePicker.search"
 - inputText: "zzzqx"
@@ -22,16 +26,25 @@ tags: [TC-CAM-038, p1]
 - assertNotVisible:
     id: "posePicker.grid"
 - takeScreenshot: search-parity-empty
-# Clearing is the way out, and it does not refetch: the grid is instantly back.
+# The sheet stays open the whole time: only its content changes.
+- assertVisible:
+    id: "posePicker.sheet"
+# Clearing is the way out, and it does not refetch: the grid is instantly back, rows included.
 - tapOn:
     id: "posePicker.searchClear"
 - extendedWaitUntil:
     visible:
       id: "posePicker.grid"
     timeout: 15000
+- assertVisible:
+    id: 'posePicker\.row\..*'
 - assertNotVisible:
     id: "posePicker.state"
 - tapOn:
     id: "posePicker.close"
+- extendedWaitUntil:
+    notVisible:
+      id: "posePicker.sheet"
+    timeout: 15000
 - assertVisible:
     id: "camera.shutter"
