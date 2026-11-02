@@ -739,6 +739,71 @@ final class PaywallScreenLayoutTests: XCTestCase {
         XCTAssertEqual(pixel.blue, expected.blue, accuracy: 3, message)
     }
 
+    // MARK: - The runtime accessibility tree QA reads
+
+    /// The how-it-works block is a **container**: the block keeps `paywall.steps` and the paid step keeps
+    /// its own `paywall.benefit`.
+    ///
+    /// Measured on 1.1 (21): an identifier set on the block alone is inherited by every row, so all three
+    /// rows answered to `paywall.steps` (three elements) and `paywall.benefit` was missing from the tree
+    /// even though the code declared it. `.accessibilityElement(children: .contain)` is what stops the
+    /// block's id from flattening its children onto itself.
+    ///
+    /// Mutation target: drop the `children: .contain` line and the assertion goes red; move it after the
+    /// identifier and the ordering assertion does (the container has to exist before it is named).
+    func testStepsBlockKeepsThePaidStepsOwnId() throws {
+        let source = try paywallViewSource()
+        let start = try XCTUnwrap(source.range(of: "private var stepsBlock: some View")?.lowerBound)
+        let block = String(source[start...].prefix(2_000))
+
+        XCTAssertTrue(
+            block.contains(".apIdentifier(step.isPremium ? PaywallAccessibilityID.benefit : nil)"),
+            "the paid step is still addressed by paywall.benefit"
+        )
+        let container = try XCTUnwrap(block.range(of: ".accessibilityElement(children: .contain)"))
+        let identifier = try XCTUnwrap(block.range(of: ".accessibilityIdentifier(PaywallAccessibilityID.steps)"))
+        XCTAssertLessThan(
+            container.lowerBound, identifier.lowerBound,
+            "the block becomes a container before it is named, so the name lands on the container"
+        )
+    }
+
+    /// Both plan cards expose their selection to assistive technology, and the derived figures stay
+    /// locatable inside the card.
+    ///
+    /// Measured on 1.1 (21): `paywall.plan.annual` carries `value: selected` and the selected state, and
+    /// `paywall.plan.monthly` carries `not selected` — this test is the regression pin for both, since a
+    /// card that loses them silently reads as "no plan chosen".
+    ///
+    /// Mutation target: drop either modifier from `PaywallPlanRow` and one assertion goes red; drop
+    /// `children: .contain` and the per-month breakdown can no longer be located on its own.
+    func testPlanCardsExposeTheirSelectedStateAndKeepTheirFiguresLocatable() throws {
+        let source = try paywallViewSource()
+        let start = try XCTUnwrap(source.range(of: "struct PaywallPlanRow: View")?.lowerBound)
+        let card = String(source[start...].prefix(6_000))
+
+        XCTAssertTrue(
+            card.contains(".accessibilityValue(plan.isSelected ? \"selected\" : \"not selected\")"),
+            "the card's selection is spoken and queryable"
+        )
+        XCTAssertTrue(
+            card.contains(".accessibilityAddTraits(plan.isSelected ? [.isButton, .isSelected] : [.isButton])"),
+            "and the selected card carries the selected trait, not only a word in its label"
+        )
+        XCTAssertTrue(
+            card.contains(".accessibilityElement(children: .contain)"),
+            "a container, so the per-month and savings ids stay their own elements"
+        )
+        XCTAssertTrue(
+            card.contains(".apIdentifier(plan.isAnnual ? PaywallAccessibilityID.planAnnualPerMonth : nil)"),
+            "the yearly breakdown is still addressed by its own id"
+        )
+        XCTAssertTrue(
+            source.contains("PaywallAccessibilityID.plan(plan)") || source.contains("identifier(for: plan)"),
+            "the card keeps the id Maestro taps (`paywall.plan.annual` / `.monthly`)"
+        )
+    }
+
     private func paywallViewSource() throws -> String {
         let url = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent() // Features

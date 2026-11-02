@@ -617,10 +617,10 @@ final class APSavedListTests: XCTestCase {
     ///
     /// Why source-level: a hosted SwiftUI view in this test host is painted, not hit-tested, so the
     /// composition is the only thing a unit test can hold still. The behaviour behind it is driven for
-    /// real in `APSavedUnsavePathTests`.
+    /// real in `testTheTilesOwnActionUnsavesThroughTheSavedRoute`.
     ///
-    /// Mutation target: inline the tap again (`Task { await model.toggleSaved(...) }` in the row) and
-    /// the first assertion goes red; drop `model.savedState(for: pose)` from `isEnabled` and the
+    /// Mutation target: bind the tile to a private copy of the tap again (as `onUnsave: { Task { … } }`)
+    /// and the first assertion goes red; drop `model.savedState(for: pose)` from `isEnabled` and the
     /// second does — with that term gone, a row that is not actually saved offers "Remove from saved"
     /// and the request it sends is a **save**, which the surface has nothing to report (the silent tap
     /// of TC-SAV-010).
@@ -631,28 +631,27 @@ final class APSavedListTests: XCTestCase {
             Self.braceMatchedBlock("private func row(for pose: NativePose, index: Int)", in: saved)
         )
         XCTAssertTrue(
-            row.contains("onUnsave: { Task { await unsave(pose, at: index) } }"),
-            "the tile's closure is the list's own unsave, not a second copy of the logic"
+            row.contains("onUnsave: APSavedRowUnsave.action(pose, at: index, in: model, undo: undo)"),
+            "the tile's action is the shared rule, not a second copy of the logic"
         )
+        XCTAssertFalse(row.contains("Task {"), "the row spawns no request of its own")
         XCTAssertTrue(
             row.contains("model.savedState(for: pose)"),
             "a row the model does not hold as saved cannot offer a removal"
         )
 
-        let list = try XCTUnwrap(Self.braceMatchedBlock("struct APSavedList", in: saved))
-        let tap = try XCTUnwrap(
-            Self.braceMatchedBlock("private func unsave(_ pose: NativePose, at index: Int)", in: list)
-        )
-        XCTAssertTrue(
-            tap.contains("await APSavedRowUnsave.perform(pose, at: index, in: model, undo: undo)"),
-            "the tap's outcomes are decided in one place the tests drive"
-        )
-
         let rule = try XCTUnwrap(Self.braceMatchedBlock("enum APSavedRowUnsave", in: saved))
-        XCTAssertTrue(rule.contains("APSavedUndoRule.offersUndo(for: outcome)"), "a confirmed removal offers Undo")
+        XCTAssertTrue(
+            rule.contains("APSavedUndoRule.offersUndo(for: outcome)"),
+            "a confirmed removal offers Undo"
+        )
         XCTAssertTrue(
             rule.contains("model.bookmarkError = APSavedStateCopy.removeFailed"),
             "an outcome that removed nothing still says so instead of going silent"
+        )
+        XCTAssertTrue(
+            rule.contains("Task { await perform("),
+            "the action is the closure the tile's Button runs, and it awaits the same rule"
         )
 
         // The surface puts the library filter back on the way out: the filter is the route the shared
@@ -881,6 +880,69 @@ final class APSavedListTests: XCTestCase {
             list.contains("isUnsaving: model.isBookmarkInFlight(pose.id)"),
             "the row's pending state is the model's in-flight claim, not a local guess"
         )
+    }
+
+    /// The whole path a finger starts, without a finger: the action bound to the row's tile, a model
+    /// whose rows came from the saved collection, and a fake bookmark service.
+    ///
+    /// This is the assertion the device evidence could not make: it proves the request this control
+    /// sends on a Saved row is `unsavePose`, not `savePose`, and that its outcome reaches the bar the
+    /// flows look for. Before the route fix the same tap called `savePose` and no bar followed, which
+    /// is exactly "the unsave never fires" as the device saw it.
+    ///
+    /// Mutation target: make the tile send `pose.withSavedValue(false)` (a save from the Saved surface)
+    /// or drop the saved route from `PosesViewModel.selectRoute(_:)` — the service counts swap and the
+    /// bar assertion goes red.
+    @MainActor func testTheTilesOwnActionUnsavesThroughTheSavedRoute() async throws {
+        let remote = RecordingPoseRemote()
+        let savedPoseID = "mine-1"
+        remote.savedItems = [try savedRouteRemotePose(savedPoseID, name: "Mine")]
+        // The app's wiring: the adapter holds the route slot, the model is handed only the service.
+        let adapter = PoseAPIServiceAdapter(
+            remote: remote,
+            baseURL: "https://api.example.com",
+            filterState: PoseFilterState()
+        )
+        let bookmarks = UndoBookmarkService()
+        let model = PosesViewModel(service: adapter, bookmarkService: bookmarks)
+
+        // Entering Saved is what makes the rows the saved collection.
+        await APSavedEntry.prepare(model: model)
+        XCTAssertEqual(remote.savedCallCount, 1)
+        guard case .loaded(let rows) = model.state, let row = rows.first else {
+            return XCTFail("the saved collection must load a row for the tile to act on")
+        }
+        XCTAssertEqual(row.id, savedPoseID)
+        XCTAssertTrue(model.savedState(for: row), "the row the tile offers to remove is saved")
+
+        let undo = APSavedUndo()
+        let remove = APSavedRowUnsave.action(row, at: 0, in: model, undo: undo)
+        // Built the way the list builds it, so the closure under test is the one its Button carries.
+        let tile = APSavedUnsaveTile(
+            isUnsaving: model.isBookmarkInFlight(row.id),
+            isEnabled: model.canSave(row) && model.savedState(for: row) && model.bookmarkService != nil,
+            isAvailableOffline: true,
+            identifier: APSavedIdentifiers.unsave(poseID: row.id),
+            onUnsave: remove
+        )
+
+        // Exactly what the Button runs.
+        tile.onUnsave()
+        await waitUntil("the removal to be confirmed and offered back") { undo.removal != nil }
+
+        XCTAssertEqual(bookmarks.unsaveCallCount, 1, "one tap, one unsavePose")
+        XCTAssertEqual(bookmarks.saveCallCount, 0, "and never the opposite request")
+        XCTAssertTrue(model.state.rows.isEmpty, "the confirmed removal takes the row out of the Saved list")
+        XCTAssertNil(model.bookmarkError)
+
+        let spec = APSavedSnackbarRule.resolve(
+            removedPoseName: undo.removal?.pose.name,
+            canUndo: undo.removal.map { model.canSave($0.pose) } ?? false,
+            failure: model.bookmarkError
+        )
+        XCTAssertEqual(spec?.identifiers.bar, "saved.snackbar", "the bar the flows wait for")
+        XCTAssertEqual(spec?.identifiers.action, "saved.snackbar.undo", "with its Undo action")
+        XCTAssertEqual(spec?.message, "Removed Mine")
     }
 
     // MARK: - The tap path (TC-SAV-010 on 1.1 (20))

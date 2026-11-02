@@ -239,6 +239,11 @@ struct PaywallScreen: View {
                 .apIdentifier(step.isPremium ? PaywallAccessibilityID.benefit : nil)
             }
         }
+        // A container, not a grouping: the block keeps `paywall.steps`, and the paid step keeps its own
+        // `paywall.benefit`. Without this the identifier set on the block is inherited by every row, so
+        // all three rows answer to `paywall.steps` and `paywall.benefit` is absent from the tree
+        // (measured on 1.1 (21): three `paywall.steps` elements, no `paywall.benefit`).
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier(PaywallAccessibilityID.steps)
     }
 

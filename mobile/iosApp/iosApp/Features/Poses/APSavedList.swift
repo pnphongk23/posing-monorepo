@@ -644,6 +644,18 @@ enum APSavedUnsaveTileRule {
 /// those two": a tap never ends in a state the person cannot see.
 @MainActor
 enum APSavedRowUnsave {
+    /// The action the row's unsave tile is bound to: exactly the closure `APSavedUnsaveTile` hands to
+    /// its `Button`, so a test can invoke it without a touch and prove the whole path (the tap → the
+    /// model → the bookmark service) instead of only the model.
+    static func action(
+        _ pose: NativePose,
+        at index: Int,
+        in model: PosesViewModel,
+        undo: APSavedUndo?
+    ) -> () -> Void {
+        { Task { await perform(pose, at: index, in: model, undo: undo) } }
+    }
+
     /// - Returns: the model's answer, so a test can assert which path the tap took.
     @discardableResult
     static func perform(
@@ -917,16 +929,10 @@ struct APSavedList: View {
                     && model.bookmarkService != nil,
                 isAvailableOffline: offlineMode.isAvailableOffline(pose),
                 identifier: APSavedIdentifiers.unsave(poseID: pose.id),
-                onUnsave: { Task { await unsave(pose, at: index) } }
+                onUnsave: APSavedRowUnsave.action(pose, at: index, in: model, undo: undo)
             )
         }
         .onAppear { requestNextPage(at: index) }
-    }
-
-    /// One unsave. The model owns the request; `APSavedRowUnsave` owns what the tap makes visible, so
-    /// the closure the tile runs and the tests that drive it cannot disagree.
-    private func unsave(_ pose: NativePose, at index: Int) async {
-        await APSavedRowUnsave.perform(pose, at: index, in: model, undo: undo)
     }
 
     /// Ask for the next page at most once per page. `canPage` is deliberately only "the last
