@@ -18,13 +18,19 @@ tags: [TC-PAY-012, p1, e2e]
     env:
       E2E_EMAIL: ${E2E_EMAIL_B}
       E2E_PASSWORD: ${E2E_PASSWORD_B}
-- runFlow: ../subflows/open-camera.yaml
+# The paywall is opened from Settings > Premium rather than through the camera gate: after the email sign-in the
+# app sits on the signed-in surfaces, and going straight to the paid surface removes the camera round trip and the
+# gate state from this case entirely (dev21 pass13: the flow did reach the paywall this way through the camera, but
+# the route made every failure ambiguous).
+- runFlow: ../subflows/open-settings.yaml
 - tapOn:
-    id: "camera.shutter"
+    id: "settings.premium.row"
 - extendedWaitUntil:
     visible:
-      id: "paywall.cta"
+      id: "paywall.plan.annual"
     timeout: 30000
+- assertVisible:
+    id: "paywall.cta"
 - tapOn:
     id: "paywall.cta"
 - extendedWaitUntil:
