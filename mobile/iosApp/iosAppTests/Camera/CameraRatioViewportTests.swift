@@ -1,3 +1,4 @@
+import AVFoundation
 import XCTest
 @testable import iosApp
 
@@ -186,7 +187,7 @@ final class CameraRatioViewportTests: XCTestCase {
     @MainActor
     func testChoosingARatioChangesTheFrameTheScreenDraws() {
         let container = CGSize(width: 393, height: 852)
-        let model = CameraViewModel()
+        let model = ratioModel()
         model.coordinator.onPermissionResult(.authorized)
 
         let threeFour = model.viewportFrame(in: container)
@@ -223,15 +224,44 @@ final class CameraRatioViewportTests: XCTestCase {
         )
     }
 
+    /// The model under test with a stub camera: the framing is pure layout, so these tests must not spin
+    /// up a real `AVCaptureSession` (a running session in a unit test leaks work into later test classes).
+    @MainActor
+    private func ratioModel() -> CameraViewModel {
+        CameraViewModel(camera: RatioStubCamera())
+    }
+
     /// A camera that cannot serve the control does not move the frame either.
     @MainActor
     func testTheFrameDoesNotMoveWhenTheControlIsDisabled() {
         let container = CGSize(width: 393, height: 852)
-        let model = CameraViewModel()
+        let model = ratioModel()
         model.coordinator.onPermissionResult(.denied)
 
         let before = model.viewportFrame(in: container)
         model.setAspectRatio(.nineSixteen)
         XCTAssertEqual(model.viewportFrame(in: container), before)
     }
+}
+
+/// A camera that is never started: these tests read the framing the ratio produces, not the hardware.
+@MainActor
+private final class RatioStubCamera: CameraSessionControlling {
+    let session = AVCaptureSession()
+    var facing: CameraFacing = .back
+    private(set) var isSessionRunning = false
+
+    func currentPermissionState() -> CameraPermissionState { .authorized }
+    func requestPermission(onResult: @escaping @Sendable (CameraPermissionState) -> Void) {
+        onResult(.authorized)
+    }
+
+    func capture(captureId: String, onResult: @escaping @Sendable (CameraCaptureResult) -> Void) {}
+    func cancelCapture() {}
+    func switchCamera() {}
+    func setFlashMode(_ mode: CameraFlashSetting) {}
+    func setTorchEnabled(_ enabled: Bool) {}
+    func setZoomFactor(_ factor: CGFloat) {}
+    func start() async throws { isSessionRunning = true }
+    func stop() { isSessionRunning = false }
 }

@@ -3002,6 +3002,15 @@ enum PosePickerLayout {
     static let stateIdentifier = "posePicker.state"
     static let gridIdentifier = "posePicker.grid"
 
+    /// The sheet's own surface. It sits on the panel — the container that already declares
+    /// `children: .contain` and the modal trait — never on the `GeometryReader` root, which is not an
+    /// accessibility element (applying the id there collapses the subtree it wraps; see the R18 probe).
+    static let sheetIdentifier = "posePicker.sheet"
+
+    /// One pose row in the grid. The row keeps its `Use <name> pose` label; the id adds the stable handle a
+    /// flow needs to pick a *specific* pose instead of "whichever row matched first".
+    static func rowIdentifier(poseID: String) -> String { "posePicker.row.\(poseID)" }
+
     /// The scrollable content's order, top to bottom. The offline banner is a **row of the scroll
     /// content**, not an overlay: it pushes the grid down instead of covering its rows, so a populated
     /// grid can never have a row hidden under the notice.
@@ -3142,6 +3151,7 @@ private struct PosePickerSheet: View {
         .clipShape(RoundedTopShape(radius: AP.Radius.radius24))
         .accessibilityElement(children: .contain)
         .accessibilityAddTraits(.isModal)
+        .accessibilityIdentifier(PosePickerLayout.sheetIdentifier)
         .transition(reduceMotion ? .opacity : .opacity.combined(with: .offset(y: 18)))
     }
 
@@ -3406,6 +3416,7 @@ private struct PosePickerSheet: View {
                             .buttonStyle(GuideCardPressStyle())
                             .accessibilityLabel("Use \(item.pose.name) pose")
                             .accessibilitySortPriority(Double(poses.count - item.index))
+                            .accessibilityIdentifier(PosePickerLayout.rowIdentifier(poseID: item.pose.id))
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .topLeading)

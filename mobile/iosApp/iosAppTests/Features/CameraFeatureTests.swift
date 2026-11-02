@@ -1211,6 +1211,8 @@ final class CameraPickerSheetLayoutTests: XCTestCase {
         XCTAssertEqual(PosePickerLayout.closeIdentifier, "posePicker.close")
         XCTAssertEqual(PosePickerLayout.stateIdentifier, "posePicker.state")
         XCTAssertEqual(PosePickerLayout.gridIdentifier, "posePicker.grid")
+        XCTAssertEqual(PosePickerLayout.sheetIdentifier, "posePicker.sheet")
+        XCTAssertEqual(PosePickerLayout.rowIdentifier(poseID: "p-42"), "posePicker.row.p-42")
         XCTAssertEqual(CameraPickerScope.all.accessibilityIdentifier, "posePicker.scope.all")
         XCTAssertEqual(CameraPickerScope.saved.accessibilityIdentifier, "posePicker.scope.saved")
     }
@@ -2172,6 +2174,40 @@ final class CameraChromeContractTests: XCTestCase {
         XCTAssertFalse(source.contains("CameraStripContent"), "no strip content mapping is declared")
         XCTAssertFalse(source.contains("togglePickerStrip"), "there is no collapse/expand action to call")
         XCTAssertFalse(panel.contains("poses"), "the panel draws the rail only, no catalogue row")
+    }
+
+    // MARK: The sheet's own handles
+
+    /// The sheet's surface and each pose row carry their own id, so a flow can assert "the sheet is open"
+    /// and pick a *specific* pose. They live on the panel (a real container) and on the row buttons, never
+    /// on the sheet's `GeometryReader` root, which is not an accessibility element — an id there collapses
+    /// the subtree it wraps and takes the search field and header out of the tree.
+    func testTheSheetAndItsRowsCarryTheirOwnIdentifiers() throws {
+        let source = try cameraFeatureSource()
+        let grid = try viewBody(named: "poseGrid", in: source)
+
+        // The sheet's panel is the container that carries the modal trait; the id belongs on it, so the
+        // two declarations are adjacent (`viewBody(named: "panel")` cannot be used here: the bottom bar
+        // has its own `panel`).
+        XCTAssertTrue(
+            source.contains(
+                ".accessibilityAddTraits(.isModal)\n        .accessibilityIdentifier(PosePickerLayout.sheetIdentifier)"
+            ),
+            "the sheet panel is the element that owns the sheet id"
+        )
+        XCTAssertTrue(
+            grid.contains("PosePickerLayout.rowIdentifier(poseID: item.pose.id)"),
+            "each grid row is addressable by its pose id"
+        )
+        XCTAssertTrue(
+            grid.contains("Use \\(item.pose.name) pose"),
+            "and the row keeps the label the flows already tap"
+        )
+        XCTAssertEqual(
+            source.components(separatedBy: "PosePickerLayout.sheetIdentifier").count - 1,
+            1,
+            "one place owns the sheet id: the panel, not the GeometryReader root"
+        )
     }
 
     // MARK: Timer / Ratio option ids
