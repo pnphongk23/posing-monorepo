@@ -3212,6 +3212,7 @@ private struct PosePickerSheet: View {
             .frame(width: proxy.size.width, height: proxy.size.height, alignment: .bottom)
         }
         .ignoresSafeArea()
+        .environment(\.colorScheme, pickerColorScheme)
         .task { session.start() }
         // The Saved chip loads when it is shown *and* the session has resolved to signed-in: the stage
         // is the task's identity, so a sign-in that lands after the sheet opened still runs the load
@@ -3231,6 +3232,13 @@ private struct PosePickerSheet: View {
         // panel's header and search field vanished from the tree while only the ScrollView's contents
         // stayed. Moving it onto the panel (a real container, declared with `children: .contain`)
         // keeps the modal trait and preserves the descendants.
+    }
+
+    /// The camera forces a dark scheme on itself, but this sheet is a browsing surface and follows the
+    /// app's appearance setting (System / Light / Dark), falling back to the device's own style.
+    private var pickerColorScheme: ColorScheme {
+        if let chosen = APAppearance.load().colorScheme { return chosen }
+        return UIScreen.main.traitCollection.userInterfaceStyle == .dark ? .dark : .light
     }
 
     /// The sheet's scrim (`scrim` token: 64% black in the camera's dark appearance).
