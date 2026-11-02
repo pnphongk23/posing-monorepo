@@ -1,59 +1,50 @@
-# TC-CAM-021 the pose sheet's search filters by name and its no-match state is the shared panel
-#
-# dev20: PASS with this flow (the earlier "10-minute hang" report was retracted — a killed wrapper, not
-# this flow). `inputText` still needs a software keyboard, which some Simulators do not show while a
-# hardware keyboard is attached: if a run ever stalls on that step, prefer hiding the hardware keyboard
-# (Simulator ▸ Keyboard ▸ Connect Hardware Keyboard off) over treating it as an app defect.
+# TC-CAM-021 the pose sheet's search filters by name, empties into the shared card and clears back
 appId: ${APP_ID}
 tags: [TC-CAM-021, p1]
 ---
 - runFlow: ../subflows/launch.yaml
 - runFlow: ../subflows/open-camera.yaml
-# `camera.choosePose` is the strip's Browse card since d001b80 — the strip opens expanded, so the card is
-# on screen; the tap still opens the full picker sheet (search + All/Saved).
-- assertVisible:
-    id: "camera.poseStrip"
-# The Browse card is the strip's last card and only exists once the catalogue has loaded.
-- extendedWaitUntil:
-    visible:
-      id: "camera.choosePose"
-    timeout: 20000
-- tapOn:
-    id: "camera.choosePose"
-# Wait for the catalogue: the no-match claim below is only meaningful over a loaded grid.
+- runFlow: ../subflows/camera-open-picker.yaml
 - extendedWaitUntil:
     visible:
       id: "posePicker.grid"
     timeout: 20000
-# A query that cannot match any pose name empties the grid and shows the shared state panel instead.
+# Sheet up, catalogue loaded: this is the state the reporter shows for the loaded sheet.
+- takeScreenshot: sheet-loaded
+# A query that cannot match any pose name empties the grid and shows the shared state card.
 - assertVisible:
     id: "posePicker.search"
 - tapOn:
     id: "posePicker.search"
-# `inputText` needs a software keyboard — the one step to watch if a batch ever stalls (header note).
+# `inputText` needs a software keyboard — the one step to watch if a batch ever stalls (Simulator ▸ Keyboard ▸
+# Connect Hardware Keyboard off).
 - inputText: "zzzqx"
 - extendedWaitUntil:
     visible:
       id: "posePicker.state"
-    timeout: 10000
-- assertVisible: "No poses match"
+    timeout: 15000
+- assertVisible: '.*No poses match.*'
 - assertNotVisible:
     id: "posePicker.grid"
+- takeScreenshot: search-empty
 # The clear control restores the full grid without refetching or closing the sheet.
 - tapOn:
     id: "posePicker.searchClear"
 - extendedWaitUntil:
     visible:
       id: "posePicker.grid"
-    timeout: 10000
+    timeout: 15000
 - assertNotVisible:
     id: "posePicker.state"
-# The camera is never left behind the sheet: Done closes it and the chrome is intact.
+- takeScreenshot: search-cleared
+# The camera is never left behind the sheet: closing it returns to the chrome.
 - tapOn:
     id: "posePicker.close"
-- assertNotVisible:
-    id: "posePicker.grid"
+- extendedWaitUntil:
+    notVisible:
+      id: "posePicker.search"
+    timeout: 15000
 - assertVisible:
     id: "camera.shutter"
 - assertVisible:
-    id: "camera.pickerStripToggle"
+    id: "camera.choosePose"

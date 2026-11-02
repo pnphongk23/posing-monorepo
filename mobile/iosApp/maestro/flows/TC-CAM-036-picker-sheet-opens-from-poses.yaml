@@ -1,0 +1,67 @@
+# TC-CAM-036 the Poses chip opens the sheet on a cold launch and again with a pose already applied
+appId: ${APP_ID}
+tags: [TC-CAM-036, p0]
+---
+- runFlow: ../subflows/launch.yaml
+- runFlow: ../subflows/open-camera.yaml
+# 1. Cold launch, no pose chosen: the chip still opens the sheet. The container has its own id, so "the sheet
+# is open" is asserted on the sheet itself, not on one of its children.
+- runFlow: ../subflows/camera-open-picker.yaml
+- assertVisible:
+    id: "posePicker.sheet"
+- assertVisible:
+    id: "posePicker.grid"
+# Rows carry `posePicker.row.<poseID>`; the catalogue ids come from the server, so the exact id is asserted by
+# pattern here (one row at minimum) rather than by inventing a pose id.
+- assertVisible:
+    id: 'posePicker\.row\..*'
+- takeScreenshot: sheet-cold-launch
+- tapOn:
+    id: "posePicker.close"
+- extendedWaitUntil:
+    notVisible:
+      id: "posePicker.sheet"
+    timeout: 15000
+- assertNotVisible:
+    id: "posePicker.search"
+# 2. Same screen with a pose applied, reached from a pose detail.
+# Closing the sheet puts us back on the CAMERA, and `poses.first-card` only exists on the Poses home — running
+# the detail subflow from here is what failed on dev21 ("Assert that id: poses.first-card is visible"). Leave the
+# camera first, then wait for the card before the subflow asserts it.
+- tapOn:
+    id: "camera.close"
+- extendedWaitUntil:
+    visible:
+      id: "poses.first-card"
+    timeout: 20000
+- runFlow: ../subflows/open-first-pose.yaml
+- tapOn:
+    id: "poseDetail.use"
+- extendedWaitUntil:
+    visible:
+      id: "camera.poseGuide"
+    timeout: 20000
+- assertVisible: '.*Change pose.*'
+# The chip's label changes with a pose applied, but the id does not: the sheet must open again — same container,
+# same rows.
+- runFlow: ../subflows/camera-open-picker.yaml
+- assertVisible:
+    id: "posePicker.sheet"
+- assertVisible:
+    id: "posePicker.grid"
+- assertVisible:
+    id: 'posePicker\.row\..*'
+- takeScreenshot: sheet-with-pose-applied
+- tapOn:
+    id: "posePicker.close"
+- extendedWaitUntil:
+    notVisible:
+      id: "posePicker.sheet"
+    timeout: 15000
+- assertNotVisible:
+    id: "posePicker.search"
+# Closing the sheet never disturbs the camera: the guide and the chrome are as they were.
+- assertVisible:
+    id: "camera.poseGuide"
+- assertVisible:
+    id: "camera.shutter"

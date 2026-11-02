@@ -62,6 +62,27 @@ final class PosePickerViewModelTests: XCTestCase {
         XCTAssertEqual(service.fetchCount(), 1, "clear-search must not refetch")
     }
 
+    /// The sheet's query and the Search screen's query are the same query: the picker's rows are exactly
+    /// what the shared matcher returns for the same text, including case and padding.
+    func testTheQueryFilterIsTheSharedNameMatcher() async {
+        let poses = [
+            samplePose(id: "a", name: "Warrior II"),
+            samplePose(id: "b", name: "Downward Dog"),
+            samplePose(id: "c", name: "Café lean"),
+        ]
+        let model = PosePickerViewModel(service: StubPoseService(poses: poses))
+        await model.load()
+
+        for query in ["warrior", "  WARRIOR  ", "dog", "CAFÉ", "café", "  ", "", "zzz"] {
+            model.query = query
+            XCTAssertEqual(
+                model.filteredPoses.map(\.id),
+                PoseAdapterMerge.filterSavedLocally(poses, query: query).map(\.id),
+                "the sheet answers \"\(query)\" exactly like the shared filter"
+            )
+        }
+    }
+
     func testSelectionCallbackReceivesNativePose() {
         var selected: NativePose?
         let pose = samplePose(id: "pick-me", name: "Pick Me")

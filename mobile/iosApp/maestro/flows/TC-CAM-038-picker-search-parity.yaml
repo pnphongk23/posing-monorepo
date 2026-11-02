@@ -1,0 +1,50 @@
+# TC-CAM-038 the sheet answers a query with the Search screen's own words
+appId: ${APP_ID}
+tags: [TC-CAM-038, p1]
+---
+- runFlow: ../subflows/launch.yaml
+- runFlow: ../subflows/open-camera.yaml
+- runFlow: ../subflows/camera-open-picker.yaml
+- extendedWaitUntil:
+    visible:
+      id: "posePicker.sheet"
+    timeout: 20000
+- assertVisible:
+    id: "posePicker.grid"
+- assertVisible:
+    id: 'posePicker\.row\..*'
+- tapOn:
+    id: "posePicker.search"
+- inputText: "zzzqx"
+- extendedWaitUntil:
+    visible:
+      id: "posePicker.state"
+    timeout: 15000
+# Same title *and* same body the Search screen uses for a query with no results (SearchResultsCopy).
+- assertVisible: '.*No poses match.*'
+- assertVisible: '.*Try a different pose name.*'
+- assertNotVisible:
+    id: "posePicker.grid"
+- takeScreenshot: search-parity-empty
+# The sheet stays open the whole time: only its content changes.
+- assertVisible:
+    id: "posePicker.sheet"
+# Clearing is the way out, and it does not refetch: the grid is instantly back, rows included.
+- tapOn:
+    id: "posePicker.searchClear"
+- extendedWaitUntil:
+    visible:
+      id: "posePicker.grid"
+    timeout: 15000
+- assertVisible:
+    id: 'posePicker\.row\..*'
+- assertNotVisible:
+    id: "posePicker.state"
+- tapOn:
+    id: "posePicker.close"
+- extendedWaitUntil:
+    notVisible:
+      id: "posePicker.sheet"
+    timeout: 15000
+- assertVisible:
+    id: "camera.shutter"

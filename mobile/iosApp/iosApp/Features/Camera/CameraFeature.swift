@@ -37,9 +37,6 @@ final class CameraViewModel: ObservableObject {
     /// Tone of that feedback. Status is never carried by colour alone: the snackbar pairs the tone's
     /// glyph and word with the message (`APStateTone`).
     @Published private(set) var statusTone: APStateTone = .success
-    /// F12: `true` draws the pose picker strip above the control bar, `false` is the collapsed camera
-    /// (thumbnail · shutter · flip only) with the strip behind one clear control. Persisted.
-    @Published var isPickerExpanded = true
     @Published var zoomLevel: CameraZoomLevel = .one
     /// The exact zoom the lens is at (presets write through here: `0.5` is not a `CameraZoomLevel`).
     @Published private(set) var zoomFactor: CGFloat = 1
@@ -291,6 +288,13 @@ final class CameraViewModel: ObservableObject {
         aspectRatio = ratio
     }
 
+    /// The framing the ratio setting defines: the largest rect of `aspectRatio` that fits `container`,
+    /// centred. The preview, the grid and the pose reference all live inside it, and the capture crop
+    /// (`CameraImagePostProcess`) uses the same ratio — so the saved photo keeps what the user framed.
+    func viewportFrame(in container: CGSize) -> CGRect {
+        CameraViewportFrame.rect(for: aspectRatio, in: container)
+    }
+
     /// Setting the timer while a countdown runs cancels it: the new value applies to the next press.
     func setTimerSetting(_ setting: CameraTimerSetting) {
         guard cameraControlsEnabled else { return }
@@ -342,26 +346,11 @@ final class CameraViewModel: ObservableObject {
         showCameraTools = false
     }
 
-    // MARK: - Picker strip (F12 collapsed / expanded)
+    // MARK: - Pose picker
 
-    /// Opens and closes the picker strip. This is the **single** control that re-opens the strip: the
-    /// Poses control at the right end of the scale row. The strip's own Browse entry
-    /// (`camera.choosePose`) opens the full picker *sheet* (search + All/Saved scopes).
-    func togglePickerStrip() {
-        guard cameraControlsEnabled else { return }
-        isPickerExpanded.toggle()
-    }
-
-    func expandPickerStrip() {
-        guard cameraControlsEnabled else { return }
-        isPickerExpanded = true
-    }
-
-    func collapsePickerStrip() {
-        guard cameraControlsEnabled else { return }
-        isPickerExpanded = false
-    }
-
+    /// The one way into the picker: the Poses control on the scale row always opens the sheet (search +
+    /// All/Saved scopes). There is no inline strip any more — it duplicated the sheet's rows in a bar
+    /// that ate the viewport, and it was a second, weaker way to reach the same collection.
     func openPosePicker() {
         guard cameraControlsEnabled else { return }
         showPosePicker = true
@@ -426,7 +415,7 @@ final class CameraViewModel: ObservableObject {
     /// The eight settings that survive a relaunch. `CameraSnapshot` carries them in one JSON blob;
     /// the selected pose is deliberately not among them (D8).
     private enum PersistedSetting: Hashable {
-        case opacity, flipped, grid, flash, guideVisibility, lineColor, transform, zoom, pickerExpanded, timer, aspectRatio
+        case opacity, flipped, grid, flash, guideVisibility, lineColor, transform, zoom, timer, aspectRatio
     }
 
     /// `@Published` sinks rather than setter bodies, because the guided gestures and a few tests
@@ -446,8 +435,6 @@ final class CameraViewModel: ObservableObject {
         $guideLineColor.dropFirst().sink { [weak self] _ in self?.settingsDidChange(.lineColor) }.store(in: &cancellables)
         $guideTransform.dropFirst().sink { [weak self] _ in self?.settingsDidChange(.transform) }.store(in: &cancellables)
         $zoomLevel.dropFirst().sink { [weak self] _ in self?.settingsDidChange(.zoom) }.store(in: &cancellables)
-        $isPickerExpanded.dropFirst().sink { [weak self] _ in self?.settingsDidChange(.pickerExpanded) }
-            .store(in: &cancellables)
         $timerSetting.dropFirst().sink { [weak self] _ in self?.settingsDidChange(.timer) }.store(in: &cancellables)
         $aspectRatio.dropFirst().sink { [weak self] _ in self?.settingsDidChange(.aspectRatio) }.store(in: &cancellables)
     }
@@ -511,7 +498,6 @@ final class CameraViewModel: ObservableObject {
             transform: persistedTransform,
             zoom: zoomLevel,
             zoomFactor: Double(zoomFactor),
-            isPickerExpanded: isPickerExpanded,
             timer: timerSetting,
             aspectRatio: aspectRatio
         )
@@ -552,7 +538,6 @@ final class CameraViewModel: ObservableObject {
             zoomLevel = stored.zoom
             zoomFactor = stored.zoomFactor
         }
-        if !touchedSettings.contains(.pickerExpanded) { isPickerExpanded = stored.isPickerExpanded }
         if !touchedSettings.contains(.aspectRatio) { aspectRatio = stored.aspectRatio }
         if !touchedSettings.contains(.timer) {
             timerSetting = stored.timer
@@ -877,6 +862,47 @@ enum CameraAspectCrop {
     }
 }
 
+/// Where the ratio setting is *visible*: the largest rect of the selected ratio that fits the viewport,
+/// centred. Before this, the ratio only reached `CameraAspectCrop`, so choosing 1:1 or 9:16 cropped the
+/// saved file while the preview stayed full-bleed — the framing the user saw was never the framing that
+/// was saved. Pure, so "the preview really is 1:1" is a unit test instead of a device observation.
+enum CameraViewportFrame {
+    /// The framing rect, in the container's coordinate space.
+    static func rect(for ratio: CameraAspectRatio, in container: CGSize) -> CGRect {
+        guard container.width > 0, container.height > 0 else { return .zero }
+        let target = ratio.widthOverHeight
+        let current = container.width / container.height
+        if abs(current - target) <= CameraAspectCrop.matchTolerance {
+            return CGRect(origin: .zero, size: container)
+        }
+        if current > target {
+            // The container is wider than the ratio: the sides give way, the full height is kept.
+            let width = container.height * target
+            return CGRect(x: (container.width - width) / 2, y: 0, width: width, height: container.height)
+        }
+        // Taller than the ratio: the height gives way, the full width is kept.
+        let height = container.width / target
+        return CGRect(x: 0, y: (container.height - height) / 2, width: container.width, height: height)
+    }
+
+    /// The pose reference's placement inside that framing rect. The four insets are the prototype's
+    /// `.nb-camera-pose-reference` fractions, but they are taken of the **frame**, not of the screen: a
+    /// 9:16 frame is shorter than the viewport, and a guide measured against the screen would spill out
+    /// of the photo it is supposed to line up with.
+    static func guideRect(in frame: CGRect) -> CGRect {
+        guard frame.width > 0, frame.height > 0 else { return .zero }
+        let horizontalInset = CameraProto.poseReferenceHorizontalInset
+        let topInset = CameraProto.poseReferenceTopInset
+        let bottomInset = CameraProto.poseReferenceBottomInset
+        return CGRect(
+            x: frame.minX + frame.width * horizontalInset,
+            y: frame.minY + frame.height * topInset,
+            width: frame.width * (1 - horizontalInset * 2),
+            height: frame.height * (1 - topInset - bottomInset)
+        )
+    }
+}
+
 /// Saved-photo post-processing for the ratio: the file behind the gallery row is cropped to the aspect
 /// the user framed with, so the saved dimensions match the preview (and are asserted in tests).
 enum CameraImagePostProcess {
@@ -1119,8 +1145,7 @@ struct CameraScreen: View {
                     savedPoses: savedPosesModel,
                     onClose: { model.closePosePicker() },
                     onSelect: { pose in
-                        guide = pose
-                        model.closePosePicker()
+                        CameraPickerSelection.select(pose, guide: $guide, closeSheet: { model.closePosePicker() })
                     }
                 )
                 .zIndex(2)
@@ -1130,7 +1155,6 @@ struct CameraScreen: View {
         }
         .animation(reduceMotion ? nil : .easeOut(duration: 0.25), value: model.showPosePicker)
         .animation(reduceMotion ? nil : .easeOut(duration: 0.1), value: model.showCameraTools)
-        .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: model.isPickerExpanded)
         .background(AP.Color.background.ignoresSafeArea())
         // The camera is a dark surface, and every AP token inside it has to resolve that way even when
         // the screen is hosted outside a dark presentation (UIKit host, preview, snapshot): the canvas,
@@ -1142,14 +1166,6 @@ struct CameraScreen: View {
         .task { await model.onAppear() }
         .onAppear { model.guideAppeared(hasGuide: guide != nil) }
         .onDisappear { model.onDisappear() }
-        .task(id: stripCatalogueID) {
-            // The strip draws the same catalogue the sheet does, so it is loaded once for both. Not
-            // while the camera is refused (nothing to place a pose on) and not while it is collapsed
-            // (the strip is not on screen to show what the load returns).
-            guard isAuthorized, model.isPickerExpanded else { return }
-            if case .loaded = posePickerModel.state { return }
-            await posePickerModel.load()
-        }
         .task(id: model.showPosePicker) {
             if model.showPosePicker {
                 // R7: monitor only while the sheet is presented.
@@ -1158,11 +1174,9 @@ struct CameraScreen: View {
                 // (or a load that failed after dismissal) cannot strand the sheet.
                 if case .loaded = posePickerModel.state { return }
                 await posePickerModel.load()
-            } else if model.isPickerExpanded {
-                // The strip keeps drawing the rows it already has, and reopening still retries a
-                // failed load, so the catalogue has to survive a dismissal that leaves it on screen.
-                posePickerModel.dismissKeepingCatalogue()
             } else {
+                // Nothing draws the catalogue while the sheet is closed, so the dismissal drops the
+                // result: reopening always retries instead of painting a stale (or failed) grid.
                 posePickerModel.prepareForDismissal()
             }
         }
@@ -1179,11 +1193,6 @@ struct CameraScreen: View {
             if !enabled { model.closeCameraTools() }
         }
         .onChange(of: guide?.id) { _ in model.guideDidChange(hasGuide: guide != nil) }
-    }
-
-    /// Identity of "the strip should have the catalogue": authorization plus the collapsed state.
-    private var stripCatalogueID: String {
-        "\(isAuthorized)-\(model.isPickerExpanded)"
     }
 
     // MARK: Viewport — full-bleed `.nb-camera-viewport--immersive`
@@ -1208,8 +1217,8 @@ struct CameraScreen: View {
         }
     }
 
-    /// F12: the whole bottom control surface — snackbar, zoom, pose strip (or its clear re-open
-    /// control) and the shutter rail. One view, so a rendered test can prove what is on screen.
+    /// The bottom control surface — snackbar, zoom row, shutter rail. One view, so a rendered test can
+    /// prove what is on screen.
     private var bottomChrome: some View {
         CameraBottomBar(
             thumbnailURL: model.latestThumbnailURL,
@@ -1219,16 +1228,11 @@ struct CameraScreen: View {
             status: model.statusMessage,
             statusTone: model.statusTone,
             timerCountdown: model.timerCountdown,
-            strip: stripContent,
             selectedPoseID: guide?.id,
-            isPickerExpanded: model.isPickerExpanded,
             showsPicker: isAuthorized,
             zoomPresets: model.zoomPresets,
             activeZoomPreset: model.activeZoomPreset,
-            onToggleStrip: { model.togglePickerStrip() },
-            onSelectPose: { pose in guide = pose },
-            onBrowse: { model.openPosePicker() },
-            onRetryStrip: { Task { await posePickerModel.load() } },
+            onOpenPosePicker: { model.openPosePicker() },
             onZoomPreset: { preset in model.selectZoomPreset(preset) },
             onOpenGallery: onOpenGallery,
             onCapture: { model.capture() },
@@ -1236,11 +1240,6 @@ struct CameraScreen: View {
             onDismissStatus: { model.dismissStatusMessage() },
             onCancelTimer: { model.cancelTimer() }
         )
-    }
-
-    /// What the strip draws. Pure mapping, so "failed" cannot silently render an empty grid.
-    private var stripContent: CameraStripContent {
-        CameraStripContent.resolve(from: posePickerModel.state, filtered: posePickerModel.filteredPoses)
     }
 
     private func dismissCameraTools() {
@@ -1306,28 +1305,31 @@ struct CameraScreen: View {
     }
 
     private func cameraCanvas(size: CGSize) -> some View {
-        ZStack {
+        // The ratio setting is framing, not only a crop: everything that is *the photo* — the live
+        // preview, the thirds grid and the pose reference — lives inside this rect, and the area
+        // outside it is the dark background. The capture path crops to the same ratio, so what the
+        // user framed is what is saved.
+        let frame = model.viewportFrame(in: size)
+        let guideFrame = CameraViewportFrame.guideRect(in: frame)
+
+        return ZStack {
             AP.Color.background
 
             if isAuthorized {
                 CameraPreview(session: model.camera.session)
+                    .frame(width: frame.width, height: frame.height)
+                    .clipped()
+                    .position(x: frame.midX, y: frame.midY)
             }
 
             verticalScrims
 
-            // `.nb-camera-pose-reference` — `top:16%; right:18%; bottom:14%; left:18%`.
-            // The static four-corner framing overlay is gone (report §3.2).
+            // `.nb-camera-pose-reference` — `top:16%; right:18%; bottom:14%; left:18%`, measured of the
+            // framing rect. The static four-corner framing overlay is gone (report §3.2).
             if let guide, model.isPoseGuideVisible {
                 guideOverlay(for: guide)
-                    .frame(
-                        width: size.width * (1 - CameraProto.poseReferenceHorizontalInset * 2),
-                        height: size.height * (1 - CameraProto.poseReferenceTopInset - CameraProto.poseReferenceBottomInset)
-                    )
-                    .position(
-                        x: size.width / 2,
-                        y: size.height * CameraProto.poseReferenceTopInset
-                            + size.height * (1 - CameraProto.poseReferenceTopInset - CameraProto.poseReferenceBottomInset) / 2
-                    )
+                    .frame(width: guideFrame.width, height: guideFrame.height)
+                    .position(x: guideFrame.midX, y: guideFrame.midY)
                     // E2E handle (`QA-261029-ID`): the only way a flow can prove a guide is drawn and
                     // say *which* pose it is. Built only when a visible guide exists, so a missing id
                     // is "no pose guide on screen" (no pose, or the guide toggle is off).
@@ -1339,6 +1341,8 @@ struct CameraScreen: View {
 
             if model.isGridVisible {
                 CameraFramingGrid()
+                    .frame(width: frame.width, height: frame.height)
+                    .position(x: frame.midX, y: frame.midY)
             }
 
             // Pinch / twist / drag anywhere on the preview places the pose reference; the reference
@@ -1685,6 +1689,16 @@ enum CameraStatePanel: Equatable {
         }
     }
 
+    /// The no-match card's copy, taken from the Search screen's own strings (`SearchResultsCopy`) instead
+    /// of a second phrasing: the sheet and the Search screen answer the same query with the same words.
+    /// The picker's All scope is the whole library, which is the `.all` source there.
+    static func noMatchCopy(term: String) -> (title: String, message: String) {
+        (
+            SearchResultsCopy.emptyTitle(query: term, filter: .all),
+            SearchResultsCopy.emptyMessage(query: term, filter: .all)
+        )
+    }
+
     /// The permission copy, in one place so the panel and its tests cannot drift.
     var permissionCopy: (title: String, message: String, actionTitle: String) {
         ("Camera access is off",
@@ -1757,9 +1771,10 @@ struct CameraPickerStatePanel: View {
                 glyph: "tray"
             )
         case .pickerNoMatch(let term):
+            let copy = CameraStatePanel.noMatchCopy(term: term)
             APEmptyStateView(
-                title: "No poses match “\(term)”",
-                message: "Try a different pose name.",
+                title: copy.title,
+                message: copy.message,
                 style: .plain,
                 glyph: "magnifyingglass"
             )
@@ -1769,69 +1784,20 @@ struct CameraPickerStatePanel: View {
     }
 }
 
-// MARK: - Bottom control surface (F12 collapsed / expanded)
+// MARK: - Bottom control surface
 
-/// What the pose strip draws. A pure mapping from the picker's `Loadable`, so a failed or empty
-/// catalogue can never render as a blank strip that looks like "no poses".
-enum CameraStripContent: Equatable {
-    case loading
-    case failed
-    case empty
-    case poses([NativePose])
-
-    /// One mapping for every picker state. A loaded catalogue whose local filter matches nothing is
-    /// `.empty` ("no poses match"), never a blank strip; a first-load failure is `.failed`, which
-    /// keeps a retry within reach instead of showing an empty row.
-    static func resolve(from state: Loadable<[NativePose]>, filtered: [NativePose]) -> CameraStripContent {
-        switch state {
-        case .idle, .loading:
-            return .loading
-        case .failed:
-            return .failed
-        case .empty:
-            return .empty
-        case .loaded:
-            return filtered.isEmpty ? .empty : .poses(filtered)
-        }
-    }
-}
-
-/// Which parts of the bottom surface are on screen (F12). Pure, so "collapsed still has a way back"
-/// is a unit test instead of something only a screenshot can show.
+/// The bottom surface's contract, pure so it is a unit test instead of something only a screenshot can
+/// show: there is no inline pose strip any more, and the Poses control on the scale row is the one way
+/// into the picker sheet.
 enum CameraChromeLayout {
-    /// The strip itself is drawn only while expanded and only when the camera can place a pose.
-    static func showsStrip(isPickerExpanded: Bool, showsPicker: Bool) -> Bool {
-        showsPicker && isPickerExpanded
-    }
+    /// The Poses control is drawn whenever the camera can place a pose — it is the sheet's only entry,
+    /// so nothing may hide it.
+    static func showsPosesControl(showsPicker: Bool) -> Bool { showsPicker }
 
-    /// The control that re-opens (and closes) the strip is always there when a picker is available —
-    /// the collapsed state must never hide its own way back.
-    static func showsStripToggle(showsPicker: Bool) -> Bool { showsPicker }
-
-    static func stripToggleGlyph(isPickerExpanded: Bool) -> String {
-        isPickerExpanded ? "chevron.down" : "chevron.up"
-    }
-
-    static func stripToggleLabel(isPickerExpanded: Bool) -> String {
-        isPickerExpanded ? "Hide pose picker" : "Show pose picker"
-    }
-
-    /// What the Poses control does on the scale row. It is the only way into the picker, so a collapsed
-    /// camera always expands first; the strip itself carries the sheet's Browse entry
-    /// (`camera.choosePose` → search + All/Saved scopes).
-    enum PickerControlTarget: Equatable {
-        case expandStrip
-        case collapseStrip
-    }
-
-    static func pickerControlTarget(isPickerExpanded: Bool) -> PickerControlTarget {
-        isPickerExpanded ? .collapseStrip : .expandStrip
-    }
-
-    /// The strip's Browse entry is only meaningful while the strip is on screen.
-    static func showsStripBrowse(isPickerExpanded: Bool, showsPicker: Bool) -> Bool {
-        showsPicker && isPickerExpanded
-    }
+    /// The Poses control's E2E handle. It is the handle the picker flows already tap to open the sheet,
+    /// so the product change (strip → sheet) does not also rename the entry point.
+    static let posesControlIdentifier = "camera.choosePose"
+    static let posesControlLabel = "Poses"
 
     /// The bottom surface's vertical order, top to bottom. F5 puts the snackbar first, directly above
     /// the control bar: `CameraBottomBar` renders its children in exactly this order.
@@ -1843,14 +1809,33 @@ enum CameraChromeLayout {
 
     static let bottomSurfaceOrder: [BottomSlot] = [.snackbar, .scaleRow, .panel]
 
-    /// The full picker sheet's handle, kept from the removed top pill so the E2E path is unchanged.
-    static let browseIdentifier = "camera.choosePose"
+    /// Identifiers the strip used to expose. Retired with it: a flow that still looks for one is
+    /// describing a screen that no longer exists, and this list is what says so.
+    static let retiredIdentifiers = [
+        "camera.poseStrip",
+        "camera.poseStrip.retry",
+        "camera.pickerStripToggle",
+    ]
+
+    /// Every picker state now lives in the sheet (`posePicker.*`), so the bar draws no catalogue at all.
+    static let bottomBarDrawsCatalogue = false
 }
 
-/// Snackbar · zoom · pose strip (or its re-open control) · shutter rail.
+/// What a pose chosen in the picker sheet does: it becomes the camera's reference and the sheet closes,
+/// so the user lands back on the framing they were about to shoot. Pure over the binding, so "selecting
+/// a pose sets the guide and closes the sheet" is a unit test instead of something only a device tap can
+/// show.
+enum CameraPickerSelection {
+    static func select(_ pose: NativePose, guide: Binding<NativePose?>, closeSheet: () -> Void) {
+        guide.wrappedValue = pose
+        closeSheet()
+    }
+}
+
+/// Snackbar · zoom row · shutter rail.
 ///
-/// The whole bottom surface is one view so the two F12 states and the snackbar's placement above the
-/// control bar are provable from a rendered bitmap (see `CameraChromeTests`).
+/// The whole bottom surface is one view so the snackbar's placement above the control bar is provable
+/// from a rendered bitmap (see `CameraChromeTests`).
 struct CameraBottomBar: View {
     let thumbnailURL: URL?
     let isBusy: Bool
@@ -1860,34 +1845,17 @@ struct CameraBottomBar: View {
     let statusTone: APStateTone
     /// Shutter-timer countdown (`nil` when idle): a visible number and its own Cancel.
     let timerCountdown: Int?
-    let strip: CameraStripContent
     let selectedPoseID: String?
-    let isPickerExpanded: Bool
     let showsPicker: Bool
     let zoomPresets: [CameraZoomPreset]
     let activeZoomPreset: CameraZoomPreset?
-    let onToggleStrip: () -> Void
-    let onSelectPose: (NativePose) -> Void
-    let onBrowse: () -> Void
-    let onRetryStrip: () -> Void
+    let onOpenPosePicker: () -> Void
     let onZoomPreset: (CameraZoomPreset) -> Void
     let onOpenGallery: () -> Void
     let onCapture: () -> Void
     let onSwitchCamera: () -> Void
     let onDismissStatus: () -> Void
     let onCancelTimer: () -> Void
-
-    @ScaledMetric(relativeTo: .caption) private var cardWidth: CGFloat = 84
-    @ScaledMetric(relativeTo: .caption) private var cardImageHeight: CGFloat = 92
-
-    /// The strip is chrome, not content: at AX3 its cards grow, but the image stops at 140 pt so the
-    /// bar can never take the whole viewport away from the pose guide. The name wraps instead.
-    private var stripImageHeight: CGFloat { min(cardImageHeight, 140) }
-
-    /// Two caption lines under the image: the strip has one deterministic height in every state, so
-    /// the bar cannot jump when a load lands mid-scroll.
-    @ScaledMetric(relativeTo: .caption) private var cardCaptionHeight: CGFloat = 36
-    private var stripRowHeight: CGFloat { stripImageHeight + cardCaptionHeight + AP.Space.space8 }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -1949,30 +1917,26 @@ struct CameraBottomBar: View {
     // MARK: Panel
 
     private var panel: some View {
-        VStack(spacing: AP.Space.space8) {
-            if CameraChromeLayout.showsStrip(isPickerExpanded: isPickerExpanded, showsPicker: showsPicker) {
-                stripView
-            }
-            rail
-        }
-        .padding(.top, AP.Space.space12)
-        .padding(.bottom, AP.Space.space8)
-        .frame(maxWidth: .infinity)
-        .background(
-            RoundedTopShape(radius: AP.Radius.radius24)
-                .fill(Color.black.opacity(0.5))
-        )
-        .accessibilityElement(children: .contain)
+        rail
+            .padding(.top, AP.Space.space12)
+            .padding(.bottom, AP.Space.space8)
+            .frame(maxWidth: .infinity)
+            .background(
+                RoundedTopShape(radius: AP.Radius.radius24)
+                    .fill(Color.black.opacity(0.5))
+            )
+            .accessibilityElement(children: .contain)
     }
 
-    /// The clear control that re-opens (and closes) the picker strip: glyph + word, never a hidden
-    /// gesture, so the collapsed camera can always get back to the strip.
-    private var stripToggle: some View {
-        Button(action: onToggleStrip) {
+    /// The Poses control at the right end of the scale row: it opens the picker sheet (search + All /
+    /// Saved scopes), always, in one tap. The selected pose's name is its value, so the bar still says
+    /// which reference is up without drawing a row of thumbnails.
+    private var posesControl: some View {
+        Button(action: onOpenPosePicker) {
             HStack(spacing: AP.Space.space4) {
-                Image(systemName: CameraChromeLayout.stripToggleGlyph(isPickerExpanded: isPickerExpanded))
+                Image(systemName: "person.crop.rectangle.stack")
                     .font(AP.Font.caption.weight(.semibold))
-                Text("Poses")
+                Text(CameraChromeLayout.posesControlLabel)
                     .font(AP.Font.supporting)
             }
             .foregroundStyle(AP.Color.primaryText)
@@ -1982,138 +1946,22 @@ struct CameraBottomBar: View {
         .buttonStyle(CameraPressStyle(shape: .capsule, restingFill: AP.Color.controlFill))
         .disabled(!controlsEnabled)
         .opacity(controlsEnabled ? 1 : 0.45)
-        .accessibilityLabel(CameraChromeLayout.stripToggleLabel(isPickerExpanded: isPickerExpanded))
-        .accessibilityValue(isPickerExpanded ? "Expanded" : "Collapsed")
-        .accessibilityIdentifier("camera.pickerStripToggle")
-    }
-
-    @ViewBuilder private var stripView: some View {
-        switch strip {
-        case .poses(let poses):
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: AP.Space.space8) {
-                    // The Browse card leads the strip. As the trailing card it left the viewport as soon
-                    // as the catalogue filled the row, and the sheet had no other entry point.
-                    if showsPicker {
-                        browseAllCard
-                    }
-                    ForEach(poses) { pose in stripCard(pose) }
-                }
-                .padding(.horizontal, AP.Space.space16)
-            }
-            .frame(height: stripRowHeight)
-            .accessibilityIdentifier("camera.poseStrip")
-        case .loading:
-            // Flat controlFill skeleton cards — the loading look, not a spinner over nothing.
-            HStack(spacing: AP.Space.space8) {
-                ForEach(0..<3, id: \.self) { _ in
-                    RoundedRectangle(cornerRadius: AP.Radius.radius16, style: .continuous)
-                        .fill(AP.Color.controlFill)
-                        .frame(width: cardWidth, height: stripImageHeight)
-                }
-            }
-            .frame(maxWidth: .infinity, minHeight: stripRowHeight, alignment: .leading)
-            .padding(.horizontal, AP.Space.space16)
-            .accessibilityIdentifier("camera.poseStrip")
-        case .empty, .failed:
-            HStack(spacing: AP.Space.space12) {
-                APStateWordRow(
-                    tone: strip == .failed ? .error : .empty,
-                    word: strip == .failed ? "Couldn't load poses" : "No poses yet"
-                )
-                Spacer(minLength: 0)
-                if strip == .failed {
-                    Button("Try again", action: onRetryStrip)
-                        .buttonStyle(APChipButtonStyle())
-                        .accessibilityIdentifier("camera.poseStrip.retry")
-                }
-            }
-            .padding(.horizontal, AP.Space.space16)
-            .frame(maxWidth: .infinity, minHeight: stripRowHeight, alignment: .leading)
-            .accessibilityIdentifier("camera.poseStrip")
-        }
-    }
-
-    /// The strip's leading card opens the full picker (search + All/Saved scopes). It keeps the
-    /// `camera.choosePose` handle the old top pill had, so the existing E2E path still reaches
-    /// `posePicker.search` and `posePicker.grid`. It sits *first* so a full catalogue can never push the
-    /// sheet's only entry off screen.
-    private var browseAllCard: some View {
-        Button(action: onBrowse) {
-            VStack(spacing: AP.Space.space4) {
-                Image(systemName: "magnifyingglass")
-                    .font(AP.Font.heading)
-                    .foregroundStyle(AP.Color.primaryText)
-                    .frame(width: cardWidth, height: stripImageHeight)
-                    .background(
-                        RoundedRectangle(cornerRadius: AP.Radius.radius8, style: .continuous)
-                            .fill(AP.Color.controlFill)
-                    )
-                Text("Browse")
-                    .font(AP.Font.caption)
-                    .foregroundStyle(AP.Color.secondaryText)
-                    .lineLimit(1)
-                    .frame(width: cardWidth - AP.Space.space8, alignment: .leading)
-            }
-            .padding(AP.Space.space4)
-        }
-        .buttonStyle(CameraPressStyle(restingFill: AP.Color.controlFill))
-        .accessibilityLabel("Browse all poses")
-        .accessibilityIdentifier("camera.choosePose")
-    }
-
-    private func stripCard(_ pose: NativePose) -> some View {
-        let isSelected = pose.id == selectedPoseID
-        return Button {
-            onSelectPose(pose)
-        } label: {
-            VStack(spacing: AP.Space.space4) {
-                ZStack(alignment: .topTrailing) {
-                    KFImage(pose.imageURL)
-                        .placeholder { AP.Color.controlFill }
-                        .onFailureView { AP.Color.controlFill }
-                        .loadDiskFileSynchronously(false)
-                        .contentConfigure { image, _ in
-                            image.resizable().aspectRatio(contentMode: .fill)
-                        }
-                        .frame(width: cardWidth, height: stripImageHeight)
-                        .clipShape(RoundedRectangle(cornerRadius: AP.Radius.radius8, style: .continuous))
-                    if isSelected {
-                        Image(systemName: "checkmark")
-                            .font(AP.Font.caption.weight(.bold))
-                            .foregroundStyle(AP.Color.onAccent)
-                            .frame(width: 20, height: 20)
-                            .background(Circle().fill(AP.Color.accent))
-                            .padding(AP.Space.space4)
-                            .accessibilityHidden(true)
-                    }
-                }
-                Text(pose.name)
-                    .font(AP.Font.caption)
-                    .foregroundStyle(isSelected ? AP.Color.selectedForeground : AP.Color.secondaryText)
-                    .lineLimit(2)
-                    .frame(width: cardWidth - AP.Space.space8, alignment: .leading)
-            }
-            .padding(AP.Space.space4)
-        }
-        .buttonStyle(CameraPressStyle(isSelected: isSelected, restingFill: AP.Color.controlFill))
-        .accessibilityLabel("Use \(pose.name) pose")
-        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
-        .accessibilityIdentifier("camera.poseStrip.card.\(pose.id)")
+        .accessibilityLabel(selectedPoseID == nil ? "Choose a pose" : "Change pose")
+        .accessibilityValue(selectedPoseID == nil ? "None selected" : "Selected")
+        .accessibilityIdentifier(CameraChromeLayout.posesControlIdentifier)
     }
 
     // MARK: Zoom
 
     /// The scale row: the zoom presets stay centred, the Poses control sits at its right end (owner
-    /// feedback calls this row the scale bar). The Poses control is the only way back into the picker,
-    /// so it is always present while the camera can pick a pose.
+    /// feedback calls this row the scale bar).
     private var scaleRow: some View {
         ZStack {
             zoomPill
-            if showsPicker, CameraChromeLayout.showsStripToggle(showsPicker: showsPicker) {
+            if CameraChromeLayout.showsPosesControl(showsPicker: showsPicker) {
                 HStack(spacing: 0) {
                     Spacer(minLength: 0)
-                    stripToggle
+                    posesControl
                 }
             }
         }
@@ -2843,15 +2691,13 @@ enum CameraPickerScope: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     var accessibilityIdentifier: String { "posePicker.scope.\(rawValue.lowercased())" }
 
-    /// The rows this scope draws. Both scopes filter by the same search text through the **same**
-    /// helpers the Poses screens use: the catalogue's own local filter for All, and the shared saved
-    /// name filter for Saved (`PoseAdapterMerge.filterSavedLocally`), so the two cannot drift.
+    /// The rows this scope draws. Both scopes filter through the **one** name matcher the Poses screens
+    /// use (`PoseAdapterMerge.matchesName`, which is what `filterSavedLocally` is built on), so a query
+    /// cannot mean two different things on two screens.
     func rows(catalogue: [NativePose], saved: [NativePose], query: String) -> [NativePose] {
         switch self {
         case .all:
-            let term = query.trimmingCharacters(in: .whitespaces).lowercased()
-            guard !term.isEmpty else { return catalogue }
-            return catalogue.filter { $0.name.lowercased().contains(term) }
+            return catalogue.filter { PoseAdapterMerge.matchesName($0.name, query: query) }
         case .saved:
             return PoseAdapterMerge.filterSavedLocally(saved, query: query)
         }
@@ -3069,12 +2915,11 @@ final class PosePickerViewModel: ObservableObject {
         loadGeneration &+= 1
     }
 
-    /// Local title filter over the loaded catalogue (`guide-picker.js` `render()`).
+    /// Local title filter over the loaded catalogue (`guide-picker.js` `render()`). One matcher, shared
+    /// with the Saved scope and the Poses screens: trimmed query, `localizedCaseInsensitiveContains`.
     var filteredPoses: [NativePose] {
         guard case .loaded(let poses) = state else { return [] }
-        let term = query.trimmingCharacters(in: .whitespaces).lowercased()
-        guard !term.isEmpty else { return poses }
-        return poses.filter { $0.name.lowercased().contains(term) }
+        return poses.filter { PoseAdapterMerge.matchesName($0.name, query: query) }
     }
 
     /// Shared-card tone the picker renders, or `nil` when it draws the grid.
@@ -3133,14 +2978,49 @@ final class PosePickerViewModel: ObservableObject {
     func clearSearch() {
         query = ""
     }
+}
 
-    /// The sheet closed while the picker strip stays on screen (F12 expanded). R7 still applies —
-    /// monitoring stops and the offline reading is cleared — but the rows stay: the strip is still
-    /// drawing them, and reopening retries any load that is not `.loaded`.
-    func dismissKeepingCatalogue() {
-        stopMonitoring()
-        query = ""
+/// The sheet's vertical order, top to bottom. Search is the sheet's primary verb — it is how a catalogue
+/// of hundreds is made usable — so it sits directly under the title, above the All/Saved chips, and the
+/// chips then narrow what the query already matched. Pure, so the order is a unit test instead of a
+/// screenshot: `PosePickerSheet.panel` renders exactly these rows in exactly this order.
+enum PosePickerLayout {
+    enum Row: Hashable {
+        case handle
+        case header
+        case search
+        case scopes
+        case results
     }
+
+    static let order: [Row] = [.handle, .header, .search, .scopes, .results]
+
+    /// The search field's own handle, and the clear button inside it.
+    static let searchIdentifier = "posePicker.search"
+    static let searchClearIdentifier = "posePicker.searchClear"
+    static let closeIdentifier = "posePicker.close"
+    static let stateIdentifier = "posePicker.state"
+    static let gridIdentifier = "posePicker.grid"
+
+    /// The sheet's own surface. It sits on the panel — the container that already declares
+    /// `children: .contain` and the modal trait — never on the `GeometryReader` root, which is not an
+    /// accessibility element (applying the id there collapses the subtree it wraps; see the R18 probe).
+    static let sheetIdentifier = "posePicker.sheet"
+
+    /// One pose row in the grid. The row keeps its `Use <name> pose` label; the id adds the stable handle a
+    /// flow needs to pick a *specific* pose instead of "whichever row matched first".
+    static func rowIdentifier(poseID: String) -> String { "posePicker.row.\(poseID)" }
+
+    /// The scrollable content's order, top to bottom. The offline banner is a **row of the scroll
+    /// content**, not an overlay: it pushes the grid down instead of covering its rows, so a populated
+    /// grid can never have a row hidden under the notice.
+    enum ContentRow: Equatable {
+        case offlineBanner
+        case statePanel
+        case grid
+    }
+
+    static let contentOrder: [ContentRow] = [.offlineBanner, .statePanel, .grid]
 }
 
 /// The pose picker sheet: Camera stays visible behind it as the parent context; panel
@@ -3251,11 +3131,10 @@ private struct PosePickerSheet: View {
 
     private func panel(height: CGFloat) -> some View {
         VStack(spacing: 0) {
-            handle
-            header
-            scopeChips
-            searchField
-            scrollContent
+            // Rendered from `PosePickerLayout.order`, so the order the tests assert is the order drawn.
+            ForEach(PosePickerLayout.order, id: \.self) { row in
+                panelRow(row)
+            }
         }
         .padding(EdgeInsets(
             top: AP.Space.space12,
@@ -3272,7 +3151,19 @@ private struct PosePickerSheet: View {
         .clipShape(RoundedTopShape(radius: AP.Radius.radius24))
         .accessibilityElement(children: .contain)
         .accessibilityAddTraits(.isModal)
+        .accessibilityIdentifier(PosePickerLayout.sheetIdentifier)
         .transition(reduceMotion ? .opacity : .opacity.combined(with: .offset(y: 18)))
+    }
+
+    @ViewBuilder
+    private func panelRow(_ row: PosePickerLayout.Row) -> some View {
+        switch row {
+        case .handle: handle
+        case .header: header
+        case .search: searchField
+        case .scopes: scopeChips
+        case .results: scrollContent
+        }
     }
 
     /// The grabber: `separator` fill, centred, decorative.
@@ -3301,7 +3192,7 @@ private struct PosePickerSheet: View {
                 .foregroundStyle(AP.Color.accentText)
                 .apMinimumHitTarget()
                 .accessibilityLabel("Close pose picker")
-                .accessibilityIdentifier("posePicker.close")
+                .accessibilityIdentifier(PosePickerLayout.closeIdentifier)
         }
         .padding(.bottom, AP.Space.space12)
     }
@@ -3316,6 +3207,10 @@ private struct PosePickerSheet: View {
             Spacer(minLength: 0)
         }
         .padding(.bottom, AP.Space.space12)
+        // A container, not a single element: each chip keeps its own identifier
+        // (`posePicker.scope.all|saved`) while the row keeps `posePicker.scope`. Without this the row's id
+        // is inherited by both chips and overwrites theirs, so they render but nothing can address them.
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("posePicker.scope")
     }
 
@@ -3362,7 +3257,7 @@ private struct PosePickerSheet: View {
                 .textInputAutocapitalization(.never)
                 .focused($isSearchFocused)
                 .onSubmit { isSearchFocused = false }
-                .accessibilityIdentifier("posePicker.search")
+                .accessibilityIdentifier(PosePickerLayout.searchIdentifier)
 
             if !model.query.trimmingCharacters(in: .whitespaces).isEmpty {
                 Button {
@@ -3377,7 +3272,7 @@ private struct PosePickerSheet: View {
                 .buttonStyle(.plain)
                 .apMinimumHitTarget()
                 .accessibilityLabel("Clear search")
-                .accessibilityIdentifier("posePicker.searchClear")
+                .accessibilityIdentifier(PosePickerLayout.searchClearIdentifier)
             }
         }
         .padding(.horizontal, AP.Space.space12)
@@ -3412,20 +3307,48 @@ private struct PosePickerSheet: View {
     private var stateSurface: some View {
         switch model.scope {
         case .saved:
-            savedStateSurface
+            if savedScopeHasNoMatch {
+                // Same search, same answer: a query that filters the saved collection out is the shared
+                // no-match card, never a silently blank area under the chips.
+                pickerPanel(.pickerNoMatch(trimmedQuery)) {
+                    Task { await savedPoses.load() }
+                }
+            } else {
+                savedStateSurface
+            }
         case .all:
             if let panel = CameraStatePanel.picker(
                 tone: model.stateTone,
                 isNoMatch: model.emptyIsNoMatch,
-                term: model.query.trimmingCharacters(in: .whitespaces),
+                term: trimmedQuery,
                 isOffline: model.isOffline
             ) {
-                CameraPickerStatePanel(panel: panel) {
+                pickerPanel(panel) {
                     Task { await model.load() }
                 }
-                .accessibilityIdentifier("posePicker.state")
             }
         }
+    }
+
+    /// The trimmed query every surface reads, so the card's copy and the filter cannot disagree.
+    private var trimmedQuery: String {
+        model.query.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// The Saved chip loaded a collection, and the query matched none of it.
+    private var savedScopeHasNoMatch: Bool {
+        guard !trimmedQuery.isEmpty, visiblePoses.isEmpty else { return false }
+        if case .rows = savedPresentation { return true }
+        return false
+    }
+
+    /// One state panel, one handle: the sheet's states are all `posePicker.state`.
+    private func pickerPanel(_ panel: CameraStatePanel, onRetry: @escaping () -> Void) -> some View {
+        CameraPickerStatePanel(panel: panel, onRetry: onRetry)
+            // Same rule as the rows above: the panel owns `posePicker.state`, and the card's own controls
+            // (the retry) stay separate elements instead of inheriting the panel's id.
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier(PosePickerLayout.stateIdentifier)
     }
 
     /// The Saved chip's panels. Copy is the Saved screen's own (`PoseResultsStateCopy`), so the two
@@ -3500,6 +3423,7 @@ private struct PosePickerSheet: View {
                             .buttonStyle(GuideCardPressStyle())
                             .accessibilityLabel("Use \(item.pose.name) pose")
                             .accessibilitySortPriority(Double(poses.count - item.index))
+                            .accessibilityIdentifier(PosePickerLayout.rowIdentifier(poseID: item.pose.id))
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -3517,7 +3441,7 @@ private struct PosePickerSheet: View {
             }
             .accessibilityElement(children: .contain)
             .accessibilityValue(model.scope.rawValue)
-            .accessibilityIdentifier("posePicker.grid")
+            .accessibilityIdentifier(PosePickerLayout.gridIdentifier)
         }
     }
 

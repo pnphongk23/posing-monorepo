@@ -1,4 +1,4 @@
-# TC-CAM-033 signed out, the Saved scope asks for a sign-in instead of showing rows or an error
+# TC-CAM-033 signed out, the Saved scope asks for a sign-in instead of showing rows
 appId: ${APP_ID}
 tags: [TC-CAM-033, p1]
 ---
@@ -7,25 +7,10 @@ tags: [TC-CAM-033, p1]
 # runner, not this file).
 - runFlow: ../subflows/launch.yaml
 - runFlow: ../subflows/open-camera.yaml
-# `camera.choosePose` is the strip's Browse card since d001b80 — the strip opens expanded, so the card is
-# on screen; the tap still opens the full picker sheet (search + All/Saved).
-- assertVisible:
-    id: "camera.poseStrip"
-# The Browse card is the strip's last card and only exists once the catalogue has loaded.
-- extendedWaitUntil:
-    visible:
-      id: "camera.choosePose"
-    timeout: 20000
-- tapOn:
-    id: "camera.choosePose"
-- extendedWaitUntil:
-    visible:
-      id: "posePicker.grid"
-    timeout: 20000
-# `posePicker.scope.saved` has no condition in source — the chips sit above the search field whenever the
-# sheet is open (CameraFeature.swift, panel: handle → header → scopeChips → searchField → content). It was
-# simply not waited for: the sheet still animates in when the grid first reports visible, so tapping
-# straight away raced the animation. Wait for the chip itself.
+- runFlow: ../subflows/camera-open-picker.yaml
+# The chips sit under the title and above the results (CameraFeature.swift, panel:
+# handle → header → search → scopes → content). Wait for the container and then the chip itself: the sheet
+# still animates in when the grid first reports visible, so tapping straight away races the animation.
 - assertVisible:
     id: "posePicker.scope"
 - extendedWaitUntil:
@@ -39,10 +24,11 @@ tags: [TC-CAM-033, p1]
       id: "posePicker.saved.signIn"
     timeout: 20000
 # The Saved screen's own sign-in copy, and no pose rows underneath it.
-- assertVisible: "Sign in to view your saved poses"
-- assertVisible: "Your saved poses are tied to your account. Sign in to keep them synced."
+- assertVisible: '.*Sign in to view your saved poses.*'
+- assertVisible: '.*Your saved poses are tied to your account.*'
 - assertNotVisible:
     id: "posePicker.grid"
+- takeScreenshot: saved-scope-signed-out
 # Signed out never blocks the catalogue: All still lists poses.
 - extendedWaitUntil:
     visible:

@@ -33,8 +33,9 @@ struct CameraSettings: Equatable, Sendable {
     /// The exact zoom the lens was at. `zoom` keeps every pre-existing row readable; the factor adds
     /// the lenses' 0.5x stop, which the level enum cannot express.
     var zoomFactor: Double = 1
-    /// F12: is the pose picker strip open above the control bar? Default = expanded, and a row
-    /// written before the collapsed state existed reads back as expanded (the state that shows more).
+    /// Retired with the inline pose picker strip: the picker is a sheet now, so nothing reads this. It
+    /// stays in the codec because the field is part of the stored JSON contract — a row written while
+    /// the strip existed must still decode (and must not cost the user the settings that still matter).
     var isPickerExpanded = true
     /// Shutter timer (Off / 3 s / 10 s). Default off: a press captures at once.
     var timer: CameraTimerSetting = .off

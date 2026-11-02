@@ -569,10 +569,8 @@ final class CameraFeatureTests: XCTestCase {
         model.commitGuideGesture(.init(scale: placement.scale,
                                        rotation: placement.rotation,
                                        translation: placement.offset))
-        // F12: the strip is chrome and this evidence is about the *reference*, so the camera renders
-        // collapsed (thumbnail · shutter · flip) and tall enough that the guide keeps the same share
-        // of the image the band measurement was written against.
-        model.collapsePickerStrip()
+        // This evidence is about the *reference*, and the bottom surface is now just the rail, so the
+        // canvas is tall enough that the guide keeps the share of the image the band was written against.
         let screen = CameraScreen(
             guide: Binding(get: { guide }, set: { guide = $0 }),
             poseService: PreviewPoseService(),
@@ -805,13 +803,13 @@ final class PosePickerCatalogueLoadTests: XCTestCase {
         NativePose(id: id, name: "Pose \(id)", category: "Standing", imageURL: nil, instructions: [], isSaved: false)
     }
 
-    /// The strip and the sheet both need the catalogue. The second caller joins the request in
-    /// flight, so expanding the camera and then opening the sheet cannot race two answers.
+    /// Two presentations of the picker both need the catalogue. The second caller joins the request in
+    /// flight, so closing and reopening the sheet cannot race two answers.
     func testTwoSurfacesShareOneCatalogueRequest() async {
         let service = DeferredPoseService(rows: [pose("new")])
         let model = PosePickerViewModel(service: service)
 
-        let strip = Task { await model.load() }
+        let firstPresentation = Task { await model.load() }
         await service.waitUntilFirstCallStarted()
         let sheet = Task { await model.load() }
         await Task.yield()
@@ -820,7 +818,7 @@ final class PosePickerCatalogueLoadTests: XCTestCase {
         XCTAssertEqual(callsWhileJoining, 1, "the second surface joins the request in flight")
 
         await service.failFirstCall()
-        await strip.value
+        await firstPresentation.value
         await sheet.value
         let callsAfter = await service.calls
         XCTAssertEqual(callsAfter, 1, "no second request was started")
@@ -828,14 +826,14 @@ final class PosePickerCatalogueLoadTests: XCTestCase {
     }
 
     /// The reported ordering: an older request fails *after* a newer one already populated the
-    /// catalogue. The stale completion must be inert (generation guard), so the strip keeps its rows.
+    /// catalogue. The stale completion must be inert (generation guard), so the grid keeps its rows.
     func testAStaleFailureCannotReplaceANewerCatalogue() async {
         let service = DeferredPoseService(rows: [pose("new")])
         let model = PosePickerViewModel(service: service)
 
         let stale = Task { await model.load() }
         await service.waitUntilFirstCallStarted()
-        // The collapsed camera's dismissal drops the catalogue and abandons the request behind it.
+        // The sheet's dismissal drops the catalogue and abandons the request behind it.
         model.prepareForDismissal()
         await model.load()
         XCTAssertEqual(model.filteredPoses.map(\.id), ["new"], "the newer request populated the catalogue")
@@ -960,6 +958,73 @@ final class CameraPickerScopeTests: XCTestCase {
         )
     }
 
+    /// One name matcher for both scopes and for the Search screen: the picker cannot answer a query
+    /// differently from the Saved screen, and it cannot answer it differently in its two scopes either.
+    /// The assertions compare the picker's own rows against `PoseAdapterMerge`, so the test fails if the
+    /// two ever drift apart again (the All scope used to run `lowercased().contains` of its own).
+    func testBothScopesFilterWithTheSharedNameMatcher() {
+        let catalogue = [
+            pose("a", name: "Warrior II"),
+            pose("b", name: "Downward Dog"),
+            pose("c", name: "Café lean"),
+        ]
+        let saved = [pose("b", name: "Downward Dog"), pose("c", name: "Café lean")]
+
+        for query in ["WARRIOR", "  warrior  ", "dog", "café", "CAFÉ", "  ", "zzz", ""] {
+            XCTAssertEqual(
+                CameraPickerScope.all.rows(catalogue: catalogue, saved: saved, query: query).map(\.id),
+                PoseAdapterMerge.filterSavedLocally(catalogue, query: query).map(\.id),
+                "the All scope answers \"\(query)\" exactly like the shared filter"
+            )
+            XCTAssertEqual(
+                CameraPickerScope.saved.rows(catalogue: catalogue, saved: saved, query: query).map(\.id),
+                PoseAdapterMerge.filterSavedLocally(saved, query: query).map(\.id),
+                "the Saved scope answers \"\(query)\" exactly like the shared filter"
+            )
+        }
+    }
+
+    /// The three behaviours the shared matcher is chosen for, spelled out on the picker's own rows:
+    /// case-insensitivity, a trimmed query, and an empty query that filters nothing.
+    func testTheQueryIsCaseInsensitiveAndTrimmed() {
+        let catalogue = [pose("a", name: "Warrior II"), pose("b", name: "Downward Dog")]
+        let saved = [pose("a", name: "Warrior II")]
+
+        XCTAssertEqual(
+            CameraPickerScope.all.rows(catalogue: catalogue, saved: saved, query: "  WARRIOR  ").map(\.id),
+            ["a"],
+            "a padded, upper-case query finds the pose a hand-typed search would"
+        )
+        XCTAssertEqual(
+            CameraPickerScope.saved.rows(catalogue: catalogue, saved: saved, query: "wArRiOr").map(\.id),
+            ["a"]
+        )
+        XCTAssertEqual(
+            CameraPickerScope.all.rows(catalogue: catalogue, saved: saved, query: "   ").map(\.id),
+            ["a", "b"],
+            "whitespace is not a query"
+        )
+    }
+
+    /// A query that matches nothing is the sheet's "No poses match" card, not a blank grid: the picker
+    /// model's own state mapping is what the sheet reads to draw it.
+    func testANoMatchQueryIsTheEmptyState() async {
+        let model = PosePickerViewModel(service: PreviewPoseService())
+        await model.load()
+        guard case .loaded(let poses) = model.state, !poses.isEmpty else {
+            return XCTFail("the preview catalogue should have loaded, saw \(model.state)")
+        }
+
+        model.query = "no-such-pose-anywhere"
+
+        XCTAssertTrue(model.filteredPoses.isEmpty)
+        XCTAssertEqual(model.stateTone, .empty, "the no-match card, not an error and not a blank grid")
+        XCTAssertTrue(model.emptyIsNoMatch, "the copy names the query instead of \"no poses yet\"")
+
+        model.clearSearch()
+        XCTAssertFalse(model.filteredPoses.isEmpty, "clearing the query brings the grid back")
+    }
+
     // MARK: Saved data model (real behaviour, no fakes in the app)
 
     func testSavedScopeLoadsTheAccountsCollection() async {
@@ -1081,49 +1146,126 @@ final class CameraPickerScopeTests: XCTestCase {
 
 @MainActor
 final class CameraPickerAccessTests: XCTestCase {
-    private func pose(_ id: String) -> NativePose {
-        NativePose(id: id, name: "Pose \(id)", category: "Standing", imageURL: nil, instructions: [], isSaved: false)
-    }
-
-    /// The Poses control on the scale row is the only way into the picker: a collapsed camera expands
-    /// the strip first, an expanded one closes it.
-    func testThePosesControlExpandsThenCollapsesTheStrip() {
-        XCTAssertEqual(CameraChromeLayout.pickerControlTarget(isPickerExpanded: false), .expandStrip)
-        XCTAssertEqual(CameraChromeLayout.pickerControlTarget(isPickerExpanded: true), .collapseStrip)
+    /// The Poses control on the scale row is the sheet's only entry, and it opens the sheet in one tap —
+    /// there is no strip to expand first, and no state in which the picker is hidden behind a chevron.
+    func testThePosesControlOpensTheSheetInOneTap() {
+        XCTAssertEqual(CameraChromeLayout.posesControlIdentifier, "camera.choosePose")
+        XCTAssertTrue(CameraChromeLayout.showsPosesControl(showsPicker: true))
+        XCTAssertFalse(CameraChromeLayout.showsPosesControl(showsPicker: false), "no camera, no control")
 
         let model = CameraViewModel()
         model.coordinator.onPermissionResult(.authorized)
-        XCTAssertTrue(model.isPickerExpanded, "the camera opens with the picker reachable")
+        XCTAssertFalse(model.showPosePicker, "the sheet is closed until it is asked for")
 
-        model.togglePickerStrip()
-        XCTAssertFalse(model.isPickerExpanded)
-        model.togglePickerStrip()
-        XCTAssertTrue(model.isPickerExpanded, "one tap brings the picker back")
-    }
-
-    /// The full sheet (search + All/Saved scopes) is still reachable from the strip's Browse entry, and
-    /// that entry only exists while the strip is drawn.
-    func testTheStripsBrowseEntryKeepsTheFullSheetReachable() {
-        XCTAssertEqual(CameraChromeLayout.browseIdentifier, "camera.choosePose")
-        XCTAssertTrue(CameraChromeLayout.showsStripBrowse(isPickerExpanded: true, showsPicker: true))
-        XCTAssertFalse(CameraChromeLayout.showsStripBrowse(isPickerExpanded: false, showsPicker: true))
-        XCTAssertFalse(CameraChromeLayout.showsStripBrowse(isPickerExpanded: true, showsPicker: false))
-
-        let model = CameraViewModel()
-        model.coordinator.onPermissionResult(.authorized)
         model.openPosePicker()
-        XCTAssertTrue(model.showPosePicker, "Browse opens the picker sheet with search and scopes")
+        XCTAssertTrue(model.showPosePicker, "one tap opens the picker sheet with search and scopes")
         model.closePosePicker()
         XCTAssertFalse(model.showPosePicker)
+
+        model.openPosePicker()
+        XCTAssertTrue(model.showPosePicker, "and it opens again after a close: nothing was collapsed")
     }
 
-    /// The removed top pill left no orphan handle: the sheet opens from the strip, and a denied camera
-    /// cannot open it at all.
-    func testTheSheetIsGatedAndTheOldPillPathIsGone() {
+    /// The inline strip is gone: the bar draws no catalogue, and the ids it used to expose are retired,
+    /// so a flow that still looks for one is looking at a screen that no longer exists.
+    func testTheBottomBarDrawsNoPoseStrip() {
+        XCTAssertFalse(CameraChromeLayout.bottomBarDrawsCatalogue)
+        XCTAssertEqual(
+            CameraChromeLayout.retiredIdentifiers,
+            ["camera.poseStrip", "camera.poseStrip.retry", "camera.pickerStripToggle"]
+        )
+    }
+
+    /// A denied camera cannot open the sheet at all — the control is the entry point, not a bypass.
+    func testTheSheetIsGated() {
         let denied = CameraViewModel()
         denied.coordinator.onPermissionResult(.denied)
         denied.openPosePicker()
         XCTAssertFalse(denied.showPosePicker, "a camera that cannot serve the picker does not open it")
+    }
+}
+
+@MainActor
+final class CameraPickerSheetLayoutTests: XCTestCase {
+    /// Search is at the top of the sheet: directly under the title, above the scope chips. A catalogue
+    /// of hundreds is only usable through the query, so it must not sit below the fold behind chips.
+    func testSearchSitsAtTheTopOfTheSheet() {
+        XCTAssertEqual(
+            PosePickerLayout.order,
+            [.handle, .header, .search, .scopes, .results],
+            "the sheet renders exactly this order (PosePickerSheet.panel iterates it)"
+        )
+        let searchIndex = PosePickerLayout.order.firstIndex(of: .search)
+        let scopesIndex = PosePickerLayout.order.firstIndex(of: .scopes)
+        let resultsIndex = PosePickerLayout.order.firstIndex(of: .results)
+        XCTAssertNotNil(searchIndex)
+        XCTAssertLessThan(searchIndex ?? .max, scopesIndex ?? .min, "search is above the All/Saved chips")
+        XCTAssertLessThan(searchIndex ?? .max, resultsIndex ?? .min, "search is above the results")
+    }
+
+    /// The sheet's QA handles are the contract the picker flows use; they are named here so a rename has
+    /// to be a deliberate edit of this test.
+    func testTheSheetHandlesAreStable() {
+        XCTAssertEqual(PosePickerLayout.searchIdentifier, "posePicker.search")
+        XCTAssertEqual(PosePickerLayout.searchClearIdentifier, "posePicker.searchClear")
+        XCTAssertEqual(PosePickerLayout.closeIdentifier, "posePicker.close")
+        XCTAssertEqual(PosePickerLayout.stateIdentifier, "posePicker.state")
+        XCTAssertEqual(PosePickerLayout.gridIdentifier, "posePicker.grid")
+        XCTAssertEqual(PosePickerLayout.sheetIdentifier, "posePicker.sheet")
+        XCTAssertEqual(PosePickerLayout.rowIdentifier(poseID: "p-42"), "posePicker.row.p-42")
+        XCTAssertEqual(CameraPickerScope.all.accessibilityIdentifier, "posePicker.scope.all")
+        XCTAssertEqual(CameraPickerScope.saved.accessibilityIdentifier, "posePicker.scope.saved")
+    }
+
+    /// The no-match card speaks the Search screen's language, because it is the Search screen's copy:
+    /// `SearchResultsCopy` is the one place the words live, so the two surfaces cannot drift apart.
+    func testTheNoMatchCardReusesTheSearchScreenCopy() {
+        let copy = CameraStatePanel.noMatchCopy(term: "dancing")
+        XCTAssertEqual(copy.title, SearchResultsCopy.emptyTitle(query: "dancing", filter: .all))
+        XCTAssertEqual(copy.message, SearchResultsCopy.emptyMessage(query: "dancing", filter: .all))
+        XCTAssertEqual(copy.title, "No poses match “dancing”")
+        XCTAssertEqual(copy.message, "Try a different pose name.")
+
+        // And the panel the sheet draws for a no-match query is that card, not a blank grid.
+        XCTAssertEqual(
+            CameraStatePanel.picker(tone: .empty, isNoMatch: true, term: "dancing", isOffline: false),
+            .pickerNoMatch("dancing")
+        )
+        XCTAssertEqual(
+            CameraStatePanel.picker(tone: .empty, isNoMatch: true, term: "dancing", isOffline: true),
+            .pickerNoMatch("dancing"),
+            "an empty result keeps the no-match card even offline (guide-picker.js returns early)"
+        )
+    }
+
+    /// The offline notice is a row of the scroll content above the grid, never an overlay: it pushes the
+    /// grid down, so it cannot cover the third row of cards.
+    func testTheOfflineBannerIsAScrollRowAboveTheGrid() {
+        XCTAssertEqual(PosePickerLayout.contentOrder, [.offlineBanner, .statePanel, .grid])
+        let banner = PosePickerLayout.contentOrder.firstIndex(of: .offlineBanner)
+        let grid = PosePickerLayout.contentOrder.firstIndex(of: .grid)
+        XCTAssertLessThan(banner ?? .max, grid ?? .min, "the banner is above the grid, in the same flow")
+    }
+
+    /// Selecting a pose is the sheet's whole purpose: the reference becomes the guide and the sheet
+    /// closes, so the user is back on the framing they were about to shoot.
+    func testSelectingAPoseSetsTheGuideAndClosesTheSheet() {
+        var guide: NativePose?
+        let binding = Binding(get: { guide }, set: { guide = $0 })
+        let chosen = NativePose(
+            id: "pick-me",
+            name: "Pick Me",
+            category: "Standing",
+            imageURL: nil,
+            instructions: [],
+            isSaved: false
+        )
+        var sheetClosed = false
+
+        CameraPickerSelection.select(chosen, guide: binding, closeSheet: { sheetClosed = true })
+
+        XCTAssertEqual(guide?.id, "pick-me", "the chosen pose is the camera's reference")
+        XCTAssertTrue(sheetClosed, "and the sheet closes on the same tap")
     }
 }
 
@@ -1208,13 +1350,13 @@ final class CameraToolsPopoverTests: XCTestCase {
     }
 }
 
-// MARK: - Camera chrome: F12 collapsed state, F4 state panels, F5 snackbar
+// MARK: - Camera chrome: picker entry, F4 state panels, F5 snackbar
 
-/// The redesign slice's own evidence: the collapse/expand contract, the strip's content mapping, the
-/// shared 72 pt state panels and the snackbar's placement above the control bar.
+/// The redesign slice's own evidence: the picker's single entry point, the shared 72 pt state panels
+/// and the snackbar's placement above the control bar.
 ///
-/// Constants are not read back here: the collapse contract is asserted through the view model and the
-/// pure layout mapping, and what the chrome *draws* is asserted on a rendered bitmap, pinned to one
+/// Constants are not read back here: the entry contract is asserted through the view model and the pure
+/// layout mapping, and what the chrome *draws* is asserted on a rendered bitmap, pinned to one
 /// appearance at a time (light and dark, the same token pairs the design system documents).
 @MainActor
 final class CameraChromeTests: XCTestCase {
@@ -1222,111 +1364,71 @@ final class CameraChromeTests: XCTestCase {
         NativePose(id: id, name: name, category: "Standing", imageURL: nil, instructions: [], isSaved: false)
     }
 
-    // MARK: - F12: collapsed / expanded (logic)
+    // MARK: - The picker is always a sheet (no strip, no collapse)
 
-    func testTheCameraOpensExpandedAndTheSameControlCollapsesIt() {
+    /// The old collapse/expand product is gone: there is no state to collapse, so the only picker action
+    /// is "open the sheet", and a camera that cannot serve it does not open it.
+    func testTheOnlyPickerActionIsOpeningTheSheet() {
         let model = CameraViewModel()
         model.coordinator.onPermissionResult(.authorized)
 
-        XCTAssertTrue(model.isPickerExpanded, "default = expanded")
-        model.togglePickerStrip()
-        XCTAssertFalse(model.isPickerExpanded)
-        model.togglePickerStrip()
-        XCTAssertTrue(model.isPickerExpanded)
+        XCTAssertFalse(model.showPosePicker)
+        model.openPosePicker()
+        XCTAssertTrue(model.showPosePicker)
+        model.closePosePicker()
+        XCTAssertFalse(model.showPosePicker)
+
+        let denied = CameraViewModel()
+        denied.coordinator.onPermissionResult(.denied)
+        denied.openPosePicker()
+        XCTAssertFalse(denied.showPosePicker, "a control the camera cannot serve must not move the state")
     }
 
-    func testCollapsingIsGatedLikeEveryOtherCameraControl() {
-        let model = CameraViewModel()
-        model.coordinator.onPermissionResult(.denied)
-
-        model.togglePickerStrip()
-        model.collapsePickerStrip()
-
-        XCTAssertTrue(model.isPickerExpanded, "a control the camera cannot serve must not move the state")
-    }
-
-    /// The board's old "Guide hidden" screen becomes this collapsed state, so collapsing must not
-    /// also hide the pose reference — the guide keeps its own eye control.
-    func testCollapsedStateKeepsThePoseGuideVisible() {
+    /// Opening the sheet must not also hide the pose reference: the guide keeps its own eye control, and
+    /// the sheet is an overlay, not a different camera state.
+    func testOpeningTheSheetKeepsThePoseGuideVisible() {
         let model = CameraViewModel()
         model.coordinator.onPermissionResult(.authorized)
         XCTAssertTrue(model.isPoseGuideVisible)
 
-        model.collapsePickerStrip()
-        XCTAssertFalse(model.isPickerExpanded)
-        XCTAssertTrue(model.isPoseGuideVisible, "collapsing the strip is not the guide-visibility toggle")
+        model.openPosePicker()
 
-        model.expandPickerStrip()
-        XCTAssertTrue(model.isPoseGuideVisible)
+        XCTAssertTrue(model.isPoseGuideVisible, "opening the picker is not the guide-visibility toggle")
     }
 
-    func testChromeLayoutHidesTheStripButNeverItsWayBack() {
-        XCTAssertTrue(CameraChromeLayout.showsStrip(isPickerExpanded: true, showsPicker: true))
-        XCTAssertFalse(CameraChromeLayout.showsStrip(isPickerExpanded: false, showsPicker: true))
-        XCTAssertFalse(
-            CameraChromeLayout.showsStrip(isPickerExpanded: true, showsPicker: false),
-            "no camera, no strip"
+    /// The bottom surface is snackbar · scale row · rail, in that order, and it draws no catalogue.
+    func testTheBottomSurfaceKeepsItsOrderAndDropsTheStrip() {
+        XCTAssertEqual(CameraChromeLayout.bottomSurfaceOrder, [.snackbar, .scaleRow, .panel])
+        XCTAssertFalse(CameraChromeLayout.bottomBarDrawsCatalogue)
+        XCTAssertTrue(CameraChromeLayout.retiredIdentifiers.contains("camera.poseStrip"))
+    }
+
+    // MARK: - Persistence of the retired strip state
+
+    /// Rows written while the strip existed still decode: `isPickerExpanded` is a dead field the codec
+    /// keeps reading, so an old snapshot cannot crash or blank the camera's settings.
+    func testARowFromTheStripEraStillDecodes() throws {
+        let old = try XCTUnwrap(
+            CameraSettings.decode(#"{"guideOpacity":0.8,"isPickerExpanded":false,"zoom":2}"#)
         )
-        XCTAssertTrue(
-            CameraChromeLayout.showsStripToggle(showsPicker: true),
-            "the collapsed state must keep the control that re-opens the strip"
+        XCTAssertEqual(old.guideOpacity, 0.8, accuracy: 0.001)
+        XCTAssertEqual(old.zoom, .two)
+        XCTAssertFalse(old.isPickerExpanded, "the dead field is preserved, not crashed on")
+        XCTAssertTrue(CameraSettings().isPickerExpanded, "and a fresh row keeps the codec's default")
+    }
+
+    /// A stored row that carries the dead field does not stop the camera from restoring what still
+    /// matters — the strip state is simply not part of the screen any more.
+    func testAStripEraRowStillRestoresTheSettingsThatMatter() async throws {
+        let store = InMemoryCameraSettingsStore(
+            seed: CameraSettings(guideOpacity: 0.25, isPickerExpanded: false)
         )
-        XCTAssertFalse(CameraChromeLayout.showsStripToggle(showsPicker: false))
-
-        XCTAssertEqual(CameraChromeLayout.stripToggleGlyph(isPickerExpanded: false), "chevron.up")
-        XCTAssertEqual(CameraChromeLayout.stripToggleGlyph(isPickerExpanded: true), "chevron.down")
-        XCTAssertEqual(CameraChromeLayout.stripToggleLabel(isPickerExpanded: false), "Show pose picker")
-        XCTAssertEqual(CameraChromeLayout.stripToggleLabel(isPickerExpanded: true), "Hide pose picker")
-    }
-
-    // MARK: - F12: persistence
-
-    func testCollapsedStateRoundTripsAndDefaultsToExpanded() throws {
-        XCTAssertTrue(CameraSettings().isPickerExpanded, "default = expanded")
-
-        var collapsed = CameraSettings()
-        collapsed.isPickerExpanded = false
-        let decoded = try XCTUnwrap(CameraSettings.decode(try collapsed.encodedJSON()))
-        XCTAssertFalse(decoded.isPickerExpanded)
-
-        // A row written before the collapsed state existed reads back as the state that shows more.
-        let legacy = try XCTUnwrap(CameraSettings.decode(#"{"guideOpacity":0.8}"#))
-        XCTAssertTrue(legacy.isPickerExpanded)
-    }
-
-    func testCollapsedStateSurvivesARelaunchAndIsWrittenBack() async throws {
-        let store = InMemoryCameraSettingsStore(seed: CameraSettings(isPickerExpanded: false))
         let model = CameraViewModel(settingsStore: store, saveDebounceNanoseconds: 1_000_000)
 
         await waitUntil { model.initialMergeDone }
-        XCTAssertFalse(model.isPickerExpanded, "the stored collapsed state comes back")
 
-        model.coordinator.onPermissionResult(.authorized)
-        model.expandPickerStrip()
-        await waitUntil { await store.saved.last?.isPickerExpanded == true }
-        let saved = await store.saved
-        XCTAssertEqual(saved.last?.isPickerExpanded, true, "an expand is persisted like every other setting")
-    }
-
-    // MARK: - Strip content per picker state
-
-    func testStripContentFollowsEveryPickerState() {
-        let armsUp = pose("p1", name: "Arms up")
-
-        XCTAssertEqual(CameraStripContent.resolve(from: .idle, filtered: []), .loading)
-        XCTAssertEqual(CameraStripContent.resolve(from: .loading, filtered: []), .loading)
-        XCTAssertEqual(CameraStripContent.resolve(from: .failed("boom"), filtered: []), .failed)
-        XCTAssertEqual(CameraStripContent.resolve(from: .empty, filtered: []), .empty)
-        XCTAssertEqual(CameraStripContent.resolve(from: .loaded([]), filtered: []), .empty)
-        XCTAssertEqual(
-            CameraStripContent.resolve(from: .loaded([armsUp]), filtered: []),
-            .empty,
-            "a filter that matches nothing is the empty strip, never a blank row"
-        )
-        XCTAssertEqual(
-            CameraStripContent.resolve(from: .loaded([armsUp]), filtered: [armsUp]),
-            .poses([armsUp])
-        )
+        XCTAssertEqual(model.guideOpacity, 0.25, accuracy: 0.001)
+        XCTAssertFalse(model.showPosePicker, "a restored camera still opens on the camera, not on the sheet")
     }
 
     // MARK: - F4: which shared state panel
@@ -1364,97 +1466,50 @@ final class CameraChromeTests: XCTestCase {
         XCTAssertNil(CameraStatePanel.picker(tone: .warning, isNoMatch: false, term: "", isOffline: false))
     }
 
-    // MARK: - F12: what the bottom surface draws
+    // MARK: - What the bottom surface draws
 
     private static let bothSchemes: [ColorScheme] = [.dark, .light]
 
-    func testExpandedDrawsTheStripAndCollapsedHidesItBehindOneControl() throws {
-        let poses = [pose("p1", name: "Arms up"), pose("p2", name: "City walk"), pose("p3", name: "Café lean")]
+    /// The strip is gone: the bar draws the rail and one Poses chip, and it does not grow a catalogue row
+    /// when a picker is available. Both appearances are pinned, so the assertion cannot pass on one
+    /// scheme's token values alone.
+    func testTheBarDrawsOnePosesChipAndNoCatalogueRow() throws {
         let size = CGSize(width: 393, height: 470)
 
         for scheme in Self.bothSchemes {
             let label = scheme == .dark ? "dark" : "light"
-            let expanded = chromeBitmap(
-                bar(poses: poses, selectedPoseID: "p1", isPickerExpanded: true),
-                scheme: scheme,
-                size: size
-            )
-            let collapsed = chromeBitmap(
-                bar(poses: poses, selectedPoseID: "p1", isPickerExpanded: false),
-                scheme: scheme,
-                size: size
-            )
+            let withPicker = chromeBitmap(bar(showsPicker: true), scheme: scheme, size: size)
+            let noPicker = chromeBitmap(bar(showsPicker: false), scheme: scheme, size: size)
 
+            // No strip row: the rail panel is exactly as tall with a picker as without one. Before, the
+            // expanded state added the whole strip (cards + captions) to the panel.
             let panel = barPanelHex(scheme)
-            let expandedPanel = panelRows(expanded, hex: panel)
-            let collapsedPanel = panelRows(collapsed, hex: panel)
-            XCTAssertGreaterThan(
-                expandedPanel.count, collapsedPanel.count + 100,
-                "\(label): expanded draws the strip above the control bar, collapsed does not"
-            )
-            let expandedTop = try XCTUnwrap(expandedPanel.min(), "\(label): expanded paints no panel")
-            let collapsedTop = try XCTUnwrap(collapsedPanel.min(), "\(label): collapsed paints no panel")
-            XCTAssertTrue(
-                expanded.differs(from: collapsed, inRows: band(expandedTop, expandedTop + 100, in: expanded)),
-                "\(label): the strip band must not be identical in the two states"
+            XCTAssertEqual(
+                panelRows(withPicker, hex: panel).count,
+                panelRows(noPicker, hex: panel).count,
+                "\(label): a picker on screen must not add a catalogue row to the bar"
             )
 
-            // The strip's thumbnails are flat controlFill tiles; at least two of them are on that row,
-            // which is a strip. The collapsed state's one control is asserted just below.
-            // Collapsed keeps its way back: one hugging control (the "Poses" chip) sits directly
-            // under the panel's top edge, while expanded draws a row of strip cards there. Measured as
-            // filled pixels on one row: a card row paints ~3 fill widths, a chip row one.
+            // The Poses chip is the one wide controlFill pill on the scale row; the rail's controls are
+            // 48 pt squares, so a run this long can only be the chip.
             let controlFill = hex(APColorTokens.controlFill, scheme)
-            let collapsedFill = fillPixels(collapsed, y: collapsedTop + 34, hex: controlFill)
-            let expandedFill = fillPixels(expanded, y: expandedTop + 34, hex: controlFill)
-            XCTAssertGreaterThanOrEqual(
-                collapsedFill, 40,
-                "\(label): the collapsed bar keeps a control that re-opens the strip (\(collapsedFill) px)"
+            XCTAssertFalse(
+                filledRows(withPicker, hex: controlFill, minRun: 70).isEmpty,
+                "\(label): the Poses control is drawn on the scale row"
             )
-            XCTAssertGreaterThan(
-                expandedFill, collapsedFill + 100,
-                "\(label): expanded draws the strip's cards there (\(expandedFill) vs \(collapsedFill) px)"
+            XCTAssertTrue(
+                filledRows(noPicker, hex: controlFill, minRun: 70).isEmpty,
+                "\(label): a camera that cannot place a pose draws no Poses control"
             )
 
-            // The shutter is still on screen in both states.
+            // And the shutter is reachable in both states.
             let shutter = hex(APColorTokens.accent, scheme)
             XCTAssertFalse(
-                filledRows(collapsed, hex: shutter, minRun: 40).isEmpty,
-                "\(label): collapsed keeps the shutter"
+                filledRows(withPicker, hex: shutter, minRun: 40).isEmpty,
+                "\(label): the shutter stays reachable for QA"
             )
             XCTAssertFalse(
-                filledRows(expanded, hex: shutter, minRun: 40).isEmpty,
-                "\(label): expanded keeps the shutter"
-            )
-        }
-    }
-
-    func testNoPermissionHidesTheStripAndItsControl() {
-        let poses = [pose("p1", name: "Arms up")]
-        let size = CGSize(width: 393, height: 470)
-
-        for scheme in Self.bothSchemes {
-            let label = scheme == .dark ? "dark" : "light"
-            let noPicker = chromeBitmap(
-                bar(poses: poses, isPickerExpanded: true, showsPicker: false),
-                scheme: scheme,
-                size: size
-            )
-            let withPicker = chromeBitmap(
-                bar(poses: poses, isPickerExpanded: true, showsPicker: true),
-                scheme: scheme,
-                size: size
-            )
-
-            // The panel is shorter by the whole strip + chip, so nothing of them was drawn.
-            let panel = barPanelHex(scheme)
-            XCTAssertGreaterThan(
-                panelRows(withPicker, hex: panel).count,
-                panelRows(noPicker, hex: panel).count + 100,
-                "\(label): a camera with no permission has no strip row"
-            )
-            XCTAssertFalse(
-                filledRows(noPicker, hex: hex(APColorTokens.accent, scheme), minRun: 40).isEmpty,
+                filledRows(noPicker, hex: shutter, minRun: 40).isEmpty,
                 "\(label): the shutter stays reachable for QA"
             )
         }
@@ -1474,10 +1529,9 @@ final class CameraChromeTests: XCTestCase {
             "the snackbar is the first child of the bottom surface, so it can never land mid-screen"
         )
 
-        let poses = [pose("p1", name: "Arms up")]
         let size = CGSize(width: 393, height: 540)
-        let withStatus = chromeBitmap(bar(poses: poses, status: "Photo saved"), scheme: .dark, size: size)
-        let withoutStatus = chromeBitmap(bar(poses: poses, status: nil), scheme: .dark, size: size)
+        let withStatus = chromeBitmap(bar(status: "Photo saved"), scheme: .dark, size: size)
+        let withoutStatus = chromeBitmap(bar(status: nil), scheme: .dark, size: size)
 
         XCTAssertFalse(
             filledRows(withStatus, hex: hex(APColorTokens.surface, .dark), minRun: 300).isEmpty,
@@ -1533,9 +1587,7 @@ final class CameraChromeTests: XCTestCase {
     // MARK: - Helpers
 
     private func bar(
-        poses: [NativePose],
         selectedPoseID: String? = nil,
-        isPickerExpanded: Bool = true,
         showsPicker: Bool = true,
         status: String? = nil
     ) -> CameraBottomBar {
@@ -1547,16 +1599,11 @@ final class CameraChromeTests: XCTestCase {
             status: status,
             statusTone: .success,
             timerCountdown: nil,
-            strip: .poses(poses),
             selectedPoseID: selectedPoseID,
-            isPickerExpanded: isPickerExpanded,
             showsPicker: showsPicker,
             zoomPresets: [.one, .two],
             activeZoomPreset: .one,
-            onToggleStrip: {},
-            onSelectPose: { _ in },
-            onBrowse: {},
-            onRetryStrip: {},
+            onOpenPosePicker: {},
             onZoomPreset: { _ in },
             onOpenGallery: {},
             onCapture: {},
@@ -2074,7 +2121,7 @@ final class CameraGuideScaleModelTests: XCTestCase {
     }
 }
 
-// MARK: - Camera chrome contracts (one host per control · a strip entry on screen · addressable option rows · a popover inside its safe area)
+// MARK: - Camera chrome contracts (one host per control · one picker entry · addressable option rows · a popover inside its safe area)
 
 /// The camera chrome's own contracts, kept next to the screens they describe.
 ///
@@ -2085,46 +2132,139 @@ final class CameraGuideScaleModelTests: XCTestCase {
 final class CameraChromeContractTests: XCTestCase {
     // MARK: One Poses control
 
-    /// The Poses control belongs to the scale row only. It used to be drawn in the bottom panel as
-    /// well, so the collapsed camera offered two identical buttons and VoiceOver read the strip
-    /// toggle twice.
+    /// The Poses control belongs to the scale row only, and it is drawn there exactly once. It used to
+    /// be drawn in the bottom panel as well, so the camera offered two identical buttons and VoiceOver
+    /// read the toggle twice.
     func testTheChromeDrawsThePosesControlInOnePlace() throws {
         let source = try cameraFeatureSource()
         let panel = try viewBody(named: "panel", in: source)
         let scaleRow = try viewBody(named: "scaleRow", in: source)
 
         XCTAssertFalse(
-            panel.contains("stripToggle"),
-            "the panel no longer hosts the Poses control: the scale row is its one home"
+            panel.contains("posesControl"),
+            "the panel does not host the Poses control: the scale row is its one home"
         )
         XCTAssertEqual(
-            scaleRow.components(separatedBy: "stripToggle").count - 1, 1,
+            scaleRow.components(separatedBy: "posesControl").count - 1, 1,
             "the scale row draws exactly one Poses control"
         )
         XCTAssertEqual(
             source.components(separatedBy: .newlines)
-                .filter { $0.trimmingCharacters(in: .whitespaces) == "stripToggle" }
+                .filter { $0.trimmingCharacters(in: .whitespaces) == "posesControl" }
                 .count,
             1,
             "one render site for the control: the declaration is not a second one"
         )
     }
 
-    // MARK: The strip's way into the full picker
+    // MARK: The picker's one entry
 
-    /// `camera.choosePose` is the only entry to the picker sheet (search + All/Saved scopes). As the
-    /// strip's *last* card it sat outside the viewport as soon as the catalogue filled the row, and
-    /// neither a tap nor VoiceOver could reach it. It leads the strip instead.
-    func testTheStripLeadsWithTheBrowseEntry() throws {
+    /// The inline strip is gone, so the Poses control is the sheet's only entry — and it opens the sheet
+    /// directly. There is no strip left for the control to expand, and no second, weaker list of poses in
+    /// the bottom bar that could drift from the sheet's.
+    func testThePosesControlOpensTheSheetAndTheStripIsGone() throws {
         let source = try cameraFeatureSource()
-        let strip = try viewBody(named: "stripView", in: source)
+        let scaleRow = try viewBody(named: "scaleRow", in: source)
+        let panel = try viewBody(named: "panel", in: source)
+        let control = try viewBody(named: "posesControl", in: source)
 
-        let browse = try XCTUnwrap(strip.range(of: "browseAllCard")?.lowerBound, "the strip draws the Browse card")
-        let cards = try XCTUnwrap(strip.range(of: "ForEach(poses)")?.lowerBound, "the strip draws the pose cards")
-        XCTAssertLessThan(
-            browse, cards,
-            "Browse comes first: a trailing card scrolls out of the viewport and takes the sheet with it"
+        XCTAssertTrue(scaleRow.contains("posesControl"), "the scale row hosts the control")
+        XCTAssertTrue(control.contains("onOpenPosePicker"), "and the control opens the picker sheet")
+        XCTAssertFalse(source.contains("stripView"), "no strip view is declared")
+        XCTAssertFalse(source.contains("CameraStripContent"), "no strip content mapping is declared")
+        XCTAssertFalse(source.contains("togglePickerStrip"), "there is no collapse/expand action to call")
+        XCTAssertFalse(panel.contains("poses"), "the panel draws the rail only, no catalogue row")
+    }
+
+    // MARK: The sheet's own handles
+
+    /// The sheet's surface and each pose row carry their own id, so a flow can assert "the sheet is open"
+    /// and pick a *specific* pose. They live on the panel (a real container) and on the row buttons, never
+    /// on the sheet's `GeometryReader` root, which is not an accessibility element — an id there collapses
+    /// the subtree it wraps and takes the search field and header out of the tree.
+    func testTheSheetAndItsRowsCarryTheirOwnIdentifiers() throws {
+        let source = try cameraFeatureSource()
+        let grid = try viewBody(named: "poseGrid", in: source)
+
+        // The sheet's panel is the container that carries the modal trait; the id belongs on it, so the
+        // two declarations are adjacent (`viewBody(named: "panel")` cannot be used here: the bottom bar
+        // has its own `panel`).
+        XCTAssertTrue(
+            source.contains(
+                ".accessibilityAddTraits(.isModal)\n        .accessibilityIdentifier(PosePickerLayout.sheetIdentifier)"
+            ),
+            "the sheet panel is the element that owns the sheet id"
         )
+        XCTAssertTrue(
+            grid.contains("PosePickerLayout.rowIdentifier(poseID: item.pose.id)"),
+            "each grid row is addressable by its pose id"
+        )
+        XCTAssertTrue(
+            grid.contains("Use \\(item.pose.name) pose"),
+            "and the row keeps the label the flows already tap"
+        )
+        XCTAssertEqual(
+            source.components(separatedBy: "PosePickerLayout.sheetIdentifier").count - 1,
+            1,
+            "one place owns the sheet id: the panel, not the GeometryReader root"
+        )
+    }
+
+    // MARK: Container ids never swallow their children
+
+    /// SwiftUI hands a container's `accessibilityIdentifier` down to the elements inside it, so an id put
+    /// on a row without `.accessibilityElement(children: .contain)` *overwrites* every child's own id. The
+    /// scope chips were exactly that: the row's `posePicker.scope` replaced `posePicker.scope.all|saved`, so
+    /// the chips rendered but no flow could address them. This pins the declaration order — container
+    /// first, id second — for every sheet row that carries an id over interactive children.
+    func testTheSheetRowsDeclareContainBeforeTheirContainerId() throws {
+        let source = try cameraFeatureSource()
+        try assertContainPrecedesContainerId(
+            after: "var scopeChips: some View {",
+            identifier: ".accessibilityIdentifier(\"posePicker.scope\")",
+            in: source
+        )
+        try assertContainPrecedesContainerId(
+            after: "var poseGrid: some View {",
+            identifier: ".accessibilityIdentifier(PosePickerLayout.gridIdentifier)",
+            in: source
+        )
+        try assertContainPrecedesContainerId(
+            after: "private func pickerPanel(",
+            identifier: ".accessibilityIdentifier(PosePickerLayout.stateIdentifier)",
+            in: source
+        )
+    }
+
+    /// `contain` must be declared before the id in a view body, or the id is inherited by every child.
+    private func assertContainPrecedesContainerId(
+        after marker: String,
+        identifier: String,
+        in source: String,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) throws {
+        let start = try XCTUnwrap(
+            source.range(of: marker)?.upperBound,
+            "no declaration for \(marker)",
+            file: file,
+            line: line
+        )
+        let body = source[start...]
+        let contain = try XCTUnwrap(
+            body.range(of: "children: .contain")?.lowerBound,
+            "\(marker) must declare .accessibilityElement(children: .contain) before its id, "
+                + "otherwise the id overwrites its children's ids",
+            file: file,
+            line: line
+        )
+        let id = try XCTUnwrap(
+            body.range(of: identifier)?.lowerBound,
+            "\(marker) carries \(identifier)",
+            file: file,
+            line: line
+        )
+        XCTAssertLessThan(contain, id, "\(marker): container first, id second", file: file, line: line)
     }
 
     // MARK: Timer / Ratio option ids
@@ -2166,8 +2306,7 @@ final class CameraChromeContractTests: XCTestCase {
         )
         let model = CameraViewModel()
         model.coordinator.onPermissionResult(.authorized)
-        // The chrome is not the subject: the popover gets the screen, the strip stays collapsed.
-        model.collapsePickerStrip()
+        // The chrome is not the subject: the popover gets the screen, and no sheet is open over it.
         model.openCameraTools()
 
         let screen = CameraScreen(
