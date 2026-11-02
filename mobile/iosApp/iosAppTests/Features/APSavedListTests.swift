@@ -612,7 +612,236 @@ final class APSavedListTests: XCTestCase {
         )
     }
 
+    // MARK: - A tap that is waiting on the server (pending unsave)
+
+    /// The tile's one rule: which state it is in, whether it takes a tap, and what it says.
+    ///
+    /// Mutation target: make `state(isUnsaving:…)` ignore `isUnsaving` and the in-flight case goes red;
+    /// drop the `isAvailableOffline` term and the offline row offers a request it cannot send.
+    func testUnsaveTileStateRule() {
+        XCTAssertEqual(
+            APSavedUnsaveTileRule.state(isUnsaving: false, isEnabled: true, isAvailableOffline: true),
+            .idle
+        )
+        XCTAssertEqual(
+            APSavedUnsaveTileRule.state(isUnsaving: true, isEnabled: true, isAvailableOffline: true),
+            .inFlight,
+            "the request the person already sent is the state that has to be shown"
+        )
+        XCTAssertEqual(
+            APSavedUnsaveTileRule.state(isUnsaving: true, isEnabled: false, isAvailableOffline: false),
+            .inFlight,
+            "in flight outranks the row's other flags: a sent tap never silently disappears"
+        )
+        XCTAssertEqual(
+            APSavedUnsaveTileRule.state(isUnsaving: false, isEnabled: false, isAvailableOffline: true),
+            .unavailable,
+            "a pose the server reported gone offers nothing"
+        )
+        XCTAssertEqual(
+            APSavedUnsaveTileRule.state(isUnsaving: false, isEnabled: true, isAvailableOffline: false),
+            .unavailable,
+            "so does a pose the device cannot send for offline"
+        )
+
+        // The tap gate: only the resting tile takes a tap, so the ignored second tap is a state, not a
+        // no-op the user cannot explain.
+        XCTAssertTrue(APSavedUnsaveTileRule.acceptsTap(.idle))
+        XCTAssertFalse(APSavedUnsaveTileRule.acceptsTap(.inFlight))
+        XCTAssertFalse(APSavedUnsaveTileRule.acceptsTap(.unavailable))
+
+        // And the same state is what assistive technology hears, next to the disabled control.
+        XCTAssertEqual(APSavedUnsaveTileRule.accessibilityValue(for: .inFlight), "In progress")
+        XCTAssertEqual(APSavedUnsaveTileRule.accessibilityValue(for: .idle), "")
+        XCTAssertEqual(APSavedUnsaveTileRule.accessibilityValue(for: .unavailable), "")
+        XCTAssertEqual(APSavedStateCopy.unsaveInFlight, "In progress")
+
+        // Reduce Motion keeps the tile still: the fill, the disabled control and the value carry it.
+        XCTAssertTrue(APSavedUnsaveTileRule.showsSpinner(.inFlight, reduceMotion: false))
+        XCTAssertFalse(APSavedUnsaveTileRule.showsSpinner(.inFlight, reduceMotion: true))
+        XCTAssertFalse(APSavedUnsaveTileRule.showsSpinner(.idle, reduceMotion: false))
+    }
+
+    /// The whole transition the user sees: the row is still there and its tile is busy while the
+    /// request is out, and only the server's confirmation removes it.
+    ///
+    /// Mutation target: paint the in-flight tile with `selectedBackground` (the old behaviour) and the
+    /// pixel assertions go red while everything else stays green — which is exactly the bug.
+    @MainActor func testUnsavingShowsThePendingTileThenRemovesTheRow() async {
+        let rows = [savedPose("a")]
+        let service = HeldBookmarkService()
+        let model = PosesViewModel(service: SavedListPoseService(rows: rows), bookmarkService: service)
+        model.filter = .saved
+        model.state = .loaded(rows)
+        model.setPagingForTesting(hasMore: false)
+
+        // A navigation container on purpose, as in the other list tests: a link outside one draws
+        // disabled, which would wash out the accent fill this measures.
+        let probe = APViewProbe(
+            NavigationView { APSavedList(poses: rows, model: model) },
+            size: CGSize(width: 393, height: 300)
+        )
+        defer { probe.tearDown() }
+        let tileColumn = (393 - 80)..<(393 - 20)
+
+        let idle = probe.capture()
+        XCTAssertEqual(
+            bands(of: 0xFAE0E7, in: idle, xRange: tileColumn).filter { $0.height >= 20 }.count, 1,
+            "a resting row offers the accent unsave tile"
+        )
+
+        // One tap: the request leaves, and the model has not touched the list.
+        let request = Task { await model.toggleSaved(for: rows[0]) }
+        await service.waitUntilUnsaving()
+        await waitUntil("the bookmark claim to be published") { model.isBookmarkInFlight("a") }
+
+        XCTAssertEqual(
+            APSavedUnsaveTileRule.state(
+                isUnsaving: model.isBookmarkInFlight("a"),
+                isEnabled: model.canSave(rows[0]) && model.bookmarkService != nil,
+                isAvailableOffline: true
+            ),
+            .inFlight,
+            "while the request is out the tile is the in-flight one, not the enabled-looking one"
+        )
+        XCTAssertEqual(
+            model.state.rows.map(\.id), ["a"],
+            "nothing leaves the collection before the server confirms it"
+        )
+
+        let pending = probe.render(NavigationView { APSavedList(poses: rows, model: model) })
+        XCTAssertTrue(
+            bands(of: 0xFAE0E7, in: pending, xRange: tileColumn).filter { $0.height >= 20 }.isEmpty,
+            "the pending tile is no longer painted as the enabled one: the tap is visibly taken"
+        )
+        let pendingTile = inkedBands(in: pending, xRange: tileColumn).filter { $0.height >= 20 }
+        XCTAssertEqual(pendingTile.count, 1, "the pending tile is still drawn, in the muted fill")
+        XCTAssertEqual(
+            Double(pendingTile.first?.height ?? 0), 44, accuracy: 2,
+            "the pending tile keeps the 44 pt hit target"
+        )
+
+        // The server answers: the claim is released and the row goes.
+        service.releaseUnsaving()
+        let outcome = await request.value
+        XCTAssertEqual(outcome, .saved(false))
+        XCTAssertFalse(model.isBookmarkInFlight("a"), "a settled request releases its claim")
+        XCTAssertTrue(model.state.rows.isEmpty, "the confirmed removal takes the row with it")
+
+        let removed = probe.render(NavigationView { APSavedList(poses: model.state.rows, model: model) })
+        XCTAssertTrue(
+            inkedBands(in: removed, xRange: tileColumn).filter { $0.height >= 20 }.isEmpty,
+            "no row, no tile"
+        )
+    }
+
+    /// A failed unsave puts the tile back to the resting one and leaves the existing failure copy in
+    /// `bookmarkError` — the same snackbar it shows today, now with a state that returned to idle.
+    @MainActor func testFailedUnsaveRevertsTheTileAndKeepsTheFailureCopy() async {
+        let rows = [savedPose("a")]
+        let service = HeldBookmarkService(unsaveFailure: URLError(.notConnectedToInternet))
+        let model = PosesViewModel(service: SavedListPoseService(rows: rows), bookmarkService: service)
+        model.filter = .saved
+        model.state = .loaded(rows)
+        model.setPagingForTesting(hasMore: false)
+
+        let probe = APViewProbe(
+            NavigationView { APSavedList(poses: rows, model: model) },
+            size: CGSize(width: 393, height: 300)
+        )
+        defer { probe.tearDown() }
+        let tileColumn = (393 - 80)..<(393 - 20)
+
+        let request = Task { await model.toggleSaved(for: rows[0]) }
+        await service.waitUntilUnsaving()
+        await waitUntil("the bookmark claim to be published") { model.isBookmarkInFlight("a") }
+        XCTAssertTrue(model.isBookmarkInFlight("a"))
+
+        service.releaseUnsaving()
+        let outcome = await request.value
+
+        XCTAssertEqual(outcome, .failed(SavedMutationCopy.offline))
+        XCTAssertFalse(model.isBookmarkInFlight("a"), "a failed request releases its claim")
+        XCTAssertEqual(
+            model.bookmarkError, SavedMutationCopy.offline,
+            "the user still gets the real reason, from the same place as today"
+        )
+        XCTAssertEqual(model.state.rows.map(\.id), ["a"], "a failed unsave leaves the row in place")
+        XCTAssertEqual(
+            APSavedUnsaveTileRule.state(
+                isUnsaving: model.isBookmarkInFlight("a"),
+                isEnabled: model.canSave(rows[0]) && model.bookmarkService != nil,
+                isAvailableOffline: true
+            ),
+            .idle,
+            "the tile reverts with the collection"
+        )
+
+        let reverted = probe.render(NavigationView { APSavedList(poses: rows, model: model) })
+        XCTAssertEqual(
+            bands(of: 0xFAE0E7, in: reverted, xRange: tileColumn).filter { $0.height >= 20 }.count, 1,
+            "after the failure the tile is the accent one again, ready for the retry"
+        )
+    }
+
+    /// Source-level, like the ids pin above: a hosted SwiftUI view exposes no accessibility tree, so the
+    /// wiring that turns the rule into pixels and an announced value is what is checked.
+    ///
+    /// Mutation target: drop `.accessibilityValue(...)`, drop the rule from `.disabled(...)`, or screen
+    /// the spinner on something other than `showsSpinner` — each turns one assertion below red.
+    func testUnsaveTileWiresThePendingStateToItsPixelsAndAccessibility() throws {
+        let saved = try savedListSource()
+        let tile = try XCTUnwrap(Self.braceMatchedBlock("struct APSavedUnsaveTile", in: saved))
+
+        XCTAssertTrue(tile.contains("APSavedUnsaveTileRule.state("), "the tile has one source of truth")
+        XCTAssertTrue(
+            tile.contains(".disabled(!APSavedUnsaveTileRule.acceptsTap(state))"),
+            "a second tap while the request is out is refused by the control itself"
+        )
+        XCTAssertTrue(
+            tile.contains(".accessibilityValue(APSavedUnsaveTileRule.accessibilityValue(for: state))"),
+            "the pending state is announced, not only painted"
+        )
+        XCTAssertTrue(
+            tile.contains("APSavedUnsaveTileRule.showsSpinner(state, reduceMotion: reduceMotion)"),
+            "the only motion is the spinner, and Reduce Motion removes it"
+        )
+        XCTAssertTrue(tile.contains("ProgressView()"), "the pending tile shows it is working")
+        XCTAssertTrue(tile.contains("AP.Color.controlFill"), "the muted state is a token, not a literal")
+        XCTAssertTrue(tile.contains(".apIdentifier(identifier)"), "the flows' id is untouched")
+        XCTAssertTrue(
+            tile.contains(".accessibilityLabel(\"Remove from saved\")"),
+            "so is the accessible name the flows read by text"
+        )
+        XCTAssertFalse(tile.contains("Color(hex"), "no hard-coded colour in the tile")
+        XCTAssertFalse(tile.contains("stroke"), "the tile takes no resting border")
+
+        // The row hands the tile the model's claim, which is what makes the state real.
+        let list = try XCTUnwrap(
+            Self.braceMatchedBlock("private func row(for pose: NativePose, index: Int)", in: saved)
+        )
+        XCTAssertTrue(
+            list.contains("isUnsaving: model.isBookmarkInFlight(pose.id)"),
+            "the row's pending state is the model's in-flight claim, not a local guess"
+        )
+    }
+
     // MARK: - Fixtures and helpers
+
+    /// Pumps the main actor until `condition` holds: the model publishes the claim, so a test waits on
+    /// that state instead of on a guessed sleep.
+    @MainActor private func waitUntil(
+        _ what: String,
+        timeout: TimeInterval = 3,
+        _ condition: () -> Bool
+    ) async {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if condition() { return }
+            try? await Task.sleep(nanoseconds: 2_000_000)
+        }
+        XCTFail("timed out waiting for \(what)")
+    }
 
     /// Reads the Saved list's own source: the composition a tap depends on is not observable at runtime
     /// in this test host.
@@ -904,6 +1133,75 @@ private final class UndoBookmarkService: PoseBookmarkServing, @unchecked Sendabl
             return _unsaveError
         }
         if let error { throw error }
+    }
+
+    /// iOS 15 target: `NSLock.withLock` is 16+, so the tests do their own.
+    private func locked<T>(_ body: () -> T) -> T {
+        lock.lock()
+        defer { lock.unlock() }
+        return body()
+    }
+}
+
+/// A bookmark service whose unsave stays open until the test releases it. The only honest way to look
+/// at the screen while the request is genuinely in flight — a fast fake would hide the very state this
+/// behaviour is about.
+private final class HeldBookmarkService: PoseBookmarkServing, @unchecked Sendable {
+    private let lock = NSLock()
+    private let unsaveFailure: Error?
+    private var hasStarted = false
+    private var startWaiters: [CheckedContinuation<Void, Never>] = []
+    private var releaseWaiter: CheckedContinuation<Void, Never>?
+    private var isReleased = false
+
+    init(unsaveFailure: Error? = nil) { self.unsaveFailure = unsaveFailure }
+
+    func savePose(poseId: String) async throws {}
+
+    func unsavePose(poseId: String) async throws {
+        let waiters: [CheckedContinuation<Void, Never>] = locked {
+            hasStarted = true
+            let waiters = startWaiters
+            startWaiters = []
+            return waiters
+        }
+        waiters.forEach { $0.resume() }
+
+        await withCheckedContinuation { (pending: CheckedContinuation<Void, Never>) in
+            let alreadyReleased: Bool = locked {
+                guard !isReleased else { return true }
+                releaseWaiter = pending
+                return false
+            }
+            if alreadyReleased { pending.resume() }
+        }
+        if let unsaveFailure { throw unsaveFailure }
+    }
+
+    /// Waits until the model actually called the service, so the assertions run against a real request
+    /// and not against a race.
+    func waitUntilUnsaving() async {
+        let alreadyStarted: Bool = locked { hasStarted }
+        guard !alreadyStarted else { return }
+        await withCheckedContinuation { (pending: CheckedContinuation<Void, Never>) in
+            let alreadyStarted: Bool = locked {
+                guard !hasStarted else { return true }
+                startWaiters.append(pending)
+                return false
+            }
+            if alreadyStarted { pending.resume() }
+        }
+    }
+
+    /// Lets the held request answer.
+    func releaseUnsaving() {
+        let pending: CheckedContinuation<Void, Never>? = locked {
+            isReleased = true
+            let pending = releaseWaiter
+            releaseWaiter = nil
+            return pending
+        }
+        pending?.resume()
     }
 
     /// iOS 15 target: `NSLock.withLock` is 16+, so the tests do their own.
