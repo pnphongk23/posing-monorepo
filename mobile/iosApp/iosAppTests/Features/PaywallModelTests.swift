@@ -213,12 +213,11 @@ final class PaywallModelTests: XCTestCase {
         // (7.77 × 12 − 59.99) / 93.24 = 35.67 % → 36 %.
         XCTAssertEqual(cards.first?.detail, "$5.00 per month, billed $59.99 yearly")
         XCTAssertEqual(cards.first?.badge, "Save 36%")
-        XCTAssertEqual(model.purchaseSummary, "Yearly plan · $59.99 billed today")
-        XCTAssertEqual(cards.last?.detail, "Billed monthly")
+        XCTAssertEqual(cards.last?.detail, "Billed $7.77 monthly")
         XCTAssertNil(cards.last?.badge, "only the annual card carries a saving claim")
     }
 
-    func testSelectingMonthlyChangesTheSelectedPlanAndSummary() async {
+    func testSelectingMonthlyMovesTheSelection() async {
         let gateway = FakePurchaseGateway(nextLoad: readyOffering)
         let model = makeModel(gateway: gateway)
         model.start()
@@ -227,9 +226,9 @@ final class PaywallModelTests: XCTestCase {
         model.select(monthly.identifier)
         XCTAssertEqual(model.ctaTitle, PaywallPlanCopy.purchaseCTA)
         XCTAssertEqual(
-            model.purchaseSummary,
-            "Monthly plan · $5.99 billed today",
-            "the helper line follows the selection and prints the store's price"
+            model.planPresentations.first { $0.isSelected }?.detail,
+            "Billed $5.99 monthly",
+            "the selected card states the store's amount and its period"
         )
         XCTAssertEqual(
             model.planPresentations.first { $0.isSelected }?.title,
@@ -796,7 +795,11 @@ final class PaywallPlanCopyTests: XCTestCase {
     func testAnnualCardCopyIsDerivedFromTheRealPrices() {
         XCTAssertEqual(PaywallPlanCopy.savingsBadge(annual: annual, monthly: monthly), "Save 44%")
         XCTAssertEqual(PaywallPlanCopy.annualDetail(for: annual), "$3.33 per month, billed $39.99 yearly")
-        XCTAssertEqual(PaywallPlanCopy.detail(for: monthly), "Billed monthly")
+        XCTAssertEqual(
+            PaywallPlanCopy.detail(for: monthly),
+            "Billed $5.99 monthly",
+            "both cards carry the billed amount and its period (App Store 3.1.2)"
+        )
     }
 
     /// A different offering produces different copy: nothing is typed in.
@@ -900,8 +903,8 @@ final class PaywallStateCopyTests: XCTestCase {
         XCTAssertTrue(model.isCTAEnabled, "the primary action opens the sign-in sheet")
         XCTAssertEqual(model.ctaHelper, "Sign in first so Premium follows you.")
         XCTAssertEqual(model.planPresentations.map(\.price), ["$39.99", "$5.99"])
-        XCTAssertEqual(model.planPresentations.first?.badge, "Save 44%")
-        XCTAssertEqual(model.purchaseSummary, "Yearly plan · $39.99 billed today")
+        XCTAssertEqual(model.planPresentations.map(\.badge), ["Save 44%", nil])
+        XCTAssertEqual(model.planPresentations.map(\.detail).last, "Billed $5.99 monthly")
         XCTAssertEqual(model.tapPrimary(), .signIn)
     }
 

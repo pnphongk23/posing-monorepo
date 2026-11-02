@@ -199,7 +199,12 @@ enum PaywallMoney {
 enum PaywallPlanCopy {
     static let benefit = "Capture with the full pose camera"
     static let autoRenewCaption = "Renews automatically until you cancel in Apple ID settings."
-    static let monthlyDetail = "Billed monthly"
+    /// Monthly card's billing statement, store-derived: App Store 3.1.2 wants the amount *and* the
+    /// period on the card, exactly as the Yearly card's "… per month, billed {price} yearly" does.
+    /// Placeholders (no price readable yet) carry their own "Price unavailable" detail instead.
+    static func monthlyDetail(for product: PurchaseProduct) -> String {
+        "Billed \(product.localizedPrice) monthly"
+    }
 
     /// The two headline fragments, in draw order. The mockup gives the second one its own line in
     /// the accent ink, which is also what keeps a one-word orphan off the first line at 375 pt.
@@ -245,7 +250,7 @@ enum PaywallPlanCopy {
     static func detail(for product: PurchaseProduct) -> String {
         PaywallPlanCatalog.isAnnual(product)
             ? annualDetail(for: product)
-            : monthlyDetail
+            : monthlyDetail(for: product)
     }
 
     /// One plan card's rendered copy, computed once so the view and the tests read the same strings.
@@ -412,14 +417,10 @@ final class PaywallModel: ObservableObject, SessionScoped {
         }
     }
 
-    /// The line above the CTA (handoff §6): what today's charge would be for the selected plan, read
-    /// out of the store package. Nil until a real plan is loaded, so no price is ever invented and
-    /// the line follows the selection instead of being a rendered constant.
-    var purchaseSummary: String? {
-        guard let plan = selectedPlan else { return nil }
-        return "\(PaywallPlanCatalog.label(for: plan)) plan · \(plan.localizedPrice) billed today"
-    }
-
+    /// The line above the CTA (handoff §6): the selected plan and today's charge used to live here.
+    /// It was removed in build 21 — the amount and the period belong on the plan cards (App Store
+    /// 3.1.2), and the dock's height belongs to the cards above it — so nothing on this surface
+    /// restates a price a card already carries.
     /// The CTA is always on screen — a state without a usable action still shows the action that is
     /// coming — and is disabled rather than hidden (boards 11-10/11-11).
     var isCTAEnabled: Bool {

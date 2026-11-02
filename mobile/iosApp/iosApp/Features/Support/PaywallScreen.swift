@@ -79,9 +79,14 @@ enum PaywallSignInOption: String, CaseIterable, Identifiable {
 ///
 /// Layout is the approved CRO variant C: a full-bleed hero with the status-bar scrim, the
 /// "Pick a pose. Match it. Shoot." headline, the three free/free/paid steps, the two plan cards, the
-/// auto-renew disclosure and a pinned purchase region (helper line, CTA, Restore/Terms/Privacy).
+/// auto-renew disclosure and a pinned purchase region (account line, CTA, Restore/Terms/Privacy).
 /// Every state — loading, offline, purchase error, restore error, signed out — keeps those
 /// disclosures on screen.
+///
+/// The purchase region fits a 375×667 screen at the default text size without scrolling: the hero
+/// yields height to the disclosures (`PaywallHeroMetrics`), the steps draw one line each, and the
+/// dock keeps only its insets. `PaywallScreenLayoutTests` measures both plan cards on a rendered SE
+/// and 6.1" frame instead of trusting this comment.
 struct PaywallScreen: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
@@ -121,7 +126,7 @@ struct PaywallScreen: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 0) {
                         PaywallCHero(height: PaywallHeroMetrics.height(for: proxy.size.height))
-                        VStack(alignment: .leading, spacing: AP.Space.space24) {
+                        VStack(alignment: .leading, spacing: AP.Space.space12) {
                             headline
                             stepsBlock
                             planSection
@@ -158,7 +163,7 @@ struct PaywallScreen: View {
                         .padding(.horizontal, AP.Space.space16)
                         // The headline starts over the hero's fade, exactly as the mockup draws it.
                         .padding(.top, -AP.Space.space24)
-                        .padding(.bottom, AP.Space.space24)
+                        .padding(.bottom, AP.Space.space12)
                     }
                 }
                 // The hero runs under the status bar; the close control and the footer keep their insets.
@@ -216,22 +221,18 @@ struct PaywallScreen: View {
 
     /// Steps 1–2 are free and step 3 is paid, which is exactly what the gate does: the live guide is
     /// free, only the shutter needs Premium. No copy may imply the guide itself is paid.
+    ///
+    /// One line per step instead of a title stacked over its detail: the same two verbatim strings,
+    /// drawn at caption size, take about half the height, and the purchase region needs that height
+    /// on an SE. They wrap rather than truncate at the narrow and Accessibility sizes.
     private var stepsBlock: some View {
-        VStack(alignment: .leading, spacing: AP.Space.space16) {
+        VStack(alignment: .leading, spacing: AP.Space.space4) {
             ForEach(PaywallPlanCopy.steps) { step in
-                HStack(alignment: .top, spacing: AP.Space.space12) {
+                HStack(alignment: .top, spacing: AP.Space.space8) {
                     stepBadge(step)
-                    VStack(alignment: .leading, spacing: AP.Space.space4) {
-                        Text(step.title)
-                            .font(AP.Font.heading)
-                            .foregroundStyle(AP.Color.primaryText)
-                            .fixedSize(horizontal: false, vertical: true)
-                        Text(step.detail)
-                            .font(AP.Font.supporting)
-                            .foregroundStyle(AP.Color.secondaryText)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    Spacer(minLength: 0)
+                    Text(stepLine(step))
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel("\(step.id). \(step.title). \(step.detail)")
@@ -241,11 +242,22 @@ struct PaywallScreen: View {
         .accessibilityIdentifier(PaywallAccessibilityID.steps)
     }
 
+    /// Title in the ink, detail in the secondary ink after an em dash, one paragraph per step.
+    private func stepLine(_ step: PaywallPlanCopy.Step) -> AttributedString {
+        var title = AttributedString(step.title)
+        title.font = AP.Font.caption.weight(.semibold)
+        title.foregroundColor = AP.Color.primaryText
+        var detail = AttributedString(" — \(step.detail)")
+        detail.font = AP.Font.caption
+        detail.foregroundColor = AP.Color.secondaryText
+        return title + detail
+    }
+
     private func stepBadge(_ step: PaywallPlanCopy.Step) -> some View {
         Text("\(step.id)")
             .font(AP.Font.caption.weight(.bold))
             .foregroundStyle(step.isPremium ? AP.Color.background : AP.Color.accentText)
-            .frame(width: 28, height: 28)
+            .frame(width: 20, height: 20)
             .background(
                 Circle().fill(step.isPremium ? AP.Color.accentText : AP.Color.selectedBackground)
             )
@@ -275,7 +287,7 @@ struct PaywallScreen: View {
     }
 
     private func planRows(_ plans: [PaywallPlanCopy.Plan]) -> some View {
-        VStack(spacing: AP.Space.space12) {
+        VStack(spacing: AP.Space.space8) {
             ForEach(plans) { plan in
                 PaywallPlanRow(
                     plan: plan,
@@ -309,11 +321,12 @@ struct PaywallScreen: View {
             }
             .accessibilityElement(children: .combine)
             .accessibilityLabel("Loading plans")
-            VStack(spacing: AP.Space.space12) {
+            VStack(spacing: AP.Space.space8) {
                 ForEach(0..<2, id: \.self) { _ in
                     RoundedRectangle(cornerRadius: AP.Radius.radius16, style: .continuous)
                         .fill(AP.Color.controlFill)
-                        .frame(height: 76)
+                        // The loaded card's own height, so the region does not jump when plans land.
+                        .frame(height: PaywallPlanRow.Metrics.plateHeight)
                 }
             }
             .accessibilityHidden(true)
@@ -355,11 +368,15 @@ struct PaywallScreen: View {
 
     // MARK: - Footer (pinned CTA + the 3.1.2 disclosures)
 
-    /// Board 11-01: one primary action, one helper line above it, and the required links below it.
+    /// Board 11-01: one primary action, the account line above it, and the required links below it.
     /// `fixedSize` keeps the dock at its real height at the Accessibility sizes, so the ScrollView
     /// shrinks instead and nothing is painted over (the AX3 board is a scrolled state).
+    ///
+    /// The insets are the dock's honest padding and nothing more: the safe-area inset still applies,
+    /// but the extra bottom padding that used to sit under the legal row is gone, and it is exactly
+    /// the height the second plan card needs on a 375×667 screen.
     private var footer: some View {
-        VStack(spacing: AP.Space.space12) {
+        VStack(spacing: AP.Space.space8) {
             if let line = footerLine {
                 Text(line.text)
                     .font(AP.Font.caption)
@@ -386,21 +403,21 @@ struct PaywallScreen: View {
             }
         }
         .padding(.horizontal, AP.Space.space16)
-        .padding(.top, AP.Space.space12)
-        .padding(.bottom, AP.Space.space8)
+        .padding(.top, AP.Space.space8)
+        .padding(.bottom, AP.Space.space4)
         .fixedSize(horizontal: false, vertical: true)
         .background(AP.Color.background)
     }
 
-    /// The one line above the CTA, and the id that says what it is about: the purchase (the selected
-    /// plan and today's charge, or why it cannot be bought yet) or the account. A blocker that
-    /// belongs to the network wins over the price, because the price cannot be charged while offline.
+    /// The one line above the CTA, and the id that says what it is about: the account, or the blocker
+    /// that stops the purchase (offline, plans still loading).
+    ///
+    /// It is not a price line. The selected plan and today's charge were removed from the dock by the
+    /// build-21 CRO pass: the amount and the period have to sit on the plan cards themselves (App
+    /// Store 3.1.2), and the dock's height belongs to the two cards above it.
     private var footerLine: (text: String, id: String)? {
         if model.isOffline, let helper = model.ctaHelper {
             return (helper, PaywallAccessibilityID.selectedPlanLine)
-        }
-        if let summary = model.purchaseSummary {
-            return (summary, PaywallAccessibilityID.selectedPlanLine)
         }
         if let helper = model.ctaHelper {
             let id = model.phase == .signInRequired
@@ -460,7 +477,7 @@ struct PaywallScreen: View {
             if let action { action() } else if let url { openURL(url) }
         } label: {
             Text(title)
-                .font(AP.Font.caption.weight(.semibold))
+                .font(PaywallLegalType.link)
                 .foregroundStyle(AP.Color.accentText)
                 .fixedSize(horizontal: false, vertical: true)
                 // `Text.underline()` is iOS 16+, so the rule is drawn under the label instead.
@@ -516,11 +533,23 @@ struct PaywallScreen: View {
 }
 
 /// Hero metrics for the CRO layout, in one place so the view and the measurements agree
-/// (`handoff-1.2.md` §1: ~210–312 pt tall on a 6.7" phone, and never the whole viewport).
+/// (`handoff-1.2.md` §1: a hero that never takes the whole viewport).
+///
+/// The hero yields to the purchase region. At the handoff's flat 28 % an SE hero was 187 pt and the
+/// Monthly card landed under the dock; here the hero takes its 28 % only while the rest of the screen
+/// still fits, and gives back whatever it has to on a short phone. `purchaseRegionFloor` is the
+/// measured height of everything that has to stay on screen under the hero at the default text size
+/// on a 375 pt width — headline, the three steps, both plan cards, the auto-renew line and the pinned
+/// dock — so this formula cannot drift away from the layout it protects
+/// (`PaywallScreenLayoutTests` re-measures it on rendered frames).
 enum PaywallHeroMetrics {
-    /// 28 % of the container: 261 pt on a 932 pt phone, 187 pt on an SE, clamped to 180–312.
+    /// The handoff's 28 % share of a tall container.
     static let heightRatio: CGFloat = 0.28
-    static let minHeight: CGFloat = 180
+    /// Everything below the hero that has to stay visible without scrolling (see above).
+    static let purchaseRegionFloor: CGFloat = 527
+    /// The floor the hero keeps on a short phone, where the purchase region is the priority: below it
+    /// the purchase region wins and the screen scrolls, which only happens at the Accessibility sizes.
+    static let minHeight: CGFloat = 118
     static let maxHeight: CGFloat = 312
     /// The status-bar scrim: the top of the hero is washed toward the `background` token, which in
     /// light mode is a cream wash under dark status glyphs and in dark mode near-black under white
@@ -536,7 +565,9 @@ enum PaywallHeroMetrics {
     static let fadeRatio: CGFloat = 0.55
 
     static func height(for containerHeight: CGFloat) -> CGFloat {
-        min(max(containerHeight * heightRatio, minHeight), maxHeight)
+        let design = containerHeight * heightRatio
+        let spareAfterThePurchaseRegion = containerHeight - purchaseRegionFloor
+        return min(max(min(design, spareAfterThePurchaseRegion), minHeight), maxHeight)
     }
 }
 
@@ -582,10 +613,25 @@ struct PaywallCHero: View {
     }
 }
 
+/// The 3.1.2 links (Restore purchases · Terms of Use · Privacy Policy).
+///
+/// One rung below `AP.Font.caption` (footnote) on the same Dynamic Type ladder: `caption2` is ~15 %
+/// smaller at every text size and still scales, so the dock loses the height a footnote row would
+/// take while the links stay legible and keep their 44 pt targets.
+enum PaywallLegalType {
+    static let link: Font = .system(.caption2, design: .default).weight(.semibold)
+}
+
 /// One plan card (boards 11-02/11-03): selection is a filled box, the saving badge sits beside the
 /// plan name, the billing breakdown under it and the price on the trailing edge. At the Accessibility
 /// sizes the card stacks (board 11-04) instead of squeezing four columns into one row.
 struct PaywallPlanRow: View {
+    /// The card's height at the default text size: two caption lines and the plate's own padding. The
+    /// loading skeleton draws itself at this height so the region does not move when plans land.
+    enum Metrics {
+        static let plateHeight: CGFloat = 60
+    }
+
     let plan: PaywallPlanCopy.Plan
     let isSelectable: Bool
     let action: () -> Void
@@ -626,7 +672,10 @@ struct PaywallPlanRow: View {
             }
             .foregroundStyle(plan.isSelected ? AP.Color.selectedForeground : AP.Color.primaryText)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(AP.Space.space16)
+            .padding(.horizontal, AP.Space.space16)
+            // Tighter vertically than horizontally: the card is a row of two text lines, and every
+            // point it gives back is a point the second card keeps above the dock on an SE.
+            .padding(.vertical, AP.Space.space8)
             .background(
                 RoundedRectangle(cornerRadius: AP.Radius.radius16, style: .continuous)
                     .fill(plan.isSelected ? AP.Color.selectedBackground : AP.Color.controlFill)
