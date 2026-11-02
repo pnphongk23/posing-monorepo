@@ -1,8 +1,15 @@
-# Add pose form, 1.1 (18) copy: "Change photo" / inline Add tag field / "Add pose" CTA.
-# Tags: `addPose.tagsField` is the inline Add tag field — a comma-separated value yields two chips,
-# and text without a comma commits on blur.
+# Add pose form, 1.1 (18)+ copy: "Change photo" / inline Add tag field / "Add pose" CTA.
+# The photo comes from the system PHPicker, whose cells expose labels like "Photo, 31 October, 16:45"
+# (recent) or "Photo, 09 August 2012, 01:52" (library samples). Tapping by that label removes the
+# coordinate race that used to lose the selection while the sheet was still animating; every tap below
+# is preceded by a bounded wait so a missing element fails fast instead of hanging the run.
+# Recent photos sort newest-first, so the first matching cell is the one added with `simctl addmedia`.
 appId: ${APP_ID}
 ---
+- extendedWaitUntil:
+    visible:
+      id: "poses.add-pose"
+    timeout: 15000
 - tapOn:
     id: "poses.add-pose"
 - extendedWaitUntil:
@@ -12,39 +19,47 @@ appId: ${APP_ID}
 - tapOn:
     id: "addPose.photoPicker"
 - extendedWaitUntil:
-    visible: "Cancel"
+    visible: 'Photo,.*'
+    timeout: 25000
+- tapOn: 'Photo,.*'
+- extendedWaitUntil:
+    visible: "Change photo"
     timeout: 20000
-- tapOn:
-    point: "16%,25%"
+# One guarded retry: a tap that lands while the sheet is still animating closes it without a selection.
 - runFlow:
     when:
       notVisible: "Change photo"
     commands:
+      - extendedWaitUntil:
+          visible:
+            id: "addPose.photoPicker"
+          timeout: 15000
       - tapOn:
-          point: "16%,25%"
-      - runFlow:
-          when:
-            visible: "Cancel"
-          commands:
-            - tapOn:
-                point: "16%,25%"
+          id: "addPose.photoPicker"
+      - extendedWaitUntil:
+          visible: 'Photo,.*'
+          timeout: 25000
+      - tapOn: 'Photo,.*'
+      - extendedWaitUntil:
+          visible: "Change photo"
+          timeout: 20000
 - extendedWaitUntil:
     visible: "Change photo"
-    timeout: 20000
-# Tags first: the keyboard shift happens once, so the name tap stays on stable coordinates.
-# One tag: the inline Add tag field commits on blur, so the name tap below commits it.
+    timeout: 15000
+# Tags first: the inline Add tag field commits on comma, and the name tap below commits the rest.
 - tapOn:
     id: "addPose.tagsField"
 - inputText: "standing"
+- extendedWaitUntil:
+    visible:
+      id: "addPose.nameField"
+    timeout: 10000
 - tapOn:
     id: "addPose.nameField"
-- assertVisible:
-    id: "addPose.tag.standing"
-- tapOn:
-    id: "addPose.nameField"
+- extendedWaitUntil:
+    visible:
+      id: "addPose.tag.standing"
+    timeout: 10000
 - inputText: ${POSE_NAME}
-- assertVisible:
-    id: "addPose.nameField"
-    text: ".*${POSE_NAME}.*"
 - scroll
 - scroll

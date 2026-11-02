@@ -59,9 +59,21 @@ tags: [TC-EXT-001, p0, e2e]
 - tapOn:
     id: "addPose.consent.cancelButton"
 # The Jobs list is unchanged: nothing was created with this draft name.
+- extendedWaitUntil:
+    visible:
+      id: "addPose.title"
+    timeout: 10000
 - tapOn: "Back"
+- extendedWaitUntil:
+    visible:
+      id: "poses.more"
+    timeout: 15000
 - tapOn:
     id: "poses.more"
+- extendedWaitUntil:
+    visible:
+      id: "poses.jobs"
+    timeout: 15000
 - tapOn:
     id: "poses.jobs"
 - extendedWaitUntil:
