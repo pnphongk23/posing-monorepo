@@ -310,9 +310,84 @@ final class PaywallModelTests: XCTestCase {
         )
     }
 
-    /// A cancel is the user's decision, not an error: it reports the outcome and offers no retry.
-    func testCancelledPurchaseIsAnOutcomeWithoutAnErrorCard() async {
+    // MARK: - Retrying a failed purchase (PAY-012)
+
+    /// The card's **Try again** must ask the store a second time. Nothing on this path may survive a
+    /// failure as a flag that keeps the next attempt from reaching the store: not an in-flight
+    /// operation, not a busy phase, not a disabled action.
+    ///
+    /// The reported defect was the store's own dialog never coming back on the retry (3/3 on the device).
+    /// This is the assertion the app can make about it: the model starts a second, real purchase of the
+    /// same package — so if the dialog still does not appear, it is the store's presentation, not a
+    /// request this app never sent.
+    ///
+    /// Mutation target: keep `activeOperation`/`phase == .processing` set after a settled failure (or
+    /// return early when `failure != nil`) and `purchasedPackageIDs` stays at one call.
+    func testRetryingAFailedPurchaseAsksTheStoreAgain() async {
         let gateway = FakePurchaseGateway(
+            nextLoad: readyOffering,
+            nextPurchase: PurchaseSnapshot(state: .purchaseFailed, products: [monthly, annual], failure: .other)
+        )
+        let model = makeModel(gateway: gateway)
+        model.start()
+        await waitUntil("ready") { model.phase == .ready }
+
+        await model.purchase()
+        XCTAssertEqual(model.phase, .purchaseFailed)
+        XCTAssertEqual(gateway.purchasedPackageIDs, [annual.identifier])
+        XCTAssertEqual(
+            model.notice?.action, .retryPurchase,
+            "the card's action is the purchase retry — not the offering reload"
+        )
+
+        // No state a failure could leave behind may block the second attempt.
+        XCTAssertFalse(model.isBusy, "a settled failure leaves nothing in flight")
+        XCTAssertTrue(model.isCTAEnabled, "and nothing disabled the actions")
+        XCTAssertNotNil(model.selectedPlan, "the plan the retry buys is still selected")
+        let loadsBeforeRetry = gateway.loadCount
+
+        // What `PaywallScreen.performNoticeAction(.retryPurchase)` runs.
+        gateway.nextPurchase = PurchaseSnapshot(state: .entitled, products: [monthly, annual])
+        await model.purchase()
+
+        XCTAssertEqual(
+            gateway.purchasedPackageIDs, [annual.identifier, annual.identifier],
+            "the retry sends a second purchase for the same package"
+        )
+        XCTAssertEqual(gateway.loadCount, loadsBeforeRetry, "and does not reload the offering instead")
+        XCTAssertEqual(model.phase, .entitled, "the second answer owns the surface")
+    }
+
+    /// The two store-failure copies, so the line QA read on the device can be matched to a state: the
+    /// retry's own failure reported `.other` ("If you were charged…"), not the transient
+    /// `.storeProblem` line ("Try again in a moment.").
+    ///
+    /// Mutation target: collapse the two cases in `purchaseFailureMessage` and this goes red.
+    @MainActor func testStoreFailureCopyMatchesWhatTheDeviceReported() async {
+        func message(_ failure: PurchaseFailure) async -> String? {
+            let gateway = FakePurchaseGateway(
+                nextLoad: readyOffering,
+                nextPurchase: PurchaseSnapshot(state: .purchaseFailed, products: [monthly, annual], failure: failure)
+            )
+            let model = makeModel(gateway: gateway)
+            model.start()
+            await waitUntil("ready") { model.phase == .ready }
+            await model.purchase()
+            return model.notice?.message
+        }
+
+        let storeProblem = await message(.storeProblem)
+        XCTAssertEqual(storeProblem, "The App Store didn't finish it. Try again in a moment.")
+        let other = await message(.other)
+        XCTAssertEqual(
+            other,
+            "The App Store didn't finish it. If you were charged, tap Restore purchases.",
+            "the wording the device showed after the retry"
+        )
+    }
+
+    /// A cancel is the user's decision, not an error: it reports the outcome and offers no retry.
+    func testCancelledPurchaseIsAnOutcomeWithoutAnErrorCard() async {        let gateway = FakePurchaseGateway(
             nextLoad: readyOffering,
             nextPurchase: PurchaseSnapshot(state: .purchaseCancelled, products: [monthly, annual])
         )

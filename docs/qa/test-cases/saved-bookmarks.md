@@ -75,6 +75,28 @@ What QA should see on dev22: tapping `saved.browseCommunity` leaves Saved for th
 (`settings.account.row`) is on screen. The catalogue reloads (a fresh first window), the same thing a dock tab
 switch does.
 
+## dev21 finding: "Remove from saved" looked like it did not persist (dev20/dev21 server evidence)
+
+The deploy's own HTTP log for the pass13 window (`railway logs --http --since 2026-11-02T21:00:00Z --until
+2026-11-02T22:45:00Z`, 270 requests) answers this without guesswork:
+
+- **`GET /api/me/saved` was never requested** — 0 times in that window. The Saved screen read
+  `GET /api/community/poses` instead (160 requests), which is the route defect fixed in `62238d1`.
+- Every removal is a **PUT followed by a DELETE** on the same pose id
+  (`21:37:52.9 PUT → 21:37:57.2 DELETE`, `21:41:03.7 → 21:41:07.1`, `21:45:17.1 → 21:45:21.6`,
+  `21:55:45.8 → 21:55:50.4`, `21:59:09.1 → 21:59:12.4`, `22:16:25.7 → 22:16:27.6`). The first tap was a
+  **save** (the row was a community row, so the model's saved state was `false`), and only the second tap
+  sent the removal.
+- The `DELETE` goes out with the row's own pose id and the server answers **204**, so the unsave itself works
+  once the row is genuinely saved — nothing is lost on the way to the server.
+- Re-entering Saved after a `DELETE` fetched `/api/community/poses` again (no saved read), which is why the
+  "full list" came back: the community feed was drawn as the saved collection. Nothing resurrected a row.
+
+Build 22 behaviour QA should verify (TC-SAV-003/TC-SAV-010): the first tap on a saved row removes it (one
+`DELETE`, row leaves, `saved.snackbar` + Undo), and leaving Saved and coming back keeps it gone; a relaunch
+keeps it gone too (the entry read is always a fresh saved collection). A failing request shows the error bar
+and leaves the row in place — it is never removed optimistically.
+
 ## Accepted cosmetic deltas (do not raise as bugs)
 
 Agreed with the Feature lane for this slice — the flows must not assert against these:

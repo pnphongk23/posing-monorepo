@@ -54,7 +54,7 @@ account."** (signed in) / **"Sign in first so Premium follows you."** (signed ou
 | TC-PAY-009 | P1 | `paywall_enabled` on, signed out | 1. Camera → shutter. 2. Tap "Sign in to subscribe". 3. Read the sheet | The options are in their own **full-height** sheet in App Review 4.8 order: Apple (system button) first, then Google (`paywall.signin`), then email (`signin.emailEntry`); the sheet is dismissible (`paywall.signin.close`) without signing in or buying | automated: TC-PAY-009-signin-apple-first.yaml (automatable on sim) |
 | TC-PAY-010 | P1 | paywall open, offering still loading (signed in) | 1. Open the paywall and watch the card area | **Skeleton cards keep the offer's geometry**, the helper line reads "Subscribe turns on when plans load." and the CTA keeps its label but is **disabled** — never a bare spinner, never a hidden or silently dead button | unit + automatable (sim) — `PaywallModel` `.loadingPlans` |
 | TC-PAY-011 | P1 | purchase or restore in flight | 1. Start a purchase, watch the purchase region | The CTA **keeps its label with a spinner** and is disabled, so a second purchase cannot start from the same sheet | unit + automatable (sim) |
-| TC-PAY-012 | P1 | Dev Test Store key, account B (never entitled) | 1. Subscribe. 2. "Test failed purchase". 3. Tap **Try again**. 4. Cancel the second dialog | The failure is the settled outcome: the **offer error card** appears with `paywall.retry` as its action, the **status line** carries "The purchase didn't go through", the CTA itself reads "Try again", and nothing is granted. Tapping retry starts a fresh store attempt (its dialog proves it); cancelling that leaves the user unentitled with the offer intact | automated: TC-PAY-012-purchase-failed.yaml (automatable on sim; Test Store) |
+| TC-PAY-012 | P1 | Dev Test Store key, account B (never entitled) | 1. Subscribe. 2. "Test failed purchase". 3. Tap **Try again**. 4. Cancel the second dialog | The failure is the settled outcome: the **offer error card** appears with `paywall.retry` as its action, the **status line** carries "The purchase didn't go through", the CTA itself reads "Try again", and nothing is granted. Tapping retry starts a fresh store attempt (its dialog proves it); cancelling that leaves the user unentitled with the offer intact | automated: TC-PAY-012-purchase-failed.yaml (automatable on sim; Test Store) — **step 3 does not pass on the simulator: see the dev21 note below** |
 | TC-PAY-013 | P1 | Dev Test Store key, account B | 1. Subscribe. 2. Cancel the store dialog | A cancel is **reported but not punished**: the status line shows **"Purchase cancelled. No access was granted."**, while there is **no offer error card and no retry** (a retry would scold the user for their own decision). No access granted; CTA back to "Unlock the pose camera"; offer intact | automated: TC-PAY-013-purchase-cancelled.yaml (automatable on sim; flow must flip from "no status at all" to "status line, no card/retry") |
 | TC-PAY-014 | P1 | paywall open, signed in, real or Test Store | 1. Tap **Restore purchases** (`paywall.restore`). 2. Repeat with a store that cannot answer | Restore is in the legal row (pinned in the dock below AX sizes, in the scroll at AX1–AX5) and always reachable; it responds — a successful restore confirms access, a restore that fails produces the error card with `paywall.retry` — and it never grants access without the store's answer | wiring automatable (sim); a real restore is **device-only** (TestFlight) |
 | TC-PAY-015 | P1 | paywall open in any state | 1. Tap **Terms of Use** (`paywall.terms`). 2. Return, tap **Privacy Policy** (`paywall.privacy`) | Both sit in the legal row with Restore, never truncated or painted over, and open the real documents in the browser (asserted on the documents' own text); the paywall is unchanged on return | automated: TC-PAY-015-legal-links.yaml (automatable on sim) |
@@ -119,6 +119,28 @@ email route still hold). The table below is kept as the record of what moved:
   TC-PAY-004 buys.
 - `paywall.status` carries the outcome (cancelled / failed / entitled) and is absent when nothing happened,
   which is how "no error" is asserted — **except** that a cancel does write its status line.
+
+## dev21 note: the retry's second Test Store dialog does not appear (not an app-state bug)
+
+TC-PAY-012's step 3 (`tapOn: paywall.retry` → the Test Store dialog with "Test failed purchase" again) fails in
+every automated run — and it already failed on the dev20-era builds (`~/.maestro/tests/2026-11-01_232633`,
+`2026-11-01_233030`, `2026-11-02_003508`), so it is not a build-21 regression and not what `6fd2e8f` touched
+(that commit changed the monthly card's copy and removed the price summary line; the retry path is
+unchanged since `c81c3a5`).
+
+What the app does after the tap, which is all it can be asked to do:
+
+- `paywall.retry` on a failed purchase is the **purchase** retry (`SupportNotice.Action.retryPurchase` →
+  `PaywallModel.purchase()`), not the offering reload;
+- a settled failure leaves no operation in flight and no disabled action, and the second attempt calls the
+  store again with the same package (`PaywallModelTests.testRetryingAFailedPurchaseAsksTheStoreAgain`);
+- the copy the device showed after the retry — "The App Store didn't finish it. If you were charged, tap
+  Restore purchases." — is the `.other` failure wording, i.e. the store answered with an error rather than
+  presenting its dialog (`PaywallModelTests.testStoreFailureCopyMatchesWhatTheDeviceReported`).
+
+So the missing dialog is the Test Store's own presentation after a simulated failure. QA's pass-14 probe on a
+device should settle it (try a real store sandbox account, or close and reopen the paywall before retrying).
+Until then TC-PAY-012's step 3 must not be reported as an app defect.
 - Reduce Motion: the hero has no motion in this build, so there is nothing to freeze.
 
 ## Accepted design deviations (GL)

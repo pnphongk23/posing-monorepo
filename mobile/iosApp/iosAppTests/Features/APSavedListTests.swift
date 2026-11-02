@@ -945,6 +945,68 @@ final class APSavedListTests: XCTestCase {
         XCTAssertEqual(spec?.message, "Removed Mine")
     }
 
+    // MARK: - Left the collection and came back (persistence)
+
+    /// An unsave has to survive leaving Saved and coming back, and a relaunch: the request is a real
+    /// deletion on the server, and re-entering reads the collection again instead of redrawing what the
+    /// screen had before.
+    ///
+    /// The fake here is a *server*, not a spy: `posesPage` answers from the same id list the bookmark
+    /// calls mutate, which is what makes "the row came back" observable at all. The re-entry is exactly
+    /// what the surface's `.task` runs (`APSavedEntry.prepare` → `load()`), and the relaunch is a second
+    /// model over the same server state.
+    ///
+    /// Mutation target: make `APSavedEntry.prepare` reuse the loaded state instead of reloading (or make
+    /// `unsavePose` a local-only flip) and the re-entry assertions go red.
+    @MainActor func testAnUnsaveSurvivesLeavingAndReEnteringSaved() async {
+        let server = SavedCollectionServer(ids: ["a", "b"])
+        let model = PosesViewModel(service: server, bookmarkService: server)
+        await APSavedEntry.prepare(model: model)
+        XCTAssertEqual(model.state.rows.map(\.id), ["a", "b"], "the saved collection, in server order")
+
+        let undo = APSavedUndo()
+        await APSavedRowUnsave.perform(model.state.rows[0], at: 0, in: model, undo: undo)
+
+        XCTAssertEqual(server.unsaveCallCount, 1, "one tap, one unsave request")
+        XCTAssertEqual(server.saveCallCount, 0, "and not the opposite request")
+        XCTAssertEqual(server.unsavedPoseID, "a", "the row's own pose id is what the server was told")
+        XCTAssertEqual(server.savedIDs, ["b"], "the server no longer has it")
+        XCTAssertEqual(model.state.rows.map(\.id), ["b"])
+
+        // Leave Saved and come back: the surface's `.task` prepares and reloads the collection.
+        await APSavedEntry.prepare(model: model)
+        XCTAssertEqual(model.state.rows.map(\.id), ["b"], "the removed row does not come back")
+
+        // A relaunch: a fresh model (and a fresh undo offer) over the same server state.
+        let relaunched = PosesViewModel(service: server, bookmarkService: server)
+        await APSavedEntry.prepare(model: relaunched)
+        XCTAssertEqual(relaunched.state.rows.map(\.id), ["b"], "and it stays gone after a relaunch")
+        XCTAssertEqual(relaunched.bookmarkError, nil)
+    }
+
+    /// The other half of the same requirement: when the request fails, the row must not disappear (the
+    /// server still has it) and must not be silently "restored" later either — the recovery is the error
+    /// bar, and re-entering reads the same, still-saved collection.
+    ///
+    /// Mutation target: remove the row optimistically before the request settles and every assertion
+    /// about the row staying in place goes red.
+    @MainActor func testAFailedUnsaveLeavesTheRowOnTheServerAndOnTheNextEntry() async {
+        let server = SavedCollectionServer(ids: ["a"])
+        server.unsaveError = URLError(.notConnectedToInternet)
+        let model = PosesViewModel(service: server, bookmarkService: server)
+        await APSavedEntry.prepare(model: model)
+
+        let outcome = await APSavedRowUnsave.perform(model.state.rows[0], at: 0, in: model, undo: APSavedUndo())
+
+        XCTAssertEqual(outcome, .failed(SavedMutationCopy.offline))
+        XCTAssertEqual(server.savedIDs, ["a"], "a failed request changed nothing on the server")
+        XCTAssertEqual(model.state.rows.map(\.id), ["a"], "and nothing on the screen")
+        XCTAssertEqual(model.bookmarkError, SavedMutationCopy.offline, "the error bar states the reason")
+
+        await APSavedEntry.prepare(model: model)
+        XCTAssertEqual(model.state.rows.map(\.id), ["a"], "re-entry shows what the server still has")
+    }
+
     // MARK: - The tap path (TC-SAV-010 on 1.1 (20))
 
     /// The app's own wiring, one line short of the fix: the adapter holds a filter slot the model is
@@ -1661,4 +1723,80 @@ private final class SignedInTokenStorage: TokenStoring, @unchecked Sendable {
     func saveCredentials(_ credentials: SessionCredentials) { self.credentials = credentials }
     func loadCredentials() -> SessionCredentials? { credentials }
     func clearCredentials() { credentials = nil }
+}
+
+/// A stand-in for the account's saved collection **as a server**: the read answers from the same id list
+/// the bookmark calls mutate, so "unsave → leave Saved → come back" is asserted against the server's own
+/// state instead of against one model instance's memory.
+private final class SavedCollectionServer: PoseServing, PoseBookmarkServing, @unchecked Sendable {
+    private let lock = NSLock()
+    private var ids: [String]
+    private var unsaves = 0
+    private var saves = 0
+    private var _unsavedPoseID: String?
+    private var _unsaveError: Error?
+
+    init(ids: [String]) { self.ids = ids }
+
+    var savedIDs: [String] { locked { ids } }
+    var unsaveCallCount: Int { locked { unsaves } }
+    var saveCallCount: Int { locked { saves } }
+    var unsavedPoseID: String? { locked { _unsavedPoseID } }
+
+    var unsaveError: Error? {
+        get { locked { _unsaveError } }
+        set { locked { _unsaveError = newValue } }
+    }
+
+    private func pose(_ id: String) -> NativePose {
+        NativePose(
+            id: id,
+            name: "Pose \(id)",
+            category: "Standing",
+            imageURL: nil,
+            instructions: ["Stand a step away from the window."],
+            isSaved: true
+        )
+    }
+
+    // MARK: PoseServing — the saved route's answer
+
+    func poses(query: String?) async throws -> [NativePose] { savedIDs.map(pose) }
+
+    func posesPage(query: String?, offset: Int, limit: Int) async throws -> PosePage {
+        let rows = savedIDs.map(pose)
+        let start = min(max(0, offset), rows.count)
+        let window = Array(rows[start..<min(rows.count, start + limit)])
+        return PosePage(poses: window, hasMore: start + window.count < rows.count, consumed: window.count)
+    }
+
+    func pose(id: String) async throws -> NativePose {
+        guard savedIDs.contains(id) else { throw PoseAdapterError.poseNotFound(id) }
+        return pose(id)
+    }
+
+    // MARK: PoseBookmarkServing — what the tap does to the server
+
+    func savePose(poseId: String) async throws {
+        locked {
+            saves += 1
+            if !ids.contains(poseId) { ids.append(poseId) }
+        }
+    }
+
+    func unsavePose(poseId: String) async throws {
+        let error: Error? = locked {
+            unsaves += 1
+            _unsavedPoseID = poseId
+            return _unsaveError
+        }
+        if let error { throw error }
+        locked { ids.removeAll { $0 == poseId } }
+    }
+
+    private func locked<T>(_ body: () -> T) -> T {
+        lock.lock()
+        defer { lock.unlock() }
+        return body()
+    }
 }
