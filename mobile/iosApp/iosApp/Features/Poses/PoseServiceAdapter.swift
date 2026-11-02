@@ -67,9 +67,20 @@ enum PoseAdapterMerge {
         return community + saved.filter { !communityIDs.contains($0.id) }
     }
 
+    /// The one name matcher every pose search uses: the query is trimmed and matched
+    /// case-insensitively (and diacritic-insensitively, which is what `localizedCaseInsensitiveContains`
+    /// buys over `lowercased().contains`). `filterSavedLocally`, the Poses screens that share it and the
+    /// camera picker's two scopes all call this, so one query cannot mean two different things on two
+    /// screens. An empty (or whitespace-only) query matches everything.
+    static func matchesName(_ name: String, query: String) -> Bool {
+        let term = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !term.isEmpty else { return true }
+        return name.localizedCaseInsensitiveContains(term)
+    }
+
     static func filterSavedLocally(_ poses: [NativePose], query: String?) -> [NativePose] {
-        guard let query, !query.isEmpty else { return poses }
-        return poses.filter { $0.name.localizedCaseInsensitiveContains(query) }
+        guard let query else { return poses }
+        return poses.filter { matchesName($0.name, query: query) }
     }
 }
 
