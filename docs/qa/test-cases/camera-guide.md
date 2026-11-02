@@ -102,6 +102,11 @@ whether the strip's ids are retired or re-used). Also: does the sheet still carr
   watch, not a confirmed defect**: dev20 ran **TC-CAM-021 to a PASS** with its `inputText`. If a batch does stall there, turn
   the hardware keyboard off before filing anything. TC-CAM-021 also keeps a fast-fail `assertVisible: posePicker.search`
   before the tap so a missing sheet fails in seconds.
+- **TC-CAM-033** (signed-out Saved scope) failed on dev20 pass 5 at `posePicker.scope.saved` for a **flow** reason, not
+  an app one: the chips are unconditional in the sheet (`handle → header → scopeChips → searchField → content`), and the
+  flow tapped one the moment the grid appeared — while the sheet was still animating in. It now asserts the
+  `posePicker.scope` container and `extendedWaitUntil`s each chip (15 s) before tapping. Note it is **not** e2e-tagged and
+  needs no credentials; a run that skips it as "needs E2E_EMAIL" is mis-classifying it.
 - **Real-camera cases have no flow at all** (device-only by design): TC-CAM-002, 003, 005, 008, 017, 026, 029, 030, 031,
   035. Nothing in `maestro/flows/` taps the shutter expecting a saved photo; the only shutter taps in the suite are the
   paywall lane's TC-PAY-001/002, which assert gate behaviour.

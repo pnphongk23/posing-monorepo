@@ -2,9 +2,9 @@
 appId: ${APP_ID}
 tags: [TC-CAM-033, p1]
 ---
-# Accounts switch off is the closest a Simulator flow gets to "signed out" without the e2e account:
-# accounts enabled + cleared keychain is signed out too, so either launch works for this case. Using the
-# plain clean launch (no session) keeps the flow credential-free.
+# Signed out is the clean-launch state, so this flow is credential-free and is NOT e2e-tagged: it must
+# never be skipped for "needs E2E_EMAIL" (a pass-5 run classified it that way, which is wrong — check the
+# runner, not this file).
 - runFlow: ../subflows/launch.yaml
 - runFlow: ../subflows/open-camera.yaml
 # `camera.choosePose` is the strip's Browse card since d001b80 — the strip opens expanded, so the card is
@@ -22,6 +22,16 @@ tags: [TC-CAM-033, p1]
     visible:
       id: "posePicker.grid"
     timeout: 20000
+# `posePicker.scope.saved` has no condition in source — the chips sit above the search field whenever the
+# sheet is open (CameraFeature.swift, panel: handle → header → scopeChips → searchField → content). It was
+# simply not waited for: the sheet still animates in when the grid first reports visible, so tapping
+# straight away raced the animation. Wait for the chip itself.
+- assertVisible:
+    id: "posePicker.scope"
+- extendedWaitUntil:
+    visible:
+      id: "posePicker.scope.saved"
+    timeout: 15000
 - tapOn:
     id: "posePicker.scope.saved"
 - extendedWaitUntil:
@@ -34,6 +44,10 @@ tags: [TC-CAM-033, p1]
 - assertNotVisible:
     id: "posePicker.grid"
 # Signed out never blocks the catalogue: All still lists poses.
+- extendedWaitUntil:
+    visible:
+      id: "posePicker.scope.all"
+    timeout: 15000
 - tapOn:
     id: "posePicker.scope.all"
 - extendedWaitUntil:
