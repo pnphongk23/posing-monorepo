@@ -25,13 +25,13 @@ one explicit pathspec.
 | TC-CAM-032 | `flows/TC-CAM-032-guide-mirror.yaml` | a build to run it on (ids landed `da61534`: row `camera.tools.mirror`, switch `camera.tools.mirror.switch` with value "Mirrored"/"Normal") |
 | TC-CAM-033 | `flows/TC-CAM-033-saved-scope-signed-out.yaml` | a build to run it on, signed out (clean launch, no credentials): `posePicker.saved.signIn` landed `a03d03a` |
 | TC-CAM-006 | `flows/TC-CAM-006-permission-panel.yaml` | a build to run it on. Only the *refused* branch is expressible on the Simulator (Maestro writes the TCC answer, so `.notDetermined` — and the "Allow Camera" button — is unreachable); the panel's action has no id (request 2), so it matches "Open Settings" by text |
-| TC-CAM-012 | `flows/TC-CAM-012-collapse-and-reopen-strip.yaml` | a build to run it on. Asserts the strip's presence *and* the control's state label ("Hide pose picker" ↔ "Show pose picker") |
-| TC-CAM-013 | `flows/TC-CAM-013-guide-kept-while-collapsed.yaml` | a build to run it on. Proves the guide is still drawn through the collapse; *which* pose is CAM-007/CAM-011's job |
+| TC-CAM-012 | `flows/TC-CAM-012-collapse-and-reopen-strip.yaml` (deleted) | **retired** — inline pose strip removed; the Poses control always opens the sheet (feat/camera-pose-popup). Flow deleted with the product |
+| TC-CAM-013 | `flows/TC-CAM-013-guide-kept-while-collapsed.yaml` (deleted) | **retired** — inline pose strip removed; the Poses control always opens the sheet (feat/camera-pose-popup). Flow deleted with the product |
 | TC-CAM-014 | `flows/TC-CAM-014-topbar-eye-and-title.yaml` | a build to run it on. Also asserts the eye's label flips to "Show pose guide" and that the title pill opens the sheet |
 | TC-CAM-015 | `flows/TC-CAM-015-tools-panel-done.yaml` | a build to run it on |
 | TC-CAM-016 | `flows/TC-CAM-016-zoom-pills.yaml` | a build to run it on; **half the case stays manual** — `camera.zoom.<label>` carries `.isSelected` but no accessibilityValue, so a flow cannot read which pill is current (request 1) |
 | TC-CAM-018 | `flows/TC-CAM-018-permission-hides-strip.yaml` | a build to run it on; needs `permissions: camera: deny`, whose effect on `CameraPermissionState` must be confirmed on the first run |
-| TC-CAM-019 | `flows/TC-CAM-019-collapse-survives-relaunch.yaml` | a build to run it on |
+| TC-CAM-019 | `flows/TC-CAM-019-collapse-survives-relaunch.yaml` (deleted) | **retired** — inline pose strip removed; the Poses control always opens the sheet (feat/camera-pose-popup). Flow deleted with the product |
 | TC-CAM-021 | `flows/TC-CAM-021-picker-search-no-match.yaml` | a build to run it on; needs the live catalogue (it waits for `posePicker.grid` first), so it is network-dependent like the other catalogue flows |
 | TC-GAL-010 | `flows/TC-GAL-010-filter-empty-state.yaml` | a build to run it on (ids committed long before, no fixture needed — an empty gallery is the state under test) |
 
@@ -89,7 +89,7 @@ zustand of the shared sim, no app crash report). Bugs filed in `bug-notes/` (4 f
 ## Fix status for the six filed defects (verification pending dev19)
 | Bug | Fix on main | Verifies with |
 |---|---|---|
-| camera-18-01 duplicate Poses control | `7153c95` | TC-CAM-012/019 (and the checklist "exactly one Poses" step) |
+| camera-18-01 duplicate Poses control | `7153c95` | TC-CAM-012/019 — both **retired** (inline pose strip removed; the Poses control always opens the sheet, feat/camera-pose-popup) — plus the checklist "exactly one Poses" step |
 | camera-18-02 picker sheet unreachable | `17fdd9f` | TC-CAM-001/004/011/014/021/022/033 |
 | camera-18-03 Timer/Ratio option ids | `22c9c83` | TC-CAM-027 (back on ids) |
 | camera-18-04 popover guide rows clipped | `2bf15e7` | TC-CAM-032 (+ TC-CAM-003/034 on device) |
