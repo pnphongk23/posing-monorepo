@@ -2210,6 +2210,63 @@ final class CameraChromeContractTests: XCTestCase {
         )
     }
 
+    // MARK: Container ids never swallow their children
+
+    /// SwiftUI hands a container's `accessibilityIdentifier` down to the elements inside it, so an id put
+    /// on a row without `.accessibilityElement(children: .contain)` *overwrites* every child's own id. The
+    /// scope chips were exactly that: the row's `posePicker.scope` replaced `posePicker.scope.all|saved`, so
+    /// the chips rendered but no flow could address them. This pins the declaration order — container
+    /// first, id second — for every sheet row that carries an id over interactive children.
+    func testTheSheetRowsDeclareContainBeforeTheirContainerId() throws {
+        let source = try cameraFeatureSource()
+        try assertContainPrecedesContainerId(
+            after: "var scopeChips: some View {",
+            identifier: ".accessibilityIdentifier(\"posePicker.scope\")",
+            in: source
+        )
+        try assertContainPrecedesContainerId(
+            after: "var poseGrid: some View {",
+            identifier: ".accessibilityIdentifier(PosePickerLayout.gridIdentifier)",
+            in: source
+        )
+        try assertContainPrecedesContainerId(
+            after: "private func pickerPanel(",
+            identifier: ".accessibilityIdentifier(PosePickerLayout.stateIdentifier)",
+            in: source
+        )
+    }
+
+    /// `contain` must be declared before the id in a view body, or the id is inherited by every child.
+    private func assertContainPrecedesContainerId(
+        after marker: String,
+        identifier: String,
+        in source: String,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) throws {
+        let start = try XCTUnwrap(
+            source.range(of: marker)?.upperBound,
+            "no declaration for \(marker)",
+            file: file,
+            line: line
+        )
+        let body = source[start...]
+        let contain = try XCTUnwrap(
+            body.range(of: "children: .contain")?.lowerBound,
+            "\(marker) must declare .accessibilityElement(children: .contain) before its id, "
+                + "otherwise the id overwrites its children's ids",
+            file: file,
+            line: line
+        )
+        let id = try XCTUnwrap(
+            body.range(of: identifier)?.lowerBound,
+            "\(marker) carries \(identifier)",
+            file: file,
+            line: line
+        )
+        XCTAssertLessThan(contain, id, "\(marker): container first, id second", file: file, line: line)
+    }
+
     // MARK: Timer / Ratio option ids
 
     /// Each Timer and Ratio choice is its own accessibility element with its own id. The row id used to

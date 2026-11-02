@@ -3207,6 +3207,10 @@ private struct PosePickerSheet: View {
             Spacer(minLength: 0)
         }
         .padding(.bottom, AP.Space.space12)
+        // A container, not a single element: each chip keeps its own identifier
+        // (`posePicker.scope.all|saved`) while the row keeps `posePicker.scope`. Without this the row's id
+        // is inherited by both chips and overwrites theirs, so they render but nothing can address them.
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("posePicker.scope")
     }
 
@@ -3341,6 +3345,9 @@ private struct PosePickerSheet: View {
     /// One state panel, one handle: the sheet's states are all `posePicker.state`.
     private func pickerPanel(_ panel: CameraStatePanel, onRetry: @escaping () -> Void) -> some View {
         CameraPickerStatePanel(panel: panel, onRetry: onRetry)
+            // Same rule as the rows above: the panel owns `posePicker.state`, and the card's own controls
+            // (the retry) stay separate elements instead of inheriting the panel's id.
+            .accessibilityElement(children: .contain)
             .accessibilityIdentifier(PosePickerLayout.stateIdentifier)
     }
 
