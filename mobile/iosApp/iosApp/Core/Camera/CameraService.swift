@@ -47,6 +47,10 @@ private final class CameraSessionBox: @unchecked Sendable {
         }
         let input = try AVCaptureDeviceInput(device: device)
         session.beginConfiguration()
+        // The preview and the still must describe the same picture: the photo preset keeps the video
+        // stream on the still's 4:3 sensor field of view, so the ratio crop contains only what the user
+        // framed instead of the extra content a 16:9 stream would hide behind the frame.
+        CameraSessionPreset.pinPhotoPreset(on: session)
         session.inputs.forEach(session.removeInput)
         if session.outputs.isEmpty, session.canAddOutput(output) {
             session.addOutput(output)
@@ -165,6 +169,36 @@ protocol VideoMirroringConnection: AnyObject {
 }
 
 extension AVCaptureConnection: VideoMirroringConnection {}
+
+/// The preview's field of view, pinned to the still's.
+///
+/// `CameraSessionBox.configure` never set `sessionPreset`, so the video stream could be 16:9 while
+/// `AVCapturePhotoOutput` returned full-sensor 4:3 stills: the ratio setting crops the still, and the
+/// preview (aspect-filled into the frame) shows the centre of the 16:9 stream — the saved photo then holds
+/// content around the frame that the user never saw. `.photo` makes both 4:3 of the same sensor.
+///
+/// The decision is separable from the session (the same shape as `CameraCaptureMirroring`) because a
+/// session cannot be configured in a unit test: the simulator has no capture device to add.
+enum CameraSessionPreset {
+    /// The one preset the camera configures: the stills' own.
+    static let photo: AVCaptureSession.Preset = .photo
+
+    /// Pins the session to `.photo` when it can serve it, and leaves it exactly as it is otherwise — a
+    /// device that refuses the preset keeps its current stream instead of losing the camera.
+    static func pinPhotoPreset(on session: PhotoPresetSession) {
+        guard session.sessionPreset != photo, session.canSetSessionPreset(photo) else { return }
+        session.sessionPreset = photo
+    }
+}
+
+/// The two `AVCaptureSession` members `CameraSessionPreset` owns, so the preset decision is
+/// unit-testable without a capture device.
+protocol PhotoPresetSession: AnyObject {
+    var sessionPreset: AVCaptureSession.Preset { get set }
+    func canSetSessionPreset(_ preset: AVCaptureSession.Preset) -> Bool
+}
+
+extension AVCaptureSession: PhotoPresetSession {}
 
 /// Lets a `sessionQueue` closure hand a result back to the main-actor controller without capturing
 /// the controller itself (which is not `Sendable`) inside a `@Sendable` closure.
