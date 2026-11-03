@@ -16,7 +16,7 @@ or on data, `out of scope 1.1` = agreed out of this release.
 |---|---|---|---|---|---|
 | TC-SAV-001 | P0 | accounts on, signed out | 1. Launch. 2. Open the Poses More menu, tap Saved | The gate, not a fake list: `saved.signIn` with "Sign in to see saved poses" / "Your saved poses sync across your devices." and one **Sign in** action. No rows, no spinner, no error | automated: TC-SAV-001-saved-signed-out.yaml (runs on 17 and 18) |
 | TC-SAV-002 | P1 | signed in, pose not yet saved | 1. Open any pose. 2. Tap Save (`poseDetail.saveButton`). 3. Settings → Library → Saved | The pose is listed (`poses.first-card` for the first row): "saved" and "listed" are the same fact | automated: TC-SAV-002-saved-list-loaded.yaml |
-| TC-SAV-003 | P1 | signed in, at least one saved pose | 1. Settings → Library → Saved. 2. Unsave from the row. 3. Leave and re-enter Saved | Gone after the reload, with the empty state shown — a removal that survived a fresh load, not a local hide. **BLOCKED by BUG/defect `SAV-010` on build 21: the unsave does not persist.** pass13 `sav003-1` evidence: one unsave emptied the list locally (the empty state appeared and the flow's own first assertion passed), but after Back → Saved the server list came back complete (Pose Compilation 06/07/08…, six scroll pages of rows, every one offering Remove from saved). So the empty state was optimistic only, and the flow's strict re-entry assertion is correct to fail — the case stays strict and unautomated on 21; it is expected to go green on build 22 when unsave persists | automated: TC-SAV-003-unsave-removes.yaml (blocked by `SAV-010` on 1.1 (21); re-run on 1.1 (22)) |
+| TC-SAV-003 | P1 | signed in; the flow seeds its own data | 1. Sign in. 2. Run `subflows/saved-seed.yaml` (saves two poses through the UI, idempotently). 3. Settings → Library → Saved. 4. Unsave every row until the list is empty. 5. Leave and re-enter Saved | The rows leave the list one `DELETE` at a time (`saved.unsave.<poseID>`, snackbar per removal), the empty state owns the screen, and **coming back keeps it empty** — the entry read is always a fresh saved collection (`/api/me/saved`, fix `62238d1`), so a removal that survived this reload is a write, not a local hide. Verified on build 22 (dev22 SAV investigation, 05:37–05:38 UTC): the unsave persists across relaunch. The flow no longer assumes any saved pose exists on the shared account — the dev22 investigation had consumed the only one, which is what starved the case before. No blocker note: the build-21 defect (`SAV-010`, wrong feed read) is fixed | automated: TC-SAV-003-unsave-removes.yaml (self-seeding; verified on 1.1 (22)) |
 | TC-SAV-004 | P1 | signed in, nothing saved | 1. Settings → Library → Saved | "No saved poses yet" / "Tap Save on any pose to keep it here." and one **Browse poses** (`saved.browseCommunity`) that lands on the **Poses tab at its root** (`poses.open-search` / `poses.category.all` visible, `saved.back` gone, Settings not showing). No error styling, no count text | automated: TC-SAV-004-empty-browse.yaml |
 | TC-SAV-005 | P1 | signed in, one saved pose | 1. Tap the saved pose. 2. Tap "Try this pose" (`poseDetail.use`) | The detail opens (`poseDetail.title`) and its Try action opens the camera with that pose; the row is a link, so a tap outside the unsave control never removes anything | pending-e2e |
 | TC-SAV-006 | P1 | signed in, saved poses, device offline | 1. Open Saved offline (evidence run: `-AIPoseSavedOfflineFixture 2`) | `saved.offlineBanner` "You're offline. Changes will sync when you're back online." above the rows; the first rows stay usable, rows the cache cannot serve are dimmed and labelled "Not saved offline". Neither the empty state nor the failure panel appears: offline is its own state | draft: redesign-drafts/saved-paywall/flows/TC-SAV-006-offline-banner-rows.yaml + unit: offline index / presentation rules (real network loss cannot be simulated per app) |
@@ -33,9 +33,9 @@ or on data, `out of scope 1.1` = agreed out of this release.
 
 ## Held for dev19 (the unsave fix)
 
-`BUG-SAVED-18-01` (unsave tile unreachable) is fixed in `0cb55d1`; **TC-SAV-010** and the flows that depend
-on unsaving — **TC-SAV-003**, **TC-SAV-004** (its setup empties the list), **TC-SAV-014** — are held until the
-dev19 app is installed, then re-run. The fix also changed what the row ids mean: `poses.first-card` /
+`BUG-SAVED-18-01` (unsave tile unreachable) is fixed in `0cb55d1` and re-verified on build 22; **TC-SAV-003**,
+**TC-SAV-010** and **TC-SAV-004** (whose setup empties the list) run again and seed their own data. The fix also
+changed what the row ids mean: `poses.first-card` /
 `poses.card.<id>` now sit on the open-pose link (thumbnail + copy), not on the whole row, so the trailing
 unsave tile is addressed by `saved.unsave.<poseID>` (or, by text, `"Remove from saved"`) and never by a
 row coordinate. The removal bar and its Undo action carry `saved.snackbar` / `saved.snackbar.undo`, so a
@@ -92,10 +92,11 @@ The deploy's own HTTP log for the pass13 window (`railway logs --http --since 20
 - Re-entering Saved after a `DELETE` fetched `/api/community/poses` again (no saved read), which is why the
   "full list" came back: the community feed was drawn as the saved collection. Nothing resurrected a row.
 
-Build 22 behaviour QA should verify (TC-SAV-003/TC-SAV-010): the first tap on a saved row removes it (one
-`DELETE`, row leaves, `saved.snackbar` + Undo), and leaving Saved and coming back keeps it gone; a relaunch
-keeps it gone too (the entry read is always a fresh saved collection). A failing request shows the error bar
-and leaves the row in place — it is never removed optimistically.
+Build 22 behaviour, **verified** (TC-SAV-003/TC-SAV-010, dev22 SAV investigation 05:37–05:38 UTC): the first tap
+on a saved row removes it (one `DELETE`, row leaves, `saved.snackbar` + Undo), leaving Saved and coming back
+keeps it gone, and a relaunch keeps it gone too — the entry read is always a fresh saved collection
+(`/api/me/saved`, fix `62238d1`). A failing request shows the error bar and leaves the row in place: it is
+never removed optimistically.
 
 ## Accepted cosmetic deltas (do not raise as bugs)
 
