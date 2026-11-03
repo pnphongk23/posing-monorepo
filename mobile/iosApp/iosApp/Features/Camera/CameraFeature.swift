@@ -3024,12 +3024,13 @@ final class PosePickerViewModel: ObservableObject {
     func setOfflineForTesting(_ offline: Bool) { isOffline = offline }
     #endif
 
-    /// The scope chip. One control switches the collection; leaving Saved drops the query so the two
-    /// lists cannot filter each other's text.
+    /// The scope chip. One control switches the collection and **keeps** the query: search sits above the
+    /// chips and the chips narrow what the query already matched, so a tap that emptied the field would
+    /// undo the typing that came first. One matcher serves both scopes, so the query cannot mean two
+    /// different things after the switch.
     func selectScope(_ scope: CameraPickerScope) {
         guard scope != self.scope else { return }
         self.scope = scope
-        query = ""
     }
 
     /// `pose-picker-search__clear`: resets to the full grid without refetching.

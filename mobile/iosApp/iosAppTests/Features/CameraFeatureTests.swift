@@ -910,17 +910,23 @@ final class CameraPickerScopeTests: XCTestCase {
 
     // MARK: Scope switching
 
-    func testThePickerOpensOnAllAndSwitchingScopeClearsTheQuery() {
+    /// Search sits above the chips, and the chips *narrow* what the query already matched. A scope tap
+    /// therefore keeps the query: emptying the field would make "type a name, then pick a collection"
+    /// impossible, which is the order the sheet is laid out in.
+    func testThePickerOpensOnAllAndSwitchingScopeKeepsTheQuery() {
         let model = PosePickerViewModel(service: PreviewPoseService())
         XCTAssertEqual(model.scope, .all, "the picker opens on the catalogue")
 
         model.query = "arms"
         model.selectScope(.saved)
         XCTAssertEqual(model.scope, .saved)
-        XCTAssertEqual(model.query, "", "a scope switch never carries the other list's search")
+        XCTAssertEqual(model.query, "arms", "the Saved chip narrows the query instead of discarding it")
+
+        model.selectScope(.all)
+        XCTAssertEqual(model.query, "arms", "and the All chip keeps it on the way back")
 
         model.query = "walk"
-        model.selectScope(.saved)
+        model.selectScope(.all)
         XCTAssertEqual(model.query, "walk", "tapping the chip already selected is a no-op")
     }
 
