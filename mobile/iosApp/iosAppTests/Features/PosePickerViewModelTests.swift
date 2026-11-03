@@ -33,11 +33,16 @@ final class PosePickerViewModelTests: XCTestCase {
         guard case .failed = model.state else { return XCTFail("Expected failed") }
     }
 
-    func testLocalTitleFilterMatchesCaseInsensitive() async {
-        let model = PosePickerViewModel(service: StubPoseService(poses: [
-            samplePose(id: "a", name: "Warrior II"),
-            samplePose(id: "b", name: "Downward Dog"),
-        ]))
+    /// The first paint under a new query: the local matcher narrows what the sheet already has, before the
+    /// server answers, and keeps doing so offline (`CameraPickerServerSearchTests` covers the request itself).
+    func testTheFirstPaintUsesTheLocalMatcherWhileTheAnswerIsOut() async {
+        let model = PosePickerViewModel(
+            service: StubPoseService(poses: [
+                samplePose(id: "a", name: "Warrior II"),
+                samplePose(id: "b", name: "Downward Dog"),
+            ]),
+            searchDebounceNanoseconds: .max
+        )
         await model.load()
         model.query = "  WARRIOR  "
         XCTAssertEqual(model.filteredPoses.map(\.id), ["a"])
@@ -51,7 +56,7 @@ final class PosePickerViewModelTests: XCTestCase {
             samplePose(id: "b", name: "Beta"),
         ]
         let service = CountingPoseService(poses: poses)
-        let model = PosePickerViewModel(service: service)
+        let model = PosePickerViewModel(service: service, searchDebounceNanoseconds: .max)
 
         await model.load()
         model.query = "alp"
@@ -62,15 +67,15 @@ final class PosePickerViewModelTests: XCTestCase {
         XCTAssertEqual(service.fetchCount(), 1, "clear-search must not refetch")
     }
 
-    /// The sheet's query and the Search screen's query are the same query: the picker's rows are exactly
-    /// what the shared matcher returns for the same text, including case and padding.
-    func testTheQueryFilterIsTheSharedNameMatcher() async {
+    /// The fallback the sheet paints while the server answers (and online-only failures aside, the whole
+    /// offline answer) is the shared matcher the Saved screen uses — never a second, weaker filter.
+    func testTheFirstPaintFilterIsTheSharedNameMatcher() async {
         let poses = [
             samplePose(id: "a", name: "Warrior II"),
             samplePose(id: "b", name: "Downward Dog"),
             samplePose(id: "c", name: "Café lean"),
         ]
-        let model = PosePickerViewModel(service: StubPoseService(poses: poses))
+        let model = PosePickerViewModel(service: StubPoseService(poses: poses), searchDebounceNanoseconds: .max)
         await model.load()
 
         for query in ["warrior", "  WARRIOR  ", "dog", "CAFÉ", "café", "  ", "", "zzz"] {

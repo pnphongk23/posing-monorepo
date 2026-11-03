@@ -853,6 +853,305 @@ final class PosePickerCatalogueLoadTests: XCTestCase {
     }
 }
 
+// MARK: - The picker's search is the Search screen's search
+
+/// Records the exact request each surface makes, so "the picker asks the Search screen's question" is a
+/// recorded fact rather than a shared comment. It can hold a request open (to deliver a *stale* answer
+/// late), fail every request (offline), and match on something other than the name (the server's own notion
+/// of relevance, which no local name filter can reproduce).
+private actor RecordingPoseSearchService: PoseServing {
+    /// One recorded window read. When `PoseServing` carries the route in the request, `filter` joins this
+    /// record and nothing else about the double changes.
+    struct Request: Equatable, Sendable {
+        let query: String?
+        let offset: Int
+        let limit: Int
+    }
+
+    private let rows: [NativePose]
+    private let matches: @Sendable (NativePose, String) -> Bool
+    private var recorded: [Request] = []
+    private var held: [(query: String?, continuation: CheckedContinuation<PosePage, Error>)] = []
+    private var holdsSearches = false
+    private var fails = false
+
+    init(
+        rows: [NativePose],
+        matches: @escaping @Sendable (NativePose, String) -> Bool = { $0.name.localizedStandardContains($1) }
+    ) {
+        self.rows = rows
+        self.matches = matches
+    }
+
+    var requests: [Request] { recorded }
+    /// Only the query-bearing reads: the catalogue load is not a search.
+    var searchRequests: [Request] { recorded.filter { $0.query != nil } }
+
+    func holdSearches() { holdsSearches = true }
+    func failRequests(_ fail: Bool) { fails = fail }
+
+    func poses(query: String?) async throws -> [NativePose] {
+        try await posesPage(query: query, offset: 0, limit: PosesViewModel.Paging.pageSize).poses
+    }
+
+    func pose(id: String) async throws -> NativePose {
+        rows.first { $0.id == id } ?? rows[0]
+    }
+
+    func posesPage(query: String?, offset: Int, limit: Int) async throws -> PosePage {
+        recorded.append(Request(query: query, offset: offset, limit: limit))
+        if holdsSearches, query != nil {
+            return try await withCheckedThrowingContinuation { held.append((query, $0)) }
+        }
+        if fails { throw URLError(.notConnectedToInternet) }
+        return answer(for: query)
+    }
+
+    func waitForSearchRequests(_ count: Int) async {
+        while searchRequests.count < count {
+            try? await Task.sleep(nanoseconds: 1_000_000)
+        }
+    }
+
+    /// Finishes the newest held request: the query the user is waiting for.
+    func releaseNewestHeld() {
+        guard !held.isEmpty else { return }
+        let next = held.removeLast()
+        next.continuation.resume(returning: answer(for: next.query))
+    }
+
+    /// Finishes the oldest held request: the query the user has already typed past.
+    func releaseOldestHeld() {
+        guard !held.isEmpty else { return }
+        let next = held.removeFirst()
+        next.continuation.resume(returning: answer(for: next.query))
+    }
+
+    private func answer(for query: String?) -> PosePage {
+        let term = (query ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let poses = term.isEmpty ? rows : rows.filter { matches($0, term) }
+        return PosePage(poses: poses, hasMore: false, consumed: poses.count)
+    }
+}
+
+/// The picker's All scope asks the server the question the Search screen asks — same call, same window, same
+/// rows — instead of filtering names client-side, and it keeps the local matcher only for what it has in hand
+/// (the first paint under a new query, and the whole answer offline).
+@MainActor
+final class CameraPickerServerSearchTests: XCTestCase {
+    private func pose(_ id: String, name: String, category: String = "Standing") -> NativePose {
+        NativePose(
+            id: id,
+            name: name,
+            category: category,
+            imageURL: nil,
+            instructions: [],
+            isSaved: false
+        )
+    }
+
+    private func picker(_ service: any PoseServing, debounce: UInt64 = 0) -> PosePickerViewModel {
+        PosePickerViewModel(service: service, searchDebounceNanoseconds: debounce)
+    }
+
+    /// Same query, same request, same rows, same order — measured on both surfaces' real code paths: the
+    /// picker's model and `PosesViewModel` (what the Search screen drives).
+    func testThePickerAndTheSearchScreenGetTheSameRowsForTheSameQuery() async throws {
+        let rows = [
+            pose("w1", name: "Warrior II"),
+            pose("d1", name: "Downward Dog"),
+            pose("c1", name: "Café lean"),
+        ]
+        let service = RecordingPoseSearchService(rows: rows)
+
+        let sheet = picker(service)
+        await sheet.load()
+        sheet.query = "warrior"
+        await waitUntil { !sheet.state.rows.isEmpty }
+
+        let searchScreen = PosesViewModel(service: service, debounceNanoseconds: 0)
+        searchScreen.query = "warrior"
+        searchScreen.scheduleSearch()
+        await waitUntil {
+            if case .loaded = searchScreen.state { return true }
+            return false
+        }
+
+        XCTAssertEqual(
+            sheet.state.rows.map(\.id),
+            searchScreen.state.rows.map(\.id),
+            "the same query returns the same pose ids, in the same order, from both screens"
+        )
+        XCTAssertEqual(sheet.state.rows.map(\.id), ["w1"])
+
+        let requests = await service.searchRequests
+        XCTAssertEqual(requests.count, 2, "one search request per surface")
+        XCTAssertEqual(requests[0], requests[1], "and the two surfaces sent the same request")
+        XCTAssertEqual(
+            requests.last,
+            RecordingPoseSearchService.Request(query: "warrior", offset: 0, limit: PosesViewModel.Paging.pageSize),
+            "the Search screen's own window: first page, the server's page size"
+        )
+    }
+
+    /// The rows the sheet draws are the server's answer, not a local name filter over it: a pose the server
+    /// matched by its category is shown even though its name does not contain the query.
+    func testAServerMatchIsNotFilteredOutByName() async {
+        let service = RecordingPoseSearchService(
+            rows: [pose("run1", name: "Sun salutation", category: "Cardio warrior flow")],
+            matches: { $0.category.localizedStandardContains($1) }
+        )
+        let sheet = picker(service)
+        await sheet.load()
+
+        sheet.query = "warrior"
+        await waitUntil { !sheet.state.rows.isEmpty }
+
+        XCTAssertEqual(
+            sheet.state.rows.map(\.id), ["run1"],
+            "the sheet shows what the server matched; a second local name filter would hide it"
+        )
+        XCTAssertEqual(sheet.stateTone, nil, "a populated grid draws no card")
+    }
+
+    /// A slow answer for a query the user has already typed past never lands.
+    func testAStaleAnswerCannotReplaceANewerQuery() async {
+        let service = RecordingPoseSearchService(rows: [
+            pose("warrior", name: "Warrior II"),
+            pose("walk", name: "City walk"),
+        ])
+        await service.holdSearches()
+        let sheet = picker(service)
+        await sheet.load()
+
+        sheet.query = "walk"
+        await service.waitForSearchRequests(1)
+        sheet.query = "warrior"
+        await service.waitForSearchRequests(2)
+
+        // The answer the user is waiting for arrives first...
+        await service.releaseNewestHeld()
+        await waitUntil { sheet.state.rows.map(\.id) == ["warrior"] }
+        XCTAssertEqual(sheet.state.rows.map(\.id), ["warrior"])
+
+        // ...and the abandoned one lands afterwards, with rows for a query nobody is looking at.
+        await service.releaseOldestHeld()
+        // Give the stale completion a turn to (wrongly) paint.
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertEqual(
+            sheet.state.rows.map(\.id), ["warrior"],
+            "an answer for an older query must not replace the newer query's rows"
+        )
+    }
+
+    /// Typing cancels the search that has not fired yet: one request, for the last text.
+    func testChangingTheQueryCancelsThePendingSearch() async {
+        let service = RecordingPoseSearchService(rows: [
+            pose("a", name: "Arms up"),
+            pose("b", name: "Warrior II"),
+        ])
+        let sheet = picker(service, debounce: 60_000_000)
+        await sheet.load()
+
+        sheet.query = "a"
+        sheet.query = "warrior"
+        await service.waitForSearchRequests(1)
+        try? await Task.sleep(nanoseconds: 120_000_000)
+
+        let requests = await service.searchRequests
+        XCTAssertEqual(requests.count, 1, "the keystroke cancelled the debounced search for \"a\"")
+        XCTAssertEqual(requests.first?.query, "warrior")
+        XCTAssertEqual(sheet.state.rows.map(\.id), ["b"])
+    }
+
+    /// While the answer is out, the grid narrows what is already in hand instead of blanking (or showing a
+    /// spinner over rows the sheet already has).
+    func testTheFirstPaintNarrowsWhatIsInHandWhileTheAnswerIsOut() async {
+        let service = RecordingPoseSearchService(rows: [
+            pose("w", name: "Warrior II"),
+            pose("d", name: "Downward Dog"),
+        ])
+        await service.holdSearches()
+        let sheet = picker(service)
+        await sheet.load()
+
+        sheet.query = "warrior"
+        XCTAssertEqual(
+            sheet.state.rows.map(\.id), ["w"],
+            "the first paint is the local matcher over the catalogue, with no request answered yet"
+        )
+        await service.waitForSearchRequests(1)
+        XCTAssertEqual(sheet.state.rows.map(\.id), ["w"], "and it holds while the request is out")
+
+        await service.releaseNewestHeld()
+        await waitUntil { !sheet.state.rows.isEmpty }
+        XCTAssertEqual(sheet.state.rows.map(\.id), ["w"], "the answer replaces it when it lands")
+    }
+
+    /// Offline the sheet cannot ask the server, so the local name filter is the whole answer — narrowed, with
+    /// the offline notice on top, never a blank or a dead-end card.
+    func testOfflineNarrowsWhatIsInHandInsteadOfBlanking() async {
+        let service = RecordingPoseSearchService(rows: [
+            pose("w", name: "Warrior II"),
+            pose("d", name: "Downward Dog"),
+        ])
+        let sheet = picker(service)
+        await sheet.load()
+        sheet.setOfflineForTesting(true)
+        await service.failRequests(true)
+
+        sheet.query = "warrior"
+        await waitUntil { sheet.state.rows.map(\.id) == ["w"] }
+        try? await Task.sleep(nanoseconds: 50_000_000)
+
+        XCTAssertEqual(sheet.state.rows.map(\.id), ["w"], "the catalogue's own matches are the offline answer")
+        XCTAssertTrue(sheet.showsOfflineNotice, "and the notice says the rows may be stale")
+        XCTAssertNil(sheet.stateTone, "a populated grid keeps its content area")
+    }
+
+    /// A query with nothing in hand and no answer is the failed/offline card, not a silent empty grid.
+    func testAQueryWithNothingInHandShowsTheOfflineCard() async {
+        let service = RecordingPoseSearchService(rows: [pose("w", name: "Warrior II")])
+        await service.failRequests(true)
+        let sheet = picker(service)
+        sheet.setOfflineForTesting(true)
+
+        sheet.query = "zzz"
+        await waitUntil { sheet.stateTone == .offline }
+        XCTAssertEqual(sheet.stateTone, .offline, "nothing in hand and nothing from the server: say why")
+    }
+
+    /// The window is closed at the first page: the sheet is a picker, not the Search screen's endless list.
+    func testTheSearchUsesTheFirstWindowOnly() async {
+        let service = RecordingPoseSearchService(rows: [pose("w", name: "Warrior II")])
+        let sheet = picker(service)
+        await sheet.load()
+
+        sheet.query = "warrior"
+        await service.waitForSearchRequests(1)
+
+        let requests = await service.searchRequests
+        XCTAssertEqual(requests.map(\.offset), [0])
+        XCTAssertEqual(requests.map(\.limit), [PosesViewModel.Paging.pageSize])
+    }
+
+    private func waitUntil(
+        timeout: TimeInterval = 3,
+        _ condition: @MainActor @escaping () async -> Bool,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) async {
+        let deadline = Date().addingTimeInterval(timeout)
+        while !(await condition()) {
+            if Date() > deadline {
+                XCTFail("condition not met within \(timeout)s", file: file, line: line)
+                return
+            }
+            try? await Task.sleep(nanoseconds: 2_000_000)
+        }
+    }
+}
+
 // MARK: - Picker scope (All / Saved)
 
 /// A Saved provider the test drives: `rows` for a success, `failure` for a failure, and an optional
@@ -1059,7 +1358,10 @@ final class CameraPickerScopeTests: XCTestCase {
 
         model.query = "no-such-pose-anywhere"
 
-        XCTAssertTrue(model.filteredPoses.isEmpty)
+        XCTAssertTrue(model.filteredPoses.isEmpty, "nothing in hand matches, so the grid holds no rows")
+        // "No poses match" is the server's answer, so it arrives with the answer — the sheet asks the same
+        // question the Search screen asks instead of deciding locally.
+        await model.searchNowForTesting()
         XCTAssertEqual(model.stateTone, .empty, "the no-match card, not an error and not a blank grid")
         XCTAssertTrue(model.emptyIsNoMatch, "the copy names the query instead of \"no poses yet\"")
 

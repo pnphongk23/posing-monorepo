@@ -683,10 +683,14 @@ final class FeatureStateToneMappingTests: XCTestCase {
         XCTAssertEqual(failing.stateTone, .offline, "a failed load while offline is the offline card")
         failing.setOfflineForTesting(false)
 
-        let loaded = PosePickerViewModel(service: StubPoseService(result: [samplePose]))
+        let loaded = PosePickerViewModel(service: StubPoseService(result: [samplePose]), searchDebounceNanoseconds: 0)
         await loaded.load()
         XCTAssertNil(loaded.stateTone, "a loaded grid draws no card")
+        // The no-match card is the *server's* answer now (the sheet asks the Search screen's question), so it
+        // arrives with that answer rather than with the keystroke; until then the sheet shows it is looking.
         loaded.query = "no-such-pose"
+        XCTAssertEqual(loaded.stateTone, .loading, "a query is out: the sheet says so instead of guessing")
+        await loaded.searchNowForTesting()
         XCTAssertEqual(loaded.stateTone, .empty)
         XCTAssertTrue(loaded.emptyIsNoMatch)
         loaded.query = ""
@@ -699,6 +703,7 @@ final class FeatureStateToneMappingTests: XCTestCase {
         // no-match card wins over the offline notice even while offline. Checking `isOffline` first
         // inverted that precedence.
         loaded.query = "no-such-pose"
+        await loaded.searchNowForTesting()
         XCTAssertEqual(loaded.stateTone, .empty, "an empty result beats offline")
         XCTAssertTrue(loaded.emptyIsNoMatch)
         XCTAssertFalse(loaded.showsOfflineNotice, "the empty branch hides the grid and never reaches the notice")

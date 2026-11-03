@@ -2773,9 +2773,12 @@ enum CameraPickerScope: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     var accessibilityIdentifier: String { "posePicker.scope.\(rawValue.lowercased())" }
 
-    /// The rows this scope draws. Both scopes filter through the **one** name matcher the Poses screens
-    /// use (`PoseAdapterMerge.matchesName`, which is what `filterSavedLocally` is built on), so a query
-    /// cannot mean two different things on two screens.
+    /// The rows this scope draws from what is already in memory.
+    ///
+    /// **Saved** is the answer: the Saved screen's own filter, through the one name matcher every pose search
+    /// uses (`PoseAdapterMerge.matchesName`). **All** is the *fallback* since the sheet started asking the
+    /// server the Search screen's question: `PosePickerViewModel` uses this rule for the first paint under a
+    /// new query and for the whole answer offline, while the query-less catalogue is in hand.
     func rows(catalogue: [NativePose], saved: [NativePose], query: String) -> [NativePose] {
         switch self {
         case .all:
@@ -2919,21 +2922,42 @@ enum CameraSavedScopePresentation: Equatable {
 @MainActor
 final class PosePickerViewModel: ObservableObject {
     @Published var state: Loadable<[NativePose]> = .idle
-    @Published var query: String = ""
+    /// The search field's text. A change schedules the **server** search: the sheet asks the same question
+    /// the Search screen asks (`PoseServing.posesPage`), debounced and cancellable, and paints what is in hand
+    /// while the answer is out.
+    @Published var query: String = "" {
+        didSet {
+            guard query != oldValue else { return }
+            scheduleSearch()
+        }
+    }
     /// `forcedState === 'offline'`: the sheet keeps showing results with an offline notice.
     @Published private(set) var isOffline = false
     /// Which collection the sheet lists (`05-camera-picker-loaded`: All / Saved). Saved is
     /// account-scoped and loaded by `CameraSavedPosesModel`, never by this model.
     @Published var scope: CameraPickerScope = .all
     private let service: any PoseServing
+    /// Typing debounce for the search, in nanoseconds. The Search screen waits 350 ms
+    /// (`PosesViewModel.debounceNanoseconds`); the sheet keeps the same cadence so a keystroke is not a
+    /// request.
+    private let searchDebounceNanoseconds: UInt64
+    /// The query-less catalogue this presentation loaded. It is the search's first paint and the whole answer
+    /// offline, so a query never costs a blank grid — and never a second request for rows already in hand.
+    private var catalogue: Loadable<[NativePose]> = .idle
+    /// The debounced search. Cancelled by the next keystroke, so only the last text is asked for.
+    private var searchTask: Task<Void, Never>?
+    /// Bumped for every query that starts a search, and by every dismissal. An answer carrying an older
+    /// generation is inert: a slow response for "wa" can never replace the grid "warrior" already got.
+    private var searchGeneration = 0
     /// R7: reachability is created on presentation and torn down on dismissal — `NWPathMonitor`
     /// `cancel()` is terminal, so each presentation gets a fresh monitor rather than one running for
     /// the whole lifetime of the camera screen.
     private var pathMonitor: NWPathMonitor?
     private let monitorQueue = DispatchQueue(label: "aipose.pose-picker.path")
 
-    init(service: any PoseServing) {
+    init(service: any PoseServing, searchDebounceNanoseconds: UInt64 = 350_000_000) {
         self.service = service
+        self.searchDebounceNanoseconds = searchDebounceNanoseconds
     }
 
     deinit {
@@ -2963,10 +2987,12 @@ final class PosePickerViewModel: ObservableObject {
 
     /// Sheet dismissal (R6). The prototype's offline card carries no retry action, so a failed fetch
     /// while offline would strand the sheet permanently; dropping the result means reopening always
-    /// retries. Also stops reachability monitoring (R7).
+    /// retries. Also stops reachability monitoring (R7) and abandons the search in flight.
     func prepareForDismissal() {
-        state = .idle
         query = ""
+        state = .idle
+        catalogue = .idle
+        cancelSearch()
         stopMonitoring()
         abandonInFlightLoad()
     }
@@ -2993,7 +3019,10 @@ final class PosePickerViewModel: ObservableObject {
             do {
                 let poses = try await self.service.poses(query: nil)
                 guard generation == self.loadGeneration else { return }
-                self.state = poses.isEmpty ? .empty : .loaded(poses)
+                self.catalogue = poses.isEmpty ? .empty : .loaded(poses)
+                // A search already owns the grid (the user typed while the catalogue was loading): its
+                // first paint and its answer both outrank the plain catalogue.
+                if self.trimmedQuery.isEmpty { self.state = self.catalogue }
             } catch {
                 guard generation == self.loadGeneration else { return }
                 self.state = .failed(error.localizedDescription)
@@ -3002,6 +3031,83 @@ final class PosePickerViewModel: ObservableObject {
         inFlightLoad = task
         await task.value
         if loadGeneration == generation { inFlightLoad = nil }
+    }
+
+    // MARK: Search — the Search screen's question, asked from the sheet
+
+    /// The text every search surface trims, so the request and the copy cannot disagree.
+    private var trimmedQuery: String {
+        query.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// What is in hand to narrow while the server has not answered: the query-less catalogue when it loaded,
+    /// otherwise whatever answer is on screen.
+    private var rowsInHand: [NativePose] {
+        if case .loaded(let poses) = catalogue { return poses }
+        return state.rows
+    }
+
+    /// The search field changed: repaint from what is in hand, then ask the server once the typing settles.
+    private func scheduleSearch() {
+        cancelSearch()
+        let term = trimmedQuery
+        guard !term.isEmpty else {
+            // No query is no search: the catalogue is the answer and no request is spent on it.
+            state = catalogue
+            return
+        }
+        let firstPaint = CameraPickerScope.all.rows(catalogue: rowsInHand, saved: [], query: term)
+        // A spinner, not the no-match card, while the answer is out: "no poses match" is a claim only the
+        // server can make.
+        state = firstPaint.isEmpty ? .loading : .loaded(firstPaint)
+
+        // The raw field text is what the request carries (the Search screen sends the field text, not the
+        // trimmed term); the fallback above uses the trimmed one because it is the matcher's rule.
+        let text = query
+        let generation = searchGeneration
+        let debounce = searchDebounceNanoseconds
+        searchTask = Task { @MainActor [weak self] in
+            if debounce > 0 {
+                try? await Task.sleep(nanoseconds: debounce)
+            }
+            guard !Task.isCancelled, let self, generation == self.searchGeneration else { return }
+            await self.search(text, generation: generation)
+        }
+    }
+
+    /// Cancels the debounced search and makes any request already in flight inert.
+    private func cancelSearch() {
+        searchTask?.cancel()
+        searchTask = nil
+        searchGeneration &+= 1
+    }
+
+    /// The server's answer for `text`, painted only if it is still the answer someone is waiting for.
+    private func search(_ text: String, generation: Int) async {
+        do {
+            let page = try await fetchAll(query: text)
+            guard generation == searchGeneration else { return }
+            state = page.poses.isEmpty ? .empty : .loaded(page.poses)
+        } catch {
+            guard generation == searchGeneration else { return }
+            // Offline (or a failure): the local name filter over the catalogue is the fallback, so the sheet
+            // narrows what it has instead of blanking. With nothing in hand the card says why.
+            let fallback = CameraPickerScope.all.rows(catalogue: rowsInHand, saved: [], query: text)
+            state = fallback.isEmpty ? .failed(error.localizedDescription) : .loaded(fallback)
+        }
+    }
+
+    /// **The call site.** The Search screen reads its rows with
+    /// `service.posesPage(query: normalizedQuery, offset: 0, limit: PosesViewModel.Paging.pageSize)` — the field text, `nil`
+    /// when it is empty, and the first window of `Paging.pageSize` rows (`PosesViewModel.load()`). The sheet
+    /// asks exactly that, so "the same query" means the same request, the same rows and the same order. When
+    /// the route travels *in* the request, this one method changes and nothing else does.
+    private func fetchAll(query text: String) async throws -> PosePage {
+        try await service.posesPage(
+            query: text.isEmpty ? nil : text,
+            offset: 0,
+            limit: PosesViewModel.Paging.pageSize
+        )
     }
 
     /// Drops the request behind the catalogue: the collapsed camera's dismissal retries on reopen
@@ -3013,12 +3119,11 @@ final class PosePickerViewModel: ObservableObject {
         loadGeneration &+= 1
     }
 
-    /// Local title filter over the loaded catalogue (`guide-picker.js` `render()`). One matcher, shared
-    /// with the Saved scope and the Poses screens: trimmed query, `localizedCaseInsensitiveContains`.
-    var filteredPoses: [NativePose] {
-        guard case .loaded(let poses) = state else { return [] }
-        return poses.filter { PoseAdapterMerge.matchesName($0.name, query: query) }
-    }
+    /// The All scope's rows for the current query. `state` **is** the answer: the server's rows when it has
+    /// answered (the same request the Search screen makes), the local name filter over the catalogue while the
+    /// answer is out or when the sheet is offline. Filtering again here would hide rows the server matched by
+    /// something other than the name — exactly the disagreement with the Search screen this removed.
+    var filteredPoses: [NativePose] { state.rows }
 
     /// Shared-card tone the picker renders, or `nil` when it draws the grid.
     ///
@@ -3052,16 +3157,24 @@ final class PosePickerViewModel: ObservableObject {
         return false
     }
 
-    /// Distinguishes the `.empty` card's two copies: a no-match query versus an empty catalogue.
-    var emptyIsNoMatch: Bool {
-        if case .empty = state { return false }
-        return !query.trimmingCharacters(in: .whitespaces).isEmpty
-    }
+    /// Distinguishes the `.empty` card's two copies: a query that matched nothing versus an empty catalogue.
+    /// Both arrive as `.empty` — the server's empty page *is* an empty list — so the query is what tells them
+    /// apart: with no query there was nothing to match, and the catalogue itself is empty.
+    var emptyIsNoMatch: Bool { !trimmedQuery.isEmpty }
 
     #if DEBUG
     /// Test seam: reachability is process-wide and cannot be driven from a unit test, but the
     /// `.offline` card has no other producer in the app and no screenshot path either.
     func setOfflineForTesting(_ offline: Bool) { isOffline = offline }
+
+    /// Test seam: runs the search for the current text now instead of waiting out the debounce, so a test
+    /// drives the request without a clock.
+    func searchNowForTesting() async {
+        let text = query
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        cancelSearch()
+        await search(text, generation: searchGeneration)
+    }
     #endif
 
     /// The scope chip. One control switches the collection and **keeps** the query: search sits above the
@@ -3073,7 +3186,8 @@ final class PosePickerViewModel: ObservableObject {
         self.scope = scope
     }
 
-    /// `pose-picker-search__clear`: resets to the full grid without refetching.
+    /// `pose-picker-search__clear`: resets to the full grid. Dropping the query cancels the search in flight
+    /// and puts the loaded catalogue back, so clearing never costs a request.
     func clearSearch() {
         query = ""
     }
@@ -3168,14 +3282,24 @@ private struct PosePickerSheet: View {
         )
     }
 
-    /// Rows the grid draws for the current scope. The rule owns the name filter for **both** lists, so
-    /// the catalogue is passed unfiltered and cannot be filtered twice.
+    /// Rows the grid draws for the current scope.
+    ///
+    /// **All** draws the model's rows as they are: they are already the answer for the current query (the
+    /// server's rows when it answered, the local name filter over the catalogue while the answer is out or
+    /// offline — see `PosePickerViewModel`). Filtering again here would hide a row the server matched by
+    /// something other than its name, which is exactly how the sheet and the Search screen used to disagree.
+    /// **Saved** is the Saved screen's own filter, through the one shared matcher.
     private var visiblePoses: [NativePose] {
-        model.scope.rows(
-            catalogue: model.state.rows,
-            saved: savedPoses.rows,
-            query: model.query
-        )
+        switch model.scope {
+        case .all:
+            return model.state.rows
+        case .saved:
+            return CameraPickerScope.saved.rows(
+                catalogue: model.state.rows,
+                saved: savedPoses.rows,
+                query: model.query
+            )
+        }
     }
 
     private struct PickerItem: Identifiable {
