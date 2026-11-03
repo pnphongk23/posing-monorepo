@@ -85,6 +85,10 @@ TC-PAY-017/018/019 (and TC-PAY-014 for Restore) in `docs/qa/test-cases/paywall-p
 - [ ] Tap the preview well outside the panel; then re-open it and dismiss it with the two-finger scrub (VoiceOver escape).
 - [ ] **Expected:** both dismiss it, no dark scrim is left behind, and re-opening lands on Flash again.
 
+- [ ] Capture once at **3:4** and once at **9:16**, then open each photo in **Gallery**.
+- [ ] **Expected:** each photo is **not rotated** and shows exactly what the preview framed — the crop matches the
+  on-screen frame, the edges line up, and the **pose guide and the scrims are not baked into the photo**.
+
 ## 3. Picking a pose (the Browse card replaced the pill)
 - [ ] Check the pose strip is expanded (rounded panel above the bar with pose thumbnails).
 - [ ] **Expected:** the strip ends with a **Browse** card (magnifier icon, the word "Browse").
@@ -265,8 +269,8 @@ page applies to both builds.
 
 Notes for QA triage (not for the product owner): the camera chrome in build 18 is verified in source at `d001b80`
 (`camera.tools.done` retired — the panel opens on Flash and dismisses on an outside tap or VoiceOver escape;
-`camera.choosePose` is the strip's Browse card and only exists while the strip is expanded; `camera.pickerStripToggle` sits at
-the right end of the zoom row; zoom presets are lens-aware `camera.zoom.0.5x|1x|2x`, filtered by the device's range, so the
+`camera.choosePose` is the **Poses chip** on the zoom/scale row and is the pose sheet's only entry (its value is the
+selected pose name, or "None selected"); the old strip and its toggle (`camera.pickerStripToggle`) are retired; zoom presets are lens-aware `camera.zoom.0.5x|1x|2x`, filtered by the device's range, so the
 Simulator offers only 1x/2x). Timer / Ratio / guide Scale ids are `camera.tools.timer.off|3s|10s`,
 `camera.timer.countdown` + `camera.timer.cancel` ("Get ready" + Cancel), `camera.tools.ratio.3x4|1x1|9x16` and
 `camera.tools.scale` (guide size, 40 %–300 %, + `.scale.reset`). The guide Mirror switch is `camera.tools.mirror.switch`
