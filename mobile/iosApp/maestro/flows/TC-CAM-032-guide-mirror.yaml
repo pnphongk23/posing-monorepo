@@ -37,5 +37,6 @@ tags: [TC-CAM-032, p1]
     id: "camera.tools.mirror"
 - assertVisible:
     id: "camera.poseGuide"
-- assertVisible:
-    id: "camera.pickerStripToggle"
+# `camera.pickerStripToggle` used to be asserted here; it is in `retiredIdentifiers` (CameraFeature.swift:1813-1817)
+# — the strip was replaced by the pose-picker sheet — so the assertion was removed rather than the case, whose
+# subject (the Mirror row flipping the guide only) still exists and still passes.
