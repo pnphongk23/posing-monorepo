@@ -1,0 +1,55 @@
+# Seeds the signed-in account with two saved poses through the UI, so the Saved cases never depend on whatever
+# the shared QA account happens to hold (dev22: the SAV investigation consumed its only saved pose, and
+# TC-SAV-003/010 then failed on `saved.unsave.*` before they could test anything).
+#
+# Idempotent: the detail's control reads "Save pose" when the pose is not saved and "Remove from saved" when it
+# is, so each save is guarded by the label and an already-saved pose is never toggled OFF. The second pose is
+# addressed as the first node matching `poses.card.*` — the first card has its own `poses.first-card` id — so no
+# catalogue UUID is hard-coded.
+appId: ${APP_ID}
+---
+# Pose 1 — the first card.
+- tapOn:
+    id: "poses.first-card"
+- extendedWaitUntil:
+    visible:
+      id: "poseDetail.saveButton"
+    timeout: 20000
+- runFlow:
+    when:
+      visible: "Save pose"
+    commands:
+      - tapOn:
+          id: "poseDetail.saveButton"
+      - extendedWaitUntil:
+          visible: "Remove from saved"
+          timeout: 20000
+- tapOn:
+    id: "poseDetail.back"
+# Pose 2 — a different card from the same list.
+- extendedWaitUntil:
+    visible:
+      id: 'poses\.card\..*'
+    timeout: 20000
+- tapOn:
+    id: 'poses\.card\..*'
+    index: 0
+- extendedWaitUntil:
+    visible:
+      id: "poseDetail.saveButton"
+    timeout: 20000
+- runFlow:
+    when:
+      visible: "Save pose"
+    commands:
+      - tapOn:
+          id: "poseDetail.saveButton"
+      - extendedWaitUntil:
+          visible: "Remove from saved"
+          timeout: 20000
+- tapOn:
+    id: "poseDetail.back"
+- extendedWaitUntil:
+    visible:
+      id: "poses.open-search"
+    timeout: 20000

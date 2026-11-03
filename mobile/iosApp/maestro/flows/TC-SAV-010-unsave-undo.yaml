@@ -9,8 +9,8 @@
 # the Undo tap is the very next command. The measured latency is printed into the Maestro log as
 # SNACKBAR_LATENCY_MS so a slow server is visible in the evidence instead of being guessed at.
 #
-# Needs an account with at least two saved poses (TC-SAV-002 leaves one; seed a second by saving another
-# pose before this flow, or run it against an account that already has some).
+# Self-seeding: two saved poses are created through the UI at the top of the flow (`saved-seed.yaml`), so the
+# case does not depend on what the shared account happens to hold.
 appId: ${APP_ID}
 tags: [TC-SAV-010, p1, e2e]
 ---
@@ -19,10 +19,8 @@ tags: [TC-SAV-010, p1, e2e]
     label: "E2E_EMAIL / E2E_PASSWORD missing - run with -e E2E_EMAIL=... -e E2E_PASSWORD=..."
 - runFlow: ../subflows/launch-accounts-on.yaml
 - runFlow: ../subflows/pay-sign-in.yaml
-- tapOn:
-    id: "poses.more"
-- tapOn:
-    id: "poses.menu.settings"
+- runFlow: ../subflows/saved-seed.yaml
+- runFlow: ../subflows/open-settings.yaml
 - tapOn:
     id: "settings.saved.row"
 - extendedWaitUntil:
@@ -66,3 +64,28 @@ tags: [TC-SAV-010, p1, e2e]
     id: "saved.browseCommunity"
 - assertNotVisible:
     id: "saved.retry"
+# Persistence, the half Undo does not prove: unsave the same pose once more and let the offer go by, then leave
+# and come back. The row must stay gone after a fresh load — a removal the server never heard would come back.
+- tapOn:
+    id: 'saved\.unsave\..*'
+    index: 0
+- extendedWaitUntil:
+    visible:
+      id: "saved.snackbar"
+    timeout: 15000
+- tapOn:
+    id: "saved.back"
+- extendedWaitUntil:
+    visible:
+      id: "settings.saved.row"
+    timeout: 15000
+- tapOn:
+    id: "settings.saved.row"
+- extendedWaitUntil:
+    visible:
+      id: "poses.first-card"
+    timeout: 25000
+- assertNotVisible:
+    text: ${maestro.copiedText}
+    below:
+      id: "saved.back"

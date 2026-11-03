@@ -19,6 +19,9 @@ tags: [TC-SAV-003, p1]
     label: "E2E_EMAIL / E2E_PASSWORD missing - run with -e E2E_EMAIL=... -e E2E_PASSWORD=..."
 - runFlow: ../subflows/launch-accounts-on.yaml
 - runFlow: ../subflows/pay-sign-in.yaml
+# Self-seeding: two saved poses are created through the UI, because the shared QA account is not guaranteed to
+# hold any (dev22: the SAV investigation left it empty and this flow failed before it could unsave anything).
+- runFlow: ../subflows/saved-seed.yaml
 # The hardened subflow waits for the popped-over row before tapping it; the inline pair this replaced raced the
 # menu's opening animation and failed 3/3 on dev21.
 - runFlow: ../subflows/open-settings.yaml
@@ -28,6 +31,9 @@ tags: [TC-SAV-003, p1]
     visible:
       id: 'saved\.unsave\..*'
     timeout: 25000
+# The seed really landed: at least one row is unsavable before the loop starts.
+- assertVisible:
+    id: "poses.first-card"
 # Unsave every row until the empty state owns the screen (bounded: at most 8 removals).
 - repeat:
     while:
