@@ -1,4 +1,4 @@
-# TC-CAM-022 the sheet's All / Saved chips switch the collection in place
+# TC-CAM-022 the sheet's All / Saved chips switch the collection in place, and keep the query
 appId: ${APP_ID}
 tags: [TC-CAM-022, p0]
 ---
@@ -17,17 +17,35 @@ tags: [TC-CAM-022, p0]
     id: "posePicker.scope.all"
 - assertVisible: '.*Saved poses.*'
 - assertVisible: '.*All poses.*'
-# Switching scope re-filters the same sheet — it does not close it and the camera stays where it was.
+# A query first, so the switch has something to keep. "zzzqx" matches nothing in either scope, which makes the
+# expectation the same whatever the catalogue holds.
+- tapOn:
+    id: "posePicker.search"
+- inputText: "zzzqx"
+- extendedWaitUntil:
+    visible:
+      id: "posePicker.state"
+    timeout: 20000
+# Switching scope re-filters the same sheet — it does not close it and it does not eat the typed query.
 - tapOn:
     id: "posePicker.scope.saved"
 - assertVisible:
     id: "posePicker.search"
+    text: '.*zzzqx.*'
 - assertVisible:
     id: "posePicker.close"
+- assertVisible:
+    id: "posePicker.sheet"
 - takeScreenshot: sheet-scopes
-# Back to All: the catalogue grid is reachable again in one tap.
+# Back to All: still the same query, still the same sheet.
 - tapOn:
     id: "posePicker.scope.all"
+- assertVisible:
+    id: "posePicker.search"
+    text: '.*zzzqx.*'
+# Clearing is the way back to the full grid — one request-free step, in the scope that is showing.
+- tapOn:
+    id: "posePicker.searchClear"
 - extendedWaitUntil:
     visible:
       id: "posePicker.grid"
@@ -36,7 +54,7 @@ tags: [TC-CAM-022, p0]
     id: "posePicker.close"
 - extendedWaitUntil:
     notVisible:
-      id: "posePicker.search"
+      id: "posePicker.sheet"
     timeout: 15000
 - assertVisible:
     id: "camera.shutter"

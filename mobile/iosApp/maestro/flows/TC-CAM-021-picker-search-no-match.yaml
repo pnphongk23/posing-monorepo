@@ -19,10 +19,12 @@ tags: [TC-CAM-021, p1]
 # `inputText` needs a software keyboard — the one step to watch if a batch ever stalls (Simulator ▸ Keyboard ▸
 # Connect Hardware Keyboard off).
 - inputText: "zzzqx"
+# The All scope asks the server the same question Search asks (debounced ~350 ms, then a round trip), so the
+# no-match card arrives after a request rather than on the keystroke — wait for it, never assert on arrival.
 - extendedWaitUntil:
     visible:
       id: "posePicker.state"
-    timeout: 15000
+    timeout: 20000
 - assertVisible: '.*No poses match.*'
 - assertNotVisible:
     id: "posePicker.grid"

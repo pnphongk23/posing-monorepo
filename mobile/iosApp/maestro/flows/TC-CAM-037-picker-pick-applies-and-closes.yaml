@@ -1,4 +1,4 @@
-# TC-CAM-037 picking a pose applies it and the sheet closes by itself
+# TC-CAM-037 picking a pose applies it, closes the sheet and names it on the chip
 appId: ${APP_ID}
 tags: [TC-CAM-037, p0]
 ---
@@ -6,28 +6,34 @@ tags: [TC-CAM-037, p0]
 - runFlow: ../subflows/open-camera.yaml
 - assertNotVisible:
     id: "camera.poseGuide"
+# Nothing picked yet: the chip's value says so.
+- assertVisible:
+    id: "camera.choosePose"
+    text: '.*None selected.*'
 - runFlow: ../subflows/camera-open-picker.yaml
-- extendedWaitUntil:
-    visible:
-      id: "posePicker.sheet"
-    timeout: 20000
 - assertVisible:
     id: "posePicker.grid"
 # The rows carry `posePicker.row.<poseID>`; without a server pose id in the repo the presence of that id is
-# asserted by pattern, and the pick itself still goes by the row's `Use <name> pose` label — never a coordinate.
+# asserted by pattern, and the pick goes by the row's `Use <name> pose` label — never a coordinate.
 - assertVisible:
     id: 'posePicker\.row\..*'
+# Read the pose name off the row that is about to be tapped, so the chip's value can be checked against it
+# instead of against a constant: "Use Window light pose" → "Window light".
+- copyTextFrom: '.*Use .* pose.*'
+- evalScript: ${output.pickedName = maestro.copiedText.replace(/^Use /, "").replace(/ pose$/, "")}
 - tapOn: '.*Use .* pose.*'
 # No Done step: the selection itself closes the sheet — asserted on the sheet's own container.
 - extendedWaitUntil:
     notVisible:
       id: "posePicker.sheet"
     timeout: 15000
-- assertNotVisible:
-    id: "posePicker.search"
 - assertVisible:
     id: "camera.poseGuide"
 - assertVisible:
     id: "camera.shutter"
 - assertVisible: '.*Change pose.*'
+# The chip reports the chosen pose by NAME (build 23), not the word "Selected".
+- assertVisible:
+    id: "camera.choosePose"
+    text: ${output.pickedName}
 - takeScreenshot: sheet-pose-applied

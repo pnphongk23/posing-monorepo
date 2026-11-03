@@ -1,6 +1,6 @@
 # Open the pose sheet from the Poses chip on the scale row and wait until it is really up.
-# Build 18+ (feat/camera-pose-popup): the chip keeps `camera.choosePose`; the sheet has **no container id**,
-# so `posePicker.search` (drawn with the sheet's first rows) is the proof it opened.
+# The chip keeps `camera.choosePose`; the sheet exposes its own container (`posePicker.sheet`), which is the
+# proof it opened — no need to infer it from one of the children any more.
 appId: ${APP_ID}
 ---
 - extendedWaitUntil:
@@ -11,5 +11,5 @@ appId: ${APP_ID}
     id: "camera.choosePose"
 - extendedWaitUntil:
     visible:
-      id: "posePicker.search"
+      id: "posePicker.sheet"
     timeout: 15000

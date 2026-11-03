@@ -19,8 +19,10 @@ tags: [TC-CAM-038, p1]
 - extendedWaitUntil:
     visible:
       id: "posePicker.state"
-    timeout: 15000
-# Same title *and* same body the Search screen uses for a query with no results (SearchResultsCopy).
+    timeout: 25000
+# Same title *and* same body the Search screen uses for a query with no results (SearchResultsCopy). The All
+# scope answers from the server (debounced, then a round trip), so the card is waited for, never asserted on
+# arrival.
 - assertVisible: '.*No poses match.*'
 - assertVisible: '.*Try a different pose name.*'
 - assertNotVisible:

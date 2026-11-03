@@ -1,4 +1,9 @@
 # TC-CAM-039 the ratio chips reshape the preview frame (3:4 / 1:1 / 9:16)
+#
+# Build 23 crops 3:4 and 9:16 captures in the displayed orientation and clips the guide, the scrims and the
+# gestures to the photo frame. None of that is observable without a capture device, so this flow keeps proving
+# what the Simulator can — the chips exist, read as words, and each one reshapes the frame (the screenshots) —
+# and the saved-file crop/orientation check is the device item in docs/qa/camera-device-checklist.md.
 appId: ${APP_ID}
 tags: [TC-CAM-039, p0]
 ---
