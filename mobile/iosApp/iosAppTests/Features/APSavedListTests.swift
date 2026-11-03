@@ -663,8 +663,8 @@ final class APSavedListTests: XCTestCase {
             "the surface remembers the collection it replaced"
         )
         XCTAssertTrue(
-            surface.contains("if let entryFilter, model.filter == .saved { model.filter = entryFilter }"),
-            "leaving Saved restores the collection the Poses tab was showing"
+            surface.contains("scheduleFilterRestore()"),
+            "leaving Saved schedules the collection the Poses tab was showing"
         )
     }
 
@@ -1005,6 +1005,75 @@ final class APSavedListTests: XCTestCase {
 
         await APSavedEntry.prepare(model: model)
         XCTAssertEqual(model.state.rows.map(\.id), ["a"], "re-entry shows what the server still has")
+    }
+
+    // MARK: - A covered Saved screen is not a teardown
+
+    /// Pushing a pose detail (or presenting a sheet) hides this surface without leaving it. The filter
+    /// restore used to run on every `onDisappear`, which flipped the shared filter under a list that was
+    /// still there: the rows stopped being filtered as saved — so a removal no longer left the list — and
+    /// coming back reloaded the collection and threw its paging cursor away.
+    ///
+    /// Mutation target: restore on `onDisappear` unconditionally and the filter assertion goes red; drop
+    /// the once-per-mount entry load and the paging/row assertions go red.
+    /// A cover is not teardown: the restore is cancelled before it fires, so the shared filter keeps
+    /// naming the saved collection — which is what an unsave needs in order to leave the list.
+    ///
+    /// Mutation target: restore on `onDisappear` unconditionally (or drop the cancel) and the filter
+    /// assertion goes red; that flip is what made "removed" rows stay on screen.
+    @MainActor func testACoverCancelsTheFilterRestoreAndKeepsTheSavedCollection() async {
+        let server = SavedCollectionServer(ids: ["a", "b", "c"])
+        let model = PosesViewModel(service: server, bookmarkService: server)
+        await APSavedEntry.prepare(model: model)
+        model.setPagingForTesting(hasMore: true, nextOffset: 2)
+        XCTAssertEqual(model.filter, .saved)
+
+        let restore = APSavedFilterRestore(grace: 0.4)
+        // What the surface does on `onDisappear` … then on `onAppear`, because it was only covered.
+        restore.schedule { model.filter = .community }
+        restore.cancel()
+        try? await Task.sleep(nanoseconds: 600_000_000)
+
+        XCTAssertEqual(model.filter, .saved, "a covered screen keeps the saved collection")
+        XCTAssertEqual(model.paging.nextOffset, 2, "and nothing reloaded: the cursor is intact")
+        XCTAssertEqual(model.state.rows.map(\.id), ["a", "b", "c"], "the rows are the ones it had")
+
+        await APSavedRowUnsave.perform(model.state.rows[0], at: 0, in: model, undo: APSavedUndo())
+        XCTAssertEqual(model.state.rows.map(\.id), ["b", "c"], "an unsave still leaves the list")
+    }
+
+    /// A real teardown does put the Poses tab's collection back.
+    ///
+    /// Mutation target: stop scheduling the restore and the assertion goes red.
+    @MainActor func testARealTeardownRestoresTheCatalogueFilter() async {
+        let server = SavedCollectionServer(ids: ["a"])
+        let model = PosesViewModel(service: server, bookmarkService: server)
+        await APSavedEntry.prepare(model: model)
+        XCTAssertEqual(model.filter, .saved)
+
+        let restore = APSavedFilterRestore(grace: 0.1)
+        restore.schedule { model.filter = .community }
+        try? await Task.sleep(nanoseconds: 400_000_000)
+
+        XCTAssertEqual(model.filter, .community, "the catalogue's collection is back")
+    }
+
+    /// The surface's own wiring: it owns a restore, cancels it on appearance and schedules it on
+    /// disappearance, and its entry load runs once per mount so a cover cannot reload the collection.
+    ///
+    /// Mutation target: put the restore back inline in `onDisappear` (or drop the `didPrepare` guard) and
+    /// one assertion goes red.
+    func testTheSurfaceDefersTheFilterRestoreUntilTeardown() throws {
+        let source = try savedListSource()
+        let surface = try XCTUnwrap(Self.braceMatchedBlock("struct APSavedSurface", in: source))
+        XCTAssertTrue(surface.contains("filterRestore.cancel()"), "coming back cancels the pending restore")
+        XCTAssertTrue(surface.contains("scheduleFilterRestore()"), "leaving schedules it")
+        XCTAssertTrue(
+            surface.contains("guard !didPrepare else { return }"),
+            "the entry load is once per mount, so a cover keeps the rows and the cursor"
+        )
+        let policy = try XCTUnwrap(Self.braceMatchedBlock("final class APSavedFilterRestore", in: source))
+        XCTAssertTrue(policy.contains("task?.cancel()"), "one restore at a time, and a cancel is real")
     }
 
     // MARK: - The tap path (TC-SAV-010 on 1.1 (20))
