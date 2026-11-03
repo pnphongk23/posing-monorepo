@@ -70,10 +70,16 @@ tags: [TC-PAY-012, p1, e2e]
 - assertVisible:
     id: "paywall.close"
 - takeScreenshot: pay012-retry-after-tap
+# Where close lands: the paywall was opened from Settings > Premium, so closing it returns to the Settings hub —
+# asserting `camera.shutter` here was the flow's own defect (dev22: 2/2 fails on exactly this line).
 - tapOn:
     id: "paywall.close"
-- assertVisible:
-    id: "camera.shutter"
+- assertNotVisible:
+    id: "paywall.close"
+- extendedWaitUntil:
+    visible:
+      id: "settings.premium.row"
+    timeout: 20000
 # The gate is unchanged: the same press asks again instead of capturing.
 - tapOn:
     id: "camera.shutter"
