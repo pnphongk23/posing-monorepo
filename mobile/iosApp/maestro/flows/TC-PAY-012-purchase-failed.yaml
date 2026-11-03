@@ -80,12 +80,12 @@ tags: [TC-PAY-012, p1, e2e]
     visible:
       id: "settings.premium.row"
     timeout: 20000
-# The gate is unchanged: the same press asks again instead of capturing.
-- tapOn:
-    id: "camera.shutter"
-- extendedWaitUntil:
-    visible:
-      id: "paywall.close"
-    timeout: 25000
-- tapOn:
-    id: "paywall.close"
+# "Nothing was granted" — the intent the old tail tried to prove with the camera — is proven from here, which is
+# where close actually lands: the Premium row still reports the unentitled state, so the failed purchase and its
+# retry bought nothing. (`settings.premium.status` is the row's status text, SettingsScreen.swift:512/525.)
+- assertVisible:
+    id: "settings.premium.status"
+    text: '.*Not subscribed.*'
+- assertNotVisible:
+    id: "paywall.cta"
+- takeScreenshot: pay012-nothing-granted
