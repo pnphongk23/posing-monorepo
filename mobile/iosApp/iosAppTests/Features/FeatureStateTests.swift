@@ -336,6 +336,43 @@ final class FeatureStateTests: XCTestCase {
         XCTAssertEqual(remote.communityCallCount, 1)
     }
 
+    // MARK: - The offline catalog never invents "no match" for a search
+
+    /// The community route already refuses to answer a *search* from the local catalog when nothing matches
+    /// ("the server owns search matching, so a local name filter that matches nothing is not an answer").
+    /// The `.all` route returned the empty merge instead, so a search whose rows the catalog had not mirrored
+    /// — or an offline one — reported "no poses match" without asking anyone.
+    ///
+    /// Mutation target: return the empty merge and `communityCallCount` stays 0 while the page is empty.
+    @MainActor func testTheAllRouteAsksTheServerWhenTheLocalCatalogCannotMatchASearch() async throws {
+        let cache = try TempPoseCatalog()
+        defer { cache.cleanUp() }
+        let seeder = PoseAPIServiceAdapter(
+            remote: SeedingPoseRemote(),
+            baseURL: "https://api.example.com",
+            filterState: PoseFilterState(),
+            cache: cache.store
+        )
+        // Mirror one community row into the catalog, then search `.all` for something it cannot match.
+        _ = try await seeder.posesPage(query: "pose", filter: .community, offset: 0, limit: 20)
+
+        let remote = SearchRouteRemote()
+        let adapter = PoseAPIServiceAdapter(
+            remote: remote,
+            baseURL: "https://api.example.com",
+            filterState: PoseFilterState(),
+            cache: cache.store,
+            hasSession: { true }
+        )
+        let page = try await adapter.posesPage(query: "zzqqxx", filter: .all, offset: 0, limit: 20)
+
+        XCTAssertTrue(page.poses.isEmpty, "the server's answer is what the screen shows")
+        XCTAssertEqual(
+            remote.communityCallCount, 1,
+            "a local miss is not an answer: the request went to the server"
+        )
+    }
+
     // MARK: - A search with no matches renders its empty state
 
     /// A signed-out search must reach the catalogue, not an account route.
@@ -1193,4 +1230,49 @@ private extension Loadable {
         case .empty, .loaded, .failed: return false
         }
     }
+}
+
+/// A throwaway offline catalog for the adapters under test.
+@MainActor
+private final class TempPoseCatalog {
+    let root: URL
+    let database: AppDatabase
+
+    /// No background revalidation, so "did the read ask the server?" is decided by the read itself.
+    var store: PoseCatalogCacheStore {
+        PoseCatalogCacheStore(
+            repository: PoseRepository(database: database),
+            scheduler: SilentPoseRefreshScheduler()
+        )
+    }
+
+    init() throws {
+        root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pose-catalog-\(UUID().uuidString)", isDirectory: true)
+        database = try AppDatabase(
+            location: AppDatabaseLocation(url: root.appendingPathComponent("aipose.db"), kind: .freshInstall)
+        )
+    }
+
+    func cleanUp() {
+        try? database.pool.close()
+        try? FileManager.default.removeItem(at: root)
+    }
+}
+
+/// A scheduler that never runs anything: stale-while-revalidate work cannot mask whether the *read* asked.
+private struct SilentPoseRefreshScheduler: PoseRefreshScheduling {
+    func schedule(_ operation: @escaping @Sendable () async -> Void) {}
+}
+
+/// One community row, so the catalog has something mirrored that does not match the search term.
+private struct SeedingPoseRemote: PoseRemoteFetching {
+    func fetchCommunity(page: Int, limit: Int, query: String?) async throws -> PoseRemotePage {
+        let pose = try JSONDecoder().decode(CommunityPose.self, from: Data("""
+        {"poseId":"mirrored-1","name":"Mirrored Pose","skeletonUrl":"/s.png","thumbnailUrl":"/t.jpg","status":"published"}
+        """.utf8))
+        return PoseRemotePage(poses: [pose], total: 1)
+    }
+
+    func fetchSaved(page: Int, limit: Int) async throws -> PoseRemotePage { PoseRemotePage(poses: [], total: 0) }
 }

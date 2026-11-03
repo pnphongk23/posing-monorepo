@@ -620,10 +620,16 @@ final class PoseCatalogCacheStore: @unchecked Sendable {
             let savedOnly = savedRows
                 .filter { $0.ownerAccountId != PoseCatalogBucket.community.rawValue }
                 .map { PoseCatalogMapping.nativePose(from: $0, isSaved: true, baseURL: baseURL) }
-            return PoseAdapterMerge.communityFirst(
+            let merged = PoseAdapterMerge.communityFirst(
                 community: community,
                 saved: PoseAdapterMerge.filterSavedLocally(savedOnly, query: key.query)
             )
+            // Same rule as the community route above: the server owns search matching, so a local name
+            // filter that matches nothing is not an answer. Returning the empty merge here claimed "no
+            // poses match" without ever asking, so an offline search (or one whose rows the catalog has
+            // not mirrored yet) reported a result the server never gave.
+            if key.query != nil, merged.isEmpty { return nil }
+            return merged
         }
     }
 
