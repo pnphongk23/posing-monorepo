@@ -1188,7 +1188,7 @@ struct CameraScreen: View {
                     savedPoses: savedPosesModel,
                     onClose: { model.closePosePicker() },
                     onSelect: { pose in
-                        CameraPickerSelection.select(pose, guide: $guide, closeSheet: { model.closePosePicker() })
+                        CameraPickerSelection.select(pose, guide: $guide, camera: model)
                     }
                 )
                 .zIndex(2)
@@ -1900,13 +1900,14 @@ enum CameraChromeLayout {
 }
 
 /// What a pose chosen in the picker sheet does: it becomes the camera's reference and the sheet closes,
-/// so the user lands back on the framing they were about to shoot. Pure over the binding, so "selecting
-/// a pose sets the guide and closes the sheet" is a unit test instead of something only a device tap can
-/// show.
+/// so the user lands back on the framing they were about to shoot. It takes the camera's own model, so the
+/// closing half is the real dismissal (`closePosePicker` on the state the view draws from) rather than a
+/// closure a test could satisfy with a flag.
+@MainActor
 enum CameraPickerSelection {
-    static func select(_ pose: NativePose, guide: Binding<NativePose?>, closeSheet: () -> Void) {
+    static func select(_ pose: NativePose, guide: Binding<NativePose?>, camera: CameraViewModel) {
         guide.wrappedValue = pose
-        closeSheet()
+        camera.closePosePicker()
     }
 }
 
@@ -2892,6 +2893,22 @@ enum CameraSavedScopePresentation: Equatable {
             }
         }
     }
+
+    /// The Saved chip's no-match card: a query that filters the account's own collection down to nothing is
+    /// the shared no-match card, never a silently blank area under the chips — while a sign-in / loading /
+    /// failed / empty *collection* keeps its own panel (that is not "no match", it is "no answer yet").
+    /// Pure, and the sheet reads it, so the card's condition is a unit test rather than a screenshot.
+    static func savedHasNoMatch(
+        presentation: CameraSavedScopePresentation,
+        rows: [NativePose],
+        query: String
+    ) -> Bool {
+        guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, rows.isEmpty else {
+            return false
+        }
+        if case .rows = presentation { return true }
+        return false
+    }
 }
 
 // MARK: - Pose picker (camera-local bottom sheet, `.nb-pose-picker-*`)
@@ -3419,9 +3436,11 @@ private struct PosePickerSheet: View {
 
     /// The Saved chip loaded a collection, and the query matched none of it.
     private var savedScopeHasNoMatch: Bool {
-        guard !trimmedQuery.isEmpty, visiblePoses.isEmpty else { return false }
-        if case .rows = savedPresentation { return true }
-        return false
+        CameraSavedScopePresentation.savedHasNoMatch(
+            presentation: savedPresentation,
+            rows: visiblePoses,
+            query: trimmedQuery
+        )
     }
 
     /// One state panel, one handle: the sheet's states are all `posePicker.state`.

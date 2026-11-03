@@ -1208,16 +1208,6 @@ final class CameraPickerAccessTests: XCTestCase {
         XCTAssertTrue(model.showPosePicker, "and it opens again after a close: nothing was collapsed")
     }
 
-    /// The inline strip is gone: the bar draws no catalogue, and the ids it used to expose are retired,
-    /// so a flow that still looks for one is looking at a screen that no longer exists.
-    func testTheBottomBarDrawsNoPoseStrip() {
-        XCTAssertFalse(CameraChromeLayout.bottomBarDrawsCatalogue)
-        XCTAssertEqual(
-            CameraChromeLayout.retiredIdentifiers,
-            ["camera.poseStrip", "camera.poseStrip.retry", "camera.pickerStripToggle"]
-        )
-    }
-
     /// A denied camera cannot open the sheet at all — the control is the entry point, not a bypass.
     func testTheSheetIsGated() {
         let denied = CameraViewModel()
@@ -1291,7 +1281,15 @@ final class CameraPickerSheetLayoutTests: XCTestCase {
 
     /// Selecting a pose is the sheet's whole purpose: the reference becomes the guide and the sheet
     /// closes, so the user is back on the framing they were about to shoot.
+    ///
+    /// The close is the camera's own dismissal on the model the screen reads (`showPosePicker`), not a
+    /// stand-in flag: the sheet is opened first, so this is the same open → pick → closed path a tap runs.
     func testSelectingAPoseSetsTheGuideAndClosesTheSheet() {
+        let model = CameraViewModel()
+        model.coordinator.onPermissionResult(.authorized)
+        model.openPosePicker()
+        XCTAssertTrue(model.showPosePicker, "the sheet is open before the pick")
+
         var guide: NativePose?
         let binding = Binding(get: { guide }, set: { guide = $0 })
         let chosen = NativePose(
@@ -1302,12 +1300,92 @@ final class CameraPickerSheetLayoutTests: XCTestCase {
             instructions: [],
             isSaved: false
         )
-        var sheetClosed = false
 
-        CameraPickerSelection.select(chosen, guide: binding, closeSheet: { sheetClosed = true })
+        CameraPickerSelection.select(chosen, guide: binding, camera: model)
 
         XCTAssertEqual(guide?.id, "pick-me", "the chosen pose is the camera's reference")
-        XCTAssertTrue(sheetClosed, "and the sheet closes on the same tap")
+        XCTAssertFalse(model.showPosePicker, "and the sheet closes on the same tap")
+        XCTAssertTrue(model.isPoseGuideVisible, "the reference the user picked is the one on screen")
+    }
+
+    /// Source-level: the two joins the wrapper cannot prove — the sheet's row tap calls its `onSelect`, and
+    /// the screen's `onSelect` runs the selection above on its own guide binding and model.
+    ///
+    /// Mutation target: call something else from `onSelect`, or stop passing the pose from the row — each
+    /// turns one assertion below red.
+    func testTheRowTapReachesTheScreenWiredSelection() throws {
+        let source = try String(
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent() // Features
+                .deletingLastPathComponent() // iosAppTests
+                .deletingLastPathComponent() // iosApp (project dir)
+                .appendingPathComponent("iosApp/Features/Camera/CameraFeature.swift"),
+            encoding: .utf8
+        )
+
+        let gridStart = try XCTUnwrap(source.range(of: "var poseGrid: some View {")?.upperBound)
+        let grid = source[gridStart...].prefix(1_200)
+        XCTAssertTrue(
+            grid.contains("onSelect(item.pose)"),
+            "a row tap hands the sheet's callback that row's pose"
+        )
+
+        let sheetStart = try XCTUnwrap(source.range(of: "PosePickerSheet(")?.upperBound)
+        let sheet = source[sheetStart...].prefix(700)
+        XCTAssertTrue(sheet.contains("onSelect: { pose in"), "the sheet is given the screen's selection")
+        XCTAssertTrue(
+            sheet.contains("CameraPickerSelection.select(pose, guide: $guide, camera: model)"),
+            "and that selection is the one above, on the screen's own guide binding and model"
+        )
+    }
+
+    /// The Saved chip's no-match card: the query matched none of the account's loaded rows, so the sheet
+    /// draws the shared no-match state instead of a blank area under the chips — and a collection that has
+    /// not answered yet keeps its own panel.
+    func testTheSavedScopeTurnsAnEmptyResultIntoTheNoMatchCard() {
+        let rows = [
+            NativePose(
+                id: "b",
+                name: "City walk",
+                category: "Standing",
+                imageURL: nil,
+                instructions: [],
+                isSaved: true
+            ),
+        ]
+
+        XCTAssertTrue(
+            CameraSavedScopePresentation.savedHasNoMatch(
+                presentation: .rows(rows),
+                rows: [],  // the query filtered every loaded row out
+                query: "warrior"
+            ),
+            "a loaded collection with no match is the no-match card"
+        )
+        XCTAssertFalse(
+            CameraSavedScopePresentation.savedHasNoMatch(presentation: .rows(rows), rows: [], query: "   "),
+            "an empty query is not a search: the grid is the answer"
+        )
+        XCTAssertFalse(
+            CameraSavedScopePresentation.savedHasNoMatch(
+                presentation: .rows(rows),
+                rows: CameraPickerScope.saved.rows(catalogue: [], saved: rows, query: "walk"),
+                query: "walk"
+            ),
+            "a query that matches keeps the rows"
+        )
+        XCTAssertFalse(
+            CameraSavedScopePresentation.savedHasNoMatch(presentation: .signInRequired, rows: [], query: "walk"),
+            "a guest sees the sign-in panel, not \"nothing matched\""
+        )
+        XCTAssertFalse(
+            CameraSavedScopePresentation.savedHasNoMatch(presentation: .loading, rows: [], query: "walk"),
+            "a load in flight is not an empty result"
+        )
+        XCTAssertFalse(
+            CameraSavedScopePresentation.savedHasNoMatch(presentation: .empty, rows: [], query: "walk"),
+            "an empty collection has its own copy: there is nothing to search yet"
+        )
     }
 }
 
@@ -1438,11 +1516,12 @@ final class CameraChromeTests: XCTestCase {
         XCTAssertTrue(model.isPoseGuideVisible, "opening the picker is not the guide-visibility toggle")
     }
 
-    /// The bottom surface is snackbar · scale row · rail, in that order, and it draws no catalogue.
-    func testTheBottomSurfaceKeepsItsOrderAndDropsTheStrip() {
+    /// The bottom surface is snackbar · scale row · rail, in that order. What it *draws* (no catalogue, no
+    /// strip) is asserted structurally on the rendered bar and on the screen's own source
+    /// (`CameraChromeContractTests.testThePosesControlOpensTheSheetAndTheStripIsGone`); reading a retired-id
+    /// list back at itself proves nothing.
+    func testTheBottomSurfaceKeepsItsOrder() {
         XCTAssertEqual(CameraChromeLayout.bottomSurfaceOrder, [.snackbar, .scaleRow, .panel])
-        XCTAssertFalse(CameraChromeLayout.bottomBarDrawsCatalogue)
-        XCTAssertTrue(CameraChromeLayout.retiredIdentifiers.contains("camera.poseStrip"))
     }
 
     // MARK: - Persistence of the retired strip state
