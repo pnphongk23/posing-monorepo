@@ -3094,6 +3094,12 @@ enum PosePickerLayout {
 
     static let order: [Row] = [.handle, .header, .search, .scopes, .results]
 
+    /// The rows above the results. The panel renders these in a `ForEach` and mounts the results scroll
+    /// content **directly** after them: a flexible child mounted inside a `ForEach` is proposed its height
+    /// differently, and the scroll content is the one child that has to fill the rest of the panel.
+    /// `fixedRows + [.results] == order`, which the layout test pins.
+    static let fixedRows: [Row] = order.filter { $0 != .results }
+
     /// The search field's own handle, and the clear button inside it.
     static let searchIdentifier = "posePicker.search"
     static let searchClearIdentifier = "posePicker.searchClear"
@@ -3230,10 +3236,13 @@ private struct PosePickerSheet: View {
 
     private func panel(height: CGFloat) -> some View {
         VStack(spacing: 0) {
-            // Rendered from `PosePickerLayout.order`, so the order the tests assert is the order drawn.
-            ForEach(PosePickerLayout.order, id: \.self) { row in
+            // Rendered from `PosePickerLayout.order`, so the order the tests assert is the order drawn —
+            // with the results mounted as a direct child, not inside the `ForEach`.
+            ForEach(PosePickerLayout.fixedRows, id: \.self) { row in
                 panelRow(row)
             }
+            scrollContent
+                .frame(maxHeight: .infinity)
         }
         .padding(EdgeInsets(
             top: AP.Space.space12,

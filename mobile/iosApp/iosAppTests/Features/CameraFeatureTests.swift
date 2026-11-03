@@ -1270,6 +1270,38 @@ final class CameraPickerSheetLayoutTests: XCTestCase {
         )
     }
 
+    /// The panel mounts the fixed rows through a `ForEach` and the results scroll content **directly**: the
+    /// scroll view is the one flexible child, and a flexible child re-parented under a `ForEach` is proposed
+    /// its height differently. The order is unchanged — `fixedRows + [.results] == order` — and what the panel
+    /// actually paints is measured on a rendered screen
+    /// (`CameraPickerSheetGeometryTests.testTheResultsFillThePanelBelowTheChips`).
+    func testTheResultsAreMountedOutsideTheForEach() throws {
+        XCTAssertEqual(PosePickerLayout.fixedRows + [.results], PosePickerLayout.order)
+
+        let source = try String(
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent() // Features
+                .deletingLastPathComponent() // iosAppTests
+                .deletingLastPathComponent() // iosApp (project dir)
+                .appendingPathComponent("iosApp/Features/Camera/CameraFeature.swift"),
+            encoding: .utf8
+        )
+        let panelStart = try XCTUnwrap(source.range(of: "private func panel(height: CGFloat)")?.upperBound)
+        let panel = source[panelStart...].prefix(700)
+        XCTAssertTrue(
+            panel.contains("ForEach(PosePickerLayout.fixedRows"),
+            "the fixed rows are the ones the ForEach iterates"
+        )
+        XCTAssertFalse(
+            panel.contains("ForEach(PosePickerLayout.order"),
+            "the results are not iterated with them"
+        )
+        XCTAssertTrue(
+            panel.contains("scrollContent\n                .frame(maxHeight: .infinity)"),
+            "the scroll content is a direct, flexible child of the panel's VStack"
+        )
+    }
+
     /// The offline notice is a row of the scroll content above the grid, never an overlay: it pushes the
     /// grid down, so it cannot cover the third row of cards.
     func testTheOfflineBannerIsAScrollRowAboveTheGrid() {
@@ -2674,5 +2706,129 @@ final class CameraChromeContractTests: XCTestCase {
         }
         XCTFail("unterminated body for \(name)")
         return ""
+    }
+}
+
+/// The picker sheet's *drawn* geometry: the results scroll content has to fill the panel under the chips.
+///
+/// The panel used to render every row through a `ForEach`, including the results `ScrollView` — the one
+/// flexible child, re-parented under a `ForEach` instead of being a direct child of the `VStack`. The order
+/// array stayed green either way, so nothing could see the scroll content being proposed the wrong height.
+/// This renders the real screen with the sheet open and measures what was painted.
+@MainActor
+final class CameraPickerSheetGeometryTests: XCTestCase {
+    private let size = CGSize(width: 393, height: 852)
+
+    func testTheResultsFillThePanelBelowTheChips() throws {
+        let bitmap = try renderSheet()
+
+        // The camera canvas behind the sheet is dark and full-width; the sheet is the light surface, so the
+        // first row that is not full-width ink is the sheet's top edge.
+        let sheetTop = try XCTUnwrap(
+            (0..<bitmap.height).first { ink(in: bitmap, row: $0) < bitmap.width / 2 },
+            "the sheet is drawn over the canvas"
+        )
+        let bands = inkBands(in: bitmap, rows: sheetTop..<bitmap.height, minimumInk: 20)
+
+        // handle · header · search field · chips, then the results. The search field is the band that paints
+        // the whole width (it is a full-width control fill); the chips are the pills under it.
+        let search = try XCTUnwrap(
+            bands.first { $0.widest >= bitmap.width * 3 / 4 },
+            "the search field is drawn (bands: \(bands))"
+        )
+        let chips = try XCTUnwrap(
+            bands.first { $0.range.lowerBound > search.range.upperBound },
+            "the scope chips are drawn"
+        )
+
+        let results = bands.filter { $0.range.lowerBound > chips.range.upperBound }.map(\.range)
+        XCTAssertGreaterThanOrEqual(
+            results.count, 2,
+            "below the chips the row's card and its name are painted, not an empty panel: \(bands.map(\.range))"
+        )
+        let first = try XCTUnwrap(results.first)
+        let last = try XCTUnwrap(results.last)
+        XCTAssertGreaterThanOrEqual(
+            last.upperBound - first.lowerBound, 80,
+            "the results area is a real block of the panel, not a sliver (\(first)–\(last))"
+        )
+        XCTAssertGreaterThan(
+            CGFloat(last.upperBound), CGFloat(chips.range.upperBound) + 60,
+            "and it extends well below the chips"
+        )
+    }
+
+    private func renderSheet() throws -> APBitmap {
+        var guide: NativePose?
+        let model = CameraViewModel()
+        model.coordinator.onPermissionResult(.authorized)
+        model.openPosePicker()
+        let screen = CameraScreen(
+            guide: Binding(get: { guide }, set: { guide = $0 }),
+            poseService: PreviewPoseService(),
+            model: model
+        )
+        let host = UIHostingController(rootView: screen)
+        // The sheet follows the app's appearance, which the test host resolves to light: pin it, so the
+        // measurement is "dark ink on a light surface" whatever the simulator is set to.
+        host.overrideUserInterfaceStyle = .light
+        host.view.frame = CGRect(origin: .zero, size: size)
+        host.view.layoutIfNeeded()
+        // The sheet loads its catalogue in a `.task`; give the immediate stub service its turn.
+        RunLoop.main.run(until: Date().addingTimeInterval(0.5))
+        host.view.setNeedsLayout()
+        host.view.layoutIfNeeded()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.2))
+
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = 1
+        format.opaque = true
+        let image = UIGraphicsImageRenderer(size: size, format: format).image { _ in
+            host.view.drawHierarchy(in: CGRect(origin: .zero, size: size), afterScreenUpdates: true)
+        }
+        return try XCTUnwrap(APBitmap(image: image))
+    }
+
+    /// Pixels in one row that are not the sheet's white surface.
+    private func ink(in bitmap: APBitmap, row: Int) -> Int {
+        var count = 0
+        for x in 0..<bitmap.width {
+            guard let pixel = bitmap.color(x: x, y: row) else { continue }
+            let luminance = (pixel.red * 299 + pixel.green * 587 + pixel.blue * 114) / 1000
+            if luminance < 235 { count += 1 }
+        }
+        return count
+    }
+
+    /// One run of rows that paints at least `minimumInk` non-surface pixels, with the widest row in it.
+    private struct InkBand {
+        let range: ClosedRange<Int>
+        /// The most pixels any row in the band painted: a full-width control fill fills the row, a pill or a
+        /// line of text does not.
+        let widest: Int
+    }
+
+    /// Runs of rows that paint at least `minimumInk` non-surface pixels.
+    private func inkBands(in bitmap: APBitmap, rows: Range<Int>, minimumInk: Int) -> [InkBand] {
+        var bands: [InkBand] = []
+        var start: Int?
+        var widest = 0
+        func close(_ lastRow: Int) {
+            guard let opened = start else { return }
+            if lastRow - opened >= 2 { bands.append(InkBand(range: opened...lastRow, widest: widest)) }
+            start = nil
+            widest = 0
+        }
+        for row in rows {
+            let painted = ink(in: bitmap, row: row)
+            if painted >= minimumInk {
+                if start == nil { start = row }
+                widest = max(widest, painted)
+            } else {
+                close(row - 1)
+            }
+        }
+        close(rows.upperBound - 1)
+        return bands
     }
 }
