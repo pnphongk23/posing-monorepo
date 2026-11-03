@@ -2170,7 +2170,6 @@ struct SearchScreen: View {
             style: .plain,
             actionIdentifier: APSearchIdentifiers.empty
         )
-        .accessibilityIdentifier(APSearchIdentifiers.panel(APSearchIdentifiers.empty))
     }
 }
 

@@ -453,15 +453,12 @@ struct APPoseGrid: View {
 /// `SearchScreen` so a probe can render exactly what the screen shows — including the paging footer,
 /// which must survive an empty page (a filtered page can hold no match while more rows exist).
 /// The ids the search surface exposes. They address the **controls** — a flow taps an id, and a tap on a
-/// panel lands on its copy — so each panel keeps a derived `<id>.panel` of its own.
+/// panel lands on its copy. Nothing is put on the containers.
 enum APSearchIdentifiers {
     /// The no-match banner's action ("Clear search").
     static let empty = "search-empty-banner"
     /// The failed-search card's retry.
     static let retry = "search.retry"
-
-    /// The container id a panel answers to, derived so a rename cannot leave a stale one behind.
-    static func panel(_ identifier: String) -> String { "\(identifier).panel" }
 }
 
 struct APSearchStatePanel: View {
@@ -477,17 +474,13 @@ struct APSearchStatePanel: View {
     var emptyIdentifier: String?
     var retryIdentifier: String?
 
-    /// Where the ids land in the state that is showing: `control` is the element a flow taps, `panel` is
-    /// the container around it. The body applies exactly these, so a test can assert the plumbing without
-    /// reading source text or needing an accessibility tree.
-    var identifiers: (control: String?, panel: String?) {
-        let identifier: String?
+    /// The id the state that is showing puts on its control; `nil` while it searches.
+    var controlIdentifier: String? {
         switch presentation {
-        case .failed: identifier = retryIdentifier
-        case .empty, .noMatch: identifier = emptyIdentifier
-        case .loading, .grid: identifier = nil
+        case .failed: return retryIdentifier
+        case .empty, .noMatch: return emptyIdentifier
+        case .loading, .grid: return nil
         }
-        return (identifier, identifier.map(APSearchIdentifiers.panel))
     }
 
     @ViewBuilder var body: some View {
@@ -507,9 +500,8 @@ struct APSearchStatePanel: View {
                     message: failureMessage,
                     retry: onRetry,
                     style: .plain,
-                    actionIdentifier: identifiers.control
+                    actionIdentifier: controlIdentifier
                 )
-                .apIdentifier(identifiers.panel)
                 searchFooter
             }
         case .empty, .noMatch:
@@ -520,9 +512,8 @@ struct APSearchStatePanel: View {
                     actionTitle: emptyActionTitle,
                     action: onEmptyAction,
                     style: .plain,
-                    actionIdentifier: identifiers.control
+                    actionIdentifier: controlIdentifier
                 )
-                .apIdentifier(identifiers.panel)
                 searchFooter
             }
         case .grid:

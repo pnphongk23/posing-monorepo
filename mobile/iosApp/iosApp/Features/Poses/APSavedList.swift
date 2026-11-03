@@ -1071,23 +1071,15 @@ struct APSavedSignInPanel: View {
 
 /// An empty collection: the bookmark glyph and the one instruction that fills it.
 /// The ids the Saved panels expose. Each addresses a **control**: a flow taps the id, and a tap on the panel
-/// lands on its copy instead (measured on 1.1 (22): the panel's bounds were the whole screen area while the
-/// button sat 60 pt below its centre). The container answers to `<id>.panel`.
+/// lands on its copy instead (the panel's bounds are the whole screen area while the button sits well below
+/// its centre). Nothing is put on the containers.
 enum APSavedPanelIdentifiers {
     static let browse = "saved.browseCommunity"
     static let retry = "saved.retry"
-
-    static func panel(_ identifier: String) -> String { "\(identifier).panel" }
 }
 
 struct APSavedEmptyPanel: View {
     var onBrowse: () -> Void
-
-    /// The ids this panel applies. One function the body and the tests read, so an id cannot quietly move
-    /// back onto the container.
-    var identifiers: (control: String, panel: String) {
-        (APSavedPanelIdentifiers.browse, APSavedPanelIdentifiers.panel(APSavedPanelIdentifiers.browse))
-    }
 
     var body: some View {
         APEmptyStateView(
@@ -1097,10 +1089,8 @@ struct APSavedEmptyPanel: View {
             action: onBrowse,
             style: .plain,
             glyph: APSavedStateCopy.emptyGlyph,
-            // On the control, not on the panel (see `APSavedPanelIdentifiers`).
-            actionIdentifier: identifiers.control
+            actionIdentifier: APSavedPanelIdentifiers.browse
         )
-        .accessibilityIdentifier(identifiers.panel)
     }
 }
 
@@ -1111,11 +1101,6 @@ struct APSavedLoadFailurePanel: View {
     var statusCode: Int? = nil
     var retry: () -> Void
 
-    /// Same rule as the empty panel: `saved.retry` is the Try again control.
-    var identifiers: (control: String, panel: String) {
-        (APSavedPanelIdentifiers.retry, APSavedPanelIdentifiers.panel(APSavedPanelIdentifiers.retry))
-    }
-
     var body: some View {
         APErrorStateView(
             title: APSavedStateCopy.loadFailureTitle,
@@ -1124,9 +1109,8 @@ struct APSavedLoadFailurePanel: View {
             retry: retry,
             style: .plain,
             glyph: APSavedStateCopy.loadFailureGlyph,
-            actionIdentifier: identifiers.control
+            actionIdentifier: APSavedPanelIdentifiers.retry
         )
-        .accessibilityIdentifier(identifiers.panel)
     }
 }
 
