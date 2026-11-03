@@ -4,6 +4,14 @@ enum Loadable<Value> {
     case idle, loading, loaded(Value), empty, failed(String)
 }
 
+/// The collection a pose read is for, named by the request instead of by a slot on the service.
+///
+/// It is the filter the screen is showing (`PoseLibraryFilter`: All poses / My poses / Community). The
+/// route belongs to the request so two screens cannot reroute each other through shared service state —
+/// a signed-out Search used to write `.all` into the adapter's slot, which made the camera picker read
+/// the account route too.
+typealias PoseFilter = PoseLibraryFilter
+
 protocol PoseServing: Sendable {
     func poses(query: String?) async throws -> [NativePose]
     func pose(id: String) async throws -> NativePose
@@ -15,6 +23,13 @@ protocol PoseServing: Sendable {
     /// unsave in the Saved list) shifts every later row one position up. A page counter cannot
     /// express "the list moved", so the caller owns the cursor and this call is a pure window read.
     func posesPage(query: String?, offset: Int, limit: Int) async throws -> PosePage
+    /// The same window, read from the collection `filter` names.
+    ///
+    /// This is the signature routed services implement: the route comes from this argument (and the
+    /// session), never from state another screen may have set. `PoseAPIServiceAdapter` overrides it, so
+    /// a call through `any PoseServing` reaches it; the default below only keeps single-collection
+    /// services (previews, test doubles) working unchanged.
+    func posesPage(query: String?, filter: PoseFilter, offset: Int, limit: Int) async throws -> PosePage
 }
 
 /// One window of a pose list plus whether the server has more rows behind it.
@@ -39,6 +54,11 @@ extension PoseServing {
         guard offset <= 0 else { return .end }
         let poses = try await poses(query: query)
         return PosePage(poses: poses, hasMore: false, consumed: poses.count)
+    }
+
+    /// A service with one collection ignores the filter and answers its one list.
+    func posesPage(query: String?, filter: PoseFilter, offset: Int, limit: Int) async throws -> PosePage {
+        try await posesPage(query: query, offset: offset, limit: limit)
     }
 }
 

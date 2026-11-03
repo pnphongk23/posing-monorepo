@@ -1022,9 +1022,14 @@ struct APSavedEmptyPanel: View {
             actionTitle: APSavedStateCopy.emptyActionTitle,
             action: onBrowse,
             style: .plain,
-            glyph: APSavedStateCopy.emptyGlyph
+            glyph: APSavedStateCopy.emptyGlyph,
+            // On the control, not on the panel. Measured on 1.1 (22): the panel carried
+            // `saved.browseCommunity` with bounds `[0,123][393,794]` while the button it was meant to
+            // address sat at `[66,521][326,569]`, so a tap by that id landed on the panel's copy and
+            // the action never ran (the flows tap the id, not the label).
+            actionIdentifier: "saved.browseCommunity"
         )
-        .accessibilityIdentifier("saved.browseCommunity")
+        .accessibilityIdentifier("saved.empty")
     }
 }
 
@@ -1042,9 +1047,12 @@ struct APSavedLoadFailurePanel: View {
             retryTitle: APSavedStateCopy.retryActionTitle,
             retry: retry,
             style: .plain,
-            glyph: APSavedStateCopy.loadFailureGlyph
+            glyph: APSavedStateCopy.loadFailureGlyph,
+            // Same reason as the empty panel: `saved.retry` addresses the Try again control, so the
+            // control is what has to carry it.
+            actionIdentifier: "saved.retry"
         )
-        .accessibilityIdentifier("saved.retry")
+        .accessibilityIdentifier("saved.loadFailure")
     }
 }
 

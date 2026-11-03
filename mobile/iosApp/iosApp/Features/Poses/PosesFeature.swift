@@ -366,9 +366,15 @@ extension PoseAPIServiceAdapter: PoseRouteSelecting {
         paging = Paging()
         let ticket = await beginSessionRequest()
         guard generation == listGeneration else { return }
-        selectRoute(filter)
+        let route = await requestRoute()
+        selectRoute(route)
         do {
-            let page = try await service.posesPage(query: normalizedQuery, offset: 0, limit: Paging.pageSize)
+            let page = try await service.posesPage(
+                query: normalizedQuery,
+                filter: route,
+                offset: 0,
+                limit: Paging.pageSize
+            )
             // A session change while this request was in flight makes the answer belong to the
             // previous Account (its Saved flags included), so it must not reach the screen.
             guard await isCurrentSession(ticket), generation == listGeneration else { return }
@@ -429,6 +435,7 @@ extension PoseAPIServiceAdapter: PoseRouteSelecting {
             do {
                 let page = try await service.posesPage(
                     query: normalizedQuery,
+                    filter: await requestRoute(),
                     offset: offset,
                     limit: Paging.pageSize
                 )
@@ -483,6 +490,24 @@ extension PoseAPIServiceAdapter: PoseRouteSelecting {
 
     private var normalizedQuery: String? {
         query.isEmpty ? nil : query
+    }
+
+    /// The filter this read is actually routed by.
+    ///
+    /// `.saved` — and `.all`, which merges the saved collection — are **account** reads: without a
+    /// session the server answers `401`, and a 401 on a credential-less request makes the session
+    /// boundary "clear" a session that never existed. That bumps the generation, resets every model and
+    /// drops this list's answer, so the screen sits in `.loading` for good: a signed-out search never
+    /// rendered its results or its empty state (the catalogue's own background grid looked stuck too).
+    /// Signed out, the catalogue *is* the community feed, so that is what is asked for.
+    private func requestRoute() async -> PoseLibraryFilter {
+        switch filter {
+        case .community:
+            return .community
+        case .saved, .all:
+            guard let boundary else { return filter }
+            return await boundary.hasStoredSession() ? filter : .community
+        }
     }
 
     /// Every slot the reads of this list are routed by: the bundle's, when the composition passed
@@ -547,15 +572,14 @@ extension PoseAPIServiceAdapter: PoseRouteSelecting {
         if case .loading = state { wasLoading = true } else { wasLoading = false }
         let ticket = scope?.ticket
 
-        // A Saved (or All) list is account-scoped in its entirety, so it is dropped and re-read.
+        // A Saved (or All) list is account-scoped in its entirety, so it is dropped and re-read. The
+        // re-read happens even when nothing is stored: `load()` routes a signed-out reader to the
+        // community feed, and *not* reloading left the screen `.idle` — which every panel draws as
+        // "loading", so a signed-out Search sat on "Searching" forever instead of showing its empty state.
         if filter == .saved || filter == .all {
             state = .idle
-            // The next Account's list is fetched through the normal path (a sign-out has nothing to
-            // fetch: the Saved surface gates on the session itself).
             Task { @MainActor [weak self] in
                 guard let self, self.isScopeCurrent(ticket) else { return }
-                guard await self.boundary?.hasStoredSession() == true else { return }
-                guard self.isScopeCurrent(ticket) else { return }
                 await self.load()
             }
             return

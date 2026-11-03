@@ -196,27 +196,13 @@ final class FeatureStateTests: XCTestCase {
 
     /// Saved is pushed from Settings, which is pushed from the Poses tab, so the panel's previous
     /// `dismiss()` landed on Settings: the button promises the catalogue and delivered a settings list.
-    /// The tap now goes through the app root, which selects its tab and — because the tab is already
-    /// Poses — rebuilds that stack from its root.
+    /// The tap now goes through the app root, which selects the Poses tab and tells every pushed screen
+    /// above it to leave.
     ///
-    /// Mutation target: make `step(from:)` return a step without the rebuild and the first assertion
-    /// goes red (Saved/Settings would stay pushed); send the other tabs to `.gallery` and the second
-    /// one does.
-    func testBrowsePosesLandsOnThePosesRootFromEveryTab() {
-        let fromPoses = APBrowsePosesRule.step(from: .poses)
-        XCTAssertEqual(fromPoses.tab, .poses, "the Poses tab is selected")
-        XCTAssertTrue(
-            fromPoses.resetsPosesRoot,
-            "and its stack is rebuilt, because Settings → Saved is pushed on it and selecting the already-selected tab pops nothing"
-        )
-
-        for tab in [AppTab.camera, AppTab.gallery] {
-            let step = APBrowsePosesRule.step(from: tab)
-            XCTAssertEqual(step.tab, .poses, "from \(tab) the tap selects Poses")
-            XCTAssertFalse(
-                step.resetsPosesRoot,
-                "the Poses stack is not mounted from \(tab), so it comes up at its root already"
-            )
+    /// Mutation target: send a different tab and the assertion goes red.
+    func testBrowsePosesSelectsTheCatalogueFromEveryTab() {
+        for tab in [AppTab.poses, .camera, .gallery] {
+            XCTAssertEqual(APBrowsePosesRule.tab(from: tab), .poses, "from \(tab) the tap selects the catalogue")
         }
     }
 
@@ -240,31 +226,35 @@ final class FeatureStateTests: XCTestCase {
         XCTAssertEqual(root.calls, 1)
     }
 
-    /// Source-level, like the other view-wiring pins in this suite: a hosted SwiftUI view cannot be
-    /// tapped here, so what is checked is the wiring that makes the tap reach the root — the root owns
-    /// the tab and the stack's identity, the action is provided through the environment, and the Saved
-    /// panel consumes it instead of dismissing itself.
+    /// Source-level for the wiring, runtime for the behaviour (the hosted tests below): the root owns the
+    /// tab and the pop, the action reaches the pushed screens through the environment, and the panel runs
+    /// it when the app provides one.
     ///
-    /// Mutation target: drop `.id(posesRootGeneration)` from the Poses tab, stop providing
-    /// `\.apBrowsePoses`, or go back to `onBrowse: { dismiss() }` — each turns one assertion below red.
+    /// Mutation target: pop one level (`dismiss()` or an `.id(_:)` identity change) instead of the
+    /// container's root and the hosted test below goes red — that is what 1.1 (22) shipped, and why the
+    /// tap left the user on Settings (or did nothing at all).
     func testBrowsePosesWiringRunsThroughTheAppRoot() throws {
         let root = try source("Features/AppFeatureRoot.swift")
         XCTAssertTrue(
-            root.contains("screenContent\n            .environment(\\.apBrowsePoses, APBrowsePosesAction { showPosesCatalogue() })"),
+            root.contains(".environment(\\.apBrowsePoses, APBrowsePosesAction { showPosesCatalogue() })"),
             "the app root provides the action to every tab"
         )
+        XCTAssertTrue(root.contains("private func showPosesCatalogue() {"), "one place writes the route")
+        XCTAssertTrue(root.contains("tab = APBrowsePosesRule.tab(from: tab)"), "it selects from the rule")
         XCTAssertTrue(
-            root.contains("private func showPosesCatalogue() {"),
-            "and owns the one place that writes the route"
-        )
-        XCTAssertTrue(root.contains("tab = step.tab"), "selecting the tab comes from the rule")
-        XCTAssertTrue(
-            root.contains("if step.resetsPosesRoot { posesRootGeneration &+= 1 }"),
-            "and so does rebuilding the stack to its root"
+            root.contains("APPushedStack.popToRoot(in: Self.keyWindow)"),
+            "and pops the Poses tab's container to its root in one step"
         )
         XCTAssertTrue(
-            root.contains(".id(posesRootGeneration)"),
-            "the Poses tab's navigation container is keyed by that generation"
+            root.contains("popToRootViewController(animated: true)"),
+            "which is the container's own pop, not an identity change"
+        )
+        XCTAssertFalse(root.contains(".id(posesRootGeneration)"), "the identity change is gone: it never popped")
+
+        let settings = try source("Features/Support/SettingsScreen.swift")
+        XCTAssertTrue(
+            settings.contains("NavigationLink(destination: SavedPosesScreen(model: posesModel, onTryPose: onTryPose))"),
+            "Settings keeps pushing Saved: the pop is the root's job"
         )
 
         let poses = try source("Features/Poses/PosesFeature.swift")
@@ -280,6 +270,302 @@ final class FeatureStateTests: XCTestCase {
             poses.contains("@Environment(\\.apBrowsePoses) private var browsePoses"),
             "the Saved screen reads the action from the environment"
         )
+    }
+
+    // MARK: - The route belongs to the request (PoseServing.posesPage(query:filter:offset:limit:))
+
+    /// The signature Search and the camera picker now share answers **exactly** what Search shows: same
+    /// route, same ids, same order, including the signed-out degradation to the community feed.
+    ///
+    /// Both calls go through one service instance: the adapter's routed window read, and the Search
+    /// screen's own model built the way the app builds it. If they ever disagree, a screen would show a
+    /// collection it did not ask for — the class of bug the process-wide slot caused.
+    @MainActor func testTheRoutedWindowReadMatchesWhatSearchShows() async throws {
+        let remote = SearchRouteRemote()
+        remote.communityItems = ["a", "b", "c"].compactMap { id in
+            try? JSONDecoder().decode(CommunityPose.self, from: Data("""
+            {"poseId":"\(id)","name":"Pose \(id)","skeletonUrl":"/s.png","thumbnailUrl":"/t.jpg","status":"published"}
+            """.utf8))
+        }
+        XCTAssertEqual(remote.communityItems.count, 3, "the fixture rows decode")
+        // The app's wiring: the adapter's session probe is the same boundary the model follows.
+        let adapter = PoseAPIServiceAdapter(
+            remote: remote,
+            baseURL: "https://api.example.com",
+            filterState: PoseFilterState(),
+            hasSession: { false }
+        )
+
+        // The picker shape: one routed window read, no model in between.
+        let window = try await adapter.posesPage(query: "zzqqxx", filter: .all, offset: 0, limit: 20)
+
+        // The Search shape: the model the app builds, on the same service instance.
+        let model = PosesViewModel(
+            service: adapter,
+            boundary: SessionBoundary(tokenStorage: SignedOutTokenStorage())
+        )
+        model.filter = .all
+        model.query = "zzqqxx"
+        await model.load()
+
+        XCTAssertEqual(
+            window.poses.map(\.id),
+            model.state.rows.map(\.id),
+            "the routed window read and the Search screen see the same ids in the same order"
+        )
+        XCTAssertEqual(remote.savedCallCount, 0, "signed out, neither path asks for the account collection")
+        XCTAssertEqual(remote.communityCallCount, 2, "both reads are the community feed")
+        XCTAssertEqual(remote.lastQuery, "zzqqxx", "and both carry the term")
+    }
+
+    /// A signed-in reader still gets the account routes through the same signature.
+    @MainActor func testTheRoutedWindowReadKeepsTheAccountRoutesWithASession() async throws {
+        let remote = SearchRouteRemote()
+        let adapter = PoseAPIServiceAdapter(
+            remote: remote,
+            baseURL: "https://api.example.com",
+            filterState: PoseFilterState(),
+            hasSession: { true }
+        )
+
+        _ = try await adapter.posesPage(query: nil, filter: .saved, offset: 0, limit: 20)
+        XCTAssertEqual(remote.savedCallCount, 1)
+
+        _ = try await adapter.posesPage(query: nil, filter: .all, offset: 0, limit: 20)
+        XCTAssertEqual(remote.savedCallCount, 2, "`.all` merges the saved collection")
+        XCTAssertEqual(remote.communityCallCount, 1)
+    }
+
+    // MARK: - A search with no matches renders its empty state
+
+    /// A signed-out search must reach the catalogue, not an account route.
+    ///
+    /// The regression this covers: routing the displayed `.all` into the process-wide slot made the
+    /// search ask `GET /api/me/saved` without a session; the server answers `401`, and a 401 on a
+    /// credential-less request makes the session boundary "clear" a session that never existed
+    /// (`SessionBoundary.performRefresh`), which bumps the generation and resets every model — so the
+    /// answer was dropped and the screen sat in `.loading`. Measured: the results area showed only
+    /// "Searching" for 20 s while the deploy's HTTP log showed `GET /api/me/saved 401` repeating, and no
+    /// banner was ever mounted.
+    ///
+    /// Mutation target: route the read by the model's `filter` alone and `savedCallCount` becomes 1.
+    @MainActor func testASignedOutSearchReadsTheCatalogueAndRendersItsEmptyState() async {
+        let remote = SearchRouteRemote()
+        let adapter = PoseAPIServiceAdapter(
+            remote: remote,
+            baseURL: "https://api.example.com",
+            filterState: PoseFilterState()
+        )
+        let model = PosesViewModel(
+            service: adapter,
+            boundary: SessionBoundary(tokenStorage: SignedOutTokenStorage())
+        )
+        model.filter = .all
+        model.query = "zzqqxx"
+
+        await model.load()
+
+        XCTAssertEqual(remote.savedCallCount, 0, "no account read without a session")
+        XCTAssertEqual(remote.communityCallCount, 1, "the catalogue is what a signed-out reader gets")
+        XCTAssertEqual(remote.lastQuery, "zzqqxx", "and the term reaches the server")
+        guard case .empty = model.state else {
+            return XCTFail("a search with no matches settles as empty, not as a stuck loading state")
+        }
+        XCTAssertEqual(
+            APCatalogPresentationRule.presentation(
+                for: model.state,
+                hasVisiblePoses: !model.state.rows.isEmpty,
+                isFilterActive: model.filter != .all
+            ),
+            .empty,
+            "one of the two states the search panel renders as the no-match banner"
+        )
+    }
+
+    /// A session change while the list is loading must not leave it `.idle`, which every panel draws as
+    /// "loading": the reload goes through the route, which degrades to the community feed when signed out.
+    @MainActor func testASessionChangeSettlesTheListInsteadOfLeavingItIdle() async {
+        let remote = SearchRouteRemote()
+        let adapter = PoseAPIServiceAdapter(
+            remote: remote,
+            baseURL: "https://api.example.com",
+            filterState: PoseFilterState()
+        )
+        let boundary = SessionBoundary(tokenStorage: SignedOutTokenStorage())
+        let model = PosesViewModel(service: adapter, boundary: boundary)
+        model.filter = .all
+        model.query = "zzqqxx"
+        model.state = .loading
+
+        model.resetForSessionChange(.signInRequired)
+        // The reload is kicked on the main actor, so pump turns until it settles.
+        for _ in 0..<40 where model.state.isWaitingForAnswer {
+            try? await Task.sleep(nanoseconds: 20_000_000)
+        }
+
+        XCTAssertFalse(model.state.isWaitingForAnswer, "the list settles: \(model.state)")
+        XCTAssertEqual(remote.savedCallCount, 0, "signed out, the reload reads the catalogue")
+    }
+
+    // MARK: - Browse poses: the control, the environment, the real stack
+
+    /// The flows tap this id, so the id has to sit on the control, not on the panel around it.
+    ///
+    /// Measured on 1.1 (22) with Maestro's hierarchy (`~/.maestro/tests/2026-11-03_135729`), on the
+    /// empty Saved screen:
+    ///
+    ///     saved.browseCommunity  bounds [0,123][393,794]   <- the panel
+    ///     "Browse poses"         bounds [66,521][326,569]   <- the button, no id
+    ///
+    /// A tap by id hits the element's centre (196, 458), which is the panel's copy: the action never ran,
+    /// Saved stayed on screen and `poses.open-search` never appeared — exactly QA's pass 16. The app
+    /// root's action was correct all along; nothing was calling it.
+    ///
+    /// Mutation target: put the identifier back on the panel and the first assertion goes red.
+    func testTheEmptyPanelsTapIdAddressesItsControl() throws {
+        let saved = try source("Features/Poses/APSavedList.swift")
+        let empty = try XCTUnwrap(Self.braceMatchedBlock("struct APSavedEmptyPanel", in: saved))
+        XCTAssertTrue(
+            empty.contains("actionIdentifier: \"saved.browseCommunity\""),
+            "the flows tap saved.browseCommunity: it belongs on the button"
+        )
+        XCTAssertFalse(
+            empty.contains(".accessibilityIdentifier(\"saved.browseCommunity\")"),
+            "an id on the panel is what made the tap land on its copy"
+        )
+
+        // The failed-load panel had the same shape; its Try again is what `saved.retry` addresses.
+        let failure = try XCTUnwrap(Self.braceMatchedBlock("struct APSavedLoadFailurePanel", in: saved))
+        XCTAssertTrue(failure.contains("actionIdentifier: \"saved.retry\""))
+        XCTAssertFalse(failure.contains(".accessibilityIdentifier(\"saved.retry\")"))
+    }
+
+    /// The app root's action really reaches a screen pushed inside the Poses navigation stack: the
+    /// report's suspicion that the environment is nil inside Settings → Saved is false (a destination
+    /// inherits the stack's environment), and this is the assertion for it.
+    ///
+    /// Mutation target: move `.environment(\.apBrowsePoses, …)` below the navigation container and the
+    /// destination stops seeing it.
+    @MainActor func testTheBrowseActionReachesAPushedDestination() async throws {
+        guard #available(iOS 16.0, *) else { throw XCTSkip("NavigationStack is iOS 16 or newer") }
+        let probe = BrowseActionProbe()
+        let state = BrowseStackState()
+        let host = UIHostingController(
+            rootView: BrowseEnvProbeHarness(state: state, probe: probe)
+                .environment(\.apBrowsePoses, APBrowsePosesAction { probe.rootActionCalls += 1 })
+        )
+        let window = hostedWindow(host)
+        defer { window.isHidden = true }
+        host.view.layoutIfNeeded()
+        await settleHosting()
+
+        state.showsDestination = true
+        await settleHosting()
+
+        XCTAssertEqual(probe.destinationSawAction, true, "a pushed destination reads the root's action")
+        probe.invokeCapturedAction()
+        XCTAssertEqual(probe.rootActionCalls, 1, "and calling it runs the root's work")
+    }
+
+    /// The mechanism the fix relies on, on a real hosted stack with the **real** Saved screen pushed two
+    /// levels deep (a Settings stand-in that applies the same modifier SettingsScreen does, then
+    /// `SavedPosesScreen`): the root's signal makes each pushed screen leave, and the stack ends at its
+    /// root. Measured before the fix: an identity change on the container left all three view controllers
+    /// in place, which is exactly "Saved stays on screen".
+    ///
+    /// Mutation target: drop the modifier from either level (the harness applies the real one) and the
+    /// depth stays above one.
+    @MainActor func testBrowsingLeavesTheRealSavedStackAtItsRoot() async throws {
+        guard #available(iOS 16.0, *) else { throw XCTSkip("NavigationStack is iOS 16 or newer") }
+        let model = PosesViewModel(service: EmptySavedPoseService())
+        model.state = .empty
+        let state = BrowseStackState()
+        let host = UIHostingController(rootView: BrowseStackHarness(state: state, model: model))
+        let window = hostedWindow(host)
+        defer { window.isHidden = true }
+        host.view.layoutIfNeeded()
+        await settleHosting()
+
+        state.showsDestination = true
+        state.showsSaved = true
+        let pushed = await waitForNavigationDepth(3, in: window)
+        XCTAssertTrue(state.savedAppeared, "the Saved screen is on the stack before the action runs")
+        XCTAssertEqual(pushed, 3, "root + Settings + Saved are pushed (last depth: \(pushed))")
+
+        // Exactly what `AppFeatureRoot.showPosesCatalogue()` does for the navigation half.
+        let popped = APPushedStack.popToRoot(in: window)
+        XCTAssertTrue(popped, "the container reports the pop")
+
+        let settled = await waitForNavigationDepth(1, in: window)
+        XCTAssertEqual(settled, 1, "the stack is at its root: only the catalogue is left (last depth: \(settled))")
+    }
+
+    // MARK: - Hosting helpers
+
+    private func hostedWindow(_ host: UIHostingController<some View>) -> UIWindow {
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 393, height: 852))
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        return window
+    }
+
+    /// Gives SwiftUI turns to lay out and drive a presentation: suspension on the main actor is what
+    /// lets its transaction run between calls.
+    @MainActor private func settleHosting() async {
+        for _ in 0..<10 {
+            await Task.yield()
+            try? await Task.sleep(nanoseconds: 40_000_000)
+        }
+    }
+
+    /// Waits for the hosted stack to reach `depth` (a push or a pop is a run-loop turn plus an
+    /// animation), and reports the depth it last saw. A fixed settle window made this test flaky under a
+    /// full-suite load; polling to a deadline does not.
+    @MainActor private func waitForNavigationDepth(
+        _ depth: Int,
+        in window: UIWindow,
+        timeout: TimeInterval = 5
+    ) async -> Int {
+        let deadline = Date().addingTimeInterval(timeout)
+        var observed = navigationDepth(in: window)
+        while observed != depth, Date() < deadline {
+            try? await Task.sleep(nanoseconds: 30_000_000)
+            observed = navigationDepth(in: window)
+        }
+        return observed
+    }
+
+    /// Pushed screens in the hosted navigation container, however deep the UIKit tree nests it.
+    private func navigationDepth(in window: UIWindow) -> Int {
+        func find(_ controller: UIViewController) -> UINavigationController? {
+            if let navigation = controller as? UINavigationController { return navigation }
+            for child in controller.children where !child.isBeingDismissed {
+                if let found = find(child) { return found }
+            }
+            return nil
+        }
+        guard let root = window.rootViewController, let navigation = find(root) else { return 0 }
+        return navigation.viewControllers.count
+    }
+
+    /// The brace-matched body of the first declaration after `marker`, so a test can read one struct
+    /// without caring how long the file around it is. Same idiom as `APSavedListTests`.
+    private static func braceMatchedBlock(_ marker: String, in source: String) -> String? {
+        guard let markerRange = source.range(of: marker),
+              let open = source.range(of: "{", range: markerRange.upperBound..<source.endIndex) else { return nil }
+        var depth = 0
+        var index = open.lowerBound
+        while index < source.endIndex {
+            switch source[index] {
+            case "{": depth += 1
+            case "}":
+                depth -= 1
+                if depth == 0 { return String(source[open.lowerBound...index]) }
+            default: break
+            }
+            index = source.index(after: index)
+        }
+        return nil
     }
 
     private func source(_ path: String) throws -> String {
@@ -733,5 +1019,158 @@ final class FeatureStateToneMappingTests: XCTestCase {
         XCTAssertEqual(r, CGFloat((hex >> 16) & 0xff) / 255, accuracy: 0.004, "\(label) red", file: file, line: line)
         XCTAssertEqual(g, CGFloat((hex >> 8) & 0xff) / 255, accuracy: 0.004, "\(label) green", file: file, line: line)
         XCTAssertEqual(b, CGFloat(hex & 0xff) / 255, accuracy: 0.004, "\(label) blue", file: file, line: line)
+    }
+}
+
+// MARK: - "Browse poses" hosting harness
+
+/// The app root's state that the browse action writes, outside the view so a test can drive it.
+@MainActor
+final class BrowseStackState: ObservableObject {
+    @Published var tab: AppTab = .poses
+    @Published var showsDestination = false
+    @Published var showsSaved = false
+    @Published var savedAppeared = false
+    @Published var savedDisappeared = false
+    @Published var settingsDisappeared = false
+}
+
+/// The app's composition shape, hosted for real: one navigation container, a root marker, a destination
+/// reached the way Settings is reached from the Poses tab — and the real `SavedPosesScreen` pushed on top of
+/// it. The structure is the app's; the pop under test is the shipped `APPushedStack`.
+@available(iOS 16.0, *)
+struct BrowseStackHarness: View {
+    @ObservedObject var state: BrowseStackState
+    let model: PosesViewModel
+
+    var body: some View {
+        NavigationStack {
+            VStack {
+                Text("POSES ROOT")
+                    .accessibilityIdentifier("poses.open-search")
+            }
+            .navigationDestination(isPresented: $state.showsDestination) {
+                VStack {
+                    Text("SETTINGS")
+                }
+                .navigationDestination(isPresented: $state.showsSaved) {
+                    SavedPosesScreen(model: model)
+                        .onAppear { state.savedAppeared = true }
+                        .onDisappear { state.savedDisappeared = true }
+                }
+            }
+        }
+    }
+}
+
+/// The narrow shape the environment question needs: one navigation container with the action applied
+/// above it, and a destination that reports what it can see.
+@available(iOS 16.0, *)
+struct BrowseEnvProbeHarness: View {
+    @ObservedObject var state: BrowseStackState
+    let probe: BrowseActionProbe
+
+    var body: some View {
+        NavigationStack {
+            Text("POSES ROOT")
+                .navigationDestination(isPresented: $state.showsDestination) {
+                    BrowseActionDestinationProbe(probe: probe)
+                }
+        }
+    }
+}
+
+/// A pushed screen that reports whether it can see the app root's browse action, and keeps it so the
+/// test can run exactly what the destination would run.
+@MainActor
+final class BrowseActionProbe {
+    var destinationSawAction: Bool?
+    var rootActionCalls = 0
+    private var captured: APBrowsePosesAction?
+
+    func record(_ action: APBrowsePosesAction?) {
+        destinationSawAction = action != nil
+        captured = action
+    }
+
+    func invokeCapturedAction() {
+        captured?()
+    }
+}
+
+@available(iOS 16.0, *)
+struct BrowseActionDestinationProbe: View {
+    let probe: BrowseActionProbe
+    @Environment(\.apBrowsePoses) private var browsePoses
+
+    var body: some View {
+        Text("DESTINATION")
+            .onAppear { probe.record(browsePoses) }
+    }
+}
+
+/// A catalogue with nothing in it: the Saved screen only has to exist for this harness.
+private struct EmptySavedPoseService: PoseServing {
+    func poses(query: String?) async throws -> [NativePose] { [] }
+    func posesPage(query: String?, offset: Int, limit: Int) async throws -> PosePage { .end }
+    func pose(id: String) async throws -> NativePose { throw PoseAdapterError.poseNotFound(id) }
+}
+
+/// The catalogue as the signed-out search sees it: no matches for the term, and a saved route that is
+/// only counted (asking it without a session is what the fix prevents).
+private final class SearchRouteRemote: PoseRemoteFetching, @unchecked Sendable {
+    private let lock = NSLock()
+    private var communityCount = 0
+    private var savedCount = 0
+    private var query: String?
+    /// The rows the community feed answers with, in server order (wire shape, as the adapter expects).
+    var communityItems: [CommunityPose] = []
+
+    var communityCallCount: Int { locked { communityCount } }
+    var savedCallCount: Int { locked { savedCount } }
+    var lastQuery: String? { locked { query } }
+
+    func fetchCommunity(page: Int, limit: Int, query text: String?) async throws -> PoseRemotePage {
+        locked {
+            communityCount += 1
+            query = text
+        }
+        return PoseRemotePage(poses: communityItems, total: communityItems.count)
+    }
+
+    func fetchSaved(page: Int, limit: Int) async throws -> PoseRemotePage {
+        locked { savedCount += 1 }
+        return PoseRemotePage(poses: [], total: 0)
+    }
+
+    /// `NSLock.withLock` is iOS 16+, and `lock()` is unavailable straight from an async context.
+    private func locked<T>(_ body: () -> T) -> T {
+        lock.lock()
+        defer { lock.unlock() }
+        return body()
+    }
+}
+
+private final class SignedOutTokenStorage: TokenStoring, @unchecked Sendable {
+    func saveCredentials(_ credentials: SessionCredentials) {}
+    func loadCredentials() -> SessionCredentials? { nil }
+    func clearCredentials() {}
+}
+
+private final class SignedInTokenStorage: TokenStoring, @unchecked Sendable {
+    private var credentials: SessionCredentials? = SessionCredentials(accessToken: "access", refreshToken: "refresh")
+    func saveCredentials(_ credentials: SessionCredentials) { self.credentials = credentials }
+    func loadCredentials() -> SessionCredentials? { credentials }
+    func clearCredentials() { credentials = nil }
+}
+
+/// A state that is still waiting for an answer: exactly what the bug left on screen. A failure has
+/// settled (it draws the error panel), so it counts as an answer.
+private extension Loadable {
+    var isWaitingForAnswer: Bool {
+        switch self {
+        case .idle, .loading: return true
+        case .empty, .loaded, .failed: return false
+        }
     }
 }

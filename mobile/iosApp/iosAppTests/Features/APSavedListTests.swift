@@ -1211,8 +1211,9 @@ final class APSavedListTests: XCTestCase {
         let boundary = SessionBoundary(tokenStorage: SignedInTokenStorage())
         let bookmarks = HeldBookmarkService()
         let rows = [savedPose("a")]
+        let server = SavedCollectionServer(ids: ["a"])
         let model = PosesViewModel(
-            service: SavedListPoseService(rows: rows),
+            service: server,
             bookmarkService: bookmarks,
             boundary: boundary
         )
@@ -1224,10 +1225,12 @@ final class APSavedListTests: XCTestCase {
         await bookmarks.waitUntilUnsaving()
         await waitUntil("the model to publish the claim") { model.isBookmarkInFlight("a") }
 
+        let readsBeforeSignOut = server.posesPageCallCount
         await boundary.signOut()
-        await waitUntil("the saved collection to be dropped for the new session") {
-            if case .idle = model.state { return true }
-            return false
+        // The reset drops the collection and re-reads it, so the screen cannot keep the previous Account's
+        // rows: the re-read is the observable consequence.
+        await waitUntil("the saved collection to be re-read for the new session") {
+            server.posesPageCallCount > readsBeforeSignOut
         }
 
         bookmarks.releaseUnsaving()
@@ -1235,9 +1238,10 @@ final class APSavedListTests: XCTestCase {
         XCTAssertEqual(outcome, .discarded, "the answer belongs to the previous session")
         XCTAssertNil(undo.removal, "an offer for the previous Account's row would be a lie")
         XCTAssertNil(model.bookmarkError, "and so would an error about it")
-        guard case .idle = model.state else {
-            return XCTFail("the dropped collection is the visible consequence of this outcome")
-        }
+        XCTAssertFalse(
+            model.isBookmarkInFlight("a"),
+            "the claim from the previous session is gone with the collection"
+        )
     }
 
     /// With no bookmark service the tile is unavailable and takes no tap, so `.unavailable` cannot be
@@ -1733,12 +1737,15 @@ private final class SavedCollectionServer: PoseServing, PoseBookmarkServing, @un
     private var ids: [String]
     private var unsaves = 0
     private var saves = 0
+    private var reads = 0
     private var _unsavedPoseID: String?
     private var _unsaveError: Error?
 
     init(ids: [String]) { self.ids = ids }
 
     var savedIDs: [String] { locked { ids } }
+    /// How many window reads this "server" answered: a session reset re-reads the collection.
+    var posesPageCallCount: Int { locked { reads } }
     var unsaveCallCount: Int { locked { unsaves } }
     var saveCallCount: Int { locked { saves } }
     var unsavedPoseID: String? { locked { _unsavedPoseID } }
@@ -1764,6 +1771,7 @@ private final class SavedCollectionServer: PoseServing, PoseBookmarkServing, @un
     func poses(query: String?) async throws -> [NativePose] { savedIDs.map(pose) }
 
     func posesPage(query: String?, offset: Int, limit: Int) async throws -> PosePage {
+        locked { reads += 1 }
         let rows = savedIDs.map(pose)
         let start = min(max(0, offset), rows.count)
         let window = Array(rows[start..<min(rows.count, start + limit)])
