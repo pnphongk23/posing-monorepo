@@ -1,5 +1,6 @@
 import AVFoundation
 import ImageIO
+import SwiftUI
 import XCTest
 @testable import iosApp
 
@@ -485,5 +486,128 @@ private extension UIColor {
             blue: CGFloat(rgb & 0xFF) / 255,
             alpha: 1
         )
+    }
+}
+
+// MARK: - The photo is the frame: nothing is painted on the bars
+
+/// What the canvas actually paints, per ratio.
+///
+/// The framing math was already asserted; this renders `CameraScreen.cameraCanvas` at a known size and
+/// looks at the pixels. The black bars are not part of the picture the shutter saves, so nothing belonging
+/// to the photo may be painted there: the old canvas drew the scrims full-bleed and let a scaled or dragged
+/// pose reference (box-limited, but not clipped) spill over the bars.
+@MainActor
+final class CameraCanvasFramingTests: XCTestCase {
+    private let canvasSize = CGSize(width: 393, height: 760)
+    private let renderScale: CGFloat = 2
+
+    func testTheCanvasPaintsNothingOnTheBarsForEveryRatio() throws {
+        for ratio in CameraAspectRatio.allCases {
+            let probe = APViewProbe(
+                try canvas(ratio: ratio),
+                size: canvasSize,
+                scale: renderScale
+            )
+            let bitmap = probe.capture()
+            probe.tearDown()
+
+            let frame = CameraViewportFrame.rect(for: ratio, in: canvasSize)
+            // The frame's own edge is antialiased, and the guide is clipped *at* it: a pixel within 2 pt
+            // of the edge is edge, not spill.
+            let allowed = frame.insetBy(dx: -2, dy: -2)
+
+            var outside: [(x: Int, y: Int)] = []
+            var inside = 0
+            for y in 0..<bitmap.height {
+                for x in 0..<bitmap.width {
+                    guard let pixel = bitmap.color(x: x, y: y) else { continue }
+                    // Ink is anything clearly brighter than the canvas background (the guide's strokes and
+                    // the thirds grid: white, or white at 30 %).
+                    let luminance = (pixel.red * 299 + pixel.green * 587 + pixel.blue * 114) / 1000
+                    guard luminance >= 60 else { continue }
+                    let point = CGPoint(x: CGFloat(x) / renderScale, y: CGFloat(y) / renderScale)
+                    if allowed.contains(point) {
+                        inside += 1
+                    } else {
+                        outside.append((x, y))
+                    }
+                }
+            }
+
+            XCTAssertGreaterThan(
+                inside, 200,
+                "\(ratio.rawValue): the reference and the grid are painted inside the photo — otherwise this test proves nothing"
+            )
+            XCTAssertTrue(
+                outside.isEmpty,
+                "\(ratio.rawValue): \(outside.count) painted pixels sit on the black bars, e.g. \(outside.prefix(5)) — "
+                    + "the photo frame is \(frame) in \(canvasSize)"
+            )
+        }
+    }
+
+    /// A guide pushed hard against the frame's edge is clipped, not wrapped: the strokes stop at the frame
+    /// and the picture keeps its own edge. (The check above proves nothing is outside; this proves the
+    /// clipping does not also swallow the guide.)
+    func testATransformedGuideIsStillDrawnInsideTheFrame() throws {
+        let ratio = CameraAspectRatio.nineSixteen
+        let probe = APViewProbe(try canvas(ratio: ratio), size: canvasSize, scale: renderScale)
+        let bitmap = probe.capture()
+        probe.tearDown()
+
+        let frame = CameraViewportFrame.rect(for: ratio, in: canvasSize)
+        let guideBand = CGRect(
+            x: frame.minX,
+            y: frame.midY - frame.height * 0.1,
+            width: frame.width,
+            height: frame.height * 0.2
+        )
+        var ink = 0
+        for y in 0..<bitmap.height {
+            for x in 0..<bitmap.width {
+                guard let pixel = bitmap.color(x: x, y: y) else { continue }
+                let luminance = (pixel.red * 299 + pixel.green * 587 + pixel.blue * 114) / 1000
+                guard luminance >= 60 else { continue }
+                let point = CGPoint(x: CGFloat(x) / renderScale, y: CGFloat(y) / renderScale)
+                if guideBand.contains(point) { ink += 1 }
+            }
+        }
+        XCTAssertGreaterThan(ink, 100, "the guide is still visible where the user put it")
+    }
+
+    /// The camera and the canvas under test: no session, no permission prompt, just the framing.
+    private func canvas(ratio: CameraAspectRatio) throws -> some View {
+        let model = CameraViewModel(camera: RatioStubCamera())
+        model.coordinator.onPermissionResult(.authorized)
+        model.setAspectRatio(ratio)
+        model.setGuideOpacity(1)
+        model.setGuideLineColor(.white)
+        if !model.isGridVisible { model.toggleGrid() }
+        // The reference at the far end of its scale range, rotated and dragged towards the frame's edge:
+        // exactly the state the review says used to paint over the bars.
+        model.commitGuideGesture(
+            GuideTransform.Delta(scale: 2.5, rotation: .degrees(24), translation: CGSize(width: 0, height: 220))
+        )
+        let pose = NativePose(
+            id: "clip-check",
+            name: "Jumping Jack",
+            category: "Standing",
+            imageURL: nil,
+            instructions: [],
+            isSaved: false
+        )
+        var guide: NativePose? = pose
+        let screen = CameraScreen(
+            guide: Binding(get: { guide }, set: { guide = $0 }),
+            poseService: PreviewPoseService(),
+            model: model
+        )
+        // `CameraScreen.body` sets both of these; rendering the canvas on its own inherits neither. Without
+        // the dark scheme the tokens resolve to their light values, and without ignoring the safe area the
+        // canvas sits below the status bar and the probe's white window shows through above it.
+        return screen.cameraCanvas(size: canvasSize)
+            .environment(\.colorScheme, .dark)
+            .ignoresSafeArea()
     }
 }

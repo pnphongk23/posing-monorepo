@@ -1348,10 +1348,15 @@ struct CameraScreen: View {
         }
     }
 
-    private func cameraCanvas(size: CGSize) -> some View {
+    /// The live camera canvas, for one container size.
+    ///
+    /// Internal rather than private so the rendered tests can mount exactly this view at a known size: the
+    /// framing rect is computed from the container, and a screen-sized render would have to guess the
+    /// viewport's height before it could say where the black bars are.
+    func cameraCanvas(size: CGSize) -> some View {
         // The ratio setting is framing, not only a crop: everything that is *the photo* — the live
-        // preview, the thirds grid and the pose reference — lives inside this rect, and the area
-        // outside it is the dark background. The capture path crops to the same ratio, so what the
+        // preview, the thirds grid, the scrims and the pose reference — lives inside this rect, and the
+        // area outside it is the dark background. The capture path crops to the same ratio, so what the
         // user framed is what is saved.
         let frame = model.viewportFrame(in: size)
         let guideFrame = CameraViewportFrame.guideRect(in: frame)
@@ -1366,21 +1371,35 @@ struct CameraScreen: View {
                     .position(x: frame.midX, y: frame.midY)
             }
 
+            // The scrims grade *the photo*: measured against the canvas they would darken the black bars,
+            // which are not part of the picture the shutter saves.
             verticalScrims
+                .frame(width: frame.width, height: frame.height)
+                .position(x: frame.midX, y: frame.midY)
 
             // `.nb-camera-pose-reference` — `top:16%; right:18%; bottom:14%; left:18%`, measured of the
             // framing rect. The static four-corner framing overlay is gone (report §3.2).
+            //
+            // The guide is a reference *for the photo*: its box is the reference area, but pinch / twist /
+            // drag can push the line art past it, so the layer is clipped to the framing rect. Without
+            // that, a scaled or dragged reference paints over the black bars — a picture the shutter can
+            // never take.
             if let guide, model.isPoseGuideVisible {
-                guideOverlay(for: guide)
-                    .frame(width: guideFrame.width, height: guideFrame.height)
-                    .position(x: guideFrame.midX, y: guideFrame.midY)
-                    // E2E handle (`QA-261029-ID`): the only way a flow can prove a guide is drawn and
-                    // say *which* pose it is. Built only when a visible guide exists, so a missing id
-                    // is "no pose guide on screen" (no pose, or the guide toggle is off).
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel("Pose guide")
-                    .accessibilityValue(guide.id)
-                    .accessibilityIdentifier("camera.poseGuide")
+                ZStack {
+                    guideOverlay(for: guide)
+                        .frame(width: guideFrame.width, height: guideFrame.height)
+                        .position(x: guideFrame.midX, y: guideFrame.midY)
+                }
+                .frame(width: frame.width, height: frame.height)
+                // Clip *before* positioning: `.position` makes a view take all the space it is offered, so
+                // a clip after it would cut at the canvas edge and the guide would still reach the bars.
+                .clipped()
+                .position(x: frame.midX, y: frame.midY)
+                // Only the part inside the frame is drawn, so only that part is announced.
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("Pose guide")
+                .accessibilityValue(guide.id)
+                .accessibilityIdentifier("camera.poseGuide")
             }
 
             if model.isGridVisible {
@@ -1389,10 +1408,14 @@ struct CameraScreen: View {
                     .position(x: frame.midX, y: frame.midY)
             }
 
-            // Pinch / twist / drag anywhere on the preview places the pose reference; the reference
-            // itself stays non-interactive so a thin skeleton is never a hard touch target.
+            // Pinch / twist / drag on the photo places the pose reference; the reference itself stays
+            // non-interactive so a thin skeleton is never a hard touch target. The catcher is the framing
+            // rect, not the canvas: a drag that starts on the black bars is outside the picture and must
+            // not move the guide inside it.
             if guide != nil, model.isPoseGuideVisible, isAuthorized {
                 Color.clear
+                    .frame(width: frame.width, height: frame.height)
+                    .position(x: frame.midX, y: frame.midY)
                     .contentShape(Rectangle())
                     .onTapGesture(count: 2) { model.resetGuideTransform() }
                     .gesture(guidePlacementGesture)

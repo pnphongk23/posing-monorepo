@@ -402,9 +402,12 @@ final class CameraFeatureTests: XCTestCase {
 
         let plain = try XCTUnwrap(renderCamera(guide: pose, placement: GuideTransform()))
         try write(plain, named: "camera-guide-line-art.png")
+        // The placement stays inside the photo: the reference is now clipped to the framing rect (it is a
+        // reference *for* the photo, never for the black bars), and a reference pushed past that edge is
+        // measured by `CameraCanvasFramingTests`, not by a centroid.
         let placed = try XCTUnwrap(renderCamera(
             guide: pose,
-            placement: GuideTransform(scale: 1.3, rotation: .degrees(12), offset: CGSize(width: 40, height: 60))
+            placement: GuideTransform(scale: 1.15, rotation: .degrees(12), offset: CGSize(width: 30, height: 50))
         ))
         try write(placed, named: "camera-guide-transformed.png")
 
@@ -2277,6 +2280,55 @@ final class CameraChromeContractTests: XCTestCase {
         )
     }
 
+    // MARK: Everything that belongs to the photo is clipped to it
+
+    /// The canvas is bigger than the photo: a 9:16 frame leaves bars above and below, and they are not part
+    /// of the picture the shutter saves. So the scrims must be measured against the frame (they grade the
+    /// photo, not the screen), the pinch/drag catcher is the frame (a drag that starts on the bars is
+    /// outside the picture), and the guide's layer is clipped to the frame *before* it is positioned —
+    /// `.position` makes a view take all the space offered, so a clip after it cuts at the canvas edge and
+    /// the guide still reaches the bars.
+    ///
+    /// Source-level because the geometry a gesture would take is not observable in a unit-test host; what
+    /// the pixels look like is asserted on a rendered canvas in `CameraCanvasFramingTests`.
+    ///
+    /// Mutation target: move `.clipped()` after `.position`, drop the scrims' frame, or let the catcher
+    /// stay canvas-sized — each turns one assertion below red.
+    func testTheScrimsTheGestureLayerAndTheGuideAreBoundedByTheFrame() throws {
+        let source = try cameraFeatureSource()
+        let canvas = try functionBody(named: "cameraCanvas", in: source)
+        let frameSize = ".frame(width: frame.width, height: frame.height)"
+
+        // The scrims.
+        let scrimsStart = try XCTUnwrap(canvas.range(of: "verticalScrims")?.lowerBound)
+        let scrims = canvas[scrimsStart...].prefix(220)
+        XCTAssertTrue(scrims.contains(frameSize), "the scrims are the size of the photo, not of the canvas")
+        XCTAssertTrue(scrims.contains(".position(x: frame.midX, y: frame.midY)"), "and sit on it")
+
+        // The pinch/twist/drag catcher.
+        let catcherStart = try XCTUnwrap(canvas.range(of: "Color.clear")?.lowerBound)
+        let catcher = canvas[catcherStart...].prefix(400)
+        XCTAssertTrue(catcher.contains(frameSize), "the gesture area is the photo")
+        let catcherFrame = try XCTUnwrap(catcher.range(of: frameSize))
+        let catcherShape = try XCTUnwrap(catcher.range(of: ".contentShape(Rectangle())"))
+        XCTAssertLessThan(
+            catcher.distance(from: catcher.startIndex, to: catcherFrame.lowerBound),
+            catcher.distance(from: catcher.startIndex, to: catcherShape.lowerBound),
+            "the touch area is shaped by the frame, so the bars stay inert"
+        )
+
+        // The guide's clip, in the order that actually clips.
+        let guideStart = try XCTUnwrap(canvas.range(of: "guideOverlay(for: guide)")?.lowerBound)
+        let guide = canvas[guideStart...].prefix(900)
+        let clip = try XCTUnwrap(guide.range(of: ".clipped()"), "the guide layer is clipped to the photo")
+        let position = try XCTUnwrap(guide.range(of: ".position(x: frame.midX, y: frame.midY)"))
+        XCTAssertLessThan(
+            guide.distance(from: guide.startIndex, to: clip.lowerBound),
+            guide.distance(from: guide.startIndex, to: position.lowerBound),
+            "clip before position: after it, the clip is the canvas edge and the guide paints on the bars"
+        )
+    }
+
     // MARK: The Poses control names the pose it holds
 
     /// The strip that used to draw the chosen pose's name is retired, so the control's *value* is the only
@@ -2510,11 +2562,25 @@ final class CameraChromeContractTests: XCTestCase {
 
     /// The body of `private var <name>: some View { … }`, found by brace counting.
     private func viewBody(named name: String, in source: String) throws -> String {
-        let marker = "var \(name): some View {"
         let start = try XCTUnwrap(
-            source.range(of: marker)?.upperBound,
+            source.range(of: "var \(name): some View {")?.upperBound,
             "no declaration for \(name)"
         )
+        return try bracedBody(from: start, named: name, in: source)
+    }
+
+    /// The body of `func <name>(…) -> some View { … }`, found by brace counting from its signature.
+    private func functionBody(named name: String, in source: String) throws -> String {
+        let signature = try XCTUnwrap(source.range(of: "func \(name)("), "no declaration for \(name)")
+        let start = try XCTUnwrap(
+            source.range(of: "{", range: signature.upperBound..<source.endIndex)?.upperBound,
+            "no body for \(name)"
+        )
+        return try bracedBody(from: start, named: name, in: source)
+    }
+
+    /// Everything up to the brace that closes the one just after `start`.
+    private func bracedBody(from start: String.Index, named name: String, in source: String) throws -> String {
         var depth = 1
         var index = start
         while index < source.endIndex {
