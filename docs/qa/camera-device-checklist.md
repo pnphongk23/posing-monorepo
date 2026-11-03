@@ -52,6 +52,10 @@ TC-PAY-017/018/019 (and TC-PAY-014 for Restore) in `docs/qa/test-cases/paywall-p
 - [ ] **Expected:** the failure is a settled state, not a dead screen — `paywall.status` says the purchase didn't go through,
   the plan card carries a **working retry** (`paywall.retry`) that starts a fresh store attempt, and **no premium is
   granted** (the shutter still opens the paywall) (TC-PAY-012).
+- [ ] Tap **Try again** (`paywall.retry`) and watch the screen.
+- [ ] **Expected:** the **real App Store sheet is presented again** for a second attempt (the Test Store does not re-show it
+  in the same session, which is why the Simulator flow does not assert it), the paywall stays usable behind it, and nothing
+  is charged until that sheet is confirmed (TC-PAY-012).
 - [ ] Note for QA: this case is **BLOCKED (env) on the Simulator** — a simulator build shows no purchasable offering, so the
   failure path can only be walked here (TC-PAY-012 lives in `docs/qa/test-cases/paywall-purchase.md`).
 

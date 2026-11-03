@@ -51,18 +51,25 @@ tags: [TC-PAY-012, p1, e2e]
 # No access: the cover is still up, the camera is not behind it.
 - assertNotVisible:
     id: "camera.shutter"
-# The retry path: "Try again" starts a fresh store attempt (its dialog is the proof), and cancelling that one
-# leaves the user where they were — still unentitled, nothing bought.
+# The retry path — and what is deliberately NOT asserted here.
 #
-# Retry diagnostic (26ab1fba, dev20, `qa-dev20/diag/pay012-retry-t2.yaml`): after tapping `paywall.retry` the
-# store dialog is back in ~2 s, so the retry does re-enter a purchase. This flow therefore waits for that dialog
-# with a margin over the measured 2 s instead of the old 30 s guess.
+# The store's second prompt is not asserted: the RevenueCat **Test Store** does not re-show it in the same
+# session (Feature, build-21 evidence), even though the app does send the second purchase — `PaywallModel`'s
+# unit test pins that. So the flow proves the part a simulator can: the retry is offered, tapping it leaves the
+# paywall intact and usable (no crash, no stuck spinner, offer still there), and it captures that state.
+# A real store re-prompt on retry is a device/sandbox item: TC-PAY-012 in docs/qa/camera-device-checklist.md.
+- takeScreenshot: pay012-retry-card
 - tapOn:
     id: "paywall.retry"
 - extendedWaitUntil:
-    visible: "Test failed purchase"
-    timeout: 15000
-- tapOn: "Cancel"
+    visible:
+      id: "paywall.plan.annual"
+    timeout: 20000
+- assertVisible:
+    id: "paywall.cta"
+- assertVisible:
+    id: "paywall.close"
+- takeScreenshot: pay012-retry-after-tap
 - tapOn:
     id: "paywall.close"
 - assertVisible:
