@@ -8,8 +8,12 @@ tags: [TC-BRW-004, p0]
 - tapOn:
     id: "search.field"
 - inputText: "zzqqxx"
-- assertVisible:
-    id: "search-empty-banner"
+# The banner is rendered once the search has answered: the id is right (`PosesFeature.swift:2044,2139`), the
+# immediate assertion simply raced the debounce + round trip (dev22 red).
+- extendedWaitUntil:
+    visible:
+      id: "search-empty-banner"
+    timeout: 20000
 - tapOn:
     id: "search.back"
 - assertVisible:
