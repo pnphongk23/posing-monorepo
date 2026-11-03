@@ -990,6 +990,39 @@ final class CameraPickerScopeTests: XCTestCase {
         }
     }
 
+    /// Diacritic-insensitivity, which is what `localizedStandardContains` buys over
+    /// `localizedCaseInsensitiveContains`: a user who types "cafe" — no accent key, no patience — finds
+    /// "Café lean", on both chips and through the Saved screen's filter, because there is one matcher.
+    func testTheSharedMatcherIgnoresDiacritics() {
+        let poses = [pose("c", name: "Café lean"), pose("d", name: "Warrior II")]
+
+        XCTAssertEqual(
+            CameraPickerScope.all.rows(catalogue: poses, saved: [], query: "cafe").map(\.id),
+            ["c"],
+            "the All chip finds an accented name from an unaccented query"
+        )
+        XCTAssertEqual(
+            CameraPickerScope.saved.rows(catalogue: [], saved: poses, query: "CAFE").map(\.id),
+            ["c"],
+            "and so does the Saved chip, which is the Saved screen's own filter"
+        )
+        XCTAssertEqual(
+            PoseAdapterMerge.filterSavedLocally(poses, query: "cafe").map(\.id),
+            ["c"],
+            "the Saved screen reads the same answer from the shared filter"
+        )
+        XCTAssertEqual(
+            PoseAdapterMerge.filterSavedLocally(poses, query: "café").map(\.id),
+            ["c"],
+            "an accented query still matches the accented name"
+        )
+        XCTAssertEqual(
+            PoseAdapterMerge.filterSavedLocally([pose("e", name: "Cafe stretch")], query: "café").map(\.id),
+            ["e"],
+            "and matches the unaccented spelling of the same word"
+        )
+    }
+
     /// The three behaviours the shared matcher is chosen for, spelled out on the picker's own rows:
     /// case-insensitivity, a trimmed query, and an empty query that filters nothing.
     func testTheQueryIsCaseInsensitiveAndTrimmed() {
