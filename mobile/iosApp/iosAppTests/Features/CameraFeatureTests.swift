@@ -1676,7 +1676,7 @@ final class CameraPickerSheetLayoutTests: XCTestCase {
     /// The Saved chip's no-match card: the query matched none of the account's loaded rows, so the sheet
     /// draws the shared no-match state instead of a blank area under the chips — and a collection that has
     /// not answered yet keeps its own panel.
-    func testTheSavedScopeTurnsAnEmptyResultIntoTheNoMatchCard() {
+    func testTheSavedScopeTurnsAnEmptyResultIntoTheNoMatchCard() throws {
         let rows = [
             NativePose(
                 id: "b",
@@ -1719,6 +1719,28 @@ final class CameraPickerSheetLayoutTests: XCTestCase {
         XCTAssertFalse(
             CameraSavedScopePresentation.savedHasNoMatch(presentation: .empty, rows: [], query: "walk"),
             "an empty collection has its own copy: there is nothing to search yet"
+        )
+
+        // And the sheet draws the card from that one rule instead of keeping a copy of the condition.
+        let source = try source()
+        XCTAssertTrue(
+            source.contains("CameraSavedScopePresentation.savedHasNoMatch("),
+            "the sheet's no-match card reads the rule above"
+        )
+        XCTAssertTrue(
+            source.contains(".pickerNoMatch(trimmedQuery)"),
+            "and draws the shared no-match card with the query in its copy"
+        )
+    }
+
+    private func source() throws -> String {
+        try String(
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent() // Features
+                .deletingLastPathComponent() // iosAppTests
+                .deletingLastPathComponent() // iosApp (project dir)
+                .appendingPathComponent("iosApp/Features/Camera/CameraFeature.swift"),
+            encoding: .utf8
         )
     }
 }
