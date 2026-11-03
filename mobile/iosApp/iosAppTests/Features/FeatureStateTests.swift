@@ -336,6 +336,77 @@ final class FeatureStateTests: XCTestCase {
         XCTAssertEqual(remote.communityCallCount, 1)
     }
 
+    // MARK: - One owner of "the shown list changed → reload"
+
+    /// Opening Search, tapping a source chip, or typing is **one read each** — the model owns the reload
+    /// and debounces it. The views used to set `filter` *and* call `load()` themselves, and `PosesScreen`
+    /// watched the filter with its own `load()`, so an open cost two or three requests for the same window.
+    ///
+    /// The model here is built the way `AppFeatureRoot` builds it (adapter handed in, no filter slot), and
+    /// the debounce is shortened so the test does not sleep for a third of a second.
+    ///
+    /// Mutation target: drop `scheduleSearch()` from the filter observer and every count becomes one short.
+    @MainActor func testTheCollectionAndTheQueryEachTriggerExactlyOneRead() async {
+        let remote = SearchRouteRemote()
+        let adapter = PoseAPIServiceAdapter(
+            remote: remote,
+            baseURL: "https://api.example.com",
+            filterState: PoseFilterState()
+        )
+        let model = PosesViewModel(
+            service: adapter,
+            boundary: SessionBoundary(tokenStorage: SignedOutTokenStorage()),
+            debounceNanoseconds: 30_000_000
+        )
+
+        // Search opens: the screen sets the collection and nothing else.
+        model.filter = .all
+        await waitUntil("the open read") { remote.callCount == 1 }
+        try? await Task.sleep(nanoseconds: 120_000_000)
+        XCTAssertEqual(remote.callCount, 1, "opening Search is exactly one read")
+
+        // A source chip: one more.
+        model.filter = .saved
+        await waitUntil("the chip read") { remote.callCount == 2 }
+        try? await Task.sleep(nanoseconds: 120_000_000)
+        XCTAssertEqual(remote.callCount, 2, "one read per collection change")
+
+        // A burst (typing, or tapping two chips quickly) settles to one more read, not three.
+        model.updateQuery("z")
+        model.updateQuery("zz")
+        model.filter = .community
+        await waitUntil("the debounced read") { remote.callCount >= 3 }
+        try? await Task.sleep(nanoseconds: 150_000_000)
+        XCTAssertEqual(remote.callCount, 3, "the debounce collapses the burst into one read")
+
+        // The query the last read carried is the last thing typed.
+        XCTAssertEqual(remote.lastQuery, "zz")
+    }
+
+    /// The views must not reload by themselves any more: every one of these call sites was a second request
+    /// for a window the model was already reading.
+    ///
+    /// (A hosted `SearchScreen` would prove it end to end, but it needs the whole tab's environment and,
+    /// as the id work showed, this test host materialises no accessibility tree to assert against. The
+    /// counts above are the runtime proof; this is the guard against the call sites coming back.)
+    func testTheViewsDoNotReloadTheListThemselves() throws {
+        let poses = try source("Features/Poses/PosesFeature.swift")
+        XCTAssertFalse(
+            poses.contains(".onChange(of: model.filter) { _ in Task { await model.load() } }"),
+            "PosesScreen re-read the list on every filter change, behind the model's back"
+        )
+        XCTAssertTrue(
+            poses.contains("model.filter = .all\n        }"),
+            "Search open only sets the collection now"
+        )
+        XCTAssertFalse(
+            poses.contains("Task { await model.load() }\n    }\n\n    /// `03-search-no-results"),
+            "the source chips no longer read the list themselves"
+        )
+        // The two reads that must stay: explicit retry controls.
+        XCTAssertTrue(poses.contains("APSavedLoadFailurePanel(retry: { Task { await model.load() } })"))
+    }
+
     // MARK: - The offline catalog never invents "no match" for a search
 
     /// The community route already refuses to answer a *search* from the local catalog when nothing matches
@@ -555,6 +626,21 @@ final class FeatureStateTests: XCTestCase {
 
         let settled = await waitForNavigationDepth(1, in: window)
         XCTAssertEqual(settled, 1, "the stack is at its root: only the catalogue is left (last depth: \(settled))")
+    }
+
+    /// Pumps the main actor until `condition` holds — the model publishes its counts, so a test waits on
+    /// that instead of on a guessed sleep.
+    @MainActor private func waitUntil(
+        _ what: String,
+        timeout: TimeInterval = 3,
+        _ condition: () -> Bool
+    ) async {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if condition() { return }
+            try? await Task.sleep(nanoseconds: 2_000_000)
+        }
+        XCTFail("timed out waiting for \(what)")
     }
 
     // MARK: - Hosting helpers
@@ -1184,6 +1270,8 @@ private final class SearchRouteRemote: PoseRemoteFetching, @unchecked Sendable {
     var communityItems: [CommunityPose] = []
 
     var communityCallCount: Int { locked { communityCount } }
+    /// Every window read this server answered, whatever the route.
+    var callCount: Int { locked { communityCount + savedCount } }
     var savedCallCount: Int { locked { savedCount } }
     var lastQuery: String? { locked { query } }
 

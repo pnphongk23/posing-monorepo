@@ -14,8 +14,10 @@ enum APSavedEntry {
     ///   is the route the shared pose service reads by, and leaving it on `.saved` would route the next
     ///   Poses or camera-picker read to the saved collection.
     @discardableResult
-    static func prepare(model: PosesViewModel) async -> PoseLibraryFilter {        let previous = model.filter
-        model.filter = .saved
+    static func prepare(model: PosesViewModel) async -> PoseLibraryFilter {
+        let previous = model.filter
+        model.filter = .saved      // schedules the collection's own reload …
+        model.cancelPendingSearch() // … which the awaited read below replaces: one request, not two
         await model.load()
         return previous
     }

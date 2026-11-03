@@ -212,6 +212,9 @@ extension PoseAPIServiceAdapter: PoseRouteSelecting {
         didSet {
             guard filter != oldValue else { return }
             selectRoute(filter)
+            // The list the screen shows changed, so the model re-reads it — the single owner of that
+            // decision (see `scheduleSearch()`). Views set the filter and nothing else.
+            scheduleSearch()
         }
     }
     /// Where the next window of the current list comes from. Kept beside `state` instead of inside it
@@ -330,6 +333,12 @@ extension PoseAPIServiceAdapter: PoseRouteSelecting {
         scheduleSearch()
     }
 
+    /// The one reload for "the list this screen shows changed" — a new collection, new text, or both.
+    ///
+    /// The model owns it because a view could not: several screens set `filter` *and* read (Search on
+    /// open, its source chips, the Saved entry, the recent-search chips), and each `load()` of its own
+    /// added a second request for the same window. Debounced, cancelling whatever was pending, so a burst
+    /// is one read.
     func scheduleSearch() {
         searchTask?.cancel()
         searchTask = Task { [weak self] in
@@ -349,8 +358,8 @@ extension PoseAPIServiceAdapter: PoseRouteSelecting {
     /// Recent-search chip entry (prototype `data-search-query` chips): fills the field with `term`
     /// and searches immediately instead of waiting out the typing debounce.
     func startSearch(for term: String) async {
-        cancelPendingSearch()
-        filter = .all
+        filter = .all          // schedules the collection's own reload …
+        cancelPendingSearch()  // … which the immediate read below replaces: one request, not two
         query = term
         await load()
     }
@@ -982,7 +991,6 @@ struct PosesScreen: View {
             resumedPose = resumePose
             onResumeHandled()
         }
-        .onChange(of: model.filter) { _ in Task { await model.load() } }
         // The session read finishes a moment after this rebuilt screen appears; a request that arrived
         // before it is answered here instead of being treated as signed out.
         .onChange(of: session.isResolved) { resolved in
@@ -1881,8 +1889,9 @@ struct SearchScreen: View {
         .neoHiddenNavigationBar()
         .task {
             selectedSource = .all
+            // The model re-reads the list when the collection changes; asking twice is what fired two
+            // requests for the same window on every Search open.
             model.filter = .all
-            await model.load()
         }
     }
 
@@ -2138,9 +2147,9 @@ struct SearchScreen: View {
     private func apply(source: PoseLibraryFilter) {
         withAnimation(SearchMotion.animation(reduceMotion: reduceMotion)) {
             selectedSource = source
+            // One owner of the reload (the model's filter observer).
             model.filter = source
         }
-        Task { await model.load() }
     }
 
     /// `03-search-no-results`: the same borderless panel as the catalogue, with the search copy.
