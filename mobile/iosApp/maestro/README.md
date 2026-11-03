@@ -9,15 +9,33 @@ Flow files must be named `<CASE-ID>-<slug>.yaml` with first line `# <CASE-ID> <t
 2. Install the Dev build right before the run: `xcrun simctl install <UDID> <derived-data>/Build/Products/Debug-Dev-iphonesimulator/posing.app` (build: `xcodebuild -workspace mobile/iosApp/iosApp.xcworkspace -scheme Dev -destination 'id=<UDID>' -derivedDataPath /tmp/dd-shared build`; one build at a time, keep >1.5 GB disk free).
 3. `mobile/iosApp/maestro/run.sh <UDID> [flow-file]` — checks traceability, then runs every flow (or the given one). Each flow starts with `subflows/launch.yaml` (clean state), so order does not matter.
 
+Run Maestro with the working directory **outside the repo** unless `SHOTS_DIR` is set (run.sh then writes one
+PNG per flow into that directory): a `takeScreenshot` with a bare name lands in the current directory, which is
+how 19 run screenshots ended up inside `maestro/` and had to be moved out.
+
 Flows need network (server catalogue). Saved/Account cases stay pending until `account_feature` is on in the server config.
 
 ## Selectors
 Prefer accessibility ids (`poses.first-card`, `search.field`, `gallery.empty.openCamera`, ...) and stable accessibility labels ("Open Camera", "Capture photo", "Open Settings").
 
 ## Identifier requests (ledger: QA-261029-ID)
-Landed in f8a49cc and used by the flows: `poseDetail.use`, `poseDetail.back`, `dock.camera`, `camera.shutter`, `gallery.empty.openCameraButton`, `poses.open-settings`, `about.close`.
+Landed in f8a49cc and used by the flows: `poseDetail.use`, `poseDetail.back`, `dock.camera`, `camera.shutter`, `gallery.empty.openCameraButton`, `poses.more` → `poses.menu.settings` (subflow `open-settings`), `about.close`.
 
 Still requested (flows keep a `TODO(QA-261029-ID)` text selector): `dock.gallery`, `settings.privacy.section`, `settings.replayOnboarding`, `settings.about`; paywall CTA, close and sign-in prompt; the camera guide overlay (or its toggle) so TC-CAM-001 can prove the guide is drawn; a capture seam on the simulator (fixture image) for TC-GAL-002 and TC-PAY-001.
+
+## Lane notes (hard-won, keep short)
+
+- **One Maestro run at a time per host.** The iOS driver listens on `127.0.0.1:7001`, which is host-global: a
+  second concurrent run fails with `Failed to connect to /127.0.0.1:7001`. Restart the simulator between groups.
+- **`clearState` 405 / "no relaunch" after a launch is an environment class, not a product bug** — retry once
+  after restarting the sim; never assert past it.
+- **Regex ids must be single-quoted** (`'saved\.unsave\..*'`); double quotes eat the backslashes.
+- **`runFlow` has no `env:`** — pass values with `-e KEY=value` on the Maestro invocation.
+- **A run with no COMPLETED line for a step, a crash, or a cap/hang is BLOCKED, never PASS.**
+- Traceability: 1 case = 1 flow, `tags: [TC-ID, ...]` with the TC id first, docs row `automated: <file>`;
+  `check-traceability.sh` enforces all of it.
+- Saved ids worth knowing: `saved.unsave.<poseID>`, `saved.snackbar`, `saved.snackbar.undo`; the snackbar lives
+  ~4 s, so the Undo tap must be the command right after it appears.
 
 ## Traceability (case → flow → status)
 
