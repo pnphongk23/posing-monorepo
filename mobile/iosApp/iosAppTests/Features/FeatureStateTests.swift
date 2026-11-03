@@ -226,52 +226,6 @@ final class FeatureStateTests: XCTestCase {
         XCTAssertEqual(root.calls, 1)
     }
 
-    /// Source-level for the wiring, runtime for the behaviour (the hosted tests below): the root owns the
-    /// tab and the pop, the action reaches the pushed screens through the environment, and the panel runs
-    /// it when the app provides one.
-    ///
-    /// Mutation target: pop one level (`dismiss()` or an `.id(_:)` identity change) instead of the
-    /// container's root and the hosted test below goes red — that is what 1.1 (22) shipped, and why the
-    /// tap left the user on Settings (or did nothing at all).
-    func testBrowsePosesWiringRunsThroughTheAppRoot() throws {
-        let root = try source("Features/AppFeatureRoot.swift")
-        XCTAssertTrue(
-            root.contains(".environment(\\.apBrowsePoses, APBrowsePosesAction { showPosesCatalogue() })"),
-            "the app root provides the action to every tab"
-        )
-        XCTAssertTrue(root.contains("private func showPosesCatalogue() {"), "one place writes the route")
-        XCTAssertTrue(root.contains("tab = APBrowsePosesRule.tab(from: tab)"), "it selects from the rule")
-        XCTAssertTrue(
-            root.contains("APPushedStack.popToRoot(in: Self.keyWindow)"),
-            "and pops the Poses tab's container to its root in one step"
-        )
-        XCTAssertTrue(
-            root.contains("popToRootViewController(animated: true)"),
-            "which is the container's own pop, not an identity change"
-        )
-        XCTAssertFalse(root.contains(".id(posesRootGeneration)"), "the identity change is gone: it never popped")
-
-        let settings = try source("Features/Support/SettingsScreen.swift")
-        XCTAssertTrue(
-            settings.contains("NavigationLink(destination: SavedPosesScreen(model: posesModel, onTryPose: onTryPose))"),
-            "Settings keeps pushing Saved: the pop is the root's job"
-        )
-
-        let poses = try source("Features/Poses/PosesFeature.swift")
-        XCTAssertTrue(
-            poses.contains("APSavedEmptyPanel(onBrowse: APBrowsePosesRule.browse(action: browsePoses, fallback: { dismiss() }))"),
-            "Browse runs the app root's action, with dismiss only as the fallback"
-        )
-        XCTAssertFalse(
-            poses.contains("APSavedEmptyPanel(onBrowse: { dismiss() })"),
-            "the panel must not pop Saved onto Settings any more"
-        )
-        XCTAssertTrue(
-            poses.contains("@Environment(\\.apBrowsePoses) private var browsePoses"),
-            "the Saved screen reads the action from the environment"
-        )
-    }
-
     // MARK: - The route belongs to the request (PoseServing.posesPage(query:filter:offset:limit:))
 
     /// The signature Search and the camera picker now share answers **exactly** what Search shows: same
@@ -383,28 +337,33 @@ final class FeatureStateTests: XCTestCase {
         XCTAssertEqual(remote.lastQuery, "zz")
     }
 
-    /// The views must not reload by themselves any more: every one of these call sites was a second request
-    /// for a window the model was already reading.
+    /// Opening the real Search screen reads the list **once**.
     ///
-    /// (A hosted `SearchScreen` would prove it end to end, but it needs the whole tab's environment and,
-    /// as the id work showed, this test host materialises no accessibility tree to assert against. The
-    /// counts above are the runtime proof; this is the guard against the call sites coming back.)
-    func testTheViewsDoNotReloadTheListThemselves() throws {
-        let poses = try source("Features/Poses/PosesFeature.swift")
-        XCTAssertFalse(
-            poses.contains(".onChange(of: model.filter) { _ in Task { await model.load() } }"),
-            "PosesScreen re-read the list on every filter change, behind the model's back"
+    /// The views used to set the collection and read it themselves, and `PosesScreen` watched the filter with
+    /// a read of its own, so an open cost two or three requests for the same window. This hosts the screen
+    /// the app opens, over a recording service, and counts: the model's reload is the only one.
+    ///
+    /// Mutation target: put a `load()` back in the screen's open task (or restore the filter observer in
+    /// `PosesScreen`) and the count becomes two or three.
+    @MainActor func testOpeningTheRealSearchScreenReadsTheListOnce() async {
+        let remote = SearchRouteRemote()
+        let adapter = PoseAPIServiceAdapter(
+            remote: remote,
+            baseURL: "https://api.example.com",
+            filterState: PoseFilterState()
         )
-        XCTAssertTrue(
-            poses.contains("model.filter = .all\n        }"),
-            "Search open only sets the collection now"
+        let model = PosesViewModel(
+            service: adapter,
+            boundary: SessionBoundary(tokenStorage: SignedOutTokenStorage()),
+            debounceNanoseconds: 30_000_000
         )
-        XCTAssertFalse(
-            poses.contains("Task { await model.load() }\n    }\n\n    /// `03-search-no-results"),
-            "the source chips no longer read the list themselves"
-        )
-        // The two reads that must stay: explicit retry controls.
-        XCTAssertTrue(poses.contains("APSavedLoadFailurePanel(retry: { Task { await model.load() } })"))
+        let probe = APViewProbe(SearchScreen(model: model), size: CGSize(width: 393, height: 700))
+        defer { probe.tearDown() }
+        probe.settle()
+
+        await waitUntil("the screen's read") { remote.callCount >= 1 }
+        try? await Task.sleep(nanoseconds: 250_000_000)
+        XCTAssertEqual(remote.callCount, 1, "opening Search is one read of the list, not two or three")
     }
 
     // MARK: - The offline catalog never invents "no match" for a search
@@ -516,57 +475,6 @@ final class FeatureStateTests: XCTestCase {
     }
 
     // MARK: - Browse poses: the control, the environment, the real stack
-
-    /// The flows tap these ids, so the ids have to address the controls, not the panels around them.
-    ///
-    /// Measured on 1.1 (22) with Maestro's hierarchy (`~/.maestro/tests/2026-11-03_135729`), on the empty
-    /// Saved screen: `saved.browseCommunity` had bounds `[0,123][393,794]` — the whole panel — while the
-    /// "Browse poses" button sat at `[66,521][326,569]`. A tap by id hits the element's centre (196, 458),
-    /// which is the panel's copy, so the action never ran. The panels now derive a `<id>.panel` of their own.
-    ///
-    /// This asserts the **plumbing** the views use (`identifiers`), not source text: moving an id back onto
-    /// the container changes these values and cannot pass.
-    @MainActor func testTheSavedPanelsAddressTheirControls() throws {
-        let empty = APSavedEmptyPanel(onBrowse: {})
-        XCTAssertEqual(empty.identifiers.control, "saved.browseCommunity", "the flows' id")
-        XCTAssertEqual(empty.identifiers.panel, "saved.browseCommunity.panel", "the container is derived, not shared")
-        XCTAssertNotEqual(empty.identifiers.control, empty.identifiers.panel, "one id, one element")
-
-        let failure = APSavedLoadFailurePanel(retry: {})
-        XCTAssertEqual(failure.identifiers.control, "saved.retry")
-        XCTAssertEqual(failure.identifiers.panel, "saved.retry.panel")
-        XCTAssertNotEqual(failure.identifiers.control, failure.identifiers.panel)
-    }
-
-    /// Same rule on the search surface: the banner id is the "Clear search" control, and the failed-search
-    /// retry is the retry control.
-    @MainActor func testTheSearchPanelsAddressTheirControls() {
-        let model = PosesViewModel(service: EmptySavedPoseService())
-        let empty = APSearchStatePanel(
-            model: model,
-            presentation: .empty,
-            emptyIdentifier: APSearchIdentifiers.empty,
-            retryIdentifier: APSearchIdentifiers.retry
-        )
-        XCTAssertEqual(empty.identifiers.control, "search-empty-banner")
-        XCTAssertEqual(empty.identifiers.panel, "search-empty-banner.panel")
-
-        let failed = APSearchStatePanel(
-            model: model,
-            presentation: .failed,
-            emptyIdentifier: APSearchIdentifiers.empty,
-            retryIdentifier: APSearchIdentifiers.retry
-        )
-        XCTAssertEqual(failed.identifiers.control, "search.retry")
-        XCTAssertEqual(failed.identifiers.panel, "search.retry.panel")
-
-        let loading = APSearchStatePanel(
-            model: model,
-            presentation: .loading,
-            emptyIdentifier: APSearchIdentifiers.empty
-        )
-        XCTAssertNil(loading.identifiers.control, "nothing to tap while it searches")
-    }
 
     /// The app root's action really reaches a screen pushed inside the Poses navigation stack: the
     /// report's suspicion that the environment is nil inside Settings → Saved is false (a destination

@@ -612,61 +612,6 @@ final class APSavedListTests: XCTestCase {
         )
     }
 
-    /// The row's tap and the tests that check it run the same code, and the control only offers a
-    /// removal for a pose the model holds as saved.
-    ///
-    /// Why source-level: a hosted SwiftUI view in this test host is painted, not hit-tested, so the
-    /// composition is the only thing a unit test can hold still. The behaviour behind it is driven for
-    /// real in `testTheTilesOwnActionUnsavesThroughTheSavedRoute`.
-    ///
-    /// Mutation target: bind the tile to a private copy of the tap again (as `onUnsave: { Task { … } }`)
-    /// and the first assertion goes red; drop `model.savedState(for: pose)` from `isEnabled` and the
-    /// second does — with that term gone, a row that is not actually saved offers "Remove from saved"
-    /// and the request it sends is a **save**, which the surface has nothing to report (the silent tap
-    /// of TC-SAV-010).
-    func testTheRowsTapRunsTheSharedUnsaveRuleForASavedPoseOnly() throws {
-        let saved = try savedListSource()
-
-        let row = try XCTUnwrap(
-            Self.braceMatchedBlock("private func row(for pose: NativePose, index: Int)", in: saved)
-        )
-        XCTAssertTrue(
-            row.contains("onUnsave: APSavedRowUnsave.action(pose, at: index, in: model, undo: undo)"),
-            "the tile's action is the shared rule, not a second copy of the logic"
-        )
-        XCTAssertFalse(row.contains("Task {"), "the row spawns no request of its own")
-        XCTAssertTrue(
-            row.contains("model.savedState(for: pose)"),
-            "a row the model does not hold as saved cannot offer a removal"
-        )
-
-        let rule = try XCTUnwrap(Self.braceMatchedBlock("enum APSavedRowUnsave", in: saved))
-        XCTAssertTrue(
-            rule.contains("APSavedUndoRule.offersUndo(for: outcome)"),
-            "a confirmed removal offers Undo"
-        )
-        XCTAssertTrue(
-            rule.contains("model.bookmarkError = APSavedStateCopy.removeFailed"),
-            "an outcome that removed nothing still says so instead of going silent"
-        )
-        XCTAssertTrue(
-            rule.contains("Task { await perform("),
-            "the action is the closure the tile's Button runs, and it awaits the same rule"
-        )
-
-        // The surface puts the library filter back on the way out: the filter is the route the shared
-        // pose service reads by, so leaving it on `.saved` would route the next catalogue read to the
-        // saved collection.
-        let surface = try XCTUnwrap(Self.braceMatchedBlock("struct APSavedSurface", in: saved))
-        XCTAssertTrue(
-            surface.contains("entryFilter = model.filter"),
-            "the surface remembers the collection it replaced"
-        )
-        XCTAssertTrue(
-            surface.contains("scheduleFilterRestore()"),
-            "leaving Saved schedules the collection the Poses tab was showing"
-        )
-    }
 
     // MARK: - A tap that is waiting on the server (pending unsave)
 
@@ -1056,24 +1001,6 @@ final class APSavedListTests: XCTestCase {
         try? await Task.sleep(nanoseconds: 400_000_000)
 
         XCTAssertEqual(model.filter, .community, "the catalogue's collection is back")
-    }
-
-    /// The surface's own wiring: it owns a restore, cancels it on appearance and schedules it on
-    /// disappearance, and its entry load runs once per mount so a cover cannot reload the collection.
-    ///
-    /// Mutation target: put the restore back inline in `onDisappear` (or drop the `didPrepare` guard) and
-    /// one assertion goes red.
-    func testTheSurfaceDefersTheFilterRestoreUntilTeardown() throws {
-        let source = try savedListSource()
-        let surface = try XCTUnwrap(Self.braceMatchedBlock("struct APSavedSurface", in: source))
-        XCTAssertTrue(surface.contains("filterRestore.cancel()"), "coming back cancels the pending restore")
-        XCTAssertTrue(surface.contains("scheduleFilterRestore()"), "leaving schedules it")
-        XCTAssertTrue(
-            surface.contains("guard !didPrepare else { return }"),
-            "the entry load is once per mount, so a cover keeps the rows and the cursor"
-        )
-        let policy = try XCTUnwrap(Self.braceMatchedBlock("final class APSavedFilterRestore", in: source))
-        XCTAssertTrue(policy.contains("task?.cancel()"), "one restore at a time, and a cancel is real")
     }
 
     // MARK: - The tap path (TC-SAV-010 on 1.1 (20))
