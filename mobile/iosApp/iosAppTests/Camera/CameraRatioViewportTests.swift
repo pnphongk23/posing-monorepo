@@ -1,4 +1,5 @@
 import AVFoundation
+import ImageIO
 import XCTest
 @testable import iosApp
 
@@ -151,35 +152,49 @@ final class CameraRatioViewportTests: XCTestCase {
     // MARK: - The saved file matches what was framed
 
     /// The capture crop and the visible frame are the same ratio, so "what you see is what you get".
-    /// 3024×4032 is the 12 MP portrait sensor size the camera actually writes.
-    func testTheCaptureCropHasTheSameRatioAsTheViewportFrame() {
-        let sensor = CGSize(width: 3024, height: 4032)
+    ///
+    /// The size under test is the one the camera *displays*, not the one it stores: a portrait capture is
+    /// a landscape 4032×3024 buffer carrying an EXIF orientation, so the picture is 3024×4032. The old
+    /// version of this test fed the display size while claiming it was "the sensor size the camera
+    /// writes", which is exactly the mistake the crop itself made.
+    func testTheCaptureCropHasTheSameRatioAsTheViewportFrame() throws {
+        let photo = try CameraCaptureFixture.decode(CameraCaptureFixture.jpeg(orientation: .right))
+        XCTAssertEqual(photo.size, CGSize(width: 3024, height: 4032), "the tag is what makes this portrait")
         for ratio in CameraAspectRatio.allCases {
             let frame = CameraViewportFrame.rect(for: ratio, in: CGSize(width: 393, height: 852))
-            let crop = CameraAspectCrop.rect(for: ratio, imageSize: sensor)
+            let crop = CameraAspectCrop.rect(for: ratio, imageSize: photo.size)
             XCTAssertEqual(
                 crop.width / crop.height,
                 frame.width / frame.height,
                 accuracy: 0.0005,
                 "\(ratio.rawValue): the saved crop and the framed preview describe the same picture"
             )
-            XCTAssertLessThanOrEqual(crop.maxX, sensor.width, "the crop stays inside the sensor")
-            XCTAssertLessThanOrEqual(crop.maxY, sensor.height, "the crop stays inside the sensor")
+            XCTAssertLessThanOrEqual(crop.maxX, photo.size.width, "the crop stays inside the picture")
+            XCTAssertLessThanOrEqual(crop.maxY, photo.size.height, "the crop stays inside the picture")
         }
     }
 
     /// The default ratio is the sensor's own: a 3:4 capture is saved untouched, no re-encode, no quality
-    /// loss — and the preview frame of that ratio needs no letterboxing on a 3:4 viewport.
-    func testACaptureAlreadyMatchingTheRatioNeedsNoCrop() {
-        let sensor = CGSize(width: 3024, height: 4032)
-        XCTAssertFalse(CameraAspectCrop.needsCrop(ratio: .threeFour, imageSize: sensor))
+    /// loss — measured on the *displayed* size, and with the raw buffer shape asserted to be the wrong
+    /// space (so this test cannot go back to agreeing with the old bug).
+    func testACaptureAlreadyMatchingTheRatioNeedsNoCrop() throws {
+        let picture = try CameraCaptureFixture.decode(CameraCaptureFixture.jpeg(orientation: .right)).size
+        XCTAssertFalse(CameraAspectCrop.needsCrop(ratio: .threeFour, imageSize: picture))
         XCTAssertEqual(
-            CameraAspectCrop.rect(for: .threeFour, imageSize: sensor),
-            CGRect(origin: .zero, size: sensor)
+            CameraAspectCrop.rect(for: .threeFour, imageSize: picture),
+            CGRect(origin: .zero, size: picture)
         )
         // The other two ratios do change the file — that is exactly why the preview has to show it.
-        XCTAssertTrue(CameraAspectCrop.needsCrop(ratio: .oneOne, imageSize: sensor))
-        XCTAssertTrue(CameraAspectCrop.needsCrop(ratio: .nineSixteen, imageSize: sensor))
+        XCTAssertTrue(CameraAspectCrop.needsCrop(ratio: .oneOne, imageSize: picture))
+        XCTAssertTrue(CameraAspectCrop.needsCrop(ratio: .nineSixteen, imageSize: picture))
+
+        // A raw buffer is 4:3 landscape. Reading the ratio off it is the old defect, in one line.
+        let raw = CameraCaptureFixture.rawSize
+        XCTAssertEqual(raw, CGSize(width: 4032, height: 3024))
+        XCTAssertTrue(
+            CameraAspectCrop.needsCrop(ratio: .threeFour, imageSize: raw),
+            "a 3:4 portrait picture is not 4:3 landscape: the buffer shape is not the picture's shape"
+        )
     }
 
     // MARK: - The published frame follows the setting
@@ -264,4 +279,211 @@ private final class RatioStubCamera: CameraSessionControlling {
     func setZoomFactor(_ factor: CGFloat) {}
     func start() async throws { isSessionRunning = true }
     func stop() { isSessionRunning = false }
+}
+
+// MARK: - WYSIWYG: the saved file is cropped in the space the user saw
+
+/// A JPEG in the shape a real capture comes in: a **landscape 4032×3024 pixel buffer** plus an EXIF
+/// orientation tag. Four quadrant colours and a marker at the buffer's centre make it possible to say,
+/// from the saved file alone, which part of the *displayed* picture survived the crop.
+enum CameraCaptureFixture {
+    static let rawSize = CGSize(width: 4032, height: 3024)
+
+    static let topLeft: UInt32 = 0xC0_20_20
+    static let topRight: UInt32 = 0x20_B0_30
+    static let bottomLeft: UInt32 = 0x20_40_C0
+    static let bottomRight: UInt32 = 0xD0_C0_20
+    /// Painted at the buffer's centre, which is the displayed picture's centre for every rotation.
+    static let centreMarker: UInt32 = 0xC0_30_B0
+
+    /// The buffer, in buffer space (top-left first, like the renderer's coordinate system).
+    static let quadrants: [(fraction: (x: CGFloat, y: CGFloat), hex: UInt32)] = [
+        ((0.25, 0.25), topLeft),
+        ((0.75, 0.25), topRight),
+        ((0.25, 0.75), bottomLeft),
+        ((0.75, 0.75), bottomRight),
+    ]
+
+    static func jpeg(orientation: UIImage.Orientation) -> Data {
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = 1
+        format.opaque = true
+        let rendered = UIGraphicsImageRenderer(size: rawSize, format: format).image { context in
+            for quadrant in quadrants {
+                let x = quadrant.fraction.x < 0.5 ? 0 : rawSize.width / 2
+                let y = quadrant.fraction.y < 0.5 ? 0 : rawSize.height / 2
+                UIColor(rgb: quadrant.hex).setFill()
+                context.fill(CGRect(x: x, y: y, width: rawSize.width / 2, height: rawSize.height / 2))
+            }
+            let side = rawSize.width * 0.03
+            UIColor(rgb: centreMarker).setFill()
+            context.fill(CGRect(
+                x: (rawSize.width - side) / 2,
+                y: (rawSize.height - side) / 2,
+                width: side,
+                height: side
+            ))
+        }
+        guard let buffer = rendered.cgImage,
+              let data = UIImage(cgImage: buffer, scale: 1, orientation: orientation)
+                  .jpegData(compressionQuality: 0.95) else {
+            XCTFail("could not build the capture fixture")
+            return Data()
+        }
+        return data
+    }
+
+    /// Reads the file the way a viewer does: ImageIO applies the EXIF transform, so `size` and the pixels
+    /// describe what the user sees. Independent of the code under test.
+    static func decode(_ data: Data) throws -> (bitmap: APBitmap, size: CGSize) {
+        let source = try XCTUnwrap(CGImageSourceCreateWithData(data as CFData, nil))
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: 4096,
+            kCGImageSourceShouldCache: false,
+        ]
+        let transformed = try XCTUnwrap(
+            CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary),
+            "the fixture is not a decodable image"
+        )
+        let size = CGSize(width: transformed.width, height: transformed.height)
+        let bitmap = try XCTUnwrap(APBitmap(image: UIImage(cgImage: transformed)))
+        return (bitmap, size)
+    }
+
+    static func colour(_ bitmap: APBitmap, at fraction: (x: CGFloat, y: CGFloat)) -> UInt32? {
+        let x = min(max(Int(fraction.x * CGFloat(bitmap.width)), 0), bitmap.width - 1)
+        let y = min(max(Int(fraction.y * CGFloat(bitmap.height)), 0), bitmap.height - 1)
+        guard let pixel = bitmap.color(x: x, y: y) else { return nil }
+        return UInt32((pixel.red << 16) | (pixel.green << 8) | pixel.blue)
+    }
+
+    static func isNear(_ hex: UInt32?, _ target: UInt32, tolerance: Int = 28) -> Bool {
+        guard let hex else { return false }
+        let channel: (UInt32) -> Int = { Int(($0 >> 16) & 0xFF) }
+        let green: (UInt32) -> Int = { Int(($0 >> 8) & 0xFF) }
+        let blue: (UInt32) -> Int = { Int($0 & 0xFF) }
+        return abs(channel(hex) - channel(target)) <= tolerance
+            && abs(green(hex) - green(target)) <= tolerance
+            && abs(blue(hex) - blue(target)) <= tolerance
+    }
+}
+
+/// The saved photo, read back: its **displayed** aspect is the ratio the user framed, and it shows the
+/// centred region of the picture they framed rather than a strip of the raw sensor buffer.
+///
+/// This is a file-level test: a real JPEG in the camera's own shape (landscape buffer + EXIF tag) goes
+/// through `CameraImagePostProcess.cropFileInPlace`, and the assertions read the file a viewer reads.
+final class CameraCaptureCropOrientationTests: XCTestCase {
+    /// `.right` is the back camera in portrait, `.left` the front camera in portrait, `.up` a capture whose
+    /// pixels are already upright (the phone held in landscape). All three must save the picture the
+    /// viewport showed; the first two are the ones the old code got wrong.
+    private let orientations: [(name: String, orientation: UIImage.Orientation, displayed: CGSize)] = [
+        ("up (landscape capture)", .up, CGSize(width: 4032, height: 3024)),
+        ("right (back camera, portrait)", .right, CGSize(width: 3024, height: 4032)),
+        ("left (front camera, portrait)", .left, CGSize(width: 3024, height: 4032)),
+    ]
+
+    func testEveryCaptureSavesTheRatioTheUserFramed() throws {
+        for entry in orientations {
+            for ratio in CameraAspectRatio.allCases {
+                try assertSavedPhoto(
+                    orientation: entry.orientation,
+                    displayed: entry.displayed,
+                    orientationName: entry.name,
+                    ratio: ratio
+                )
+            }
+        }
+    }
+
+    private func assertSavedPhoto(
+        orientation: UIImage.Orientation,
+        displayed expectedDisplay: CGSize,
+        orientationName: String,
+        ratio: CameraAspectRatio
+    ) throws {
+        let original = CameraCaptureFixture.jpeg(orientation: orientation)
+        let displayed = try CameraCaptureFixture.decode(original)
+        XCTAssertEqual(
+            displayed.size,
+            expectedDisplay,
+            "the fixture must display as the camera's picture, not as its buffer (\(orientationName))"
+        )
+
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("capture-\(orientationName.prefix(5))-\(ratio.rawValue)-\(UUID().uuidString).jpg")
+        try original.write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        CameraImagePostProcess.cropFileInPlace(at: url.path, ratio: ratio)
+
+        let saved = try CameraCaptureFixture.decode(try Data(contentsOf: url))
+        let label = "\(ratio.rawValue), stored \(orientationName)"
+
+        // (a) The picture's displayed shape is the framed shape. This is the assertion that fails on the
+        // old code: a 3:4 frame used to save a 4:3 landscape photo of a vertical strip.
+        XCTAssertEqual(
+            saved.size.width / saved.size.height,
+            ratio.widthOverHeight,
+            accuracy: 0.005,
+            "\(label): the saved photo displays \(saved.size), which is not \(ratio.rawValue)"
+        )
+        // The largest centred crop of the displayed picture, to the pixel.
+        let expected = CameraAspectCrop.rect(for: ratio, imageSize: displayed.size).integral.size
+        XCTAssertEqual(saved.size.width, expected.width, accuracy: 1, "\(label): displayed width")
+        XCTAssertEqual(saved.size.height, expected.height, accuracy: 1, "\(label): displayed height")
+
+        // (b) The region is the centred region the viewport showed: the marker painted at the displayed
+        // centre is still at the displayed centre.
+        let centre = (x: CGFloat(0.5), y: CGFloat(0.5))
+        XCTAssertTrue(
+            CameraCaptureFixture.isNear(
+                CameraCaptureFixture.colour(saved.bitmap, at: centre),
+                CameraCaptureFixture.centreMarker,
+                tolerance: 40
+            ),
+            "\(label): the centre of the saved photo is \(CameraCaptureFixture.colour(saved.bitmap, at: centre).map { String($0, radix: 16) } ?? "nothing"), not the frame's centre"
+        )
+
+        // (c) Nothing was rotated or flipped on the way out: every quadrant of the picture keeps its
+        // colour, so the saved photo is the same picture, cropped — not the same buffer, re-tagged.
+        for quadrant in CameraCaptureFixture.quadrants {
+            let expectedColour = CameraCaptureFixture.colour(displayed.bitmap, at: quadrant.fraction)
+            let savedColour = CameraCaptureFixture.colour(saved.bitmap, at: quadrant.fraction)
+            XCTAssertTrue(
+                CameraCaptureFixture.isNear(savedColour, expectedColour ?? 0),
+                "\(label): the \(quadrant.fraction) quadrant is \(savedColour.map { String($0, radix: 16) } ?? "nothing"), expected \(expectedColour.map { String($0, radix: 16) } ?? "nothing")"
+            )
+        }
+    }
+
+    /// The default ratio is the picture's own aspect, so a portrait capture needs no crop at all: the file
+    /// is not re-encoded and keeps its full resolution. The old code re-encoded every single capture,
+    /// because it compared 3:4 against a 4:3 buffer.
+    func testAPortraitCaptureAtTheDefaultRatioIsNotReencoded() throws {
+        let original = CameraCaptureFixture.jpeg(orientation: .right)
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("capture-nocrop-\(UUID().uuidString).jpg")
+        try original.write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        XCTAssertFalse(
+            CameraImagePostProcess.cropFileInPlace(at: url.path, ratio: .threeFour),
+            "3:4 is the capture's own aspect, so there is nothing to crop"
+        )
+        XCTAssertEqual(try Data(contentsOf: url), original, "the file is left byte-identical")
+    }
+}
+
+private extension UIColor {
+    convenience init(rgb: UInt32) {
+        self.init(
+            red: CGFloat((rgb >> 16) & 0xFF) / 255,
+            green: CGFloat((rgb >> 8) & 0xFF) / 255,
+            blue: CGFloat(rgb & 0xFF) / 255,
+            alpha: 1
+        )
+    }
 }

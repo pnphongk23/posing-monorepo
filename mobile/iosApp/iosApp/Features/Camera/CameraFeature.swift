@@ -906,16 +906,59 @@ enum CameraViewportFrame {
 /// Saved-photo post-processing for the ratio: the file behind the gallery row is cropped to the aspect
 /// the user framed with, so the saved dimensions match the preview (and are asserted in tests).
 enum CameraImagePostProcess {
+    /// The size the photo **displays** at, in pixels.
+    ///
+    /// The camera writes a landscape pixel buffer and records the rotation as an EXIF tag, so a portrait
+    /// capture is 4032×3024 pixels tagged `.right` that displays as 3024×4032. Every ratio in this file
+    /// describes what the user *sees*, so `cgImage.width/height` is the wrong space to measure: 3:4 read
+    /// off a 4:3 buffer crops a vertical strip and saves a 4:3 *landscape* photo — the inverse aspect of
+    /// the frame the viewport showed.
+    static func displayedPixelSize(of image: UIImage) -> CGSize {
+        guard let cgImage = image.cgImage else { return image.size }
+        let width = CGFloat(cgImage.width)
+        let height = CGFloat(cgImage.height)
+        switch image.imageOrientation {
+        case .left, .right, .leftMirrored, .rightMirrored:
+            return CGSize(width: height, height: width)
+        default:
+            return CGSize(width: width, height: height)
+        }
+    }
+
+    /// The photo's pixels with the orientation applied (`orientation == .up`), so a crop rect expressed
+    /// in display space is literally the rect to crop. `nil` when the image has no bitmap backing.
+    static func uprightPixelBuffer(of image: UIImage) -> CGImage? {
+        guard let cgImage = image.cgImage else { return nil }
+        guard image.imageOrientation != .up else { return cgImage }
+        let size = displayedPixelSize(of: image)
+        guard size.width >= 1, size.height >= 1 else { return nil }
+        let format = UIGraphicsImageRendererFormat.default()
+        // Point-for-pixel: the renderer's default scale would resample a 12 MP capture at 2–3×.
+        format.scale = 1
+        format.opaque = true
+        let upright = UIGraphicsImageRenderer(size: size, format: format).image { _ in
+            // `UIImage.draw` applies the EXIF orientation, so the buffer comes out as the picture.
+            image.draw(in: CGRect(origin: .zero, size: size))
+        }
+        return upright.cgImage
+    }
+
     @discardableResult
     static func cropFileInPlace(at path: String, ratio: CameraAspectRatio) -> Bool {
         guard let data = FileManager.default.contents(atPath: path),
-              let image = UIImage(data: data),
-              let cgImage = image.cgImage else { return false }
-        let pixelSize = CGSize(width: cgImage.width, height: cgImage.height)
-        guard CameraAspectCrop.needsCrop(ratio: ratio, imageSize: pixelSize) else { return false }
-        let rect = CameraAspectCrop.rect(for: ratio, imageSize: pixelSize).integral
-        guard let cropped = cgImage.cropping(to: rect) else { return false }
-        let output = UIImage(cgImage: cropped, scale: image.scale, orientation: image.imageOrientation)
+              let image = UIImage(data: data) else { return false }
+        // Cheap early-out in display space: a 3:4 capture of a 3:4 picture is not re-encoded at all.
+        guard CameraAspectCrop.needsCrop(ratio: ratio, imageSize: displayedPixelSize(of: image)) else {
+            return false
+        }
+        guard let upright = uprightPixelBuffer(of: image) else { return false }
+        let bufferSize = CGSize(width: upright.width, height: upright.height)
+        let rect = CameraAspectCrop.rect(for: ratio, imageSize: bufferSize)
+            .integral
+            .intersection(CGRect(origin: .zero, size: bufferSize))
+        guard !rect.isEmpty, let cropped = upright.cropping(to: rect) else { return false }
+        // The buffer is upright, so the file carries no orientation tag: the crop *is* the picture.
+        let output = UIImage(cgImage: cropped, scale: image.scale, orientation: .up)
         guard let encoded = output.jpegData(compressionQuality: 0.92) else { return false }
         return (try? encoded.write(to: URL(fileURLWithPath: path), options: .atomic)) != nil
     }
