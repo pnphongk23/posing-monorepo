@@ -194,18 +194,6 @@ final class FeatureStateTests: XCTestCase {
 
     // MARK: - "Browse poses" leaves Saved for the catalogue (TC-SAV-004)
 
-    /// Saved is pushed from Settings, which is pushed from the Poses tab, so the panel's previous
-    /// `dismiss()` landed on Settings: the button promises the catalogue and delivered a settings list.
-    /// The tap now goes through the app root, which selects the Poses tab and tells every pushed screen
-    /// above it to leave.
-    ///
-    /// Mutation target: send a different tab and the assertion goes red.
-    func testBrowsePosesSelectsTheCatalogueFromEveryTab() {
-        for tab in [AppTab.poses, .camera, .gallery] {
-            XCTAssertEqual(APBrowsePosesRule.tab(from: tab), .poses, "from \(tab) the tap selects the catalogue")
-        }
-    }
-
     /// The panel's Browse runs the app root's action when the app provided one, and the screen's own
     /// dismiss when it did not (a preview, or a test that mounts the surface alone). Anything else is a
     /// dead button in one of the two cases.
@@ -599,36 +587,6 @@ final class FeatureStateTests: XCTestCase {
         return navigation.viewControllers.count
     }
 
-    /// The brace-matched body of the first declaration after `marker`, so a test can read one struct
-    /// without caring how long the file around it is. Same idiom as `APSavedListTests`.
-    private static func braceMatchedBlock(_ marker: String, in source: String) -> String? {
-        guard let markerRange = source.range(of: marker),
-              let open = source.range(of: "{", range: markerRange.upperBound..<source.endIndex) else { return nil }
-        var depth = 0
-        var index = open.lowerBound
-        while index < source.endIndex {
-            switch source[index] {
-            case "{": depth += 1
-            case "}":
-                depth -= 1
-                if depth == 0 { return String(source[open.lowerBound...index]) }
-            default: break
-            }
-            index = source.index(after: index)
-        }
-        return nil
-    }
-
-    private func source(_ path: String) throws -> String {
-        try String(
-            contentsOf: URL(fileURLWithPath: #filePath)
-                .deletingLastPathComponent() // Features
-                .deletingLastPathComponent() // iosAppTests
-                .deletingLastPathComponent() // iosApp (project dir)
-                .appendingPathComponent("iosApp/\(path)"),
-            encoding: .utf8
-        )
-    }
 
     @MainActor func testGalleryTimeFilterToday() async {
         let store = StubGalleryStore(items: [

@@ -32,22 +32,11 @@ extension EnvironmentValues {
 /// What "Browse poses" has to do to app routing. Pure, so what the button promises is assertable
 /// without a screen.
 ///
-/// The bug this exists for: Saved is pushed from Settings, which is itself pushed from the Poses tab, so
-/// dismissing one screen lands on Settings — not on the catalogue the button promises. Three facts decide
-/// the shape of the fix, all measured on a hosted navigation stack (`FeatureStateTests`):
-///
-/// - selecting the tab the user is already on pops nothing, and a stack built from view-based links has
-///   no `NavigationPath` to clear;
-/// - an identity change on the navigation container does not empty it either (the hosted stack kept all
-///   three of its view controllers through `.id(_)`, which is what 1.1 (22) did on the device);
-/// - `dismiss()` from a covered screen pops the screen *above* it, so one tap cannot sequence one call
-///   per level.
-///
-/// So the tab is selected here and the tab's navigation container is popped to its root in one step.
+/// Saved is pushed from Settings, which is pushed from the Poses tab, so dismissing one screen lands on
+/// Settings rather than on the catalogue. Selecting the tab pops nothing (it is already selected) and a
+/// view-link stack has no `NavigationPath` to clear, so the tab is selected here and its navigation
+/// container is popped to its root in one step (`APPushedStack`).
 enum APBrowsePosesRule {
-    /// The tab the tap selects: the catalogue, from wherever the tap came from.
-    static func tab(from current: AppTab) -> AppTab { .poses }
-
     /// The action the empty panel's Browse runs: the app root's action when there is one, otherwise the
     /// caller's own dismiss, so a surface mounted outside the app still closes instead of doing nothing.
     static func browse(action: APBrowsePosesAction?, fallback: @escaping () -> Void) -> () -> Void {
@@ -56,14 +45,8 @@ enum APBrowsePosesRule {
     }
 }
 
-/// Pops the navigation container that is on screen back to its root.
-///
-/// Why not SwiftUI: the Poses tab builds its stack from view-based `NavigationLink`s, so there is no
-/// `NavigationPath` to clear; selecting the tab the user is already on pops nothing; an identity change
-/// on the container does not empty it (measured: a hosted `NavigationStack` kept all three view
-/// controllers through `.id(_:)`); and `dismiss()` from a *covered* screen pops the screen above it, so one
-/// tap would have to sequence one call per level. The container itself is a `UINavigationController`, and
-/// `popToRootViewController` is exactly "back to the Poses root" from any depth, in one step.
+/// Pops the navigation container that is on screen back to its root — the mechanism `APBrowsePosesRule`
+/// describes. The container is a `UINavigationController`, so one call reaches the root from any depth.
 @MainActor
 enum APPushedStack {
     static func popToRoot(in window: UIWindow?) -> Bool {
@@ -292,7 +275,7 @@ struct AppFeatureRoot: View {
     /// "Browse poses" (Saved's empty panel, TC-SAV-004): select the catalogue and pop the Poses tab's
     /// stack, so the tap lands on the Poses root instead of on Settings (Saved is pushed from Settings).
     private func showPosesCatalogue() {
-        tab = APBrowsePosesRule.tab(from: tab)
+        tab = .poses
         APPushedStack.popToRoot(in: Self.keyWindow)
     }
 
