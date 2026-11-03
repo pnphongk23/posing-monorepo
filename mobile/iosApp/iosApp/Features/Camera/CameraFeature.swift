@@ -1272,6 +1272,7 @@ struct CameraScreen: View {
             statusTone: model.statusTone,
             timerCountdown: model.timerCountdown,
             selectedPoseID: guide?.id,
+            selectedPoseName: guide?.name,
             showsPicker: isAuthorized,
             zoomPresets: model.zoomPresets,
             activeZoomPreset: model.activeZoomPreset,
@@ -1842,6 +1843,17 @@ enum CameraChromeLayout {
     static let posesControlIdentifier = "camera.choosePose"
     static let posesControlLabel = "Poses"
 
+    /// What the Poses control announces as its value: **the reference it holds**, by name.
+    ///
+    /// The strip that used to draw the chosen pose's name (and its `camera.poseStrip.card.<id>` handle) is
+    /// gone, so the control is the only place left that can say which guide is up. It said "Selected",
+    /// which tells a VoiceOver user nothing about *which* pose they are about to line up against.
+    static func posesControlValue(selectedPoseName: String?) -> String {
+        guard let name = selectedPoseName?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !name.isEmpty else { return "None selected" }
+        return name
+    }
+
     /// The bottom surface's vertical order, top to bottom. F5 puts the snackbar first, directly above
     /// the control bar: `CameraBottomBar` renders its children in exactly this order.
     enum BottomSlot: Equatable {
@@ -1889,6 +1901,9 @@ struct CameraBottomBar: View {
     /// Shutter-timer countdown (`nil` when idle): a visible number and its own Cancel.
     let timerCountdown: Int?
     let selectedPoseID: String?
+    /// The selected reference's name, announced by the Poses control (the strip that used to draw it is
+    /// retired).
+    let selectedPoseName: String?
     let showsPicker: Bool
     let zoomPresets: [CameraZoomPreset]
     let activeZoomPreset: CameraZoomPreset?
@@ -1990,7 +2005,7 @@ struct CameraBottomBar: View {
         .disabled(!controlsEnabled)
         .opacity(controlsEnabled ? 1 : 0.45)
         .accessibilityLabel(selectedPoseID == nil ? "Choose a pose" : "Change pose")
-        .accessibilityValue(selectedPoseID == nil ? "None selected" : "Selected")
+        .accessibilityValue(CameraChromeLayout.posesControlValue(selectedPoseName: selectedPoseName))
         .accessibilityIdentifier(CameraChromeLayout.posesControlIdentifier)
     }
 

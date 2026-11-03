@@ -1588,6 +1588,7 @@ final class CameraChromeTests: XCTestCase {
 
     private func bar(
         selectedPoseID: String? = nil,
+        selectedPoseName: String? = nil,
         showsPicker: Bool = true,
         status: String? = nil
     ) -> CameraBottomBar {
@@ -1600,6 +1601,7 @@ final class CameraChromeTests: XCTestCase {
             statusTone: .success,
             timerCountdown: nil,
             selectedPoseID: selectedPoseID,
+            selectedPoseName: selectedPoseName,
             showsPicker: showsPicker,
             zoomPresets: [.one, .two],
             activeZoomPreset: .one,
@@ -2233,6 +2235,57 @@ final class CameraChromeContractTests: XCTestCase {
             after: "private func pickerPanel(",
             identifier: ".accessibilityIdentifier(PosePickerLayout.stateIdentifier)",
             in: source
+        )
+    }
+
+    // MARK: The Poses control names the pose it holds
+
+    /// The strip that used to draw the chosen pose's name is retired, so the control's *value* is the only
+    /// place left that says which reference is up. It said "Selected" — true of any pose, and no use to a
+    /// VoiceOver user lining up against the guide.
+    func testThePosesControlValueIsTheSelectedPoseName() {
+        XCTAssertEqual(CameraChromeLayout.posesControlValue(selectedPoseName: "Warrior II"), "Warrior II")
+        XCTAssertEqual(
+            CameraChromeLayout.posesControlValue(selectedPoseName: "  Tree Pose \n"),
+            "Tree Pose",
+            "the name is announced as written, not padded"
+        )
+        XCTAssertEqual(CameraChromeLayout.posesControlValue(selectedPoseName: nil), "None selected")
+        XCTAssertEqual(
+            CameraChromeLayout.posesControlValue(selectedPoseName: "   "),
+            "None selected",
+            "a blank name is no name: the control does not announce nothing at all"
+        )
+        XCTAssertNotEqual(
+            CameraChromeLayout.posesControlValue(selectedPoseName: "Warrior II"),
+            "Selected",
+            "the value names the pose, it does not restate that something is selected"
+        )
+    }
+
+    /// Source-level, like the picker ids pin below: a hosted SwiftUI view exposes no accessibility tree in
+    /// this test host, so the wiring from the guide to the announcement is what is checked.
+    ///
+    /// Mutation target: put `.accessibilityValue(... = "Selected")` back, or pass only `guide?.id` from the
+    /// screen — each turns one assertion below red.
+    func testTheControlWiresThePoseNameIntoItsValue() throws {
+        let source = try cameraFeatureSource()
+        let control = try viewBody(named: "posesControl", in: source)
+        XCTAssertTrue(
+            control.contains(
+                ".accessibilityValue(CameraChromeLayout.posesControlValue(selectedPoseName: selectedPoseName))"
+            ),
+            "the control announces the reference it holds, through the one rule"
+        )
+        XCTAssertFalse(
+            control.contains("\"Selected\""),
+            "and no longer announces the word that says nothing"
+        )
+
+        let bottomChrome = try viewBody(named: "bottomChrome", in: source)
+        XCTAssertTrue(
+            bottomChrome.contains("selectedPoseName: guide?.name"),
+            "the bar is handed the name, not only the id"
         )
     }
 
