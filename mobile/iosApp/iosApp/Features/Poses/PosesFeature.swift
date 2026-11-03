@@ -2065,8 +2065,8 @@ struct SearchScreen: View {
                     Task { await model.startSearch(for: "") }
                 },
                 onRetry: { Task { await model.load() } },
-                emptyIdentifier: "search-empty-banner",
-                retryIdentifier: "search.retry"
+                emptyIdentifier: APSearchIdentifiers.empty,
+                retryIdentifier: APSearchIdentifiers.retry
             )
         }
     }
@@ -2158,9 +2158,10 @@ struct SearchScreen: View {
                 model.cancelPendingSearch()
                 Task { await model.startSearch(for: "") }
             },
-            style: .plain
+            style: .plain,
+            actionIdentifier: APSearchIdentifiers.empty
         )
-        .accessibilityIdentifier("search-empty-banner")
+        .accessibilityIdentifier(APSearchIdentifiers.panel(APSearchIdentifiers.empty))
     }
 }
 

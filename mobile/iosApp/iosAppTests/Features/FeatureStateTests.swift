@@ -409,35 +409,55 @@ final class FeatureStateTests: XCTestCase {
 
     // MARK: - Browse poses: the control, the environment, the real stack
 
-    /// The flows tap this id, so the id has to sit on the control, not on the panel around it.
+    /// The flows tap these ids, so the ids have to address the controls, not the panels around them.
     ///
-    /// Measured on 1.1 (22) with Maestro's hierarchy (`~/.maestro/tests/2026-11-03_135729`), on the
-    /// empty Saved screen:
+    /// Measured on 1.1 (22) with Maestro's hierarchy (`~/.maestro/tests/2026-11-03_135729`), on the empty
+    /// Saved screen: `saved.browseCommunity` had bounds `[0,123][393,794]` — the whole panel — while the
+    /// "Browse poses" button sat at `[66,521][326,569]`. A tap by id hits the element's centre (196, 458),
+    /// which is the panel's copy, so the action never ran. The panels now derive a `<id>.panel` of their own.
     ///
-    ///     saved.browseCommunity  bounds [0,123][393,794]   <- the panel
-    ///     "Browse poses"         bounds [66,521][326,569]   <- the button, no id
-    ///
-    /// A tap by id hits the element's centre (196, 458), which is the panel's copy: the action never ran,
-    /// Saved stayed on screen and `poses.open-search` never appeared — exactly QA's pass 16. The app
-    /// root's action was correct all along; nothing was calling it.
-    ///
-    /// Mutation target: put the identifier back on the panel and the first assertion goes red.
-    func testTheEmptyPanelsTapIdAddressesItsControl() throws {
-        let saved = try source("Features/Poses/APSavedList.swift")
-        let empty = try XCTUnwrap(Self.braceMatchedBlock("struct APSavedEmptyPanel", in: saved))
-        XCTAssertTrue(
-            empty.contains("actionIdentifier: \"saved.browseCommunity\""),
-            "the flows tap saved.browseCommunity: it belongs on the button"
-        )
-        XCTAssertFalse(
-            empty.contains(".accessibilityIdentifier(\"saved.browseCommunity\")"),
-            "an id on the panel is what made the tap land on its copy"
-        )
+    /// This asserts the **plumbing** the views use (`identifiers`), not source text: moving an id back onto
+    /// the container changes these values and cannot pass.
+    @MainActor func testTheSavedPanelsAddressTheirControls() throws {
+        let empty = APSavedEmptyPanel(onBrowse: {})
+        XCTAssertEqual(empty.identifiers.control, "saved.browseCommunity", "the flows' id")
+        XCTAssertEqual(empty.identifiers.panel, "saved.browseCommunity.panel", "the container is derived, not shared")
+        XCTAssertNotEqual(empty.identifiers.control, empty.identifiers.panel, "one id, one element")
 
-        // The failed-load panel had the same shape; its Try again is what `saved.retry` addresses.
-        let failure = try XCTUnwrap(Self.braceMatchedBlock("struct APSavedLoadFailurePanel", in: saved))
-        XCTAssertTrue(failure.contains("actionIdentifier: \"saved.retry\""))
-        XCTAssertFalse(failure.contains(".accessibilityIdentifier(\"saved.retry\")"))
+        let failure = APSavedLoadFailurePanel(retry: {})
+        XCTAssertEqual(failure.identifiers.control, "saved.retry")
+        XCTAssertEqual(failure.identifiers.panel, "saved.retry.panel")
+        XCTAssertNotEqual(failure.identifiers.control, failure.identifiers.panel)
+    }
+
+    /// Same rule on the search surface: the banner id is the "Clear search" control, and the failed-search
+    /// retry is the retry control.
+    @MainActor func testTheSearchPanelsAddressTheirControls() {
+        let model = PosesViewModel(service: EmptySavedPoseService())
+        let empty = APSearchStatePanel(
+            model: model,
+            presentation: .empty,
+            emptyIdentifier: APSearchIdentifiers.empty,
+            retryIdentifier: APSearchIdentifiers.retry
+        )
+        XCTAssertEqual(empty.identifiers.control, "search-empty-banner")
+        XCTAssertEqual(empty.identifiers.panel, "search-empty-banner.panel")
+
+        let failed = APSearchStatePanel(
+            model: model,
+            presentation: .failed,
+            emptyIdentifier: APSearchIdentifiers.empty,
+            retryIdentifier: APSearchIdentifiers.retry
+        )
+        XCTAssertEqual(failed.identifiers.control, "search.retry")
+        XCTAssertEqual(failed.identifiers.panel, "search.retry.panel")
+
+        let loading = APSearchStatePanel(
+            model: model,
+            presentation: .loading,
+            emptyIdentifier: APSearchIdentifiers.empty
+        )
+        XCTAssertNil(loading.identifiers.control, "nothing to tap while it searches")
     }
 
     /// The app root's action really reaches a screen pushed inside the Poses navigation stack: the

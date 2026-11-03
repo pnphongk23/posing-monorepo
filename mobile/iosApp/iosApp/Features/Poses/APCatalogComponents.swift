@@ -452,6 +452,18 @@ struct APPoseGrid: View {
 /// The non-grid Search results panels (`03-search-loading/error/no-results`), extracted from
 /// `SearchScreen` so a probe can render exactly what the screen shows — including the paging footer,
 /// which must survive an empty page (a filtered page can hold no match while more rows exist).
+/// The ids the search surface exposes. They address the **controls** — a flow taps an id, and a tap on a
+/// panel lands on its copy — so each panel keeps a derived `<id>.panel` of its own.
+enum APSearchIdentifiers {
+    /// The no-match banner's action ("Clear search").
+    static let empty = "search-empty-banner"
+    /// The failed-search card's retry.
+    static let retry = "search.retry"
+
+    /// The container id a panel answers to, derived so a rename cannot leave a stale one behind.
+    static func panel(_ identifier: String) -> String { "\(identifier).panel" }
+}
+
 struct APSearchStatePanel: View {
     @ObservedObject var model: PosesViewModel
     let presentation: APCatalogPresentation
@@ -465,6 +477,19 @@ struct APSearchStatePanel: View {
     var emptyIdentifier: String?
     var retryIdentifier: String?
 
+    /// Where the ids land in the state that is showing: `control` is the element a flow taps, `panel` is
+    /// the container around it. The body applies exactly these, so a test can assert the plumbing without
+    /// reading source text or needing an accessibility tree.
+    var identifiers: (control: String?, panel: String?) {
+        let identifier: String?
+        switch presentation {
+        case .failed: identifier = retryIdentifier
+        case .empty, .noMatch: identifier = emptyIdentifier
+        case .loading, .grid: identifier = nil
+        }
+        return (identifier, identifier.map(APSearchIdentifiers.panel))
+    }
+
     @ViewBuilder var body: some View {
         switch presentation {
         case .loading:
@@ -473,13 +498,18 @@ struct APSearchStatePanel: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         case .failed:
             VStack(spacing: 0) {
+                // The ids address the controls, not the panels around them: a flow taps the id, and a tap
+                // on the panel lands on its copy (measured on the Saved panel: the container's bounds were
+                // the whole panel while the button sat 60 pt below its centre). The panels keep their own,
+                // distinct ids underneath.
                 APErrorStateView(
                     title: failureTitle,
                     message: failureMessage,
                     retry: onRetry,
-                    style: .plain
+                    style: .plain,
+                    actionIdentifier: identifiers.control
                 )
-                .apIdentifier(retryIdentifier)
+                .apIdentifier(identifiers.panel)
                 searchFooter
             }
         case .empty, .noMatch:
@@ -489,9 +519,10 @@ struct APSearchStatePanel: View {
                     message: emptyMessage,
                     actionTitle: emptyActionTitle,
                     action: onEmptyAction,
-                    style: .plain
+                    style: .plain,
+                    actionIdentifier: identifiers.control
                 )
-                .apIdentifier(emptyIdentifier)
+                .apIdentifier(identifiers.panel)
                 searchFooter
             }
         case .grid:
