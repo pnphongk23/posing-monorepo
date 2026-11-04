@@ -260,15 +260,15 @@ final class CameraFeatureTests: XCTestCase {
     func testSetGuideLineColorIgnoredWhenControlsDisabled() {
         let model = CameraViewModel()
         model.coordinator.onPermissionResult(.denied)
-        model.setGuideLineColor(.white)
-        XCTAssertEqual(model.guideLineColor, .black)
+        model.setGuideLineColor(.yellow)
+        XCTAssertEqual(model.guideLineColor, .pink, "a control the camera cannot serve does not move")
     }
 
     func testSetGuideLineColorWhenEnabled() {
         let model = CameraViewModel()
         model.coordinator.onPermissionResult(.authorized)
-        model.setGuideLineColor(.white)
-        XCTAssertEqual(model.guideLineColor, .white)
+        model.setGuideLineColor(.yellow)
+        XCTAssertEqual(model.guideLineColor, .yellow)
     }
 
     // MARK: Persisted defaults (FEAT-012)
@@ -319,14 +319,14 @@ final class CameraFeatureTests: XCTestCase {
         let model = CameraViewModel()
         model.coordinator.onPermissionResult(.authorized)
         model.setGuideOpacity(0.9)
-        model.setGuideLineColor(.white)
+        model.setGuideLineColor(.yellow)
         model.commitGuideGesture(.init(scale: 2, rotation: .degrees(30), translation: CGSize(width: 40, height: 40)))
 
         model.resetGuideTransform()
 
         XCTAssertEqual(model.guideTransform, GuideTransform())
         XCTAssertEqual(model.guideOpacity, 0.9, accuracy: 0.001)
-        XCTAssertEqual(model.guideLineColor, .white)
+        XCTAssertEqual(model.guideLineColor, .yellow)
     }
 
     /// `NativePose.imageURL` is the source photo; the camera must never draw it.
@@ -567,7 +567,7 @@ final class CameraFeatureTests: XCTestCase {
         var guide: NativePose? = pose
         let model = CameraViewModel()
         model.coordinator.onPermissionResult(.authorized)
-        model.setGuideLineColor(.white)
+        model.setGuideLineColor(.yellow)
         model.setGuideOpacity(1)
         model.commitGuideGesture(.init(scale: placement.scale,
                                        rotation: placement.rotation,
@@ -649,7 +649,9 @@ final class CameraFeatureTests: XCTestCase {
                 let b = Int(pixels.bytes[index + 2])
                 let a = Int(pixels.bytes[index + 3])
                 guard a > 200 else { continue }
-                if r > 200, g > 200, b > 200 {
+                // The Line colour's ink: any of the sheet's bright palette colours (pink, yellow, green) and
+                // white, against the black preview the simulator draws.
+                if r > 190, g > 150, b > 40 {
                     result.whiteCount += 1
                     sumX += Double(col)
                     sumY += Double(row)
@@ -2555,6 +2557,185 @@ final class CameraGuideScaleTests: XCTestCase {
         XCTAssertEqual(CameraGuideScale.stepped(1.53), 1.55, accuracy: 0.0001)
         XCTAssertGreaterThanOrEqual(CameraGuideScale.stepped(0), GuideTransform.scaleRange.lowerBound)
         XCTAssertLessThanOrEqual(CameraGuideScale.stepped(9), GuideTransform.scaleRange.upperBound)
+    }
+}
+
+/// The guide-adjust sheet: the reference's own controls, moved off the tools popover, over a live camera.
+@MainActor
+final class CameraGuideAdjustTests: XCTestCase {
+    /// It opens only where there is something to adjust: a camera that works and a reference on screen.
+    func testTheSheetNeedsACameraAndAReference() {
+        let noCamera = CameraViewModel()
+        noCamera.coordinator.onPermissionResult(.denied)
+        noCamera.guideAppeared(hasGuide: true)
+        noCamera.openGuideAdjust()
+        XCTAssertFalse(noCamera.showGuideAdjust, "a camera that cannot serve it does not open the sheet")
+
+        let noGuide = CameraViewModel()
+        noGuide.coordinator.onPermissionResult(.authorized)
+        noGuide.openGuideAdjust()
+        XCTAssertFalse(noGuide.showGuideAdjust, "no reference, nothing to adjust")
+
+        let ready = CameraViewModel()
+        ready.coordinator.onPermissionResult(.authorized)
+        ready.guideAppeared(hasGuide: true)
+        ready.openGuideAdjust()
+        XCTAssertTrue(ready.showGuideAdjust)
+        ready.closeGuideAdjust()
+        XCTAssertFalse(ready.showGuideAdjust, "Done closes it")
+    }
+
+    /// One surface at a time: the sheet, the picker and the popover never stack on each other.
+    func testTheSheetAndTheOtherSurfacesAreExclusive() {
+        let model = CameraViewModel()
+        model.coordinator.onPermissionResult(.authorized)
+        model.guideAppeared(hasGuide: true)
+
+        model.openGuideAdjust()
+        model.openPosePicker()
+        XCTAssertFalse(model.showGuideAdjust, "the picker takes the screen")
+
+        model.closePosePicker()
+        model.openGuideAdjust()
+        model.toggleCameraTools()
+        XCTAssertFalse(model.showGuideAdjust, "and so does the tools popover")
+
+        model.toggleCameraTools()
+        model.openGuideAdjust()
+        XCTAssertTrue(model.showGuideAdjust, "the reference reopens it")
+    }
+
+    /// The sheet's controls write the same state the gesture writes, and the palette is the sheet's four.
+    func testTheSheetControlsWriteTheGuidelinesState() {
+        let model = CameraViewModel()
+        model.coordinator.onPermissionResult(.authorized)
+        model.setGuideOpacity(0.6)
+        XCTAssertEqual(model.guideOpacity, 0.6, accuracy: 0.0001)
+
+        model.setGuideScale(1.8)
+        XCTAssertEqual(model.guideTransform.scale, 1.8, accuracy: 0.0001, "the slider and the pinch share one value")
+
+        model.setGuideLineColor(.green)
+        XCTAssertEqual(model.guideLineColor, .green)
+
+        model.toggleGuideMirror()
+        XCTAssertTrue(model.guideFlipped, "Mirror guide flips the reference")
+    }
+
+    /// The palette is four swatches and `white` is not one of them; a stored row that still says `white` reads as
+    /// the sheet's default (pink), which is what it meant before the palette existed.
+    func testThePaletteIsFourSwatchesAndLegacyWhiteMigrates() {
+        XCTAssertEqual(GuideLineColor.allCases.map(\.rawValue), ["pink", "black", "yellow", "green"])
+        XCTAssertEqual(GuideLineColor.stored("white"), .pink)
+        XCTAssertEqual(GuideLineColor.stored("neon"), nil)
+        XCTAssertEqual(GuideLineColor.stored(nil), nil)
+        XCTAssertEqual(GuideLineColor.stored("green"), .green)
+
+        for color in GuideLineColor.allCases {
+            XCTAssertEqual(
+                color.accessibilityIdentifier,
+                "camera.guideAdjust.lineColor.\(color.rawValue)",
+                "each swatch has its own handle"
+            )
+        }
+    }
+
+    /// A row written before the palette existed still opens the camera with its own settings.
+    func testALegacyWhiteRowStillDecodes() throws {
+        let legacy = #"{"version":1,"lineColor":"white","guideOpacity":0.7}"#
+        let decoded = try XCTUnwrap(CameraSettings.decode(legacy))
+        XCTAssertEqual(decoded.lineColor, .pink)
+        XCTAssertEqual(decoded.guideOpacity, 0.7, accuracy: 0.0001, "and its other settings survive")
+    }
+
+    /// The sheet draws its four controls: two sliders, the four swatches and the Mirror button, with Done in the
+    /// header. Rendered on its own at the sheet's own size, so the measurement is of the sheet and not of the
+    /// camera behind it.
+    func testTheSheetDrawsOpacityLineColourScaleAndFlip() throws {
+        let size = CGSize(width: 393, height: CameraGuideAdjustSheet.Layout.height)
+        let sheet = CameraGuideAdjustSheet(
+            opacity: 0.6,
+            lineColor: .pink,
+            scale: 1,
+            isFlipped: false,
+            isEnabled: true,
+            onOpacityChange: { _ in },
+            onLineColorChange: { _ in },
+            onScaleChange: { _ in },
+            onFlip: {},
+            onDone: {}
+        )
+        .environment(\.colorScheme, .light)
+        .background(AP.Color.background)
+        let probe = APViewProbe(sheet, size: size, scale: 2)
+        let bitmap = probe.capture()
+        probe.tearDown()
+
+        // The four swatches are painted, in the palette's own colours.
+        for color in GuideLineColor.allCases {
+            XCTAssertFalse(
+                rowsPainted(bitmap, hex: resolvedHex(color.color), minRun: 30).isEmpty,
+                "\(color.rawValue) swatch is drawn"
+            )
+        }
+
+        // Two sliders: the accent track paints twice (Opacity and Scale), and the Mirror button is one wide
+        // controlFill plate.
+        let accent = APColorTokens.accent.spec(for: .light).hex ?? 0
+        let controlFill = APColorTokens.controlFill.spec(for: .light).hex ?? 0
+        let sliderBands = rowBands(rowsPainted(bitmap, hex: accent, minRun: 20))
+        XCTAssertGreaterThanOrEqual(sliderBands, 2, "Opacity and Scale are both drawn as sliders")
+        XCTAssertFalse(
+            rowsPainted(bitmap, hex: controlFill, minRun: 120).isEmpty,
+            "the Mirror guide button is drawn"
+        )
+    }
+
+    // MARK: Helpers
+
+    /// The hex a `Color` paints at, resolved in the light appearance the sheet is rendered in.
+    private func resolvedHex(_ color: Color) -> UInt32 {
+        var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
+        UIColor(color)
+            .resolvedColor(with: UITraitCollection(userInterfaceStyle: .light))
+            .getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+        return (UInt32((red * 255).rounded()) << 16)
+            | (UInt32((green * 255).rounded()) << 8)
+            | UInt32((blue * 255).rounded())
+    }
+
+    private func rowsPainted(_ bitmap: APBitmap, hex: UInt32, minRun: Int) -> [Int] {
+        let target = (red: Int((hex >> 16) & 0xFF), green: Int((hex >> 8) & 0xFF), blue: Int(hex & 0xFF))
+        var rows: [Int] = []
+        for y in 0..<bitmap.height {
+            var run = 0
+            var longest = 0
+            for x in 0..<bitmap.width {
+                guard let pixel = bitmap.color(x: x, y: y) else { run = 0; continue }
+                let matches = abs(pixel.red - target.red) <= 6
+                    && abs(pixel.green - target.green) <= 6
+                    && abs(pixel.blue - target.blue) <= 6
+                run = matches ? run + 1 : 0
+                longest = max(longest, run)
+            }
+            if longest >= minRun { rows.append(y) }
+        }
+        return rows
+    }
+
+    /// How many separated row bands a list of rows forms.
+    private func rowBands(_ rows: [Int]) -> Int {
+        var bands = 0
+        var previous: Int?
+        for row in rows.sorted() {
+            if let previous, row - previous <= 2 {
+                // Same band.
+            } else {
+                bands += 1
+            }
+            previous = row
+        }
+        return bands
     }
 }
 

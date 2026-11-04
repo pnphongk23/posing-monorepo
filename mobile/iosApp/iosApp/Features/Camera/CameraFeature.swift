@@ -20,6 +20,8 @@ final class CameraViewModel: ObservableObject {
     @Published var showCameraTools = false
     /// `.nb-pose-picker-sheet` — camera-local bottom sheet, not a pushed route.
     @Published var showPosePicker = false
+    /// The guide-adjust sheet. A sheet, not a popover row: the reference's own controls are what it holds.
+    @Published var showGuideAdjust = false
     /// Visible countdown (`nil` when idle): the number and its Cancel above the shutter.
     @Published private(set) var timerCountdown: Int?
     /// Shutter timer setting (`Off` / `3 s` / `10 s`), persisted like the other settings.
@@ -29,7 +31,7 @@ final class CameraViewModel: ObservableObject {
     /// `pose-visibility-row`: Shown / Hidden for the selected pose reference.
     @Published var isPoseGuideVisible = true
     /// `pose-line-color-black` / `pose-line-color-white`.
-    @Published var guideLineColor: GuideLineColor = .black
+    @Published var guideLineColor: GuideLineColor = .pink
     /// Pinch / rotate / drag placement of the pose reference, committed when a gesture ends.
     @Published var guideTransform = GuideTransform()
     /// Transient capture feedback; cleared by `statusClearTask`.
@@ -326,6 +328,7 @@ final class CameraViewModel: ObservableObject {
     /// which broke AC4's dismissal on the control itself (`02` and `03` measured byte-identical).
     func toggleCameraTools() {
         guard cameraControlsEnabled else { return }
+        showGuideAdjust = false
         showCameraTools.toggle()
     }
 
@@ -340,11 +343,23 @@ final class CameraViewModel: ObservableObject {
     /// that ate the viewport, and it was a second, weaker way to reach the same collection.
     func openPosePicker() {
         guard cameraControlsEnabled else { return }
+        showGuideAdjust = false
         showPosePicker = true
     }
 
     func closePosePicker() {
         showPosePicker = false
+    }
+
+    /// The guide-adjust sheet: opened from the pose reference itself, which is the thing it adjusts.
+    func openGuideAdjust() {
+        guard cameraControlsEnabled, hasGuide else { return }
+        showCameraTools = false
+        showGuideAdjust = true
+    }
+
+    func closeGuideAdjust() {
+        showGuideAdjust = false
     }
 
     /// The Flash row's three chips apply the chosen mode directly; nothing cycles behind the user's back.
@@ -974,13 +989,6 @@ extension CameraFlashSetting {
 
 /// `pose-line-color-black` / `pose-line-color-white` (`camera-live.html`). The colour is the stroke
 /// of the pose reference: the stick-figure fallback and the tinted extracted line art.
-enum GuideLineColor: String, CaseIterable {
-    case black, white
-
-    var label: String { rawValue.capitalized }
-    var color: Color { self == .black ? AP.Color.background : AP.Color.primaryText }
-}
-
 /// Placement of the pose reference over the preview. Scale and rotation pivot on the reference's
 /// centre; the offset is in screen space.
 struct GuideTransform: Equatable {
@@ -1103,6 +1111,33 @@ struct CameraScreen: View {
                 bottomChrome
             }
 
+            // The guide-adjust sheet: an in-place overlay, so the camera stays live behind it and a change is
+            // visible while it is made.
+            if model.showGuideAdjust {
+                VStack(spacing: 0) {
+                    Spacer(minLength: 0)
+                    CameraGuideAdjustSheet(
+                        opacity: model.guideOpacity,
+                        lineColor: model.guideLineColor,
+                        scale: model.guideTransform.scale,
+                        isFlipped: model.guideFlipped,
+                        isEnabled: model.cameraControlsEnabled,
+                        onOpacityChange: { model.setGuideOpacity($0) },
+                        onLineColorChange: { model.setGuideLineColor($0) },
+                        onScaleChange: { model.setGuideScale($0) },
+                        onFlip: { model.toggleGuideMirror() },
+                        onDone: { model.closeGuideAdjust() }
+                    )
+                }
+                .ignoresSafeArea(edges: .bottom)
+                .background(
+                    AP.Color.scrim
+                        .contentShape(Rectangle())
+                        .onTapGesture { model.closeGuideAdjust() }
+                )
+                .zIndex(3)
+            }
+
             // `.nb-pose-picker-sheet` — an in-place overlay on Camera, never a pushed route, so
             // selecting a pose returns directly with no picker entry left on the navigation stack.
             if model.showPosePicker {
@@ -1167,7 +1202,10 @@ struct CameraScreen: View {
         .onChange(of: model.cameraControlsEnabled) { enabled in
             if !enabled { model.closeCameraTools() }
         }
-        .onChange(of: guide?.id) { _ in model.guideDidChange(hasGuide: guide != nil) }
+        .onChange(of: guide?.id) { _ in
+            model.guideDidChange(hasGuide: guide != nil)
+            model.closeGuideAdjust()
+        }
     }
 
     // MARK: Stage
@@ -2810,7 +2848,7 @@ private struct PosePickerSheet: View {
 }
 
 /// `.nb-pose-picker-panel` — rounded top corners, square bottom (radius `22px 22px 0 0`).
-private struct RoundedTopShape: Shape {
+struct RoundedTopShape: Shape {
     let radius: CGFloat
 
     func path(in rect: CGRect) -> Path {

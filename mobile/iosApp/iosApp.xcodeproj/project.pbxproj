@@ -145,6 +145,7 @@
 		DDFD22DE41ACF4D8024B420F /* FeatureService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3199C4916FBCFAB168D672B3 /* FeatureService.swift */; };
 		E43F792270B7D8035A0BF48F /* APCatalogComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05B0AD7019D70604DAFDB180 /* APCatalogComponents.swift */; };
 		E5B3C01E57B6DF2944D11522 /* JobsService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53EBC3EEFA2DC96148AD4F88 /* JobsService.swift */; };
+		E81687E1D527F878DB515388 /* CameraGuideAdjust.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E3C9F3D1A650074E2165F6F /* CameraGuideAdjust.swift */; };
 		E8797FFC600470412CF9C081 /* APViewProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1F245A9DCCCBAAA643F4742 /* APViewProbe.swift */; };
 		E8A5403574A3EA968A57C900 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 0CF0BA8A92206DCBD9D678DD /* LaunchScreen.storyboard */; };
 		ED862A86741C4BCE264CD535 /* CameraPorts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2ECB98D7629FBEB99B72912B /* CameraPorts.swift */; };
@@ -190,6 +191,7 @@
 		13014C50A5C1B9BA1364503E /* FeatureStateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeatureStateTests.swift; sourceTree = "<group>"; };
 		1BF0EC7C15D38373A4A93356 /* AppDatabase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDatabase.swift; sourceTree = "<group>"; };
 		1D33F377EAE99AD4407CC35B /* PosePickerViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PosePickerViewModelTests.swift; sourceTree = "<group>"; };
+		1E3C9F3D1A650074E2165F6F /* CameraGuideAdjust.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraGuideAdjust.swift; sourceTree = "<group>"; };
 		1E4FFF2B9867295214406982 /* iosAppDebug-Prod.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "iosAppDebug-Prod.entitlements"; sourceTree = "<group>"; };
 		1F6B2754084B0CD392E52DEE /* Dev-Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "Dev-Release.xcconfig"; sourceTree = "<group>"; };
 		1FADCC33F02A7BB84B9C89D2 /* CaptureImageStorageTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureImageStorageTests.swift; sourceTree = "<group>"; };
@@ -466,6 +468,7 @@
 				2C7918C7CD67F5C4D933F310 /* CameraCanvas.swift */,
 				926C2ADC431ADE5DD2CEB043 /* CameraEntry.swift */,
 				346C81403D18D752BB15A3B5 /* CameraFeature.swift */,
+				1E3C9F3D1A650074E2165F6F /* CameraGuideAdjust.swift */,
 				A316637F1758F62CE321A3DA /* CameraSettings.swift */,
 				50E74016FB84BDC5C31BB3DA /* CameraToolsPopover.swift */,
 				605353FE16B986A780983BCF /* CameraZoom.swift */,
@@ -893,6 +896,7 @@
 				D836CDF6B75993DFF231DC3A /* CameraEntry.swift in Sources */,
 				3800FE2DB2CD8CB2A2D81B76 /* CameraFeature.swift in Sources */,
 				F6972790D8A1C72BF2BE5A36 /* CameraGridOverlay.swift in Sources */,
+				E81687E1D527F878DB515388 /* CameraGuideAdjust.swift in Sources */,
 				ED862A86741C4BCE264CD535 /* CameraPorts.swift in Sources */,
 				4E0CF73E9CCBAF52450EB28E /* CameraPreview.swift in Sources */,
 				1BB0A4A720889629F197952E /* CameraService.swift in Sources */,

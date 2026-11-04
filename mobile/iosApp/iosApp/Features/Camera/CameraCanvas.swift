@@ -158,6 +158,8 @@ struct CameraCanvas: View {
                     .accessibilityLabel("Pose guide")
                     .accessibilityValue(guide.id)
                     .accessibilityIdentifier("camera.poseGuide")
+                    // The reference is the entry point of its own sheet, so VoiceOver gets the same action.
+                    .accessibilityAction(named: "Adjust guide") { model.openGuideAdjust() }
                 }
 
                 // Pinch / twist / drag on the photo places the pose reference; the reference itself stays
@@ -169,6 +171,8 @@ struct CameraCanvas: View {
                         .position(x: frame.midX, y: frame.midY)
                         .contentShape(Rectangle())
                         .onTapGesture(count: 2) { model.resetGuideTransform() }
+                        // One tap on the reference opens the sheet that adjusts it: the guide is the control.
+                        .onTapGesture { model.openGuideAdjust() }
                         .gesture(guidePlacementGesture)
                         .accessibilityHidden(true)
                 }

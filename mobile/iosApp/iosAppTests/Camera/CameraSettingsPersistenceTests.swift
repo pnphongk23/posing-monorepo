@@ -33,7 +33,7 @@ final class CameraSettingsPersistenceTests: XCTestCase {
             isGridVisible: true,
             flash: .off,
             isPoseGuideVisible: false,
-            lineColor: .white,
+            lineColor: .green,
             transform: .init(scale: 2.5, rotationDegrees: 32, offsetX: 14, offsetY: -20),
             zoom: .three
         )
@@ -56,7 +56,7 @@ final class CameraSettingsPersistenceTests: XCTestCase {
 
         XCTAssertEqual(decoded.guideOpacity, 0.8, accuracy: 0.001)
         XCTAssertEqual(decoded.flash, .auto)
-        XCTAssertEqual(decoded.lineColor, .black)
+        XCTAssertEqual(decoded.lineColor, .pink, "the sheet's default swatch")
         XCTAssertEqual(decoded.zoom, .one)
         XCTAssertTrue(decoded.isPoseGuideVisible)
         XCTAssertFalse(decoded.isGridVisible)
@@ -84,7 +84,7 @@ final class CameraSettingsPersistenceTests: XCTestCase {
         ))
 
         XCTAssertEqual(decoded.flash, .auto)
-        XCTAssertEqual(decoded.lineColor, .black)
+        XCTAssertEqual(decoded.lineColor, .pink, "the sheet's default swatch")
         XCTAssertEqual(decoded.zoom, .one)
     }
 
@@ -188,7 +188,7 @@ final class CameraSettingsPersistenceTests: XCTestCase {
         camera.permission = .notDetermined
         let store = MemorySettingsStore(seed: makeSettings(
             opacity: 0.2, flipped: true, grid: true, flash: .off,
-            guideVisible: false, lineColor: .white, zoom: .three
+            guideVisible: false, lineColor: .green, zoom: .three
         ))
         let model = makeModel(camera: camera, store: store)
 
@@ -199,7 +199,7 @@ final class CameraSettingsPersistenceTests: XCTestCase {
         XCTAssertTrue(model.isGridVisible)
         XCTAssertEqual(model.flashSetting, .off)
         XCTAssertFalse(model.isPoseGuideVisible)
-        XCTAssertEqual(model.guideLineColor, .white)
+        XCTAssertEqual(model.guideLineColor, .green)
         XCTAssertEqual(model.zoomLevel, .three)
         XCTAssertFalse(model.cameraControlsEnabled, "the setters stay gated; the restore does not")
     }
@@ -227,7 +227,7 @@ final class CameraSettingsPersistenceTests: XCTestCase {
 
         XCTAssertEqual(model.guideOpacity, 0.5, accuracy: 0.001)
         XCTAssertEqual(model.flashSetting, .auto)
-        XCTAssertEqual(model.guideLineColor, .black)
+        XCTAssertEqual(model.guideLineColor, .pink, "the sheet's default swatch")
         XCTAssertEqual(model.zoomLevel, .one)
         XCTAssertTrue(model.isPoseGuideVisible)
         XCTAssertFalse(model.isGridVisible)

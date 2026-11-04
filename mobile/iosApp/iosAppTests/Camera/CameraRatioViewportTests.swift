@@ -613,7 +613,7 @@ final class CameraCanvasFramingTests: XCTestCase {
         model.setAspectRatio(ratio)
         if withGuide {
             model.setGuideOpacity(1)
-            model.setGuideLineColor(.white)
+            model.setGuideLineColor(.green)
             model.commitGuideGesture(
                 GuideTransform.Delta(scale: 2.5, rotation: .degrees(24), translation: CGSize(width: 0, height: 220))
             )
