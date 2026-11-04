@@ -119,9 +119,56 @@ enum CameraZoomScale {
     }
 }
 
-/// The continuous zoom control: a thin track, a tick and a label for every preset the lens serves, a round thumb
-/// and the value pill above it. Drag or tap anywhere on the track to set the factor; VoiceOver gets the same
-/// control as one adjustable element.
+/// The slider's own geometry, pure: where the thumb sits for a zoom value, where the value pill sits, and whether a
+/// tick's label would repeat what the pill already says. The board's control is the reference: a light thumb on the
+/// track and the accent pill directly above it, kept inside the track at the ends.
+struct CameraZoomTrackGeometry: Equatable {
+    let width: CGFloat
+    let thumbDiameter: CGFloat
+    let range: ClosedRange<CGFloat>
+
+    /// The pill's row, the gap under it, the thumb's row, and the ticks with their labels under the track.
+    static let pillHeight: CGFloat = 22
+    static let pillToTrack: CGFloat = 4
+    static let thumbDiameterConstant: CGFloat = 22
+    static let markHeight: CGFloat = 6
+    static let labelHeight: CGFloat = 11
+    static let markToLabel: CGFloat = 2
+    static var totalHeight: CGFloat {
+        pillHeight + pillToTrack + thumbDiameterConstant + 2 + markHeight + markToLabel + labelHeight
+    }
+
+    var trackWidth: CGFloat { max(width - thumbDiameter, 1) }
+
+    /// Centre of the thumb for a zoom factor: the track's ends are the range's ends.
+    func thumbCenterX(for factor: CGFloat) -> CGFloat {
+        thumbDiameter / 2 + trackWidth * CameraZoomScale.fraction(of: factor, in: range)
+    }
+
+    /// Centre of the pill: over the thumb, pushed inside the track at the extremes so it never hangs off.
+    func pillCenterX(for factor: CGFloat) -> CGFloat {
+        let half = Self.pillHeight / 2 + 8
+        return min(max(thumbCenterX(for: factor), half), max(half, width - half))
+    }
+
+    var pillCenterY: CGFloat { Self.pillHeight / 2 }
+    /// The track line and the thumb share one centre line, under the pill.
+    var trackLineCenterY: CGFloat { Self.pillHeight + Self.pillToTrack + thumbDiameter / 2 }
+    /// The top of a tick: its mark, then its label, clear of the thumb.
+    var ticksTop: CGFloat { trackLineCenterY + thumbDiameter / 2 + 2 }
+    var tickCenterY: CGFloat { ticksTop + (Self.markHeight + Self.markToLabel + Self.labelHeight) / 2 }
+    /// The minimum stop's label x, to prove the labels survive where the pill does not cover them.
+    var minimumLabelX: CGFloat { thumbDiameter / 2 }
+
+    /// Whether a tick's label is readable: it is dropped where the pill already carries that value.
+    func showsLabel(forFactor tick: CGFloat, thumbFactor: CGFloat) -> Bool {
+        abs(thumbCenterX(for: tick) - thumbCenterX(for: thumbFactor)) > 14
+    }
+}
+
+/// The continuous zoom control: a light thumb on a thin track, a tick and a label per preset the lens serves, and
+/// the zoom value in an accent pill above the thumb that follows it. Drag or tap anywhere on the track; VoiceOver
+/// gets the same control as one adjustable element.
 struct CameraZoomSlider: View {
     let factor: CGFloat
     let range: ClosedRange<CGFloat>
@@ -131,44 +178,26 @@ struct CameraZoomSlider: View {
     private let thumbSize: CGFloat = 22
 
     var body: some View {
-        VStack(spacing: AP.Space.space4) {
-            valuePill
-            GeometryReader { proxy in
-                let trackWidth = max(proxy.size.width - thumbSize, 1)
-                let thumbX = thumbSize / 2 + trackWidth * CameraZoomScale.fraction(of: factor, in: range)
-                let trackY = thumbSize / 2
-
-                ZStack(alignment: .leading) {
-                    Capsule()
-                        .fill(Color.white.opacity(0.4))
-                        .frame(height: 2)
-                        .padding(.horizontal, thumbSize / 2)
-                        .position(x: proxy.size.width / 2, y: trackY)
-
-                    // The stops sit under the track with their labels, so a label never sits on the line the
-                    // thumb is read against.
-                    tickMarks(trackWidth: trackWidth, trackY: trackY)
-                        .padding(.horizontal, thumbSize / 2)
-
-                    Circle()
-                        .fill(AP.Color.surface)
-                        .frame(width: thumbSize, height: thumbSize)
-                        .position(x: thumbX, y: trackY)
-                        .shadow(color: .black.opacity(0.35), radius: 2, y: 1)
-                }
-                .frame(width: proxy.size.width, height: proxy.size.height)
-                .contentShape(Rectangle())
-                .gesture(
-                    DragGesture(minimumDistance: 0)
-                        .onChanged { value in
-                            guard isEnabled else { return }
-                            let fraction = (value.location.x - thumbSize / 2) / trackWidth
-                            onChange(CameraZoomScale.factor(atFraction: fraction, in: range))
-                        }
-                )
+        GeometryReader { proxy in
+            let geometry = CameraZoomTrackGeometry(width: proxy.size.width, thumbDiameter: thumbSize, range: range)
+            ZStack(alignment: .topLeading) {
+                valuePill(geometry)
+                trackLine(geometry)
+                tickMarks(geometry)
+                thumb(geometry)
             }
-            .frame(height: 38)
+            .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        guard isEnabled else { return }
+                        let fraction = (value.location.x - thumbSize / 2) / geometry.trackWidth
+                        onChange(CameraZoomScale.factor(atFraction: fraction, in: range))
+                    }
+            )
         }
+        .frame(height: CameraZoomTrackGeometry.totalHeight)
         .opacity(isEnabled ? 1 : 0.45)
         .accessibilityElement()
         .accessibilityLabel("Zoom")
@@ -187,43 +216,56 @@ struct CameraZoomSlider: View {
         .accessibilityIdentifier(CameraZoomScale.sliderIdentifier)
     }
 
-    /// The value above the thumb, following it: the number the user is choosing, not a fixed label.
-    private var valuePill: some View {
-        GeometryReader { proxy in
-            let thumbSize: CGFloat = 22
-            let trackWidth = max(proxy.size.width - thumbSize, 1)
-            let thumbX = thumbSize / 2 + trackWidth * CameraZoomScale.fraction(of: factor, in: range)
-            Text(CameraZoomScale.valueLabel(factor))
-                .font(AP.Font.caption.weight(.semibold))
-                .foregroundStyle(AP.Color.primaryText)
-                .padding(.horizontal, AP.Space.space8)
-                .frame(minHeight: 22)
-                .background(Capsule().fill(AP.Color.controlFill))
-                .fixedSize()
-                .position(
-                    x: min(max(thumbX, 22), proxy.size.width - 22),
-                    y: proxy.size.height / 2
-                )
-        }
-        .frame(height: 22)
-        .accessibilityHidden(true)
+    /// The value, in the accent pill over the thumb (the board's pink "1×"): it follows the thumb, so the number
+    /// and the handle are never read from two different places.
+    private func valuePill(_ geometry: CameraZoomTrackGeometry) -> some View {
+        Text(CameraZoomScale.valueLabel(factor))
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(AP.Color.onAccent)
+            .padding(.horizontal, AP.Space.space8)
+            .frame(minHeight: CameraZoomTrackGeometry.pillHeight)
+            .background(Capsule().fill(AP.Color.accent))
+            .fixedSize()
+            .position(x: geometry.pillCenterX(for: factor), y: CameraZoomTrackGeometry.pillHeight / 2)
+            .accessibilityHidden(true)
     }
 
-    /// A tick per preset the lens serves, with its label under it.
-    private func tickMarks(trackWidth: CGFloat, trackY: CGFloat) -> some View {
+    private func trackLine(_ geometry: CameraZoomTrackGeometry) -> some View {
+        Capsule()
+            .fill(Color.white.opacity(0.4))
+            .frame(width: geometry.trackWidth, height: 2)
+            .position(x: geometry.width / 2, y: geometry.trackLineCenterY)
+            .allowsHitTesting(false)
+    }
+
+    private func thumb(_ geometry: CameraZoomTrackGeometry) -> some View {
+        Circle()
+            .fill(AP.Color.primaryText)
+            .frame(width: thumbSize, height: thumbSize)
+            .position(x: geometry.thumbCenterX(for: factor), y: geometry.trackLineCenterY)
+            .shadow(color: .black.opacity(0.35), radius: 2, y: 1)
+            .allowsHitTesting(false)
+    }
+
+    /// A tick per preset the lens serves, with its label under the track. The label under the thumb is dropped:
+    /// the pill above already says that value.
+    private func tickMarks(_ geometry: CameraZoomTrackGeometry) -> some View {
         ForEach(CameraZoomScale.ticks(in: range)) { preset in
-            let x = trackWidth * CameraZoomScale.fraction(of: preset.factor, in: range)
             VStack(spacing: 2) {
                 Rectangle()
                     .fill(Color.white.opacity(0.6))
                     .frame(width: 1, height: 6)
-                Text(CameraZoomScale.valueLabel(preset.factor))
-                    .font(.system(size: 9, weight: .medium))
-                    .foregroundStyle(Color.white.opacity(0.8))
-                    .fixedSize()
+                if geometry.showsLabel(forFactor: preset.factor, thumbFactor: factor) {
+                    Text(CameraZoomScale.valueLabel(preset.factor))
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundStyle(Color.white.opacity(0.8))
+                        .fixedSize()
+                }
             }
-            .position(x: x, y: trackY + 16)
+            .frame(width: 44)
+            .position(x: geometry.thumbCenterX(for: preset.factor), y: geometry.tickCenterY)
         }
+        .allowsHitTesting(false)
         .accessibilityHidden(true)
     }
 }

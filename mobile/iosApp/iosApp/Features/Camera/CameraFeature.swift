@@ -1091,6 +1091,7 @@ struct CameraScreen: View {
 
     private var isAuthorized: Bool { model.coordinator.state.permission == .authorized }
 
+
     var body: some View {
         ZStack {
             // The camera stage: the preview fills the screen, and the ratio frames the part the shutter keeps.
@@ -1140,6 +1141,10 @@ struct CameraScreen: View {
                         onDone: { model.closeGuideAdjust() }
                     )
                 }
+                // There is no dark guide-adjust board, so the dark variant is derived from the same tokens as the
+                // dark tools-sheet board: the camera's own dark surface, its light type and the same four swatches.
+                // The sheet therefore inherits the camera's scheme instead of re-resolving tokens against a light
+                // environment (the colour tokens are dynamic `UIColor`s, so only the trait collection decides).
                 .ignoresSafeArea(edges: .bottom)
                 // The camera stays live and undimmed behind the sheet: only an outside tap dismisses it.
                 .background(
@@ -1759,15 +1764,13 @@ struct CameraBottomBar: View {
 
     // MARK: Panel
 
+    /// The rail: a flat band, full width, no card and no rounded top — the board's bottom strip.
     private var panel: some View {
         rail
             .padding(.top, AP.Space.space12)
             .padding(.bottom, AP.Space.space8)
             .frame(maxWidth: .infinity)
-            .background(
-                RoundedTopShape(radius: AP.Radius.radius24)
-                    .fill(Color.black.opacity(0.5))
-            )
+            .background(Color.black.opacity(0.5))
             .accessibilityElement(children: .contain)
     }
 

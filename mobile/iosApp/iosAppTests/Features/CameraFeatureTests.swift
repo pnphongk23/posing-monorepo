@@ -2618,6 +2618,279 @@ final class CameraScreenStageTests: XCTestCase {
     }
 }
 
+/// Board parity for the chrome the B6 boards fix: the zoom control's thumb and value pill, the tools chips' size,
+/// and the flat bottom rail. Measured on rendered frames, because these are the three places the app drifted from
+/// the artboards in a way only pixels show.
+@MainActor
+final class CameraChromeBoardParityTests: XCTestCase {
+    private let darkScheme: ColorScheme = .dark
+
+    // MARK: Zoom thumb and value pill
+
+    /// The board's zoom control: a light round thumb on the dark band and the value in a pink pill above it, at the
+    /// thumb's own x — the pill is the value, so it never sits anywhere but over the thumb.
+    func testTheThumbIsLightAndTheValueIsAPinkPillAboveIt() throws {
+        let bitmap = try renderZoomSlider(factor: 1.5)
+        let geometry = CameraZoomTrackGeometry(width: 260, thumbDiameter: 22, range: 1...2)
+        let thumb = try XCTUnwrap(
+            bitmap.color(x: Int(geometry.thumbCenterX(for: 1.5)), y: Int(geometry.trackLineCenterY)),
+            "the thumb is painted"
+        )
+        XCTAssertGreaterThan(thumb.red, 200, "the thumb is a light disc on the dark band")
+        XCTAssertGreaterThan(thumb.green, 200)
+        XCTAssertGreaterThan(thumb.blue, 200)
+
+        let band = try pillBand(in: bitmap, accentHex: 0xE89CAE)
+        // The pill's own middle: its rounded ends are antialiased against the band.
+        // Just inside the pill's top edge: its centre is the glyph.
+        let pillRow = try XCTUnwrap(band.rows.min().map { $0 + 3 }, "the pill is painted")
+        let pill = try XCTUnwrap(bitmap.color(x: band.midX, y: pillRow), "the value pill is painted")
+        XCTAssertEqual(pill.red, 232, accuracy: 12, "the pill is the accent pink")
+        XCTAssertEqual(pill.green, 156, accuracy: 26)
+        XCTAssertEqual(pill.blue, 174, accuracy: 26)
+    }
+
+    /// The pill follows the thumb: it is over the thumb at the minimum, the middle and the maximum, and it stays
+    /// inside the track at the ends instead of hanging off it.
+    func testTheValuePillFollowsTheThumb() throws {
+        for factor: CGFloat in [1, 1.5, 2] {
+            let bitmap = try renderZoomSlider(factor: factor)
+            let geometry = CameraZoomTrackGeometry(width: 260, thumbDiameter: 22, range: 1...2)
+            let pill = try pillBand(in: bitmap, accentHex: 0xE89CAE)
+            XCTAssertEqual(
+                Double(pill.midX), Double(geometry.pillCenterX(for: factor)), accuracy: 3,
+                "\(factor)x: the pill sits over the thumb (kept inside the track at the ends)"
+            )
+        }
+    }
+
+    /// The value is said once: a tick's label is dropped where the pill already carries that value (the tick under
+    /// the thumb), and kept where it does not. The rule is pure, and the slider reads it.
+    func testTheTickLabelUnderTheThumbIsNotRepeated() throws {
+        let geometry = CameraZoomTrackGeometry(width: 260, thumbDiameter: 22, range: 1...2)
+        XCTAssertFalse(
+            geometry.showsLabel(forFactor: 1, thumbFactor: 1),
+            "at 1x the pill says 1x: the tick under it does not repeat it"
+        )
+        XCTAssertTrue(
+            geometry.showsLabel(forFactor: 1, thumbFactor: 2),
+            "at 2x the 1x stop keeps its small label under the track"
+        )
+
+        let source = try String(
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appendingPathComponent("iosApp/Features/Camera/CameraZoom.swift"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(
+            source.contains("if geometry.showsLabel(forFactor: preset.factor, thumbFactor: factor) {"),
+            "the tick's label is only drawn where the pill does not already say it"
+        )
+    }
+
+    // MARK: Tools popover chips
+
+    /// The board's chips are pills of 30 pt with 14 pt type — visibly bigger than the app's 11 pt. The tap target
+    /// stays 44 pt, so the row's height is what a finger aims at.
+    func testTheChipsUseTheBoardsSizeAndKeepAFullHitTarget() throws {
+        XCTAssertGreaterThanOrEqual(CameraToolsLayout.chipHeight, 30, "the board's chip is 30 pt tall")
+        XCTAssertGreaterThanOrEqual(CameraToolsLayout.chipFontSize, 14, "and its type is 14 pt, not 11")
+        XCTAssertGreaterThanOrEqual(CameraToolsLayout.chipHitTarget, AP.HitTarget.minimum)
+
+        // The chosen chip's painted pill is the board's height, and the chip keeps a 44 pt tap target even though
+        // it draws 30 pt tall. Source-level for the target: a rendered frame cannot show a hit area.
+        let bitmap = try renderPopover()
+        let selected = APColorTokens.selectedBackground.spec(for: darkScheme).hex ?? 0
+        let pillRows = rowsPainting(bitmap, hex: selected, minimum: 20)
+        XCTAssertGreaterThanOrEqual(
+            pillRows.count, Int(CameraToolsLayout.chipHeight),
+            "the chosen chip is painted \(CameraToolsLayout.chipHeight) pt tall, as on the board"
+        )
+        let source = try String(
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appendingPathComponent("iosApp/Features/Camera/CameraToolsPopover.swift"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(
+            source.contains(".apMinimumHitTarget("),
+            "the chip keeps a 44 pt hit target around its 30 pt pill"
+        )
+    }
+
+    // MARK: The bottom rail
+
+    /// The rail is a flat band on the board: no rounded card behind the thumbnail, the shutter and the flip.
+    ///
+    /// Rendered first: on the panel's own first row the whole width is one fill, so the row's luminance is even.
+    /// A rounded top leaves its corners showing the gradient above, which makes that row uneven. Then the shape
+    /// itself, because a fill that happens to match cannot undo a rounded corner.
+    func testTheBottomRailIsAFlatBand() throws {
+        let bitmap = try renderBottomBar()
+        let row = try XCTUnwrap(firstRailRow(in: bitmap, column: bitmap.width / 2), "the rail is painted")
+        var lowest = Int.max
+        var highest = Int.min
+        for x in 0..<bitmap.width {
+            guard let pixel = bitmap.color(x: x, y: row) else { continue }
+            lowest = min(lowest, luminance(pixel))
+            highest = max(highest, luminance(pixel))
+        }
+        XCTAssertLessThanOrEqual(
+            highest - lowest, 6,
+            "the rail's first row is one flat fill across the width: no rounded card"
+        )
+
+        let source = try String(
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appendingPathComponent("iosApp/Features/Camera/CameraFeature.swift"),
+            encoding: .utf8
+        )
+        let barStart = try XCTUnwrap(source.range(of: "struct CameraBottomBar: View")?.lowerBound)
+        let bar = source[barStart...]
+        let panelStart = try XCTUnwrap(bar.range(of: "private var panel: some View")?.lowerBound)
+        let panel = bar[panelStart...].prefix(400)
+        XCTAssertFalse(panel.contains("RoundedTopShape"), "the rail has no rounded card behind it")
+    }
+
+    // MARK: Helpers
+
+    private func renderZoomSlider(factor: CGFloat) -> APBitmap {
+        // No extra padding: the slider's own frame is what the geometry describes.
+        let view = CameraZoomSlider(factor: factor, range: 1...2, onChange: { _ in })
+            .environment(\.colorScheme, darkScheme)
+            .background(AP.Color.background)
+        return renderProbe(view, size: CGSize(width: 260, height: 140))
+    }
+
+    private func renderPopover() -> APBitmap {
+        let popup = CameraToolsPopup(
+            flashSetting: .auto,
+            isGridVisible: false,
+            controlsEnabled: true,
+            timerSetting: .off,
+            aspectRatio: .threeFour,
+            onFlashChange: { _ in },
+            onGridToggle: {},
+            onTimerChange: { _ in },
+            onAspectRatioChange: { _ in },
+            onDismiss: {}
+        )
+        .environment(\.colorScheme, darkScheme)
+        .background(AP.Color.background)
+        return renderProbe(popup, size: CGSize(width: CameraToolsLayout.width + 16, height: CameraToolsLayout.height + 16))
+    }
+
+    private func renderBottomBar() -> APBitmap {
+        let bar = CameraBottomBar(
+            thumbnailURL: nil,
+            isBusy: false,
+            canCapture: true,
+            controlsEnabled: true,
+            status: nil,
+            statusTone: .success,
+            timerCountdown: nil,
+            selectedPoseID: nil,
+            selectedPoseName: nil,
+            showsPicker: true,
+            zoomFactor: 1,
+            zoomRange: 1...2,
+            onOpenPosePicker: {},
+            onZoomChange: { _ in },
+            onOpenGallery: {},
+            onCapture: {},
+            onSwitchCamera: {},
+            onDismissStatus: {},
+            onCancelTimer: {},
+            safeBottom: 0
+        )
+        .environment(\.colorScheme, darkScheme)
+        .background(AP.Color.background)
+        return renderProbe(bar, size: CGSize(width: 393, height: 220))
+    }
+
+    /// The proven harness: `APViewProbe` renders into the shared key window, which gives the view a definite
+    /// proposal (a bare hosting controller sizes flexible content at its own intrinsic size).
+    private func renderProbe<Content: View>(_ view: Content, size: CGSize) -> APBitmap {
+        // The shared probe window carries the device's safe area, so the view is pinned to the whole frame.
+        let probe = APViewProbe(view.ignoresSafeArea(), size: size, scale: 1)
+        let bitmap = probe.capture()
+        probe.tearDown()
+        return bitmap
+    }
+
+    /// The x range of the accent-pink pixels in the pill's row band.
+    private func pillBand(in bitmap: APBitmap, accentHex: UInt32) throws -> (midX: Int, rows: [Int]) {
+        let target = (red: Int((accentHex >> 16) & 0xFF), green: Int((accentHex >> 8) & 0xFF), blue: Int(accentHex & 0xFF))
+        var minX = Int.max, maxX = Int.min
+        var rows: [Int] = []
+        for y in 0..<bitmap.height {
+            for x in 0..<bitmap.width {
+                guard let pixel = bitmap.color(x: x, y: y) else { continue }
+                guard abs(pixel.red - target.red) <= 12,
+                      abs(pixel.green - target.green) <= 26,
+                      abs(pixel.blue - target.blue) <= 26 else { continue }
+                minX = min(minX, x); maxX = max(maxX, x)
+                rows.append(y)
+            }
+        }
+        XCTAssertLessThanOrEqual(minX, maxX, "the pill is painted")
+        return ((minX + maxX) / 2, rows)
+    }
+
+    /// Bright ink (a label) in a small window: the tick labels are light type on the dark band.
+    private func hasBrightInk(in bitmap: APBitmap, aroundX x: Int, rows: Range<Int>) -> Bool {
+        for y in rows where y >= 0 && y < bitmap.height {
+            for column in (x - 10)...(x + 10) where column >= 0 && column < bitmap.width {
+                guard let pixel = bitmap.color(x: column, y: y) else { continue }
+                if pixel.red > 140, pixel.green > 140, pixel.blue > 140 { return true }
+            }
+        }
+        return false
+    }
+
+    /// Rows where `hex` paints at least `minimum` pixels: a chip's pill.
+    private func rowsPainting(_ bitmap: APBitmap, hex: UInt32, minimum: Int) -> [Int] {
+        let target = (red: Int((hex >> 16) & 0xFF), green: Int((hex >> 8) & 0xFF), blue: Int(hex & 0xFF))
+        var rows: [Int] = []
+        for y in 0..<bitmap.height {
+            var painted = 0
+            for x in 0..<bitmap.width {
+                guard let pixel = bitmap.color(x: x, y: y) else { continue }
+                if abs(pixel.red - target.red) <= 10,
+                   abs(pixel.green - target.green) <= 10,
+                   abs(pixel.blue - target.blue) <= 10 {
+                    painted += 1
+                }
+            }
+            if painted >= minimum { rows.append(y) }
+        }
+        return rows
+    }
+
+    /// The first row where a column paints the rail's own dark fill.
+    private func firstRailRow(in bitmap: APBitmap, column: Int) -> Int? {
+        for y in 1..<bitmap.height {
+            guard let pixel = bitmap.color(x: column, y: y),
+                  let above = bitmap.color(x: column, y: y - 1) else { continue }
+            // The rail starts with a step: its own fill is darker than the gradient above it.
+            if luminance(pixel) < luminance(above) - 6, luminance(pixel) < 80 { return y }
+        }
+        return nil
+    }
+
+    private func luminance(_ pixel: APPixel) -> Int {
+        (pixel.red * 299 + pixel.green * 587 + pixel.blue * 114) / 1000
+    }
+}
+
 /// The guide-adjust sheet: the reference's own controls, moved off the tools popover, over a live camera.
 @MainActor
 final class CameraGuideAdjustTests: XCTestCase {
@@ -3265,7 +3538,7 @@ final class CameraChromeContractTests: XCTestCase {
     func testTheChosenChipDrawsACheckmark() throws {
         let source = try cameraToolsPopoverSource()
         let chip = try XCTUnwrap(source.range(of: "private func chip(")?.lowerBound)
-        let chipBody = source[chip...].prefix(1_200)
+        let chipBody = source[chip...].prefix(2_200)
         XCTAssertTrue(chipBody.contains("if isSelected {"), "the chip branches on being the chosen one")
         XCTAssertTrue(
             chipBody.contains("Image(systemName: \"checkmark\")"),

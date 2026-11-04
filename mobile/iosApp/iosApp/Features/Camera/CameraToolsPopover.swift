@@ -34,6 +34,14 @@ enum CameraToolsLayout {
 
     static let rows: [Row] = Row.allCases
 
+    /// The chips the board draws: a 30 pt pill with 14 pt type, inside a 44 pt row (which is the tap target).
+    /// Measured on `05-camera-tools-sheet.png` at the 393 pt reference.
+    static let chipHeight: CGFloat = 30
+    static let chipFontSize: CGFloat = 14
+    static let chipHitTarget: CGFloat = AP.HitTarget.minimum
+    static let chipGap: CGFloat = 6
+    static let chipHorizontalPadding: CGFloat = 6
+
     /// The artboard's card: 232 pt wide, its right edge on the tools control's right edge.
     static let width: CGFloat = 232
     static let rowHeight: CGFloat = AP.HitTarget.minimum
@@ -126,7 +134,7 @@ struct CameraToolsPopup: View {
                 .frame(width: 18)
                 .accessibilityHidden(true)
             Text(row.title)
-                .font(AP.Font.supporting)
+                .font(.system(size: 15))
                 .foregroundStyle(AP.Color.primaryText)
                 .lineLimit(1)
                 .fixedSize()
@@ -143,7 +151,7 @@ struct CameraToolsPopup: View {
     private func control(for row: CameraToolsLayout.Row) -> some View {
         switch row {
         case .flash:
-            HStack(spacing: AP.Space.space4) {
+            HStack(spacing: CameraToolsLayout.chipGap) {
                 ForEach(CameraFlashSetting.toolsChoices, id: \.self) { setting in
                     chip(setting.toolsDisplayName, isSelected: flashSetting == setting,
                          identifier: "camera.tools.flash.\(setting.toolsSlug)",
@@ -161,7 +169,7 @@ struct CameraToolsPopup: View {
                 .accessibilityValue(isGridVisible ? "On" : "Off")
                 .accessibilityIdentifier("camera.tools.grid")
         case .timer:
-            HStack(spacing: AP.Space.space4) {
+            HStack(spacing: CameraToolsLayout.chipGap) {
                 ForEach(CameraTimerSetting.allCases) { setting in
                     chip(setting.rawValue, isSelected: timerSetting == setting,
                          identifier: setting.accessibilityIdentifier,
@@ -171,7 +179,7 @@ struct CameraToolsPopup: View {
                 }
             }
         case .ratio:
-            HStack(spacing: AP.Space.space4) {
+            HStack(spacing: CameraToolsLayout.chipGap) {
                 ForEach(CameraAspectRatio.allCases) { ratio in
                     chip(ratio.rawValue, isSelected: aspectRatio == ratio,
                          identifier: ratio.accessibilityIdentifier,
@@ -196,22 +204,24 @@ struct CameraToolsPopup: View {
             HStack(spacing: 2) {
                 if isSelected {
                     Image(systemName: "checkmark")
-                        .font(.system(size: 8, weight: .bold))
+                        .font(.system(size: 9, weight: .bold))
                         .accessibilityHidden(true)
                 }
                 Text(title)
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: CameraToolsLayout.chipFontSize, weight: .semibold))
+                    .lineLimit(1)
                     .fixedSize()
             }
             .foregroundStyle(isSelected ? AP.Color.selectedForeground : AP.Color.primaryText)
-            .padding(.horizontal, 6)
-            .frame(height: 28)
+            .padding(.horizontal, CameraToolsLayout.chipHorizontalPadding)
+            .frame(height: CameraToolsLayout.chipHeight)
             .background(
-                RoundedRectangle(cornerRadius: AP.Radius.radius8, style: .continuous)
-                    .fill(isSelected ? AP.Color.selectedBackground : AP.Color.controlFill)
+                Capsule().fill(isSelected ? AP.Color.selectedBackground : AP.Color.controlFill)
             )
         }
         .buttonStyle(.plain)
+        // The pill draws 30 pt tall; the finger gets the board's 44 pt row.
+        .apMinimumHitTarget()
         .disabled(!controlsEnabled)
         .accessibilityLabel(accessibilityLabel)
         .accessibilityValue(isSelected ? "Selected" : "")
