@@ -30,6 +30,7 @@
 		1C81D6F669B7BB6D2FFCCEB3 /* FirebaseCore in Frameworks */ = {isa = PBXBuildFile; productRef = 16D66C9411832E1B7D572C76 /* FirebaseCore */; };
 		1D9026BC5AC454851D5B19BB /* AddPoseConsentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 80A7FD034183E8622852DBDC /* AddPoseConsentTests.swift */; };
 		1E0244096A7F89E47C305A09 /* PoseDetailFeatureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E683518697C7CD04E17A0D94 /* PoseDetailFeatureTests.swift */; };
+		1E192841E4149B175E834BB6 /* CameraCanvas.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C7918C7CD67F5C4D933F310 /* CameraCanvas.swift */; };
 		2062345D79BB3019FFFC7DCF /* PremiumGateDebugOverrideTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5677CEF217F910602310E3C /* PremiumGateDebugOverrideTests.swift */; };
 		22EA1CB33A17DCC6FC82406D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F543015C899423D4B01CEB2E /* Assets.xcassets */; };
 		24323778ABA0C668C758086B /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = 5F5D09D8B3AA79328B33FC59 /* GRDB */; };
@@ -196,6 +197,7 @@
 		21F759916DD6C60D0A6AE6E8 /* GalleryFeatureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalleryFeatureTests.swift; sourceTree = "<group>"; };
 		2390F661F0C57B7CC33D5181 /* SessionScopedArchitectureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionScopedArchitectureTests.swift; sourceTree = "<group>"; };
 		266C4EBDBED6CDC01D2A2A0F /* APAppearance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APAppearance.swift; sourceTree = "<group>"; };
+		2C7918C7CD67F5C4D933F310 /* CameraCanvas.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraCanvas.swift; sourceTree = "<group>"; };
 		2C7990F01E9011DBB339CFFA /* APSnackbar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APSnackbar.swift; sourceTree = "<group>"; };
 		2D49ED5731A9555D73FC2614 /* SessionScopeCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionScopeCoordinator.swift; sourceTree = "<group>"; };
 		2ECB98D7629FBEB99B72912B /* CameraPorts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraPorts.swift; sourceTree = "<group>"; };
@@ -461,6 +463,7 @@
 		36E1165DE1065FDECA582F03 /* Camera */ = {
 			isa = PBXGroup;
 			children = (
+				2C7918C7CD67F5C4D933F310 /* CameraCanvas.swift */,
 				926C2ADC431ADE5DD2CEB043 /* CameraEntry.swift */,
 				346C81403D18D752BB15A3B5 /* CameraFeature.swift */,
 				A316637F1758F62CE321A3DA /* CameraSettings.swift */,
@@ -885,6 +888,7 @@
 				B76948567578B0EB3766F5C4 /* AppFeatureRoot.swift in Sources */,
 				33B27B4D310716CB30BEB63D /* AppImage.swift in Sources */,
 				8C8EC5B13461D52698AF9850 /* AppleSignIn.swift in Sources */,
+				1E192841E4149B175E834BB6 /* CameraCanvas.swift in Sources */,
 				26FEE10E47B59638546BA083 /* CameraCoordinator.swift in Sources */,
 				D836CDF6B75993DFF231DC3A /* CameraEntry.swift in Sources */,
 				3800FE2DB2CD8CB2A2D81B76 /* CameraFeature.swift in Sources */,

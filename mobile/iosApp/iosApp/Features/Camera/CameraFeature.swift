@@ -1075,8 +1075,6 @@ struct CameraScreen: View {
     /// Focus returns to the More control when the Camera Tools popup is dismissed
     /// (outside tap / Escape / VoiceOver escape).
     @FocusState private var isToolsButtonFocused: Bool
-    /// In-flight pinch / twist / drag, folded into `model.guideTransform` when the gesture ends.
-    @GestureState private var guideGestureDelta = GuideTransform.Delta.identity
     /// Height of the top control bar, measured so the tools popup anchors *under* it at every
     /// Dynamic Type size instead of at a hard-coded offset.
     @State private var topBarHeight: CGFloat = AP.HitTarget.minimum
@@ -1287,106 +1285,16 @@ struct CameraScreen: View {
         }
     }
 
-    /// The live camera canvas, for one container size.
-    ///
-    /// Internal rather than private so the rendered tests can mount exactly this view at a known size: the
-    /// framing rect is computed from the container, and a screen-sized render would have to guess the
-    /// viewport's height before it could say where the black bars are.
+    /// The canvas for one container size. The screen's entry point, so a rendered test mounts exactly what
+    /// the screen mounts.
     func cameraCanvas(size: CGSize) -> some View {
-        // The ratio setting is framing, not only a crop: everything that is *the photo* — the live
-        // preview, the thirds grid, the scrims and the pose reference — lives inside this rect, and the
-        // area outside it is the dark background. The capture path crops to the same ratio, so what the
-        // user framed is what is saved.
-        let frame = model.viewportFrame(in: size)
-        let guideFrame = CameraViewportFrame.guideRect(in: frame)
-
-        return ZStack {
-            AP.Color.background
-
-            if isAuthorized {
-                CameraPreview(session: model.camera.session)
-                    .frame(width: frame.width, height: frame.height)
-                    .clipped()
-                    .position(x: frame.midX, y: frame.midY)
-            }
-
-            // The scrims grade *the photo*: measured against the canvas they would darken the black bars,
-            // which are not part of the picture the shutter saves.
-            verticalScrims
-                .frame(width: frame.width, height: frame.height)
-                .position(x: frame.midX, y: frame.midY)
-
-            // `.nb-camera-pose-reference` — `top:16%; right:18%; bottom:14%; left:18%`, measured of the
-            // framing rect. The static four-corner framing overlay is gone (report §3.2).
-            //
-            // The guide is a reference *for the photo*: its box is the reference area, but pinch / twist /
-            // drag can push the line art past it, so the layer is clipped to the framing rect. Without
-            // that, a scaled or dragged reference paints over the black bars — a picture the shutter can
-            // never take.
-            if let guide, model.isPoseGuideVisible {
-                ZStack {
-                    guideOverlay(for: guide)
-                        .frame(width: guideFrame.width, height: guideFrame.height)
-                        .position(x: guideFrame.midX, y: guideFrame.midY)
-                }
-                .frame(width: frame.width, height: frame.height)
-                // Clip *before* positioning: `.position` makes a view take all the space it is offered, so
-                // a clip after it would cut at the canvas edge and the guide would still reach the bars.
-                .clipped()
-                .position(x: frame.midX, y: frame.midY)
-                // Only the part inside the frame is drawn, so only that part is announced.
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel("Pose guide")
-                .accessibilityValue(guide.id)
-                .accessibilityIdentifier("camera.poseGuide")
-            }
-
-            if model.isGridVisible {
-                CameraFramingGrid()
-                    .frame(width: frame.width, height: frame.height)
-                    .position(x: frame.midX, y: frame.midY)
-            }
-
-            // Pinch / twist / drag on the photo places the pose reference; the reference itself stays
-            // non-interactive so a thin skeleton is never a hard touch target. The catcher is the framing
-            // rect, not the canvas: a drag that starts on the black bars is outside the picture and must
-            // not move the guide inside it.
-            if guide != nil, model.isPoseGuideVisible, isAuthorized {
-                Color.clear
-                    .frame(width: frame.width, height: frame.height)
-                    .position(x: frame.midX, y: frame.midY)
-                    .contentShape(Rectangle())
-                    .onTapGesture(count: 2) { model.resetGuideTransform() }
-                    .gesture(guidePlacementGesture)
-                    .accessibilityHidden(true)
-            }
-
-            // F4: the camera's permission state is the shared 72 pt panel, over the scrim.
-            if !isAuthorized {
-                permissionPanel
-            }
-        }
-        .clipped()
-    }
-
-    /// `.nb-camera-viewport__top-scrim` (190px) / `__bottom-scrim` (170px).
-    private var verticalScrims: some View {
-        VStack(spacing: 0) {
-            LinearGradient(
-                colors: [AP.Color.background.opacity(0.68), AP.Color.background.opacity(0)],
-                startPoint: .top, endPoint: .bottom
-            )
-            .frame(height: 190)
-
-            Spacer(minLength: 0)
-
-            LinearGradient(
-                colors: [AP.Color.background.opacity(0), AP.Color.background.opacity(0.54)],
-                startPoint: .top, endPoint: .bottom
-            )
-            .frame(height: 170)
-        }
-        .allowsHitTesting(false)
+        CameraCanvas(
+            model: model,
+            guide: guide,
+            isAuthorized: isAuthorized,
+            frame: model.viewportFrame(in: size),
+            onClose: onClose
+        )
     }
 
     /// The camera's top chrome: Close on the left, the guide's eye when a reference is up, tools on the
@@ -1424,87 +1332,6 @@ struct CameraScreen: View {
         }
     }
 
-    private var guidePlacementGesture: some Gesture {
-        SimultaneousGesture(
-            SimultaneousGesture(MagnificationGesture(), RotationGesture()),
-            DragGesture()
-        )
-        .updating($guideGestureDelta) { value, state, _ in
-            state = Self.delta(from: value)
-        }
-        .onEnded { value in
-            model.commitGuideGesture(Self.delta(from: value))
-        }
-    }
-
-    private static func delta(
-        from value: SimultaneousGesture<SimultaneousGesture<MagnificationGesture, RotationGesture>, DragGesture>.Value
-    ) -> GuideTransform.Delta {
-        GuideTransform.Delta(
-            scale: value.first?.first ?? 1,
-            rotation: value.first?.second ?? .zero,
-            translation: value.second?.translation ?? .zero
-        )
-    }
-
-    @ViewBuilder
-    private func guideOverlay(for guide: NativePose) -> some View {
-        let placement = model.guideTransform.applying(guideGestureDelta)
-        Group {
-            if let url = guide.cameraGuideURL {
-                // The guide image covers most of the viewport, so it is decoded at screen size
-                // instead of at whatever the source asset happens to be.
-                KFImage(url)
-                    .setProcessor(AppImage.downsample(points: FullScreenImageTarget.drawSize, contentMode: .fit))
-                    .placeholder { guideFallback(for: guide) }
-                    .onFailureView { guideFallback(for: guide) }
-                    .loadDiskFileSynchronously(false)
-                    // The extracted pose is line art on a transparent background, so it is drawn as
-                    // a template and the Line colour setting becomes its stroke colour.
-                    .contentConfigure { image, _ in
-                        image.renderingMode(.template).resizable().scaledToFit()
-                    }
-                    .foregroundColor(model.guideLineColor.color)
-            } else {
-                guideFallback(for: guide)
-            }
-        }
-        .opacity(model.guideOpacity)
-        .scaleEffect(x: model.guideFlipped ? -1 : 1, y: 1)
-        .scaleEffect(placement.scale)
-        .rotationEffect(placement.rotation)
-        .offset(placement.offset)
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
-    }
-
-    // The guide's drawing stays hidden from accessibility; `camera.poseGuide` is set on the wrapper
-    // that is only built while a visible guide exists.
-
-    /// Same stand-in the `AsyncImage` placeholder used before the guide asset loads. The stroke
-    /// follows the tools popup Line colour (`--nb-camera-pose-line-color`).
-    private func guideFallback(for guide: NativePose) -> StickFigureView {
-        StickFigureView(kind: .resolve(name: guide.name, category: guide.category, index: 0),
-                        lineColor: model.guideLineColor.color)
-    }
-
-    /// F4: the camera's permission state is the shared 72 pt state panel — one clean accent-tint
-    /// circle, title, copy and one action — instead of the old stacked camera tile on a yellow square.
-    private var permissionPanel: some View {
-        CameraPermissionPanel(
-            permission: model.coordinator.state.permission,
-            onAllow: { model.requestPermission() },
-            onOpenSettings: openSystemSettings,
-            onDismiss: onClose
-        )
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(AP.Color.scrim)
-    }
-
-    private func openSystemSettings() {
-        guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
-        UIApplication.shared.open(url)
-    }
 }
 
 // MARK: - Camera metrics
@@ -2080,28 +1907,6 @@ struct CameraBottomBar: View {
         .disabled(!controlsEnabled)
         .accessibilityLabel("Switch to front camera")
         .accessibilityIdentifier("camera.flip")
-    }
-}
-
-/// `.nb-camera-viewport__grid-overlay` — hairline thirds at 30% white.
-private struct CameraFramingGrid: View {
-    var body: some View {
-        GeometryReader { proxy in
-            Path { path in
-                for step in 1...2 {
-                    let x = proxy.size.width * CGFloat(step) / 3
-                    path.move(to: CGPoint(x: x, y: 0))
-                    path.addLine(to: CGPoint(x: x, y: proxy.size.height))
-
-                    let y = proxy.size.height * CGFloat(step) / 3
-                    path.move(to: CGPoint(x: 0, y: y))
-                    path.addLine(to: CGPoint(x: proxy.size.width, y: y))
-                }
-            }
-            .stroke(Color.white.opacity(0.3), lineWidth: 1)
-        }
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
     }
 }
 
@@ -3188,7 +2993,7 @@ struct StickFigureShape: Shape {
     }
 }
 
-private struct StickFigureView: View {
+struct StickFigureView: View {
     let kind: StickFigurePose
     var lineColor: Color = AP.Color.primaryText
 
