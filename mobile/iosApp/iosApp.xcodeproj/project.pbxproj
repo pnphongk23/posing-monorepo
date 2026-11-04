@@ -10,6 +10,7 @@
 		01C8648C27A168928A11377E /* AppConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = B200B349F72BE4E46078D085 /* AppConfig.swift */; };
 		04DCE91D0145EDCBD19822AB /* APStateViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84F88CDE9ADAD57F2AA600A5 /* APStateViews.swift */; };
 		06712E8A9DE264A6196F317C /* PaywallAnalyticsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C215B7599A994960E59A8FD0 /* PaywallAnalyticsTests.swift */; };
+		0D8DADC4E41F43A406718E2E /* CameraZoom.swift in Sources */ = {isa = PBXBuildFile; fileRef = 605353FE16B986A780983BCF /* CameraZoom.swift */; };
 		0E456DAEAD3275ED61424B4C /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5B35EABCB9F1E49AA085E03 /* APIClient.swift */; };
 		0EDBF62D8BA38CBAB2E4FE3B /* legacy-aipose-database-v1.sqlite in Resources */ = {isa = PBXBuildFile; fileRef = EA2BE22C3F2AC2544865BC8E /* legacy-aipose-database-v1.sqlite */; };
 		0F7D38959BDB335D3F00BFDC /* APShellTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FFFE7C7B356335E133906C94 /* APShellTests.swift */; };
@@ -228,6 +229,7 @@
 		59169CF64611E3D726C9D47A /* Prod-Debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "Prod-Debug.xcconfig"; sourceTree = "<group>"; };
 		5C1DBAF0DCF9CB11B0A0C57A /* AppConfigService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfigService.swift; sourceTree = "<group>"; };
 		5E26C008F7E8079D880FD29E /* APIClientTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClientTests.swift; sourceTree = "<group>"; };
+		605353FE16B986A780983BCF /* CameraZoom.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraZoom.swift; sourceTree = "<group>"; };
 		61571883DB4BF8DDEFEE8BD5 /* JobsFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JobsFixtures.swift; sourceTree = "<group>"; };
 		6535A435C54DDB708745F381 /* DatabaseRecords.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DatabaseRecords.swift; sourceTree = "<group>"; };
 		69F99C45485E02CD56C6E0C2 /* SupportScreens.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupportScreens.swift; sourceTree = "<group>"; };
@@ -460,6 +462,7 @@
 				926C2ADC431ADE5DD2CEB043 /* CameraEntry.swift */,
 				346C81403D18D752BB15A3B5 /* CameraFeature.swift */,
 				A316637F1758F62CE321A3DA /* CameraSettings.swift */,
+				605353FE16B986A780983BCF /* CameraZoom.swift */,
 			);
 			path = Camera;
 			sourceTree = "<group>";
@@ -889,6 +892,7 @@
 				3678A794EAED19B13AB6828E /* CameraSettings.swift in Sources */,
 				C4F461F913C3D3D1F6192DEA /* CameraTypes.swift in Sources */,
 				6F97E6341D69FA7794C701DB /* CameraViewController.swift in Sources */,
+				0D8DADC4E41F43A406718E2E /* CameraZoom.swift in Sources */,
 				478C69833C0D2273DC31B2F0 /* CaptureImageStorage.swift in Sources */,
 				56B0305B5D3847FC6B326502 /* ContentView.swift in Sources */,
 				D53B2AE891DDB2AE2BD05028 /* DatabaseRecords.swift in Sources */,
