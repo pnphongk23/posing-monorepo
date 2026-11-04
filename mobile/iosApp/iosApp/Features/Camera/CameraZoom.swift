@@ -2,18 +2,12 @@ import Foundation
 import SwiftUI
 import UIKit
 
-/// Prototype scale-factor stops (`nb-camera-zoom-slider`, values 0…2 → 1x…3x).
+/// The zoom stops a stored settings row carries. The slider is continuous, so this enum is the **storage**
+/// shape (older rows read as 1x/2x/3x) and the level follows the factor; nothing steps through it any more.
 enum CameraZoomLevel: Int, CaseIterable, Equatable {
     case one = 1, two = 2, three = 3
 
-    var label: String { "\(rawValue)x" }
     var factor: CGFloat { CGFloat(rawValue) }
-
-    func next() -> CameraZoomLevel {
-        let all = CameraZoomLevel.allCases
-        let index = all.firstIndex(of: self) ?? 0
-        return all[(index + 1) % all.count]
-    }
 }
 
 extension CameraZoomLevel {
@@ -43,9 +37,6 @@ enum CameraZoomPreset: String, CaseIterable, Identifiable, Sendable {
         case .three: return 3
         }
     }
-    /// The old pill handle. The pills are retired, so a flow that still looks for one is looking at a control
-    /// that no longer exists (`CameraZoomScale.retiredIdentifiers`).
-    var retiredAccessibilityIdentifier: String { "camera.zoom.\(rawValue)" }
 }
 
 enum CameraZoomPresets {
@@ -54,16 +45,6 @@ enum CameraZoomPresets {
         // 1x always exists: it is the lens's native framing even when a device reports a minimum of
         // exactly 1 (every iPhone does).
         return presets.isEmpty ? [.one] : presets
-    }
-
-    static func clamp(_ factor: CGFloat, range: ClosedRange<CGFloat>) -> CGFloat {
-        guard factor.isFinite else { return 1 }
-        return min(max(factor, range.lowerBound), range.upperBound)
-    }
-
-    /// The preset closest to a factor, so a clamped or restored value still lights up a choice.
-    static func nearest(to factor: CGFloat, range: ClosedRange<CGFloat>) -> CameraZoomPreset? {
-        available(range: range).min { abs($0.factor - factor) < abs($1.factor - factor) }
     }
 }
 

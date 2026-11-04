@@ -1339,9 +1339,6 @@ enum CameraProto {
     static let poseReferenceBottomInset: CGFloat = 0.14
     static let poseReferenceHorizontalInset: CGFloat = 0.18
 
-    // `.nb-camera-tools-menu`
-    static let popupWidth: CGFloat = 264
-
     // `.nb-pose-picker-panel`
     static let pickerMaxHeight: CGFloat = 700
     static let pickerMinHeight: CGFloat = 420

@@ -473,21 +473,8 @@ final class CameraFeatureTests: XCTestCase {
         XCTAssertEqual(dragged.rotation, .zero)
     }
 
-    /// Zoom pill (`.nb-camera-zoom-slider` stops 1x → 2x → 3x)
-
-    func testZoomStartsAtOneXForTheAccessibilityLabel() {
-        let model = CameraViewModel()
-        XCTAssertEqual(model.zoomLevel, .one)
-        XCTAssertEqual("Zoom \(model.zoomLevel.label)", "Zoom 1x")
-    }
-
-    func testZoomCyclesThroughStopsAndWraps() {
-        XCTAssertEqual(CameraZoomLevel.one.next(), .two)
-        XCTAssertEqual(CameraZoomLevel.two.next(), .three)
-        XCTAssertEqual(CameraZoomLevel.three.next(), .one)
-    }
-
-    func testZoomFactorsMatchLabels() {
+    /// The stored stops the slider's factor is written back to for older readers.
+    func testTheStoredStopsMatchTheirFactors() {
         XCTAssertEqual(CameraZoomLevel.one.factor, 1)
         XCTAssertEqual(CameraZoomLevel.two.factor, 2)
         XCTAssertEqual(CameraZoomLevel.three.factor, 3)
@@ -2835,27 +2822,13 @@ final class CameraZoomPresetTests: XCTestCase {
         XCTAssertEqual(CameraZoomPresets.available(range: 4...4), [.one], "an empty wall of ticks still names 1x")
     }
 
-    func testRequestsAreClampedToTheLens() {
-        XCTAssertEqual(CameraZoomPresets.clamp(0.4, range: 1...2), 1)
-        XCTAssertEqual(CameraZoomPresets.clamp(9, range: 1...2), 2)
-        XCTAssertEqual(CameraZoomPresets.clamp(.nan, range: 0.5...2), 1)
-        XCTAssertEqual(CameraZoomPresets.clamp(1.5, range: 0.5...2), 1.5)
-    }
-
-    func testTheNearestPresetIsTheHighlightedChoice() {
-        XCTAssertEqual(CameraZoomPresets.nearest(to: 0.5, range: 0.5...2), .half)
-        XCTAssertEqual(CameraZoomPresets.nearest(to: 2.4, range: 0.5...2), .two)
-        XCTAssertEqual(CameraZoomPresets.nearest(to: 3, range: 0.5...2), .two)
-    }
-
     /// The 1x/2x pills are gone; the slider is the zoom control now, and the old pill handles are retired so no
     /// flow can address a control that no longer exists.
     func testTheZoomSliderIsTheOnlyZoomControl() {
         XCTAssertEqual(CameraZoomScale.sliderIdentifier, "camera.zoom.slider")
-        XCTAssertEqual(
-            CameraZoomPreset.half.retiredAccessibilityIdentifier,
-            "camera.zoom.0.5x",
-            "the old spelling is kept as the retirement record"
+        XCTAssertTrue(
+            CameraZoomScale.retiredIdentifiers.contains("camera.zoom.0.5x"),
+            "the old pill spelling is kept as the retirement record"
         )
         for retired in CameraZoomScale.retiredIdentifiers {
             XCTAssertTrue(
