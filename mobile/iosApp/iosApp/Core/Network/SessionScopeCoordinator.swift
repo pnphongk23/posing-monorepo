@@ -23,6 +23,11 @@ final class SessionScopeCoordinator {
     private let readAccount: () async throws -> AccountSummary
     private var task: Task<Void, Never>?
     private var generation = 0
+    /// Session fan-outs that have finished: the models are reset and the catalog is cleared.
+    private(set) var fanOutsSettled = 0
+    private var fanOutWaiters: [(target: Int, continuation: CheckedContinuation<Void, Never>)] = []
+    private var hasSubscribed = false
+    private var subscriptionWaiters: [CheckedContinuation<Void, Never>] = []
 
     init(
         boundary: SessionBoundary = ServiceLocator.sessionBoundary,
@@ -48,14 +53,54 @@ final class SessionScopeCoordinator {
             // A launch with an already-stored session emits no event, so link it up front.
             onStart: { [weak self] in
                 guard let self else { return }
+                self.noteSubscribed()
                 await self.linkCurrentAccount()
             },
             onEvent: { [weak self] _ in
                 guard let self else { return }
                 await self.handleSessionChange()
                 await self.linkCurrentAccount()
+                self.noteFanOutSettled()
             }
         )
+    }
+
+    /// Waits until the boundary subscription is live. `SessionBoundary.events()` does not replay, so an
+    /// event emitted before this is dropped for good — a real synchronization point, not a delay.
+    func waitUntilSubscribed() async {
+        guard !hasSubscribed else { return }
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            if hasSubscribed { continuation.resume() } else { subscriptionWaiters.append(continuation) }
+        }
+    }
+
+    /// Waits until `count` session fan-outs have settled. Resumed from inside the fan-out itself, so a
+    /// caller (a test, or a screen that must not paint A's rows for B) waits on the work rather than on a
+    /// clock: polling the state a fan-out leaves behind is what made this wait flaky under load.
+    func waitUntilSettled(after count: Int) async {
+        guard fanOutsSettled < count else { return }
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            if fanOutsSettled >= count {
+                continuation.resume()
+            } else {
+                fanOutWaiters.append((count, continuation))
+            }
+        }
+    }
+
+    private func noteSubscribed() {
+        guard !hasSubscribed else { return }
+        hasSubscribed = true
+        let waiters = subscriptionWaiters
+        subscriptionWaiters = []
+        waiters.forEach { $0.resume() }
+    }
+
+    private func noteFanOutSettled() {
+        fanOutsSettled += 1
+        let ready = fanOutWaiters.filter { $0.target <= fanOutsSettled }
+        fanOutWaiters.removeAll { $0.target <= fanOutsSettled }
+        ready.forEach { $0.continuation.resume() }
     }
 
     /// Binds the provider customer to whatever Account the current session resolves to.

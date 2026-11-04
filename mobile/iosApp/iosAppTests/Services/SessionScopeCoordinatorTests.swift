@@ -116,13 +116,15 @@ final class SessionScopeCoordinatorTests: XCTestCase {
         let coordinator = SessionScopeCoordinator(
             boundary: boundary,
             cache: cache,
+            purchases: FakePurchasesAdapter.make(),
             readAccount: { AccountSummary(id: "account-b", displayName: "B", createdAt: nil) }
         )
         coordinator.start()
-        await waitUntilSubscribed(boundary)
+        await coordinator.waitUntilSubscribed()
 
+        let before = coordinator.fanOutsSettled
         await boundary.saveCredentials(storedCredentials)
-        await waitUntil("catalog cleared") { (try? await self.savedRowCount(temp)) == 0 }
+        await coordinator.waitUntilSettled(after: before + 1)
 
         let remainingSaved = try await savedRowCount(temp)
         XCTAssertEqual(remainingSaved, 0)
@@ -141,15 +143,17 @@ final class SessionScopeCoordinatorTests: XCTestCase {
         let coordinator = SessionScopeCoordinator(
             boundary: boundary,
             cache: cache,
+            purchases: FakePurchasesAdapter.make(),
             readAccount: { AccountSummary(id: "account-a", displayName: "A", createdAt: nil) }
         )
         coordinator.start()
-        await waitUntilSubscribed(boundary)
+        await coordinator.waitUntilSubscribed()
         let seededSaved = try await savedRowCount(temp)
         XCTAssertGreaterThan(seededSaved, 0, "an unchanged session keeps its catalog")
 
+        let before = coordinator.fanOutsSettled
         await boundary.signOut()
-        await waitUntil("catalog cleared") { (try? await self.savedRowCount(temp)) == 0 }
+        await coordinator.waitUntilSettled(after: before + 1)
         let remainingSaved = try await savedRowCount(temp)
         XCTAssertEqual(remainingSaved, 0)
     }
@@ -165,13 +169,15 @@ final class SessionScopeCoordinatorTests: XCTestCase {
         let coordinator = SessionScopeCoordinator(
             boundary: boundary,
             cache: cache,
+            purchases: FakePurchasesAdapter.make(),
             readAccount: { AccountSummary(id: "account-a", displayName: "A", createdAt: nil) }
         )
         coordinator.start()
-        await waitUntilSubscribed(boundary)
+        await coordinator.waitUntilSubscribed()
 
+        let before = coordinator.fanOutsSettled
         await boundary.clearForUnauthorized()
-        await waitUntil("catalog cleared") { (try? await self.savedRowCount(temp)) == 0 }
+        await coordinator.waitUntilSettled(after: before + 1)
         let remainingSaved = try await savedRowCount(temp)
         XCTAssertEqual(remainingSaved, 0)
     }
@@ -183,18 +189,21 @@ final class SessionScopeCoordinatorTests: XCTestCase {
         defer { temp.cleanUp() }
         let cache = PoseCatalogCacheStore(repository: temp.repository)
         let boundary = SessionBoundary(tokenStorage: InMemoryTokenStorage())
+        let purchases = FakePurchasesAdapter.make()
         let coordinator = SessionScopeCoordinator(
             boundary: boundary,
             cache: cache,
+            purchases: purchases,
             readAccount: { throw PoseAPIError(code: "503", message: "unavailable") }
         )
         coordinator.start()
-        await settle()
+        await coordinator.waitUntilSubscribed()
 
+        let before = coordinator.fanOutsSettled
         await boundary.saveCredentials(storedCredentials)
-        await settle()
+        await coordinator.waitUntilSettled(after: before + 1)
 
-        XCTAssertNil(RevenueCatAdapter.shared.linkedAccountID, "no identity is invented when the read fails")
+        XCTAssertNil(purchases.linkedAccountID, "no identity is invented when the read fails")
         let token = await boundary.loadAccessToken()
         XCTAssertNotNil(token, "the session itself is untouched")
     }
@@ -210,15 +219,16 @@ final class SessionScopeCoordinatorTests: XCTestCase {
         let coordinator = SessionScopeCoordinator(
             boundary: boundary,
             cache: cache,
-            purchases: RevenueCatAdapter(provider: FakePurchasesProvider(), entitlementID: nil),
+            purchases: FakePurchasesAdapter.make(),
             readAccount: { AccountSummary(id: "account-a", displayName: "A", createdAt: nil) }
         )
         coordinator.start()
-        await waitUntilSubscribed(boundary)
+        await coordinator.waitUntilSubscribed()
 
         let inFlightEpoch = cache.beginAccountScopedOperation()
+        let before = coordinator.fanOutsSettled
         await boundary.signOut()
-        await waitUntil("the epoch advanced") { cache.beginAccountScopedOperation() != inFlightEpoch }
+        await coordinator.waitUntilSettled(after: before + 1)
 
         XCTAssertNotEqual(cache.beginAccountScopedOperation(), inFlightEpoch)
         let token = await boundary.loadAccessToken()
@@ -227,42 +237,11 @@ final class SessionScopeCoordinatorTests: XCTestCase {
 
     // MARK: - helpers
 
-    private func settle() async {
-        try? await Task.sleep(nanoseconds: 80_000_000)
-    }
-
-    /// `SessionBoundary.events()` is deliberately not replayed, and a subscriber registers only
-    /// after `onStart` has finished: an event emitted before that is dropped for good and the only
-    /// possible outcome is a timeout. A fixed `settle()` therefore made these tests timing-dependent
-    /// — measured registration latency is ~2 ms on an idle process but exactly as long as `onStart`
-    /// when `onStart` awaits anything (302 ms for a 300 ms Account read), and main-actor contention
-    /// can push past any fixed sleep. Waiting for the subscription is a real synchronization point.
-    private func waitUntilSubscribed(
-        _ boundary: SessionBoundary,
-        timeout: TimeInterval = 5,
-        file: StaticString = #filePath,
-        line: UInt = #line
-    ) async {
-        let deadline = Date().addingTimeInterval(timeout)
-        while await boundary.subscriberCountForTests() == 0, Date() < deadline {
-            try? await Task.sleep(nanoseconds: 1_000_000)
+    /// A coordinator's store side without RevenueCat: the fan-out is the work under test, not the store's
+    /// network call. `RevenueCatAdapter` with a fake provider is the same object the app uses, minus the SDK.
+    enum FakePurchasesAdapter {
+        @MainActor static func make() -> RevenueCatAdapter {
+            RevenueCatAdapter(provider: FakePurchasesProvider(), entitlementID: nil)
         }
-        let subscribed = await boundary.subscriberCountForTests() > 0
-        XCTAssertTrue(subscribed, "Timed out waiting for the coordinator to observe sessions", file: file, line: line)
-    }
-
-    private func waitUntil(
-        _ description: String,
-        timeout: TimeInterval = 3,
-        file: StaticString = #filePath,
-        line: UInt = #line,
-        _ condition: () async -> Bool
-    ) async {
-        let deadline = Date().addingTimeInterval(timeout)
-        while !(await condition()) && Date() < deadline {
-            try? await Task.sleep(nanoseconds: 10_000_000)
-        }
-        let satisfied = await condition()
-        XCTAssertTrue(satisfied, "Timed out waiting for \(description)", file: file, line: line)
     }
 }
