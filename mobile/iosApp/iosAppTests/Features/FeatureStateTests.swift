@@ -510,7 +510,12 @@ final class FeatureStateTests: XCTestCase {
         host.view.layoutIfNeeded()
         await settleHosting()
 
+        // One push at a time: `navigationDestination(isPresented:)` chains reliably when each level is
+        // on screen before the next one is asked for, and the wait makes the test independent of the
+        // device's animation speed.
         state.showsDestination = true
+        let settings = await waitForNavigationDepth(2, in: window)
+        XCTAssertEqual(settings, 2, "root + Settings are pushed (last depth: \(settings))")
         state.showsSaved = true
         let pushed = await waitForNavigationDepth(3, in: window)
         XCTAssertTrue(state.savedAppeared, "the Saved screen is on the stack before the action runs")
