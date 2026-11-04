@@ -2852,7 +2852,8 @@ final class CameraChromeContractTests: XCTestCase {
     /// be applied to the row's *content*, so every option reported `camera.tools.timer` /
     /// `camera.tools.ratio` and the documented per-option ids never reached the tree.
     func testTheTimerAndRatioChoicesKeepTheirOwnIdentifiers() throws {
-        let source = try cameraFeatureSource()
+        // The rows live with the popover they belong to.
+        let source = try cameraToolsPopoverSource()
         for row in ["timerRow", "ratioRow"] {
             let body = try viewBody(named: row, in: source)
             XCTAssertTrue(
@@ -2983,6 +2984,18 @@ final class CameraChromeContractTests: XCTestCase {
     }
 
     // MARK: - Source helpers
+
+    /// The tools popover's own source: its rows are asserted here, and it is a file of its own.
+    private func cameraToolsPopoverSource() throws -> String {
+        try String(
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent() // Features
+                .deletingLastPathComponent() // iosAppTests
+                .deletingLastPathComponent() // iosApp (project dir)
+                .appendingPathComponent("iosApp/Features/Camera/CameraToolsPopover.swift"),
+            encoding: .utf8
+        )
+    }
 
     private func cameraFeatureSource() throws -> String {
         try String(

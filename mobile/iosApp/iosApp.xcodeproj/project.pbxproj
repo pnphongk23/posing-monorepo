@@ -61,6 +61,7 @@
 		4E0CF73E9CCBAF52450EB28E /* CameraPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4697D3F5282E542C071A863 /* CameraPreview.swift */; };
 		50440106D7977FFD6AE12145 /* APDesignTokens.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0EC92F0C140A7146ECED28B6 /* APDesignTokens.swift */; };
 		52427AE21B1A7E6E8EDF1CA5 /* SupportDestinationsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45864E41E850EBD2CD84515E /* SupportDestinationsTests.swift */; };
+		54F2F7911DCDA944D8EC5840 /* CameraToolsPopover.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50E74016FB84BDC5C31BB3DA /* CameraToolsPopover.swift */; };
 		55DFA81BD5F71447F00CB70F /* AppIcon.svg in Resources */ = {isa = PBXBuildFile; fileRef = 9BC94B44AEDD7B65B44E6EF4 /* AppIcon.svg */; };
 		56A46FB5D95B5B7AB587F7E2 /* Kingfisher in Frameworks */ = {isa = PBXBuildFile; productRef = F1B03872049470BF84F3E5E2 /* Kingfisher */; };
 		56B0305B5D3847FC6B326502 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE8509E5A49E4A5CAAEB3ADB /* ContentView.swift */; };
@@ -220,6 +221,7 @@
 		4D9F3EB320D8C8811CC13EC9 /* SettingsScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsScreen.swift; sourceTree = "<group>"; };
 		4E3F05BA7D23C56F8F95252B /* AppImage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppImage.swift; sourceTree = "<group>"; };
 		50332EA7FC91E3A2C9A013F2 /* SessionBoundaryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionBoundaryTests.swift; sourceTree = "<group>"; };
+		50E74016FB84BDC5C31BB3DA /* CameraToolsPopover.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraToolsPopover.swift; sourceTree = "<group>"; };
 		52E97F07902AB9B765D7227F /* CameraLastPoseTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraLastPoseTests.swift; sourceTree = "<group>"; };
 		53EBC3EEFA2DC96148AD4F88 /* JobsService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JobsService.swift; sourceTree = "<group>"; };
 		542D285B42FD894B1FE933C6 /* APCatalogViewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APCatalogViewTests.swift; sourceTree = "<group>"; };
@@ -462,6 +464,7 @@
 				926C2ADC431ADE5DD2CEB043 /* CameraEntry.swift */,
 				346C81403D18D752BB15A3B5 /* CameraFeature.swift */,
 				A316637F1758F62CE321A3DA /* CameraSettings.swift */,
+				50E74016FB84BDC5C31BB3DA /* CameraToolsPopover.swift */,
 				605353FE16B986A780983BCF /* CameraZoom.swift */,
 			);
 			path = Camera;
@@ -890,6 +893,7 @@
 				4E0CF73E9CCBAF52450EB28E /* CameraPreview.swift in Sources */,
 				1BB0A4A720889629F197952E /* CameraService.swift in Sources */,
 				3678A794EAED19B13AB6828E /* CameraSettings.swift in Sources */,
+				54F2F7911DCDA944D8EC5840 /* CameraToolsPopover.swift in Sources */,
 				C4F461F913C3D3D1F6192DEA /* CameraTypes.swift in Sources */,
 				6F97E6341D69FA7794C701DB /* CameraViewController.swift in Sources */,
 				0D8DADC4E41F43A406718E2E /* CameraZoom.swift in Sources */,
