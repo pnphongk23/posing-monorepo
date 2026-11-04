@@ -318,11 +318,11 @@ final class CameraSettingsPersistenceTests: XCTestCase {
         await waitUntil { model.initialMergeDone }
         await model.onAppear()
 
-        model.cycleFlash()
-        model.cycleFlash()
+        model.setFlash(.on)
+        model.setFlash(.off)
         model.setZoomFactor(2)
 
-        XCTAssertEqual(camera.flashCalls, [.auto, .on, .off])
+        XCTAssertEqual(camera.flashCalls, [.auto, .on, .off], "the launch reconcile, then each chip change once")
         XCTAssertEqual(camera.zoomCalls, [1, 2])
     }
 

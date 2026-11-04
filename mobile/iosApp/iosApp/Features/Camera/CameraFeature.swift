@@ -347,9 +347,10 @@ final class CameraViewModel: ObservableObject {
         showPosePicker = false
     }
 
-    func cycleFlash() {
+    /// The Flash row's three chips apply the chosen mode directly; nothing cycles behind the user's back.
+    func setFlash(_ setting: CameraFlashSetting) {
         guard cameraControlsEnabled else { return }
-        flashSetting = flashSetting.cameraToolsNext()
+        flashSetting = setting
         reconcileHardware()
     }
 
@@ -1217,57 +1218,34 @@ struct CameraScreen: View {
         isToolsButtonFocused = true
     }
 
-    /// `.nb-camera-tools-menu` — the anchored popup: below the tools control, no scrim, no handle, no
-    /// app-bar Close. It is hosted above the bottom chrome rather than inside the viewport so it can use
-    /// the whole safe area it sits in: with a pose guide up the menu carries eleven rows, and a cap
-    /// shorter than that content clipped the guide rows inside the popover's own scroll view — present in
-    /// the accessibility tree, hittable by nobody.
+    /// The tools popover, anchored under the tools control: its caret points up at the button and its right edge
+    /// sits on the button's. There is no scrim — only an outside-tap catcher.
     @ViewBuilder private var cameraToolsPopup: some View {
         if model.showCameraTools {
-            GeometryReader { proxy in
-                let popupTop = topBarHeight + AP.Space.space8
-                ZStack(alignment: .topTrailing) {
-                    // Outside tap dismisses without a visible scrim.
-                    Color.clear
-                        .contentShape(Rectangle())
-                        .onTapGesture { dismissCameraTools() }
-                        .accessibilityHidden(true)
+            ZStack(alignment: .topTrailing) {
+                // Outside tap dismisses without a visible scrim.
+                Color.clear
+                    .contentShape(Rectangle())
+                    .onTapGesture { dismissCameraTools() }
+                    .accessibilityHidden(true)
 
-                    CameraToolsPopup(
-                        flashSetting: model.flashSetting,
-                        isGridVisible: model.isGridVisible,
-                        controlsEnabled: model.cameraControlsEnabled,
-                        hasPose: guide != nil,
-                        isPoseGuideVisible: model.isPoseGuideVisible,
-                        guideFlipped: model.guideFlipped,
-                        timerSetting: model.timerSetting,
-                        aspectRatio: model.aspectRatio,
-                        guideOpacity: model.guideOpacity,
-                        guideScale: model.guideTransform.scale,
-                        guideLineColor: model.guideLineColor,
-                        popupWidth: min(CameraProto.popupWidth, proxy.size.width - CameraProto.controlInset * 2),
-                        popupMaxHeight: CameraToolsPopupMetrics.maxHeight(
-                            available: proxy.size.height,
-                            topBarBottom: popupTop
-                        ),
-                        onFlashTap: { model.cycleFlash() },
-                        onGridToggle: { model.toggleGrid() },
-                        onPoseGuideVisibilityToggle: { model.togglePoseGuideVisibility() },
-                        onMirrorToggle: { model.toggleGuideMirror() },
-                        onTimerChange: { model.setTimerSetting($0) },
-                        onAspectRatioChange: { model.setAspectRatio($0) },
-                        onGuideScaleChange: { model.setGuideScale($0) },
-                        onGuideScaleReset: { model.resetGuideTransform() },
-                        onGuideOpacityChange: { model.setGuideOpacity($0) },
-                        onGuideLineColorChange: { model.setGuideLineColor($0) },
-                        onDismiss: { dismissCameraTools() }
-                    )
-                    .padding(.top, popupTop)
-                    .padding(.trailing, CameraProto.controlInset)
-                    .transition(.opacity
-                        .combined(with: .offset(y: -AP.Space.space8))
-                        .combined(with: .scale(scale: 0.98, anchor: .topTrailing)))
-                }
+                CameraToolsPopup(
+                    flashSetting: model.flashSetting,
+                    isGridVisible: model.isGridVisible,
+                    controlsEnabled: model.cameraControlsEnabled,
+                    timerSetting: model.timerSetting,
+                    aspectRatio: model.aspectRatio,
+                    onFlashChange: { model.setFlash($0) },
+                    onGridToggle: { model.toggleGrid() },
+                    onTimerChange: { model.setTimerSetting($0) },
+                    onAspectRatioChange: { model.setAspectRatio($0) },
+                    onDismiss: { dismissCameraTools() }
+                )
+                .padding(.top, CameraToolsLayout.cardTop(belowTopBar: topBarHeight))
+                .padding(.trailing, CameraProto.controlInset)
+                .transition(.opacity
+                    .combined(with: .offset(y: -AP.Space.space8))
+                    .combined(with: .scale(scale: 0.98, anchor: .topTrailing)))
             }
         }
     }

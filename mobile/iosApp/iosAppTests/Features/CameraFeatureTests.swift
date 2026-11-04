@@ -64,28 +64,26 @@ final class CameraFeatureTests: XCTestCase {
         XCTAssertFalse(model.showPosePicker)
     }
 
-    func testCycleFlashIgnoredWhenControlsDisabled() {
+    func testFlashChipIsIgnoredWhenControlsDisabled() {
         let model = CameraViewModel()
         model.coordinator.onPermissionResult(.denied)
         let initial = model.flashSetting
-        model.cycleFlash()
+        model.setFlash(.on)
         XCTAssertEqual(model.flashSetting, initial)
     }
 
-    /// `toggle.js` / AC4: the Camera Tools row rotates `Off → Auto → On → Off`. The entry point is
-    /// the prototype's shipped default `Auto` (`camera-live.html:87`
-    /// `<span id="flash-value">Auto</span>`), so the ring is entered at `Auto`: Auto → On → Off → Auto.
-    /// Traversing the full ring still proves the `Off → Auto → On → Off` order.
-    func testCycleFlashFollowsPrototypeOffAutoOnOrder() {
+    /// The Flash row is three chips, so a choice applies exactly itself: there is no ring to cycle through and no
+    /// hidden next step. Auto stays the shipped default.
+    func testFlashIsChosenNotCycled() {
         let model = CameraViewModel()
         model.coordinator.onPermissionResult(.authorized)
-        XCTAssertEqual(model.flashSetting, .auto)
-        model.cycleFlash()
-        XCTAssertEqual(model.flashSetting, .on)
-        model.cycleFlash()
-        XCTAssertEqual(model.flashSetting, .off)
-        model.cycleFlash()
-        XCTAssertEqual(model.flashSetting, .auto)
+        XCTAssertEqual(model.flashSetting, .auto, "the shipped default")
+        for setting in CameraFlashSetting.toolsChoices {
+            model.setFlash(setting)
+            XCTAssertEqual(model.flashSetting, setting)
+        }
+        XCTAssertEqual(CameraFlashSetting.toolsChoices, [.off, .auto, .on], "the board's order")
+        XCTAssertEqual(CameraFlashSetting.toolsChoices.map(\.toolsSlug), ["off", "auto", "on"])
     }
 
     // MARK: - Capture gate (`FEAT-011` M1)
@@ -524,12 +522,6 @@ final class CameraFeatureTests: XCTestCase {
     func testPopupAnchorsUnderTheTopControlBar() {
         XCTAssertEqual(AP.HitTarget.minimum, 44, "the anchor is the bar's 44 pt control plus 8 pt")
         XCTAssertEqual(CameraStageFrame.shortRatioTopInset, 45, "and the photo frame starts a point below it")
-    }
-
-    /// The width is the prototype's fixed 264; the height is not a constant any more — it is the safe
-    /// area the popover is given (`CameraChromeContractTests.testTheToolsPopoverUsesTheHeightItsSafeAreaHas`).
-    func testPopupKeepsItsWidth() {
-        XCTAssertEqual(CameraProto.popupWidth, 264)
     }
 
     // MARK: Pose picker stick figures
@@ -1767,12 +1759,14 @@ final class CameraToolsPopoverTests: XCTestCase {
         model.openCameraTools()
         XCTAssertTrue(model.showCameraTools, "the popover is open for the whole test")
 
-        model.cycleFlash()
+        model.setFlash(.on)
         model.toggleGrid()
-        model.toggleGuideMirror()
         model.setTimerSetting(.threeSeconds)
         model.setAspectRatio(.oneOne)
+        // The guide's own controls live in the adjust sheet now, and it has no Done either.
+        model.setGuideOpacity(0.8)
         model.setGuideScale(1.5)
+        model.toggleGuideMirror()
 
         await waitUntil { await store.saved.last?.aspectRatio == .oneOne }
         let writes = await store.saved
@@ -1780,6 +1774,7 @@ final class CameraToolsPopoverTests: XCTestCase {
         XCTAssertEqual(saved.flash, model.flashSetting)
         XCTAssertTrue(saved.isGridVisible)
         XCTAssertTrue(saved.guideFlipped, "Mirror persists on change")
+        XCTAssertEqual(saved.guideOpacity, 0.8, accuracy: 0.0001)
         XCTAssertEqual(saved.timer, .threeSeconds)
         XCTAssertEqual(saved.aspectRatio, .oneOne)
         XCTAssertEqual(saved.transform.placement.scale, 1.5, accuracy: 0.0001)
@@ -1802,19 +1797,42 @@ final class CameraToolsPopoverTests: XCTestCase {
         XCTAssertFalse(model.showCameraTools, "and closes it")
     }
 
-    /// The title row and the Done action are gone from the surface's contract: no control exposes the
-    /// retired handle, and every remaining control is one that applies immediately.
-    func testThePopoverHasNoTitleOrDone() {
-        XCTAssertFalse(CameraToolsLayout.hasHeaderRow)
-        XCTAssertFalse(
-            CameraToolsLayout.controlIdentifiers.contains(CameraToolsLayout.retiredDoneIdentifier),
-            "the Done handle is retired"
+    /// The popover is exactly four one-line rows — Flash, Grid, Timer, Ratio — and nothing else: no title, no
+    /// Done, no guide section. The guide's controls live in the adjust sheet, and the ids it used to expose are
+    /// retired so no flow can address a row that no longer exists.
+    func testThePopoverIsFourOneLineRows() {
+        XCTAssertEqual(CameraToolsLayout.rows.map(\.rawValue), ["flash", "grid", "timer", "ratio"])
+        XCTAssertEqual(
+            CameraToolsLayout.controlIdentifiers,
+            ["camera.tools.flash", "camera.tools.grid", "camera.tools.timer", "camera.tools.ratio"]
         )
-        for identifier in CameraToolsLayout.controlIdentifiers {
-            XCTAssertTrue(CameraToolsLayout.persistsImmediately(identifier: identifier))
+        for retired in CameraToolsLayout.retiredIdentifiers {
+            XCTAssertFalse(
+                CameraToolsLayout.controlIdentifiers.contains(retired),
+                "\(retired) is gone from the popover"
+            )
         }
-        XCTAssertTrue(CameraToolsLayout.controlIdentifiers.contains("camera.tools.timer"))
-        XCTAssertTrue(CameraToolsLayout.controlIdentifiers.contains("camera.tools.ratio"))
+        XCTAssertTrue(CameraToolsLayout.retiredIdentifiers.contains("camera.tools.opacity"))
+        XCTAssertTrue(CameraToolsLayout.retiredIdentifiers.contains("camera.tools.lineColor.black"))
+        XCTAssertTrue(CameraToolsLayout.retiredIdentifiers.contains("camera.tools.done"))
+    }
+
+    /// The card's own geometry: the artboard's 232 pt, a caret pointing up at the tools control, and the card
+    /// sitting a short gap under the measured top bar.
+    func testThePopoverHangsUnderTheToolsControl() {
+        XCTAssertEqual(CameraToolsLayout.width, 232)
+        XCTAssertEqual(CameraToolsLayout.rowHeight, AP.HitTarget.minimum)
+        XCTAssertEqual(
+            CameraToolsLayout.caretCenterX(),
+            CameraToolsLayout.width - AP.HitTarget.minimum / 2,
+            "the caret is centred on the control it points at"
+        )
+        XCTAssertEqual(CameraToolsLayout.cardTop(belowTopBar: 103), 103 + AP.Space.space4)
+        XCTAssertEqual(
+            CameraToolsLayout.height,
+            CameraToolsLayout.caret.height + 4 * AP.HitTarget.minimum + 3,
+            "the caret plus four 44 pt rows and their hairlines"
+        )
     }
 
     private func waitUntil(
@@ -2959,94 +2977,176 @@ final class CameraChromeContractTests: XCTestCase {
 
     // MARK: Timer / Ratio option ids
 
-    /// Each Timer and Ratio choice is its own accessibility element with its own id. The row id used to
-    /// be applied to the row's *content*, so every option reported `camera.tools.timer` /
-    /// `camera.tools.ratio` and the documented per-option ids never reached the tree.
+    /// Each Timer and Ratio choice is its own accessibility element with its own id, and each row keeps the
+    /// handle the flows already use. The chips are one line per row now, so the row is the container and no chip
+    /// inherits its parent's id.
     func testTheTimerAndRatioChoicesKeepTheirOwnIdentifiers() throws {
-        // The rows live with the popover they belong to.
+        // The chips live with the popover they belong to, in the one place that builds a row's control.
         let source = try cameraToolsPopoverSource()
-        for row in ["timerRow", "ratioRow"] {
-            let body = try viewBody(named: row, in: source)
-            XCTAssertTrue(
-                body.contains(".accessibilityElement(children: .contain)"),
-                "\(row) is a container, so its choices stay separate elements with their own ids"
-            )
-        }
+        let control = try XCTUnwrap(
+            source.range(of: "private func control(for row: CameraToolsLayout.Row)")?.lowerBound
+        )
+        let controlBody = source[control...].prefix(2_600)
+        XCTAssertTrue(controlBody.contains("setting.accessibilityIdentifier"), "each Timer choice keeps its own id")
+        XCTAssertTrue(controlBody.contains("ratio.accessibilityIdentifier"), "each Ratio choice keeps its own id")
+        XCTAssertTrue(controlBody.contains("camera.tools.flash."), "and so does each Flash choice")
 
         // The ids themselves are the QA contract and stay unchanged.
         XCTAssertEqual(CameraTimerSetting.off.accessibilityIdentifier, "camera.tools.timer.off")
         XCTAssertEqual(CameraTimerSetting.threeSeconds.accessibilityIdentifier, "camera.tools.timer.3s")
         XCTAssertEqual(CameraTimerSetting.tenSeconds.accessibilityIdentifier, "camera.tools.timer.10s")
         XCTAssertEqual(CameraAspectRatio.threeFour.accessibilityIdentifier, "camera.tools.ratio.3x4")
+        XCTAssertEqual(CameraAspectRatio.oneOne.accessibilityIdentifier, "camera.tools.ratio.1x1")
+        XCTAssertEqual(CameraAspectRatio.nineSixteen.accessibilityIdentifier, "camera.tools.ratio.9x16")
     }
 
     // MARK: The popover, rendered
 
-    /// What the fix is for, measured on a rendered frame: with a pose guide up the popover paints every
-    /// one of its control blocks down to the line-colour row. Before, the card stopped at the Ratio row
-    /// (the viewport band) and the four guide rows were laid out past the clip, where a tap landed on
-    /// nothing.
-    func testTheToolsPopoverPaintsItsGuideRowsInsideTheSafeArea() throws {
-        var guide: NativePose? = NativePose(
-            id: "p1",
-            name: "Warrior II",
-            category: "Yoga",
-            imageURL: nil,
-            instructions: [],
-            isSaved: false
-        )
-        let model = CameraViewModel()
-        model.coordinator.onPermissionResult(.authorized)
-        // The chrome is not the subject: the popover gets the screen, and no sheet is open over it.
-        model.openCameraTools()
+    /// The popover, measured on a rendered frame: four one-line rows and the artboard's 232 pt, with the Ratio
+    /// row's three choices on a single line and the chosen one carrying the selected fill.
+    ///
+    /// Four rows and no fifth is what says the retired Opacity / Line colour / Scale / Mirror rows are gone. The
+    /// popover is rendered on its own because the camera behind it cannot be rendered in a simulator, so the
+    /// anchoring to the tools control and the check inside the chosen chip are pinned by their own rules.
+    func testThePopoverDrawsFourOneLineRows() throws {
+        let rendered = try popoverRender(ratio: .threeFour)
 
-        let screen = CameraScreen(
-            guide: Binding(get: { guide }, set: { guide = $0 }),
-            poseService: PreviewPoseService(),
-            model: model
-        )
-        let size = CGSize(width: 393, height: 852)
-        let bitmap = try XCTUnwrap(render(screen, size: size))
+        XCTAssertEqual(rendered.card.width, CameraToolsLayout.width - 4, accuracy: 4, "the artboard's 232 pt")
+        XCTAssertLessThanOrEqual(rendered.card.height, CameraToolsLayout.height + 1, "no fifth row on this surface")
+        XCTAssertGreaterThan(rendered.card.height, CameraToolsLayout.height - 26, "and all four rows are painted")
 
-        // One column inside the popover's rows: the pills start 12 pt in from the card's edge, and the
-        // column sits left of every glyph and label, so it samples the row's fill only.
-        let bands = controlFillBands(bitmap, column: 130)
-        XCTAssertGreaterThanOrEqual(
-            bands.count, 9,
-            "flash · grid · timer · ratio · pose guide · mirror · opacity · scale · line colour"
-        )
-
-        let last = try XCTUnwrap(bands.last)
-        XCTAssertGreaterThan(
-            last.upperBound, 760,
-            "the line-colour row is painted at the bottom of the safe area, not clipped at the Ratio row"
-        )
-        XCTAssertLessThan(last.upperBound, Int(size.height) - 8, "and it stays inside the screen")
+        XCTAssertEqual(rendered.ratioChips.count, 3, "the Ratio row paints its three choices on one line")
+        XCTAssertEqual(rendered.selectedChips, 1, "and exactly one of them is the chosen one")
     }
 
-    /// The rows that paint `controlFill` at one x, as contiguous bands.
-    private func controlFillBands(_ bitmap: APBitmap, column: Int) -> [ClosedRange<Int>] {
-        let fill = APColorTokens.controlFill.spec(for: .dark).hex ?? 0
-        let target = (red: Int((fill >> 16) & 0xFF), green: Int((fill >> 8) & 0xFF), blue: Int(fill & 0xFF))
-        var bands: [ClosedRange<Int>] = []
-        var start: Int?
+    /// The popover hangs under the tools control because the screen pads it by those two rules: its right edge on
+    /// the control's inset, its card top under the measured top bar. Source-level, so a change to either padding
+    /// has to change this test.
+    func testTheScreenAnchorsThePopoverUnderTheToolsControl() throws {
+        let source = try cameraFeatureSource()
+        XCTAssertTrue(
+            source.contains(".padding(.top, CameraToolsLayout.cardTop(belowTopBar: topBarHeight))"),
+            "the card starts under the measured top bar"
+        )
+        XCTAssertTrue(
+            source.contains(".padding(.trailing, CameraProto.controlInset)"),
+            "and its right edge sits on the tools control's"
+        )
+        XCTAssertFalse(source.contains("CameraToolsPopupMetrics"), "no height cap: the popover hugs its four rows")
+    }
+
+    /// The chosen chip is marked with a check glyph in addition to its fill (the owner's default). A 9 pt glyph is
+    /// below what a rendered frame can be asserted on reliably, so the chip's own drawing rule is pinned here.
+    func testTheChosenChipDrawsACheckmark() throws {
+        let source = try cameraToolsPopoverSource()
+        let chip = try XCTUnwrap(source.range(of: "private func chip(")?.lowerBound)
+        let chipBody = source[chip...].prefix(1_200)
+        XCTAssertTrue(chipBody.contains("if isSelected {"), "the chip branches on being the chosen one")
+        XCTAssertTrue(
+            chipBody.contains("Image(systemName: \"checkmark\")"),
+            "and that branch draws the check glyph beside the word"
+        )
+        XCTAssertTrue(
+            chipBody.contains(".accessibilityValue(isSelected ? \"Selected\" : \"\")"),
+            "and announces the choice instead of relying on the glyph alone"
+        )
+    }
+
+    private struct PopoverRender {
+        let card: CGRect
+        let ratioChips: [Range<Int>]
+        /// How many of those chips carry the selected fill.
+        let selectedChips: Int
+    }
+
+    private func popoverRender(ratio: CameraAspectRatio) throws -> PopoverRender {
+        let popup = CameraToolsPopup(
+            flashSetting: .auto,
+            isGridVisible: false,
+            controlsEnabled: true,
+            timerSetting: .off,
+            aspectRatio: ratio,
+            onFlashChange: { _ in },
+            onGridToggle: {},
+            onTimerChange: { _ in },
+            onAspectRatioChange: { _ in },
+            onDismiss: {}
+        )
+        .environment(\.colorScheme, .dark)
+        .background(AP.Color.background)
+        let size = CGSize(width: CameraToolsLayout.width + 16, height: CameraToolsLayout.height + 16)
+        let bitmap = try XCTUnwrap(render(popup, size: size))
+
+        let surface = APColorTokens.surface.spec(for: .dark).hex ?? 0
+        let card = try XCTUnwrap(boxOfColour(bitmap, hex: surface), "the popover's card is painted")
+
+        let selected = APColorTokens.selectedBackground.spec(for: .dark).hex ?? 0
+        let unselected = APColorTokens.controlFill.spec(for: .dark).hex ?? 0
+        var chips: [Range<Int>] = []
+        var selectedCount = 0
+        for row in stride(from: Int(card.maxY) - 4, through: Int(card.maxY) - 52, by: -1) {
+            // A chip's fill is split by the glyphs drawn on it, so runs closer than 12 pt are one chip.
+            let chosen = mergedRuns(bitmap, row: row, hex: selected).filter { $0.count >= 20 && $0.count <= 90 }
+            let plain = mergedRuns(bitmap, row: row, hex: unselected).filter { $0.count >= 20 && $0.count <= 90 }
+            guard chosen.count + plain.count == 3 else { continue }
+            chips = (chosen + plain).sorted { $0.lowerBound < $1.lowerBound }
+            selectedCount = chosen.count
+            break
+        }
+        return PopoverRender(card: card, ratioChips: chips, selectedChips: selectedCount)
+    }
+
+    private func matches(_ pixel: APPixel, _ hex: UInt32, tolerance: Int = 6) -> Bool {
+        let target = (red: Int((hex >> 16) & 0xFF), green: Int((hex >> 8) & 0xFF), blue: Int(hex & 0xFF))
+        return pixel.alpha > 200
+            && abs(pixel.red - target.red) <= tolerance
+            && abs(pixel.green - target.green) <= tolerance
+            && abs(pixel.blue - target.blue) <= tolerance
+    }
+
+    /// The bounding box of `hex`-coloured pixels.
+    private func boxOfColour(_ bitmap: APBitmap, hex: UInt32) -> CGRect? {
+        var minX = Int.max, maxX = Int.min, minY = Int.max, maxY = Int.min
         for y in 0..<bitmap.height {
-            let pixel = bitmap.color(x: column, y: y)
-            let isFill = pixel.map { pixel in
-                pixel.alpha > 200
-                    && abs(pixel.red - target.red) <= 6
-                    && abs(pixel.green - target.green) <= 6
-                    && abs(pixel.blue - target.blue) <= 6
-            } ?? false
+            for x in 0..<bitmap.width {
+                guard let pixel = bitmap.color(x: x, y: y), matches(pixel, hex, tolerance: 4) else { continue }
+                minX = min(minX, x); maxX = max(maxX, x)
+                minY = min(minY, y); maxY = max(maxY, y)
+            }
+        }
+        guard minX <= maxX, minY <= maxY else { return nil }
+        return CGRect(x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1)
+    }
+
+    /// The runs of `hex` on one row with neighbouring runs closer than `maxGap` merged: a chip's fill is split by
+    /// the glyphs drawn on top of it, and a chip is what the caller counts.
+    private func mergedRuns(_ bitmap: APBitmap, row: Int, hex: UInt32, maxGap: Int = 12) -> [Range<Int>] {
+        var merged: [Range<Int>] = []
+        for run in allRuns(bitmap, row: row, hex: hex) {
+            if let last = merged.last, run.lowerBound - last.upperBound <= maxGap {
+                merged[merged.count - 1] = last.lowerBound..<max(last.upperBound, run.upperBound)
+            } else {
+                merged.append(run)
+            }
+        }
+        return merged
+    }
+
+    private func allRuns(_ bitmap: APBitmap, row: Int, hex: UInt32) -> [Range<Int>] {
+        var runs: [Range<Int>] = []
+        var start: Int?
+        for x in 0...bitmap.width {
+            let isFill = x < bitmap.width
+                ? (bitmap.color(x: x, y: row).map { matches($0, hex, tolerance: 4) } ?? false)
+                : false
             if isFill, start == nil {
-                start = y
+                start = x
             } else if !isFill, let opened = start {
-                bands.append(opened...(y - 1))
+                runs.append(opened..<x)
                 start = nil
             }
         }
-        if let opened = start { bands.append(opened...(bitmap.height - 1)) }
-        return bands
+        return runs
     }
 
     /// Deterministic dark render of a screen, as the guide-tint evidence does it.
@@ -3067,31 +3167,6 @@ final class CameraChromeContractTests: XCTestCase {
             host.view.drawHierarchy(in: CGRect(origin: .zero, size: size), afterScreenUpdates: true)
         }
         return APBitmap(image: image)
-    }
-
-    // MARK: The tools popover's height
-
-    /// The popover may use the whole safe area under the top bar. A fixed cap is shorter than the
-    /// menu's own content once a pose guide is in place, which is how Mirror / Opacity / Scale / Line
-    /// colour ended up outside the popover's clip — in the accessibility tree, hittable by nobody.
-    func testTheToolsPopoverUsesTheHeightItsSafeAreaHas() {
-        // 393×852 phone, bottom safe area 34: 818 pt of safe height, top bar under-side at 62 + 44 + 8.
-        let phone = CameraToolsPopupMetrics.maxHeight(available: 818, topBarBottom: 114)
-        XCTAssertGreaterThan(phone, 420, "no fixed 420 cap: the guide rows need the space that exists")
-        XCTAssertEqual(phone, 818 - 114 - AP.Space.space16, accuracy: 0.001)
-        XCTAssertLessThanOrEqual(phone, 818 - 114, "the popover never leaves the safe area it was given")
-
-        let short = CameraToolsPopupMetrics.maxHeight(available: 260, topBarBottom: 200)
-        XCTAssertEqual(short, CameraToolsPopupMetrics.minHeight, "a cramped screen keeps a scrollable window")
-    }
-
-    /// The view must ask the metric, so the fixed cap cannot come back as a constant.
-    func testThePopoverHeightIsComputedFromTheSafeArea() throws {
-        let source = try cameraFeatureSource()
-        XCTAssertTrue(
-            source.contains("CameraToolsPopupMetrics.maxHeight("),
-            "the popover's cap is computed from the space that exists"
-        )
     }
 
     // MARK: - Source helpers
