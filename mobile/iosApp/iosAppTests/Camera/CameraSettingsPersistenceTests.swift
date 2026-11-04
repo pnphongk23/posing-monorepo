@@ -320,7 +320,7 @@ final class CameraSettingsPersistenceTests: XCTestCase {
 
         model.cycleFlash()
         model.cycleFlash()
-        model.cycleZoom()
+        model.setZoomFactor(2)
 
         XCTAssertEqual(camera.flashCalls, [.auto, .on, .off])
         XCTAssertEqual(camera.zoomCalls, [1, 2])

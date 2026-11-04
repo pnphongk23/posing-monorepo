@@ -251,31 +251,25 @@ final class CameraViewModel: ObservableObject {
         guideTransform = transform
     }
 
-    /// The zoom presets this lens can serve (`0.5x` only where the device's minimum allows it).
-    var zoomPresets: [CameraZoomPreset] {
-        CameraZoomPresets.available(range: deviceZoomRange)
-    }
+    /// The zoom range this camera can serve, which is what the slider spans and what its ticks come from.
+    var zoomRange: ClosedRange<CGFloat> { CameraZoomScale.range(lower: lensZoomRange.lowerBound, upper: lensZoomRange.upperBound) }
 
-    /// The preset the current zoom is nearest to, so the pill highlights a real choice.
-    var activeZoomPreset: CameraZoomPreset? {
-        CameraZoomPresets.nearest(to: zoomLevel.factor, range: deviceZoomRange)
-    }
-
-    /// Selecting a preset applies it (clamped to the lens) and keeps the persisted level in step.
-    func selectZoomPreset(_ preset: CameraZoomPreset) {
+    /// The slider's own value: clamped to the lens before it reaches the hardware, so a drag past the end
+    /// stops at the end instead of being quietly clipped later.
+    func setZoomFactor(_ factor: CGFloat) {
         guard cameraControlsEnabled else { return }
-        applyZoom(factor: CameraZoomPresets.clamp(preset.factor, range: deviceZoomRange))
+        applyZoom(factor: factor)
     }
 
     func applyZoom(factor: CGFloat) {
-        zoomFactor = CameraZoomPresets.clamp(factor, range: deviceZoomRange)
+        zoomFactor = CameraZoomScale.deviceFactor(forDisplay: factor, in: zoomRange)
         zoomLevel = CameraZoomLevel.nearest(to: zoomFactor)
         reconcileHardware()
     }
 
-    /// The active lens's zoom range, best effort: the simulator has no capture device, so the shipped
+    /// The active lens's own zoom range, best effort: the simulator has no capture device, so the shipped
     /// presets (1x/2x) are the fallback.
-    private var deviceZoomRange: ClosedRange<CGFloat> {
+    private var lensZoomRange: ClosedRange<CGFloat> {
         let position: AVCaptureDevice.Position = camera.facing == .front ? .front : .back
         let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: position)
             ?? AVCaptureDevice.default(for: .video)
@@ -394,15 +388,6 @@ final class CameraViewModel: ObservableObject {
         guideTransform = GuideTransform()
     }
 
-    func cycleZoom() {
-        guard cameraControlsEnabled else { return }
-        applyZoom(zoomLevel.next())
-    }
-
-    func applyZoom(_ level: CameraZoomLevel) {
-        applyZoom(factor: level.factor)
-    }
-
     // MARK: - Settings persistence (FEAT-012)
 
     /// The eight settings that survive a relaunch. `CameraSnapshot` carries them in one JSON blob;
@@ -428,6 +413,8 @@ final class CameraViewModel: ObservableObject {
         $guideLineColor.dropFirst().sink { [weak self] _ in self?.settingsDidChange(.lineColor) }.store(in: &cancellables)
         $guideTransform.dropFirst().sink { [weak self] _ in self?.settingsDidChange(.transform) }.store(in: &cancellables)
         $zoomLevel.dropFirst().sink { [weak self] _ in self?.settingsDidChange(.zoom) }.store(in: &cancellables)
+        // The slider is continuous: a factor between two levels is still a setting the user chose.
+        $zoomFactor.dropFirst().sink { [weak self] _ in self?.settingsDidChange(.zoom) }.store(in: &cancellables)
         $timerSetting.dropFirst().sink { [weak self] _ in self?.settingsDidChange(.timer) }.store(in: &cancellables)
         $aspectRatio.dropFirst().sink { [weak self] _ in self?.settingsDidChange(.aspectRatio) }.store(in: &cancellables)
     }
@@ -1210,10 +1197,10 @@ struct CameraScreen: View {
             selectedPoseID: guide?.id,
             selectedPoseName: guide?.name,
             showsPicker: isAuthorized,
-            zoomPresets: model.zoomPresets,
-            activeZoomPreset: model.activeZoomPreset,
+            zoomFactor: model.zoomFactor,
+            zoomRange: model.zoomRange,
             onOpenPosePicker: { model.openPosePicker() },
-            onZoomPreset: { preset in model.selectZoomPreset(preset) },
+            onZoomChange: { factor in model.setZoomFactor(factor) },
             onOpenGallery: onOpenGallery,
             onCapture: { model.capture() },
             onSwitchCamera: { model.switchCamera() },
@@ -1628,7 +1615,7 @@ enum CameraChromeLayout {
         "camera.poseStrip",
         "camera.poseStrip.retry",
         "camera.pickerStripToggle",
-    ]
+    ] + CameraZoomScale.retiredIdentifiers
 
     /// Every picker state now lives in the sheet (`posePicker.*`), so the bar draws no catalogue at all.
     static let bottomBarDrawsCatalogue = false
@@ -1664,10 +1651,11 @@ struct CameraBottomBar: View {
     /// retired).
     let selectedPoseName: String?
     let showsPicker: Bool
-    let zoomPresets: [CameraZoomPreset]
-    let activeZoomPreset: CameraZoomPreset?
+    /// The zoom the lens is at, and the range it can serve: one control, continuous.
+    let zoomFactor: CGFloat
+    let zoomRange: ClosedRange<CGFloat>
     let onOpenPosePicker: () -> Void
-    let onZoomPreset: (CameraZoomPreset) -> Void
+    let onZoomChange: (CGFloat) -> Void
     let onOpenGallery: () -> Void
     let onCapture: () -> Void
     let onSwitchCamera: () -> Void
@@ -1782,52 +1770,24 @@ struct CameraBottomBar: View {
 
     // MARK: Zoom
 
-    /// The scale row: the zoom presets stay centred, the Poses control sits at its right end (owner
-    /// feedback calls this row the scale bar).
+    /// The band under the photo: the continuous zoom slider takes the left of the row and the Poses control
+    /// keeps its right end.
     private var scaleRow: some View {
-        ZStack {
-            zoomPill
+        HStack(spacing: AP.Space.space12) {
+            CameraZoomSlider(
+                factor: zoomFactor,
+                range: zoomRange,
+                isEnabled: controlsEnabled,
+                onChange: onZoomChange
+            )
+            .frame(maxWidth: .infinity)
+
             if CameraChromeLayout.showsPosesControl(showsPicker: showsPicker) {
-                HStack(spacing: 0) {
-                    Spacer(minLength: 0)
-                    posesControl
-                }
+                posesControl
             }
         }
         .frame(maxWidth: .infinity)
-        .padding(.horizontal, AP.Space.space16)
-    }
-
-    /// The zoom presets: compact (owner feedback), no container, the selection marked by its own small
-    /// chip plus weight — and still a 44 pt target per preset.
-    private var zoomPill: some View {
-        HStack(spacing: AP.Space.space4) {
-            ForEach(zoomPresets) { preset in
-                let isActive = preset == activeZoomPreset
-                Button {
-                    onZoomPreset(preset)
-                } label: {
-                    Text(preset.rawValue)
-                        .font(.system(size: 13, weight: isActive ? .semibold : .regular))
-                        .foregroundStyle(isActive ? AP.Color.primaryText : AP.Color.secondaryText)
-                        .frame(minWidth: AP.HitTarget.minimum)
-                        .frame(height: 36)
-                        .background(
-                            Capsule().fill(isActive ? AP.Color.selectedBackground : .clear)
-                        )
-                        .shadow(color: .black.opacity(0.35), radius: 2, y: 1)
-                }
-                .buttonStyle(.plain)
-                .contentShape(Rectangle())
-                .frame(minHeight: AP.HitTarget.minimum)
-                .disabled(!controlsEnabled)
-                .opacity(controlsEnabled ? 1 : 0.45)
-                .accessibilityLabel("Zoom \(preset.rawValue)")
-                .accessibilityAddTraits(isActive ? [.isSelected] : [])
-                .accessibilityIdentifier(preset.accessibilityIdentifier)
-            }
-        }
-        .accessibilityElement(children: .contain)
+        .padding(.horizontal, CameraProto.controlInset)
     }
 
     // MARK: Rail

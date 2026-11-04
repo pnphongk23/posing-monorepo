@@ -495,18 +495,26 @@ final class CameraFeatureTests: XCTestCase {
         XCTAssertEqual(CameraZoomLevel.three.factor, 3)
     }
 
-    func testCycleZoomIgnoredWhenControlsDisabled() {
+    func testTheSliderIsIgnoredWhenTheCameraCannotServeIt() {
         let model = CameraViewModel()
         model.coordinator.onPermissionResult(.denied)
-        model.cycleZoom()
-        XCTAssertEqual(model.zoomLevel, .one)
+        model.setZoomFactor(2)
+        XCTAssertEqual(model.zoomFactor, 1, "a control the camera cannot serve does not move")
     }
 
-    func testCycleZoomAdvancesWhenEnabled() {
+    func testTheSliderSetsTheFactorAndClampsItToTheLens() {
         let model = CameraViewModel()
         model.coordinator.onPermissionResult(.authorized)
-        model.cycleZoom()
-        XCTAssertEqual(model.zoomLevel, .two)
+        // The simulator has no capture device: the lens fallback is 1...2.
+        XCTAssertEqual(model.zoomRange, 1...2)
+
+        model.setZoomFactor(1.5)
+        XCTAssertEqual(model.zoomFactor, 1.5, accuracy: 0.0001, "a continuous value, not a preset")
+
+        model.setZoomFactor(9)
+        XCTAssertEqual(model.zoomFactor, 2, accuracy: 0.0001, "the slider stops where the lens stops")
+        model.setZoomFactor(0.2)
+        XCTAssertEqual(model.zoomFactor, 1, accuracy: 0.0001)
     }
 
     // MARK: Camera tools geometry
@@ -2080,10 +2088,10 @@ final class CameraChromeTests: XCTestCase {
             selectedPoseID: selectedPoseID,
             selectedPoseName: selectedPoseName,
             showsPicker: showsPicker,
-            zoomPresets: [.one, .two],
-            activeZoomPreset: .one,
+            zoomFactor: 1,
+            zoomRange: 1...2,
             onOpenPosePicker: {},
-            onZoomPreset: { _ in },
+            onZoomChange: { _ in },
             onOpenGallery: {},
             onCapture: {},
             onSwitchCamera: {},
@@ -2532,11 +2540,90 @@ final class CameraGuideScaleTests: XCTestCase {
     }
 }
 
+/// The zoom slider's mapping: what it shows, what the lens receives, and where the thumb sits.
+final class CameraZoomScaleTests: XCTestCase {
+    /// The camera drives one wide-angle lens, so the displayed factor is the lens's own factor — the round trip
+    /// has to be the identity inside the range and a clamp outside it.
+    func testTheDisplayedFactorAndTheLensFactorRoundTrip() {
+        let lens: ClosedRange<CGFloat> = 1...5
+        for factor: CGFloat in [1, 1.4, 2, 3, 4.75, 5] {
+            let device = CameraZoomScale.deviceFactor(forDisplay: factor, in: lens)
+            XCTAssertEqual(device, factor, accuracy: 0.0001, "\(factor)x reaches the lens unchanged")
+            XCTAssertEqual(
+                CameraZoomScale.displayFactor(forDevice: device, in: lens),
+                factor,
+                accuracy: 0.0001,
+                "and comes back to the same number on the pill"
+            )
+        }
+
+        XCTAssertEqual(CameraZoomScale.deviceFactor(forDisplay: 0.2, in: lens), 1, "below the lens' floor")
+        XCTAssertEqual(CameraZoomScale.deviceFactor(forDisplay: 9, in: lens), 5, "above the ramp's ceiling")
+        XCTAssertEqual(
+            CameraZoomScale.deviceFactor(forDisplay: .nan, in: lens), 1,
+            "a corrupt value falls back to the lens' floor instead of an impossible one"
+        )
+    }
+
+    /// A lens that really has the ultra-wide stop keeps it: the range is the device's, capped by the ramp.
+    func testTheRangeIsTheLensRubyCappedByTheRamp() {
+        XCTAssertEqual(CameraZoomScale.range(lower: 0.5, upper: 15.7), 0.5...CameraZoomScale.maxFactor)
+        XCTAssertEqual(CameraZoomScale.range(lower: 1, upper: 2), 1...2)
+        XCTAssertEqual(
+            CameraZoomScale.range(lower: 2, upper: 1), 2...2,
+            "an inverted report cannot make a range the thumb cannot sit in"
+        )
+    }
+
+    /// The thumb's position and the value it stands for are one mapping, both ways.
+    func testTheThumbPositionRoundTrips() {
+        let range: ClosedRange<CGFloat> = 1...5
+        XCTAssertEqual(CameraZoomScale.fraction(of: 1, in: range), 0, accuracy: 0.0001, "the left end")
+        XCTAssertEqual(CameraZoomScale.fraction(of: 5, in: range), 1, accuracy: 0.0001, "the right end")
+        XCTAssertEqual(CameraZoomScale.fraction(of: 3, in: range), 0.5, accuracy: 0.0001, "the middle")
+
+        for factor: CGFloat in [1, 1.7, 2.5, 4.2, 5] {
+            let x = CameraZoomScale.fraction(of: factor, in: range)
+            XCTAssertEqual(
+                CameraZoomScale.factor(atFraction: x, in: range), factor, accuracy: 0.0001,
+                "\(factor)x sits where dragging to \(x) puts it"
+            )
+        }
+        XCTAssertEqual(CameraZoomScale.factor(atFraction: -3, in: range), 1, "a drag past the end stops at it")
+        XCTAssertEqual(CameraZoomScale.factor(atFraction: 7, in: range), 5)
+    }
+
+    func testTheLabelsNameTheFactorTheWayTheBoardsDo() {
+        XCTAssertEqual(CameraZoomScale.valueLabel(1), "1×", "whole stops have no decimal, as on the boards")
+        XCTAssertEqual(CameraZoomScale.valueLabel(0.5), "0.5×")
+        XCTAssertEqual(CameraZoomScale.valueLabel(2.46), "2.5×")
+        XCTAssertEqual(CameraZoomScale.accessibilityValue(1), "1.0×", "VoiceOver reads one decimal, never \"1x\"")
+        XCTAssertEqual(CameraZoomScale.accessibilityValue(0.5), "0.5×")
+        XCTAssertEqual(CameraZoomScale.accessibilityValue(3), "3.0×")
+    }
+
+    /// The wall of ticks comes from the same range the slider spans, so a label can never sit on a factor the
+    /// thumb cannot reach.
+    func testTheTicksComeFromTheSliderRange() {
+        let lens = CameraZoomScale.range(lower: 0.5, upper: 5)
+        XCTAssertEqual(CameraZoomScale.ticks(in: lens), [.half, .one, .two, .three])
+        for tick in CameraZoomScale.ticks(in: lens) {
+            XCTAssertTrue(lens.contains(tick.factor), "\(tick.factor) is reachable")
+            XCTAssertTrue(
+                (0...1).contains(CameraZoomScale.fraction(of: tick.factor, in: lens)),
+                "\(tick.factor) sits on the track"
+            )
+        }
+    }
+}
+
 final class CameraZoomPresetTests: XCTestCase {
+    /// The slider's ticks are the stops the lens can actually reach: a phone without the ultra-wide never draws
+    /// a 0.5 label, and a lens that starts at 2x never draws a 1.
     func testPresetsFollowTheLensRange() {
         XCTAssertEqual(
             CameraZoomPresets.available(range: 0.5...4),
-            [.half, .one, .two],
+            [.half, .one, .two, .three],
             "a lens with an ultra-wide stop offers 0.5x"
         )
         XCTAssertEqual(
@@ -2544,8 +2631,9 @@ final class CameraZoomPresetTests: XCTestCase {
             [.one, .two],
             "a lens that cannot go below 1x never offers 0.5x"
         )
-        XCTAssertEqual(CameraZoomPresets.available(range: 2...5), [.two])
-        XCTAssertEqual(CameraZoomPresets.available(range: 3...5), [.one], "1x is always offered")
+        XCTAssertEqual(CameraZoomPresets.available(range: 2...5), [.two, .three])
+        XCTAssertEqual(CameraZoomPresets.available(range: 3...5), [.three])
+        XCTAssertEqual(CameraZoomPresets.available(range: 4...4), [.one], "an empty wall of ticks still names 1x")
     }
 
     func testRequestsAreClampedToTheLens() {
@@ -2561,10 +2649,21 @@ final class CameraZoomPresetTests: XCTestCase {
         XCTAssertEqual(CameraZoomPresets.nearest(to: 3, range: 0.5...2), .two)
     }
 
-    func testZoomIdentifiersAreTheQaContract() {
-        XCTAssertEqual(CameraZoomPreset.half.accessibilityIdentifier, "camera.zoom.0.5x")
-        XCTAssertEqual(CameraZoomPreset.one.accessibilityIdentifier, "camera.zoom.1x")
-        XCTAssertEqual(CameraZoomPreset.two.accessibilityIdentifier, "camera.zoom.2x")
+    /// The 1x/2x pills are gone; the slider is the zoom control now, and the old pill handles are retired so no
+    /// flow can address a control that no longer exists.
+    func testTheZoomSliderIsTheOnlyZoomControl() {
+        XCTAssertEqual(CameraZoomScale.sliderIdentifier, "camera.zoom.slider")
+        XCTAssertEqual(
+            CameraZoomPreset.half.retiredAccessibilityIdentifier,
+            "camera.zoom.0.5x",
+            "the old spelling is kept as the retirement record"
+        )
+        for retired in CameraZoomScale.retiredIdentifiers {
+            XCTAssertTrue(
+                CameraChromeLayout.retiredIdentifiers.contains(retired),
+                "\(retired) is retired in one list the chrome reads"
+            )
+        }
     }
 
     func testTheStoredLevelMatchesTheNearestFactor() {
@@ -2594,20 +2693,18 @@ final class CameraGuideScaleModelTests: XCTestCase {
         XCTAssertEqual(model.guideTransform.scale, 1, accuracy: 0.0001, "a control the camera cannot serve does not move")
     }
 
-    /// The simulator has no capture device, so the lens range falls back to 1...2: 0.5x is not offered
-    /// and a 0.5x request clamps to the lens instead of failing.
-    func testZoomPresetsAreLensAwareInTheSimulator() {
+    /// The simulator has no capture device, so the lens range falls back to 1...2: the slider's ticks are 1x
+    /// and 2x, and the 0.5x stop is simply not offered instead of being drawn and refused.
+    func testTheSliderTicksAreLensAwareInTheSimulator() {
         let model = CameraViewModel()
         model.coordinator.onPermissionResult(.authorized)
 
-        XCTAssertEqual(model.zoomPresets, [.one, .two])
+        XCTAssertEqual(model.zoomRange, 1...2)
+        XCTAssertEqual(CameraZoomScale.ticks(in: model.zoomRange), [.one, .two])
 
-        model.selectZoomPreset(.two)
-        XCTAssertEqual(model.activeZoomPreset, .two)
-        XCTAssertEqual(model.zoomLevel, .two)
-
-        model.selectZoomPreset(.half)
-        XCTAssertEqual(model.activeZoomPreset, .one, "a preset the lens cannot serve clamps to its minimum")
+        model.setZoomFactor(2)
+        XCTAssertEqual(model.zoomLevel, .two, "the stored level follows the factor for older readers")
+        XCTAssertEqual(model.zoomFactor, 2, accuracy: 0.0001)
     }
 }
 
