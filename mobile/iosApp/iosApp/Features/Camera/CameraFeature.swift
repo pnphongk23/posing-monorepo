@@ -288,13 +288,6 @@ final class CameraViewModel: ObservableObject {
         aspectRatio = ratio
     }
 
-    /// The framing the ratio setting defines: the largest rect of `aspectRatio` that fits `container`,
-    /// centred. The preview, the grid and the pose reference all live inside it, and the capture crop
-    /// (`CameraImagePostProcess`) uses the same ratio — so the saved photo keeps what the user framed.
-    func viewportFrame(in container: CGSize) -> CGRect {
-        CameraViewportFrame.rect(for: aspectRatio, in: container)
-    }
-
     /// Setting the timer while a countdown runs cancels it: the new value applies to the next press.
     func setTimerSetting(_ setting: CameraTimerSetting) {
         guard cameraControlsEnabled else { return }
@@ -801,33 +794,12 @@ enum CameraAspectCrop {
     }
 }
 
-/// Where the ratio setting is *visible*: the largest rect of the selected ratio that fits the viewport,
-/// centred. Before this, the ratio only reached `CameraAspectCrop`, so choosing 1:1 or 9:16 cropped the
-/// saved file while the preview stayed full-bleed — the framing the user saw was never the framing that
-/// was saved. Pure, so "the preview really is 1:1" is a unit test instead of a device observation.
+/// Where the pose reference sits inside the photo frame: the prototype's four inset fractions of the frame.
 enum CameraViewportFrame {
-    /// The framing rect, in the container's coordinate space.
-    static func rect(for ratio: CameraAspectRatio, in container: CGSize) -> CGRect {
-        guard container.width > 0, container.height > 0 else { return .zero }
-        let target = ratio.widthOverHeight
-        let current = container.width / container.height
-        if abs(current - target) <= CameraAspectCrop.matchTolerance {
-            return CGRect(origin: .zero, size: container)
-        }
-        if current > target {
-            // The container is wider than the ratio: the sides give way, the full height is kept.
-            let width = container.height * target
-            return CGRect(x: (container.width - width) / 2, y: 0, width: width, height: container.height)
-        }
-        // Taller than the ratio: the height gives way, the full width is kept.
-        let height = container.width / target
-        return CGRect(x: 0, y: (container.height - height) / 2, width: container.width, height: height)
-    }
-
-    /// The pose reference's placement inside that framing rect. The four insets are the prototype's
-    /// `.nb-camera-pose-reference` fractions, but they are taken of the **frame**, not of the screen: a
-    /// 9:16 frame is shorter than the viewport, and a guide measured against the screen would spill out
-    /// of the photo it is supposed to line up with.
+    /// The pose reference's placement inside the photo frame. The four insets are the prototype's
+    /// `.nb-camera-pose-reference` fractions, taken of the **frame**, never of the screen: a 9:16 frame runs
+    /// under the bottom controls, and a guide measured against the screen would spill out of the photo it is
+    /// supposed to line up with.
     static func guideRect(in frame: CGRect) -> CGRect {
         guard frame.width > 0, frame.height > 0 else { return .zero }
         let horizontalInset = CameraProto.poseReferenceHorizontalInset
@@ -1075,9 +1047,12 @@ struct CameraScreen: View {
     /// Focus returns to the More control when the Camera Tools popup is dismissed
     /// (outside tap / Escape / VoiceOver escape).
     @FocusState private var isToolsButtonFocused: Bool
-    /// Height of the top control bar, measured so the tools popup anchors *under* it at every
-    /// Dynamic Type size instead of at a hard-coded offset.
+    /// Height of the top control bar, measured so the popover anchors *under* it at every Dynamic Type size
+    /// instead of at a hard-coded offset.
     @State private var topBarHeight: CGFloat = AP.HitTarget.minimum
+    /// The window's insets. The camera draws edge to edge, so this is what the chrome and the photo frame are
+    /// positioned from — never a hard-coded phone.
+    @State private var safeAreaInsets = CameraSafeArea.Insets()
 
     init(
         guide: Binding<NativePose?>,
@@ -1112,8 +1087,31 @@ struct CameraScreen: View {
 
     var body: some View {
         ZStack {
+            // The camera stage: the preview fills the screen, and the ratio frames the part the shutter keeps.
+            GeometryReader { proxy in
+                CameraCanvas(
+                    model: model,
+                    guide: guide,
+                    isAuthorized: isAuthorized,
+                    stage: CameraStageFrame.make(
+                        ratio: model.aspectRatio,
+                        screen: proxy.size,
+                        safeTop: safeAreaInsets.top
+                    ),
+                    onClose: onClose
+                )
+            }
+
             VStack(spacing: 0) {
-                viewport
+                topControls
+                    .padding(.horizontal, CameraProto.controlInset)
+                    .padding(.top, safeAreaInsets.top)
+                    .background(
+                        GeometryReader { geo in
+                            Color.clear.preference(key: CameraTopBarHeightKey.self, value: geo.size.height)
+                        }
+                    )
+                Spacer(minLength: 0)
                 bottomChrome
             }
 
@@ -1140,11 +1138,14 @@ struct CameraScreen: View {
         // the screen is hosted outside a dark presentation (UIKit host, preview, snapshot): the canvas,
         // the chrome and the pose reference's white line colour are all read from the dark values.
         .environment(\.colorScheme, .dark)
-        .ignoresSafeArea(.container, edges: .top)
+        .ignoresSafeArea()
         .neoHiddenNavigationBar()
         .preferredColorScheme(.dark)
         .task { await model.onAppear() }
-        .onAppear { model.guideAppeared(hasGuide: guide != nil) }
+        .onAppear {
+            model.guideAppeared(hasGuide: guide != nil)
+            safeAreaInsets = CameraSafeArea.read()
+        }
         .onDisappear { model.onDisappear() }
         .task(id: model.showPosePicker) {
             if model.showPosePicker {
@@ -1162,12 +1163,18 @@ struct CameraScreen: View {
         }
         .onChange(of: scenePhase) { phase in
             switch phase {
-            case .active: model.coordinator.onForeground()
+            case .active:
+                model.coordinator.onForeground()
+                safeAreaInsets = CameraSafeArea.read()
             case .background:
                 model.coordinator.onBackground()
                 Task { await model.flushSettings() }
             default: break
             }
+        }
+        .onPreferenceChange(CameraTopBarHeightKey.self) { height in
+            guard height > 0 else { return }
+            topBarHeight = height
         }
         .onChange(of: model.cameraControlsEnabled) { enabled in
             if !enabled { model.closeCameraTools() }
@@ -1175,30 +1182,22 @@ struct CameraScreen: View {
         .onChange(of: guide?.id) { _ in model.guideDidChange(hasGuide: guide != nil) }
     }
 
-    // MARK: Viewport — full-bleed `.nb-camera-viewport--immersive`
+    // MARK: Stage
 
-    private var viewport: some View {
-        GeometryReader { proxy in
-            cameraCanvas(size: proxy.size)
-        }
-        .overlay(alignment: .top) {
-            topControls
-                .padding(.horizontal, CameraProto.controlInset)
-                .padding(.top, CameraProto.topControlsTop)
-                .background(
-                    GeometryReader { geo in
-                        Color.clear.preference(key: CameraTopBarHeightKey.self, value: geo.size.height)
-                    }
-                )
-        }
-        .onPreferenceChange(CameraTopBarHeightKey.self) { height in
-            guard height > 0 else { return }
-            topBarHeight = height
-        }
+    /// The canvas for one container size. The screen's entry point, so a rendered test mounts exactly what the
+    /// screen mounts.
+    func cameraCanvas(size: CGSize, safeTop: CGFloat = 0) -> some View {
+        CameraCanvas(
+            model: model,
+            guide: guide,
+            isAuthorized: isAuthorized,
+            stage: CameraStageFrame.make(ratio: model.aspectRatio, screen: size, safeTop: safeTop),
+            onClose: onClose
+        )
     }
 
     /// The bottom control surface — snackbar, zoom row, shutter rail. One view, so a rendered test can
-    /// prove what is on screen.
+    /// prove what is on screen. It floats over the preview: the photo is not shortened to make room for it.
     private var bottomChrome: some View {
         CameraBottomBar(
             thumbnailURL: model.latestThumbnailURL,
@@ -1219,7 +1218,8 @@ struct CameraScreen: View {
             onCapture: { model.capture() },
             onSwitchCamera: { model.switchCamera() },
             onDismissStatus: { model.dismissStatusMessage() },
-            onCancelTimer: { model.cancelTimer() }
+            onCancelTimer: { model.cancelTimer() },
+            safeBottom: safeAreaInsets.bottom
         )
     }
 
@@ -1238,7 +1238,7 @@ struct CameraScreen: View {
     @ViewBuilder private var cameraToolsPopup: some View {
         if model.showCameraTools {
             GeometryReader { proxy in
-                let popupTop = CameraProto.topControlsTop + topBarHeight + AP.Space.space8
+                let popupTop = topBarHeight + AP.Space.space8
                 ZStack(alignment: .topTrailing) {
                     // Outside tap dismisses without a visible scrim.
                     Color.clear
@@ -1285,18 +1285,6 @@ struct CameraScreen: View {
         }
     }
 
-    /// The canvas for one container size. The screen's entry point, so a rendered test mounts exactly what
-    /// the screen mounts.
-    func cameraCanvas(size: CGSize) -> some View {
-        CameraCanvas(
-            model: model,
-            guide: guide,
-            isAuthorized: isAuthorized,
-            frame: model.viewportFrame(in: size),
-            onClose: onClose
-        )
-    }
-
     /// The camera's top chrome: Close on the left, the guide's eye when a reference is up, tools on the
     /// right. The old "Choose a pose" dropdown pill is gone (owner device feedback): picking a pose is
     /// the Poses control in the scale row, which opens the strip and its Browse entry.
@@ -1341,8 +1329,6 @@ struct CameraScreen: View {
 // elevation come from `AP`.
 
 enum CameraProto {
-    // `.nb-camera-viewport__top-controls`
-    static let topControlsTop: CGFloat = 62
     static let controlInset: CGFloat = 16
 
     // `.nb-camera-pose-reference`
@@ -1687,6 +1673,8 @@ struct CameraBottomBar: View {
     let onSwitchCamera: () -> Void
     let onDismissStatus: () -> Void
     let onCancelTimer: () -> Void
+    /// The home indicator's inset: the rail sits above it, while the preview keeps running underneath.
+    let safeBottom: CGFloat
 
     var body: some View {
         VStack(spacing: 0) {
@@ -1715,7 +1703,17 @@ struct CameraBottomBar: View {
             panel
         }
         .frame(maxWidth: .infinity)
-        .background(AP.Color.background)
+        // The surface floats over the preview: a gradient fades the photo into the controls instead of an
+        // opaque bar cutting the viewfinder in half. On 9:16 the frame runs under this band, which is exactly
+        // where the gradient earns its keep.
+        .background(
+            LinearGradient(
+                colors: [Color.black.opacity(0), Color.black.opacity(0.45), Color.black.opacity(0.6)],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        )
+        .padding(.bottom, safeBottom)
     }
 
     /// The countdown: seconds left plus its own Cancel. Cancelling returns to ready with no photo;

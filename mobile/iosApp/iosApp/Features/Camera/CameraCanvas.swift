@@ -1,6 +1,90 @@
 import AVFoundation
+import Foundation
 import Kingfisher
 import SwiftUI
+import UIKit
+
+/// Where the photo frame sits on the camera stage.
+///
+/// The preview is always full screen — edge to edge, behind the top buttons and the bottom controls — and the
+/// ratio only decides which rect the shutter saves. That rect is never narrower than the screen: 3:4 and 1:1
+/// hang from just under the top controls, and 9:16 is taller than the space left, so it starts at the top and
+/// runs under the bottom controls. Everything outside it is dimmed, never blacked out.
+///
+/// Pure, so every number below is a unit test at any phone size instead of something only a screenshot shows.
+struct CameraStageFrame: Equatable {
+    /// From the safe-area top to a 3:4 / 1:1 frame: the top control row plus the hairline under it.
+    static let shortRatioTopInset: CGFloat = 45
+    /// A 9:16 frame hangs from the safe-area top itself; the top controls sit on the photo.
+    static let tallRatioTopInset: CGFloat = 1
+    /// The dim over everything the shutter is leaving out. The owner's default (65 %), not the artboard's.
+    static let dimOpacity: Double = 0.65
+    /// The frame's edge is a guide, not a border: white at 40 %, one point.
+    static let edgeOpacity: Double = 0.4
+
+    let screen: CGSize
+    let frame: CGRect
+
+    static func topInset(for ratio: CameraAspectRatio) -> CGFloat {
+        ratio == .nineSixteen ? tallRatioTopInset : shortRatioTopInset
+    }
+
+    /// The frame for a ratio on a screen, given the safe-area top the chrome is drawn from.
+    static func make(ratio: CameraAspectRatio, screen: CGSize, safeTop: CGFloat) -> CameraStageFrame {
+        guard screen.width > 0, screen.height > 0 else {
+            return CameraStageFrame(screen: screen, frame: .zero)
+        }
+        // Full width always: the ratio decides the height, and the phone decides the width.
+        let height = screen.width / ratio.widthOverHeight
+        let wanted = max(0, safeTop) + topInset(for: ratio)
+        // A short phone keeps the frame on screen by moving its top up. Its width never gives way, so the
+        // picture is never narrower than the screen — only the top moves.
+        let top = min(wanted, max(0, screen.height - height))
+        return CameraStageFrame(
+            screen: screen,
+            frame: CGRect(x: 0, y: top, width: screen.width, height: height)
+        )
+    }
+
+    /// The pose reference's area inside the frame (the prototype's `.nb-camera-pose-reference` fractions).
+    var guideFrame: CGRect { CameraViewportFrame.guideRect(in: frame) }
+}
+
+/// The stage minus the photo frame: one rect with a hole, so the dim outside the frame is a single translucent
+/// layer instead of four strips that could leave a seam.
+struct CameraStageFrameMask: Shape {
+    let frame: CGRect
+
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.addRect(rect)
+        path.addRect(frame.intersection(rect))
+        return path
+    }
+}
+
+/// The window's safe-area insets.
+///
+/// The camera draws edge to edge, so its own `GeometryReader` reports zero insets — the chrome and the photo
+/// frame are positioned from the window's numbers instead of from a hard-coded phone.
+@MainActor
+enum CameraSafeArea {
+    struct Insets: Equatable {
+        var top: CGFloat = 0
+        var bottom: CGFloat = 0
+    }
+
+    static func read(from window: UIWindow? = nil) -> Insets {
+        let resolved = window ?? keyWindow
+        guard let resolved else { return Insets() }
+        return Insets(top: resolved.safeAreaInsets.top, bottom: resolved.safeAreaInsets.bottom)
+    }
+
+    private static var keyWindow: UIWindow? {
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        return scenes.flatMap(\.windows).first(where: \.isKeyWindow) ?? scenes.first?.windows.first
+    }
+}
 
 /// The live camera canvas: the preview, everything that belongs to *the photo* (the framing edge, the thirds
 /// grid and the pose reference, each clipped to it), the pinch/twist/drag layer that places the reference, and
@@ -14,99 +98,103 @@ struct CameraCanvas: View {
     /// what changes it.
     let guide: NativePose?
     let isAuthorized: Bool
-    /// The photo frame, in the canvas' own coordinate space.
-    let frame: CGRect
+    /// Where the photo frame sits on this screen, and how big the screen is.
+    let stage: CameraStageFrame
     /// Leaves the camera from the permission panel's "Not now".
     let onClose: () -> Void
+    /// Draws the live preview instead of the camera's own layer. A rendered test injects a flat colour: the
+    /// simulator has no camera feed, and "the area outside the frame is dimmed but not opaque" is a claim
+    /// about pixels.
+    var previewOverride: AnyView? = nil
 
     /// In-flight pinch / twist / drag, folded into `model.guideTransform` when the gesture ends.
     @GestureState private var guideGestureDelta = GuideTransform.Delta.identity
 
-    private var guideFrame: CGRect { CameraViewportFrame.guideRect(in: frame) }
+    private var frame: CGRect { stage.frame }
+    private var guideFrame: CGRect { stage.guideFrame }
 
     var body: some View {
         ZStack {
             AP.Color.background
 
             if isAuthorized {
-                CameraPreview(session: model.camera.session)
+                // The preview is the whole screen: the ratio frames the photo, it never letterboxes the camera.
+                preview
+                    .frame(width: stage.screen.width, height: stage.screen.height)
+                    .clipped()
+
+                // One layer over everything the shutter is leaving out. The preview keeps showing through it,
+                // so the user sees what the photo will not include instead of a black bar.
+                CameraStageFrameMask(frame: frame)
+                    .fill(Color.black.opacity(CameraStageFrame.dimOpacity), style: FillStyle(eoFill: true))
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+
+                frameEdge
+
+                if model.isGridVisible {
+                    CameraFramingGrid()
+                        .frame(width: frame.width, height: frame.height)
+                        .position(x: frame.midX, y: frame.midY)
+                }
+
+                // `.nb-camera-pose-reference` — the reference area is a fraction of the framing rect, and the
+                // guide's layer is clipped to the rect before it is positioned: pinch / twist / drag can push
+                // the line art past its box, and a reference painted outside the photo is a picture the
+                // shutter can never take.
+                if let guide, model.isPoseGuideVisible {
+                    ZStack {
+                        guideOverlay(for: guide)
+                            .frame(width: guideFrame.width, height: guideFrame.height)
+                            .position(x: guideFrame.midX, y: guideFrame.midY)
+                    }
                     .frame(width: frame.width, height: frame.height)
+                    // Clip *before* positioning: `.position` makes a view take all the space it is offered, so
+                    // a clip after it would cut at the canvas edge and the guide would still reach the bars.
                     .clipped()
                     .position(x: frame.midX, y: frame.midY)
-            }
-
-            // The scrims grade *the photo*: measured against the canvas they would darken the black bars,
-            // which are not part of the picture the shutter saves.
-            verticalScrims
-                .frame(width: frame.width, height: frame.height)
-                .position(x: frame.midX, y: frame.midY)
-
-            // `.nb-camera-pose-reference` — the reference area is a fraction of the framing rect, and the
-            // guide's layer is clipped to the rect before it is positioned: pinch / twist / drag can push the
-            // line art past its box, and a reference painted outside the photo is a picture the shutter can
-            // never take.
-            if let guide, model.isPoseGuideVisible {
-                ZStack {
-                    guideOverlay(for: guide)
-                        .frame(width: guideFrame.width, height: guideFrame.height)
-                        .position(x: guideFrame.midX, y: guideFrame.midY)
+                    // Only the part inside the frame is drawn, so only that part is announced.
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("Pose guide")
+                    .accessibilityValue(guide.id)
+                    .accessibilityIdentifier("camera.poseGuide")
                 }
-                .frame(width: frame.width, height: frame.height)
-                // Clip *before* positioning: `.position` makes a view take all the space it is offered, so
-                // a clip after it would cut at the canvas edge and the guide would still reach the bars.
-                .clipped()
-                .position(x: frame.midX, y: frame.midY)
-                // Only the part inside the frame is drawn, so only that part is announced.
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel("Pose guide")
-                .accessibilityValue(guide.id)
-                .accessibilityIdentifier("camera.poseGuide")
-            }
 
-            if model.isGridVisible {
-                CameraFramingGrid()
-                    .frame(width: frame.width, height: frame.height)
-                    .position(x: frame.midX, y: frame.midY)
-            }
-
-            // Pinch / twist / drag on the photo places the pose reference; the reference itself stays
-            // non-interactive so a thin skeleton is never a hard touch target. The catcher is the framing
-            // rect: a drag that starts outside the photo must not move the guide inside it.
-            if guide != nil, model.isPoseGuideVisible, isAuthorized {
-                Color.clear
-                    .frame(width: frame.width, height: frame.height)
-                    .position(x: frame.midX, y: frame.midY)
-                    .contentShape(Rectangle())
-                    .onTapGesture(count: 2) { model.resetGuideTransform() }
-                    .gesture(guidePlacementGesture)
-                    .accessibilityHidden(true)
-            }
-
-            if !isAuthorized {
+                // Pinch / twist / drag on the photo places the pose reference; the reference itself stays
+                // non-interactive so a thin skeleton is never a hard touch target. The catcher is the framing
+                // rect: a drag that starts outside the photo must not move the guide inside it.
+                if guide != nil, model.isPoseGuideVisible {
+                    Color.clear
+                        .frame(width: frame.width, height: frame.height)
+                        .position(x: frame.midX, y: frame.midY)
+                        .contentShape(Rectangle())
+                        .onTapGesture(count: 2) { model.resetGuideTransform() }
+                        .gesture(guidePlacementGesture)
+                        .accessibilityHidden(true)
+                }
+            } else {
                 permissionPanel
             }
         }
         .clipped()
     }
 
-    /// `.nb-camera-viewport__top-scrim` (190px) / `__bottom-scrim` (170px).
-    private var verticalScrims: some View {
-        VStack(spacing: 0) {
-            LinearGradient(
-                colors: [AP.Color.background.opacity(0.68), AP.Color.background.opacity(0)],
-                startPoint: .top, endPoint: .bottom
-            )
-            .frame(height: 190)
-
-            Spacer(minLength: 0)
-
-            LinearGradient(
-                colors: [AP.Color.background.opacity(0), AP.Color.background.opacity(0.54)],
-                startPoint: .top, endPoint: .bottom
-            )
-            .frame(height: 170)
+    @ViewBuilder private var preview: some View {
+        if let previewOverride {
+            previewOverride
+        } else {
+            CameraPreview(session: model.camera.session)
         }
-        .allowsHitTesting(false)
+    }
+
+    /// The frame's edge: one white hairline at 40 %. Drawn inside the rect, so it never spills on the photo.
+    private var frameEdge: some View {
+        Rectangle()
+            .strokeBorder(Color.white.opacity(CameraStageFrame.edgeOpacity), lineWidth: 1)
+            .frame(width: frame.width, height: frame.height)
+            .position(x: frame.midX, y: frame.midY)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
     }
 
     private var guidePlacementGesture: some Gesture {
@@ -170,7 +258,7 @@ struct CameraCanvas: View {
 
     /// The camera's permission state on the shared 72 pt panel — one clean accent-tint circle, title, copy
     /// and one action — instead of a camera tile stacked on a yellow square.
-    private var permissionPanel: some View {
+    @MainActor private var permissionPanel: some View {
         CameraPermissionPanel(
             permission: model.coordinator.state.permission,
             onAllow: { model.requestPermission() },
@@ -181,7 +269,7 @@ struct CameraCanvas: View {
         .background(AP.Color.scrim)
     }
 
-    private func openSystemSettings() {
+    @MainActor private func openSystemSettings() {
         guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
         UIApplication.shared.open(url)
     }

@@ -511,11 +511,11 @@ final class CameraFeatureTests: XCTestCase {
 
     // MARK: Camera tools geometry
 
-    /// The tools moved from the lower-right column to the top bar, so the popup now anchors *under*
-    /// the top control bar instead of above the old Choose-pose control.
+    /// The tools live in the top bar, drawn from the safe-area top, so the popover anchors *under* that row
+    /// instead of above the old Choose-pose control.
     func testPopupAnchorsUnderTheTopControlBar() {
-        XCTAssertEqual(CameraProto.topControlsTop, 62)
         XCTAssertEqual(AP.HitTarget.minimum, 44, "the anchor is the bar's 44 pt control plus 8 pt")
+        XCTAssertEqual(CameraStageFrame.shortRatioTopInset, 45, "and the photo frame starts a point below it")
     }
 
     /// The width is the prototype's fixed 264; the height is not a constant any more — it is the safe
@@ -2088,7 +2088,8 @@ final class CameraChromeTests: XCTestCase {
             onCapture: {},
             onSwitchCamera: {},
             onDismissStatus: {},
-            onCancelTimer: {}
+            onCancelTimer: {},
+            safeBottom: 34
         )
     }
 
@@ -2154,22 +2155,32 @@ final class CameraChromeTests: XCTestCase {
     /// Rows where `hex` is painted as a **flat run** of at least `minRun` pixels. A single-pixel match
     /// is not evidence: antialiased text produces every grey between two tokens, so a plain
     /// `rows(paintedWith:)` can "find" a snackbar surface inside a text edge. Only fills paint runs.
+    /// Rows that paint a run of `hex` at least `minRun` pixels long, **bounded on both sides** by a different
+    /// pixel. A control has edges: a background band that runs to the screen's edge is never one, which is what
+    /// keeps a gradient that drifts within tolerance of a token from reading as a chip.
     private func filledRows(_ bitmap: APBitmap, hex: UInt32, minRun: Int, tolerance: Int = 6) -> [Int] {
         let target = (red: Int((hex >> 16) & 0xFF), green: Int((hex >> 8) & 0xFF), blue: Int(hex & 0xFF))
         var rows: [Int] = []
         for y in 0..<bitmap.height {
-            var run = 0
-            for x in 0..<bitmap.width {
-                guard let pixel = bitmap.color(x: x, y: y), pixel.alpha > 200 else { run = 0; continue }
-                let matches = abs(pixel.red - target.red) <= tolerance
-                    && abs(pixel.green - target.green) <= tolerance
-                    && abs(pixel.blue - target.blue) <= tolerance
-                run = matches ? run + 1 : 0
-                if run >= minRun {
-                    rows.append(y)
-                    break
+            var runStart: Int?
+            var longestBounded = 0
+            for x in 0...bitmap.width {
+                var matches = false
+                if x < bitmap.width, let pixel = bitmap.color(x: x, y: y), pixel.alpha > 200 {
+                    matches = abs(pixel.red - target.red) <= tolerance
+                        && abs(pixel.green - target.green) <= tolerance
+                        && abs(pixel.blue - target.blue) <= tolerance
+                }
+                if matches {
+                    if runStart == nil { runStart = x }
+                } else if let start = runStart {
+                    if start > 0, x < bitmap.width {
+                        longestBounded = max(longestBounded, x - start)
+                    }
+                    runStart = nil
                 }
             }
+            if longestBounded >= minRun { rows.append(y) }
         }
         return rows
     }
@@ -2729,18 +2740,21 @@ final class CameraChromeContractTests: XCTestCase {
     ///
     /// Mutation target: move `.clipped()` after `.position`, drop the scrims' frame, or let the catcher
     /// stay canvas-sized — each turns one assertion below red.
-    func testTheScrimsTheGestureLayerAndTheGuideAreBoundedByTheFrame() throws {
-        let source = try cameraFeatureSource()
-        let canvas = try functionBody(named: "cameraCanvas", in: source)
+    func testTheDimTheEdgeAndTheGuideAreBoundedByThePhoto() throws {
+        let canvas = try cameraCanvasSource()
         let frameSize = ".frame(width: frame.width, height: frame.height)"
 
-        // The scrims.
-        let scrimsStart = try XCTUnwrap(canvas.range(of: "verticalScrims")?.lowerBound)
-        let scrims = canvas[scrimsStart...].prefix(220)
-        XCTAssertTrue(scrims.contains(frameSize), "the scrims are the size of the photo, not of the canvas")
-        XCTAssertTrue(scrims.contains(".position(x: frame.midX, y: frame.midY)"), "and sit on it")
+        // One dim layer over everything the photo leaves out — never four strips, never an opaque bar.
+        let dimStart = try XCTUnwrap(canvas.range(of: "CameraStageFrameMask(frame: frame)")?.lowerBound)
+        let dim = canvas[dimStart...].prefix(260)
+        XCTAssertTrue(
+            dim.contains("Color.black.opacity(CameraStageFrame.dimOpacity)"),
+            "the outside is one translucent black layer at the stage's own opacity"
+        )
+        XCTAssertTrue(dim.contains("eoFill: true"), "a rect with a hole, so the photo inside is untouched")
+        XCTAssertTrue(dim.contains(".allowsHitTesting(false)"), "and it never eats a gesture meant for the photo")
 
-        // The pinch/twist/drag catcher.
+        // The pinch/twist/drag catcher is the photo.
         let catcherStart = try XCTUnwrap(canvas.range(of: "Color.clear")?.lowerBound)
         let catcher = canvas[catcherStart...].prefix(400)
         XCTAssertTrue(catcher.contains(frameSize), "the gesture area is the photo")
@@ -2749,7 +2763,7 @@ final class CameraChromeContractTests: XCTestCase {
         XCTAssertLessThan(
             catcher.distance(from: catcher.startIndex, to: catcherFrame.lowerBound),
             catcher.distance(from: catcher.startIndex, to: catcherShape.lowerBound),
-            "the touch area is shaped by the frame, so the bars stay inert"
+            "the touch area is shaped by the frame, so the dimmed area stays inert"
         )
 
         // The guide's clip, in the order that actually clips.
@@ -2985,6 +2999,18 @@ final class CameraChromeContractTests: XCTestCase {
 
     // MARK: - Source helpers
 
+    /// The canvas' own source: the dim, the edge and the guide's clip are drawn there now.
+    private func cameraCanvasSource() throws -> String {
+        try String(
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent() // Features
+                .deletingLastPathComponent() // iosAppTests
+                .deletingLastPathComponent() // iosApp (project dir)
+                .appendingPathComponent("iosApp/Features/Camera/CameraCanvas.swift"),
+            encoding: .utf8
+        )
+    }
+
     /// The tools popover's own source: its rows are asserted here, and it is a file of its own.
     private func cameraToolsPopoverSource() throws -> String {
         try String(
@@ -3013,16 +3039,6 @@ final class CameraChromeContractTests: XCTestCase {
         let start = try XCTUnwrap(
             source.range(of: "var \(name): some View {")?.upperBound,
             "no declaration for \(name)"
-        )
-        return try bracedBody(from: start, named: name, in: source)
-    }
-
-    /// The body of `func <name>(…) -> some View { … }`, found by brace counting from its signature.
-    private func functionBody(named name: String, in source: String) throws -> String {
-        let signature = try XCTUnwrap(source.range(of: "func \(name)("), "no declaration for \(name)")
-        let start = try XCTUnwrap(
-            source.range(of: "{", range: signature.upperBound..<source.endIndex)?.upperBound,
-            "no body for \(name)"
         )
         return try bracedBody(from: start, named: name, in: source)
     }

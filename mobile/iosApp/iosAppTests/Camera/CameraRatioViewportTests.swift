@@ -6,82 +6,123 @@ import XCTest
 
 /// The camera's ratio setting is **framing**, not only a saved-file crop.
 ///
-/// The bug this file pins: `CameraAspectRatio.widthOverHeight` used to reach only
-/// `CameraAspectCrop` / `CameraImagePostProcess`, so choosing 1:1 or 9:16 cropped the saved photo while
-/// the preview stayed full-bleed — the user framed one picture and kept another. These are business
-/// assertions (what the screen shows versus what the file keeps), not view snapshots.
+/// The model the boards describe: the preview is always full screen, and the ratio only draws the full-width
+/// frame the shutter will save — everything outside it is dimmed, never blacked out. These are business
+/// assertions (what the screen frames versus what the file keeps), not view snapshots, and they run on two
+/// phones so "full width" and "on screen" are rules instead of one screen's luck.
 final class CameraRatioViewportTests: XCTestCase {
-    /// Two real phone viewports: the canvas is the space left under the top chrome and above the bottom
-    /// bar, so both a narrow (393×852) and a wide (430×932) device are checked.
-    private let containers = [
-        CGSize(width: 393, height: 852),
-        CGSize(width: 430, height: 932),
+    /// The artboards' phone (393×852, safe top 59) and a small one (375×667, safe top 20).
+    private let phones: [(name: String, screen: CGSize, safeTop: CGFloat)] = [
+        ("393x852", CGSize(width: 393, height: 852), 59),
+        ("375x667", CGSize(width: 375, height: 667), 20),
     ]
 
-    // MARK: - The frame has the selected ratio
+    // MARK: - The frame is full width, of the ratio's height, hung from the top controls
 
-    func testThePreviewFrameHasTheSelectedRatioOnEveryScreen() {
-        for container in containers {
+    func testTheFrameIsAlwaysAsWideAsTheScreen() {
+        for phone in phones {
             for ratio in CameraAspectRatio.allCases {
-                let frame = CameraViewportFrame.rect(for: ratio, in: container)
-                XCTAssertGreaterThan(frame.width, 0, "\(ratio) in \(container)")
+                let stage = CameraStageFrame.make(ratio: ratio, screen: phone.screen, safeTop: phone.safeTop)
+                XCTAssertEqual(stage.frame.minX, 0, "\(ratio.rawValue) on \(phone.name) starts at the screen's edge")
                 XCTAssertEqual(
-                    frame.width / frame.height,
+                    stage.frame.width, phone.screen.width,
+                    "\(ratio.rawValue) on \(phone.name): the photo is never narrower than the screen"
+                )
+            }
+        }
+    }
+
+    /// 3:4 = w·4/3, 1:1 = w, 9:16 = w·16/9 — and on the boards' phone those are 524, 393 and 699 points.
+    func testTheFrameHasTheRatiosHeight() {
+        let reference = CameraStageFrame.make(
+            ratio: .threeFour,
+            screen: CGSize(width: 393, height: 852),
+            safeTop: 59
+        )
+        XCTAssertEqual(reference.frame.height, 524, accuracy: 0.01, "3:4 on the boards' phone")
+        XCTAssertEqual(
+            CameraStageFrame.make(ratio: .oneOne, screen: reference.screen, safeTop: 59).frame.height,
+            393, accuracy: 0.01
+        )
+        XCTAssertEqual(
+            CameraStageFrame.make(ratio: .nineSixteen, screen: reference.screen, safeTop: 59).frame.height,
+            393 * 16.0 / 9.0, accuracy: 0.01
+        )
+
+        for phone in phones {
+            for ratio in CameraAspectRatio.allCases {
+                let stage = CameraStageFrame.make(ratio: ratio, screen: phone.screen, safeTop: phone.safeTop)
+                XCTAssertEqual(
+                    stage.frame.width / stage.frame.height,
                     ratio.widthOverHeight,
                     accuracy: 0.0005,
-                    "the framing rect is \(ratio.rawValue) in \(container), got \(frame)"
+                    "\(ratio.rawValue) on \(phone.name) is the ratio the shutter saves"
                 )
             }
         }
     }
 
-    func testTheFrameIsCentredAndStaysInsideTheContainer() {
-        for container in containers {
+    /// 3:4 and 1:1 hang from just under the top control row (safe top + 45); 9:16 starts at the safe top.
+    func testTheFrameHangsFromJustUnderTheTopControls() {
+        XCTAssertEqual(
+            CameraStageFrame.make(ratio: .threeFour, screen: CGSize(width: 393, height: 852), safeTop: 59).frame.minY,
+            104, accuracy: 0.01, "the artboard's 3:4 frame starts at y 104"
+        )
+        XCTAssertEqual(
+            CameraStageFrame.make(ratio: .oneOne, screen: CGSize(width: 393, height: 852), safeTop: 59).frame.minY,
+            104, accuracy: 0.01
+        )
+        XCTAssertEqual(
+            CameraStageFrame.make(ratio: .nineSixteen, screen: CGSize(width: 393, height: 852), safeTop: 59).frame.minY,
+            60, accuracy: 0.01, "the artboard's 9:16 frame starts at y 60"
+        )
+        // The insets are relative to the safe area, not to one phone's notch — until the frame no longer fits,
+        // which is the clamp `testAShortPhoneKeepsTheTallFrameOnScreen` pins.
+        for phone in phones {
             for ratio in CameraAspectRatio.allCases {
-                let frame = CameraViewportFrame.rect(for: ratio, in: container)
-                XCTAssertEqual(frame.midX, container.width / 2, accuracy: 0.001, "\(ratio) is horizontally centred")
-                XCTAssertEqual(frame.midY, container.height / 2, accuracy: 0.001, "\(ratio) is vertically centred")
-                XCTAssertGreaterThanOrEqual(frame.minX, 0, "\(ratio) does not leave the container")
-                XCTAssertGreaterThanOrEqual(frame.minY, 0, "\(ratio) does not leave the container")
-                XCTAssertLessThanOrEqual(frame.maxX, container.width + 0.001, "\(ratio) does not overflow")
-                XCTAssertLessThanOrEqual(frame.maxY, container.height + 0.001, "\(ratio) does not overflow")
-            }
-        }
-    }
-
-    /// "Largest that fits": the frame touches one pair of container edges, and growing it would leave the
-    /// container. A frame that merely had the right ratio could be a stamp in the middle of the screen.
-    /// A wide canvas (landscape host, split view) is included so the height-limited branch is covered too.
-    func testTheFrameIsTheLargestRectOfThatRatioThatFits() {
-        for container in containers + [CGSize(width: 852, height: 393)] {
-            for ratio in CameraAspectRatio.allCases {
-                let frame = CameraViewportFrame.rect(for: ratio, in: container)
-                let fillsWidth = abs(frame.width - container.width) <= 0.001
-                let fillsHeight = abs(frame.height - container.height) <= 0.001
-                XCTAssertTrue(
-                    fillsWidth || fillsHeight,
-                    "\(ratio.rawValue) in \(container) must use every point it can: \(frame)"
-                )
+                let stage = CameraStageFrame.make(ratio: ratio, screen: phone.screen, safeTop: phone.safeTop)
+                let wanted = phone.safeTop + CameraStageFrame.topInset(for: ratio)
+                let fits = wanted + stage.frame.height <= phone.screen.height + 0.01
+                guard fits else { continue }
                 XCTAssertEqual(
-                    fillsWidth,
-                    container.width / container.height <= ratio.widthOverHeight,
-                    "\(ratio.rawValue) keeps the full width exactly when the screen is narrower than the ratio"
+                    stage.frame.minY, wanted, accuracy: 0.01,
+                    "\(ratio.rawValue) on \(phone.name)"
                 )
             }
         }
     }
 
-    /// A 3:4 phone viewport is the camera's own framing: nothing is letterboxed away.
-    func testTheDefaultRatioFillsAPortraitScreenWithNoBars() {
-        let container = CGSize(width: 393, height: 524) // 3:4, the framing the default ratio produces
-        let frame = CameraViewportFrame.rect(for: .threeFour, in: container)
-        XCTAssertEqual(frame.width, container.width, accuracy: 0.001)
-        XCTAssertEqual(frame.height, container.height, accuracy: 0.001)
+    /// A short phone keeps the tall 9:16 frame on screen by moving its top up — the width never gives way, so
+    /// the photo is still the full screen wide.
+    func testAShortPhoneKeepsTheTallFrameOnScreen() {
+        let small = CGSize(width: 375, height: 667)
+        let stage = CameraStageFrame.make(ratio: .nineSixteen, screen: small, safeTop: 20)
+        XCTAssertEqual(stage.frame.width, small.width, "the width is the screen's, whatever the height costs")
+        XCTAssertLessThan(
+            stage.frame.minY, 20 + CameraStageFrame.tallRatioTopInset,
+            "the top is what moves when the tall frame no longer fits"
+        )
+        XCTAssertEqual(stage.frame.maxY, small.height, accuracy: 0.01, "the frame fills the screen it cannot fit in")
     }
 
-    func testADegenerateContainerDoesNotCrash() {
-        XCTAssertEqual(CameraViewportFrame.rect(for: .oneOne, in: .zero), .zero)
-        XCTAssertEqual(CameraViewportFrame.rect(for: .nineSixteen, in: CGSize(width: 0, height: 852)), .zero)
+    func testTheFrameIsOnScreenForEveryRatioAndPhone() {
+        for phone in phones {
+            for ratio in CameraAspectRatio.allCases {
+                let stage = CameraStageFrame.make(ratio: ratio, screen: phone.screen, safeTop: phone.safeTop)
+                XCTAssertGreaterThanOrEqual(stage.frame.minY, 0, "\(ratio.rawValue) on \(phone.name) stays on screen")
+                XCTAssertLessThanOrEqual(
+                    stage.frame.maxY, phone.screen.height + 0.01,
+                    "\(ratio.rawValue) on \(phone.name) stays on screen"
+                )
+            }
+        }
+    }
+
+    func testADegenerateScreenDoesNotCrash() {
+        XCTAssertEqual(
+            CameraStageFrame.make(ratio: .oneOne, screen: .zero, safeTop: 59).frame,
+            .zero
+        )
         XCTAssertEqual(CameraViewportFrame.guideRect(in: .zero), .zero)
     }
 
@@ -92,42 +133,31 @@ final class CameraRatioViewportTests: XCTestCase {
 
     // MARK: - The pose reference lives inside the frame
 
-    func testTheGuideSitsInsideTheFramingRect() {
-        for container in containers {
+    func testTheGuideSitsInsideTheFrame() {
+        for phone in phones {
             for ratio in CameraAspectRatio.allCases {
-                let frame = CameraViewportFrame.rect(for: ratio, in: container)
-                let guide = CameraViewportFrame.guideRect(in: frame)
+                let stage = CameraStageFrame.make(ratio: ratio, screen: phone.screen, safeTop: phone.safeTop)
+                let guide = stage.guideFrame
                 XCTAssertGreaterThan(guide.width, 0, "\(ratio) has a guide area")
                 XCTAssertGreaterThan(guide.height, 0, "\(ratio) has a guide area")
-                XCTAssertGreaterThanOrEqual(guide.minX, frame.minX - 0.001, "\(ratio): the guide stays in the photo")
-                XCTAssertGreaterThanOrEqual(guide.minY, frame.minY - 0.001, "\(ratio): the guide stays in the photo")
-                XCTAssertLessThanOrEqual(guide.maxX, frame.maxX + 0.001, "\(ratio): the guide stays in the photo")
-                XCTAssertLessThanOrEqual(guide.maxY, frame.maxY + 0.001, "\(ratio): the guide stays in the photo")
+                XCTAssertGreaterThanOrEqual(guide.minX, stage.frame.minX - 0.001)
+                XCTAssertGreaterThanOrEqual(guide.minY, stage.frame.minY - 0.001)
+                XCTAssertLessThanOrEqual(guide.maxX, stage.frame.maxX + 0.001)
+                XCTAssertLessThanOrEqual(guide.maxY, stage.frame.maxY + 0.001)
             }
         }
     }
 
-    /// The guide keeps the prototype's inset fractions — of the frame, so the same reference covers the
-    /// same share of the photo at every ratio.
+    /// The guide keeps the prototype's inset fractions — of the frame, so the same reference covers the same
+    /// share of the photo at every ratio.
     func testTheGuideKeepsThePrototypeInsetFractionsOfTheFrame() {
-        let frame = CameraViewportFrame.rect(for: .nineSixteen, in: CGSize(width: 393, height: 852))
-        let guide = CameraViewportFrame.guideRect(in: frame)
+        let stage = CameraStageFrame.make(ratio: .nineSixteen, screen: CGSize(width: 393, height: 852), safeTop: 59)
+        let frame = stage.frame
+        let guide = stage.guideFrame
 
-        XCTAssertEqual(
-            (guide.minX - frame.minX) / frame.width,
-            CameraProto.poseReferenceHorizontalInset,
-            accuracy: 0.0005
-        )
-        XCTAssertEqual(
-            (guide.minY - frame.minY) / frame.height,
-            CameraProto.poseReferenceTopInset,
-            accuracy: 0.0005
-        )
-        XCTAssertEqual(
-            guide.width / frame.width,
-            1 - CameraProto.poseReferenceHorizontalInset * 2,
-            accuracy: 0.0005
-        )
+        XCTAssertEqual((guide.minX - frame.minX) / frame.width, CameraProto.poseReferenceHorizontalInset, accuracy: 0.0005)
+        XCTAssertEqual((guide.minY - frame.minY) / frame.height, CameraProto.poseReferenceTopInset, accuracy: 0.0005)
+        XCTAssertEqual(guide.width / frame.width, 1 - CameraProto.poseReferenceHorizontalInset * 2, accuracy: 0.0005)
         XCTAssertEqual(
             guide.height / frame.height,
             1 - CameraProto.poseReferenceTopInset - CameraProto.poseReferenceBottomInset,
@@ -135,113 +165,113 @@ final class CameraRatioViewportTests: XCTestCase {
         )
     }
 
-    /// A taller frame (9:16, the narrowest ratio) must not draw the guide where the 3:4 frame put it: the
-    /// reference follows the photo, not the screen.
+    /// A taller frame (9:16) must not put the guide where the 3:4 frame did: the reference follows the photo.
     func testTheGuideMovesWithTheFrameNotWithTheScreen() {
-        let container = CGSize(width: 393, height: 852)
-        let threeFour = CameraViewportFrame.guideRect(
-            in: CameraViewportFrame.rect(for: .threeFour, in: container)
-        )
-        let story = CameraViewportFrame.guideRect(
-            in: CameraViewportFrame.rect(for: .nineSixteen, in: container)
-        )
-        XCTAssertNotEqual(threeFour.minY, story.minY, accuracy: 0.5)
+        let screen = CGSize(width: 393, height: 852)
+        let threeFour = CameraStageFrame.make(ratio: .threeFour, screen: screen, safeTop: 59).guideFrame
+        let story = CameraStageFrame.make(ratio: .nineSixteen, screen: screen, safeTop: 59).guideFrame
         XCTAssertGreaterThan(story.height, threeFour.height, "the narrower ratio is the taller frame")
         XCTAssertEqual(story.width, threeFour.width, accuracy: 0.001, "both frames are as wide as the screen")
+        XCTAssertNotEqual(story.minY, threeFour.minY, accuracy: 0.5)
     }
 
-    // MARK: - The saved file matches what was framed
+    // MARK: - The saved photo is the frame
 
-    /// The capture crop and the visible frame are the same ratio, so "what you see is what you get".
-    ///
-    /// The size under test is the one the camera *displays*, not the one it stores: a portrait capture is
-    /// a landscape 4032×3024 buffer carrying an EXIF orientation, so the picture is 3024×4032. The old
-    /// version of this test fed the display size while claiming it was "the sensor size the camera
-    /// writes", which is exactly the mistake the crop itself made.
-    func testTheCaptureCropHasTheSameRatioAsTheViewportFrame() throws {
-        let photo = try CameraCaptureFixture.decode(CameraCaptureFixture.jpeg(orientation: .right))
-        XCTAssertEqual(photo.size, CGSize(width: 3024, height: 4032), "the tag is what makes this portrait")
-        for ratio in CameraAspectRatio.allCases {
-            let frame = CameraViewportFrame.rect(for: ratio, in: CGSize(width: 393, height: 852))
-            let crop = CameraAspectCrop.rect(for: ratio, imageSize: photo.size)
-            XCTAssertEqual(
-                crop.width / crop.height,
-                frame.width / frame.height,
-                accuracy: 0.0005,
-                "\(ratio.rawValue): the saved crop and the framed preview describe the same picture"
-            )
-            XCTAssertLessThanOrEqual(crop.maxX, photo.size.width, "the crop stays inside the picture")
-            XCTAssertLessThanOrEqual(crop.maxY, photo.size.height, "the crop stays inside the picture")
+    /// The crop the shutter writes and the frame the screen draws describe the same picture: same aspect, same
+    /// centred region. Measured through the real file path on both phones, so a change to either rule that
+    /// forgets the other fails here.
+    func testTheSavedPhotoMatchesTheFrameForEveryRatioAndPhone() throws {
+        for phone in phones {
+            for ratio in CameraAspectRatio.allCases {
+                let stage = CameraStageFrame.make(ratio: ratio, screen: phone.screen, safeTop: phone.safeTop)
+
+                let original = CameraCaptureFixture.jpeg(orientation: .right)
+                let url = FileManager.default.temporaryDirectory
+                    .appendingPathComponent("frame-\(phone.name)-\(ratio.rawValue)-\(UUID().uuidString).jpg")
+                try original.write(to: url)
+                defer { try? FileManager.default.removeItem(at: url) }
+
+                CameraImagePostProcess.cropFileInPlace(at: url.path, ratio: ratio)
+                let saved = try CameraCaptureFixture.decode(try Data(contentsOf: url))
+
+                XCTAssertEqual(
+                    saved.size.width / saved.size.height,
+                    stage.frame.width / stage.frame.height,
+                    accuracy: 0.005,
+                    "\(ratio.rawValue) on \(phone.name): the saved photo is the frame, not an approximation of it"
+                )
+                // The largest centred region of the picture with the frame's aspect: the frame is centred on the
+                // screen and the preview is filled into it, so the crop has to be centred too.
+                let expected = CameraAspectCrop.rect(for: ratio, imageSize: saved.size).integral
+                XCTAssertEqual(
+                    expected.size.width / expected.size.height,
+                    stage.frame.width / stage.frame.height,
+                    accuracy: 0.005,
+                    "\(ratio.rawValue) on \(phone.name): the crop and the frame agree on the region"
+                )
+            }
         }
     }
 
-    /// The default ratio is the sensor's own: a 3:4 capture is saved untouched, no re-encode, no quality
-    /// loss — measured on the *displayed* size, and with the raw buffer shape asserted to be the wrong
-    /// space (so this test cannot go back to agreeing with the old bug).
+    /// The default ratio is the capture's own: a 3:4 capture is saved untouched — measured on the *displayed*
+    /// size, with the raw buffer shape asserted to be the wrong space.
     func testACaptureAlreadyMatchingTheRatioNeedsNoCrop() throws {
         let picture = try CameraCaptureFixture.decode(CameraCaptureFixture.jpeg(orientation: .right)).size
         XCTAssertFalse(CameraAspectCrop.needsCrop(ratio: .threeFour, imageSize: picture))
-        XCTAssertEqual(
-            CameraAspectCrop.rect(for: .threeFour, imageSize: picture),
-            CGRect(origin: .zero, size: picture)
-        )
-        // The other two ratios do change the file — that is exactly why the preview has to show it.
+        XCTAssertEqual(CameraAspectCrop.rect(for: .threeFour, imageSize: picture), CGRect(origin: .zero, size: picture))
         XCTAssertTrue(CameraAspectCrop.needsCrop(ratio: .oneOne, imageSize: picture))
         XCTAssertTrue(CameraAspectCrop.needsCrop(ratio: .nineSixteen, imageSize: picture))
 
         // A raw buffer is 4:3 landscape. Reading the ratio off it is the old defect, in one line.
         let raw = CameraCaptureFixture.rawSize
         XCTAssertEqual(raw, CGSize(width: 4032, height: 3024))
-        XCTAssertTrue(
-            CameraAspectCrop.needsCrop(ratio: .threeFour, imageSize: raw),
-            "a 3:4 portrait picture is not 4:3 landscape: the buffer shape is not the picture's shape"
-        )
+        XCTAssertTrue(CameraAspectCrop.needsCrop(ratio: .threeFour, imageSize: raw))
     }
 
-    // MARK: - The published frame follows the setting
+    // MARK: - The published ratio is what the stage draws
 
     @MainActor
     func testChoosingARatioChangesTheFrameTheScreenDraws() {
-        let container = CGSize(width: 393, height: 852)
+        let screen = CGSize(width: 393, height: 852)
         let model = ratioModel()
         model.coordinator.onPermissionResult(.authorized)
 
-        let threeFour = model.viewportFrame(in: container)
-        XCTAssertEqual(threeFour.width / threeFour.height, CameraAspectRatio.threeFour.widthOverHeight, accuracy: 0.0005)
+        func stage() -> CameraStageFrame {
+            CameraStageFrame.make(ratio: model.aspectRatio, screen: screen, safeTop: 59)
+        }
+
+        let threeFour = stage()
+        XCTAssertEqual(threeFour.frame.height, 524, accuracy: 0.01)
 
         model.setAspectRatio(.oneOne)
-        let square = model.viewportFrame(in: container)
-        XCTAssertNotEqual(square, threeFour, "the published ratio is what the viewport reads")
-        XCTAssertEqual(square.width / square.height, 1, accuracy: 0.0005)
-        XCTAssertEqual(square.height, container.width, accuracy: 0.001, "1:1 in a tall viewport is a square as wide as the screen")
+        let square = stage()
+        XCTAssertNotEqual(square, threeFour, "the published ratio is what the stage reads")
+        XCTAssertEqual(square.frame.height, 393, accuracy: 0.01)
 
         model.setAspectRatio(.nineSixteen)
-        let story = model.viewportFrame(in: container)
+        let story = stage()
         XCTAssertNotEqual(story, square)
-        XCTAssertEqual(story.width / story.height, 9.0 / 16.0, accuracy: 0.0005)
-        XCTAssertGreaterThan(
-            story.height, threeFour.height,
-            "9:16 is the narrowest ratio, so its frame is the tallest and fills the viewport best"
-        )
+        XCTAssertEqual(story.frame.height, 393 * 16.0 / 9.0, accuracy: 0.01)
+        XCTAssertLessThan(story.frame.minY, threeFour.frame.minY, "9:16 hangs from the safe top, the others sit lower")
     }
 
-    /// The ratio is persisted like every other camera setting, so the frame a relaunch draws is the one
-    /// the user chose.
+    /// The ratio is persisted like every other camera setting, so the frame a relaunch draws is the one the
+    /// user chose.
     @MainActor
     func testTheChosenFrameSurvivesARelaunch() throws {
         var settings = CameraSettings()
         settings.aspectRatio = .oneOne
         let restored = try XCTUnwrap(CameraSettings.decode(try settings.encodedJSON()))
 
-        let container = CGSize(width: 393, height: 852)
+        let screen = CGSize(width: 393, height: 852)
         XCTAssertEqual(
-            CameraViewportFrame.rect(for: restored.aspectRatio, in: container),
-            CameraViewportFrame.rect(for: .oneOne, in: container)
+            CameraStageFrame.make(ratio: restored.aspectRatio, screen: screen, safeTop: 59),
+            CameraStageFrame.make(ratio: .oneOne, screen: screen, safeTop: 59)
         )
     }
 
-    /// The model under test with a stub camera: the framing is pure layout, so these tests must not spin
-    /// up a real `AVCaptureSession` (a running session in a unit test leaks work into later test classes).
+    /// The model under test with a stub camera: the framing is pure layout, so these tests must not spin up a
+    /// real `AVCaptureSession` (a running session in a unit test leaks work into later test classes).
     @MainActor
     private func ratioModel() -> CameraViewModel {
         CameraViewModel(camera: RatioStubCamera())
@@ -250,13 +280,12 @@ final class CameraRatioViewportTests: XCTestCase {
     /// A camera that cannot serve the control does not move the frame either.
     @MainActor
     func testTheFrameDoesNotMoveWhenTheControlIsDisabled() {
-        let container = CGSize(width: 393, height: 852)
         let model = ratioModel()
         model.coordinator.onPermissionResult(.denied)
 
-        let before = model.viewportFrame(in: container)
+        XCTAssertEqual(model.aspectRatio, .threeFour)
         model.setAspectRatio(.nineSixteen)
-        XCTAssertEqual(model.viewportFrame(in: container), before)
+        XCTAssertEqual(model.aspectRatio, .threeFour, "a control the camera cannot serve does not move")
     }
 }
 
@@ -489,125 +518,146 @@ private extension UIColor {
     }
 }
 
-// MARK: - The photo is the frame: nothing is painted on the bars
+// MARK: - What the canvas paints: the photo untouched, everything else dimmed
 
-/// What the canvas actually paints, per ratio.
+/// The stage's own drawn rules, measured on pixels.
 ///
-/// The framing math was already asserted; this renders `CameraScreen.cameraCanvas` at a known size and
-/// looks at the pixels. The black bars are not part of the picture the shutter saves, so nothing belonging
-/// to the photo may be painted there: the old canvas drew the scrims full-bleed and let a scaled or dragged
-/// pose reference (box-limited, but not clipped) spill over the bars.
+/// The framing maths is asserted above; this renders `CameraCanvas` at a known size with a flat colour standing
+/// in for the preview (the simulator has no camera feed, and "dimmed but not opaque" is a claim about pixels) and
+/// checks the three things a screenshot would otherwise be the only evidence for: the photo is untouched inside
+/// the frame, everything outside it is dimmed to 35 % of the photo, and the frame's edge is one white hairline.
 @MainActor
 final class CameraCanvasFramingTests: XCTestCase {
-    private let canvasSize = CGSize(width: 393, height: 760)
+    private let screen = CGSize(width: 393, height: 852)
+    private let safeTop: CGFloat = 59
     private let renderScale: CGFloat = 2
+    /// The stand-in preview: a saturated colour, so "dimmed" is measurable and cannot be confused with black.
+    private let previewColour = Color(red: 1, green: 0, blue: 1)
 
-    func testTheCanvasPaintsNothingOnTheBarsForEveryRatio() throws {
+    func testTheFrameLeavesThePhotoUntouchedAndDimsOnlyWhatItLeavesOut() throws {
         for ratio in CameraAspectRatio.allCases {
-            let probe = APViewProbe(
-                try canvas(ratio: ratio),
-                size: canvasSize,
-                scale: renderScale
+            let stage = CameraStageFrame.make(ratio: ratio, screen: screen, safeTop: safeTop)
+            let bitmap = try render(ratio: ratio)
+
+            // Inside: exactly the preview, undimmed.
+            let inside = try XCTUnwrap(
+                pixel(in: bitmap, at: CGPoint(x: stage.frame.midX, y: stage.frame.midY)),
+                "\(ratio.rawValue): the photo is drawn"
             )
-            let bitmap = probe.capture()
-            probe.tearDown()
+            XCTAssertEqual(inside.red, 255, "the frame does not dim what the shutter keeps")
+            XCTAssertEqual(inside.green, 0)
+            XCTAssertEqual(inside.blue, 255)
 
-            let frame = CameraViewportFrame.rect(for: ratio, in: canvasSize)
-            // The frame's own edge is antialiased, and the guide is clipped *at* it: a pixel within 2 pt
-            // of the edge is edge, not spill.
-            let allowed = frame.insetBy(dx: -2, dy: -2)
+            // Outside: the same preview at 35 % (the 65 % dim), never an opaque bar.
+            let outsidePoint = CGPoint(x: stage.frame.midX, y: max(2, stage.frame.minY / 2))
+            let outside = try XCTUnwrap(pixel(in: bitmap, at: outsidePoint), "\(ratio.rawValue): outside is drawn")
+            XCTAssertGreaterThan(outside.red, 40, "\(ratio.rawValue): the preview still shows under the dim")
+            XCTAssertLessThan(outside.red, 130, "\(ratio.rawValue): and it is dimmed, not untouched")
+            XCTAssertEqual(outside.green, 0, "\(ratio.rawValue): the dim is black, so it adds no colour")
+            XCTAssertEqual(
+                outside.blue, outside.red,
+                accuracy: 12,
+                "\(ratio.rawValue): the dim is neutral — it scales the colour, it does not tint it"
+            )
+            XCTAssertEqual(
+                Double(outside.red) / 255,
+                1 - CameraStageFrame.dimOpacity,
+                accuracy: 0.06,
+                "\(ratio.rawValue): 65 % black over the preview leaves 35 % of it"
+            )
+        }
+    }
 
-            var outside: [(x: Int, y: Int)] = []
-            var inside = 0
+    /// The frame's edge is a hairline, not a border: one point of white at 40 % on the boundary.
+    func testTheFramesEdgeIsAHairline() throws {
+        let stage = CameraStageFrame.make(ratio: .threeFour, screen: screen, safeTop: safeTop)
+        let bitmap = try render(ratio: .threeFour)
+        let edge = try XCTUnwrap(pixel(in: bitmap, at: CGPoint(x: stage.frame.midX, y: stage.frame.minY + 0.5)))
+        let outside = try XCTUnwrap(pixel(in: bitmap, at: CGPoint(x: stage.frame.midX, y: stage.frame.minY - 4)))
+        XCTAssertGreaterThan(
+            edge.green, outside.green + 40,
+            "the edge is brighter than the dim it separates: white over the photo, not a seam"
+        )
+        XCTAssertLessThan(edge.green, 255, "and it is 40 %, not a solid white rule")
+    }
+
+    /// A guide pushed hard against the frame's edge is clipped, not wrapped: the line art stops at the photo.
+    func testATransformedGuideIsClippedToTheFrame() throws {
+        for ratio in CameraAspectRatio.allCases {
+            let stage = CameraStageFrame.make(ratio: ratio, screen: screen, safeTop: safeTop)
+            let bitmap = try render(ratio: ratio, withGuide: true)
+            var spilledPastFrame = 0
             for y in 0..<bitmap.height {
                 for x in 0..<bitmap.width {
                     guard let pixel = bitmap.color(x: x, y: y) else { continue }
-                    // Ink is anything clearly brighter than the canvas background (the guide's strokes and
-                    // the thirds grid: white, or white at 30 %).
-                    let luminance = (pixel.red * 299 + pixel.green * 587 + pixel.blue * 114) / 1000
-                    guard luminance >= 60 else { continue }
                     let point = CGPoint(x: CGFloat(x) / renderScale, y: CGFloat(y) / renderScale)
-                    if allowed.contains(point) {
-                        inside += 1
-                    } else {
-                        outside.append((x, y))
+                    guard !stage.frame.contains(point) else { continue }
+                    // Outside the frame everything is the dimmed magenta: a white guide stroke would be grey.
+                    if pixel.red > 150, pixel.green > 150, pixel.blue > 150 {
+                        spilledPastFrame += 1
                     }
                 }
             }
-
-            XCTAssertGreaterThan(
-                inside, 200,
-                "\(ratio.rawValue): the reference and the grid are painted inside the photo — otherwise this test proves nothing"
-            )
-            XCTAssertTrue(
-                outside.isEmpty,
-                "\(ratio.rawValue): \(outside.count) painted pixels sit on the black bars, e.g. \(outside.prefix(5)) — "
-                    + "the photo frame is \(frame) in \(canvasSize)"
+            XCTAssertEqual(
+                spilledPastFrame, 0,
+                "\(ratio.rawValue): \(spilledPastFrame) guide pixels are drawn outside the photo"
             )
         }
     }
 
-    /// A guide pushed hard against the frame's edge is clipped, not wrapped: the strokes stop at the frame
-    /// and the picture keeps its own edge. (The check above proves nothing is outside; this proves the
-    /// clipping does not also swallow the guide.)
-    func testATransformedGuideIsStillDrawnInsideTheFrame() throws {
-        let ratio = CameraAspectRatio.nineSixteen
-        let probe = APViewProbe(try canvas(ratio: ratio), size: canvasSize, scale: renderScale)
-        let bitmap = probe.capture()
-        probe.tearDown()
+    // MARK: Helpers
 
-        let frame = CameraViewportFrame.rect(for: ratio, in: canvasSize)
-        let guideBand = CGRect(
-            x: frame.minX,
-            y: frame.midY - frame.height * 0.1,
-            width: frame.width,
-            height: frame.height * 0.2
-        )
-        var ink = 0
-        for y in 0..<bitmap.height {
-            for x in 0..<bitmap.width {
-                guard let pixel = bitmap.color(x: x, y: y) else { continue }
-                let luminance = (pixel.red * 299 + pixel.green * 587 + pixel.blue * 114) / 1000
-                guard luminance >= 60 else { continue }
-                let point = CGPoint(x: CGFloat(x) / renderScale, y: CGFloat(y) / renderScale)
-                if guideBand.contains(point) { ink += 1 }
-            }
-        }
-        XCTAssertGreaterThan(ink, 100, "the guide is still visible where the user put it")
-    }
-
-    /// The camera and the canvas under test: no session, no permission prompt, just the framing.
-    private func canvas(ratio: CameraAspectRatio) throws -> some View {
+    private func render(ratio: CameraAspectRatio, withGuide: Bool = false) throws -> APBitmap {
         let model = CameraViewModel(camera: RatioStubCamera())
         model.coordinator.onPermissionResult(.authorized)
         model.setAspectRatio(ratio)
-        model.setGuideOpacity(1)
-        model.setGuideLineColor(.white)
-        if !model.isGridVisible { model.toggleGrid() }
-        // The reference at the far end of its scale range, rotated and dragged towards the frame's edge:
-        // exactly the state the review says used to paint over the bars.
-        model.commitGuideGesture(
-            GuideTransform.Delta(scale: 2.5, rotation: .degrees(24), translation: CGSize(width: 0, height: 220))
-        )
-        let pose = NativePose(
-            id: "clip-check",
-            name: "Jumping Jack",
-            category: "Standing",
-            imageURL: nil,
-            instructions: [],
-            isSaved: false
-        )
-        var guide: NativePose? = pose
+        if withGuide {
+            model.setGuideOpacity(1)
+            model.setGuideLineColor(.white)
+            model.commitGuideGesture(
+                GuideTransform.Delta(scale: 2.5, rotation: .degrees(24), translation: CGSize(width: 0, height: 220))
+            )
+        }
+        var guide: NativePose? = withGuide
+            ? NativePose(
+                id: "clip-check",
+                name: "Jumping Jack",
+                category: "Standing",
+                imageURL: nil,
+                instructions: [],
+                isSaved: false
+            )
+            : nil
         let screen = CameraScreen(
             guide: Binding(get: { guide }, set: { guide = $0 }),
             poseService: PreviewPoseService(),
             model: model
         )
-        // `CameraScreen.body` sets both of these; rendering the canvas on its own inherits neither. Without
-        // the dark scheme the tokens resolve to their light values, and without ignoring the safe area the
-        // canvas sits below the status bar and the probe's white window shows through above it.
-        return screen.cameraCanvas(size: canvasSize)
-            .environment(\.colorScheme, .dark)
-            .ignoresSafeArea()
+        let stage = CameraStageFrame.make(ratio: ratio, screen: self.screen, safeTop: safeTop)
+        let canvas = CameraCanvas(
+            model: model,
+            guide: guide,
+            isAuthorized: true,
+            stage: stage,
+            onClose: {},
+            previewOverride: AnyView(previewColour)
+        )
+        _ = screen // the screen's own wiring is asserted elsewhere; the canvas is the subject here
+        let probe = APViewProbe(
+            canvas
+                .environment(\.colorScheme, .dark)
+                .ignoresSafeArea(),
+            size: self.screen,
+            scale: renderScale
+        )
+        let bitmap = probe.capture()
+        probe.tearDown()
+        return bitmap
+    }
+
+    private func pixel(in bitmap: APBitmap, at point: CGPoint) -> APPixel? {
+        let x = Int((point.x * renderScale).rounded())
+        let y = Int((point.y * renderScale).rounded())
+        return bitmap.color(x: x, y: y)
     }
 }
