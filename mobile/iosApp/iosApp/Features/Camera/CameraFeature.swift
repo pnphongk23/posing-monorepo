@@ -1049,6 +1049,12 @@ struct CameraScreen: View {
     /// The window's insets. The camera draws edge to edge, so this is what the chrome and the photo frame are
     /// positioned from — never a hard-coded phone.
     @State private var safeAreaInsets = CameraSafeArea.Insets()
+    /// Stands in for the camera feed. The simulator has none, so a rendered test paints a known image behind
+    /// the stage and measures what the chrome does to it.
+    private let preview: AnyView?
+    /// The window's insets, stated by a rendered test: the test host has no window safe area, and the chrome
+    /// and the photo frame are positioned from it.
+    private let windowInsets: CameraSafeArea.Insets?
 
     init(
         guide: Binding<NativePose?>,
@@ -1058,7 +1064,9 @@ struct CameraScreen: View {
         premiumGate: any PremiumGateProviding = PremiumGateModel(),
         onPremiumRequired: @escaping (Bool) -> Void = { _ in },
         savedPoses: any CameraSavedPosesProviding = CatalogueSavedPosesService(),
-        model: @autoclosure @escaping () -> CameraViewModel? = nil
+        model: @autoclosure @escaping () -> CameraViewModel? = nil,
+        preview: AnyView? = nil,
+        windowInsets: CameraSafeArea.Insets? = nil
     ) {
         _guide = guide
         self.poseService = poseService
@@ -1072,6 +1080,8 @@ struct CameraScreen: View {
         ))
         _posePickerModel = StateObject(wrappedValue: PosePickerViewModel(service: poseService))
         _savedPosesModel = StateObject(wrappedValue: CameraSavedPosesModel(provider: savedPoses))
+        self.preview = preview
+        self.windowInsets = windowInsets
     }
 
     /// Legacy UIKit host and previews without an injected pose service.
@@ -1094,7 +1104,8 @@ struct CameraScreen: View {
                         screen: proxy.size,
                         safeTop: safeAreaInsets.top
                     ),
-                    onClose: onClose
+                    onClose: onClose,
+                    previewOverride: preview
                 )
             }
 
@@ -1130,8 +1141,9 @@ struct CameraScreen: View {
                     )
                 }
                 .ignoresSafeArea(edges: .bottom)
+                // The camera stays live and undimmed behind the sheet: only an outside tap dismisses it.
                 .background(
-                    AP.Color.scrim
+                    Color.clear
                         .contentShape(Rectangle())
                         .onTapGesture { model.closeGuideAdjust() }
                 )
@@ -1167,7 +1179,7 @@ struct CameraScreen: View {
         .task { await model.onAppear() }
         .onAppear {
             model.guideAppeared(hasGuide: guide != nil)
-            safeAreaInsets = CameraSafeArea.read()
+            safeAreaInsets = windowInsets ?? CameraSafeArea.read()
         }
         .onDisappear { model.onDisappear() }
         .task(id: model.showPosePicker) {
@@ -1188,7 +1200,7 @@ struct CameraScreen: View {
             switch phase {
             case .active:
                 model.coordinator.onForeground()
-                safeAreaInsets = CameraSafeArea.read()
+                safeAreaInsets = windowInsets ?? CameraSafeArea.read()
             case .background:
                 model.coordinator.onBackground()
                 Task { await model.flushSettings() }
@@ -1218,7 +1230,8 @@ struct CameraScreen: View {
             guide: guide,
             isAuthorized: isAuthorized,
             stage: CameraStageFrame.make(ratio: model.aspectRatio, screen: size, safeTop: safeTop),
-            onClose: onClose
+            onClose: onClose,
+            previewOverride: preview
         )
     }
 

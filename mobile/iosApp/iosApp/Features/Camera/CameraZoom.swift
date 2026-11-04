@@ -136,20 +136,24 @@ struct CameraZoomSlider: View {
             GeometryReader { proxy in
                 let trackWidth = max(proxy.size.width - thumbSize, 1)
                 let thumbX = thumbSize / 2 + trackWidth * CameraZoomScale.fraction(of: factor, in: range)
+                let trackY = thumbSize / 2
 
                 ZStack(alignment: .leading) {
                     Capsule()
                         .fill(Color.white.opacity(0.4))
                         .frame(height: 2)
                         .padding(.horizontal, thumbSize / 2)
+                        .position(x: proxy.size.width / 2, y: trackY)
 
-                    tickMarks(trackWidth: trackWidth)
+                    // The stops sit under the track with their labels, so a label never sits on the line the
+                    // thumb is read against.
+                    tickMarks(trackWidth: trackWidth, trackY: trackY)
                         .padding(.horizontal, thumbSize / 2)
 
                     Circle()
                         .fill(AP.Color.surface)
                         .frame(width: thumbSize, height: thumbSize)
-                        .position(x: thumbX, y: proxy.size.height / 2)
+                        .position(x: thumbX, y: trackY)
                         .shadow(color: .black.opacity(0.35), radius: 2, y: 1)
                 }
                 .frame(width: proxy.size.width, height: proxy.size.height)
@@ -163,7 +167,7 @@ struct CameraZoomSlider: View {
                         }
                 )
             }
-            .frame(height: 26)
+            .frame(height: 38)
         }
         .opacity(isEnabled ? 1 : 0.45)
         .accessibilityElement()
@@ -206,21 +210,19 @@ struct CameraZoomSlider: View {
     }
 
     /// A tick per preset the lens serves, with its label under it.
-    private func tickMarks(trackWidth: CGFloat) -> some View {
-        ZStack(alignment: .top) {
-            ForEach(CameraZoomScale.ticks(in: range)) { preset in
-                let x = trackWidth * CameraZoomScale.fraction(of: preset.factor, in: range)
-                VStack(spacing: 2) {
-                    Rectangle()
-                        .fill(Color.white.opacity(0.6))
-                        .frame(width: 1, height: 6)
-                    Text(CameraZoomScale.valueLabel(preset.factor))
-                        .font(.system(size: 9, weight: .medium))
-                        .foregroundStyle(Color.white.opacity(0.8))
-                        .fixedSize()
-                }
-                .position(x: x, y: 3)
+    private func tickMarks(trackWidth: CGFloat, trackY: CGFloat) -> some View {
+        ForEach(CameraZoomScale.ticks(in: range)) { preset in
+            let x = trackWidth * CameraZoomScale.fraction(of: preset.factor, in: range)
+            VStack(spacing: 2) {
+                Rectangle()
+                    .fill(Color.white.opacity(0.6))
+                    .frame(width: 1, height: 6)
+                Text(CameraZoomScale.valueLabel(preset.factor))
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(Color.white.opacity(0.8))
+                    .fixedSize()
             }
+            .position(x: x, y: trackY + 16)
         }
         .accessibilityHidden(true)
     }

@@ -2547,6 +2547,77 @@ final class CameraGuideScaleTests: XCTestCase {
     }
 }
 
+/// The camera stage as the *screen* composes it: preview, dim, frame, chrome. The canvas has its own pixel
+/// tests; this one drives the real screen, with the window's insets stated and a stand-in image where the
+/// camera feed would be (a simulator has none), so "the preview is full screen and only the photo is
+/// undimmed" is asserted on the thing the app actually shows.
+@MainActor
+final class CameraScreenStageTests: XCTestCase {
+    private let phone = CameraSafeArea.Insets(top: 59, bottom: 34)
+    private let size = CGSize(width: 393, height: 852)
+    /// A bright stand-in for the photo: a dim over it is measurable, and so is leaving it alone.
+    private let previewColour = Color(red: 1, green: 0, blue: 1)
+
+    func testTheScreensPreviewIsFullBleedAndOnlyTheFrameIsUndimmed() throws {
+        for ratio in CameraAspectRatio.allCases {
+            let bitmap = try renderScreen(ratio: ratio)
+            let frame = CameraStageFrame.make(ratio: ratio, screen: size, safeTop: phone.top).frame
+
+            // Above the frame, clear of the top controls' buttons: the preview covers the whole screen and is
+            // dimmed there — never an opaque bar, and never the plain background.
+            let band = max(2, Int(frame.minY / 2))
+            for x in [8, Int(size.width) - 8] {
+                let pixel = try XCTUnwrap(bitmap.color(x: x, y: band))
+                XCTAssertGreaterThan(pixel.red, 40, "\(ratio.rawValue) at (\(x), \(band)): the preview shows through")
+                XCTAssertLessThan(pixel.red, 150, "\(ratio.rawValue) at (\(x), \(band)): and it is dimmed")
+            }
+
+            // Inside the frame the photo is untouched.
+            let inside = try XCTUnwrap(
+                bitmap.color(x: Int(frame.midX), y: Int(frame.midY)),
+                "\(ratio.rawValue): the frame's middle is painted"
+            )
+            XCTAssertGreaterThan(inside.red, 200, "\(ratio.rawValue): the photo inside the frame is not dimmed")
+        }
+    }
+
+    private func renderScreen(ratio: CameraAspectRatio) throws -> APBitmap {
+        var guide: NativePose? = NativePose(
+            id: "p1",
+            name: "Warrior II",
+            category: "Yoga",
+            imageURL: nil,
+            instructions: [],
+            isSaved: false
+        )
+        let model = CameraViewModel()
+        model.coordinator.onPermissionResult(.authorized)
+        model.setAspectRatio(ratio)
+        model.setGuideLineColor(.green)
+        let screen = CameraScreen(
+            guide: Binding(get: { guide }, set: { guide = $0 }),
+            poseService: PreviewPoseService(),
+            model: model,
+            preview: AnyView(previewColour),
+            windowInsets: phone
+        )
+        let host = UIHostingController(rootView: screen)
+        host.overrideUserInterfaceStyle = .dark
+        host.view.frame = CGRect(origin: .zero, size: size)
+        host.view.layoutIfNeeded()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.08))
+        host.view.setNeedsLayout()
+        host.view.layoutIfNeeded()
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = 1
+        format.opaque = true
+        let image = UIGraphicsImageRenderer(size: size, format: format).image { _ in
+            host.view.drawHierarchy(in: CGRect(origin: .zero, size: size), afterScreenUpdates: true)
+        }
+        return try XCTUnwrap(APBitmap(image: image))
+    }
+}
+
 /// The guide-adjust sheet: the reference's own controls, moved off the tools popover, over a live camera.
 @MainActor
 final class CameraGuideAdjustTests: XCTestCase {
@@ -3239,7 +3310,8 @@ final class CameraChromeContractTests: XCTestCase {
         var chips: [Range<Int>] = []
         var selectedCount = 0
         for row in stride(from: Int(card.maxY) - 4, through: Int(card.maxY) - 52, by: -1) {
-            // A chip's fill is split by the glyphs drawn on it, so runs closer than 12 pt are one chip.
+            // A chip's fill is split by the glyphs drawn on it, so runs separated by a letter gap are one chip —
+            // while the gap between two chips (4 pt) keeps them apart.
             let chosen = mergedRuns(bitmap, row: row, hex: selected).filter { $0.count >= 20 && $0.count <= 90 }
             let plain = mergedRuns(bitmap, row: row, hex: unselected).filter { $0.count >= 20 && $0.count <= 90 }
             guard chosen.count + plain.count == 3 else { continue }
@@ -3274,7 +3346,7 @@ final class CameraChromeContractTests: XCTestCase {
 
     /// The runs of `hex` on one row with neighbouring runs closer than `maxGap` merged: a chip's fill is split by
     /// the glyphs drawn on top of it, and a chip is what the caller counts.
-    private func mergedRuns(_ bitmap: APBitmap, row: Int, hex: UInt32, maxGap: Int = 12) -> [Range<Int>] {
+    private func mergedRuns(_ bitmap: APBitmap, row: Int, hex: UInt32, maxGap: Int = 3) -> [Range<Int>] {
         var merged: [Range<Int>] = []
         for run in allRuns(bitmap, row: row, hex: hex) {
             if let last = merged.last, run.lowerBound - last.upperBound <= maxGap {

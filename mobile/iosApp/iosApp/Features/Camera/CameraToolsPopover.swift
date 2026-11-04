@@ -123,12 +123,14 @@ struct CameraToolsPopup: View {
             Image(systemName: row.symbolName)
                 .font(AP.Font.body)
                 .foregroundStyle(AP.Color.primaryText)
-                .frame(width: 20)
+                .frame(width: 18)
                 .accessibilityHidden(true)
             Text(row.title)
-                .font(AP.Font.body)
+                .font(AP.Font.supporting)
                 .foregroundStyle(AP.Color.primaryText)
-            Spacer(minLength: AP.Space.space8)
+                .lineLimit(1)
+                .fixedSize()
+            Spacer(minLength: AP.Space.space4)
             control(for: row)
         }
         .padding(.horizontal, AP.Space.space8)
@@ -194,15 +196,15 @@ struct CameraToolsPopup: View {
             HStack(spacing: 2) {
                 if isSelected {
                     Image(systemName: "checkmark")
-                        .font(.system(size: 9, weight: .bold))
+                        .font(.system(size: 8, weight: .bold))
                         .accessibilityHidden(true)
                 }
                 Text(title)
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.system(size: 11, weight: .semibold))
                     .fixedSize()
             }
             .foregroundStyle(isSelected ? AP.Color.selectedForeground : AP.Color.primaryText)
-            .padding(.horizontal, AP.Space.space8)
+            .padding(.horizontal, 6)
             .frame(height: 28)
             .background(
                 RoundedRectangle(cornerRadius: AP.Radius.radius8, style: .continuous)

@@ -130,7 +130,8 @@ struct CameraGuideAdjustSheet: View {
             Text("\(Int((opacity * 100).rounded()))%")
                 .font(AP.Font.supporting)
                 .foregroundStyle(AP.Color.secondaryText)
-                .frame(width: 40, alignment: .trailing)
+                .lineLimit(1)
+                .frame(width: 48, alignment: .trailing)
                 .accessibilityHidden(true)
         }
         .frame(minHeight: 44)
@@ -206,7 +207,8 @@ struct CameraGuideAdjustSheet: View {
             Text(CameraGuideScale.label(scale))
                 .font(AP.Font.supporting)
                 .foregroundStyle(AP.Color.secondaryText)
-                .frame(width: 40, alignment: .trailing)
+                .lineLimit(1)
+                .fixedSize()
                 .accessibilityHidden(true)
         }
         .frame(minHeight: 44)
