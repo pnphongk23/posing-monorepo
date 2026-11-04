@@ -878,11 +878,11 @@ enum CameraImagePostProcess {
     }
 }
 
-/// Shutter timer (`05-camera-tools-sheet`: Off / 3 s / 10 s).
+/// Shutter timer (`05-camera-tools-sheet`: Off / 3s / 10s).
 enum CameraTimerSetting: String, CaseIterable, Identifiable, Sendable {
     case off = "Off"
-    case threeSeconds = "3 s"
-    case tenSeconds = "10 s"
+    case threeSeconds = "3s"
+    case tenSeconds = "10s"
 
     var id: String { rawValue }
     var seconds: Int {
@@ -897,6 +897,16 @@ enum CameraTimerSetting: String, CaseIterable, Identifiable, Sendable {
         case .off: return "camera.tools.timer.off"
         case .threeSeconds: return "camera.tools.timer.3s"
         case .tenSeconds: return "camera.tools.timer.10s"
+        }
+    }
+
+    /// A stored row from before the labels lost their space (`"3 s"`) still reads as its own timer.
+    static func stored(_ raw: String?) -> CameraTimerSetting? {
+        guard let raw else { return nil }
+        switch raw {
+        case "3 s": return .threeSeconds
+        case "10 s": return .tenSeconds
+        default: return CameraTimerSetting(rawValue: raw)
         }
     }
 }

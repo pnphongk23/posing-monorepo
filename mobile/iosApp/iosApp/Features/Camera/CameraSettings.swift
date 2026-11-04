@@ -160,8 +160,9 @@ extension CameraSettings: Codable {
             (try? container.decodeIfPresent(Double.self, forKey: .zoomFactor)) ?? nil ?? Double(defaults.zoom.factor)
         )
         isPickerExpanded = (try? container.decodeIfPresent(Bool.self, forKey: .isPickerExpanded)) ?? defaults.isPickerExpanded
-        timer = ((try? container.decodeIfPresent(String.self, forKey: .timer)) ?? nil)
-            .flatMap(CameraTimerSetting.init(rawValue:)) ?? defaults.timer
+        // Rows written before the chips lost their space ("3 s") still decode to their own timer.
+        timer = CameraTimerSetting.stored((try? container.decodeIfPresent(String.self, forKey: .timer)) ?? nil)
+            ?? defaults.timer
         aspectRatio = ((try? container.decodeIfPresent(String.self, forKey: .aspectRatio)) ?? nil)
             .flatMap(CameraAspectRatio.init(rawValue:)) ?? defaults.aspectRatio
     }

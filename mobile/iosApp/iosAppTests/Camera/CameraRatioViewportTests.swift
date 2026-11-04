@@ -274,7 +274,7 @@ final class CameraRatioViewportTests: XCTestCase {
     /// real `AVCaptureSession` (a running session in a unit test leaks work into later test classes).
     @MainActor
     private func ratioModel() -> CameraViewModel {
-        CameraViewModel(camera: RatioStubCamera())
+        CameraViewModel(camera: RatioStubCamera(), settingsStore: InMemoryCameraSettingsStore())
     }
 
     /// A camera that cannot serve the control does not move the frame either.
@@ -608,7 +608,7 @@ final class CameraCanvasFramingTests: XCTestCase {
     // MARK: Helpers
 
     private func render(ratio: CameraAspectRatio, withGuide: Bool = false) throws -> APBitmap {
-        let model = CameraViewModel(camera: RatioStubCamera())
+        let model = CameraViewModel(camera: RatioStubCamera(), settingsStore: InMemoryCameraSettingsStore())
         model.coordinator.onPermissionResult(.authorized)
         model.setAspectRatio(ratio)
         if withGuide {

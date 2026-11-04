@@ -2590,7 +2590,7 @@ final class CameraScreenStageTests: XCTestCase {
             instructions: [],
             isSaved: false
         )
-        let model = CameraViewModel()
+        let model = CameraViewModel(settingsStore: InMemoryCameraSettingsStore())
         model.coordinator.onPermissionResult(.authorized)
         model.setAspectRatio(ratio)
         model.setGuideLineColor(.green)
@@ -2896,18 +2896,18 @@ final class CameraChromeBoardParityTests: XCTestCase {
 final class CameraGuideAdjustTests: XCTestCase {
     /// It opens only where there is something to adjust: a camera that works and a reference on screen.
     func testTheSheetNeedsACameraAndAReference() {
-        let noCamera = CameraViewModel()
+        let noCamera = CameraViewModel(settingsStore: InMemoryCameraSettingsStore())
         noCamera.coordinator.onPermissionResult(.denied)
         noCamera.guideAppeared(hasGuide: true)
         noCamera.openGuideAdjust()
         XCTAssertFalse(noCamera.showGuideAdjust, "a camera that cannot serve it does not open the sheet")
 
-        let noGuide = CameraViewModel()
+        let noGuide = CameraViewModel(settingsStore: InMemoryCameraSettingsStore())
         noGuide.coordinator.onPermissionResult(.authorized)
         noGuide.openGuideAdjust()
         XCTAssertFalse(noGuide.showGuideAdjust, "no reference, nothing to adjust")
 
-        let ready = CameraViewModel()
+        let ready = CameraViewModel(settingsStore: InMemoryCameraSettingsStore())
         ready.coordinator.onPermissionResult(.authorized)
         ready.guideAppeared(hasGuide: true)
         ready.openGuideAdjust()
@@ -2918,7 +2918,7 @@ final class CameraGuideAdjustTests: XCTestCase {
 
     /// One surface at a time: the sheet, the picker and the popover never stack on each other.
     func testTheSheetAndTheOtherSurfacesAreExclusive() {
-        let model = CameraViewModel()
+        let model = CameraViewModel(settingsStore: InMemoryCameraSettingsStore())
         model.coordinator.onPermissionResult(.authorized)
         model.guideAppeared(hasGuide: true)
 
@@ -2938,7 +2938,7 @@ final class CameraGuideAdjustTests: XCTestCase {
 
     /// The sheet's controls write the same state the gesture writes, and the palette is the sheet's four.
     func testTheSheetControlsWriteTheGuidelinesState() {
-        let model = CameraViewModel()
+        let model = CameraViewModel(settingsStore: InMemoryCameraSettingsStore())
         model.coordinator.onPermissionResult(.authorized)
         model.setGuideOpacity(0.6)
         XCTAssertEqual(model.guideOpacity, 0.6, accuracy: 0.0001)
@@ -3474,6 +3474,25 @@ final class CameraChromeContractTests: XCTestCase {
     }
 
     // MARK: Timer / Ratio option ids
+
+    /// The Timer chips read the board's words: "Off", "3s", "10s" — no space. The accessible name follows the
+    /// same spelling, so what a flow reads and what a VoiceOver user hears are one label.
+    func testTheTimerChipsReadTheBoardSpelling() {
+        XCTAssertEqual(CameraTimerSetting.allCases.map(\.rawValue), ["Off", "3s", "10s"])
+        XCTAssertEqual(CameraTimerSetting.threeSeconds.rawValue, "3s")
+        XCTAssertEqual(CameraTimerSetting.tenSeconds.rawValue, "10s")
+        XCTAssertFalse(CameraTimerSetting.threeSeconds.rawValue.contains(" "), "no space before the unit")
+    }
+
+    /// A row written before the spelling changed still decodes to its own timer.
+    func testALegacyTimerSpellingStillDecodes() throws {
+        let legacy = #"{"version":1,"timer":"3 s"}"#
+        XCTAssertEqual(try XCTUnwrap(CameraSettings.decode(legacy)).timer, .threeSeconds)
+        let legacyTen = #"{"version":1,"timer":"10 s"}"#
+        XCTAssertEqual(try XCTUnwrap(CameraSettings.decode(legacyTen)).timer, .tenSeconds)
+        XCTAssertEqual(CameraTimerSetting.stored("3s"), .threeSeconds)
+        XCTAssertEqual(CameraTimerSetting.stored("nonsense"), nil)
+    }
 
     /// Each Timer and Ratio choice is its own accessibility element with its own id, and each row keeps the
     /// handle the flows already use. The chips are one line per row now, so the row is the container and no chip
