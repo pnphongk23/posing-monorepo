@@ -11,16 +11,22 @@ iOS verify (do NOT write your own lock/sleep/pgrep loop — the script queues fo
   IOS_VERIFY_ONLY_TESTING=<Class1>,<Class2> scripts/ios-verify.sh   # iterate on the classes you touched
   scripts/ios-verify.sh --check-env         # disk + slots + simulator only, no build
 
-  Slots: slot 1 = sim 7CC9393C + /tmp/dd-shared; slot 2 = $IOS_VERIFY_SIM_2 + /tmp/dd-shared-2
-  (slot 2 only exists when IOS_VERIFY_SIM_2 is set). Locks: /tmp/ai-pose-slot-{1,2}; stale locks
+  Slots: slot 1 = sim 7CC9393C ("ai-pose-test", the QA lane) + /tmp/dd-shared;
+         slot 2 = $IOS_VERIFY_SIM_2 + /tmp/dd-shared-2, and the Feature lane's device is
+         CF871F97-1789-4490-B3E3-0B5EFA39F23F ("iPhone 16"), so Feature runs start with
+         IOS_VERIFY_SLOT=2 IOS_VERIFY_SIM_2=CF871F97-1789-4490-B3E3-0B5EFA39F23F
+         (slot 2 only exists when IOS_VERIFY_SIM_2 is set — it is never defaulted).
+         Locks: /tmp/ai-pose-slot-{1,2}; stale locks
   (dead holder, or older than 90 min) are reclaimed automatically, the slot is released on
   EXIT/INT/TERM. The script prints how long it waited. Max 2 concurrent verify runs; everyone else
   does code-only work. Never start a 3rd build by hand and never create a simulator.
   Env: IOS_VERIFY_SLOT=1|2 (force), IOS_VERIFY_SIM / IOS_VERIFY_DD (slot 1 override),
        IOS_VERIFY_TIMEOUT (1400s cap), IOS_VERIFY_FAKE_FREE_KB (fake disk reading for purge tests).
   Disk: below 3 GB free the script auto-purges only the user-approved list (testmanagerd
-  attachments of sims no slot holds, $TMPDIR/maestro_xctestrunner_* older than 10 min, /tmp/dd-*
-  nothing holds) and refuses only below 1.5 GB after that. Do not purge by hand.
+  attachments of sims that are neither a slot device nor held by a live slot, $TMPDIR/
+  maestro_xctestrunner_* older than 10 min, /tmp/dd-* nothing holds) and refuses only below 1.5 GB
+  after that. Do not purge by hand. Only the two slot simulators may exist — never create or clone
+  one — and the script shuts down/cleans only the slot's own UDID.
 
   Test classes for this slice: <name the exact classes, e.g. AppConfigTests,
   SessionScopeCoordinatorTests>. Iterate with -only-testing; run the FULL suite once before commit.

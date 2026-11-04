@@ -260,11 +260,11 @@ Tối đa 2 slot, **không bao giờ 3** (16 GB RAM). `IOS_VERIFY_SLOT=1|2` bu�
 trừ khi nó build trên sim. Không worker nào tự viết vòng sleep/pgrep/lock riêng.
 
 Đĩa: khi `/` dưới 3 GB script tự purge **đúng** danh sách user đã duyệt (R2) — attachments
-testmanagerd của mọi simulator không bị slot nào giữ (giữ file mới hơn 10 phút, bỏ qua
-"iPhone 16" `CF871F97…` và sim của slot đang chạy), `$TMPDIR/maestro_xctestrunner_*` cũ hơn
+testmanagerd của mọi simulator không phải thiết bị của slot (bỏ qua file mới hơn 10 phút, bỏ qua
+hai sim của slot 1 và slot 2 dù slot đó có đang chạy hay không), `$TMPDIR/maestro_xctestrunner_*` cũ hơn
 10 phút, và `/tmp/dd-*` mà không slot sống và không `xcodebuild` nào đang dùng — rồi đọc lại dung
 lượng và chỉ từ chối khi vẫn dưới 1.5 GB. Mỗi mục purge log kèm số byte giải phóng. Không bao giờ
-chạm QuanLyLop, `/tmp/qlh-*`, `marketing/`, simulator "iPhone 16", hay DerivedData của slot đang
+chạm QuanLyLop, `/tmp/qlh-*`, `marketing/`, hai simulator của slot, hay DerivedData của slot đang
 giữ. Archive/export đã upload **không** được purge (chưa có quy ước marker `uploaded`); đường
 archive dùng ngưỡng 5 GB (`MIN_FREE_ARCHIVE_KB`). `IOS_VERIFY_FAKE_FREE_KB` giả lập số dung lượng
 trống để test đường purge/refuse mà không phải làm đầy đĩa.
@@ -283,7 +283,8 @@ xanh với 0 test là false pass. Muốn kiểm môi trường (đĩa, slot, sim
 Bước cuối của **mọi** lần chạy (xanh hay đỏ, trap `EXIT`): script xoá **nội dung**
 `$HOME/Library/Developer/CoreSimulator/Devices/<slot-sim>/data/Library/Caches/com.apple.containermanagerd/Dead/`
 — container app chết do mỗi lần cài lại app — rồi in một dòng số byte giải phóng. Chỉ đúng
-simulator của slot vừa dùng (không bao giờ `CF871F97…`), chỉ thư mục `Dead/` và chỉ khi nó tồn
+simulator của slot vừa dùng (một trong hai UDID của slot, không bao giờ sim nào khác), chỉ thư mục
+`Dead/` và chỉ khi nó tồn
 tại; dọn dẹp **không** đổi exit code của lần verify.
 
 Mẫu dòng brief cho worker (slots, `-only-testing`, purge, env) nằm ở
