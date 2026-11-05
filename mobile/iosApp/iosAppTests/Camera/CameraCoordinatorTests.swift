@@ -349,3 +349,76 @@ final class CameraCaptureMirroringTests: XCTestCase {
         XCTAssertFalse(connection.isVideoMirrored)
     }
 }
+
+/// The preview and the still have to describe the same picture.
+///
+/// A session's default video stream is typically 16:9 while `AVCapturePhotoOutput` returns full-sensor 4:3
+/// stills. The ratio setting then crops the *still*, and the preview (aspect-filled into the frame) shows
+/// the centre of a 16:9 stream: the saved 3:4 photo would contain content around the frame the user framed
+/// and never saw. Pinning the session to `.photo` makes the preview and the still share the sensor's 4:3
+/// field of view.
+///
+/// `AVCaptureSession` cannot be configured in the simulator (there is no capture device to add), so the
+/// preset step is a seam — the same shape as `CameraCaptureMirroring` above — and this test drives the
+/// real decision the configure path calls.
+@MainActor
+final class CameraSessionPresetTests: XCTestCase {
+    /// Stands in for `AVCaptureSession`: records the preset it is given and can refuse it, like a device
+    /// whose active format does not support `.photo`.
+    private final class FakeSession: PhotoPresetSession {
+        var canSetPhoto = true
+        private(set) var presetRequests: [AVCaptureSession.Preset] = []
+        var sessionPreset: AVCaptureSession.Preset = .high
+
+        func canSetSessionPreset(_ preset: AVCaptureSession.Preset) -> Bool {
+            preset == .photo ? canSetPhoto : true
+        }
+    }
+
+    func testTheSessionIsPinnedToTheStillCapturePreset() {
+        let session = FakeSession()
+        XCTAssertEqual(session.sessionPreset, .high, "the default preset is not the still's preset")
+
+        CameraSessionPreset.pinPhotoPreset(on: session)
+
+        XCTAssertEqual(
+            session.sessionPreset,
+            .photo,
+            "a photo session keeps the preview and the still in the same 4:3 field of view"
+        )
+    }
+
+    /// Asking twice is free: re-configuring the session (a lens switch) must not pay for a preset change.
+    func testPinningAnAlreadyPinnedSessionDoesNothing() {
+        let session = FakeSession()
+        CameraSessionPreset.pinPhotoPreset(on: session)
+        let after = session.sessionPreset
+
+        CameraSessionPreset.pinPhotoPreset(on: session)
+        XCTAssertEqual(session.sessionPreset, after)
+    }
+
+    /// A session that refuses `.photo` keeps running: an unsupported preset must degrade to today's
+    /// behaviour, not throw and take the camera down with it.
+    func testASessionThatRefusesThePresetIsLeftAlone() {
+        let session = FakeSession()
+        session.canSetPhoto = false
+
+        CameraSessionPreset.pinPhotoPreset(on: session)
+
+        XCTAssertEqual(session.sessionPreset, .high, "the session keeps the preset it can serve")
+    }
+
+    /// The real session is the production target: this conformance is what makes the seam a wiring point
+    /// and not a test-only abstraction.
+    func testTheCaptureSessionConformsToThePresetSeam() {
+        let session: PhotoPresetSession = AVCaptureSession()
+        XCTAssertFalse(session.sessionPreset == .photo)
+        CameraSessionPreset.pinPhotoPreset(on: session)
+        XCTAssertEqual(
+            session.sessionPreset,
+            .photo,
+            "a real AVCaptureSession accepts .photo (the simulator has no input, and canSetSessionPreset still answers)"
+        )
+    }
+}

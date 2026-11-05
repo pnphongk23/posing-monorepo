@@ -64,28 +64,26 @@ final class CameraFeatureTests: XCTestCase {
         XCTAssertFalse(model.showPosePicker)
     }
 
-    func testCycleFlashIgnoredWhenControlsDisabled() {
+    func testFlashChipIsIgnoredWhenControlsDisabled() {
         let model = CameraViewModel()
         model.coordinator.onPermissionResult(.denied)
         let initial = model.flashSetting
-        model.cycleFlash()
+        model.setFlash(.on)
         XCTAssertEqual(model.flashSetting, initial)
     }
 
-    /// `toggle.js` / AC4: the Camera Tools row rotates `Off → Auto → On → Off`. The entry point is
-    /// the prototype's shipped default `Auto` (`camera-live.html:87`
-    /// `<span id="flash-value">Auto</span>`), so the ring is entered at `Auto`: Auto → On → Off → Auto.
-    /// Traversing the full ring still proves the `Off → Auto → On → Off` order.
-    func testCycleFlashFollowsPrototypeOffAutoOnOrder() {
+    /// The Flash row is three chips, so a choice applies exactly itself: there is no ring to cycle through and no
+    /// hidden next step. Auto stays the shipped default.
+    func testFlashIsChosenNotCycled() {
         let model = CameraViewModel()
         model.coordinator.onPermissionResult(.authorized)
-        XCTAssertEqual(model.flashSetting, .auto)
-        model.cycleFlash()
-        XCTAssertEqual(model.flashSetting, .on)
-        model.cycleFlash()
-        XCTAssertEqual(model.flashSetting, .off)
-        model.cycleFlash()
-        XCTAssertEqual(model.flashSetting, .auto)
+        XCTAssertEqual(model.flashSetting, .auto, "the shipped default")
+        for setting in CameraFlashSetting.toolsChoices {
+            model.setFlash(setting)
+            XCTAssertEqual(model.flashSetting, setting)
+        }
+        XCTAssertEqual(CameraFlashSetting.toolsChoices, [.off, .auto, .on], "the board's order")
+        XCTAssertEqual(CameraFlashSetting.toolsChoices.map(\.toolsSlug), ["off", "auto", "on"])
     }
 
     // MARK: - Capture gate (`FEAT-011` M1)
@@ -262,15 +260,15 @@ final class CameraFeatureTests: XCTestCase {
     func testSetGuideLineColorIgnoredWhenControlsDisabled() {
         let model = CameraViewModel()
         model.coordinator.onPermissionResult(.denied)
-        model.setGuideLineColor(.white)
-        XCTAssertEqual(model.guideLineColor, .black)
+        model.setGuideLineColor(.yellow)
+        XCTAssertEqual(model.guideLineColor, .pink, "a control the camera cannot serve does not move")
     }
 
     func testSetGuideLineColorWhenEnabled() {
         let model = CameraViewModel()
         model.coordinator.onPermissionResult(.authorized)
-        model.setGuideLineColor(.white)
-        XCTAssertEqual(model.guideLineColor, .white)
+        model.setGuideLineColor(.yellow)
+        XCTAssertEqual(model.guideLineColor, .yellow)
     }
 
     // MARK: Persisted defaults (FEAT-012)
@@ -321,14 +319,14 @@ final class CameraFeatureTests: XCTestCase {
         let model = CameraViewModel()
         model.coordinator.onPermissionResult(.authorized)
         model.setGuideOpacity(0.9)
-        model.setGuideLineColor(.white)
+        model.setGuideLineColor(.yellow)
         model.commitGuideGesture(.init(scale: 2, rotation: .degrees(30), translation: CGSize(width: 40, height: 40)))
 
         model.resetGuideTransform()
 
         XCTAssertEqual(model.guideTransform, GuideTransform())
         XCTAssertEqual(model.guideOpacity, 0.9, accuracy: 0.001)
-        XCTAssertEqual(model.guideLineColor, .white)
+        XCTAssertEqual(model.guideLineColor, .yellow)
     }
 
     /// `NativePose.imageURL` is the source photo; the camera must never draw it.
@@ -402,9 +400,12 @@ final class CameraFeatureTests: XCTestCase {
 
         let plain = try XCTUnwrap(renderCamera(guide: pose, placement: GuideTransform()))
         try write(plain, named: "camera-guide-line-art.png")
+        // The placement stays inside the photo: the reference is now clipped to the framing rect (it is a
+        // reference *for* the photo, never for the black bars), and a reference pushed past that edge is
+        // measured by `CameraCanvasFramingTests`, not by a centroid.
         let placed = try XCTUnwrap(renderCamera(
             guide: pose,
-            placement: GuideTransform(scale: 1.3, rotation: .degrees(12), offset: CGSize(width: 40, height: 60))
+            placement: GuideTransform(scale: 1.15, rotation: .degrees(12), offset: CGSize(width: 30, height: 50))
         ))
         try write(placed, named: "camera-guide-transformed.png")
 
@@ -472,53 +473,42 @@ final class CameraFeatureTests: XCTestCase {
         XCTAssertEqual(dragged.rotation, .zero)
     }
 
-    /// Zoom pill (`.nb-camera-zoom-slider` stops 1x → 2x → 3x)
-
-    func testZoomStartsAtOneXForTheAccessibilityLabel() {
-        let model = CameraViewModel()
-        XCTAssertEqual(model.zoomLevel, .one)
-        XCTAssertEqual("Zoom \(model.zoomLevel.label)", "Zoom 1x")
-    }
-
-    func testZoomCyclesThroughStopsAndWraps() {
-        XCTAssertEqual(CameraZoomLevel.one.next(), .two)
-        XCTAssertEqual(CameraZoomLevel.two.next(), .three)
-        XCTAssertEqual(CameraZoomLevel.three.next(), .one)
-    }
-
-    func testZoomFactorsMatchLabels() {
+    /// The stored stops the slider's factor is written back to for older readers.
+    func testTheStoredStopsMatchTheirFactors() {
         XCTAssertEqual(CameraZoomLevel.one.factor, 1)
         XCTAssertEqual(CameraZoomLevel.two.factor, 2)
         XCTAssertEqual(CameraZoomLevel.three.factor, 3)
     }
 
-    func testCycleZoomIgnoredWhenControlsDisabled() {
+    func testTheSliderIsIgnoredWhenTheCameraCannotServeIt() {
         let model = CameraViewModel()
         model.coordinator.onPermissionResult(.denied)
-        model.cycleZoom()
-        XCTAssertEqual(model.zoomLevel, .one)
+        model.setZoomFactor(2)
+        XCTAssertEqual(model.zoomFactor, 1, "a control the camera cannot serve does not move")
     }
 
-    func testCycleZoomAdvancesWhenEnabled() {
+    func testTheSliderSetsTheFactorAndClampsItToTheLens() {
         let model = CameraViewModel()
         model.coordinator.onPermissionResult(.authorized)
-        model.cycleZoom()
-        XCTAssertEqual(model.zoomLevel, .two)
+        // The simulator has no capture device: the lens fallback is 1...2.
+        XCTAssertEqual(model.zoomRange, 1...2)
+
+        model.setZoomFactor(1.5)
+        XCTAssertEqual(model.zoomFactor, 1.5, accuracy: 0.0001, "a continuous value, not a preset")
+
+        model.setZoomFactor(9)
+        XCTAssertEqual(model.zoomFactor, 2, accuracy: 0.0001, "the slider stops where the lens stops")
+        model.setZoomFactor(0.2)
+        XCTAssertEqual(model.zoomFactor, 1, accuracy: 0.0001)
     }
 
     // MARK: Camera tools geometry
 
-    /// The tools moved from the lower-right column to the top bar, so the popup now anchors *under*
-    /// the top control bar instead of above the old Choose-pose control.
+    /// The tools live in the top bar, drawn from the safe-area top, so the popover anchors *under* that row
+    /// instead of above the old Choose-pose control.
     func testPopupAnchorsUnderTheTopControlBar() {
-        XCTAssertEqual(CameraProto.topControlsTop, 62)
         XCTAssertEqual(AP.HitTarget.minimum, 44, "the anchor is the bar's 44 pt control plus 8 pt")
-    }
-
-    /// The width is the prototype's fixed 264; the height is not a constant any more — it is the safe
-    /// area the popover is given (`CameraChromeContractTests.testTheToolsPopoverUsesTheHeightItsSafeAreaHas`).
-    func testPopupKeepsItsWidth() {
-        XCTAssertEqual(CameraProto.popupWidth, 264)
+        XCTAssertEqual(CameraStageFrame.shortRatioTopInset, 45, "and the photo frame starts a point below it")
     }
 
     // MARK: Pose picker stick figures
@@ -564,7 +554,7 @@ final class CameraFeatureTests: XCTestCase {
         var guide: NativePose? = pose
         let model = CameraViewModel()
         model.coordinator.onPermissionResult(.authorized)
-        model.setGuideLineColor(.white)
+        model.setGuideLineColor(.yellow)
         model.setGuideOpacity(1)
         model.commitGuideGesture(.init(scale: placement.scale,
                                        rotation: placement.rotation,
@@ -646,7 +636,9 @@ final class CameraFeatureTests: XCTestCase {
                 let b = Int(pixels.bytes[index + 2])
                 let a = Int(pixels.bytes[index + 3])
                 guard a > 200 else { continue }
-                if r > 200, g > 200, b > 200 {
+                // The Line colour's ink: any of the sheet's bright palette colours (pink, yellow, green) and
+                // white, against the black preview the simulator draws.
+                if r > 190, g > 150, b > 40 {
                     result.whiteCount += 1
                     sumX += Double(col)
                     sumY += Double(row)
@@ -850,6 +842,393 @@ final class PosePickerCatalogueLoadTests: XCTestCase {
     }
 }
 
+// MARK: - The picker's search is the Search screen's search
+
+/// A remote with two distinct collections, so a wrong route changes the ids: `.all` merges the community rows with
+/// the account's saved rows, `.community` returns only the first and `.saved` only the second.
+private struct TwoCollectionPoseRemote: PoseRemoteFetching {
+    let community: [CommunityPose]
+    let saved: [CommunityPose]
+
+    func fetchCommunity(page: Int, limit: Int, query: String?) async throws -> PoseRemotePage {
+        PoseRemotePage(poses: community, total: community.count)
+    }
+
+    func fetchSaved(page: Int, limit: Int) async throws -> PoseRemotePage {
+        PoseRemotePage(poses: saved, total: saved.count)
+    }
+}
+
+private func routedPose(_ id: String, name: String) throws -> CommunityPose {
+    try JSONDecoder().decode(CommunityPose.self, from: Data("""
+    {"poseId":"\(id)","name":"\(name)","skeletonUrl":"/s.png","thumbnailUrl":"/t.jpg","status":"published"}
+    """.utf8))
+}
+
+/// Records the exact request each surface makes, so "the picker asks the Search screen's question" is a
+/// recorded fact rather than a shared comment. It can hold a request open (to deliver a *stale* answer
+/// late), fail every request (offline), and match on something other than the name (the server's own notion
+/// of relevance, which no local name filter can reproduce).
+private actor RecordingPoseSearchService: PoseServing {
+    /// One recorded window read. The route travels in the request now, so the double records it: a test can say
+    /// which collection the sheet asked for instead of inferring it from a service-wide slot.
+    struct Request: Equatable, Sendable {
+        let query: String?
+        let filter: PoseFilter
+        let offset: Int
+        let limit: Int
+    }
+
+    private let rows: [NativePose]
+    private let matches: @Sendable (NativePose, String) -> Bool
+    private var recorded: [Request] = []
+    private var held: [(query: String?, continuation: CheckedContinuation<PosePage, Error>)] = []
+    private var holdsSearches = false
+    private var fails = false
+
+    init(
+        rows: [NativePose],
+        matches: @escaping @Sendable (NativePose, String) -> Bool = { $0.name.localizedStandardContains($1) }
+    ) {
+        self.rows = rows
+        self.matches = matches
+    }
+
+    var requests: [Request] { recorded }
+    /// Only the query-bearing reads: the catalogue load is not a search.
+    var searchRequests: [Request] { recorded.filter { $0.query != nil } }
+
+    func holdSearches() { holdsSearches = true }
+    func failRequests(_ fail: Bool) { fails = fail }
+
+    func poses(query: String?) async throws -> [NativePose] {
+        try await posesPage(query: query, offset: 0, limit: PosesViewModel.Paging.pageSize).poses
+    }
+
+    func pose(id: String) async throws -> NativePose {
+        rows.first { $0.id == id } ?? rows[0]
+    }
+
+    /// The routed requirement: the one the sheet must call. A single-collection double answers its one list.
+    func posesPage(query: String?, filter: PoseFilter, offset: Int, limit: Int) async throws -> PosePage {
+        recorded.append(Request(query: query, filter: filter, offset: offset, limit: limit))
+        if holdsSearches, query != nil {
+            return try await withCheckedThrowingContinuation { held.append((query, $0)) }
+        }
+        if fails { throw URLError(.notConnectedToInternet) }
+        return answer(for: query)
+    }
+
+    /// The un-routed window (used by the catalogue load): it goes through the routed call with its own route.
+    func posesPage(query: String?, offset: Int, limit: Int) async throws -> PosePage {
+        try await posesPage(query: query, filter: .community, offset: offset, limit: limit)
+    }
+
+    func waitForSearchRequests(_ count: Int) async {
+        while searchRequests.count < count {
+            try? await Task.sleep(nanoseconds: 1_000_000)
+        }
+    }
+
+    /// Finishes the newest held request: the query the user is waiting for.
+    func releaseNewestHeld() {
+        guard !held.isEmpty else { return }
+        let next = held.removeLast()
+        next.continuation.resume(returning: answer(for: next.query))
+    }
+
+    /// Finishes the oldest held request: the query the user has already typed past.
+    func releaseOldestHeld() {
+        guard !held.isEmpty else { return }
+        let next = held.removeFirst()
+        next.continuation.resume(returning: answer(for: next.query))
+    }
+
+    private func answer(for query: String?) -> PosePage {
+        let term = (query ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let poses = term.isEmpty ? rows : rows.filter { matches($0, term) }
+        return PosePage(poses: poses, hasMore: false, consumed: poses.count)
+    }
+}
+
+/// The picker's All scope asks the server the question the Search screen asks — same call, same window, same
+/// rows — instead of filtering names client-side, and it keeps the local matcher only for what it has in hand
+/// (the first paint under a new query, and the whole answer offline).
+@MainActor
+final class CameraPickerServerSearchTests: XCTestCase {
+    private func pose(_ id: String, name: String, category: String = "Standing") -> NativePose {
+        NativePose(
+            id: id,
+            name: name,
+            category: category,
+            imageURL: nil,
+            instructions: [],
+            isSaved: false
+        )
+    }
+
+    private func picker(_ service: any PoseServing, debounce: UInt64 = 0) -> PosePickerViewModel {
+        PosePickerViewModel(service: service, searchDebounceNanoseconds: debounce)
+    }
+
+    /// Same query, same request, same rows, same order — measured on both surfaces' real code paths: the
+    /// picker's model and `PosesViewModel` (what the Search screen drives).
+    func testThePickerAndTheSearchScreenGetTheSameRowsForTheSameQuery() async throws {
+        let rows = [
+            pose("w1", name: "Warrior II"),
+            pose("d1", name: "Downward Dog"),
+            pose("c1", name: "Café lean"),
+        ]
+        let service = RecordingPoseSearchService(rows: rows)
+
+        let sheet = picker(service)
+        await sheet.load()
+        sheet.query = "warrior"
+        await waitUntil { !sheet.state.rows.isEmpty }
+
+        let searchScreen = PosesViewModel(service: service, debounceNanoseconds: 0)
+        // `SearchScreen.task` sets the source to `.all` on open; the model defaults to `.community`.
+        searchScreen.filter = .all
+        searchScreen.query = "warrior"
+        searchScreen.scheduleSearch()
+        await waitUntil {
+            if case .loaded = searchScreen.state { return true }
+            return false
+        }
+
+        XCTAssertEqual(
+            sheet.state.rows.map(\.id),
+            searchScreen.state.rows.map(\.id),
+            "the same query returns the same pose ids, in the same order, from both screens"
+        )
+        XCTAssertEqual(sheet.state.rows.map(\.id), ["w1"])
+
+        let requests = await service.searchRequests
+        XCTAssertEqual(requests.count, 2, "one search request per surface")
+        XCTAssertEqual(requests[0], requests[1], "and the two surfaces sent the same request")
+        XCTAssertEqual(
+            requests.last,
+            RecordingPoseSearchService.Request(
+                query: "warrior",
+                filter: .all,
+                offset: 0,
+                limit: PosesViewModel.Paging.pageSize
+            ),
+            "the Search screen's own window: the `.all` route, first page, the server's page size"
+        )
+        XCTAssertTrue(
+            requests.allSatisfy { $0.filter == .all },
+            "the sheet's All scope names its route in the request instead of leaning on a service-wide slot"
+        )
+    }
+
+    /// The routed requirement, proved on the **real adapter** Feature's route tests use: the picker's All scope and
+    /// the Search screen send the same request and get the same ids in the same order — signed in (the merged
+    /// `.all` list) and signed out (the community feed, because `.all` degrades without a session).
+    ///
+    /// The adapter's own filter slot is set to `.saved` before the read: a picker that still leaned on that
+    /// service-wide slot would answer the saved rows, so this also pins that the route travels in the request.
+    func testThePickerAndTheSearchScreenAgreeOnTheRoutedRequestSignedInAndOut() async throws {
+        let community = [try routedPose("c1", name: "Warrior flow"), try routedPose("c2", name: "Warrior II")]
+        let saved = [try routedPose("s1", name: "Warrior stretch")]
+
+        for signedIn in [true, false] {
+            let remote = TwoCollectionPoseRemote(community: community, saved: saved)
+            let slot = PoseFilterState()
+            let adapter = PoseAPIServiceAdapter(
+                remote: remote,
+                baseURL: "https://api.example.com",
+                filterState: slot,
+                hasSession: { signedIn }
+            )
+
+            let sheet = picker(adapter)
+            await sheet.load()
+            // A stale slot another screen may have left behind: the routed call must not read it.
+            slot.filter = .saved
+            sheet.query = "warrior"
+            await waitUntil { !sheet.state.rows.isEmpty }
+
+            let searchScreen = PosesViewModel(service: adapter, filterState: PoseFilterState(), debounceNanoseconds: 0)
+            // `SearchScreen.task` sets the source to `.all` on open.
+            searchScreen.filter = .all
+            searchScreen.query = "warrior"
+            searchScreen.scheduleSearch()
+            await waitUntil {
+                if case .loaded = searchScreen.state { return true }
+                return false
+            }
+
+            let expected = signedIn ? ["c1", "c2", "s1"] : ["c1", "c2"]
+            XCTAssertEqual(
+                sheet.state.rows.map(\.id), expected,
+                "signed in: the All scope is the merged library; signed out: the community feed"
+            )
+            XCTAssertEqual(
+                sheet.state.rows.map(\.id), searchScreen.state.rows.map(\.id),
+                "the picker and the Search screen return the same ids, in the same order (signedIn: \(signedIn))"
+            )
+        }
+    }
+
+    /// The rows the sheet draws are the server's answer, not a local name filter over it: a pose the server
+    /// matched by its category is shown even though its name does not contain the query.
+    func testAServerMatchIsNotFilteredOutByName() async {
+        let service = RecordingPoseSearchService(
+            rows: [pose("run1", name: "Sun salutation", category: "Cardio warrior flow")],
+            matches: { $0.category.localizedStandardContains($1) }
+        )
+        let sheet = picker(service)
+        await sheet.load()
+
+        sheet.query = "warrior"
+        await waitUntil { !sheet.state.rows.isEmpty }
+
+        XCTAssertEqual(
+            sheet.state.rows.map(\.id), ["run1"],
+            "the sheet shows what the server matched; a second local name filter would hide it"
+        )
+        XCTAssertEqual(sheet.stateTone, nil, "a populated grid draws no card")
+    }
+
+    /// A slow answer for a query the user has already typed past never lands.
+    func testAStaleAnswerCannotReplaceANewerQuery() async {
+        let service = RecordingPoseSearchService(rows: [
+            pose("warrior", name: "Warrior II"),
+            pose("walk", name: "City walk"),
+        ])
+        await service.holdSearches()
+        let sheet = picker(service)
+        await sheet.load()
+
+        sheet.query = "walk"
+        await service.waitForSearchRequests(1)
+        sheet.query = "warrior"
+        await service.waitForSearchRequests(2)
+
+        // The answer the user is waiting for arrives first...
+        await service.releaseNewestHeld()
+        await waitUntil { sheet.state.rows.map(\.id) == ["warrior"] }
+        XCTAssertEqual(sheet.state.rows.map(\.id), ["warrior"])
+
+        // ...and the abandoned one lands afterwards, with rows for a query nobody is looking at.
+        await service.releaseOldestHeld()
+        // Give the stale completion a turn to (wrongly) paint.
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertEqual(
+            sheet.state.rows.map(\.id), ["warrior"],
+            "an answer for an older query must not replace the newer query's rows"
+        )
+    }
+
+    /// Typing cancels the search that has not fired yet: one request, for the last text.
+    func testChangingTheQueryCancelsThePendingSearch() async {
+        let service = RecordingPoseSearchService(rows: [
+            pose("a", name: "Arms up"),
+            pose("b", name: "Warrior II"),
+        ])
+        let sheet = picker(service, debounce: 60_000_000)
+        await sheet.load()
+
+        sheet.query = "a"
+        sheet.query = "warrior"
+        await service.waitForSearchRequests(1)
+        try? await Task.sleep(nanoseconds: 120_000_000)
+
+        let requests = await service.searchRequests
+        XCTAssertEqual(requests.count, 1, "the keystroke cancelled the debounced search for \"a\"")
+        XCTAssertEqual(requests.first?.query, "warrior")
+        XCTAssertEqual(sheet.state.rows.map(\.id), ["b"])
+    }
+
+    /// While the answer is out, the grid narrows what is already in hand instead of blanking (or showing a
+    /// spinner over rows the sheet already has).
+    func testTheFirstPaintNarrowsWhatIsInHandWhileTheAnswerIsOut() async {
+        let service = RecordingPoseSearchService(rows: [
+            pose("w", name: "Warrior II"),
+            pose("d", name: "Downward Dog"),
+        ])
+        await service.holdSearches()
+        let sheet = picker(service)
+        await sheet.load()
+
+        sheet.query = "warrior"
+        XCTAssertEqual(
+            sheet.state.rows.map(\.id), ["w"],
+            "the first paint is the local matcher over the catalogue, with no request answered yet"
+        )
+        await service.waitForSearchRequests(1)
+        XCTAssertEqual(sheet.state.rows.map(\.id), ["w"], "and it holds while the request is out")
+
+        await service.releaseNewestHeld()
+        await waitUntil { !sheet.state.rows.isEmpty }
+        XCTAssertEqual(sheet.state.rows.map(\.id), ["w"], "the answer replaces it when it lands")
+    }
+
+    /// Offline the sheet cannot ask the server, so the local name filter is the whole answer — narrowed, with
+    /// the offline notice on top, never a blank or a dead-end card.
+    func testOfflineNarrowsWhatIsInHandInsteadOfBlanking() async {
+        let service = RecordingPoseSearchService(rows: [
+            pose("w", name: "Warrior II"),
+            pose("d", name: "Downward Dog"),
+        ])
+        let sheet = picker(service)
+        await sheet.load()
+        sheet.setOfflineForTesting(true)
+        await service.failRequests(true)
+
+        sheet.query = "warrior"
+        await waitUntil { sheet.state.rows.map(\.id) == ["w"] }
+        try? await Task.sleep(nanoseconds: 50_000_000)
+
+        XCTAssertEqual(sheet.state.rows.map(\.id), ["w"], "the catalogue's own matches are the offline answer")
+        XCTAssertTrue(sheet.showsOfflineNotice, "and the notice says the rows may be stale")
+        XCTAssertNil(sheet.stateTone, "a populated grid keeps its content area")
+    }
+
+    /// A query with nothing in hand and no answer is the failed/offline card, not a silent empty grid.
+    func testAQueryWithNothingInHandShowsTheOfflineCard() async {
+        let service = RecordingPoseSearchService(rows: [pose("w", name: "Warrior II")])
+        await service.failRequests(true)
+        let sheet = picker(service)
+        sheet.setOfflineForTesting(true)
+
+        sheet.query = "zzz"
+        await waitUntil { sheet.stateTone == .offline }
+        XCTAssertEqual(sheet.stateTone, .offline, "nothing in hand and nothing from the server: say why")
+    }
+
+    /// The window is closed at the first page: the sheet is a picker, not the Search screen's endless list.
+    func testTheSearchUsesTheFirstWindowOnly() async {
+        let service = RecordingPoseSearchService(rows: [pose("w", name: "Warrior II")])
+        let sheet = picker(service)
+        await sheet.load()
+
+        sheet.query = "warrior"
+        await service.waitForSearchRequests(1)
+
+        let requests = await service.searchRequests
+        XCTAssertEqual(requests.map(\.offset), [0])
+        XCTAssertEqual(requests.map(\.limit), [PosesViewModel.Paging.pageSize])
+    }
+
+    private func waitUntil(
+        timeout: TimeInterval = 3,
+        _ condition: @MainActor @escaping () async -> Bool,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) async {
+        let deadline = Date().addingTimeInterval(timeout)
+        while !(await condition()) {
+            if Date() > deadline {
+                XCTFail("condition not met within \(timeout)s", file: file, line: line)
+                return
+            }
+            try? await Task.sleep(nanoseconds: 2_000_000)
+        }
+    }
+}
+
 // MARK: - Picker scope (All / Saved)
 
 /// A Saved provider the test drives: `rows` for a success, `failure` for a failure, and an optional
@@ -910,17 +1289,23 @@ final class CameraPickerScopeTests: XCTestCase {
 
     // MARK: Scope switching
 
-    func testThePickerOpensOnAllAndSwitchingScopeClearsTheQuery() {
+    /// Search sits above the chips, and the chips *narrow* what the query already matched. A scope tap
+    /// therefore keeps the query: emptying the field would make "type a name, then pick a collection"
+    /// impossible, which is the order the sheet is laid out in.
+    func testThePickerOpensOnAllAndSwitchingScopeKeepsTheQuery() {
         let model = PosePickerViewModel(service: PreviewPoseService())
         XCTAssertEqual(model.scope, .all, "the picker opens on the catalogue")
 
         model.query = "arms"
         model.selectScope(.saved)
         XCTAssertEqual(model.scope, .saved)
-        XCTAssertEqual(model.query, "", "a scope switch never carries the other list's search")
+        XCTAssertEqual(model.query, "arms", "the Saved chip narrows the query instead of discarding it")
+
+        model.selectScope(.all)
+        XCTAssertEqual(model.query, "arms", "and the All chip keeps it on the way back")
 
         model.query = "walk"
-        model.selectScope(.saved)
+        model.selectScope(.all)
         XCTAssertEqual(model.query, "walk", "tapping the chip already selected is a no-op")
     }
 
@@ -984,6 +1369,39 @@ final class CameraPickerScopeTests: XCTestCase {
         }
     }
 
+    /// Diacritic-insensitivity, which is what `localizedStandardContains` buys over
+    /// `localizedCaseInsensitiveContains`: a user who types "cafe" — no accent key, no patience — finds
+    /// "Café lean", on both chips and through the Saved screen's filter, because there is one matcher.
+    func testTheSharedMatcherIgnoresDiacritics() {
+        let poses = [pose("c", name: "Café lean"), pose("d", name: "Warrior II")]
+
+        XCTAssertEqual(
+            CameraPickerScope.all.rows(catalogue: poses, saved: [], query: "cafe").map(\.id),
+            ["c"],
+            "the All chip finds an accented name from an unaccented query"
+        )
+        XCTAssertEqual(
+            CameraPickerScope.saved.rows(catalogue: [], saved: poses, query: "CAFE").map(\.id),
+            ["c"],
+            "and so does the Saved chip, which is the Saved screen's own filter"
+        )
+        XCTAssertEqual(
+            PoseAdapterMerge.filterSavedLocally(poses, query: "cafe").map(\.id),
+            ["c"],
+            "the Saved screen reads the same answer from the shared filter"
+        )
+        XCTAssertEqual(
+            PoseAdapterMerge.filterSavedLocally(poses, query: "café").map(\.id),
+            ["c"],
+            "an accented query still matches the accented name"
+        )
+        XCTAssertEqual(
+            PoseAdapterMerge.filterSavedLocally([pose("e", name: "Cafe stretch")], query: "café").map(\.id),
+            ["e"],
+            "and matches the unaccented spelling of the same word"
+        )
+    }
+
     /// The three behaviours the shared matcher is chosen for, spelled out on the picker's own rows:
     /// case-insensitivity, a trimmed query, and an empty query that filters nothing.
     func testTheQueryIsCaseInsensitiveAndTrimmed() {
@@ -1017,7 +1435,10 @@ final class CameraPickerScopeTests: XCTestCase {
 
         model.query = "no-such-pose-anywhere"
 
-        XCTAssertTrue(model.filteredPoses.isEmpty)
+        XCTAssertTrue(model.filteredPoses.isEmpty, "nothing in hand matches, so the grid holds no rows")
+        // "No poses match" is the server's answer, so it arrives with the answer — the sheet asks the same
+        // question the Search screen asks instead of deciding locally.
+        await model.searchNowForTesting()
         XCTAssertEqual(model.stateTone, .empty, "the no-match card, not an error and not a blank grid")
         XCTAssertTrue(model.emptyIsNoMatch, "the copy names the query instead of \"no poses yet\"")
 
@@ -1166,16 +1587,6 @@ final class CameraPickerAccessTests: XCTestCase {
         XCTAssertTrue(model.showPosePicker, "and it opens again after a close: nothing was collapsed")
     }
 
-    /// The inline strip is gone: the bar draws no catalogue, and the ids it used to expose are retired,
-    /// so a flow that still looks for one is looking at a screen that no longer exists.
-    func testTheBottomBarDrawsNoPoseStrip() {
-        XCTAssertFalse(CameraChromeLayout.bottomBarDrawsCatalogue)
-        XCTAssertEqual(
-            CameraChromeLayout.retiredIdentifiers,
-            ["camera.poseStrip", "camera.poseStrip.retry", "camera.pickerStripToggle"]
-        )
-    }
-
     /// A denied camera cannot open the sheet at all — the control is the entry point, not a bypass.
     func testTheSheetIsGated() {
         let denied = CameraViewModel()
@@ -1238,6 +1649,38 @@ final class CameraPickerSheetLayoutTests: XCTestCase {
         )
     }
 
+    /// The panel mounts the fixed rows through a `ForEach` and the results scroll content **directly**: the
+    /// scroll view is the one flexible child, and a flexible child re-parented under a `ForEach` is proposed
+    /// its height differently. The order is unchanged — `fixedRows + [.results] == order` — and what the panel
+    /// actually paints is measured on a rendered screen
+    /// (`CameraPickerSheetGeometryTests.testTheResultsFillThePanelBelowTheChips`).
+    func testTheResultsAreMountedOutsideTheForEach() throws {
+        XCTAssertEqual(PosePickerLayout.fixedRows + [.results], PosePickerLayout.order)
+
+        let source = try String(
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent() // Features
+                .deletingLastPathComponent() // iosAppTests
+                .deletingLastPathComponent() // iosApp (project dir)
+                .appendingPathComponent("iosApp/Features/Camera/CameraFeature.swift"),
+            encoding: .utf8
+        )
+        let panelStart = try XCTUnwrap(source.range(of: "private func panel(height: CGFloat)")?.upperBound)
+        let panel = source[panelStart...].prefix(700)
+        XCTAssertTrue(
+            panel.contains("ForEach(PosePickerLayout.fixedRows"),
+            "the fixed rows are the ones the ForEach iterates"
+        )
+        XCTAssertFalse(
+            panel.contains("ForEach(PosePickerLayout.order"),
+            "the results are not iterated with them"
+        )
+        XCTAssertTrue(
+            panel.contains("scrollContent\n                .frame(maxHeight: .infinity)"),
+            "the scroll content is a direct, flexible child of the panel's VStack"
+        )
+    }
+
     /// The offline notice is a row of the scroll content above the grid, never an overlay: it pushes the
     /// grid down, so it cannot cover the third row of cards.
     func testTheOfflineBannerIsAScrollRowAboveTheGrid() {
@@ -1249,7 +1692,15 @@ final class CameraPickerSheetLayoutTests: XCTestCase {
 
     /// Selecting a pose is the sheet's whole purpose: the reference becomes the guide and the sheet
     /// closes, so the user is back on the framing they were about to shoot.
+    ///
+    /// The close is the camera's own dismissal on the model the screen reads (`showPosePicker`), not a
+    /// stand-in flag: the sheet is opened first, so this is the same open → pick → closed path a tap runs.
     func testSelectingAPoseSetsTheGuideAndClosesTheSheet() {
+        let model = CameraViewModel()
+        model.coordinator.onPermissionResult(.authorized)
+        model.openPosePicker()
+        XCTAssertTrue(model.showPosePicker, "the sheet is open before the pick")
+
         var guide: NativePose?
         let binding = Binding(get: { guide }, set: { guide = $0 })
         let chosen = NativePose(
@@ -1260,12 +1711,114 @@ final class CameraPickerSheetLayoutTests: XCTestCase {
             instructions: [],
             isSaved: false
         )
-        var sheetClosed = false
 
-        CameraPickerSelection.select(chosen, guide: binding, closeSheet: { sheetClosed = true })
+        CameraPickerSelection.select(chosen, guide: binding, camera: model)
 
         XCTAssertEqual(guide?.id, "pick-me", "the chosen pose is the camera's reference")
-        XCTAssertTrue(sheetClosed, "and the sheet closes on the same tap")
+        XCTAssertFalse(model.showPosePicker, "and the sheet closes on the same tap")
+        XCTAssertTrue(model.isPoseGuideVisible, "the reference the user picked is the one on screen")
+    }
+
+    /// Source-level: the two joins the wrapper cannot prove — the sheet's row tap calls its `onSelect`, and
+    /// the screen's `onSelect` runs the selection above on its own guide binding and model.
+    ///
+    /// Mutation target: call something else from `onSelect`, or stop passing the pose from the row — each
+    /// turns one assertion below red.
+    func testTheRowTapReachesTheScreenWiredSelection() throws {
+        let source = try String(
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent() // Features
+                .deletingLastPathComponent() // iosAppTests
+                .deletingLastPathComponent() // iosApp (project dir)
+                .appendingPathComponent("iosApp/Features/Camera/CameraFeature.swift"),
+            encoding: .utf8
+        )
+
+        let gridStart = try XCTUnwrap(source.range(of: "var poseGrid: some View {")?.upperBound)
+        let grid = source[gridStart...].prefix(1_200)
+        XCTAssertTrue(
+            grid.contains("onSelect(item.pose)"),
+            "a row tap hands the sheet's callback that row's pose"
+        )
+
+        let sheetStart = try XCTUnwrap(source.range(of: "PosePickerSheet(")?.upperBound)
+        let sheet = source[sheetStart...].prefix(700)
+        XCTAssertTrue(sheet.contains("onSelect: { pose in"), "the sheet is given the screen's selection")
+        XCTAssertTrue(
+            sheet.contains("CameraPickerSelection.select(pose, guide: $guide, camera: model)"),
+            "and that selection is the one above, on the screen's own guide binding and model"
+        )
+    }
+
+    /// The Saved chip's no-match card: the query matched none of the account's loaded rows, so the sheet
+    /// draws the shared no-match state instead of a blank area under the chips — and a collection that has
+    /// not answered yet keeps its own panel.
+    func testTheSavedScopeTurnsAnEmptyResultIntoTheNoMatchCard() throws {
+        let rows = [
+            NativePose(
+                id: "b",
+                name: "City walk",
+                category: "Standing",
+                imageURL: nil,
+                instructions: [],
+                isSaved: true
+            ),
+        ]
+
+        XCTAssertTrue(
+            CameraSavedScopePresentation.savedHasNoMatch(
+                presentation: .rows(rows),
+                rows: [],  // the query filtered every loaded row out
+                query: "warrior"
+            ),
+            "a loaded collection with no match is the no-match card"
+        )
+        XCTAssertFalse(
+            CameraSavedScopePresentation.savedHasNoMatch(presentation: .rows(rows), rows: [], query: "   "),
+            "an empty query is not a search: the grid is the answer"
+        )
+        XCTAssertFalse(
+            CameraSavedScopePresentation.savedHasNoMatch(
+                presentation: .rows(rows),
+                rows: CameraPickerScope.saved.rows(catalogue: [], saved: rows, query: "walk"),
+                query: "walk"
+            ),
+            "a query that matches keeps the rows"
+        )
+        XCTAssertFalse(
+            CameraSavedScopePresentation.savedHasNoMatch(presentation: .signInRequired, rows: [], query: "walk"),
+            "a guest sees the sign-in panel, not \"nothing matched\""
+        )
+        XCTAssertFalse(
+            CameraSavedScopePresentation.savedHasNoMatch(presentation: .loading, rows: [], query: "walk"),
+            "a load in flight is not an empty result"
+        )
+        XCTAssertFalse(
+            CameraSavedScopePresentation.savedHasNoMatch(presentation: .empty, rows: [], query: "walk"),
+            "an empty collection has its own copy: there is nothing to search yet"
+        )
+
+        // And the sheet draws the card from that one rule instead of keeping a copy of the condition.
+        let source = try source()
+        XCTAssertTrue(
+            source.contains("CameraSavedScopePresentation.savedHasNoMatch("),
+            "the sheet's no-match card reads the rule above"
+        )
+        XCTAssertTrue(
+            source.contains(".pickerNoMatch(trimmedQuery)"),
+            "and draws the shared no-match card with the query in its copy"
+        )
+    }
+
+    private func source() throws -> String {
+        try String(
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent() // Features
+                .deletingLastPathComponent() // iosAppTests
+                .deletingLastPathComponent() // iosApp (project dir)
+                .appendingPathComponent("iosApp/Features/Camera/CameraFeature.swift"),
+            encoding: .utf8
+        )
     }
 }
 
@@ -1283,12 +1836,14 @@ final class CameraToolsPopoverTests: XCTestCase {
         model.openCameraTools()
         XCTAssertTrue(model.showCameraTools, "the popover is open for the whole test")
 
-        model.cycleFlash()
+        model.setFlash(.on)
         model.toggleGrid()
-        model.toggleGuideMirror()
         model.setTimerSetting(.threeSeconds)
         model.setAspectRatio(.oneOne)
+        // The guide's own controls live in the adjust sheet now, and it has no Done either.
+        model.setGuideOpacity(0.8)
         model.setGuideScale(1.5)
+        model.toggleGuideMirror()
 
         await waitUntil { await store.saved.last?.aspectRatio == .oneOne }
         let writes = await store.saved
@@ -1296,6 +1851,7 @@ final class CameraToolsPopoverTests: XCTestCase {
         XCTAssertEqual(saved.flash, model.flashSetting)
         XCTAssertTrue(saved.isGridVisible)
         XCTAssertTrue(saved.guideFlipped, "Mirror persists on change")
+        XCTAssertEqual(saved.guideOpacity, 0.8, accuracy: 0.0001)
         XCTAssertEqual(saved.timer, .threeSeconds)
         XCTAssertEqual(saved.aspectRatio, .oneOne)
         XCTAssertEqual(saved.transform.placement.scale, 1.5, accuracy: 0.0001)
@@ -1318,19 +1874,42 @@ final class CameraToolsPopoverTests: XCTestCase {
         XCTAssertFalse(model.showCameraTools, "and closes it")
     }
 
-    /// The title row and the Done action are gone from the surface's contract: no control exposes the
-    /// retired handle, and every remaining control is one that applies immediately.
-    func testThePopoverHasNoTitleOrDone() {
-        XCTAssertFalse(CameraToolsLayout.hasHeaderRow)
-        XCTAssertFalse(
-            CameraToolsLayout.controlIdentifiers.contains(CameraToolsLayout.retiredDoneIdentifier),
-            "the Done handle is retired"
+    /// The popover is exactly four one-line rows — Flash, Grid, Timer, Ratio — and nothing else: no title, no
+    /// Done, no guide section. The guide's controls live in the adjust sheet, and the ids it used to expose are
+    /// retired so no flow can address a row that no longer exists.
+    func testThePopoverIsFourOneLineRows() {
+        XCTAssertEqual(CameraToolsLayout.rows.map(\.rawValue), ["flash", "grid", "timer", "ratio"])
+        XCTAssertEqual(
+            CameraToolsLayout.controlIdentifiers,
+            ["camera.tools.flash", "camera.tools.grid", "camera.tools.timer", "camera.tools.ratio"]
         )
-        for identifier in CameraToolsLayout.controlIdentifiers {
-            XCTAssertTrue(CameraToolsLayout.persistsImmediately(identifier: identifier))
+        for retired in CameraToolsLayout.retiredIdentifiers {
+            XCTAssertFalse(
+                CameraToolsLayout.controlIdentifiers.contains(retired),
+                "\(retired) is gone from the popover"
+            )
         }
-        XCTAssertTrue(CameraToolsLayout.controlIdentifiers.contains("camera.tools.timer"))
-        XCTAssertTrue(CameraToolsLayout.controlIdentifiers.contains("camera.tools.ratio"))
+        XCTAssertTrue(CameraToolsLayout.retiredIdentifiers.contains("camera.tools.opacity"))
+        XCTAssertTrue(CameraToolsLayout.retiredIdentifiers.contains("camera.tools.lineColor.black"))
+        XCTAssertTrue(CameraToolsLayout.retiredIdentifiers.contains("camera.tools.done"))
+    }
+
+    /// The card's own geometry: the artboard's 232 pt, a caret pointing up at the tools control, and the card
+    /// sitting a short gap under the measured top bar.
+    func testThePopoverHangsUnderTheToolsControl() {
+        XCTAssertEqual(CameraToolsLayout.width, 232)
+        XCTAssertEqual(CameraToolsLayout.rowHeight, AP.HitTarget.minimum)
+        XCTAssertEqual(
+            CameraToolsLayout.caretCenterX(),
+            CameraToolsLayout.width - AP.HitTarget.minimum / 2,
+            "the caret is centred on the control it points at"
+        )
+        XCTAssertEqual(CameraToolsLayout.cardTop(belowTopBar: 103), 103 + AP.Space.space4)
+        XCTAssertEqual(
+            CameraToolsLayout.height,
+            CameraToolsLayout.caret.height + 4 * AP.HitTarget.minimum + 3,
+            "the caret plus four 44 pt rows and their hairlines"
+        )
     }
 
     private func waitUntil(
@@ -1396,11 +1975,12 @@ final class CameraChromeTests: XCTestCase {
         XCTAssertTrue(model.isPoseGuideVisible, "opening the picker is not the guide-visibility toggle")
     }
 
-    /// The bottom surface is snackbar · scale row · rail, in that order, and it draws no catalogue.
-    func testTheBottomSurfaceKeepsItsOrderAndDropsTheStrip() {
+    /// The bottom surface is snackbar · scale row · rail, in that order. What it *draws* (no catalogue, no
+    /// strip) is asserted structurally on the rendered bar and on the screen's own source
+    /// (`CameraChromeContractTests.testThePosesControlOpensTheSheetAndTheStripIsGone`); reading a retired-id
+    /// list back at itself proves nothing.
+    func testTheBottomSurfaceKeepsItsOrder() {
         XCTAssertEqual(CameraChromeLayout.bottomSurfaceOrder, [.snackbar, .scaleRow, .panel])
-        XCTAssertFalse(CameraChromeLayout.bottomBarDrawsCatalogue)
-        XCTAssertTrue(CameraChromeLayout.retiredIdentifiers.contains("camera.poseStrip"))
     }
 
     // MARK: - Persistence of the retired strip state
@@ -1588,6 +2168,7 @@ final class CameraChromeTests: XCTestCase {
 
     private func bar(
         selectedPoseID: String? = nil,
+        selectedPoseName: String? = nil,
         showsPicker: Bool = true,
         status: String? = nil
     ) -> CameraBottomBar {
@@ -1600,16 +2181,18 @@ final class CameraChromeTests: XCTestCase {
             statusTone: .success,
             timerCountdown: nil,
             selectedPoseID: selectedPoseID,
+            selectedPoseName: selectedPoseName,
             showsPicker: showsPicker,
-            zoomPresets: [.one, .two],
-            activeZoomPreset: .one,
+            zoomFactor: 1,
+            zoomRange: 1...2,
             onOpenPosePicker: {},
-            onZoomPreset: { _ in },
+            onZoomChange: { _ in },
             onOpenGallery: {},
             onCapture: {},
             onSwitchCamera: {},
             onDismissStatus: {},
-            onCancelTimer: {}
+            onCancelTimer: {},
+            safeBottom: 34
         )
     }
 
@@ -1675,22 +2258,32 @@ final class CameraChromeTests: XCTestCase {
     /// Rows where `hex` is painted as a **flat run** of at least `minRun` pixels. A single-pixel match
     /// is not evidence: antialiased text produces every grey between two tokens, so a plain
     /// `rows(paintedWith:)` can "find" a snackbar surface inside a text edge. Only fills paint runs.
+    /// Rows that paint a run of `hex` at least `minRun` pixels long, **bounded on both sides** by a different
+    /// pixel. A control has edges: a background band that runs to the screen's edge is never one, which is what
+    /// keeps a gradient that drifts within tolerance of a token from reading as a chip.
     private func filledRows(_ bitmap: APBitmap, hex: UInt32, minRun: Int, tolerance: Int = 6) -> [Int] {
         let target = (red: Int((hex >> 16) & 0xFF), green: Int((hex >> 8) & 0xFF), blue: Int(hex & 0xFF))
         var rows: [Int] = []
         for y in 0..<bitmap.height {
-            var run = 0
-            for x in 0..<bitmap.width {
-                guard let pixel = bitmap.color(x: x, y: y), pixel.alpha > 200 else { run = 0; continue }
-                let matches = abs(pixel.red - target.red) <= tolerance
-                    && abs(pixel.green - target.green) <= tolerance
-                    && abs(pixel.blue - target.blue) <= tolerance
-                run = matches ? run + 1 : 0
-                if run >= minRun {
-                    rows.append(y)
-                    break
+            var runStart: Int?
+            var longestBounded = 0
+            for x in 0...bitmap.width {
+                var matches = false
+                if x < bitmap.width, let pixel = bitmap.color(x: x, y: y), pixel.alpha > 200 {
+                    matches = abs(pixel.red - target.red) <= tolerance
+                        && abs(pixel.green - target.green) <= tolerance
+                        && abs(pixel.blue - target.blue) <= tolerance
+                }
+                if matches {
+                    if runStart == nil { runStart = x }
+                } else if let start = runStart {
+                    if start > 0, x < bitmap.width {
+                        longestBounded = max(longestBounded, x - start)
+                    }
+                    runStart = nil
                 }
             }
+            if longestBounded >= minRun { rows.append(y) }
         }
         return rows
     }
@@ -2042,11 +2635,900 @@ final class CameraGuideScaleTests: XCTestCase {
     }
 }
 
+/// The camera stage as the *screen* composes it: preview, dim, frame, chrome. The canvas has its own pixel
+/// tests; this one drives the real screen, with the window's insets stated and a stand-in image where the
+/// camera feed would be (a simulator has none), so "the preview is full screen and only the photo is
+/// undimmed" is asserted on the thing the app actually shows.
+@MainActor
+final class CameraScreenStageTests: XCTestCase {
+    private let phone = CameraSafeArea.Insets(top: 59, bottom: 34)
+    private let size = CGSize(width: 393, height: 852)
+    /// A bright stand-in for the photo: a dim over it is measurable, and so is leaving it alone.
+    private let previewColour = Color(red: 1, green: 0, blue: 1)
+
+    func testTheScreensPreviewIsFullBleedAndOnlyTheFrameIsUndimmed() throws {
+        for ratio in CameraAspectRatio.allCases {
+            let bitmap = try renderScreen(ratio: ratio)
+            let frame = CameraStageFrame.make(ratio: ratio, screen: size, safeTop: phone.top).frame
+
+            // Above the frame, clear of the top controls' buttons: the preview covers the whole screen and is
+            // dimmed there — never an opaque bar, and never the plain background.
+            let band = max(2, Int(frame.minY / 2))
+            for x in [8, Int(size.width) - 8] {
+                let pixel = try XCTUnwrap(bitmap.color(x: x, y: band))
+                XCTAssertGreaterThan(pixel.red, 40, "\(ratio.rawValue) at (\(x), \(band)): the preview shows through")
+                XCTAssertLessThan(pixel.red, 150, "\(ratio.rawValue) at (\(x), \(band)): and it is dimmed")
+            }
+
+            // Inside the frame the photo is untouched.
+            let inside = try XCTUnwrap(
+                bitmap.color(x: Int(frame.midX), y: Int(frame.midY)),
+                "\(ratio.rawValue): the frame's middle is painted"
+            )
+            XCTAssertGreaterThan(inside.red, 200, "\(ratio.rawValue): the photo inside the frame is not dimmed")
+        }
+    }
+
+    private func renderScreen(ratio: CameraAspectRatio) throws -> APBitmap {
+        var guide: NativePose? = NativePose(
+            id: "p1",
+            name: "Warrior II",
+            category: "Yoga",
+            imageURL: nil,
+            instructions: [],
+            isSaved: false
+        )
+        let model = CameraViewModel(settingsStore: InMemoryCameraSettingsStore())
+        model.coordinator.onPermissionResult(.authorized)
+        model.setAspectRatio(ratio)
+        model.setGuideLineColor(.green)
+        let screen = CameraScreen(
+            guide: Binding(get: { guide }, set: { guide = $0 }),
+            poseService: PreviewPoseService(),
+            model: model,
+            preview: AnyView(previewColour),
+            windowInsets: phone
+        )
+        let host = UIHostingController(rootView: screen)
+        host.overrideUserInterfaceStyle = .dark
+        host.view.frame = CGRect(origin: .zero, size: size)
+        host.view.layoutIfNeeded()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.08))
+        host.view.setNeedsLayout()
+        host.view.layoutIfNeeded()
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = 1
+        format.opaque = true
+        let image = UIGraphicsImageRenderer(size: size, format: format).image { _ in
+            host.view.drawHierarchy(in: CGRect(origin: .zero, size: size), afterScreenUpdates: true)
+        }
+        return try XCTUnwrap(APBitmap(image: image))
+    }
+}
+
+/// Board parity for the chrome the B6 boards fix: the zoom control's thumb and value pill, the tools chips' size,
+/// and the flat bottom rail. Measured on rendered frames, because these are the three places the app drifted from
+/// the artboards in a way only pixels show.
+@MainActor
+final class CameraChromeBoardParityTests: XCTestCase {
+    private let darkScheme: ColorScheme = .dark
+
+    // MARK: Zoom thumb and value pill
+
+    /// The board's zoom control: a light round thumb on the dark band and the value in a pink pill above it, at the
+    /// thumb's own x — the pill is the value, so it never sits anywhere but over the thumb.
+    func testTheThumbIsLightAndTheValueIsAPinkPillAboveIt() throws {
+        let bitmap = try renderZoomSlider(factor: 1.5)
+        let geometry = CameraZoomTrackGeometry(width: 260, thumbDiameter: 22, range: 1...2)
+        let thumb = try XCTUnwrap(
+            bitmap.color(x: Int(geometry.thumbCenterX(for: 1.5)), y: Int(geometry.trackLineCenterY)),
+            "the thumb is painted"
+        )
+        XCTAssertGreaterThan(thumb.red, 200, "the thumb is a light disc on the dark band")
+        XCTAssertGreaterThan(thumb.green, 200)
+        XCTAssertGreaterThan(thumb.blue, 200)
+
+        let band = try pillBand(in: bitmap, accentHex: 0xE89CAE)
+        // The pill's own middle: its rounded ends are antialiased against the band.
+        // Just inside the pill's top edge: its centre is the glyph.
+        let pillRow = try XCTUnwrap(band.rows.min().map { $0 + 3 }, "the pill is painted")
+        let pill = try XCTUnwrap(bitmap.color(x: band.midX, y: pillRow), "the value pill is painted")
+        XCTAssertEqual(pill.red, 232, accuracy: 12, "the pill is the accent pink")
+        XCTAssertEqual(pill.green, 156, accuracy: 26)
+        XCTAssertEqual(pill.blue, 174, accuracy: 26)
+    }
+
+    /// The pill follows the thumb: it is over the thumb at the minimum, the middle and the maximum, and it stays
+    /// inside the track at the ends instead of hanging off it.
+    func testTheValuePillFollowsTheThumb() throws {
+        for factor: CGFloat in [1, 1.5, 2] {
+            let bitmap = try renderZoomSlider(factor: factor)
+            let geometry = CameraZoomTrackGeometry(width: 260, thumbDiameter: 22, range: 1...2)
+            let pill = try pillBand(in: bitmap, accentHex: 0xE89CAE)
+            XCTAssertEqual(
+                Double(pill.midX), Double(geometry.pillCenterX(for: factor)), accuracy: 3,
+                "\(factor)x: the pill sits over the thumb (kept inside the track at the ends)"
+            )
+        }
+    }
+
+    /// The value is said once: a tick's label is dropped where the pill already carries that value (the tick under
+    /// the thumb), and kept where it does not. The rule is pure, and the slider reads it.
+    func testTheTickLabelUnderTheThumbIsNotRepeated() throws {
+        let geometry = CameraZoomTrackGeometry(width: 260, thumbDiameter: 22, range: 1...2)
+        XCTAssertFalse(
+            geometry.showsLabel(forFactor: 1, thumbFactor: 1),
+            "at 1x the pill says 1x: the tick under it does not repeat it"
+        )
+        XCTAssertTrue(
+            geometry.showsLabel(forFactor: 1, thumbFactor: 2),
+            "at 2x the 1x stop keeps its small label under the track"
+        )
+
+        let source = try String(
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appendingPathComponent("iosApp/Features/Camera/CameraZoom.swift"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(
+            source.contains("if geometry.showsLabel(forFactor: preset.factor, thumbFactor: factor) {"),
+            "the tick's label is only drawn where the pill does not already say it"
+        )
+    }
+
+    // MARK: Tools popover chips
+
+    /// The board's chips are pills of 30 pt with 14 pt type — visibly bigger than the app's 11 pt. The tap target
+    /// stays 44 pt, so the row's height is what a finger aims at.
+    func testTheChipsUseTheBoardsSizeAndKeepAFullHitTarget() throws {
+        XCTAssertGreaterThanOrEqual(CameraToolsLayout.chipHeight, 30, "the board's chip is 30 pt tall")
+        XCTAssertGreaterThanOrEqual(CameraToolsLayout.chipFontSize, 14, "and its type is 14 pt, not 11")
+        XCTAssertGreaterThanOrEqual(CameraToolsLayout.chipHitTarget, AP.HitTarget.minimum)
+
+        // The chosen chip's painted pill is the board's height, and the chip keeps a 44 pt tap target even though
+        // it draws 30 pt tall. Source-level for the target: a rendered frame cannot show a hit area.
+        let bitmap = try renderPopover()
+        let selected = APColorTokens.selectedBackground.spec(for: darkScheme).hex ?? 0
+        let pillRows = rowsPainting(bitmap, hex: selected, minimum: 20)
+        XCTAssertGreaterThanOrEqual(
+            pillRows.count, Int(CameraToolsLayout.chipHeight),
+            "the chosen chip is painted \(CameraToolsLayout.chipHeight) pt tall, as on the board"
+        )
+        let source = try String(
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appendingPathComponent("iosApp/Features/Camera/CameraToolsPopover.swift"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(
+            source.contains(".apMinimumHitTarget("),
+            "the chip keeps a 44 pt hit target around its 30 pt pill"
+        )
+    }
+
+    // MARK: The bottom rail
+
+    /// The rail is a flat band on the board: no rounded card behind the thumbnail, the shutter and the flip.
+    ///
+    /// Rendered first: on the panel's own first row the whole width is one fill, so the row's luminance is even.
+    /// A rounded top leaves its corners showing the gradient above, which makes that row uneven. Then the shape
+    /// itself, because a fill that happens to match cannot undo a rounded corner.
+    func testTheBottomRailIsAFlatBand() throws {
+        let bitmap = try renderBottomBar()
+        let row = try XCTUnwrap(firstRailRow(in: bitmap, column: bitmap.width / 2), "the rail is painted")
+        var lowest = Int.max
+        var highest = Int.min
+        for x in 0..<bitmap.width {
+            guard let pixel = bitmap.color(x: x, y: row) else { continue }
+            lowest = min(lowest, luminance(pixel))
+            highest = max(highest, luminance(pixel))
+        }
+        XCTAssertLessThanOrEqual(
+            highest - lowest, 6,
+            "the rail's first row is one flat fill across the width: no rounded card"
+        )
+
+        let source = try String(
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appendingPathComponent("iosApp/Features/Camera/CameraFeature.swift"),
+            encoding: .utf8
+        )
+        let barStart = try XCTUnwrap(source.range(of: "struct CameraBottomBar: View")?.lowerBound)
+        let bar = source[barStart...]
+        let panelStart = try XCTUnwrap(bar.range(of: "private var panel: some View")?.lowerBound)
+        let panel = bar[panelStart...].prefix(400)
+        XCTAssertFalse(panel.contains("RoundedTopShape"), "the rail has no rounded card behind it")
+    }
+
+    // MARK: Helpers
+
+    private func renderZoomSlider(factor: CGFloat) -> APBitmap {
+        // No extra padding: the slider's own frame is what the geometry describes.
+        let view = CameraZoomSlider(factor: factor, range: 1...2, onChange: { _ in })
+            .environment(\.colorScheme, darkScheme)
+            .background(AP.Color.background)
+        return renderProbe(view, size: CGSize(width: 260, height: 140))
+    }
+
+    private func renderPopover() -> APBitmap {
+        let popup = CameraToolsPopup(
+            flashSetting: .auto,
+            isGridVisible: false,
+            controlsEnabled: true,
+            timerSetting: .off,
+            aspectRatio: .threeFour,
+            onFlashChange: { _ in },
+            onGridToggle: {},
+            onTimerChange: { _ in },
+            onAspectRatioChange: { _ in },
+            onDismiss: {}
+        )
+        .environment(\.colorScheme, darkScheme)
+        .background(AP.Color.background)
+        return renderProbe(popup, size: CGSize(width: CameraToolsLayout.width + 16, height: CameraToolsLayout.height + 16))
+    }
+
+    private func renderBottomBar() -> APBitmap {
+        let bar = CameraBottomBar(
+            thumbnailURL: nil,
+            isBusy: false,
+            canCapture: true,
+            controlsEnabled: true,
+            status: nil,
+            statusTone: .success,
+            timerCountdown: nil,
+            selectedPoseID: nil,
+            selectedPoseName: nil,
+            showsPicker: true,
+            zoomFactor: 1,
+            zoomRange: 1...2,
+            onOpenPosePicker: {},
+            onZoomChange: { _ in },
+            onOpenGallery: {},
+            onCapture: {},
+            onSwitchCamera: {},
+            onDismissStatus: {},
+            onCancelTimer: {},
+            safeBottom: 0
+        )
+        .environment(\.colorScheme, darkScheme)
+        .background(AP.Color.background)
+        return renderProbe(bar, size: CGSize(width: 393, height: 220))
+    }
+
+    /// The proven harness: `APViewProbe` renders into the shared key window, which gives the view a definite
+    /// proposal (a bare hosting controller sizes flexible content at its own intrinsic size).
+    private func renderProbe<Content: View>(_ view: Content, size: CGSize) -> APBitmap {
+        // The shared probe window carries the device's safe area, so the view is pinned to the whole frame.
+        let probe = APViewProbe(view.ignoresSafeArea(), size: size, scale: 1)
+        let bitmap = probe.capture()
+        probe.tearDown()
+        return bitmap
+    }
+
+    /// The x range of the accent-pink pixels in the pill's row band.
+    private func pillBand(in bitmap: APBitmap, accentHex: UInt32) throws -> (midX: Int, rows: [Int]) {
+        let target = (red: Int((accentHex >> 16) & 0xFF), green: Int((accentHex >> 8) & 0xFF), blue: Int(accentHex & 0xFF))
+        var minX = Int.max, maxX = Int.min
+        var rows: [Int] = []
+        for y in 0..<bitmap.height {
+            for x in 0..<bitmap.width {
+                guard let pixel = bitmap.color(x: x, y: y) else { continue }
+                guard abs(pixel.red - target.red) <= 12,
+                      abs(pixel.green - target.green) <= 26,
+                      abs(pixel.blue - target.blue) <= 26 else { continue }
+                minX = min(minX, x); maxX = max(maxX, x)
+                rows.append(y)
+            }
+        }
+        XCTAssertLessThanOrEqual(minX, maxX, "the pill is painted")
+        return ((minX + maxX) / 2, rows)
+    }
+
+    /// Bright ink (a label) in a small window: the tick labels are light type on the dark band.
+    private func hasBrightInk(in bitmap: APBitmap, aroundX x: Int, rows: Range<Int>) -> Bool {
+        for y in rows where y >= 0 && y < bitmap.height {
+            for column in (x - 10)...(x + 10) where column >= 0 && column < bitmap.width {
+                guard let pixel = bitmap.color(x: column, y: y) else { continue }
+                if pixel.red > 140, pixel.green > 140, pixel.blue > 140 { return true }
+            }
+        }
+        return false
+    }
+
+    /// Rows where `hex` paints at least `minimum` pixels: a chip's pill.
+    private func rowsPainting(_ bitmap: APBitmap, hex: UInt32, minimum: Int) -> [Int] {
+        let target = (red: Int((hex >> 16) & 0xFF), green: Int((hex >> 8) & 0xFF), blue: Int(hex & 0xFF))
+        var rows: [Int] = []
+        for y in 0..<bitmap.height {
+            var painted = 0
+            for x in 0..<bitmap.width {
+                guard let pixel = bitmap.color(x: x, y: y) else { continue }
+                if abs(pixel.red - target.red) <= 10,
+                   abs(pixel.green - target.green) <= 10,
+                   abs(pixel.blue - target.blue) <= 10 {
+                    painted += 1
+                }
+            }
+            if painted >= minimum { rows.append(y) }
+        }
+        return rows
+    }
+
+    /// The first row where a column paints the rail's own dark fill.
+    private func firstRailRow(in bitmap: APBitmap, column: Int) -> Int? {
+        for y in 1..<bitmap.height {
+            guard let pixel = bitmap.color(x: column, y: y),
+                  let above = bitmap.color(x: column, y: y - 1) else { continue }
+            // The rail starts with a step: its own fill is darker than the gradient above it.
+            if luminance(pixel) < luminance(above) - 6, luminance(pixel) < 80 { return y }
+        }
+        return nil
+    }
+
+    private func luminance(_ pixel: APPixel) -> Int {
+        (pixel.red * 299 + pixel.green * 587 + pixel.blue * 114) / 1000
+    }
+}
+
+/// The guide-adjust sheet: the reference's own controls, moved off the tools popover, over a live camera.
+@MainActor
+final class CameraGuideAdjustTests: XCTestCase {
+    /// It opens only where there is something to adjust: a camera that works and a reference on screen.
+    func testTheSheetNeedsACameraAndAReference() {
+        let noCamera = CameraViewModel(settingsStore: InMemoryCameraSettingsStore())
+        noCamera.coordinator.onPermissionResult(.denied)
+        noCamera.guideAppeared(hasGuide: true)
+        noCamera.openGuideAdjust()
+        XCTAssertFalse(noCamera.showGuideAdjust, "a camera that cannot serve it does not open the sheet")
+
+        let noGuide = CameraViewModel(settingsStore: InMemoryCameraSettingsStore())
+        noGuide.coordinator.onPermissionResult(.authorized)
+        noGuide.openGuideAdjust()
+        XCTAssertFalse(noGuide.showGuideAdjust, "no reference, nothing to adjust")
+
+        let ready = CameraViewModel(settingsStore: InMemoryCameraSettingsStore())
+        ready.coordinator.onPermissionResult(.authorized)
+        ready.guideAppeared(hasGuide: true)
+        ready.openGuideAdjust()
+        XCTAssertTrue(ready.showGuideAdjust)
+        ready.closeGuideAdjust()
+        XCTAssertFalse(ready.showGuideAdjust, "Done closes it")
+    }
+
+    /// One surface at a time: the sheet, the picker and the popover never stack on each other.
+    func testTheSheetAndTheOtherSurfacesAreExclusive() {
+        let model = CameraViewModel(settingsStore: InMemoryCameraSettingsStore())
+        model.coordinator.onPermissionResult(.authorized)
+        model.guideAppeared(hasGuide: true)
+
+        model.openGuideAdjust()
+        model.openPosePicker()
+        XCTAssertFalse(model.showGuideAdjust, "the picker takes the screen")
+
+        model.closePosePicker()
+        model.openGuideAdjust()
+        model.toggleCameraTools()
+        XCTAssertFalse(model.showGuideAdjust, "and so does the tools popover")
+
+        model.toggleCameraTools()
+        model.openGuideAdjust()
+        XCTAssertTrue(model.showGuideAdjust, "the reference reopens it")
+    }
+
+    /// The sheet's controls write the same state the gesture writes, and the palette is the sheet's four.
+    func testTheSheetControlsWriteTheGuidelinesState() {
+        let model = CameraViewModel(settingsStore: InMemoryCameraSettingsStore())
+        model.coordinator.onPermissionResult(.authorized)
+        model.setGuideOpacity(0.6)
+        XCTAssertEqual(model.guideOpacity, 0.6, accuracy: 0.0001)
+
+        model.setGuideScale(1.8)
+        XCTAssertEqual(model.guideTransform.scale, 1.8, accuracy: 0.0001, "the slider and the pinch share one value")
+
+        model.setGuideLineColor(.green)
+        XCTAssertEqual(model.guideLineColor, .green)
+
+        model.toggleGuideMirror()
+        XCTAssertTrue(model.guideFlipped, "Mirror guide flips the reference")
+    }
+
+    /// The palette is four swatches and `white` is not one of them; a stored row that still says `white` reads as
+    /// the sheet's default (pink), which is what it meant before the palette existed.
+    func testThePaletteIsFourSwatchesAndLegacyWhiteMigrates() {
+        XCTAssertEqual(GuideLineColor.allCases.map(\.rawValue), ["pink", "black", "yellow", "green"])
+        XCTAssertEqual(GuideLineColor.stored("white"), .pink)
+        XCTAssertEqual(GuideLineColor.stored("neon"), nil)
+        XCTAssertEqual(GuideLineColor.stored(nil), nil)
+        XCTAssertEqual(GuideLineColor.stored("green"), .green)
+
+        for color in GuideLineColor.allCases {
+            XCTAssertEqual(
+                color.accessibilityIdentifier,
+                "camera.guideAdjust.lineColor.\(color.rawValue)",
+                "each swatch has its own handle"
+            )
+        }
+    }
+
+    /// A row written before the palette existed still opens the camera with its own settings.
+    func testALegacyWhiteRowStillDecodes() throws {
+        let legacy = #"{"version":1,"lineColor":"white","guideOpacity":0.7}"#
+        let decoded = try XCTUnwrap(CameraSettings.decode(legacy))
+        XCTAssertEqual(decoded.lineColor, .pink)
+        XCTAssertEqual(decoded.guideOpacity, 0.7, accuracy: 0.0001, "and its other settings survive")
+    }
+
+    /// The sheet draws its four controls: two sliders, the four swatches and the Mirror button, with Done in the
+    /// header. Rendered on its own at the sheet's own size, so the measurement is of the sheet and not of the
+    /// camera behind it.
+    func testTheSheetDrawsOpacityLineColourScaleAndFlip() throws {
+        let size = CGSize(width: 393, height: CameraGuideAdjustSheet.Layout.height)
+        let sheet = CameraGuideAdjustSheet(
+            opacity: 0.6,
+            lineColor: .pink,
+            scale: 1,
+            isFlipped: false,
+            isEnabled: true,
+            onOpacityChange: { _ in },
+            onLineColorChange: { _ in },
+            onScaleChange: { _ in },
+            onFlip: {},
+            onDone: {}
+        )
+        .environment(\.colorScheme, .light)
+        .background(AP.Color.background)
+        let probe = APViewProbe(sheet, size: size, scale: 2)
+        let bitmap = probe.capture()
+        probe.tearDown()
+
+        // The four swatches are painted, in the palette's own colours.
+        for color in GuideLineColor.allCases {
+            XCTAssertFalse(
+                rowsPainted(bitmap, hex: resolvedHex(color.color), minRun: 30).isEmpty,
+                "\(color.rawValue) swatch is drawn"
+            )
+        }
+
+        // Two sliders: the board's dark-pink track paints twice (Opacity and Scale), and the Mirror button is one
+        // wide controlFill plate.
+        let track = APColorTokens.accentText.spec(for: .light).hex ?? 0
+        let controlFill = APColorTokens.controlFill.spec(for: .light).hex ?? 0
+        let sliderBands = rowBands(rowsPainted(bitmap, hex: track, minRun: 20))
+        XCTAssertGreaterThanOrEqual(sliderBands, 2, "Opacity and Scale are both drawn as sliders")
+        XCTAssertFalse(
+            rowsPainted(bitmap, hex: controlFill, minRun: 120).isEmpty,
+            "the Mirror guide button is drawn"
+        )
+    }
+
+    /// The sheet is the light board, not a dark variant: its fill is the light background token, its Done action
+    /// the light accent text, and the camera behind it stays dark. The tokens are dynamic `UIColor`s, so this is
+    /// the proof that the sheet's own trait — not the camera's dark scheme — decides how they resolve.
+    func testTheSheetResolvesTheLightTokensOverADarkCamera() throws {
+        let bitmap = try renderScreenWithSheet()
+        let lightBackground = APColorTokens.background.spec(for: .light).hex ?? 0
+        let lightAccentText = APColorTokens.accentText.spec(for: .light).hex ?? 0
+
+        // Inside the sheet, away from its content: the sheet's own fill.
+        let fill = try XCTUnwrap(bitmap.color(x: 200, y: 540), "the sheet is painted")
+        XCTAssertTrue(
+            isNear(fill, hex: lightBackground),
+            "the sheet's fill is the light background token, as on the board (got \(fill.red),\(fill.green),\(fill.blue))"
+        )
+
+        // The Done action's ink in the header, on the right: the light accent text token.
+        let sheetTop = bitmap.height - Int(CameraGuideAdjustSheet.Layout.height)
+        var doneIsLightAccent = false
+        for y in (sheetTop + 16)..<(sheetTop + 80) {
+            for x in (bitmap.width / 2)..<bitmap.width {
+                guard let pixel = bitmap.color(x: x, y: y) else { continue }
+                if isNear(pixel, hex: lightAccentText, tolerance: 16) { doneIsLightAccent = true; break }
+            }
+            if doneIsLightAccent { break }
+        }
+        XCTAssertTrue(doneIsLightAccent, "Done is the light accent text token, as on the board")
+
+        // The palette and the slider track are the board's light tokens: four swatches and two dark-pink tracks.
+        for color in GuideLineColor.allCases {
+            let hex = resolvedHex(color.color)
+            XCTAssertFalse(
+                rowsPaintedInSheet(bitmap, hex: hex).isEmpty,
+                "\(color.rawValue) swatch is drawn in its light token"
+            )
+        }
+        let lightTrack = APColorTokens.accentText.spec(for: .light).hex ?? 0
+        XCTAssertGreaterThanOrEqual(
+            rowBands(rowsPaintedInSheet(bitmap, hex: lightTrack, minRun: 20)),
+            2,
+            "the Opacity and Scale tracks are the light accentText, as on the board"
+        )
+
+        // The camera keeps its own scheme: the Close control is still the dark surface token, which is the very
+        // value the sheet used to take (the override is local to the sheet, not a screen-wide flip).
+        let darkSurface = APColorTokens.surface.spec(for: .dark).hex ?? 0
+        // Inside the Close pill, away from its glyph: the pill's fill is the dark surface token.
+        let close = try XCTUnwrap(bitmap.color(x: 24, y: 70), "the top control is painted")
+        XCTAssertTrue(
+            isNear(close, hex: darkSurface),
+            "the camera behind the sheet keeps its dark surface (got \(close.red),\(close.green),\(close.blue))"
+        )
+    }
+
+    /// The screen with the guide-adjust sheet open, at the board's phone, with a stand-in photo where the camera
+    /// feed would be.
+    private func renderScreenWithSheet() throws -> APBitmap {
+        let size = CGSize(width: 393, height: 852)
+        var guide: NativePose? = NativePose(
+            id: "p1", name: "Warrior II", category: "Yoga", imageURL: nil, instructions: [], isSaved: false
+        )
+        let model = CameraViewModel(settingsStore: InMemoryCameraSettingsStore())
+        model.coordinator.onPermissionResult(.authorized)
+        model.guideAppeared(hasGuide: true)
+        model.openGuideAdjust()
+        let screen = CameraScreen(
+            guide: Binding(get: { guide }, set: { guide = $0 }),
+            poseService: PreviewPoseService(),
+            model: model,
+            preview: AnyView(Color(red: 0.55, green: 0.75, blue: 0.88)),
+            windowInsets: CameraSafeArea.Insets(top: 59, bottom: 34)
+        )
+        let host = UIHostingController(rootView: screen)
+        host.overrideUserInterfaceStyle = .dark
+        host.view.frame = CGRect(origin: .zero, size: size)
+        host.view.layoutIfNeeded()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.2))
+        host.view.setNeedsLayout()
+        host.view.layoutIfNeeded()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = 1
+        format.opaque = true
+        let image = UIGraphicsImageRenderer(size: size, format: format).image { _ in
+            host.view.drawHierarchy(in: CGRect(origin: .zero, size: size), afterScreenUpdates: true)
+        }
+        return try XCTUnwrap(APBitmap(image: image))
+    }
+
+    // MARK: Helpers
+
+    private func isNear(_ pixel: APPixel, hex: UInt32, tolerance: Int = 6) -> Bool {
+        let target = (red: Int((hex >> 16) & 0xFF), green: Int((hex >> 8) & 0xFF), blue: Int(hex & 0xFF))
+        return abs(pixel.red - target.red) <= tolerance
+            && abs(pixel.green - target.green) <= tolerance
+            && abs(pixel.blue - target.blue) <= tolerance
+    }
+
+    /// The hex a `Color` paints at, resolved in the light appearance the sheet is rendered in.
+    private func resolvedHex(_ color: Color) -> UInt32 {
+        var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
+        UIColor(color)
+            .resolvedColor(with: UITraitCollection(userInterfaceStyle: .light))
+            .getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+        return (UInt32((red * 255).rounded()) << 16)
+            | (UInt32((green * 255).rounded()) << 8)
+            | UInt32((blue * 255).rounded())
+    }
+
+    /// The two adjust sliders are the board's, not the system `Slider`'s: a dark round disc on a 6 pt track, the
+    /// filled part in the accent text colour and the rest in the palette's olive-grey. Measured from
+    /// `05-camera-guide-adjust.png` at the 393 reference: thumb 28 pt (0x121212), track 6 pt, unfilled 0x8F887C.
+    func testTheAdjustSlidersMatchTheBoard() throws {
+        let bitmap = try renderSheetOnly()
+        let accentText = APColorTokens.accentText.spec(for: .light).hex ?? 0
+        let trackRest = APColorTokens.disabled.spec(for: .light).hex ?? 0
+        let ink = APColorTokens.onAccent.spec(for: .light).hex ?? 0
+
+        // The first band that paints the filled track is the Opacity slider.
+        let band = try XCTUnwrap(
+            contiguousBands(rowsPainted(bitmap, hex: accentText, minRun: 20)).first,
+            "the Opacity track is painted"
+        )
+        let trackRow = (band.lowerBound + band.upperBound) / 2
+        // The filled part, sampled well inside it (the probe draws at scale 2, so 28 px is 14 pt).
+        let fillEnd = try XCTUnwrap(
+            (0..<bitmap.width).last { x in
+                bitmap.color(x: x, y: trackRow).map { isNear($0, hex: accentText, tolerance: 14) } ?? false
+            },
+            "the filled track has an end"
+        )
+        let filled = try XCTUnwrap(bitmap.color(x: fillEnd - 28, y: trackRow))
+        XCTAssertTrue(
+            isNear(filled, hex: accentText, tolerance: 12),
+            "the filled track stays the accent text token (got \(filled.red),\(filled.green),\(filled.blue))"
+        )
+
+        // The thumb is drawn in the dark ink token, right where the fill ends.
+        let thumb = darkBlob(
+            bitmap,
+            hex: ink,
+            // ±24 pt (the probe draws at scale 2): enough for the whole 28 pt disc around the 6 pt track.
+            rows: (band.lowerBound - 48)...(band.upperBound + 48),
+            columns: (fillEnd - 8)...(bitmap.width - 1)
+        )
+        XCTAssertNotNil(thumb, "the thumb is painted in the dark ink token, not as a white pill")
+        XCTAssertEqual(Double(thumb?.width ?? 0), Double(thumb?.height ?? 0), accuracy: 1, "the thumb is a disc")
+        XCTAssertEqual(Double(thumb?.width ?? 0), 28, accuracy: 1.5, "the board's 28 pt disc")
+
+        // Its centre, one radius past the fill's end, is the ink itself.
+        let centre = try XCTUnwrap(bitmap.color(x: fillEnd + 14, y: trackRow))
+        XCTAssertTrue(
+            isNear(centre, hex: ink, tolerance: 12),
+            "the thumb's centre is the dark ink token (got \(centre.red),\(centre.green),\(centre.blue))"
+        )
+
+        // Right of the thumb: the unfilled track, the board's olive-grey.
+        let rest = try XCTUnwrap(bitmap.color(x: fillEnd + 60, y: trackRow))
+        XCTAssertTrue(
+            isNear(rest, hex: trackRest, tolerance: 12),
+            "the unfilled track is the board's olive-grey (got \(rest.red),\(rest.green),\(rest.blue))"
+        )
+    }
+
+    /// The camera band's zoom slider is untouched: its thumb stays the light disc on the dark band.
+    func testTheZoomSliderThumbIsStillLight() throws {
+        let view = CameraZoomSlider(factor: 1.5, range: 1...2, onChange: { _ in })
+            .environment(\.colorScheme, .dark)
+            .background(AP.Color.background)
+        let probe = APViewProbe(
+            view.ignoresSafeArea(),
+            size: CGSize(width: 260, height: CameraZoomTrackGeometry.totalHeight),
+            scale: 1
+        )
+        let bitmap = probe.capture()
+        probe.tearDown()
+        let geometry = CameraZoomTrackGeometry(width: 260, thumbDiameter: 22, range: 1...2)
+        let thumb = try XCTUnwrap(
+            bitmap.color(x: Int(geometry.thumbCenterX(for: 1.5)), y: Int(geometry.trackLineCenterY)),
+            "the zoom thumb is painted"
+        )
+        XCTAssertGreaterThan(thumb.red, 200, "the zoom slider's thumb is still light on the dark band")
+        XCTAssertGreaterThan(thumb.green, 200)
+        XCTAssertGreaterThan(thumb.blue, 200)
+    }
+
+    // MARK: Slider helpers
+
+    private func renderSheetOnly() throws -> APBitmap {
+        let sheet = CameraGuideAdjustSheet(
+            opacity: 0.6,
+            lineColor: .pink,
+            scale: 1,
+            isFlipped: false,
+            isEnabled: true,
+            onOpacityChange: { _ in },
+            onLineColorChange: { _ in },
+            onScaleChange: { _ in },
+            onFlip: {},
+            onDone: {}
+        )
+        .environment(\.colorScheme, .light)
+        .background(AP.Color.background)
+        let probe = APViewProbe(sheet, size: CGSize(width: 393, height: CameraGuideAdjustSheet.Layout.height), scale: 2)
+        let bitmap = probe.capture()
+        probe.tearDown()
+        return bitmap
+    }
+
+    /// Runs of rows that paint `hex` in a run of at least `minRun` pixels.
+    private func contiguousBands(_ rows: [Int]) -> [ClosedRange<Int>] {
+        var bands: [ClosedRange<Int>] = []
+        var start: Int?
+        var previous: Int?
+        for row in rows.sorted() {
+            if let previous, row - previous <= 2 {
+                self.unused(previous)
+            } else {
+                if let opened = start { bands.append(opened...previous!) }
+                start = row
+            }
+            previous = row
+        }
+        if let opened = start, let previous { bands.append(opened...previous) }
+        return bands
+    }
+
+    private func unused(_ value: Int) {}
+
+    /// The handle on the track row, as a rect in points: its horizontal run right of the filled part, and its
+    /// vertical extent at that run's centre column. Colour-agnostic, so a white pill and a dark disc are both found
+    /// (and the test can then say which one is drawn).
+    private func thumbGeometry(_ bitmap: APBitmap, row: Int, fillHex: UInt32, restHex: UInt32) -> CGRect? {
+        func isTrack(_ pixel: APPixel) -> Bool {
+            isNear(pixel, hex: fillHex, tolerance: 14) || isNear(pixel, hex: restHex, tolerance: 16)
+        }
+        var start: Int?
+        var run: Range<Int>?
+        for x in 0..<bitmap.width {
+            guard let pixel = bitmap.color(x: x, y: row) else { continue }
+            // The handle begins where the fill stops and paints something that is not the unfilled track.
+            if !isTrack(pixel) {
+                if start == nil { start = x }
+            } else if let opened = start {
+                if x - opened >= 8 { run = opened..<x; break }
+                start = nil
+            }
+        }
+        guard let run else { return nil }
+        let centreColumn = (run.lowerBound + run.upperBound) / 2
+        guard let centreColour = bitmap.color(x: centreColumn, y: row) else { return nil }
+        var top = row
+        while top > 0, let pixel = bitmap.color(x: centreColumn, y: top - 1),
+              isNear(pixel, hex: rgb(centreColour), tolerance: 10) {
+            top -= 1
+        }
+        var bottom = row
+        while bottom < bitmap.height - 1, let pixel = bitmap.color(x: centreColumn, y: bottom + 1),
+              isNear(pixel, hex: rgb(centreColour), tolerance: 10) {
+            bottom += 1
+        }
+        let scale = 2.0
+        return CGRect(
+            x: Double(run.lowerBound) / scale,
+            y: Double(top) / scale,
+            width: Double(run.count) / scale,
+            height: Double(bottom - top + 1) / scale
+        )
+    }
+
+    private func rgb(_ pixel: APPixel) -> UInt32 {
+        (UInt32(pixel.red) << 16) | (UInt32(pixel.green) << 8) | UInt32(pixel.blue)
+    }
+
+    /// The bounding box of `hex`-coloured pixels in `rows` (the drawn disc).
+    private func darkBlob(
+        _ bitmap: APBitmap,
+        hex: UInt32,
+        rows: ClosedRange<Int>,
+        columns: ClosedRange<Int>
+    ) -> CGRect? {
+        var minX = Int.max, maxX = Int.min, minY = Int.max, maxY = Int.min
+        for y in rows where y >= 0 && y < bitmap.height {
+            for x in columns where x >= 0 && x < bitmap.width {
+                guard let pixel = bitmap.color(x: x, y: y), isNear(pixel, hex: hex, tolerance: 12) else { continue }
+                minX = min(minX, x); maxX = max(maxX, x)
+                minY = min(minY, y); maxY = max(maxY, y)
+            }
+        }
+        guard minX <= maxX, minY <= maxY else { return nil }
+        // Points, not pixels: the probe renders at scale 2.
+        return CGRect(x: Double(minX) / 2, y: Double(minY) / 2,
+                      width: Double(maxX - minX + 1) / 2, height: Double(maxY - minY + 1) / 2)
+    }
+
+    /// Rows inside the sheet (the bottom 340 pt of the screen) that paint `hex` in a run of `minRun`.
+    private func rowsPaintedInSheet(_ bitmap: APBitmap, hex: UInt32, minRun: Int = 24) -> [Int] {
+        let top = max(0, bitmap.height - Int(CameraGuideAdjustSheet.Layout.height))
+        return rowsPainted(bitmap, hex: hex, minRun: minRun).filter { $0 >= top }
+    }
+
+    private func rowsPainted(_ bitmap: APBitmap, hex: UInt32, minRun: Int) -> [Int] {
+        let target = (red: Int((hex >> 16) & 0xFF), green: Int((hex >> 8) & 0xFF), blue: Int(hex & 0xFF))
+        var rows: [Int] = []
+        for y in 0..<bitmap.height {
+            var run = 0
+            var longest = 0
+            for x in 0..<bitmap.width {
+                guard let pixel = bitmap.color(x: x, y: y) else { run = 0; continue }
+                let matches = abs(pixel.red - target.red) <= 6
+                    && abs(pixel.green - target.green) <= 6
+                    && abs(pixel.blue - target.blue) <= 6
+                run = matches ? run + 1 : 0
+                longest = max(longest, run)
+            }
+            if longest >= minRun { rows.append(y) }
+        }
+        return rows
+    }
+
+    /// How many separated row bands a list of rows forms.
+    private func rowBands(_ rows: [Int]) -> Int {
+        var bands = 0
+        var previous: Int?
+        for row in rows.sorted() {
+            if let previous, row - previous <= 2 {
+                // Same band.
+            } else {
+                bands += 1
+            }
+            previous = row
+        }
+        return bands
+    }
+}
+
+/// The zoom slider's mapping: what it shows, what the lens receives, and where the thumb sits.
+final class CameraZoomScaleTests: XCTestCase {
+    /// The camera drives one wide-angle lens, so the displayed factor is the lens's own factor — the round trip
+    /// has to be the identity inside the range and a clamp outside it.
+    func testTheDisplayedFactorAndTheLensFactorRoundTrip() {
+        let lens: ClosedRange<CGFloat> = 1...5
+        for factor: CGFloat in [1, 1.4, 2, 3, 4.75, 5] {
+            let device = CameraZoomScale.deviceFactor(forDisplay: factor, in: lens)
+            XCTAssertEqual(device, factor, accuracy: 0.0001, "\(factor)x reaches the lens unchanged")
+            XCTAssertEqual(
+                CameraZoomScale.displayFactor(forDevice: device, in: lens),
+                factor,
+                accuracy: 0.0001,
+                "and comes back to the same number on the pill"
+            )
+        }
+
+        XCTAssertEqual(CameraZoomScale.deviceFactor(forDisplay: 0.2, in: lens), 1, "below the lens' floor")
+        XCTAssertEqual(CameraZoomScale.deviceFactor(forDisplay: 9, in: lens), 5, "above the ramp's ceiling")
+        XCTAssertEqual(
+            CameraZoomScale.deviceFactor(forDisplay: .nan, in: lens), 1,
+            "a corrupt value falls back to the lens' floor instead of an impossible one"
+        )
+    }
+
+    /// A lens that really has the ultra-wide stop keeps it: the range is the device's, capped by the ramp.
+    func testTheRangeIsTheLensRubyCappedByTheRamp() {
+        XCTAssertEqual(CameraZoomScale.range(lower: 0.5, upper: 15.7), 0.5...CameraZoomScale.maxFactor)
+        XCTAssertEqual(CameraZoomScale.range(lower: 1, upper: 2), 1...2)
+        XCTAssertEqual(
+            CameraZoomScale.range(lower: 2, upper: 1), 2...2,
+            "an inverted report cannot make a range the thumb cannot sit in"
+        )
+    }
+
+    /// The thumb's position and the value it stands for are one mapping, both ways.
+    func testTheThumbPositionRoundTrips() {
+        let range: ClosedRange<CGFloat> = 1...5
+        XCTAssertEqual(CameraZoomScale.fraction(of: 1, in: range), 0, accuracy: 0.0001, "the left end")
+        XCTAssertEqual(CameraZoomScale.fraction(of: 5, in: range), 1, accuracy: 0.0001, "the right end")
+        XCTAssertEqual(CameraZoomScale.fraction(of: 3, in: range), 0.5, accuracy: 0.0001, "the middle")
+
+        for factor: CGFloat in [1, 1.7, 2.5, 4.2, 5] {
+            let x = CameraZoomScale.fraction(of: factor, in: range)
+            XCTAssertEqual(
+                CameraZoomScale.factor(atFraction: x, in: range), factor, accuracy: 0.0001,
+                "\(factor)x sits where dragging to \(x) puts it"
+            )
+        }
+        XCTAssertEqual(CameraZoomScale.factor(atFraction: -3, in: range), 1, "a drag past the end stops at it")
+        XCTAssertEqual(CameraZoomScale.factor(atFraction: 7, in: range), 5)
+    }
+
+    func testTheLabelsNameTheFactorTheWayTheBoardsDo() {
+        XCTAssertEqual(CameraZoomScale.valueLabel(1), "1×", "whole stops have no decimal, as on the boards")
+        XCTAssertEqual(CameraZoomScale.valueLabel(0.5), "0.5×")
+        XCTAssertEqual(CameraZoomScale.valueLabel(2.46), "2.5×")
+        XCTAssertEqual(CameraZoomScale.accessibilityValue(1), "1.0×", "VoiceOver reads one decimal, never \"1x\"")
+        XCTAssertEqual(CameraZoomScale.accessibilityValue(0.5), "0.5×")
+        XCTAssertEqual(CameraZoomScale.accessibilityValue(3), "3.0×")
+    }
+
+    /// The wall of ticks comes from the same range the slider spans, so a label can never sit on a factor the
+    /// thumb cannot reach.
+    func testTheTicksComeFromTheSliderRange() {
+        let lens = CameraZoomScale.range(lower: 0.5, upper: 5)
+        XCTAssertEqual(CameraZoomScale.ticks(in: lens), [.half, .one, .two, .three])
+        for tick in CameraZoomScale.ticks(in: lens) {
+            XCTAssertTrue(lens.contains(tick.factor), "\(tick.factor) is reachable")
+            XCTAssertTrue(
+                (0...1).contains(CameraZoomScale.fraction(of: tick.factor, in: lens)),
+                "\(tick.factor) sits on the track"
+            )
+        }
+    }
+}
+
 final class CameraZoomPresetTests: XCTestCase {
+    /// The slider's ticks are the stops the lens can actually reach: a phone without the ultra-wide never draws
+    /// a 0.5 label, and a lens that starts at 2x never draws a 1.
     func testPresetsFollowTheLensRange() {
         XCTAssertEqual(
             CameraZoomPresets.available(range: 0.5...4),
-            [.half, .one, .two],
+            [.half, .one, .two, .three],
             "a lens with an ultra-wide stop offers 0.5x"
         )
         XCTAssertEqual(
@@ -2054,27 +3536,25 @@ final class CameraZoomPresetTests: XCTestCase {
             [.one, .two],
             "a lens that cannot go below 1x never offers 0.5x"
         )
-        XCTAssertEqual(CameraZoomPresets.available(range: 2...5), [.two])
-        XCTAssertEqual(CameraZoomPresets.available(range: 3...5), [.one], "1x is always offered")
+        XCTAssertEqual(CameraZoomPresets.available(range: 2...5), [.two, .three])
+        XCTAssertEqual(CameraZoomPresets.available(range: 3...5), [.three])
+        XCTAssertEqual(CameraZoomPresets.available(range: 4...4), [.one], "an empty wall of ticks still names 1x")
     }
 
-    func testRequestsAreClampedToTheLens() {
-        XCTAssertEqual(CameraZoomPresets.clamp(0.4, range: 1...2), 1)
-        XCTAssertEqual(CameraZoomPresets.clamp(9, range: 1...2), 2)
-        XCTAssertEqual(CameraZoomPresets.clamp(.nan, range: 0.5...2), 1)
-        XCTAssertEqual(CameraZoomPresets.clamp(1.5, range: 0.5...2), 1.5)
-    }
-
-    func testTheNearestPresetIsTheHighlightedChoice() {
-        XCTAssertEqual(CameraZoomPresets.nearest(to: 0.5, range: 0.5...2), .half)
-        XCTAssertEqual(CameraZoomPresets.nearest(to: 2.4, range: 0.5...2), .two)
-        XCTAssertEqual(CameraZoomPresets.nearest(to: 3, range: 0.5...2), .two)
-    }
-
-    func testZoomIdentifiersAreTheQaContract() {
-        XCTAssertEqual(CameraZoomPreset.half.accessibilityIdentifier, "camera.zoom.0.5x")
-        XCTAssertEqual(CameraZoomPreset.one.accessibilityIdentifier, "camera.zoom.1x")
-        XCTAssertEqual(CameraZoomPreset.two.accessibilityIdentifier, "camera.zoom.2x")
+    /// The 1x/2x pills are gone; the slider is the zoom control now, and the old pill handles are retired so no
+    /// flow can address a control that no longer exists.
+    func testTheZoomSliderIsTheOnlyZoomControl() {
+        XCTAssertEqual(CameraZoomScale.sliderIdentifier, "camera.zoom.slider")
+        XCTAssertTrue(
+            CameraZoomScale.retiredIdentifiers.contains("camera.zoom.0.5x"),
+            "the old pill spelling is kept as the retirement record"
+        )
+        for retired in CameraZoomScale.retiredIdentifiers {
+            XCTAssertTrue(
+                CameraChromeLayout.retiredIdentifiers.contains(retired),
+                "\(retired) is retired in one list the chrome reads"
+            )
+        }
     }
 
     func testTheStoredLevelMatchesTheNearestFactor() {
@@ -2104,20 +3584,18 @@ final class CameraGuideScaleModelTests: XCTestCase {
         XCTAssertEqual(model.guideTransform.scale, 1, accuracy: 0.0001, "a control the camera cannot serve does not move")
     }
 
-    /// The simulator has no capture device, so the lens range falls back to 1...2: 0.5x is not offered
-    /// and a 0.5x request clamps to the lens instead of failing.
-    func testZoomPresetsAreLensAwareInTheSimulator() {
+    /// The simulator has no capture device, so the lens range falls back to 1...2: the slider's ticks are 1x
+    /// and 2x, and the 0.5x stop is simply not offered instead of being drawn and refused.
+    func testTheSliderTicksAreLensAwareInTheSimulator() {
         let model = CameraViewModel()
         model.coordinator.onPermissionResult(.authorized)
 
-        XCTAssertEqual(model.zoomPresets, [.one, .two])
+        XCTAssertEqual(model.zoomRange, 1...2)
+        XCTAssertEqual(CameraZoomScale.ticks(in: model.zoomRange), [.one, .two])
 
-        model.selectZoomPreset(.two)
-        XCTAssertEqual(model.activeZoomPreset, .two)
-        XCTAssertEqual(model.zoomLevel, .two)
-
-        model.selectZoomPreset(.half)
-        XCTAssertEqual(model.activeZoomPreset, .one, "a preset the lens cannot serve clamps to its minimum")
+        model.setZoomFactor(2)
+        XCTAssertEqual(model.zoomLevel, .two, "the stored level follows the factor for older readers")
+        XCTAssertEqual(model.zoomFactor, 2, accuracy: 0.0001)
     }
 }
 
@@ -2236,6 +3714,109 @@ final class CameraChromeContractTests: XCTestCase {
         )
     }
 
+    // MARK: Everything that belongs to the photo is clipped to it
+
+    /// The canvas is bigger than the photo: a 9:16 frame leaves bars above and below, and they are not part
+    /// of the picture the shutter saves. So the scrims must be measured against the frame (they grade the
+    /// photo, not the screen), the pinch/drag catcher is the frame (a drag that starts on the bars is
+    /// outside the picture), and the guide's layer is clipped to the frame *before* it is positioned —
+    /// `.position` makes a view take all the space offered, so a clip after it cuts at the canvas edge and
+    /// the guide still reaches the bars.
+    ///
+    /// Source-level because the geometry a gesture would take is not observable in a unit-test host; what
+    /// the pixels look like is asserted on a rendered canvas in `CameraCanvasFramingTests`.
+    ///
+    /// Mutation target: move `.clipped()` after `.position`, drop the scrims' frame, or let the catcher
+    /// stay canvas-sized — each turns one assertion below red.
+    func testTheDimTheEdgeAndTheGuideAreBoundedByThePhoto() throws {
+        let canvas = try cameraCanvasSource()
+        let frameSize = ".frame(width: frame.width, height: frame.height)"
+
+        // One dim layer over everything the photo leaves out — never four strips, never an opaque bar.
+        let dimStart = try XCTUnwrap(canvas.range(of: "CameraStageFrameMask(frame: frame)")?.lowerBound)
+        let dim = canvas[dimStart...].prefix(260)
+        XCTAssertTrue(
+            dim.contains("Color.black.opacity(CameraStageFrame.dimOpacity)"),
+            "the outside is one translucent black layer at the stage's own opacity"
+        )
+        XCTAssertTrue(dim.contains("eoFill: true"), "a rect with a hole, so the photo inside is untouched")
+        XCTAssertTrue(dim.contains(".allowsHitTesting(false)"), "and it never eats a gesture meant for the photo")
+
+        // The pinch/twist/drag catcher is the photo.
+        let catcherStart = try XCTUnwrap(canvas.range(of: "Color.clear")?.lowerBound)
+        let catcher = canvas[catcherStart...].prefix(400)
+        XCTAssertTrue(catcher.contains(frameSize), "the gesture area is the photo")
+        let catcherFrame = try XCTUnwrap(catcher.range(of: frameSize))
+        let catcherShape = try XCTUnwrap(catcher.range(of: ".contentShape(Rectangle())"))
+        XCTAssertLessThan(
+            catcher.distance(from: catcher.startIndex, to: catcherFrame.lowerBound),
+            catcher.distance(from: catcher.startIndex, to: catcherShape.lowerBound),
+            "the touch area is shaped by the frame, so the dimmed area stays inert"
+        )
+
+        // The guide's clip, in the order that actually clips.
+        let guideStart = try XCTUnwrap(canvas.range(of: "guideOverlay(for: guide)")?.lowerBound)
+        let guide = canvas[guideStart...].prefix(900)
+        let clip = try XCTUnwrap(guide.range(of: ".clipped()"), "the guide layer is clipped to the photo")
+        let position = try XCTUnwrap(guide.range(of: ".position(x: frame.midX, y: frame.midY)"))
+        XCTAssertLessThan(
+            guide.distance(from: guide.startIndex, to: clip.lowerBound),
+            guide.distance(from: guide.startIndex, to: position.lowerBound),
+            "clip before position: after it, the clip is the canvas edge and the guide paints on the bars"
+        )
+    }
+
+    // MARK: The Poses control names the pose it holds
+
+    /// The strip that used to draw the chosen pose's name is retired, so the control's *value* is the only
+    /// place left that says which reference is up. It said "Selected" — true of any pose, and no use to a
+    /// VoiceOver user lining up against the guide.
+    func testThePosesControlValueIsTheSelectedPoseName() {
+        XCTAssertEqual(CameraChromeLayout.posesControlValue(selectedPoseName: "Warrior II"), "Warrior II")
+        XCTAssertEqual(
+            CameraChromeLayout.posesControlValue(selectedPoseName: "  Tree Pose \n"),
+            "Tree Pose",
+            "the name is announced as written, not padded"
+        )
+        XCTAssertEqual(CameraChromeLayout.posesControlValue(selectedPoseName: nil), "None selected")
+        XCTAssertEqual(
+            CameraChromeLayout.posesControlValue(selectedPoseName: "   "),
+            "None selected",
+            "a blank name is no name: the control does not announce nothing at all"
+        )
+        XCTAssertNotEqual(
+            CameraChromeLayout.posesControlValue(selectedPoseName: "Warrior II"),
+            "Selected",
+            "the value names the pose, it does not restate that something is selected"
+        )
+    }
+
+    /// Source-level, like the picker ids pin below: a hosted SwiftUI view exposes no accessibility tree in
+    /// this test host, so the wiring from the guide to the announcement is what is checked.
+    ///
+    /// Mutation target: put `.accessibilityValue(... = "Selected")` back, or pass only `guide?.id` from the
+    /// screen — each turns one assertion below red.
+    func testTheControlWiresThePoseNameIntoItsValue() throws {
+        let source = try cameraFeatureSource()
+        let control = try viewBody(named: "posesControl", in: source)
+        XCTAssertTrue(
+            control.contains(
+                ".accessibilityValue(CameraChromeLayout.posesControlValue(selectedPoseName: selectedPoseName))"
+            ),
+            "the control announces the reference it holds, through the one rule"
+        )
+        XCTAssertFalse(
+            control.contains("\"Selected\""),
+            "and no longer announces the word that says nothing"
+        )
+
+        let bottomChrome = try viewBody(named: "bottomChrome", in: source)
+        XCTAssertTrue(
+            bottomChrome.contains("selectedPoseName: guide?.name"),
+            "the bar is handed the name, not only the id"
+        )
+    }
+
     /// `contain` must be declared before the id in a view body, or the id is inherited by every child.
     private func assertContainPrecedesContainerId(
         after marker: String,
@@ -2269,93 +3850,196 @@ final class CameraChromeContractTests: XCTestCase {
 
     // MARK: Timer / Ratio option ids
 
-    /// Each Timer and Ratio choice is its own accessibility element with its own id. The row id used to
-    /// be applied to the row's *content*, so every option reported `camera.tools.timer` /
-    /// `camera.tools.ratio` and the documented per-option ids never reached the tree.
+    /// The Timer chips read the board's words: "Off", "3s", "10s" — no space. The accessible name follows the
+    /// same spelling, so what a flow reads and what a VoiceOver user hears are one label.
+    func testTheTimerChipsReadTheBoardSpelling() {
+        XCTAssertEqual(CameraTimerSetting.allCases.map(\.rawValue), ["Off", "3s", "10s"])
+        XCTAssertEqual(CameraTimerSetting.threeSeconds.rawValue, "3s")
+        XCTAssertEqual(CameraTimerSetting.tenSeconds.rawValue, "10s")
+        XCTAssertFalse(CameraTimerSetting.threeSeconds.rawValue.contains(" "), "no space before the unit")
+    }
+
+    /// A row written before the spelling changed still decodes to its own timer.
+    func testALegacyTimerSpellingStillDecodes() throws {
+        let legacy = #"{"version":1,"timer":"3 s"}"#
+        XCTAssertEqual(try XCTUnwrap(CameraSettings.decode(legacy)).timer, .threeSeconds)
+        let legacyTen = #"{"version":1,"timer":"10 s"}"#
+        XCTAssertEqual(try XCTUnwrap(CameraSettings.decode(legacyTen)).timer, .tenSeconds)
+        XCTAssertEqual(CameraTimerSetting.stored("3s"), .threeSeconds)
+        XCTAssertEqual(CameraTimerSetting.stored("nonsense"), nil)
+    }
+
+    /// Each Timer and Ratio choice is its own accessibility element with its own id, and each row keeps the
+    /// handle the flows already use. The chips are one line per row now, so the row is the container and no chip
+    /// inherits its parent's id.
     func testTheTimerAndRatioChoicesKeepTheirOwnIdentifiers() throws {
-        let source = try cameraFeatureSource()
-        for row in ["timerRow", "ratioRow"] {
-            let body = try viewBody(named: row, in: source)
-            XCTAssertTrue(
-                body.contains(".accessibilityElement(children: .contain)"),
-                "\(row) is a container, so its choices stay separate elements with their own ids"
-            )
-        }
+        // The chips live with the popover they belong to, in the one place that builds a row's control.
+        let source = try cameraToolsPopoverSource()
+        let control = try XCTUnwrap(
+            source.range(of: "private func control(for row: CameraToolsLayout.Row)")?.lowerBound
+        )
+        let controlBody = source[control...].prefix(2_600)
+        XCTAssertTrue(controlBody.contains("setting.accessibilityIdentifier"), "each Timer choice keeps its own id")
+        XCTAssertTrue(controlBody.contains("ratio.accessibilityIdentifier"), "each Ratio choice keeps its own id")
+        XCTAssertTrue(controlBody.contains("camera.tools.flash."), "and so does each Flash choice")
 
         // The ids themselves are the QA contract and stay unchanged.
         XCTAssertEqual(CameraTimerSetting.off.accessibilityIdentifier, "camera.tools.timer.off")
         XCTAssertEqual(CameraTimerSetting.threeSeconds.accessibilityIdentifier, "camera.tools.timer.3s")
         XCTAssertEqual(CameraTimerSetting.tenSeconds.accessibilityIdentifier, "camera.tools.timer.10s")
         XCTAssertEqual(CameraAspectRatio.threeFour.accessibilityIdentifier, "camera.tools.ratio.3x4")
+        XCTAssertEqual(CameraAspectRatio.oneOne.accessibilityIdentifier, "camera.tools.ratio.1x1")
+        XCTAssertEqual(CameraAspectRatio.nineSixteen.accessibilityIdentifier, "camera.tools.ratio.9x16")
     }
 
     // MARK: The popover, rendered
 
-    /// What the fix is for, measured on a rendered frame: with a pose guide up the popover paints every
-    /// one of its control blocks down to the line-colour row. Before, the card stopped at the Ratio row
-    /// (the viewport band) and the four guide rows were laid out past the clip, where a tap landed on
-    /// nothing.
-    func testTheToolsPopoverPaintsItsGuideRowsInsideTheSafeArea() throws {
-        var guide: NativePose? = NativePose(
-            id: "p1",
-            name: "Warrior II",
-            category: "Yoga",
-            imageURL: nil,
-            instructions: [],
-            isSaved: false
-        )
-        let model = CameraViewModel()
-        model.coordinator.onPermissionResult(.authorized)
-        // The chrome is not the subject: the popover gets the screen, and no sheet is open over it.
-        model.openCameraTools()
+    /// The popover, measured on a rendered frame: four one-line rows and the artboard's 232 pt, with the Ratio
+    /// row's three choices on a single line and the chosen one carrying the selected fill.
+    ///
+    /// Four rows and no fifth is what says the retired Opacity / Line colour / Scale / Mirror rows are gone. The
+    /// popover is rendered on its own because the camera behind it cannot be rendered in a simulator, so the
+    /// anchoring to the tools control and the check inside the chosen chip are pinned by their own rules.
+    func testThePopoverDrawsFourOneLineRows() throws {
+        let rendered = try popoverRender(ratio: .threeFour)
 
-        let screen = CameraScreen(
-            guide: Binding(get: { guide }, set: { guide = $0 }),
-            poseService: PreviewPoseService(),
-            model: model
-        )
-        let size = CGSize(width: 393, height: 852)
-        let bitmap = try XCTUnwrap(render(screen, size: size))
+        XCTAssertEqual(rendered.card.width, CameraToolsLayout.width - 4, accuracy: 4, "the artboard's 232 pt")
+        XCTAssertLessThanOrEqual(rendered.card.height, CameraToolsLayout.height + 1, "no fifth row on this surface")
+        XCTAssertGreaterThan(rendered.card.height, CameraToolsLayout.height - 26, "and all four rows are painted")
 
-        // One column inside the popover's rows: the pills start 12 pt in from the card's edge, and the
-        // column sits left of every glyph and label, so it samples the row's fill only.
-        let bands = controlFillBands(bitmap, column: 130)
-        XCTAssertGreaterThanOrEqual(
-            bands.count, 9,
-            "flash · grid · timer · ratio · pose guide · mirror · opacity · scale · line colour"
-        )
-
-        let last = try XCTUnwrap(bands.last)
-        XCTAssertGreaterThan(
-            last.upperBound, 760,
-            "the line-colour row is painted at the bottom of the safe area, not clipped at the Ratio row"
-        )
-        XCTAssertLessThan(last.upperBound, Int(size.height) - 8, "and it stays inside the screen")
+        XCTAssertEqual(rendered.ratioChips.count, 3, "the Ratio row paints its three choices on one line")
+        XCTAssertEqual(rendered.selectedChips, 1, "and exactly one of them is the chosen one")
     }
 
-    /// The rows that paint `controlFill` at one x, as contiguous bands.
-    private func controlFillBands(_ bitmap: APBitmap, column: Int) -> [ClosedRange<Int>] {
-        let fill = APColorTokens.controlFill.spec(for: .dark).hex ?? 0
-        let target = (red: Int((fill >> 16) & 0xFF), green: Int((fill >> 8) & 0xFF), blue: Int(fill & 0xFF))
-        var bands: [ClosedRange<Int>] = []
-        var start: Int?
+    /// The popover hangs under the tools control because the screen pads it by those two rules: its right edge on
+    /// the control's inset, its card top under the measured top bar. Source-level, so a change to either padding
+    /// has to change this test.
+    func testTheScreenAnchorsThePopoverUnderTheToolsControl() throws {
+        let source = try cameraFeatureSource()
+        XCTAssertTrue(
+            source.contains(".padding(.top, CameraToolsLayout.cardTop(belowTopBar: topBarHeight))"),
+            "the card starts under the measured top bar"
+        )
+        XCTAssertTrue(
+            source.contains(".padding(.trailing, CameraProto.controlInset)"),
+            "and its right edge sits on the tools control's"
+        )
+        XCTAssertFalse(source.contains("CameraToolsPopupMetrics"), "no height cap: the popover hugs its four rows")
+    }
+
+    /// The chosen chip is marked with a check glyph in addition to its fill (the owner's default). A 9 pt glyph is
+    /// below what a rendered frame can be asserted on reliably, so the chip's own drawing rule is pinned here.
+    func testTheChosenChipDrawsACheckmark() throws {
+        let source = try cameraToolsPopoverSource()
+        let chip = try XCTUnwrap(source.range(of: "private func chip(")?.lowerBound)
+        let chipBody = source[chip...].prefix(2_200)
+        XCTAssertTrue(chipBody.contains("if isSelected {"), "the chip branches on being the chosen one")
+        XCTAssertTrue(
+            chipBody.contains("Image(systemName: \"checkmark\")"),
+            "and that branch draws the check glyph beside the word"
+        )
+        XCTAssertTrue(
+            chipBody.contains(".accessibilityValue(isSelected ? \"Selected\" : \"\")"),
+            "and announces the choice instead of relying on the glyph alone"
+        )
+    }
+
+    private struct PopoverRender {
+        let card: CGRect
+        let ratioChips: [Range<Int>]
+        /// How many of those chips carry the selected fill.
+        let selectedChips: Int
+    }
+
+    private func popoverRender(ratio: CameraAspectRatio) throws -> PopoverRender {
+        let popup = CameraToolsPopup(
+            flashSetting: .auto,
+            isGridVisible: false,
+            controlsEnabled: true,
+            timerSetting: .off,
+            aspectRatio: ratio,
+            onFlashChange: { _ in },
+            onGridToggle: {},
+            onTimerChange: { _ in },
+            onAspectRatioChange: { _ in },
+            onDismiss: {}
+        )
+        .environment(\.colorScheme, .dark)
+        .background(AP.Color.background)
+        let size = CGSize(width: CameraToolsLayout.width + 16, height: CameraToolsLayout.height + 16)
+        let bitmap = try XCTUnwrap(render(popup, size: size))
+
+        let surface = APColorTokens.surface.spec(for: .dark).hex ?? 0
+        let card = try XCTUnwrap(boxOfColour(bitmap, hex: surface), "the popover's card is painted")
+
+        let selected = APColorTokens.selectedBackground.spec(for: .dark).hex ?? 0
+        let unselected = APColorTokens.controlFill.spec(for: .dark).hex ?? 0
+        var chips: [Range<Int>] = []
+        var selectedCount = 0
+        for row in stride(from: Int(card.maxY) - 4, through: Int(card.maxY) - 52, by: -1) {
+            // A chip's fill is split by the glyphs drawn on it, so runs separated by a letter gap are one chip —
+            // while the gap between two chips (4 pt) keeps them apart.
+            let chosen = mergedRuns(bitmap, row: row, hex: selected).filter { $0.count >= 20 && $0.count <= 90 }
+            let plain = mergedRuns(bitmap, row: row, hex: unselected).filter { $0.count >= 20 && $0.count <= 90 }
+            guard chosen.count + plain.count == 3 else { continue }
+            chips = (chosen + plain).sorted { $0.lowerBound < $1.lowerBound }
+            selectedCount = chosen.count
+            break
+        }
+        return PopoverRender(card: card, ratioChips: chips, selectedChips: selectedCount)
+    }
+
+    private func matches(_ pixel: APPixel, _ hex: UInt32, tolerance: Int = 6) -> Bool {
+        let target = (red: Int((hex >> 16) & 0xFF), green: Int((hex >> 8) & 0xFF), blue: Int(hex & 0xFF))
+        return pixel.alpha > 200
+            && abs(pixel.red - target.red) <= tolerance
+            && abs(pixel.green - target.green) <= tolerance
+            && abs(pixel.blue - target.blue) <= tolerance
+    }
+
+    /// The bounding box of `hex`-coloured pixels.
+    private func boxOfColour(_ bitmap: APBitmap, hex: UInt32) -> CGRect? {
+        var minX = Int.max, maxX = Int.min, minY = Int.max, maxY = Int.min
         for y in 0..<bitmap.height {
-            let pixel = bitmap.color(x: column, y: y)
-            let isFill = pixel.map { pixel in
-                pixel.alpha > 200
-                    && abs(pixel.red - target.red) <= 6
-                    && abs(pixel.green - target.green) <= 6
-                    && abs(pixel.blue - target.blue) <= 6
-            } ?? false
+            for x in 0..<bitmap.width {
+                guard let pixel = bitmap.color(x: x, y: y), matches(pixel, hex, tolerance: 4) else { continue }
+                minX = min(minX, x); maxX = max(maxX, x)
+                minY = min(minY, y); maxY = max(maxY, y)
+            }
+        }
+        guard minX <= maxX, minY <= maxY else { return nil }
+        return CGRect(x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1)
+    }
+
+    /// The runs of `hex` on one row with neighbouring runs closer than `maxGap` merged: a chip's fill is split by
+    /// the glyphs drawn on top of it, and a chip is what the caller counts.
+    private func mergedRuns(_ bitmap: APBitmap, row: Int, hex: UInt32, maxGap: Int = 3) -> [Range<Int>] {
+        var merged: [Range<Int>] = []
+        for run in allRuns(bitmap, row: row, hex: hex) {
+            if let last = merged.last, run.lowerBound - last.upperBound <= maxGap {
+                merged[merged.count - 1] = last.lowerBound..<max(last.upperBound, run.upperBound)
+            } else {
+                merged.append(run)
+            }
+        }
+        return merged
+    }
+
+    private func allRuns(_ bitmap: APBitmap, row: Int, hex: UInt32) -> [Range<Int>] {
+        var runs: [Range<Int>] = []
+        var start: Int?
+        for x in 0...bitmap.width {
+            let isFill = x < bitmap.width
+                ? (bitmap.color(x: x, y: row).map { matches($0, hex, tolerance: 4) } ?? false)
+                : false
             if isFill, start == nil {
-                start = y
+                start = x
             } else if !isFill, let opened = start {
-                bands.append(opened...(y - 1))
+                runs.append(opened..<x)
                 start = nil
             }
         }
-        if let opened = start { bands.append(opened...(bitmap.height - 1)) }
-        return bands
+        return runs
     }
 
     /// Deterministic dark render of a screen, as the guide-tint evidence does it.
@@ -2378,32 +4062,31 @@ final class CameraChromeContractTests: XCTestCase {
         return APBitmap(image: image)
     }
 
-    // MARK: The tools popover's height
+    // MARK: - Source helpers
 
-    /// The popover may use the whole safe area under the top bar. A fixed cap is shorter than the
-    /// menu's own content once a pose guide is in place, which is how Mirror / Opacity / Scale / Line
-    /// colour ended up outside the popover's clip — in the accessibility tree, hittable by nobody.
-    func testTheToolsPopoverUsesTheHeightItsSafeAreaHas() {
-        // 393×852 phone, bottom safe area 34: 818 pt of safe height, top bar under-side at 62 + 44 + 8.
-        let phone = CameraToolsPopupMetrics.maxHeight(available: 818, topBarBottom: 114)
-        XCTAssertGreaterThan(phone, 420, "no fixed 420 cap: the guide rows need the space that exists")
-        XCTAssertEqual(phone, 818 - 114 - AP.Space.space16, accuracy: 0.001)
-        XCTAssertLessThanOrEqual(phone, 818 - 114, "the popover never leaves the safe area it was given")
-
-        let short = CameraToolsPopupMetrics.maxHeight(available: 260, topBarBottom: 200)
-        XCTAssertEqual(short, CameraToolsPopupMetrics.minHeight, "a cramped screen keeps a scrollable window")
-    }
-
-    /// The view must ask the metric, so the fixed cap cannot come back as a constant.
-    func testThePopoverHeightIsComputedFromTheSafeArea() throws {
-        let source = try cameraFeatureSource()
-        XCTAssertTrue(
-            source.contains("CameraToolsPopupMetrics.maxHeight("),
-            "the popover's cap is computed from the space that exists"
+    /// The canvas' own source: the dim, the edge and the guide's clip are drawn there now.
+    private func cameraCanvasSource() throws -> String {
+        try String(
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent() // Features
+                .deletingLastPathComponent() // iosAppTests
+                .deletingLastPathComponent() // iosApp (project dir)
+                .appendingPathComponent("iosApp/Features/Camera/CameraCanvas.swift"),
+            encoding: .utf8
         )
     }
 
-    // MARK: - Source helpers
+    /// The tools popover's own source: its rows are asserted here, and it is a file of its own.
+    private func cameraToolsPopoverSource() throws -> String {
+        try String(
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent() // Features
+                .deletingLastPathComponent() // iosAppTests
+                .deletingLastPathComponent() // iosApp (project dir)
+                .appendingPathComponent("iosApp/Features/Camera/CameraToolsPopover.swift"),
+            encoding: .utf8
+        )
+    }
 
     private func cameraFeatureSource() throws -> String {
         try String(
@@ -2418,11 +4101,15 @@ final class CameraChromeContractTests: XCTestCase {
 
     /// The body of `private var <name>: some View { … }`, found by brace counting.
     private func viewBody(named name: String, in source: String) throws -> String {
-        let marker = "var \(name): some View {"
         let start = try XCTUnwrap(
-            source.range(of: marker)?.upperBound,
+            source.range(of: "var \(name): some View {")?.upperBound,
             "no declaration for \(name)"
         )
+        return try bracedBody(from: start, named: name, in: source)
+    }
+
+    /// Everything up to the brace that closes the one just after `start`.
+    private func bracedBody(from start: String.Index, named name: String, in source: String) throws -> String {
         var depth = 1
         var index = start
         while index < source.endIndex {
@@ -2437,5 +4124,129 @@ final class CameraChromeContractTests: XCTestCase {
         }
         XCTFail("unterminated body for \(name)")
         return ""
+    }
+}
+
+/// The picker sheet's *drawn* geometry: the results scroll content has to fill the panel under the chips.
+///
+/// The panel used to render every row through a `ForEach`, including the results `ScrollView` — the one
+/// flexible child, re-parented under a `ForEach` instead of being a direct child of the `VStack`. The order
+/// array stayed green either way, so nothing could see the scroll content being proposed the wrong height.
+/// This renders the real screen with the sheet open and measures what was painted.
+@MainActor
+final class CameraPickerSheetGeometryTests: XCTestCase {
+    private let size = CGSize(width: 393, height: 852)
+
+    func testTheResultsFillThePanelBelowTheChips() throws {
+        let bitmap = try renderSheet()
+
+        // The camera canvas behind the sheet is dark and full-width; the sheet is the light surface, so the
+        // first row that is not full-width ink is the sheet's top edge.
+        let sheetTop = try XCTUnwrap(
+            (0..<bitmap.height).first { ink(in: bitmap, row: $0) < bitmap.width / 2 },
+            "the sheet is drawn over the canvas"
+        )
+        let bands = inkBands(in: bitmap, rows: sheetTop..<bitmap.height, minimumInk: 20)
+
+        // handle · header · search field · chips, then the results. The search field is the band that paints
+        // the whole width (it is a full-width control fill); the chips are the pills under it.
+        let search = try XCTUnwrap(
+            bands.first { $0.widest >= bitmap.width * 3 / 4 },
+            "the search field is drawn (bands: \(bands))"
+        )
+        let chips = try XCTUnwrap(
+            bands.first { $0.range.lowerBound > search.range.upperBound },
+            "the scope chips are drawn"
+        )
+
+        let results = bands.filter { $0.range.lowerBound > chips.range.upperBound }.map(\.range)
+        XCTAssertGreaterThanOrEqual(
+            results.count, 2,
+            "below the chips the row's card and its name are painted, not an empty panel: \(bands.map(\.range))"
+        )
+        let first = try XCTUnwrap(results.first)
+        let last = try XCTUnwrap(results.last)
+        XCTAssertGreaterThanOrEqual(
+            last.upperBound - first.lowerBound, 80,
+            "the results area is a real block of the panel, not a sliver (\(first)–\(last))"
+        )
+        XCTAssertGreaterThan(
+            CGFloat(last.upperBound), CGFloat(chips.range.upperBound) + 60,
+            "and it extends well below the chips"
+        )
+    }
+
+    private func renderSheet() throws -> APBitmap {
+        var guide: NativePose?
+        let model = CameraViewModel()
+        model.coordinator.onPermissionResult(.authorized)
+        model.openPosePicker()
+        let screen = CameraScreen(
+            guide: Binding(get: { guide }, set: { guide = $0 }),
+            poseService: PreviewPoseService(),
+            model: model
+        )
+        let host = UIHostingController(rootView: screen)
+        // The sheet follows the app's appearance, which the test host resolves to light: pin it, so the
+        // measurement is "dark ink on a light surface" whatever the simulator is set to.
+        host.overrideUserInterfaceStyle = .light
+        host.view.frame = CGRect(origin: .zero, size: size)
+        host.view.layoutIfNeeded()
+        // The sheet loads its catalogue in a `.task`; give the immediate stub service its turn.
+        RunLoop.main.run(until: Date().addingTimeInterval(0.5))
+        host.view.setNeedsLayout()
+        host.view.layoutIfNeeded()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.2))
+
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = 1
+        format.opaque = true
+        let image = UIGraphicsImageRenderer(size: size, format: format).image { _ in
+            host.view.drawHierarchy(in: CGRect(origin: .zero, size: size), afterScreenUpdates: true)
+        }
+        return try XCTUnwrap(APBitmap(image: image))
+    }
+
+    /// Pixels in one row that are not the sheet's white surface.
+    private func ink(in bitmap: APBitmap, row: Int) -> Int {
+        var count = 0
+        for x in 0..<bitmap.width {
+            guard let pixel = bitmap.color(x: x, y: row) else { continue }
+            let luminance = (pixel.red * 299 + pixel.green * 587 + pixel.blue * 114) / 1000
+            if luminance < 235 { count += 1 }
+        }
+        return count
+    }
+
+    /// One run of rows that paints at least `minimumInk` non-surface pixels, with the widest row in it.
+    private struct InkBand {
+        let range: ClosedRange<Int>
+        /// The most pixels any row in the band painted: a full-width control fill fills the row, a pill or a
+        /// line of text does not.
+        let widest: Int
+    }
+
+    /// Runs of rows that paint at least `minimumInk` non-surface pixels.
+    private func inkBands(in bitmap: APBitmap, rows: Range<Int>, minimumInk: Int) -> [InkBand] {
+        var bands: [InkBand] = []
+        var start: Int?
+        var widest = 0
+        func close(_ lastRow: Int) {
+            guard let opened = start else { return }
+            if lastRow - opened >= 2 { bands.append(InkBand(range: opened...lastRow, widest: widest)) }
+            start = nil
+            widest = 0
+        }
+        for row in rows {
+            let painted = ink(in: bitmap, row: row)
+            if painted >= minimumInk {
+                if start == nil { start = row }
+                widest = max(widest, painted)
+            } else {
+                close(row - 1)
+            }
+        }
+        close(rows.upperBound - 1)
+        return bands
     }
 }

@@ -70,6 +70,10 @@
 # never use `xcrun simctl launch --console-pty` (killing that console host SIGTERMs the app ~1 s after
 # launch — it looks like a crash, but is not one). This script uses `xcodebuild test`, not Maestro.
 #
+# Simulator budget (owner rule): exactly two simulators exist and no clones may be created, so every
+# xcodebuild below passes `-parallel-testing-enabled NO`. Never `simctl create`/`clone`, and shut the sim
+# down when a run is finished.
+#
 # Why the perl wrapper: this Mac has no `timeout` binary. `alarm` survives exec, so the
 # xcodebuild child gets the signal and is killed instead of hanging a lane forever.
 #
@@ -671,6 +675,7 @@ if ! run_guarded "$BUILD_LOG" xcodebuild build-for-testing \
   -scheme "$SCHEME" \
   -destination "id=$SIM_ID" \
   -derivedDataPath "$DERIVED_DATA" \
+  -parallel-testing-enabled NO \
   ${TEST_ARGS[@]+"${TEST_ARGS[@]}"}; then
   echo "--- last 40 lines of $BUILD_LOG ---" >&2
   tail -40 "$BUILD_LOG" >&2
@@ -685,6 +690,7 @@ run_guarded "$TEST_LOG" xcodebuild test-without-building \
   -scheme "$SCHEME" \
   -destination "id=$SIM_ID" \
   -derivedDataPath "$DERIVED_DATA" \
+  -parallel-testing-enabled NO \
   ${TEST_ARGS[@]+"${TEST_ARGS[@]}"}
 TEST_STATUS=$?
 set -e

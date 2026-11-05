@@ -41,6 +41,18 @@ enum CameraFlashSetting: Equatable, Sendable {
         case .auto: return "bolt.badge.automatic.fill"
         }
     }
+
+    /// The three choices the tools popover offers, in the order the artboard reads them.
+    static let toolsChoices: [CameraFlashSetting] = [.off, .auto, .on]
+
+    /// The handle suffix for a choice's chip (`camera.tools.flash.<slug>`).
+    var toolsSlug: String {
+        switch self {
+        case .off: return "off"
+        case .auto: return "auto"
+        case .on: return "on"
+        }
+    }
 }
 
 enum CameraFacing: Equatable, Sendable {

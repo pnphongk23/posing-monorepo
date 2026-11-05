@@ -20,6 +20,8 @@ final class CameraViewModel: ObservableObject {
     @Published var showCameraTools = false
     /// `.nb-pose-picker-sheet` — camera-local bottom sheet, not a pushed route.
     @Published var showPosePicker = false
+    /// The guide-adjust sheet. A sheet, not a popover row: the reference's own controls are what it holds.
+    @Published var showGuideAdjust = false
     /// Visible countdown (`nil` when idle): the number and its Cancel above the shutter.
     @Published private(set) var timerCountdown: Int?
     /// Shutter timer setting (`Off` / `3 s` / `10 s`), persisted like the other settings.
@@ -29,7 +31,7 @@ final class CameraViewModel: ObservableObject {
     /// `pose-visibility-row`: Shown / Hidden for the selected pose reference.
     @Published var isPoseGuideVisible = true
     /// `pose-line-color-black` / `pose-line-color-white`.
-    @Published var guideLineColor: GuideLineColor = .black
+    @Published var guideLineColor: GuideLineColor = .pink
     /// Pinch / rotate / drag placement of the pose reference, committed when a gesture ends.
     @Published var guideTransform = GuideTransform()
     /// Transient capture feedback; cleared by `statusClearTask`.
@@ -251,31 +253,25 @@ final class CameraViewModel: ObservableObject {
         guideTransform = transform
     }
 
-    /// The zoom presets this lens can serve (`0.5x` only where the device's minimum allows it).
-    var zoomPresets: [CameraZoomPreset] {
-        CameraZoomPresets.available(range: deviceZoomRange)
-    }
+    /// The zoom range this camera can serve, which is what the slider spans and what its ticks come from.
+    var zoomRange: ClosedRange<CGFloat> { CameraZoomScale.range(lower: lensZoomRange.lowerBound, upper: lensZoomRange.upperBound) }
 
-    /// The preset the current zoom is nearest to, so the pill highlights a real choice.
-    var activeZoomPreset: CameraZoomPreset? {
-        CameraZoomPresets.nearest(to: zoomLevel.factor, range: deviceZoomRange)
-    }
-
-    /// Selecting a preset applies it (clamped to the lens) and keeps the persisted level in step.
-    func selectZoomPreset(_ preset: CameraZoomPreset) {
+    /// The slider's own value: clamped to the lens before it reaches the hardware, so a drag past the end
+    /// stops at the end instead of being quietly clipped later.
+    func setZoomFactor(_ factor: CGFloat) {
         guard cameraControlsEnabled else { return }
-        applyZoom(factor: CameraZoomPresets.clamp(preset.factor, range: deviceZoomRange))
+        applyZoom(factor: factor)
     }
 
     func applyZoom(factor: CGFloat) {
-        zoomFactor = CameraZoomPresets.clamp(factor, range: deviceZoomRange)
+        zoomFactor = CameraZoomScale.deviceFactor(forDisplay: factor, in: zoomRange)
         zoomLevel = CameraZoomLevel.nearest(to: zoomFactor)
         reconcileHardware()
     }
 
-    /// The active lens's zoom range, best effort: the simulator has no capture device, so the shipped
+    /// The active lens's own zoom range, best effort: the simulator has no capture device, so the shipped
     /// presets (1x/2x) are the fallback.
-    private var deviceZoomRange: ClosedRange<CGFloat> {
+    private var lensZoomRange: ClosedRange<CGFloat> {
         let position: AVCaptureDevice.Position = camera.facing == .front ? .front : .back
         let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: position)
             ?? AVCaptureDevice.default(for: .video)
@@ -286,13 +282,6 @@ final class CameraViewModel: ObservableObject {
     func setAspectRatio(_ ratio: CameraAspectRatio) {
         guard cameraControlsEnabled else { return }
         aspectRatio = ratio
-    }
-
-    /// The framing the ratio setting defines: the largest rect of `aspectRatio` that fits `container`,
-    /// centred. The preview, the grid and the pose reference all live inside it, and the capture crop
-    /// (`CameraImagePostProcess`) uses the same ratio — so the saved photo keeps what the user framed.
-    func viewportFrame(in container: CGSize) -> CGRect {
-        CameraViewportFrame.rect(for: aspectRatio, in: container)
     }
 
     /// Setting the timer while a countdown runs cancels it: the new value applies to the next press.
@@ -339,6 +328,7 @@ final class CameraViewModel: ObservableObject {
     /// which broke AC4's dismissal on the control itself (`02` and `03` measured byte-identical).
     func toggleCameraTools() {
         guard cameraControlsEnabled else { return }
+        showGuideAdjust = false
         showCameraTools.toggle()
     }
 
@@ -353,6 +343,7 @@ final class CameraViewModel: ObservableObject {
     /// that ate the viewport, and it was a second, weaker way to reach the same collection.
     func openPosePicker() {
         guard cameraControlsEnabled else { return }
+        showGuideAdjust = false
         showPosePicker = true
     }
 
@@ -360,9 +351,21 @@ final class CameraViewModel: ObservableObject {
         showPosePicker = false
     }
 
-    func cycleFlash() {
+    /// The guide-adjust sheet: opened from the pose reference itself, which is the thing it adjusts.
+    func openGuideAdjust() {
+        guard cameraControlsEnabled, hasGuide else { return }
+        showCameraTools = false
+        showGuideAdjust = true
+    }
+
+    func closeGuideAdjust() {
+        showGuideAdjust = false
+    }
+
+    /// The Flash row's three chips apply the chosen mode directly; nothing cycles behind the user's back.
+    func setFlash(_ setting: CameraFlashSetting) {
         guard cameraControlsEnabled else { return }
-        flashSetting = flashSetting.cameraToolsNext()
+        flashSetting = setting
         reconcileHardware()
     }
 
@@ -401,15 +404,6 @@ final class CameraViewModel: ObservableObject {
         guideTransform = GuideTransform()
     }
 
-    func cycleZoom() {
-        guard cameraControlsEnabled else { return }
-        applyZoom(zoomLevel.next())
-    }
-
-    func applyZoom(_ level: CameraZoomLevel) {
-        applyZoom(factor: level.factor)
-    }
-
     // MARK: - Settings persistence (FEAT-012)
 
     /// The eight settings that survive a relaunch. `CameraSnapshot` carries them in one JSON blob;
@@ -435,6 +429,8 @@ final class CameraViewModel: ObservableObject {
         $guideLineColor.dropFirst().sink { [weak self] _ in self?.settingsDidChange(.lineColor) }.store(in: &cancellables)
         $guideTransform.dropFirst().sink { [weak self] _ in self?.settingsDidChange(.transform) }.store(in: &cancellables)
         $zoomLevel.dropFirst().sink { [weak self] _ in self?.settingsDidChange(.zoom) }.store(in: &cancellables)
+        // The slider is continuous: a factor between two levels is still a setting the user chose.
+        $zoomFactor.dropFirst().sink { [weak self] _ in self?.settingsDidChange(.zoom) }.store(in: &cancellables)
         $timerSetting.dropFirst().sink { [weak self] _ in self?.settingsDidChange(.timer) }.store(in: &cancellables)
         $aspectRatio.dropFirst().sink { [weak self] _ in self?.settingsDidChange(.aspectRatio) }.store(in: &cancellables)
     }
@@ -730,30 +726,6 @@ actor DeferredCapturePhotoMetadata: CapturePhotoMetadata {
     }
 }
 
-/// Prototype scale-factor stops (`nb-camera-zoom-slider`, values 0…2 → 1x…3x).
-enum CameraZoomLevel: Int, CaseIterable, Equatable {
-    case one = 1, two = 2, three = 3
-
-    var label: String { "\(rawValue)x" }
-    var factor: CGFloat { CGFloat(rawValue) }
-
-    func next() -> CameraZoomLevel {
-        let all = CameraZoomLevel.allCases
-        let index = all.firstIndex(of: self) ?? 0
-        return all[(index + 1) % all.count]
-    }
-}
-
-extension CameraZoomLevel {
-    /// The stored level nearest a lens factor. The enum keeps every pre-existing settings row readable;
-    /// the exact factor (which can be 0.5x) lives beside it.
-    static func nearest(to factor: CGFloat) -> CameraZoomLevel {
-        allCases.min {
-            abs(CGFloat($0.rawValue) - factor) < abs(CGFloat($1.rawValue) - factor)
-        } ?? .one
-    }
-}
-
 /// The pose reference's size, as the adjust-guide sheet exposes it: the value the pinch gesture
 /// writes, clamped to the documented range, stepped for a slider and reset by one control.
 enum CameraGuideScale {
@@ -773,43 +745,6 @@ enum CameraGuideScale {
     /// The value beside the slider: scale as a percentage (1.0 → "100%").
     static func label(_ scale: CGFloat) -> String {
         "\(Int((clamped(scale) * 100).rounded()))%"
-    }
-}
-
-/// Lens-aware zoom presets (`05-01`/`05-21`: 0.5x / 1x / 2x). A preset the lens cannot serve is not
-/// offered at all, and a request outside the device's range is clamped instead of failing silently.
-enum CameraZoomPreset: String, CaseIterable, Identifiable, Sendable {
-    case half = "0.5x"
-    case one = "1x"
-    case two = "2x"
-
-    var id: String { rawValue }
-    var factor: CGFloat {
-        switch self {
-        case .half: return 0.5
-        case .one: return 1
-        case .two: return 2
-        }
-    }
-    var accessibilityIdentifier: String { "camera.zoom.\(rawValue)" }
-}
-
-enum CameraZoomPresets {
-    static func available(range: ClosedRange<CGFloat>) -> [CameraZoomPreset] {
-        let presets = CameraZoomPreset.allCases.filter { range.contains($0.factor) }
-        // 1x always exists: it is the lens's native framing even when a device reports a minimum of
-        // exactly 1 (every iPhone does).
-        return presets.isEmpty ? [.one] : presets
-    }
-
-    static func clamp(_ factor: CGFloat, range: ClosedRange<CGFloat>) -> CGFloat {
-        guard factor.isFinite else { return 1 }
-        return min(max(factor, range.lowerBound), range.upperBound)
-    }
-
-    /// The preset closest to a factor, so a clamped or restored value still lights up a choice.
-    static func nearest(to factor: CGFloat, range: ClosedRange<CGFloat>) -> CameraZoomPreset? {
-        available(range: range).min { abs($0.factor - factor) < abs($1.factor - factor) }
     }
 }
 
@@ -862,33 +797,12 @@ enum CameraAspectCrop {
     }
 }
 
-/// Where the ratio setting is *visible*: the largest rect of the selected ratio that fits the viewport,
-/// centred. Before this, the ratio only reached `CameraAspectCrop`, so choosing 1:1 or 9:16 cropped the
-/// saved file while the preview stayed full-bleed — the framing the user saw was never the framing that
-/// was saved. Pure, so "the preview really is 1:1" is a unit test instead of a device observation.
+/// Where the pose reference sits inside the photo frame: the prototype's four inset fractions of the frame.
 enum CameraViewportFrame {
-    /// The framing rect, in the container's coordinate space.
-    static func rect(for ratio: CameraAspectRatio, in container: CGSize) -> CGRect {
-        guard container.width > 0, container.height > 0 else { return .zero }
-        let target = ratio.widthOverHeight
-        let current = container.width / container.height
-        if abs(current - target) <= CameraAspectCrop.matchTolerance {
-            return CGRect(origin: .zero, size: container)
-        }
-        if current > target {
-            // The container is wider than the ratio: the sides give way, the full height is kept.
-            let width = container.height * target
-            return CGRect(x: (container.width - width) / 2, y: 0, width: width, height: container.height)
-        }
-        // Taller than the ratio: the height gives way, the full width is kept.
-        let height = container.width / target
-        return CGRect(x: 0, y: (container.height - height) / 2, width: container.width, height: height)
-    }
-
-    /// The pose reference's placement inside that framing rect. The four insets are the prototype's
-    /// `.nb-camera-pose-reference` fractions, but they are taken of the **frame**, not of the screen: a
-    /// 9:16 frame is shorter than the viewport, and a guide measured against the screen would spill out
-    /// of the photo it is supposed to line up with.
+    /// The pose reference's placement inside the photo frame. The four insets are the prototype's
+    /// `.nb-camera-pose-reference` fractions, taken of the **frame**, never of the screen: a 9:16 frame runs
+    /// under the bottom controls, and a guide measured against the screen would spill out of the photo it is
+    /// supposed to line up with.
     static func guideRect(in frame: CGRect) -> CGRect {
         guard frame.width > 0, frame.height > 0 else { return .zero }
         let horizontalInset = CameraProto.poseReferenceHorizontalInset
@@ -906,26 +820,69 @@ enum CameraViewportFrame {
 /// Saved-photo post-processing for the ratio: the file behind the gallery row is cropped to the aspect
 /// the user framed with, so the saved dimensions match the preview (and are asserted in tests).
 enum CameraImagePostProcess {
+    /// The size the photo **displays** at, in pixels.
+    ///
+    /// The camera writes a landscape pixel buffer and records the rotation as an EXIF tag, so a portrait
+    /// capture is 4032×3024 pixels tagged `.right` that displays as 3024×4032. Every ratio in this file
+    /// describes what the user *sees*, so `cgImage.width/height` is the wrong space to measure: 3:4 read
+    /// off a 4:3 buffer crops a vertical strip and saves a 4:3 *landscape* photo — the inverse aspect of
+    /// the frame the viewport showed.
+    static func displayedPixelSize(of image: UIImage) -> CGSize {
+        guard let cgImage = image.cgImage else { return image.size }
+        let width = CGFloat(cgImage.width)
+        let height = CGFloat(cgImage.height)
+        switch image.imageOrientation {
+        case .left, .right, .leftMirrored, .rightMirrored:
+            return CGSize(width: height, height: width)
+        default:
+            return CGSize(width: width, height: height)
+        }
+    }
+
+    /// The photo's pixels with the orientation applied (`orientation == .up`), so a crop rect expressed
+    /// in display space is literally the rect to crop. `nil` when the image has no bitmap backing.
+    static func uprightPixelBuffer(of image: UIImage) -> CGImage? {
+        guard let cgImage = image.cgImage else { return nil }
+        guard image.imageOrientation != .up else { return cgImage }
+        let size = displayedPixelSize(of: image)
+        guard size.width >= 1, size.height >= 1 else { return nil }
+        let format = UIGraphicsImageRendererFormat.default()
+        // Point-for-pixel: the renderer's default scale would resample a 12 MP capture at 2–3×.
+        format.scale = 1
+        format.opaque = true
+        let upright = UIGraphicsImageRenderer(size: size, format: format).image { _ in
+            // `UIImage.draw` applies the EXIF orientation, so the buffer comes out as the picture.
+            image.draw(in: CGRect(origin: .zero, size: size))
+        }
+        return upright.cgImage
+    }
+
     @discardableResult
     static func cropFileInPlace(at path: String, ratio: CameraAspectRatio) -> Bool {
         guard let data = FileManager.default.contents(atPath: path),
-              let image = UIImage(data: data),
-              let cgImage = image.cgImage else { return false }
-        let pixelSize = CGSize(width: cgImage.width, height: cgImage.height)
-        guard CameraAspectCrop.needsCrop(ratio: ratio, imageSize: pixelSize) else { return false }
-        let rect = CameraAspectCrop.rect(for: ratio, imageSize: pixelSize).integral
-        guard let cropped = cgImage.cropping(to: rect) else { return false }
-        let output = UIImage(cgImage: cropped, scale: image.scale, orientation: image.imageOrientation)
+              let image = UIImage(data: data) else { return false }
+        // Cheap early-out in display space: a 3:4 capture of a 3:4 picture is not re-encoded at all.
+        guard CameraAspectCrop.needsCrop(ratio: ratio, imageSize: displayedPixelSize(of: image)) else {
+            return false
+        }
+        guard let upright = uprightPixelBuffer(of: image) else { return false }
+        let bufferSize = CGSize(width: upright.width, height: upright.height)
+        let rect = CameraAspectCrop.rect(for: ratio, imageSize: bufferSize)
+            .integral
+            .intersection(CGRect(origin: .zero, size: bufferSize))
+        guard !rect.isEmpty, let cropped = upright.cropping(to: rect) else { return false }
+        // The buffer is upright, so the file carries no orientation tag: the crop *is* the picture.
+        let output = UIImage(cgImage: cropped, scale: image.scale, orientation: .up)
         guard let encoded = output.jpegData(compressionQuality: 0.92) else { return false }
         return (try? encoded.write(to: URL(fileURLWithPath: path), options: .atomic)) != nil
     }
 }
 
-/// Shutter timer (`05-camera-tools-sheet`: Off / 3 s / 10 s).
+/// Shutter timer (`05-camera-tools-sheet`: Off / 3s / 10s).
 enum CameraTimerSetting: String, CaseIterable, Identifiable, Sendable {
     case off = "Off"
-    case threeSeconds = "3 s"
-    case tenSeconds = "10 s"
+    case threeSeconds = "3s"
+    case tenSeconds = "10s"
 
     var id: String { rawValue }
     var seconds: Int {
@@ -940,6 +897,16 @@ enum CameraTimerSetting: String, CaseIterable, Identifiable, Sendable {
         case .off: return "camera.tools.timer.off"
         case .threeSeconds: return "camera.tools.timer.3s"
         case .tenSeconds: return "camera.tools.timer.10s"
+        }
+    }
+
+    /// A stored row from before the labels lost their space (`"3 s"`) still reads as its own timer.
+    static func stored(_ raw: String?) -> CameraTimerSetting? {
+        guard let raw else { return nil }
+        switch raw {
+        case "3 s": return .threeSeconds
+        case "10 s": return .tenSeconds
+        default: return CameraTimerSetting(rawValue: raw)
         }
     }
 }
@@ -1032,13 +999,6 @@ extension CameraFlashSetting {
 
 /// `pose-line-color-black` / `pose-line-color-white` (`camera-live.html`). The colour is the stroke
 /// of the pose reference: the stick-figure fallback and the tinted extracted line art.
-enum GuideLineColor: String, CaseIterable {
-    case black, white
-
-    var label: String { rawValue.capitalized }
-    var color: Color { self == .black ? AP.Color.background : AP.Color.primaryText }
-}
-
 /// Placement of the pose reference over the preview. Scale and rotation pivot on the reference's
 /// centre; the offset is in screen space.
 struct GuideTransform: Equatable {
@@ -1093,11 +1053,18 @@ struct CameraScreen: View {
     /// Focus returns to the More control when the Camera Tools popup is dismissed
     /// (outside tap / Escape / VoiceOver escape).
     @FocusState private var isToolsButtonFocused: Bool
-    /// In-flight pinch / twist / drag, folded into `model.guideTransform` when the gesture ends.
-    @GestureState private var guideGestureDelta = GuideTransform.Delta.identity
-    /// Height of the top control bar, measured so the tools popup anchors *under* it at every
-    /// Dynamic Type size instead of at a hard-coded offset.
+    /// Height of the top control bar, measured so the popover anchors *under* it at every Dynamic Type size
+    /// instead of at a hard-coded offset.
     @State private var topBarHeight: CGFloat = AP.HitTarget.minimum
+    /// The window's insets. The camera draws edge to edge, so this is what the chrome and the photo frame are
+    /// positioned from — never a hard-coded phone.
+    @State private var safeAreaInsets = CameraSafeArea.Insets()
+    /// Stands in for the camera feed. The simulator has none, so a rendered test paints a known image behind
+    /// the stage and measures what the chrome does to it.
+    private let preview: AnyView?
+    /// The window's insets, stated by a rendered test: the test host has no window safe area, and the chrome
+    /// and the photo frame are positioned from it.
+    private let windowInsets: CameraSafeArea.Insets?
 
     init(
         guide: Binding<NativePose?>,
@@ -1107,7 +1074,9 @@ struct CameraScreen: View {
         premiumGate: any PremiumGateProviding = PremiumGateModel(),
         onPremiumRequired: @escaping (Bool) -> Void = { _ in },
         savedPoses: any CameraSavedPosesProviding = CatalogueSavedPosesService(),
-        model: @autoclosure @escaping () -> CameraViewModel? = nil
+        model: @autoclosure @escaping () -> CameraViewModel? = nil,
+        preview: AnyView? = nil,
+        windowInsets: CameraSafeArea.Insets? = nil
     ) {
         _guide = guide
         self.poseService = poseService
@@ -1121,6 +1090,8 @@ struct CameraScreen: View {
         ))
         _posePickerModel = StateObject(wrappedValue: PosePickerViewModel(service: poseService))
         _savedPosesModel = StateObject(wrappedValue: CameraSavedPosesModel(provider: savedPoses))
+        self.preview = preview
+        self.windowInsets = windowInsets
     }
 
     /// Legacy UIKit host and previews without an injected pose service.
@@ -1130,11 +1101,73 @@ struct CameraScreen: View {
 
     private var isAuthorized: Bool { model.coordinator.state.permission == .authorized }
 
+
     var body: some View {
         ZStack {
+            // The camera stage: the preview fills the screen, and the ratio frames the part the shutter keeps.
+            GeometryReader { proxy in
+                CameraCanvas(
+                    model: model,
+                    guide: guide,
+                    isAuthorized: isAuthorized,
+                    stage: CameraStageFrame.make(
+                        ratio: model.aspectRatio,
+                        screen: proxy.size,
+                        safeTop: safeAreaInsets.top
+                    ),
+                    onClose: onClose,
+                    previewOverride: preview
+                )
+            }
+
             VStack(spacing: 0) {
-                viewport
+                topControls
+                    .padding(.horizontal, CameraProto.controlInset)
+                    .padding(.top, safeAreaInsets.top)
+                    .background(
+                        GeometryReader { geo in
+                            Color.clear.preference(key: CameraTopBarHeightKey.self, value: geo.size.height)
+                        }
+                    )
+                Spacer(minLength: 0)
                 bottomChrome
+            }
+
+            // The guide-adjust sheet: an in-place overlay, so the camera stays live behind it and a change is
+            // visible while it is made.
+            if model.showGuideAdjust {
+                // The sheet is the light board. Its tokens are dynamic `UIColor`s, so the sheet's subtree is hosted
+                // with a light trait collection (a colourScheme environment alone leaves them dark) while the camera
+                // behind keeps its own dark scheme.
+                APInterfaceStyleHost(style: .light) {
+                    VStack(spacing: 0) {
+                        Spacer(minLength: 0)
+                        CameraGuideAdjustSheet(
+                            opacity: model.guideOpacity,
+                            lineColor: model.guideLineColor,
+                            scale: model.guideTransform.scale,
+                            isFlipped: model.guideFlipped,
+                            isEnabled: model.cameraControlsEnabled,
+                            onOpacityChange: { model.setGuideOpacity($0) },
+                            onLineColorChange: { model.setGuideLineColor($0) },
+                            onScaleChange: { model.setGuideScale($0) },
+                            onFlip: { model.toggleGuideMirror() },
+                            onDone: { model.closeGuideAdjust() }
+                        )
+                    }
+                    // Both mechanisms, because the tokens arrive two ways: the SwiftUI environment decides for
+                    // `Color(uiColor:)` values and the hosted controller's trait decides for anything UIKit
+                    // resolves. The camera's own dark scheme stays outside this subtree.
+                    .environment(\.colorScheme, .light)
+                    .ignoresSafeArea(edges: .bottom)
+                    // The camera stays live and undimmed behind the sheet: only an outside tap dismisses it.
+                    .background(
+                        Color.clear
+                            .contentShape(Rectangle())
+                            .onTapGesture { model.closeGuideAdjust() }
+                    )
+                }
+                .zIndex(3)
             }
 
             // `.nb-pose-picker-sheet` — an in-place overlay on Camera, never a pushed route, so
@@ -1145,7 +1178,7 @@ struct CameraScreen: View {
                     savedPoses: savedPosesModel,
                     onClose: { model.closePosePicker() },
                     onSelect: { pose in
-                        CameraPickerSelection.select(pose, guide: $guide, closeSheet: { model.closePosePicker() })
+                        CameraPickerSelection.select(pose, guide: $guide, camera: model)
                     }
                 )
                 .zIndex(2)
@@ -1160,11 +1193,14 @@ struct CameraScreen: View {
         // the screen is hosted outside a dark presentation (UIKit host, preview, snapshot): the canvas,
         // the chrome and the pose reference's white line colour are all read from the dark values.
         .environment(\.colorScheme, .dark)
-        .ignoresSafeArea(.container, edges: .top)
+        .ignoresSafeArea()
         .neoHiddenNavigationBar()
         .preferredColorScheme(.dark)
         .task { await model.onAppear() }
-        .onAppear { model.guideAppeared(hasGuide: guide != nil) }
+        .onAppear {
+            model.guideAppeared(hasGuide: guide != nil)
+            safeAreaInsets = windowInsets ?? CameraSafeArea.read()
+        }
         .onDisappear { model.onDisappear() }
         .task(id: model.showPosePicker) {
             if model.showPosePicker {
@@ -1182,43 +1218,45 @@ struct CameraScreen: View {
         }
         .onChange(of: scenePhase) { phase in
             switch phase {
-            case .active: model.coordinator.onForeground()
+            case .active:
+                model.coordinator.onForeground()
+                safeAreaInsets = windowInsets ?? CameraSafeArea.read()
             case .background:
                 model.coordinator.onBackground()
                 Task { await model.flushSettings() }
             default: break
             }
         }
-        .onChange(of: model.cameraControlsEnabled) { enabled in
-            if !enabled { model.closeCameraTools() }
-        }
-        .onChange(of: guide?.id) { _ in model.guideDidChange(hasGuide: guide != nil) }
-    }
-
-    // MARK: Viewport — full-bleed `.nb-camera-viewport--immersive`
-
-    private var viewport: some View {
-        GeometryReader { proxy in
-            cameraCanvas(size: proxy.size)
-        }
-        .overlay(alignment: .top) {
-            topControls
-                .padding(.horizontal, CameraProto.controlInset)
-                .padding(.top, CameraProto.topControlsTop)
-                .background(
-                    GeometryReader { geo in
-                        Color.clear.preference(key: CameraTopBarHeightKey.self, value: geo.size.height)
-                    }
-                )
-        }
         .onPreferenceChange(CameraTopBarHeightKey.self) { height in
             guard height > 0 else { return }
             topBarHeight = height
         }
+        .onChange(of: model.cameraControlsEnabled) { enabled in
+            if !enabled { model.closeCameraTools() }
+        }
+        .onChange(of: guide?.id) { _ in
+            model.guideDidChange(hasGuide: guide != nil)
+            model.closeGuideAdjust()
+        }
+    }
+
+    // MARK: Stage
+
+    /// The canvas for one container size. The screen's entry point, so a rendered test mounts exactly what the
+    /// screen mounts.
+    func cameraCanvas(size: CGSize, safeTop: CGFloat = 0) -> some View {
+        CameraCanvas(
+            model: model,
+            guide: guide,
+            isAuthorized: isAuthorized,
+            stage: CameraStageFrame.make(ratio: model.aspectRatio, screen: size, safeTop: safeTop),
+            onClose: onClose,
+            previewOverride: preview
+        )
     }
 
     /// The bottom control surface — snackbar, zoom row, shutter rail. One view, so a rendered test can
-    /// prove what is on screen.
+    /// prove what is on screen. It floats over the preview: the photo is not shortened to make room for it.
     private var bottomChrome: some View {
         CameraBottomBar(
             thumbnailURL: model.latestThumbnailURL,
@@ -1229,16 +1267,18 @@ struct CameraScreen: View {
             statusTone: model.statusTone,
             timerCountdown: model.timerCountdown,
             selectedPoseID: guide?.id,
+            selectedPoseName: guide?.name,
             showsPicker: isAuthorized,
-            zoomPresets: model.zoomPresets,
-            activeZoomPreset: model.activeZoomPreset,
+            zoomFactor: model.zoomFactor,
+            zoomRange: model.zoomRange,
             onOpenPosePicker: { model.openPosePicker() },
-            onZoomPreset: { preset in model.selectZoomPreset(preset) },
+            onZoomChange: { factor in model.setZoomFactor(factor) },
             onOpenGallery: onOpenGallery,
             onCapture: { model.capture() },
             onSwitchCamera: { model.switchCamera() },
             onDismissStatus: { model.dismissStatusMessage() },
-            onCancelTimer: { model.cancelTimer() }
+            onCancelTimer: { model.cancelTimer() },
+            safeBottom: safeAreaInsets.bottom
         )
     }
 
@@ -1249,138 +1289,36 @@ struct CameraScreen: View {
         isToolsButtonFocused = true
     }
 
-    /// `.nb-camera-tools-menu` — the anchored popup: below the tools control, no scrim, no handle, no
-    /// app-bar Close. It is hosted above the bottom chrome rather than inside the viewport so it can use
-    /// the whole safe area it sits in: with a pose guide up the menu carries eleven rows, and a cap
-    /// shorter than that content clipped the guide rows inside the popover's own scroll view — present in
-    /// the accessibility tree, hittable by nobody.
+    /// The tools popover, anchored under the tools control: its caret points up at the button and its right edge
+    /// sits on the button's. There is no scrim — only an outside-tap catcher.
     @ViewBuilder private var cameraToolsPopup: some View {
         if model.showCameraTools {
-            GeometryReader { proxy in
-                let popupTop = CameraProto.topControlsTop + topBarHeight + AP.Space.space8
-                ZStack(alignment: .topTrailing) {
-                    // Outside tap dismisses without a visible scrim.
-                    Color.clear
-                        .contentShape(Rectangle())
-                        .onTapGesture { dismissCameraTools() }
-                        .accessibilityHidden(true)
-
-                    CameraToolsPopup(
-                        flashSetting: model.flashSetting,
-                        isGridVisible: model.isGridVisible,
-                        controlsEnabled: model.cameraControlsEnabled,
-                        hasPose: guide != nil,
-                        isPoseGuideVisible: model.isPoseGuideVisible,
-                        guideFlipped: model.guideFlipped,
-                        timerSetting: model.timerSetting,
-                        aspectRatio: model.aspectRatio,
-                        guideOpacity: model.guideOpacity,
-                        guideScale: model.guideTransform.scale,
-                        guideLineColor: model.guideLineColor,
-                        popupWidth: min(CameraProto.popupWidth, proxy.size.width - CameraProto.controlInset * 2),
-                        popupMaxHeight: CameraToolsPopupMetrics.maxHeight(
-                            available: proxy.size.height,
-                            topBarBottom: popupTop
-                        ),
-                        onFlashTap: { model.cycleFlash() },
-                        onGridToggle: { model.toggleGrid() },
-                        onPoseGuideVisibilityToggle: { model.togglePoseGuideVisibility() },
-                        onMirrorToggle: { model.toggleGuideMirror() },
-                        onTimerChange: { model.setTimerSetting($0) },
-                        onAspectRatioChange: { model.setAspectRatio($0) },
-                        onGuideScaleChange: { model.setGuideScale($0) },
-                        onGuideScaleReset: { model.resetGuideTransform() },
-                        onGuideOpacityChange: { model.setGuideOpacity($0) },
-                        onGuideLineColorChange: { model.setGuideLineColor($0) },
-                        onDismiss: { dismissCameraTools() }
-                    )
-                    .padding(.top, popupTop)
-                    .padding(.trailing, CameraProto.controlInset)
-                    .transition(.opacity
-                        .combined(with: .offset(y: -AP.Space.space8))
-                        .combined(with: .scale(scale: 0.98, anchor: .topTrailing)))
-                }
-            }
-        }
-    }
-
-    private func cameraCanvas(size: CGSize) -> some View {
-        // The ratio setting is framing, not only a crop: everything that is *the photo* — the live
-        // preview, the thirds grid and the pose reference — lives inside this rect, and the area
-        // outside it is the dark background. The capture path crops to the same ratio, so what the
-        // user framed is what is saved.
-        let frame = model.viewportFrame(in: size)
-        let guideFrame = CameraViewportFrame.guideRect(in: frame)
-
-        return ZStack {
-            AP.Color.background
-
-            if isAuthorized {
-                CameraPreview(session: model.camera.session)
-                    .frame(width: frame.width, height: frame.height)
-                    .clipped()
-                    .position(x: frame.midX, y: frame.midY)
-            }
-
-            verticalScrims
-
-            // `.nb-camera-pose-reference` — `top:16%; right:18%; bottom:14%; left:18%`, measured of the
-            // framing rect. The static four-corner framing overlay is gone (report §3.2).
-            if let guide, model.isPoseGuideVisible {
-                guideOverlay(for: guide)
-                    .frame(width: guideFrame.width, height: guideFrame.height)
-                    .position(x: guideFrame.midX, y: guideFrame.midY)
-                    // E2E handle (`QA-261029-ID`): the only way a flow can prove a guide is drawn and
-                    // say *which* pose it is. Built only when a visible guide exists, so a missing id
-                    // is "no pose guide on screen" (no pose, or the guide toggle is off).
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel("Pose guide")
-                    .accessibilityValue(guide.id)
-                    .accessibilityIdentifier("camera.poseGuide")
-            }
-
-            if model.isGridVisible {
-                CameraFramingGrid()
-                    .frame(width: frame.width, height: frame.height)
-                    .position(x: frame.midX, y: frame.midY)
-            }
-
-            // Pinch / twist / drag anywhere on the preview places the pose reference; the reference
-            // itself stays non-interactive so a thin skeleton is never a hard touch target.
-            if guide != nil, model.isPoseGuideVisible, isAuthorized {
+            ZStack(alignment: .topTrailing) {
+                // Outside tap dismisses without a visible scrim.
                 Color.clear
                     .contentShape(Rectangle())
-                    .onTapGesture(count: 2) { model.resetGuideTransform() }
-                    .gesture(guidePlacementGesture)
+                    .onTapGesture { dismissCameraTools() }
                     .accessibilityHidden(true)
-            }
 
-            // F4: the camera's permission state is the shared 72 pt panel, over the scrim.
-            if !isAuthorized {
-                permissionPanel
+                CameraToolsPopup(
+                    flashSetting: model.flashSetting,
+                    isGridVisible: model.isGridVisible,
+                    controlsEnabled: model.cameraControlsEnabled,
+                    timerSetting: model.timerSetting,
+                    aspectRatio: model.aspectRatio,
+                    onFlashChange: { model.setFlash($0) },
+                    onGridToggle: { model.toggleGrid() },
+                    onTimerChange: { model.setTimerSetting($0) },
+                    onAspectRatioChange: { model.setAspectRatio($0) },
+                    onDismiss: { dismissCameraTools() }
+                )
+                .padding(.top, CameraToolsLayout.cardTop(belowTopBar: topBarHeight))
+                .padding(.trailing, CameraProto.controlInset)
+                .transition(.opacity
+                    .combined(with: .offset(y: -AP.Space.space8))
+                    .combined(with: .scale(scale: 0.98, anchor: .topTrailing)))
             }
         }
-        .clipped()
-    }
-
-    /// `.nb-camera-viewport__top-scrim` (190px) / `__bottom-scrim` (170px).
-    private var verticalScrims: some View {
-        VStack(spacing: 0) {
-            LinearGradient(
-                colors: [AP.Color.background.opacity(0.68), AP.Color.background.opacity(0)],
-                startPoint: .top, endPoint: .bottom
-            )
-            .frame(height: 190)
-
-            Spacer(minLength: 0)
-
-            LinearGradient(
-                colors: [AP.Color.background.opacity(0), AP.Color.background.opacity(0.54)],
-                startPoint: .top, endPoint: .bottom
-            )
-            .frame(height: 170)
-        }
-        .allowsHitTesting(false)
     }
 
     /// The camera's top chrome: Close on the left, the guide's eye when a reference is up, tools on the
@@ -1418,87 +1356,6 @@ struct CameraScreen: View {
         }
     }
 
-    private var guidePlacementGesture: some Gesture {
-        SimultaneousGesture(
-            SimultaneousGesture(MagnificationGesture(), RotationGesture()),
-            DragGesture()
-        )
-        .updating($guideGestureDelta) { value, state, _ in
-            state = Self.delta(from: value)
-        }
-        .onEnded { value in
-            model.commitGuideGesture(Self.delta(from: value))
-        }
-    }
-
-    private static func delta(
-        from value: SimultaneousGesture<SimultaneousGesture<MagnificationGesture, RotationGesture>, DragGesture>.Value
-    ) -> GuideTransform.Delta {
-        GuideTransform.Delta(
-            scale: value.first?.first ?? 1,
-            rotation: value.first?.second ?? .zero,
-            translation: value.second?.translation ?? .zero
-        )
-    }
-
-    @ViewBuilder
-    private func guideOverlay(for guide: NativePose) -> some View {
-        let placement = model.guideTransform.applying(guideGestureDelta)
-        Group {
-            if let url = guide.cameraGuideURL {
-                // The guide image covers most of the viewport, so it is decoded at screen size
-                // instead of at whatever the source asset happens to be.
-                KFImage(url)
-                    .setProcessor(AppImage.downsample(points: FullScreenImageTarget.drawSize, contentMode: .fit))
-                    .placeholder { guideFallback(for: guide) }
-                    .onFailureView { guideFallback(for: guide) }
-                    .loadDiskFileSynchronously(false)
-                    // The extracted pose is line art on a transparent background, so it is drawn as
-                    // a template and the Line colour setting becomes its stroke colour.
-                    .contentConfigure { image, _ in
-                        image.renderingMode(.template).resizable().scaledToFit()
-                    }
-                    .foregroundColor(model.guideLineColor.color)
-            } else {
-                guideFallback(for: guide)
-            }
-        }
-        .opacity(model.guideOpacity)
-        .scaleEffect(x: model.guideFlipped ? -1 : 1, y: 1)
-        .scaleEffect(placement.scale)
-        .rotationEffect(placement.rotation)
-        .offset(placement.offset)
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
-    }
-
-    // The guide's drawing stays hidden from accessibility; `camera.poseGuide` is set on the wrapper
-    // that is only built while a visible guide exists.
-
-    /// Same stand-in the `AsyncImage` placeholder used before the guide asset loads. The stroke
-    /// follows the tools popup Line colour (`--nb-camera-pose-line-color`).
-    private func guideFallback(for guide: NativePose) -> StickFigureView {
-        StickFigureView(kind: .resolve(name: guide.name, category: guide.category, index: 0),
-                        lineColor: model.guideLineColor.color)
-    }
-
-    /// F4: the camera's permission state is the shared 72 pt state panel — one clean accent-tint
-    /// circle, title, copy and one action — instead of the old stacked camera tile on a yellow square.
-    private var permissionPanel: some View {
-        CameraPermissionPanel(
-            permission: model.coordinator.state.permission,
-            onAllow: { model.requestPermission() },
-            onOpenSettings: openSystemSettings,
-            onDismiss: onClose
-        )
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(AP.Color.scrim)
-    }
-
-    private func openSystemSettings() {
-        guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
-        UIApplication.shared.open(url)
-    }
 }
 
 // MARK: - Camera metrics
@@ -1508,17 +1365,12 @@ struct CameraScreen: View {
 // elevation come from `AP`.
 
 enum CameraProto {
-    // `.nb-camera-viewport__top-controls`
-    static let topControlsTop: CGFloat = 62
     static let controlInset: CGFloat = 16
 
     // `.nb-camera-pose-reference`
     static let poseReferenceTopInset: CGFloat = 0.16
     static let poseReferenceBottomInset: CGFloat = 0.14
     static let poseReferenceHorizontalInset: CGFloat = 0.18
-
-    // `.nb-camera-tools-menu`
-    static let popupWidth: CGFloat = 264
 
     // `.nb-pose-picker-panel`
     static let pickerMaxHeight: CGFloat = 700
@@ -1529,23 +1381,6 @@ enum CameraProto {
     static let railInset: CGFloat = 24
     static let railControl: CGFloat = 48
     static let shutterSize: CGFloat = 72
-}
-
-/// `.nb-camera-tools-menu` height: the prototype's `max-height` is a cap, not a target. The menu carries
-/// eleven rows once a pose guide is in place, and on a phone that content is taller than a fixed cap — so
-/// the guide rows were clipped inside the popover's own scroll view: present in the accessibility tree,
-/// hittable by nobody. The popover may use the whole safe area it is given instead.
-enum CameraToolsPopupMetrics {
-    /// Floor: a cramped screen still gets a scrollable window rather than a sliver.
-    static let minHeight = AP.Space.space48
-
-    static func maxHeight(
-        available: CGFloat,
-        topBarBottom: CGFloat,
-        bottomMargin: CGFloat = AP.Space.space16
-    ) -> CGFloat {
-        max(minHeight, available - topBarBottom - bottomMargin)
-    }
 }
 
 // MARK: - Camera chrome (AP tokens, forced dark)
@@ -1799,6 +1634,17 @@ enum CameraChromeLayout {
     static let posesControlIdentifier = "camera.choosePose"
     static let posesControlLabel = "Poses"
 
+    /// What the Poses control announces as its value: **the reference it holds**, by name.
+    ///
+    /// The strip that used to draw the chosen pose's name (and its `camera.poseStrip.card.<id>` handle) is
+    /// gone, so the control is the only place left that can say which guide is up. It said "Selected",
+    /// which tells a VoiceOver user nothing about *which* pose they are about to line up against.
+    static func posesControlValue(selectedPoseName: String?) -> String {
+        guard let name = selectedPoseName?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !name.isEmpty else { return "None selected" }
+        return name
+    }
+
     /// The bottom surface's vertical order, top to bottom. F5 puts the snackbar first, directly above
     /// the control bar: `CameraBottomBar` renders its children in exactly this order.
     enum BottomSlot: Equatable {
@@ -1815,20 +1661,21 @@ enum CameraChromeLayout {
         "camera.poseStrip",
         "camera.poseStrip.retry",
         "camera.pickerStripToggle",
-    ]
+    ] + CameraZoomScale.retiredIdentifiers
 
     /// Every picker state now lives in the sheet (`posePicker.*`), so the bar draws no catalogue at all.
     static let bottomBarDrawsCatalogue = false
 }
 
 /// What a pose chosen in the picker sheet does: it becomes the camera's reference and the sheet closes,
-/// so the user lands back on the framing they were about to shoot. Pure over the binding, so "selecting
-/// a pose sets the guide and closes the sheet" is a unit test instead of something only a device tap can
-/// show.
+/// so the user lands back on the framing they were about to shoot. It takes the camera's own model, so the
+/// closing half is the real dismissal (`closePosePicker` on the state the view draws from) rather than a
+/// closure a test could satisfy with a flag.
+@MainActor
 enum CameraPickerSelection {
-    static func select(_ pose: NativePose, guide: Binding<NativePose?>, closeSheet: () -> Void) {
+    static func select(_ pose: NativePose, guide: Binding<NativePose?>, camera: CameraViewModel) {
         guide.wrappedValue = pose
-        closeSheet()
+        camera.closePosePicker()
     }
 }
 
@@ -1846,16 +1693,22 @@ struct CameraBottomBar: View {
     /// Shutter-timer countdown (`nil` when idle): a visible number and its own Cancel.
     let timerCountdown: Int?
     let selectedPoseID: String?
+    /// The selected reference's name, announced by the Poses control (the strip that used to draw it is
+    /// retired).
+    let selectedPoseName: String?
     let showsPicker: Bool
-    let zoomPresets: [CameraZoomPreset]
-    let activeZoomPreset: CameraZoomPreset?
+    /// The zoom the lens is at, and the range it can serve: one control, continuous.
+    let zoomFactor: CGFloat
+    let zoomRange: ClosedRange<CGFloat>
     let onOpenPosePicker: () -> Void
-    let onZoomPreset: (CameraZoomPreset) -> Void
+    let onZoomChange: (CGFloat) -> Void
     let onOpenGallery: () -> Void
     let onCapture: () -> Void
     let onSwitchCamera: () -> Void
     let onDismissStatus: () -> Void
     let onCancelTimer: () -> Void
+    /// The home indicator's inset: the rail sits above it, while the preview keeps running underneath.
+    let safeBottom: CGFloat
 
     var body: some View {
         VStack(spacing: 0) {
@@ -1884,7 +1737,17 @@ struct CameraBottomBar: View {
             panel
         }
         .frame(maxWidth: .infinity)
-        .background(AP.Color.background)
+        // The surface floats over the preview: a gradient fades the photo into the controls instead of an
+        // opaque bar cutting the viewfinder in half. On 9:16 the frame runs under this band, which is exactly
+        // where the gradient earns its keep.
+        .background(
+            LinearGradient(
+                colors: [Color.black.opacity(0), Color.black.opacity(0.45), Color.black.opacity(0.6)],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        )
+        .padding(.bottom, safeBottom)
     }
 
     /// The countdown: seconds left plus its own Cancel. Cancelling returns to ready with no photo;
@@ -1916,15 +1779,13 @@ struct CameraBottomBar: View {
 
     // MARK: Panel
 
+    /// The rail: a flat band, full width, no card and no rounded top — the board's bottom strip.
     private var panel: some View {
         rail
             .padding(.top, AP.Space.space12)
             .padding(.bottom, AP.Space.space8)
             .frame(maxWidth: .infinity)
-            .background(
-                RoundedTopShape(radius: AP.Radius.radius24)
-                    .fill(Color.black.opacity(0.5))
-            )
+            .background(Color.black.opacity(0.5))
             .accessibilityElement(children: .contain)
     }
 
@@ -1947,58 +1808,30 @@ struct CameraBottomBar: View {
         .disabled(!controlsEnabled)
         .opacity(controlsEnabled ? 1 : 0.45)
         .accessibilityLabel(selectedPoseID == nil ? "Choose a pose" : "Change pose")
-        .accessibilityValue(selectedPoseID == nil ? "None selected" : "Selected")
+        .accessibilityValue(CameraChromeLayout.posesControlValue(selectedPoseName: selectedPoseName))
         .accessibilityIdentifier(CameraChromeLayout.posesControlIdentifier)
     }
 
     // MARK: Zoom
 
-    /// The scale row: the zoom presets stay centred, the Poses control sits at its right end (owner
-    /// feedback calls this row the scale bar).
+    /// The band under the photo: the continuous zoom slider takes the left of the row and the Poses control
+    /// keeps its right end.
     private var scaleRow: some View {
-        ZStack {
-            zoomPill
+        HStack(spacing: AP.Space.space12) {
+            CameraZoomSlider(
+                factor: zoomFactor,
+                range: zoomRange,
+                isEnabled: controlsEnabled,
+                onChange: onZoomChange
+            )
+            .frame(maxWidth: .infinity)
+
             if CameraChromeLayout.showsPosesControl(showsPicker: showsPicker) {
-                HStack(spacing: 0) {
-                    Spacer(minLength: 0)
-                    posesControl
-                }
+                posesControl
             }
         }
         .frame(maxWidth: .infinity)
-        .padding(.horizontal, AP.Space.space16)
-    }
-
-    /// The zoom presets: compact (owner feedback), no container, the selection marked by its own small
-    /// chip plus weight — and still a 44 pt target per preset.
-    private var zoomPill: some View {
-        HStack(spacing: AP.Space.space4) {
-            ForEach(zoomPresets) { preset in
-                let isActive = preset == activeZoomPreset
-                Button {
-                    onZoomPreset(preset)
-                } label: {
-                    Text(preset.rawValue)
-                        .font(.system(size: 13, weight: isActive ? .semibold : .regular))
-                        .foregroundStyle(isActive ? AP.Color.primaryText : AP.Color.secondaryText)
-                        .frame(minWidth: AP.HitTarget.minimum)
-                        .frame(height: 36)
-                        .background(
-                            Capsule().fill(isActive ? AP.Color.selectedBackground : .clear)
-                        )
-                        .shadow(color: .black.opacity(0.35), radius: 2, y: 1)
-                }
-                .buttonStyle(.plain)
-                .contentShape(Rectangle())
-                .frame(minHeight: AP.HitTarget.minimum)
-                .disabled(!controlsEnabled)
-                .opacity(controlsEnabled ? 1 : 0.45)
-                .accessibilityLabel("Zoom \(preset.rawValue)")
-                .accessibilityAddTraits(isActive ? [.isSelected] : [])
-                .accessibilityIdentifier(preset.accessibilityIdentifier)
-            }
-        }
-        .accessibilityElement(children: .contain)
+        .padding(.horizontal, CameraProto.controlInset)
     }
 
     // MARK: Rail
@@ -2079,584 +1912,6 @@ struct CameraBottomBar: View {
     }
 }
 
-/// `.nb-camera-viewport__grid-overlay` — hairline thirds at 30% white.
-private struct CameraFramingGrid: View {
-    var body: some View {
-        GeometryReader { proxy in
-            Path { path in
-                for step in 1...2 {
-                    let x = proxy.size.width * CGFloat(step) / 3
-                    path.move(to: CGPoint(x: x, y: 0))
-                    path.addLine(to: CGPoint(x: x, y: proxy.size.height))
-
-                    let y = proxy.size.height * CGFloat(step) / 3
-                    path.move(to: CGPoint(x: 0, y: y))
-                    path.addLine(to: CGPoint(x: proxy.size.width, y: y))
-                }
-            }
-            .stroke(Color.white.opacity(0.3), lineWidth: 1)
-        }
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
-    }
-}
-
-/// The camera tools popover's surface contract (owner feedback, build 18).
-///
-/// There is no title row and no Done action: every control applies and persists the moment it changes,
-/// and the popover is dismissed by tapping outside or with VoiceOver's escape. The identifiers below are
-/// the ones the rows expose, so "the Done handle is gone" is a unit-testable fact rather than a memory.
-enum CameraToolsLayout {
-    static let hasHeaderRow = false
-    /// Retired with the Done button; no row may expose it again.
-    static let retiredDoneIdentifier = "camera.tools.done"
-    static let controlIdentifiers = [
-        "camera.tools.flash",
-        "camera.tools.grid",
-        "camera.tools.mirror",
-        "camera.tools.timer",
-        "camera.tools.ratio",
-        "camera.tools.poseGuide",
-        "camera.tools.opacity",
-        "camera.tools.scale",
-        "camera.tools.lineColor.black",
-        "camera.tools.lineColor.white",
-    ]
-
-    /// Every change lands on the model directly (no commit step), so a setting is persisted while the
-    /// popover is still open.
-    static func persistsImmediately(identifier: String) -> Bool {
-        controlIdentifiers.contains(identifier)
-    }
-}
-
-// MARK: - Camera tools (AP tokens, forced dark)
-
-/// The camera's settings surface: an anchored popup under the tools control (no scrim, no handle, no
-/// app-bar Close), `surface` fill, radius 24, E1 — the dark card edge is the elevation's `cardStroke`
-/// hairline, never a hand-drawn border. Rows are `controlFill` pills with 44 pt targets and a pressed
-/// fill step, and every status pairs a glyph with a word.
-///
-/// The popup hugs its content up to `max-height` with `overflow-y: auto`, so the content height is
-/// measured once through a preference and the scroll view is bounded to it.
-private struct CameraToolsPopup: View {
-    let flashSetting: CameraFlashSetting
-    let isGridVisible: Bool
-    let controlsEnabled: Bool
-    let hasPose: Bool
-    let isPoseGuideVisible: Bool
-    let guideFlipped: Bool
-    let timerSetting: CameraTimerSetting
-    let aspectRatio: CameraAspectRatio
-    let guideOpacity: Double
-    let guideScale: CGFloat
-    let guideLineColor: GuideLineColor
-    let popupWidth: CGFloat
-    let popupMaxHeight: CGFloat
-    let onFlashTap: () -> Void
-    let onGridToggle: () -> Void
-    let onPoseGuideVisibilityToggle: () -> Void
-    let onMirrorToggle: () -> Void
-    let onTimerChange: (CameraTimerSetting) -> Void
-    let onAspectRatioChange: (CameraAspectRatio) -> Void
-    let onGuideScaleChange: (CGFloat) -> Void
-    let onGuideScaleReset: () -> Void
-    let onGuideOpacityChange: (Double) -> Void
-    let onGuideLineColorChange: (GuideLineColor) -> Void
-    let onDismiss: () -> Void
-
-    @State private var naturalContentHeight: CGFloat?
-
-    var body: some View {
-        ScrollView {
-            content
-                .background(
-                    GeometryReader { geo in
-                        Color.clear.preference(
-                            key: CameraToolsContentHeightKey.self,
-                            value: geo.size.height
-                        )
-                    }
-                )
-        }
-        .onPreferenceChange(CameraToolsContentHeightKey.self) { naturalContentHeight = $0 }
-        .frame(maxWidth: popupWidth, alignment: .leading)
-        .modifier(CameraToolsPopupHeight(naturalHeight: naturalContentHeight, maxHeight: popupMaxHeight))
-        .background(
-            RoundedRectangle(cornerRadius: AP.Radius.radius24, style: .continuous)
-                .fill(AP.Color.surface)
-        )
-        .apElevation(.e1, cornerRadius: AP.Radius.radius24)
-        .clipShape(RoundedRectangle(cornerRadius: AP.Radius.radius24, style: .continuous))
-        .accessibilityElement(children: .contain)
-        // VoiceOver's local Back (two-finger Z scrub) — the native equivalent of Escape.
-        .accessibilityAction(.escape) { onDismiss() }
-    }
-
-    /// A four-point rhythm: the menu carries eleven rows once a pose guide is up, and at the row spacing
-    /// of the rest of the chrome the guide section fell below the fold of the safe area it is given.
-    private var content: some View {
-        VStack(alignment: .leading, spacing: AP.Space.space4) {
-            row(
-                systemImage: flashSetting.symbolName,
-                title: "Flash",
-                value: flashSetting.toolsDisplayName,
-                accessibilityLabel: "Flash \(flashSetting.toolsDisplayName), tap to change",
-                identifier: "camera.tools.flash",
-                action: onFlashTap
-            )
-            gridRow
-            timerRow
-            ratioRow
-
-            if hasPose {
-                Divider()
-                    .overlay(AP.Color.separator)
-                    .padding(.vertical, AP.Space.space4)
-
-                Text("Pose guide")
-                    .font(AP.Font.caption)
-                    .foregroundStyle(AP.Color.secondaryText)
-                    .accessibilityAddTraits(.isHeader)
-
-                row(
-                    systemImage: isPoseGuideVisible ? "eye" : "eye.slash",
-                    title: "Pose guide",
-                    value: isPoseGuideVisible ? "Shown" : "Hidden",
-                    accessibilityLabel: isPoseGuideVisible ? "Hide pose guide" : "Show pose guide",
-                    identifier: "camera.tools.poseGuide",
-                    action: onPoseGuideVisibilityToggle
-                )
-                mirrorRow
-                opacityRow
-                guideScaleRow
-                lineColorRow
-            }
-        }
-        .padding(AP.Space.space12)
-    }
-
-    /// One settings row: glyph + word on `controlFill`, 44 pt tall, pressed fill step.
-    private func row(
-        systemImage: String?,
-        title: String,
-        value: String?,
-        accessibilityLabel: String,
-        identifier: String,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            HStack(spacing: AP.Space.space8) {
-                if let systemImage {
-                    Image(systemName: systemImage)
-                        .font(AP.Font.body)
-                        .foregroundStyle(AP.Color.primaryText)
-                        .frame(width: 22)
-                        .accessibilityHidden(true)
-                }
-                Text(title)
-                    .font(AP.Font.body)
-                    .foregroundStyle(AP.Color.primaryText)
-                Spacer(minLength: AP.Space.space8)
-                if let value {
-                    Text(value)
-                        .font(AP.Font.body.weight(.semibold))
-                        .foregroundStyle(AP.Color.accentText)
-                }
-            }
-            .padding(.horizontal, AP.Space.space12)
-            .frame(maxWidth: .infinity, minHeight: AP.HitTarget.minimum, alignment: .leading)
-        }
-        .buttonStyle(CameraRowStyle())
-        .disabled(!controlsEnabled)
-        .opacity(controlsEnabled ? 1 : 0.45)
-        .accessibilityLabel(accessibilityLabel)
-        .accessibilityIdentifier(identifier)
-    }
-
-    private var gridRow: some View {
-        HStack(spacing: AP.Space.space8) {
-            Image(systemName: "grid")
-                .font(AP.Font.body)
-                .foregroundStyle(AP.Color.primaryText)
-                .frame(width: 22)
-                .accessibilityHidden(true)
-            Text("Grid")
-                .font(AP.Font.body)
-                .foregroundStyle(AP.Color.primaryText)
-            Spacer(minLength: AP.Space.space8)
-            gridSwitch
-        }
-        .padding(.horizontal, AP.Space.space12)
-        .frame(maxWidth: .infinity, minHeight: AP.HitTarget.minimum, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: AP.Radius.radius16, style: .continuous)
-                .fill(AP.Color.controlFill)
-        )
-        .opacity(controlsEnabled ? 1 : 0.45)
-        .accessibilityLabel("Show camera grid")
-        .accessibilityIdentifier("camera.tools.grid")
-    }
-
-    /// Switch: `accent` track when on, `controlFillPressed` when off, ink knob, 44 pt hit area.
-    private var gridSwitch: some View {
-        Button(action: onGridToggle) {
-            ZStack(alignment: .leading) {
-                Capsule()
-                    .fill(isGridVisible ? AP.Color.accent : AP.Color.controlFillPressed)
-                    .frame(width: 48, height: 28)
-                Circle()
-                    .fill(AP.Color.onAccent)
-                    .frame(width: 22, height: 22)
-                    .padding(.leading, 3)
-                    .offset(x: isGridVisible ? 20 : 0)
-            }
-            .animation(.easeOut(duration: 0.1), value: isGridVisible)
-        }
-        .buttonStyle(.plain)
-        // The drawn switch is 48x28; the row's own minimum height does not enlarge the Button, so the
-        // target is applied here, where the tap actually lands.
-        .apMinimumHitTarget()
-        .disabled(!controlsEnabled)
-        .accessibilityLabel("Show camera grid")
-        .accessibilityValue(isGridVisible ? "On" : "Off")
-        .accessibilityIdentifier("camera.tools.grid")
-        .accessibilityAddTraits(isGridVisible ? [.isSelected] : [])
-    }
-
-    /// Opacity: label + value on the tone's ink, slider tinted with the accent.
-    /// Mirror: flips the pose reference (the guide), with a glyph and a word so the state is never
-    /// carried by the switch's own position.
-    private var mirrorRow: some View {
-        HStack(spacing: AP.Space.space8) {
-            Image(systemName: "arrow.left.and.right.righttriangle.left.righttriangle.right")
-                .font(AP.Font.body)
-                .foregroundStyle(AP.Color.primaryText)
-                .frame(width: 22)
-                .accessibilityHidden(true)
-            Text("Mirror guide")
-                .font(AP.Font.body)
-                .foregroundStyle(AP.Color.primaryText)
-            Spacer(minLength: AP.Space.space8)
-            Text(guideFlipped ? "Mirrored" : "Normal")
-                .font(AP.Font.body.weight(.semibold))
-                .foregroundStyle(AP.Color.accentText)
-            mirrorSwitch
-        }
-        .padding(.horizontal, AP.Space.space12)
-        .frame(maxWidth: .infinity, minHeight: AP.HitTarget.minimum, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: AP.Radius.radius16, style: .continuous)
-                .fill(AP.Color.controlFill)
-        )
-        .opacity(controlsEnabled ? 1 : 0.45)
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("camera.tools.mirror")
-    }
-
-    private var mirrorSwitch: some View {
-        Button(action: onMirrorToggle) {
-            ZStack(alignment: .leading) {
-                Capsule()
-                    .fill(guideFlipped ? AP.Color.accent : AP.Color.controlFillPressed)
-                    .frame(width: 48, height: 28)
-                Circle()
-                    .fill(AP.Color.onAccent)
-                    .frame(width: 22, height: 22)
-                    .padding(.leading, 3)
-                    .offset(x: guideFlipped ? 20 : 0)
-            }
-            .animation(.easeOut(duration: 0.1), value: guideFlipped)
-        }
-        .buttonStyle(.plain)
-        .apMinimumHitTarget()
-        .disabled(!controlsEnabled)
-        .accessibilityLabel("Mirror pose guide")
-        .accessibilityValue(guideFlipped ? "Mirrored" : "Normal")
-        .accessibilityIdentifier("camera.tools.mirror.switch")
-        .accessibilityAddTraits(guideFlipped ? [.isSelected] : [])
-    }
-
-    /// Pose reference's size: value, slider and a Reset, so the gesture has a visible control.
-    private var guideScaleRow: some View {
-        VStack(alignment: .leading, spacing: AP.Space.space4) {
-            HStack(spacing: AP.Space.space8) {
-                Text("Scale")
-                    .font(AP.Font.body)
-                    .foregroundStyle(AP.Color.primaryText)
-                Spacer(minLength: AP.Space.space8)
-                Text(CameraGuideScale.label(guideScale))
-                    .font(AP.Font.body.weight(.semibold))
-                    .foregroundStyle(AP.Color.accentText)
-            }
-            HStack(spacing: AP.Space.space8) {
-                Slider(
-                    value: Binding(get: { guideScale }, set: { onGuideScaleChange($0) }),
-                    in: CameraGuideScale.range
-                )
-                .tint(AP.Color.accent)
-                .disabled(!controlsEnabled)
-                .accessibilityLabel("Pose guide scale \(CameraGuideScale.label(guideScale))")
-                .accessibilityIdentifier("camera.tools.scale")
-
-                Button("Reset", action: onGuideScaleReset)
-                    .buttonStyle(.plain)
-                    .font(AP.Font.supporting.weight(.semibold))
-                    .foregroundStyle(AP.Color.accentText)
-                    .apMinimumHitTarget()
-                    .disabled(!controlsEnabled)
-                    .accessibilityIdentifier("camera.tools.scale.reset")
-            }
-        }
-        .padding(.horizontal, AP.Space.space12)
-        .padding(.vertical, AP.Space.space8)
-        .background(
-            RoundedRectangle(cornerRadius: AP.Radius.radius16, style: .continuous)
-                .fill(AP.Color.controlFill)
-        )
-        .opacity(controlsEnabled ? 1 : 0.45)
-    }
-
-    /// Ratio: the saved capture's aspect. The chosen option carries a check glyph and its word.
-    private var ratioRow: some View {
-        VStack(alignment: .leading, spacing: AP.Space.space4) {
-            HStack(spacing: AP.Space.space8) {
-                Image(systemName: "rectangle.portrait")
-                    .font(AP.Font.body)
-                    .foregroundStyle(AP.Color.primaryText)
-                    .frame(width: 22)
-                    .accessibilityHidden(true)
-                Text("Ratio")
-                    .font(AP.Font.body)
-                    .foregroundStyle(AP.Color.primaryText)
-                Spacer(minLength: AP.Space.space8)
-                Text(aspectRatio.rawValue)
-                    .font(AP.Font.body.weight(.semibold))
-                    .foregroundStyle(AP.Color.accentText)
-            }
-            HStack(spacing: AP.Space.space8) {
-                ForEach(CameraAspectRatio.allCases) { ratio in
-                    ratioChoice(ratio)
-                }
-            }
-        }
-        .padding(.horizontal, AP.Space.space12)
-        .padding(.vertical, AP.Space.space8)
-        .background(
-            RoundedRectangle(cornerRadius: AP.Radius.radius16, style: .continuous)
-                .fill(AP.Color.controlFill)
-        )
-        .disabled(!controlsEnabled)
-        .opacity(controlsEnabled ? 1 : 0.45)
-        // A container, not a single element: each Ratio choice keeps its own identifier
-        // (`camera.tools.ratio.*`) while the row keeps `camera.tools.ratio`.
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("camera.tools.ratio")
-    }
-
-    private func ratioChoice(_ ratio: CameraAspectRatio) -> some View {
-        let isSelected = aspectRatio == ratio
-        return Button {
-            onAspectRatioChange(ratio)
-        } label: {
-            HStack(spacing: AP.Space.space4) {
-                if isSelected {
-                    Image(systemName: "checkmark")
-                        .font(AP.Font.caption.weight(.bold))
-                }
-                Text(ratio.rawValue)
-                    .font(AP.Font.supporting.weight(.semibold))
-            }
-            .foregroundStyle(isSelected ? AP.Color.selectedForeground : AP.Color.primaryText)
-            .frame(maxWidth: .infinity, minHeight: AP.HitTarget.minimum)
-        }
-        .buttonStyle(CameraSelectStyle(isSelected: isSelected))
-        .accessibilityLabel("Ratio \(ratio.rawValue)")
-        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
-        .accessibilityIdentifier(ratio.accessibilityIdentifier)
-    }
-
-    /// Timer: Off / 3 s / 10 s, the chosen option with a check glyph and its word.
-    private var timerRow: some View {
-        VStack(alignment: .leading, spacing: AP.Space.space4) {
-            HStack(spacing: AP.Space.space8) {
-                Image(systemName: "timer")
-                    .font(AP.Font.body)
-                    .foregroundStyle(AP.Color.primaryText)
-                    .frame(width: 22)
-                    .accessibilityHidden(true)
-                Text("Timer")
-                    .font(AP.Font.body)
-                    .foregroundStyle(AP.Color.primaryText)
-                Spacer(minLength: AP.Space.space8)
-                Text(timerSetting.rawValue)
-                    .font(AP.Font.body.weight(.semibold))
-                    .foregroundStyle(AP.Color.accentText)
-            }
-            HStack(spacing: AP.Space.space8) {
-                ForEach(CameraTimerSetting.allCases) { setting in
-                    timerChoice(setting)
-                }
-            }
-        }
-        .padding(.horizontal, AP.Space.space12)
-        .padding(.vertical, AP.Space.space8)
-        .background(
-            RoundedRectangle(cornerRadius: AP.Radius.radius16, style: .continuous)
-                .fill(AP.Color.controlFill)
-        )
-        .disabled(!controlsEnabled)
-        .opacity(controlsEnabled ? 1 : 0.45)
-        // A container, not a single element: each Timer choice keeps its own identifier
-        // (`camera.tools.timer.*`) while the row keeps `camera.tools.timer`.
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("camera.tools.timer")
-    }
-
-    private func timerChoice(_ setting: CameraTimerSetting) -> some View {
-        let isSelected = timerSetting == setting
-        return Button {
-            onTimerChange(setting)
-        } label: {
-            HStack(spacing: AP.Space.space4) {
-                if isSelected {
-                    Image(systemName: "checkmark")
-                        .font(AP.Font.caption.weight(.bold))
-                }
-                Text(setting.rawValue)
-                    .font(AP.Font.supporting.weight(.semibold))
-            }
-            .foregroundStyle(isSelected ? AP.Color.selectedForeground : AP.Color.primaryText)
-            .frame(maxWidth: .infinity, minHeight: AP.HitTarget.minimum)
-        }
-        .buttonStyle(CameraSelectStyle(isSelected: isSelected))
-        .accessibilityLabel("Timer \(setting.rawValue)")
-        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
-        .accessibilityIdentifier(setting.accessibilityIdentifier)
-    }
-
-    private var opacityRow: some View {
-        VStack(alignment: .leading, spacing: AP.Space.space4) {
-            HStack(spacing: AP.Space.space8) {
-                Text("Opacity")
-                    .font(AP.Font.body)
-                    .foregroundStyle(AP.Color.primaryText)
-                Spacer(minLength: AP.Space.space8)
-                Text("\(Int((guideOpacity * 100).rounded()))%")
-                    .font(AP.Font.body.weight(.semibold))
-                    .foregroundStyle(AP.Color.accentText)
-            }
-            Slider(value: Binding(
-                get: { guideOpacity },
-                set: { onGuideOpacityChange($0) }
-            ), in: 0.1...1)
-            .tint(AP.Color.accent)
-            .disabled(!controlsEnabled)
-            .accessibilityLabel("Pose guide opacity \(Int((guideOpacity * 100).rounded())) percent")
-            .accessibilityIdentifier("camera.tools.opacity")
-        }
-        .padding(.horizontal, AP.Space.space12)
-        .padding(.vertical, AP.Space.space8)
-        .background(
-            RoundedRectangle(cornerRadius: AP.Radius.radius16, style: .continuous)
-                .fill(AP.Color.controlFill)
-        )
-    }
-
-    /// Line colour: the selected choice carries a check glyph **and** its word, never colour alone.
-    private var lineColorRow: some View {
-        VStack(alignment: .leading, spacing: AP.Space.space4) {
-            Text("Line colour")
-                .font(AP.Font.body)
-                .foregroundStyle(AP.Color.primaryText)
-            HStack(spacing: AP.Space.space8) {
-                choiceButton(.black, identifier: "camera.tools.lineColor.black")
-                choiceButton(.white, identifier: "camera.tools.lineColor.white")
-            }
-        }
-        .padding(.horizontal, AP.Space.space12)
-        .padding(.vertical, AP.Space.space8)
-        .background(
-            RoundedRectangle(cornerRadius: AP.Radius.radius16, style: .continuous)
-                .fill(AP.Color.controlFill)
-        )
-        .disabled(!controlsEnabled)
-        .opacity(controlsEnabled ? 1 : 0.45)
-    }
-
-    private func choiceButton(_ color: GuideLineColor, identifier: String) -> some View {
-        let isSelected = guideLineColor == color
-        return Button {
-            onGuideLineColorChange(color)
-        } label: {
-            HStack(spacing: AP.Space.space4) {
-                if isSelected {
-                    Image(systemName: "checkmark")
-                        .font(AP.Font.caption.weight(.bold))
-                }
-                Text(color.label)
-                    .font(AP.Font.supporting.weight(.semibold))
-            }
-            .foregroundStyle(isSelected ? AP.Color.selectedForeground : AP.Color.primaryText)
-            .frame(maxWidth: .infinity, minHeight: AP.HitTarget.minimum)
-        }
-        .buttonStyle(CameraSelectStyle(isSelected: isSelected))
-        .accessibilityLabel("\(color.label) pose line colour")
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
-        .accessibilityIdentifier(identifier)
-    }
-}
-
-/// Selected/unselected fill for an option chip: `selectedBackground` when chosen, else transparent
-/// (it sits on the row's `controlFill`).
-private struct CameraSelectStyle: ButtonStyle {
-    let isSelected: Bool
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .background(
-                RoundedRectangle(cornerRadius: AP.Radius.radius8, style: .continuous)
-                    .fill(isSelected ? AP.Color.selectedBackground
-                          : (configuration.isPressed ? AP.Color.controlFillPressed : Color.clear))
-            )
-            .apMinimumHitTarget()
-    }
-}
-
-/// `controlFill` row with a pressed fill step.
-private struct CameraRowStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .background(
-                RoundedRectangle(cornerRadius: AP.Radius.radius16, style: .continuous)
-                    .fill(configuration.isPressed ? AP.Color.controlFillPressed : AP.Color.controlFill)
-            )
-            .apMinimumHitTarget()
-    }
-}
-
-private struct CameraToolsContentHeightKey: PreferenceKey {
-    nonisolated(unsafe) static var defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = max(value, nextValue())
-    }
-}
-
-/// `max-height: min(62vh, 420px)` + `overflow-y: auto`, while hugging the content when it is
-/// shorter than the cap (the prototype menu is not a fixed-height panel).
-private struct CameraToolsPopupHeight: ViewModifier {
-    let naturalHeight: CGFloat?
-    let maxHeight: CGFloat
-
-    func body(content: Content) -> some View {
-        if let naturalHeight, naturalHeight > 0 {
-            content.frame(height: min(naturalHeight, maxHeight))
-        } else {
-            content.frame(maxHeight: maxHeight)
-        }
-    }
-}
-
 /// Spinner drawn inside the shutter while a capture is in flight: a glyph on the controlFill disc,
 /// so a busy shutter reads as busy without a second control appearing.
 private struct CameraShutterSpinner: View {
@@ -2691,9 +1946,12 @@ enum CameraPickerScope: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     var accessibilityIdentifier: String { "posePicker.scope.\(rawValue.lowercased())" }
 
-    /// The rows this scope draws. Both scopes filter through the **one** name matcher the Poses screens
-    /// use (`PoseAdapterMerge.matchesName`, which is what `filterSavedLocally` is built on), so a query
-    /// cannot mean two different things on two screens.
+    /// The rows this scope draws from what is already in memory.
+    ///
+    /// **Saved** is the answer: the Saved screen's own filter, through the one name matcher every pose search
+    /// uses (`PoseAdapterMerge.matchesName`). **All** is the *fallback* since the sheet started asking the
+    /// server the Search screen's question: `PosePickerViewModel` uses this rule for the first paint under a
+    /// new query and for the whole answer offline, while the query-less catalogue is in hand.
     func rows(catalogue: [NativePose], saved: [NativePose], query: String) -> [NativePose] {
         switch self {
         case .all:
@@ -2811,6 +2069,22 @@ enum CameraSavedScopePresentation: Equatable {
             }
         }
     }
+
+    /// The Saved chip's no-match card: a query that filters the account's own collection down to nothing is
+    /// the shared no-match card, never a silently blank area under the chips — while a sign-in / loading /
+    /// failed / empty *collection* keeps its own panel (that is not "no match", it is "no answer yet").
+    /// Pure, and the sheet reads it, so the card's condition is a unit test rather than a screenshot.
+    static func savedHasNoMatch(
+        presentation: CameraSavedScopePresentation,
+        rows: [NativePose],
+        query: String
+    ) -> Bool {
+        guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, rows.isEmpty else {
+            return false
+        }
+        if case .rows = presentation { return true }
+        return false
+    }
 }
 
 // MARK: - Pose picker (camera-local bottom sheet, `.nb-pose-picker-*`)
@@ -2821,21 +2095,42 @@ enum CameraSavedScopePresentation: Equatable {
 @MainActor
 final class PosePickerViewModel: ObservableObject {
     @Published var state: Loadable<[NativePose]> = .idle
-    @Published var query: String = ""
+    /// The search field's text. A change schedules the **server** search: the sheet asks the same question
+    /// the Search screen asks (`PoseServing.posesPage`), debounced and cancellable, and paints what is in hand
+    /// while the answer is out.
+    @Published var query: String = "" {
+        didSet {
+            guard query != oldValue else { return }
+            scheduleSearch()
+        }
+    }
     /// `forcedState === 'offline'`: the sheet keeps showing results with an offline notice.
     @Published private(set) var isOffline = false
     /// Which collection the sheet lists (`05-camera-picker-loaded`: All / Saved). Saved is
     /// account-scoped and loaded by `CameraSavedPosesModel`, never by this model.
     @Published var scope: CameraPickerScope = .all
     private let service: any PoseServing
+    /// Typing debounce for the search, in nanoseconds. The Search screen waits 350 ms
+    /// (`PosesViewModel.debounceNanoseconds`); the sheet keeps the same cadence so a keystroke is not a
+    /// request.
+    private let searchDebounceNanoseconds: UInt64
+    /// The query-less catalogue this presentation loaded. It is the search's first paint and the whole answer
+    /// offline, so a query never costs a blank grid — and never a second request for rows already in hand.
+    private var catalogue: Loadable<[NativePose]> = .idle
+    /// The debounced search. Cancelled by the next keystroke, so only the last text is asked for.
+    private var searchTask: Task<Void, Never>?
+    /// Bumped for every query that starts a search, and by every dismissal. An answer carrying an older
+    /// generation is inert: a slow response for "wa" can never replace the grid "warrior" already got.
+    private var searchGeneration = 0
     /// R7: reachability is created on presentation and torn down on dismissal — `NWPathMonitor`
     /// `cancel()` is terminal, so each presentation gets a fresh monitor rather than one running for
     /// the whole lifetime of the camera screen.
     private var pathMonitor: NWPathMonitor?
     private let monitorQueue = DispatchQueue(label: "aipose.pose-picker.path")
 
-    init(service: any PoseServing) {
+    init(service: any PoseServing, searchDebounceNanoseconds: UInt64 = 350_000_000) {
         self.service = service
+        self.searchDebounceNanoseconds = searchDebounceNanoseconds
     }
 
     deinit {
@@ -2865,10 +2160,12 @@ final class PosePickerViewModel: ObservableObject {
 
     /// Sheet dismissal (R6). The prototype's offline card carries no retry action, so a failed fetch
     /// while offline would strand the sheet permanently; dropping the result means reopening always
-    /// retries. Also stops reachability monitoring (R7).
+    /// retries. Also stops reachability monitoring (R7) and abandons the search in flight.
     func prepareForDismissal() {
-        state = .idle
         query = ""
+        state = .idle
+        catalogue = .idle
+        cancelSearch()
         stopMonitoring()
         abandonInFlightLoad()
     }
@@ -2895,7 +2192,10 @@ final class PosePickerViewModel: ObservableObject {
             do {
                 let poses = try await self.service.poses(query: nil)
                 guard generation == self.loadGeneration else { return }
-                self.state = poses.isEmpty ? .empty : .loaded(poses)
+                self.catalogue = poses.isEmpty ? .empty : .loaded(poses)
+                // A search already owns the grid (the user typed while the catalogue was loading): its
+                // first paint and its answer both outrank the plain catalogue.
+                if self.trimmedQuery.isEmpty { self.state = self.catalogue }
             } catch {
                 guard generation == self.loadGeneration else { return }
                 self.state = .failed(error.localizedDescription)
@@ -2904,6 +2204,84 @@ final class PosePickerViewModel: ObservableObject {
         inFlightLoad = task
         await task.value
         if loadGeneration == generation { inFlightLoad = nil }
+    }
+
+    // MARK: Search — the Search screen's question, asked from the sheet
+
+    /// The text every search surface trims, so the request and the copy cannot disagree.
+    private var trimmedQuery: String {
+        query.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// What is in hand to narrow while the server has not answered: the query-less catalogue when it loaded,
+    /// otherwise whatever answer is on screen.
+    private var rowsInHand: [NativePose] {
+        if case .loaded(let poses) = catalogue { return poses }
+        return state.rows
+    }
+
+    /// The search field changed: repaint from what is in hand, then ask the server once the typing settles.
+    private func scheduleSearch() {
+        cancelSearch()
+        let term = trimmedQuery
+        guard !term.isEmpty else {
+            // No query is no search: the catalogue is the answer and no request is spent on it.
+            state = catalogue
+            return
+        }
+        let firstPaint = CameraPickerScope.all.rows(catalogue: rowsInHand, saved: [], query: term)
+        // A spinner, not the no-match card, while the answer is out: "no poses match" is a claim only the
+        // server can make.
+        state = firstPaint.isEmpty ? .loading : .loaded(firstPaint)
+
+        // The raw field text is what the request carries (the Search screen sends the field text, not the
+        // trimmed term); the fallback above uses the trimmed one because it is the matcher's rule.
+        let text = query
+        let generation = searchGeneration
+        let debounce = searchDebounceNanoseconds
+        searchTask = Task { @MainActor [weak self] in
+            if debounce > 0 {
+                try? await Task.sleep(nanoseconds: debounce)
+            }
+            guard !Task.isCancelled, let self, generation == self.searchGeneration else { return }
+            await self.search(text, generation: generation)
+        }
+    }
+
+    /// Cancels the debounced search and makes any request already in flight inert.
+    private func cancelSearch() {
+        searchTask?.cancel()
+        searchTask = nil
+        searchGeneration &+= 1
+    }
+
+    /// The server's answer for `text`, painted only if it is still the answer someone is waiting for.
+    private func search(_ text: String, generation: Int) async {
+        do {
+            let page = try await fetchAll(query: text)
+            guard generation == searchGeneration else { return }
+            state = page.poses.isEmpty ? .empty : .loaded(page.poses)
+        } catch {
+            guard generation == searchGeneration else { return }
+            // Offline (or a failure): the local name filter over the catalogue is the fallback, so the sheet
+            // narrows what it has instead of blanking. With nothing in hand the card says why.
+            let fallback = CameraPickerScope.all.rows(catalogue: rowsInHand, saved: [], query: text)
+            state = fallback.isEmpty ? .failed(error.localizedDescription) : .loaded(fallback)
+        }
+    }
+
+    /// **The call site.** The Search screen reads its rows with
+    /// `service.posesPage(query: normalizedQuery, offset: 0, limit: PosesViewModel.Paging.pageSize)` — the field text, `nil`
+    /// when it is empty, and the first window of `Paging.pageSize` rows (`PosesViewModel.load()`). The sheet
+    /// asks exactly that, so "the same query" means the same request, the same rows and the same order. When
+    /// the route travels *in* the request, this one method changes and nothing else does.
+    private func fetchAll(query text: String) async throws -> PosePage {
+        try await service.posesPage(
+            query: text.isEmpty ? nil : text,
+            filter: .all,
+            offset: 0,
+            limit: PosesViewModel.Paging.pageSize
+        )
     }
 
     /// Drops the request behind the catalogue: the collapsed camera's dismissal retries on reopen
@@ -2915,12 +2293,11 @@ final class PosePickerViewModel: ObservableObject {
         loadGeneration &+= 1
     }
 
-    /// Local title filter over the loaded catalogue (`guide-picker.js` `render()`). One matcher, shared
-    /// with the Saved scope and the Poses screens: trimmed query, `localizedCaseInsensitiveContains`.
-    var filteredPoses: [NativePose] {
-        guard case .loaded(let poses) = state else { return [] }
-        return poses.filter { PoseAdapterMerge.matchesName($0.name, query: query) }
-    }
+    /// The All scope's rows for the current query. `state` **is** the answer: the server's rows when it has
+    /// answered (the same request the Search screen makes), the local name filter over the catalogue while the
+    /// answer is out or when the sheet is offline. Filtering again here would hide rows the server matched by
+    /// something other than the name — exactly the disagreement with the Search screen this removed.
+    var filteredPoses: [NativePose] { state.rows }
 
     /// Shared-card tone the picker renders, or `nil` when it draws the grid.
     ///
@@ -2954,27 +2331,37 @@ final class PosePickerViewModel: ObservableObject {
         return false
     }
 
-    /// Distinguishes the `.empty` card's two copies: a no-match query versus an empty catalogue.
-    var emptyIsNoMatch: Bool {
-        if case .empty = state { return false }
-        return !query.trimmingCharacters(in: .whitespaces).isEmpty
-    }
+    /// Distinguishes the `.empty` card's two copies: a query that matched nothing versus an empty catalogue.
+    /// Both arrive as `.empty` — the server's empty page *is* an empty list — so the query is what tells them
+    /// apart: with no query there was nothing to match, and the catalogue itself is empty.
+    var emptyIsNoMatch: Bool { !trimmedQuery.isEmpty }
 
     #if DEBUG
     /// Test seam: reachability is process-wide and cannot be driven from a unit test, but the
     /// `.offline` card has no other producer in the app and no screenshot path either.
     func setOfflineForTesting(_ offline: Bool) { isOffline = offline }
+
+    /// Test seam: runs the search for the current text now instead of waiting out the debounce, so a test
+    /// drives the request without a clock.
+    func searchNowForTesting() async {
+        let text = query
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        cancelSearch()
+        await search(text, generation: searchGeneration)
+    }
     #endif
 
-    /// The scope chip. One control switches the collection; leaving Saved drops the query so the two
-    /// lists cannot filter each other's text.
+    /// The scope chip. One control switches the collection and **keeps** the query: search sits above the
+    /// chips and the chips narrow what the query already matched, so a tap that emptied the field would
+    /// undo the typing that came first. One matcher serves both scopes, so the query cannot mean two
+    /// different things after the switch.
     func selectScope(_ scope: CameraPickerScope) {
         guard scope != self.scope else { return }
         self.scope = scope
-        query = ""
     }
 
-    /// `pose-picker-search__clear`: resets to the full grid without refetching.
+    /// `pose-picker-search__clear`: resets to the full grid. Dropping the query cancels the search in flight
+    /// and puts the loaded catalogue back, so clearing never costs a request.
     func clearSearch() {
         query = ""
     }
@@ -2994,6 +2381,12 @@ enum PosePickerLayout {
     }
 
     static let order: [Row] = [.handle, .header, .search, .scopes, .results]
+
+    /// The rows above the results. The panel renders these in a `ForEach` and mounts the results scroll
+    /// content **directly** after them: a flexible child mounted inside a `ForEach` is proposed its height
+    /// differently, and the scroll content is the one child that has to fill the rest of the panel.
+    /// `fixedRows + [.results] == order`, which the layout test pins.
+    static let fixedRows: [Row] = order.filter { $0 != .results }
 
     /// The search field's own handle, and the clear button inside it.
     static let searchIdentifier = "posePicker.search"
@@ -3063,14 +2456,24 @@ private struct PosePickerSheet: View {
         )
     }
 
-    /// Rows the grid draws for the current scope. The rule owns the name filter for **both** lists, so
-    /// the catalogue is passed unfiltered and cannot be filtered twice.
+    /// Rows the grid draws for the current scope.
+    ///
+    /// **All** draws the model's rows as they are: they are already the answer for the current query (the
+    /// server's rows when it answered, the local name filter over the catalogue while the answer is out or
+    /// offline — see `PosePickerViewModel`). Filtering again here would hide a row the server matched by
+    /// something other than its name, which is exactly how the sheet and the Search screen used to disagree.
+    /// **Saved** is the Saved screen's own filter, through the one shared matcher.
     private var visiblePoses: [NativePose] {
-        model.scope.rows(
-            catalogue: model.state.rows,
-            saved: savedPoses.rows,
-            query: model.query
-        )
+        switch model.scope {
+        case .all:
+            return model.state.rows
+        case .saved:
+            return CameraPickerScope.saved.rows(
+                catalogue: model.state.rows,
+                saved: savedPoses.rows,
+                query: model.query
+            )
+        }
     }
 
     private struct PickerItem: Identifiable {
@@ -3131,10 +2534,13 @@ private struct PosePickerSheet: View {
 
     private func panel(height: CGFloat) -> some View {
         VStack(spacing: 0) {
-            // Rendered from `PosePickerLayout.order`, so the order the tests assert is the order drawn.
-            ForEach(PosePickerLayout.order, id: \.self) { row in
+            // Rendered from `PosePickerLayout.order`, so the order the tests assert is the order drawn —
+            // with the results mounted as a direct child, not inside the `ForEach`.
+            ForEach(PosePickerLayout.fixedRows, id: \.self) { row in
                 panelRow(row)
             }
+            scrollContent
+                .frame(maxHeight: .infinity)
         }
         .padding(EdgeInsets(
             top: AP.Space.space12,
@@ -3337,9 +2743,11 @@ private struct PosePickerSheet: View {
 
     /// The Saved chip loaded a collection, and the query matched none of it.
     private var savedScopeHasNoMatch: Bool {
-        guard !trimmedQuery.isEmpty, visiblePoses.isEmpty else { return false }
-        if case .rows = savedPresentation { return true }
-        return false
+        CameraSavedScopePresentation.savedHasNoMatch(
+            presentation: savedPresentation,
+            rows: visiblePoses,
+            query: trimmedQuery
+        )
     }
 
     /// One state panel, one handle: the sheet's states are all `posePicker.state`.
@@ -3469,7 +2877,7 @@ private struct PosePickerSheet: View {
 }
 
 /// `.nb-pose-picker-panel` — rounded top corners, square bottom (radius `22px 22px 0 0`).
-private struct RoundedTopShape: Shape {
+struct RoundedTopShape: Shape {
     let radius: CGFloat
 
     func path(in rect: CGRect) -> Path {
@@ -3588,7 +2996,7 @@ struct StickFigureShape: Shape {
     }
 }
 
-private struct StickFigureView: View {
+struct StickFigureView: View {
     let kind: StickFigurePose
     var lineColor: Color = AP.Color.primaryText
 
