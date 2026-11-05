@@ -59,17 +59,18 @@ TC-PAY-017/018/019 (and TC-PAY-014 for Restore) in `docs/qa/test-cases/paywall-p
 - [ ] Note for QA: this case is **BLOCKED (env) on the Simulator** — a simulator build shows no purchasable offering, so the
   failure path can only be walked here (TC-PAY-012 lives in `docs/qa/test-cases/paywall-purchase.md`).
 
-## 2. Camera chrome — what changed in 18
+## 2. Camera chrome — what changed in 23
 - [ ] Open the camera from the dock and read the **top row**.
 - [ ] **Expected:** a round **X** on the left, the **tools** button on the right, and (once a pose is chosen) an **eye** —
-  there is **no "Choose a pose" pill** any more.
+  there is no "Choose a pose" pill any more.
+- [ ] Read the **preview**. It is full screen: the ratio frame spans the screen's width and everything outside the photo
+  is dimmed (about 65 %), so what you see inside the frame is what the photo will contain.
 - [ ] Read the row just above the bottom bar.
-- [ ] **Expected:** the zoom choices **0.5x · 1x · 2x** on the left (a phone whose lens cannot do 0.5x simply does not offer
-  it) and one **⌃ Poses** button at the **right end of that same row**, each compact with no background box and still easy
-  to hit.
-- [ ] Count the **⌃ Poses** buttons.
-- [ ] **Expected:** exactly **one**, at the right end of the zoom row — if a second one appears above the shutter, report it
-  (it was a defect in the first 1.1 (18) dev builds).
+- [ ] **Expected:** one **continuous zoom slider** on the left (its value is a factor like `1.0×`; the old 0.5x/1x/2x
+  pills are gone) and one **Poses** control at the right end of that row.
+- [ ] Count the **Poses** controls.
+- [ ] **Expected:** exactly **one**, at the right end of the zoom row — if a second one appears above the shutter, report
+  it (it was a defect in the first 1.1 (18) dev builds).
 - [ ] Look at the bottom bar itself.
 - [ ] **Expected:** exactly three things — the last-photo thumbnail, the shutter and the flip-camera button — on a bar that
   is **see-through** (50 %) over the preview.
@@ -85,6 +86,10 @@ TC-PAY-017/018/019 (and TC-PAY-014 for Restore) in `docs/qa/test-cases/paywall-p
 - [ ] Tap the preview well outside the panel; then re-open it and dismiss it with the two-finger scrub (VoiceOver escape).
 - [ ] **Expected:** both dismiss it, no dark scrim is left behind, and re-opening lands on Flash again.
 
+- [ ] Drag the **zoom** control to **0.5×**, then **2×**, then **3×** (a factor the lens cannot serve is simply not
+  reachable — note which ones your iPhone offers).
+- [ ] **Expected:** the slider reaches each factor it offers, the preview zooms with it, and a photo taken at that zoom
+  **matches the preview** — same framing, no jump between what was framed and what was saved.
 - [ ] Capture once at **3:4** and once at **9:16**, then open each photo in **Gallery**.
 - [ ] **Expected:** each photo is **not rotated** and shows exactly what the preview framed — the crop matches the
   on-screen frame, the edges line up, and the **pose guide and the scrims are not baked into the photo**.
@@ -263,19 +268,18 @@ The **Mirror** row flips the pose guide only. A front-camera **photo** is a sepa
 - [ ] Something failed → reply with **the section number, what you saw instead, the screen recording, and your device /
   iOS / build line**.
 
-If you are still on build **17**, three things look different and are expected: the top bar still has a "Choose a pose" pill,
-the tools panel still has a title row and a **Done** button, and the zoom row reads **1x · 2x · 3x**. Everything else on this
-page applies to both builds.
+If you are on an **older build**, several things look different and are expected: before 23 the preview was not full
+screen and the zoom was a row of 0.5x/1x/2x pills; before 21 the guide's controls sat in the tools popover. This page
+describes **build 23** — check the build number in Settings → About before reporting a difference.
 
-Notes for QA triage (not for the product owner): the camera chrome in build 18 is verified in source at `d001b80`
-(`camera.tools.done` retired — the panel opens on Flash and dismisses on an outside tap or VoiceOver escape;
-`camera.choosePose` is the **Poses chip** on the zoom/scale row and is the pose sheet's only entry (its value is the
-selected pose name, or "None selected"); the old strip and its toggle (`camera.pickerStripToggle`) are retired; zoom presets are lens-aware `camera.zoom.0.5x|1x|2x`, filtered by the device's range, so the
-Simulator offers only 1x/2x). Timer / Ratio / guide Scale ids are `camera.tools.timer.off|3s|10s`,
-`camera.timer.countdown` + `camera.timer.cancel` ("Get ready" + Cancel), `camera.tools.ratio.3x4|1x1|9x16` and
-`camera.tools.scale` (guide size, 40 %–300 %, + `.scale.reset`). The guide Mirror switch is `camera.tools.mirror.switch`
-(value "Mirrored" / "Normal") and never touches the saved photo — that is section 8's front-camera check.
-Test cases: `docs/qa/test-cases/camera-guide.md` (TC-CAM-001…034) and `capture-gallery.md` (TC-GAL-001…021); automated
-equivalents in `iosAppTests/Features/CameraFeatureTests.swift` and `GalleryFeatureTests.swift`.
-The paywall section's simulator equivalent is `docs/qa/prod-smoke/flows/S-05b-paywall-signed-in.yaml`, BLOCKED-BY-ENV for
-the price assertion — which is exactly why section 1 is manual and on device.
+Notes for QA triage (not for the product owner): the camera chrome in build 23 is verified in source at `7fa7681`.
+Retired — never assert them: `camera.tools.done`, `camera.tools.poseGuide`, `camera.tools.mirror`,
+`camera.tools.mirror.switch`, `camera.tools.opacity`, `camera.tools.scale`, `camera.tools.lineColor.black|white` and
+every `camera.zoom.0.5x|1x|2x|3x`. In their place: zoom is the continuous `camera.zoom.slider` (value like `1.0×`); the
+tools popover is `camera.tools.popover` with flash chips `camera.tools.flash.off|auto|on`, the grid switch, timer chips
+`camera.tools.timer.off|3s|10s` and ratio chips `camera.tools.ratio.3x4|1x1|9x16` (no title, no Done; closes on its own
+control or an outside tap); the guide's controls live in the `camera.guideAdjust` sheet — opened by tapping the pose
+reference itself — with `camera.guideAdjust.opacity|scale|flip|done` and `.lineColor.pink|black|yellow|green`. The
+preview is full screen with a full-width ratio frame, everything outside the frame dimmed to 65 %, and the guide,
+scrims and gestures clipped to it. `camera.choosePose` is still the Poses chip and its value is the selected pose name
+(or "None selected"); the strip and `camera.pickerStripToggle` are retired.

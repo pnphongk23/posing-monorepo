@@ -68,21 +68,31 @@ drawn, and CAM-001/CAM-013 prove that a guide is drawn at all. `camera.pickerStr
 - The no-match card reads `No poses match “<term>”` + `Try a different pose name.` (the Search screen's `SearchResultsCopy`),
   **not** "No poses for …".
 
-## Build 18 camera changes — RELEASED at `d001b80` (superseded the earlier HOLD list)
-Verified in source at `d001b80`:
-- `camera.tools.done` is **retired** (the only mention left is `CameraToolsLayout.retiredDoneIdentifier`, a
-  unit-test constant). The popover opens on the **Flash row**, has no title row, every control applies immediately, and
-  it is dismissed by an **outside tap** or VoiceOver's escape.
-- `camera.choosePose` **survives** — it is now the strip's **Browse card** ("Browse", label "Browse all poses"), drawn
-  only while the strip is expanded, and it opens the full picker sheet (search + All/Saved scopes).
-- `camera.pickerStripToggle` sits at the **right end of the scale row** (same id, same glyph/label pair).
-- Zoom is **lens-aware**: ids are `camera.zoom.0.5x|1x|2x`, and a preset the lens cannot serve is not offered. The
-  Simulator has no capture device, so it falls back to the 1…2x range and offers **1x and 2x only**; 0.5x is device-only.
+## Build 23 camera — the current surface (branch `fix/camera-review-b23`, `7fa7681`)
 
-Every flow and draft below was reworked in the same pass (Done → outside tap; the Browse card needs the strip expanded):
-TC-CAM-001/004/011 keep their flows, TC-CAM-014/015/021/022/023/032/033 are now drafts against these ids and are run on
-the 18 app. Their automation cells say so.
+Read from that source, not guessed:
 
+- **Preview**: full screen, the ratio frame is **full width**, and everything outside the photo frame is dimmed to
+  **65 %** — the frame *is* the photo, so the guide, the scrims and the pinch/twist gestures are clipped to it.
+- **Zoom**: one **continuous slider**, `camera.zoom.slider`, VoiceOver label "Zoom" and a value like `1.0×`. The
+  lens-aware presets `camera.zoom.0.5x|1x|2x|3x` are **retired**.
+- **Tools popover**: container `camera.tools.popover`, **four rows, no title, no Done**. Flash is three chips
+  (`camera.tools.flash.off|auto|on`), the grid a switch (`camera.tools.grid`), timer chips
+  (`camera.tools.timer.off|3s|10s`) and ratio chips (`camera.tools.ratio.3x4|1x1|9x16`). A setting applies on tap;
+  the popover closes on its own control (a toggle) or on an outside tap.
+- **Guide-adjust sheet**: `camera.guideAdjust` with `camera.guideAdjust.opacity`, `.scale`, `.flip`,
+  `.lineColor.pink|black|yellow|green` and `.done`. It is opened from **the pose reference itself** (the guide is the
+  control) and the camera stays live behind it.
+- **Retired ids** (`CameraToolsLayout.retiredIdentifiers` + the zoom presets): `camera.tools.done`,
+  `camera.tools.poseGuide`, `camera.tools.mirror`, `camera.tools.mirror.switch`, `camera.tools.opacity`,
+  `camera.tools.scale`, `camera.tools.scale.reset`, `camera.tools.lineColor.black|white`, and every
+  `camera.zoom.0.5x|1x|2x|3x`. Flows may only use them as **`assertNotVisible` guards**.
+- **Pose sheet**: container `posePicker.sheet`; the picker's **All** scope asks the **server** the Search screen's
+  own question (debounced ~350 ms), so its answer arrives after a request; a scope switch **keeps the query**; the
+  Poses chip's value is the **selected pose name** ("None selected" when there is none).
+
+Historical: the build-18 notes below described the strip era (Browse card, picker toggle, zoom pills); all of that is
+gone and is recorded only so old evidence can still be read.
 
 ## Merged change — the inline pose strip is removed (camera lane `feat/camera-pose-popup`)
 Status: **merged.** The inline strip is gone, the **Poses control always opens a slide-up sheet with search on top**, and
@@ -99,78 +109,13 @@ the **Ratio control changes the preview viewport** (3:4 / 1:1 / 9:16). The ids b
 | ID | Pri | Preconditions | Steps | Expected | Automation |
 |---|---|---|---|---|---|
 
-### Ids to request from the camera lane (all `id TBD on build`)
-slide-up sheet container · sheet close/dismiss control · sheet search field (+ its clear control) · sheet result grid /
-list · a pose row inside the sheet · the "No poses match" panel · the **Poses** control (does it keep
-`camera.pickerStripToggle`, or is there a new id?) · the All/Saved scope chips inside the sheet (keep
-`posePicker.scope.all|saved`?) · the **Ratio** control and its options (keep `camera.tools.ratio.3x4|1x1|9x16`?) ·
-whether `camera.poseStrip` / `camera.poseStrip.card.<id>` / `camera.poseStrip.retry` disappear entirely (that decides
-whether the strip's ids are retired or re-used). Also: does the sheet still carry `posePicker.search` and
-`posePicker.state`, or are they renamed? That single answer decides whether TC-CAM-021 keeps its flow or gets a rewrite.
+### Landed ids (no longer to be requested)
 
-## Flow hazards to watch (found while triaging dev20)
-- **TC-CAM-004** failed on dev20 at `posePicker.search` for a **stale premise**, not an app bug: build 18+ draws
-  `cameraToolsPopup` as the last child of the camera's root ZStack with a **full-screen** `Color.clear` tap catcher, so a tap
-  on the strip's Browse card while the popover is open only dismisses the popover. The flow now dismisses the popover
-  (outside tap + assert) before opening the sheet and waits for `posePicker.search` instead of asserting it instantly.
-- **`inputText` and the software keyboard** — a Magento step that types (`inputText`) needs a software keyboard; a Simulator
-  with **Connect Hardware Keyboard** on shows none, and XCTest's `typeText` can then look stalled. This is a **hazard to
-  watch, not a confirmed defect**: dev20 ran **TC-CAM-021 to a PASS** with its `inputText`. If a batch does stall there, turn
-  the hardware keyboard off before filing anything. TC-CAM-021 also keeps a fast-fail `assertVisible: posePicker.search`
-  before the tap so a missing sheet fails in seconds.
-- **TC-CAM-033** (signed-out Saved scope) failed on dev20 pass 5 at `posePicker.scope.saved` for a **flow** reason, not
-  an app one: the chips are unconditional in the sheet (`handle → header → scopeChips → searchField → content`), and the
-  flow tapped one the moment the grid appeared — while the sheet was still animating in. It now asserts the
-  `posePicker.scope` container and `extendedWaitUntil`s each chip (15 s) before tapping. Note it is **not** e2e-tagged and
-  needs no credentials; a run that skips it as "needs E2E_EMAIL" is mis-classifying it.
-- **Real-camera cases have no flow at all** (device-only by design): TC-CAM-002, 003, 005, 008, 017, 026, 029, 030, 031,
-  035. Nothing in `maestro/flows/` taps the shutter expecting a saved photo; the only shutter taps in the suite are the
-  paywall lane's TC-PAY-001/002, which assert gate behaviour.
-
-## Fix status (all six camera defects have a fix on main, none verified yet)
-`7153c95` duplicate Poses control · `17fdd9f` Browse card leads the strip (the 7 red flows) · `22c9c83` Timer/Ratio option
-ids · `2bf15e7` popover safe area (the clipped guide rows, TC-CAM-032) · `48c1222` front-lens capture saved as previewed
-(TC-CAM-035) · `4cde9d9` Gallery Add pose no longer prompts a signed-in user (TC-GAL-022/023). Verification is the dev19 run
-(and the device run for the capture/orientation items); nothing below is marked fixed on the strength of the commit alone.
-
-## Run on 1.1 (18) — red flows are an app defect, not a flow defect
-dev18 run (2026-11-01, lane-2): **7 flows are red for one app bug** — the Browse card that replaced the top pill is off
-screen and absent from the accessibility tree, so the pose picker sheet has no reachable entry point
-(`docs/qa/redesign-drafts/gallery-camera/bug-notes/camera-18-02-picker-sheet-entry-unreachable.md`): TC-CAM-001, 004, 011,
-014, 021, 022, 033. TC-CAM-032 is red for the clipped pose-guide section
-(`…/camera-18-04-popover-guide-rows-clipped.md`). Two more defects have no flow attached: the duplicate Poses control
-(`…/camera-18-01-…`) and the missing per-option Timer/Ratio ids (`…/camera-18-03-…`, worked around in TC-CAM-027 by
-tapping the option words). Green on 18: TC-CAM-006/007/009/012/013/015/016/018/019/024/027, TC-GAL-001, TC-GAL-010.
-
-## F4 state coverage for the camera (loading / empty / error / offline)
-| State | Where it is proven |
-|---|---|
-| permission (never asked / refused) | TC-CAM-006 (draft flow, refused branch) + TC-CAM-018 (draft flow) + device checklist §10 for the first-run prompt |
-| picker loading | unit: `CameraPickerStatePanel` selection per picker state (`testStatePanelSelectionPerPickerState`) |
-| picker empty catalogue | unit: same mapping + TC-CAM-021's no-match half (flow) |
-| picker no match (search) | TC-CAM-021 (draft flow) |
-| picker error | unit: `CameraStatePanel.picker` → `.pickerFailed` (shared panel + Retry); no flow — the catalogue failure cannot be forced from Maestro (see Requests) |
-| picker offline | TC-CAM-025 (new) |
-| strip loading / failed / empty | TC-CAM-020 (unit mapping) + device checklist §3 |
-| capture in flight (busy) | TC-CAM-026 (device) |
-
-## Re-baseline when the build lands (existing cases whose expected outcome may change)
-- **TC-CAM-017** — the shipped success copy is **"Saved"**; the board says **"Photo saved"**. The camera copy slice is in
-  progress, so this case (and checklist §9) must be re-recorded against whatever ships, and the "View" shortcut re-checked
-  with it.
-- **TC-CAM-021** — if the All/Saved scope chips land in the same sheet, the search case grows a scope dimension: the
-  no-match copy may become scope-specific ("No saved poses match …"), so the expected text needs re-recording.
-- **TC-CAM-005** — the sheet gains scope chips; "search for a pose and pick it" then has two entry paths, and the case
-  must say which scope it runs in.
-- **TC-CAM-020** — strip copy/state mapping is stable, but the strip's empty wording ("No poses yet") is shared with the
-  picker's saved-empty copy ("No saved poses yet"); if those are unified, the row changes.
-- **TC-CAM-016** — **re-baselined at `d001b80`**: the pills are 0.5x / 1x / 2x and lens-aware (`camera.zoom.0.5x|1x|2x`),
-  so the old 1x · 2x · 3x wording is retired; the flow asserts 1x/2x because the Simulator offers no 0.5x preset.
-- **TC-CAM-003** — now that Timer / Ratio / Scale / mirror ship, the tools panel gains two capture rows and the guide
-  section two controls: the case must be re-recorded against the new row set and its "only opacity and line colour"
-  wording retired.
-- **TC-CAM-002** — if the guide's Scale control ships, the pinch case must say how pinch and the slider interact (the
-  slider follows the pinch, or pinch is disabled) — re-record whichever ships.
+Everything that list asked for exists in build 23: the sheet container (`posePicker.sheet`), its close, search and
+clear (`posePicker.close|search|searchClear`), the grid and state panel (`posePicker.grid|state`), pose rows
+(`posePicker.row.<poseID>`), the All/Saved scope chips (`posePicker.scope.all|saved`), the Poses control
+(`camera.choosePose`, value = the selected pose name), the ratio chips (`camera.tools.ratio.3x4|1x1|9x16`) and the
+zoom (`camera.zoom.slider`, with a readable value).
 
 ## Out of scope for 1.1 (no flows; kept as acceptance targets)
 - The paywall press opening an inline "Capture needs Premium / See plans / Not now" card — the paywall worker's area; the
@@ -186,15 +131,15 @@ picker"), `camera.poseStrip`, `camera.poseStrip.card.<poseId>`, `camera.poseStri
 `camera.status`, `camera.permission`, `camera.tools` (top-right) + `camera.tools.*` + `camera.tools.done`,
 `posePicker.search|searchClear|grid|state|close`. Still open:
 
-1. `camera.zoom.<label>` needs a readable selected state — an `accessibilityValue` ("Selected" on the current level,
-   "Not selected" elsewhere) or the trait is invisible to Maestro, so TC-CAM-016 can only assert that the three pills
-   exist. Without it the "tap 2x actually selected 2x" half of the case stays manual.
+1. ~~`camera.zoom.<label>` needs a readable selected state~~ — **answered**: the pills are gone, `camera.zoom.slider`
+   reports its factor as a value (`1.0×`). Maestro can read it but cannot drag to an exact factor, so *setting* 0.5× /
+   2× / 3× and comparing the preview to the captured photo is a device step (checklist §7).
 2. The permission panel's single action carries no identifier (`APEmptyStateView` is built without
    `actionIdentifier`), so a flow must match the label, which changes with the permission state. Please add
    `camera.permission.action` + a value ("allow" / "settings").
-3. Strip card ids embed the pose id (`camera.poseStrip.card.<pose id>`), which a flow cannot know. An index-based id
-   (`camera.poseStrip.card.0`, `.1`, …) or the pose name in an `accessibilityValue` would make "tap a different card
-   switches the guide" automatable.
+3. ~~Strip card ids embed the pose id~~ — **answered**: the strip is gone; the sheet's rows are
+   `posePicker.row.<poseID>` and rows still expose "Use <name> pose", so a flow picks by label and asserts the id by
+   pattern (`'posePicker\.row\..*'`). A specific pose id would have to come from a fixture.
 4. `dock.gallery` — the dock tab item has a label but no identifier (already logged as `TODO(QA-261029-ID)` in
    TC-GAL-001/TC-EXT-003); Gallery flows start by tapping the "Gallery" text, which is also the title on the Gallery
    screen.
