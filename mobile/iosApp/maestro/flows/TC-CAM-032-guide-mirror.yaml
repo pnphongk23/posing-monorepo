@@ -1,4 +1,4 @@
-# TC-CAM-032 the Mirror row flips the pose GUIDE only, and says so in words
+# TC-CAM-032 the guide's Mirror control flips the pose GUIDE only, and says so in words
 appId: ${APP_ID}
 tags: [TC-CAM-032, p1]
 ---
@@ -10,33 +10,46 @@ tags: [TC-CAM-032, p1]
     visible:
       id: "camera.poseGuide"
     timeout: 20000
+# Build 23 moved every guide control out of the tools popover and into the guide-adjust sheet, and the sheet is
+# opened from the reference itself (CameraCanvas.swift: the guide is the control), so the flow taps the guide.
 - tapOn:
-    id: "camera.tools"
+    id: "camera.poseGuide"
+- extendedWaitUntil:
+    visible:
+      id: "camera.guideAdjust"
+    timeout: 15000
 - assertVisible:
+    id: "camera.guideAdjust.opacity"
+- assertVisible:
+    id: "camera.guideAdjust.scale"
+- assertVisible:
+    id: "camera.guideAdjust.flip"
+- assertVisible:
+    id: "camera.guideAdjust.lineColor.black"
+# The retired popover controls must not exist on either surface.
+- assertNotVisible:
     id: "camera.tools.mirror"
-- assertVisible: "Mirror pose guide"
-- assertVisible:
+- assertNotVisible:
     id: "camera.tools.mirror.switch"
-# Off by default; the switch reports its own state as a word, not only a colour.
-- assertVisible: "Normal"
+# Off by default; the control reports its own state as a word, not only a colour.
+- assertVisible: '.*Mirror pose guide.*'
 - tapOn:
-    id: "camera.tools.mirror.switch"
-- assertVisible: "Mirrored"
+    id: "camera.guideAdjust.flip"
+- assertVisible: '.*Unmirror pose guide.*'
 # The guide is still drawn (mirrored, not removed) and the camera itself is untouched.
 - assertVisible:
     id: "camera.poseGuide"
 - assertVisible:
     id: "camera.shutter"
-# Back to Normal, then close the panel.
+# Back to Normal, then close the sheet with its own control.
 - tapOn:
-    id: "camera.tools.mirror.switch"
-- assertVisible: "Normal"
+    id: "camera.guideAdjust.flip"
+- assertVisible: '.*Mirror pose guide.*'
 - tapOn:
-    point: "20%,45%"
-- assertNotVisible:
-    id: "camera.tools.mirror"
+    id: "camera.guideAdjust.done"
+- extendedWaitUntil:
+    notVisible:
+      id: "camera.guideAdjust"
+    timeout: 15000
 - assertVisible:
     id: "camera.poseGuide"
-# `camera.pickerStripToggle` used to be asserted here; it is in `retiredIdentifiers` (CameraFeature.swift:1813-1817)
-# — the strip was replaced by the pose-picker sheet — so the assertion was removed rather than the case, whose
-# subject (the Mirror row flipping the guide only) still exists and still passes.

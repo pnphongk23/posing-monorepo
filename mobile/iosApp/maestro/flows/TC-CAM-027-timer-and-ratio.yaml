@@ -2,37 +2,47 @@
 appId: ${APP_ID}
 tags: [TC-CAM-027, p0]
 ---
-# Ids landed at 117b8bb; NOT in the 1.1 (17) app — run this draft on the 18 app (or later).
-# Timer / Ratio change what a capture does, and the Simulator has no camera: this flow proves the
-# controls, their values and their persistence; the capture itself is device-checklist §5 / §12.
+# Timer / Ratio change what a capture does, and the Simulator has no camera: this flow proves the controls, their
+# chips and their persistence; the capture itself is device-checklist §5 / §12.
 - runFlow: ../subflows/launch.yaml
 - runFlow: ../subflows/open-camera.yaml
 - tapOn:
     id: "camera.tools"
+- extendedWaitUntil:
+    visible:
+      id: "camera.tools.popover"
+    timeout: 15000
+# Build 23 draws both rows as chip rows, one chip per choice, each with its own id.
 - assertVisible:
-    id: "camera.tools.timer"
+    id: "camera.tools.timer.off"
 - assertVisible:
-    id: "camera.tools.ratio"
-# Per-option ids (camera.tools.timer.3s / .ratio.1x1 …) were missing at runtime on dev18 and are restored in
-# 22c9c83, so the flow is back on ids rather than on the option words.
+    id: "camera.tools.timer.3s"
+- assertVisible:
+    id: "camera.tools.timer.10s"
+- assertVisible:
+    id: "camera.tools.ratio.3x4"
+- assertVisible:
+    id: "camera.tools.ratio.1x1"
+- assertVisible:
+    id: "camera.tools.ratio.9x16"
+# Choose a countdown, then a square frame: the popover stays up, so a setting applies without a commit step.
 - tapOn:
     id: "camera.tools.timer.3s"
 - assertVisible:
-    id: "camera.tools.timer"
-# Ratio: 3:4 is the default; switch to a square and to a tall frame.
+    id: "camera.tools.popover"
 - tapOn:
     id: "camera.tools.ratio.1x1"
 - assertVisible:
-    id: "camera.tools.ratio"
+    id: "camera.tools.popover"
 - tapOn:
     id: "camera.tools.ratio.9x16"
 - assertVisible:
-    id: "camera.tools.ratio"
-# Dismissal is by tapping outside the popover (build 18 has no Done button).
+    id: "camera.tools.popover"
+# Dismissal: the popover closes on its own control or on an outside tap — never on a Done button.
 - tapOn:
     point: "20%,45%"
 - assertNotVisible:
-    id: "camera.tools.timer"
+    id: "camera.tools.popover"
 - assertVisible:
     id: "camera.shutter"
 # Both settings persist like every other camera setting.
@@ -40,7 +50,11 @@ tags: [TC-CAM-027, p0]
 - runFlow: ../subflows/open-camera.yaml
 - tapOn:
     id: "camera.tools"
+- extendedWaitUntil:
+    visible:
+      id: "camera.tools.popover"
+    timeout: 15000
 - assertVisible:
-    id: "camera.tools.timer"
+    id: "camera.tools.timer.3s"
 - assertVisible:
-    id: "camera.tools.ratio"
+    id: "camera.tools.ratio.9x16"

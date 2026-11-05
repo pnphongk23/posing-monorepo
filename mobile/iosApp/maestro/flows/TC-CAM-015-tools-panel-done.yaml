@@ -1,44 +1,68 @@
-# TC-CAM-015 the tools popover starts at Flash, has no title or Done, and dismisses on an outside tap
+# TC-CAM-015 the tools popover has four rows, no title and no Done
 appId: ${APP_ID}
 tags: [TC-CAM-015, p1]
 ---
 - runFlow: ../subflows/launch.yaml
-- runFlow: ../subflows/open-first-pose.yaml
-- tapOn:
-    id: "poseDetail.use"
-- extendedWaitUntil:
-    visible:
-      id: "camera.shutter"
-    timeout: 20000
+- runFlow: ../subflows/open-camera.yaml
 - tapOn:
     id: "camera.tools"
-# No title row and no Done button any more: the popover opens on its first control.
+# Build 23: the popover is its own container and a setting applies the moment it is tapped — there is no commit
+# step and no Done control to press.
+- extendedWaitUntil:
+    visible:
+      id: "camera.tools.popover"
+    timeout: 15000
 - assertNotVisible:
     id: "camera.tools.done"
-# A pose is chosen, so every row the panel owns is present — Flash and Grid always, the pose rows with a guide.
+# The four rows, with their controls: flash as three chips, the grid switch, timer and ratio as chip rows.
 - assertVisible:
-    id: "camera.tools.flash"
+    id: "camera.tools.flash.off"
+- assertVisible:
+    id: "camera.tools.flash.auto"
+- assertVisible:
+    id: "camera.tools.flash.on"
 - assertVisible:
     id: "camera.tools.grid"
 - assertVisible:
+    id: "camera.tools.timer.off"
+- assertVisible:
+    id: "camera.tools.timer.3s"
+- assertVisible:
+    id: "camera.tools.timer.10s"
+- assertVisible:
+    id: "camera.tools.ratio.3x4"
+- assertVisible:
+    id: "camera.tools.ratio.1x1"
+- assertVisible:
+    id: "camera.tools.ratio.9x16"
+# The guide's controls left this popover for their own sheet: none of them may appear here any more.
+- assertNotVisible:
     id: "camera.tools.poseGuide"
-- assertVisible:
+- assertNotVisible:
+    id: "camera.tools.mirror"
+- assertNotVisible:
+    id: "camera.tools.mirror.switch"
+- assertNotVisible:
     id: "camera.tools.opacity"
-- assertVisible:
+- assertNotVisible:
+    id: "camera.tools.scale"
+- assertNotVisible:
     id: "camera.tools.lineColor.black"
-# Dismissal is the outside tap: tap the preview well clear of the popover and the popover goes away.
+# Dismissal is the outside tap: the popover goes away and the camera is untouched.
 - tapOn:
     point: "20%,45%"
 - assertNotVisible:
-    id: "camera.tools.flash"
+    id: "camera.tools.popover"
 - assertNotVisible:
-    id: "camera.tools.grid"
+    id: "camera.tools.flash.off"
 - assertVisible:
     id: "camera.close"
 - assertVisible:
     id: "camera.shutter"
-# Re-open proves the popover is really gone and comes back on its first control.
+# Re-open proves the popover really went away and comes back on its rows.
 - tapOn:
     id: "camera.tools"
-- assertVisible:
-    id: "camera.tools.flash"
+- extendedWaitUntil:
+    visible:
+      id: "camera.tools.popover"
+    timeout: 15000

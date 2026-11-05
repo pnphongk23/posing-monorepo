@@ -25,7 +25,7 @@ tags: [TC-CAM-014, p0]
       id: "camera.poseGuide"
     timeout: 15000
 - assertNotVisible:
-    id: "posePicker.search"
+    id: "posePicker.sheet"
 # A pose is chosen, so the eye appears and owns the guide's visibility — its label is the action.
 - assertVisible:
     id: "camera.guideToggle"

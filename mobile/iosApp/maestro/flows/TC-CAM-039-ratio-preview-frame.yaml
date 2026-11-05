@@ -13,9 +13,13 @@ tags: [TC-CAM-039, p0]
     id: "camera.tools"
 - extendedWaitUntil:
     visible:
-      id: "camera.tools.ratio"
+      id: "camera.tools.popover"
     timeout: 15000
-# The chips are all present and read as words (never colour alone).
+- assertVisible:
+    id: "camera.tools.ratio.3x4"
+# The chips are all present and read as words (never colour alone). Build 23 keeps them in the four-row popover,
+# whose rows and chips each carry their own id, and the popover closes on its own control (a toggle) as well as on
+# an outside tap — the flow uses the control.
 - assertVisible:
     id: "camera.tools.ratio.3x4"
 - assertVisible:
@@ -31,7 +35,7 @@ tags: [TC-CAM-039, p0]
     id: "camera.tools"
 - extendedWaitUntil:
     notVisible:
-      id: "camera.tools.ratio"
+      id: "camera.tools.popover"
     timeout: 15000
 - assertVisible:
     id: "camera.shutter"
@@ -50,7 +54,7 @@ tags: [TC-CAM-039, p0]
     id: "camera.tools"
 - extendedWaitUntil:
     notVisible:
-      id: "camera.tools.ratio"
+      id: "camera.tools.popover"
     timeout: 15000
 - takeScreenshot: camera-9x16
 # 3:4 — the portrait default, and the state the rest of the run expects.
@@ -66,7 +70,7 @@ tags: [TC-CAM-039, p0]
     id: "camera.tools"
 - extendedWaitUntil:
     notVisible:
-      id: "camera.tools.ratio"
+      id: "camera.tools.popover"
     timeout: 15000
 - takeScreenshot: camera-3x4
 - assertVisible:

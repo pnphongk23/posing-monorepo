@@ -1,29 +1,42 @@
-# TC-CAM-016 zoom is three pills, and the chosen pill survives a relaunch
+# TC-CAM-016 zoom is a continuous slider, and its value survives a relaunch
 appId: ${APP_ID}
 tags: [TC-CAM-016, p1]
 ---
 - runFlow: ../subflows/launch.yaml
 - runFlow: ../subflows/open-camera.yaml
-# Lens-aware presets: 0.5x / 1x / 2x, never one cycling button. The Simulator has no capture device, so
-# the app falls back to the 1...2x range and offers exactly 1x and 2x — 0.5x is a device-only check
-# (checklist §6, an ultra-wide iPhone), which is why the assertion below is 1x/2x.
+# Build 23 replaced the lens-aware pills with ONE continuous slider. It reports its factor as a value ("1.0×"), which
+# is the only handle a flow has on it: Maestro can read the value, it cannot drag a slider to an exact factor, so
+# setting 0.5×/2×/3× and comparing the preview against the captured photo is the device item (checklist §7).
+- extendedWaitUntil:
+    visible:
+      id: "camera.zoom.slider"
+    timeout: 15000
 - assertVisible:
+    id: "camera.zoom.slider"
+    text: '.*[0-9]\.[0-9]×.*'
+- assertVisible: '.*Zoom.*'
+# The retired presets must not come back: no flow and no screen should find them.
+- assertNotVisible:
+    id: "camera.zoom.0.5x"
+- assertNotVisible:
     id: "camera.zoom.1x"
-- assertVisible:
+- assertNotVisible:
     id: "camera.zoom.2x"
-# Tapping 2x stays on the camera (no cycling, no navigation) — the *selection* itself is not readable yet:
-# `camera.zoom.<label>` carries the `.isSelected` trait but no accessibilityValue, so this flow cannot prove
-# which pill became current (Requests to Feature #1 in camera-guide.md). That half stays manual until it does.
-- tapOn:
-    id: "camera.zoom.2x"
+- assertNotVisible:
+    id: "camera.zoom.3x"
 - assertVisible:
     id: "camera.shutter"
 - assertVisible:
     id: "camera.close"
-# The zoom choice is persisted like the other camera settings.
+# The zoom setting is persisted like every other camera setting: after a relaunch the slider is back with a value.
 - runFlow: ../subflows/relaunch-keep-state.yaml
 - runFlow: ../subflows/open-camera.yaml
+- extendedWaitUntil:
+    visible:
+      id: "camera.zoom.slider"
+    timeout: 15000
 - assertVisible:
-    id: "camera.zoom.2x"
+    id: "camera.zoom.slider"
+    text: '.*[0-9]\.[0-9]×.*'
 - assertVisible:
     id: "camera.shutter"
