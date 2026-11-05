@@ -91,6 +91,7 @@ final class PaywallScreenLayoutTests: XCTestCase {
     private func signedInModel(offering: PurchaseSnapshot? = nil) async -> PaywallModel {
         let model = PaywallModel(
             gateway: Gateway(nextLoad: offering ?? self.offering),
+            offerings: OfferingPrefetcher(),
             boundary: SessionBoundary(
                 tokenStorage: PaywallLayoutTokenStorage(
                     credentials: SessionCredentials(accessToken: "access", refreshToken: "refresh")
@@ -110,6 +111,7 @@ final class PaywallScreenLayoutTests: XCTestCase {
     private func signedOutModel() async -> PaywallModel {
         let model = PaywallModel(
             gateway: Gateway(nextLoad: offering),
+            offerings: OfferingPrefetcher(),
             boundary: SessionBoundary(tokenStorage: PaywallLayoutTokenStorage()),
             signInAction: SignInAction(start: {}),
             connectivity: PaywallLayoutConnectivity()

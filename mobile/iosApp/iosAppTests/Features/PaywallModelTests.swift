@@ -116,11 +116,13 @@ private let readyOffering = PurchaseSnapshot(state: .notEntitled, products: [mon
 final class PaywallModelTests: XCTestCase {
     private func makeModel(
         gateway: FakePurchaseGateway,
+        offerings: OfferingPrefetcher = OfferingPrefetcher(),
         storage: InMemoryTokenStorage = InMemoryTokenStorage(credentials: session),
         signIn: @escaping SignInAction.Starter = {}
     ) -> PaywallModel {
         PaywallModel(
             gateway: gateway,
+            offerings: offerings,
             boundary: SessionBoundary(tokenStorage: storage),
             signInAction: SignInAction(start: signIn)
         )
@@ -308,6 +310,126 @@ final class PaywallModelTests: XCTestCase {
             model.noticeIsSettledOutcome,
             "the failed purchase reports through the outcome banner the surface publishes, not as an offer-area note"
         )
+    }
+
+    // MARK: - Prices are read once, at launch, and the paywall joins that read
+
+    /// With the offering already read, starting the paywall costs **no** request, and the prices are in the
+    /// same state transition as the phase: nothing ever observes "sign-in step, no plans" — which is the
+    /// frame that painted "Price unavailable" cards over a read that was on its way.
+    ///
+    /// Mutation target: announce `.signInRequired` before `loadSignedOutPrices()` and the transition
+    /// observer records a phase-set/plans-empty frame; drop the shared holder and the gateway is asked twice.
+    @MainActor func testPrefetchedPricesArriveWithThePhaseAndCostNoRequest() async {
+        let gateway = FakePurchaseGateway(nextLoad: readyOffering)
+        let offerings = OfferingPrefetcher()
+        offerings.prefetch(using: gateway)
+        await waitUntil("the launch read") { gateway.loadCount == 1 }
+        let primed = await offerings.offering(using: gateway)
+        XCTAssertEqual(primed.products.count, 2, "the launch read brought both packages")
+
+        let model = makeModel(gateway: gateway, offerings: offerings, storage: InMemoryTokenStorage())
+        var frames: [(phase: String, plans: Int)] = []
+        let recorder = model.objectWillChange.sink { _ in
+            frames.append(("\(model.phase)", model.plans.count))
+        }
+        defer { recorder.cancel() }
+
+        model.start()
+        await waitUntil("the sign-in step") { model.phase == .signInRequired }
+
+        XCTAssertEqual(model.plans.count, 2, "the cards have the store's prices on the first frame that shows them")
+        XCTAssertEqual(model.phase, .signInRequired)
+        XCTAssertEqual(gateway.loadCount, 1, "the paywall joined the launch read instead of asking again")
+        XCTAssertFalse(
+            frames.contains { $0.phase != "loadingPlans" && $0.plans == 0 },
+            "no observed frame was phase-set with no plans: \(frames)"
+        )
+    }
+
+    /// A paywall opened while the launch read is still running joins it: one request in total, and the
+    /// surface shows the loading state — never "Price unavailable" — until the prices land.
+    ///
+    /// Mutation target: give the paywall its own `loadOffering()` and the gateway is asked twice.
+    @MainActor func testAPaywallOpenedDuringTheLaunchReadJoinsItOnce() async {
+        let gateway = FakePurchaseGateway(nextLoad: readyOffering)
+        gateway.loadGate = SuspensionGate()
+        let offerings = OfferingPrefetcher()
+        offerings.prefetch(using: gateway)
+        await waitUntil("the launch read to start") { gateway.loadCount == 1 }
+
+        let model = makeModel(gateway: gateway, offerings: offerings, storage: InMemoryTokenStorage())
+        model.start()
+        await waitUntil("the paywall to wait on that read") { model.phase == .loadingPlans && !model.isSignedIn }
+        XCTAssertTrue(offerings.isPrefetching, "the launch read is still the one in flight")
+        XCTAssertNil(model.notice, "a read in flight is not a failed offering")
+        XCTAssertTrue(model.plans.isEmpty)
+
+        gateway.loadGate?.release()
+        await waitUntil("the prices") { model.phase == .signInRequired && model.plans.count == 2 }
+        XCTAssertEqual(gateway.loadCount, 1, "one request for both: the paywall joined the launch read")
+    }
+
+    /// A launch read that came back empty is not an answer: the paywall does one fresh read, and only a
+    /// failure of *that* read reports the unavailable copy with its retry.
+    ///
+    /// Mutation target: cache the empty snapshot and the fresh read never happens; drop the fallback and the
+    /// paywall never recovers.
+    @MainActor func testAnEmptyLaunchReadFallsBackToAFreshPaywallRead() async {
+        let gateway = FakePurchaseGateway(nextLoad: PurchaseSnapshot(state: .noOffering, products: []))
+        let offerings = OfferingPrefetcher()
+        offerings.prefetch(using: gateway)
+        await waitUntil("the launch read") { gateway.loadCount == 1 }
+        XCTAssertNil(offerings.snapshot, "an offering with no packages is not kept")
+
+        gateway.nextLoad = readyOffering
+        let model = makeModel(gateway: gateway, offerings: offerings, storage: InMemoryTokenStorage())
+        model.start()
+        await waitUntil("the fresh read") { model.plans.count == 2 }
+        XCTAssertEqual(gateway.loadCount, 2, "the paywall read once for itself")
+        XCTAssertEqual(model.phase, .signInRequired)
+    }
+
+    /// Both reads failing is the existing unavailable state, action and all.
+    @MainActor func testAFailedLaunchReadAndAFailedPaywallReadReportTheUnavailableRetry() async {
+        let gateway = FakePurchaseGateway(nextLoad: PurchaseSnapshot(state: .noOffering, products: []))
+        let offerings = OfferingPrefetcher()
+        offerings.prefetch(using: gateway)
+        await waitUntil("the launch read") { gateway.loadCount == 1 }
+
+        // A signed-in paywall is the one that reports an unavailable offering with its retry.
+        let model = makeModel(gateway: gateway, offerings: offerings)
+        model.start()
+        await waitUntil("the second read") { gateway.loadCount == 2 }
+        await waitUntil("the unavailable step") {
+            if case .unavailable = model.phase { return true }
+            return false
+        }
+        XCTAssertEqual(gateway.loadCount, 2)
+        XCTAssertEqual(model.notice?.action, .retryLoad)
+    }
+
+    /// Launch kicks the read once, without waiting for it: two kicks (launch, then the first screen) issue one
+    /// request, and the caller carries on while the store is still answering.
+    ///
+    /// Mutation target: remove the de-duplication and the count becomes two.
+    @MainActor func testTheLaunchKickIsDeduplicatedAndDoesNotBlock() async {
+        let gateway = FakePurchaseGateway(nextLoad: readyOffering)
+        gateway.loadGate = SuspensionGate()
+        let offerings = OfferingPrefetcher()
+
+        offerings.prefetch(using: gateway)
+        XCTAssertTrue(offerings.isPrefetching, "the kick returned while the read is still running")
+        await waitUntil("the read to reach the store") { gateway.loadCount == 1 }
+        offerings.prefetch(using: gateway)
+        XCTAssertEqual(gateway.loadCount, 1, "a second kick joins the read in flight")
+
+        gateway.loadGate?.release()
+        let snapshot = await offerings.offering(using: gateway)
+        XCTAssertEqual(snapshot.products.count, 2)
+        XCTAssertEqual(gateway.loadCount, 1)
+        offerings.prefetch(using: gateway)
+        XCTAssertEqual(gateway.loadCount, 1, "and a kick after the answer does nothing")
     }
 
     // MARK: - Retrying a failed purchase (PAY-012)
@@ -505,7 +627,10 @@ final class PaywallModelTests: XCTestCase {
         await waitUntil("ready") { model.phase == .ready }
         XCTAssertTrue(model.isSignedIn)
         XCTAssertNil(model.authError)
-        XCTAssertEqual(gateway.loadCount, 2, "one offering read for the signed-out prices, one after sign-in")
+        XCTAssertEqual(
+            gateway.loadCount, 1,
+            "the offering read for the signed-out prices answers the signed-in step too"
+        )
     }
 
     /// Email sign-in seam (PLAN §4): the sheet signed in through `SessionBoundary`, so re-checking
@@ -529,7 +654,10 @@ final class PaywallModelTests: XCTestCase {
         await waitUntil("ready") { model.phase == .ready }
         XCTAssertTrue(model.isSignedIn)
         XCTAssertNil(model.authError)
-        XCTAssertEqual(gateway.loadCount, 2, "the signed-out price read, then the signed-in one")
+        XCTAssertEqual(
+            gateway.loadCount, 1,
+            "the offering read before sign-in is store data, so the signed-in step reuses it"
+        )
     }
 
     /// Cancelling the sheet without signing in leaves the gate exactly as it was.

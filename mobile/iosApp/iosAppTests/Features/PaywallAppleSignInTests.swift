@@ -118,8 +118,8 @@ final class PaywallAppleSignInTests: XCTestCase {
         XCTAssertTrue(model.isSignedIn)
         XCTAssertEqual(
             gateway.loadCount,
-            2,
-            "the signed-out price read, then the plans the account-bound purchase needs"
+            1,
+            "prices are store data: the read before sign-in is reused for the signed-in step"
         )
         XCTAssertEqual(model.phase, .ready)
         XCTAssertEqual(model.plans.map(\.identifier), ["annual", "monthly"])
