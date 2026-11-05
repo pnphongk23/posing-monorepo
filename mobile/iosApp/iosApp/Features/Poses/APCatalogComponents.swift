@@ -452,6 +452,15 @@ struct APPoseGrid: View {
 /// The non-grid Search results panels (`03-search-loading/error/no-results`), extracted from
 /// `SearchScreen` so a probe can render exactly what the screen shows — including the paging footer,
 /// which must survive an empty page (a filtered page can hold no match while more rows exist).
+/// The ids the search surface exposes. They address the **controls** — a flow taps an id, and a tap on a
+/// panel lands on its copy. Nothing is put on the containers.
+enum APSearchIdentifiers {
+    /// The no-match banner's action ("Clear search").
+    static let empty = "search-empty-banner"
+    /// The failed-search card's retry.
+    static let retry = "search.retry"
+}
+
 struct APSearchStatePanel: View {
     @ObservedObject var model: PosesViewModel
     let presentation: APCatalogPresentation
@@ -465,6 +474,15 @@ struct APSearchStatePanel: View {
     var emptyIdentifier: String?
     var retryIdentifier: String?
 
+    /// The id the state that is showing puts on its control; `nil` while it searches.
+    var controlIdentifier: String? {
+        switch presentation {
+        case .failed: return retryIdentifier
+        case .empty, .noMatch: return emptyIdentifier
+        case .loading, .grid: return nil
+        }
+    }
+
     @ViewBuilder var body: some View {
         switch presentation {
         case .loading:
@@ -473,13 +491,17 @@ struct APSearchStatePanel: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         case .failed:
             VStack(spacing: 0) {
+                // The ids address the controls, not the panels around them: a flow taps the id, and a tap
+                // on the panel lands on its copy (measured on the Saved panel: the container's bounds were
+                // the whole panel while the button sat 60 pt below its centre). The panels keep their own,
+                // distinct ids underneath.
                 APErrorStateView(
                     title: failureTitle,
                     message: failureMessage,
                     retry: onRetry,
-                    style: .plain
+                    style: .plain,
+                    actionIdentifier: controlIdentifier
                 )
-                .apIdentifier(retryIdentifier)
                 searchFooter
             }
         case .empty, .noMatch:
@@ -489,9 +511,9 @@ struct APSearchStatePanel: View {
                     message: emptyMessage,
                     actionTitle: emptyActionTitle,
                     action: onEmptyAction,
-                    style: .plain
+                    style: .plain,
+                    actionIdentifier: controlIdentifier
                 )
-                .apIdentifier(emptyIdentifier)
                 searchFooter
             }
         case .grid:

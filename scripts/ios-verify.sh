@@ -19,8 +19,9 @@
 # or executes 0 tests fails non-zero — a green run with 0 tests is a false pass.
 #
 # Build slots — the script QUEUES, it never fails because another build is running:
-#   slot 1 = simulator 7CC9393C-88FC-4AE6-88D3-AC68A2E266B7 + /tmp/dd-shared
+#   slot 1 = simulator 7CC9393C-88FC-4AE6-88D3-AC68A2E266B7 ("ai-pose-test") + /tmp/dd-shared
 #   slot 2 = simulator $IOS_VERIFY_SIM_2 + /tmp/dd-shared-2  (only offered when IOS_VERIFY_SIM_2 is set)
+#            the Feature lane's device is CF871F97-1789-4490-B3E3-0B5EFA39F23F ("iPhone 16")
 #   Locks are /tmp/ai-pose-slot-1 and /tmp/ai-pose-slot-2 (atomic `mkdir`). The first run takes the
 #   first free slot, the second takes the other, the third blocks until one frees and prints how long
 #   it waited. A lock is stale (and is recovered) when its holder PID is dead or when it is older than
@@ -48,12 +49,12 @@
 #                         faked); the post-purge decision uses fake + bytes actually freed.
 #
 # Disk (R2, user-approved auto-purge): when `/` is below 3 GB free the script purges ONLY
-#   1. testmanagerd attachments on every simulator except one held by a live slot or CF871F97
-#      ("iPhone 16", manual QA) — files untouched for 10 min;
+#   1. testmanagerd attachments on every simulator that is neither a slot simulator nor held by a
+#      live slot — files untouched for 10 min;
 #   2. $TMPDIR/maestro_xctestrunner_* directories untouched for 10 min;
 #   3. /tmp/dd-* roots that no live slot and no live xcodebuild command line references.
 # It re-reads the free space and refuses to build only below 1.5 GB. It logs every item and the bytes
-# freed. It never touches QuanLyLop, /tmp/qlh-*, marketing/, the "iPhone 16" simulator, or the
+# freed. It never touches QuanLyLop, /tmp/qlh-*, marketing/, either slot simulator, or the
 # DerivedData of a held slot / in-flight xcodebuild. Archives and exports are NOT purged: the release
 # skill has no `uploaded` marker convention, so that item stays unimplemented (see ledger rule 13).
 # MIN_FREE_ARCHIVE_KB below is the 5 GB floor that an archive/release path must use; this script only
@@ -61,7 +62,7 @@
 #
 # Every run (green or red) also drops the shared device's dead app containers
 # (.../com.apple.containermanagerd/Dead/*) and prints the bytes freed. That path is built from the
-# slot's own UDID only, never CF871F97, and the cleanup keeps the exit code.
+# slot's own UDID only, and the cleanup keeps the exit code.
 #
 # Host rule (R4) — exactly ONE Maestro run may exist on this host at any time: Maestro's iOS driver
 # port 127.0.0.1:7001 is host-global, so two runs (even on different sims) kill each other's driver.
@@ -80,11 +81,8 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
-# Shared test device. Never default to CF871F97-… (that device belongs to manual QA runs);
-# override deliberately with IOS_VERIFY_SIM when needed.
+# Slot 1's device, the QA lane's. Override deliberately with IOS_VERIFY_SIM when needed.
 DEFAULT_SIM="7CC9393C-88FC-4AE6-88D3-AC68A2E266B7"
-# "iPhone 16" — manual QA device. Never used, erased or purged by this script (ledger rule 12).
-MANUAL_QA_SIM="CF871F97-1789-4490-B3E3-0B5EFA39F23F"
 
 WORKSPACE="$ROOT/mobile/iosApp/iosApp.xcworkspace"
 SCHEME="Dev"
@@ -288,9 +286,6 @@ acquire_slot() {
     if [[ "$SLOT2_SIM" == "$SLOT1_SIM" ]]; then
       fail "IOS_VERIFY_SIM_2 must differ from the slot 1 simulator ($SLOT1_SIM); two slots on one device is not a second lane."
     fi
-    if [[ "$SLOT2_SIM" == "$MANUAL_QA_SIM" ]]; then
-      fail "IOS_VERIFY_SIM_2 must not be the \"iPhone 16\" manual QA device ($MANUAL_QA_SIM)."
-    fi
     sims+=("$SLOT2_SIM")
     dds+=("$SLOT2_DD")
   fi
@@ -421,7 +416,10 @@ running_xcodebuild_cmds() {
 # The user approved this list once (ledger rule 13 / analysis/OPUS-REVIEW.md §4 R2).
 purge_approved_caches() {
   local -a protected_dds=()
-  local -a guarded_sims=("$MANUAL_QA_SIM")
+  # Both configured slot simulators are off limits, held or not: they are the lanes' devices.
+  local -a guarded_sims=()
+  [[ -n "$SLOT1_SIM" ]] && guarded_sims+=("$SLOT1_SIM")
+  [[ -n "$SLOT2_SIM" ]] && guarded_sims+=("$SLOT2_SIM")
   local d dev tmp_path guarded live_sim kb skip p xb_cmds
 
   PURGED_KB=0
@@ -542,12 +540,12 @@ ensure_disk() {
 # one container per install behind in `com.apple.containermanagerd/Dead`. This Mac runs close to its
 # disk floor, so each run drops them — on success **and** on failure (GL rule).
 #
-# Guarded by construction: only the slot simulator we actually used, never CF871F97, only that
+# Guarded by construction: only a slot simulator, only that
 # `Dead/` directory's contents, and nothing happens when the directory does not exist. Never changes
 # the exit status.
 cleanup_dead_containers() { # <sim> <status>
   local sim="$1" status="$2" dir before_kb after_kb freed_bytes
-  [[ -n "$sim" && "$sim" != "$MANUAL_QA_SIM" ]] || return 0
+  [[ -n "$sim" && ( "$sim" == "$SLOT1_SIM" || "$sim" == "$SLOT2_SIM" ) ]] || return 0
   dir="$HOME/Library/Developer/CoreSimulator/Devices/$sim/data/Library/Caches/com.apple.containermanagerd/Dead"
   [[ -d "$dir" ]] || return 0
   before_kb="$(du -sk "$dir" 2>/dev/null | awk 'NR == 1 {print $1}')"

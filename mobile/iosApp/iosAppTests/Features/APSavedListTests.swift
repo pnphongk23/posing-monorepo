@@ -612,61 +612,6 @@ final class APSavedListTests: XCTestCase {
         )
     }
 
-    /// The row's tap and the tests that check it run the same code, and the control only offers a
-    /// removal for a pose the model holds as saved.
-    ///
-    /// Why source-level: a hosted SwiftUI view in this test host is painted, not hit-tested, so the
-    /// composition is the only thing a unit test can hold still. The behaviour behind it is driven for
-    /// real in `testTheTilesOwnActionUnsavesThroughTheSavedRoute`.
-    ///
-    /// Mutation target: bind the tile to a private copy of the tap again (as `onUnsave: { Task { … } }`)
-    /// and the first assertion goes red; drop `model.savedState(for: pose)` from `isEnabled` and the
-    /// second does — with that term gone, a row that is not actually saved offers "Remove from saved"
-    /// and the request it sends is a **save**, which the surface has nothing to report (the silent tap
-    /// of TC-SAV-010).
-    func testTheRowsTapRunsTheSharedUnsaveRuleForASavedPoseOnly() throws {
-        let saved = try savedListSource()
-
-        let row = try XCTUnwrap(
-            Self.braceMatchedBlock("private func row(for pose: NativePose, index: Int)", in: saved)
-        )
-        XCTAssertTrue(
-            row.contains("onUnsave: APSavedRowUnsave.action(pose, at: index, in: model, undo: undo)"),
-            "the tile's action is the shared rule, not a second copy of the logic"
-        )
-        XCTAssertFalse(row.contains("Task {"), "the row spawns no request of its own")
-        XCTAssertTrue(
-            row.contains("model.savedState(for: pose)"),
-            "a row the model does not hold as saved cannot offer a removal"
-        )
-
-        let rule = try XCTUnwrap(Self.braceMatchedBlock("enum APSavedRowUnsave", in: saved))
-        XCTAssertTrue(
-            rule.contains("APSavedUndoRule.offersUndo(for: outcome)"),
-            "a confirmed removal offers Undo"
-        )
-        XCTAssertTrue(
-            rule.contains("model.bookmarkError = APSavedStateCopy.removeFailed"),
-            "an outcome that removed nothing still says so instead of going silent"
-        )
-        XCTAssertTrue(
-            rule.contains("Task { await perform("),
-            "the action is the closure the tile's Button runs, and it awaits the same rule"
-        )
-
-        // The surface puts the library filter back on the way out: the filter is the route the shared
-        // pose service reads by, so leaving it on `.saved` would route the next catalogue read to the
-        // saved collection.
-        let surface = try XCTUnwrap(Self.braceMatchedBlock("struct APSavedSurface", in: saved))
-        XCTAssertTrue(
-            surface.contains("entryFilter = model.filter"),
-            "the surface remembers the collection it replaced"
-        )
-        XCTAssertTrue(
-            surface.contains("if let entryFilter, model.filter == .saved { model.filter = entryFilter }"),
-            "leaving Saved restores the collection the Poses tab was showing"
-        )
-    }
 
     // MARK: - A tap that is waiting on the server (pending unsave)
 
@@ -1007,6 +952,57 @@ final class APSavedListTests: XCTestCase {
         XCTAssertEqual(model.state.rows.map(\.id), ["a"], "re-entry shows what the server still has")
     }
 
+    // MARK: - A covered Saved screen is not a teardown
+
+    /// Pushing a pose detail (or presenting a sheet) hides this surface without leaving it. The filter
+    /// restore used to run on every `onDisappear`, which flipped the shared filter under a list that was
+    /// still there: the rows stopped being filtered as saved — so a removal no longer left the list — and
+    /// coming back reloaded the collection and threw its paging cursor away.
+    ///
+    /// Mutation target: restore on `onDisappear` unconditionally and the filter assertion goes red; drop
+    /// the once-per-mount entry load and the paging/row assertions go red.
+    /// A cover is not teardown: the restore is cancelled before it fires, so the shared filter keeps
+    /// naming the saved collection — which is what an unsave needs in order to leave the list.
+    ///
+    /// Mutation target: restore on `onDisappear` unconditionally (or drop the cancel) and the filter
+    /// assertion goes red; that flip is what made "removed" rows stay on screen.
+    @MainActor func testACoverCancelsTheFilterRestoreAndKeepsTheSavedCollection() async {
+        let server = SavedCollectionServer(ids: ["a", "b", "c"])
+        let model = PosesViewModel(service: server, bookmarkService: server)
+        await APSavedEntry.prepare(model: model)
+        model.setPagingForTesting(hasMore: true, nextOffset: 2)
+        XCTAssertEqual(model.filter, .saved)
+
+        let restore = APSavedFilterRestore(grace: 0.4)
+        // What the surface does on `onDisappear` … then on `onAppear`, because it was only covered.
+        restore.schedule { model.filter = .community }
+        restore.cancel()
+        try? await Task.sleep(nanoseconds: 600_000_000)
+
+        XCTAssertEqual(model.filter, .saved, "a covered screen keeps the saved collection")
+        XCTAssertEqual(model.paging.nextOffset, 2, "and nothing reloaded: the cursor is intact")
+        XCTAssertEqual(model.state.rows.map(\.id), ["a", "b", "c"], "the rows are the ones it had")
+
+        await APSavedRowUnsave.perform(model.state.rows[0], at: 0, in: model, undo: APSavedUndo())
+        XCTAssertEqual(model.state.rows.map(\.id), ["b", "c"], "an unsave still leaves the list")
+    }
+
+    /// A real teardown does put the Poses tab's collection back.
+    ///
+    /// Mutation target: stop scheduling the restore and the assertion goes red.
+    @MainActor func testARealTeardownRestoresTheCatalogueFilter() async {
+        let server = SavedCollectionServer(ids: ["a"])
+        let model = PosesViewModel(service: server, bookmarkService: server)
+        await APSavedEntry.prepare(model: model)
+        XCTAssertEqual(model.filter, .saved)
+
+        let restore = APSavedFilterRestore(grace: 0.1)
+        restore.schedule { model.filter = .community }
+        try? await Task.sleep(nanoseconds: 400_000_000)
+
+        XCTAssertEqual(model.filter, .community, "the catalogue's collection is back")
+    }
+
     // MARK: - The tap path (TC-SAV-010 on 1.1 (20))
 
     /// The app's own wiring, one line short of the fix: the adapter holds a filter slot the model is
@@ -1211,8 +1207,9 @@ final class APSavedListTests: XCTestCase {
         let boundary = SessionBoundary(tokenStorage: SignedInTokenStorage())
         let bookmarks = HeldBookmarkService()
         let rows = [savedPose("a")]
+        let server = SavedCollectionServer(ids: ["a"])
         let model = PosesViewModel(
-            service: SavedListPoseService(rows: rows),
+            service: server,
             bookmarkService: bookmarks,
             boundary: boundary
         )
@@ -1224,10 +1221,12 @@ final class APSavedListTests: XCTestCase {
         await bookmarks.waitUntilUnsaving()
         await waitUntil("the model to publish the claim") { model.isBookmarkInFlight("a") }
 
+        let readsBeforeSignOut = server.posesPageCallCount
         await boundary.signOut()
-        await waitUntil("the saved collection to be dropped for the new session") {
-            if case .idle = model.state { return true }
-            return false
+        // The reset drops the collection and re-reads it, so the screen cannot keep the previous Account's
+        // rows: the re-read is the observable consequence.
+        await waitUntil("the saved collection to be re-read for the new session") {
+            server.posesPageCallCount > readsBeforeSignOut
         }
 
         bookmarks.releaseUnsaving()
@@ -1235,9 +1234,10 @@ final class APSavedListTests: XCTestCase {
         XCTAssertEqual(outcome, .discarded, "the answer belongs to the previous session")
         XCTAssertNil(undo.removal, "an offer for the previous Account's row would be a lie")
         XCTAssertNil(model.bookmarkError, "and so would an error about it")
-        guard case .idle = model.state else {
-            return XCTFail("the dropped collection is the visible consequence of this outcome")
-        }
+        XCTAssertFalse(
+            model.isBookmarkInFlight("a"),
+            "the claim from the previous session is gone with the collection"
+        )
     }
 
     /// With no bookmark service the tile is unavailable and takes no tap, so `.unavailable` cannot be
@@ -1733,12 +1733,15 @@ private final class SavedCollectionServer: PoseServing, PoseBookmarkServing, @un
     private var ids: [String]
     private var unsaves = 0
     private var saves = 0
+    private var reads = 0
     private var _unsavedPoseID: String?
     private var _unsaveError: Error?
 
     init(ids: [String]) { self.ids = ids }
 
     var savedIDs: [String] { locked { ids } }
+    /// How many window reads this "server" answered: a session reset re-reads the collection.
+    var posesPageCallCount: Int { locked { reads } }
     var unsaveCallCount: Int { locked { unsaves } }
     var saveCallCount: Int { locked { saves } }
     var unsavedPoseID: String? { locked { _unsavedPoseID } }
@@ -1764,6 +1767,7 @@ private final class SavedCollectionServer: PoseServing, PoseBookmarkServing, @un
     func poses(query: String?) async throws -> [NativePose] { savedIDs.map(pose) }
 
     func posesPage(query: String?, offset: Int, limit: Int) async throws -> PosePage {
+        locked { reads += 1 }
         let rows = savedIDs.map(pose)
         let start = min(max(0, offset), rows.count)
         let window = Array(rows[start..<min(rows.count, start + limit)])

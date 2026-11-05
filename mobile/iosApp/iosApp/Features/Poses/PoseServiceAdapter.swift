@@ -620,10 +620,16 @@ final class PoseCatalogCacheStore: @unchecked Sendable {
             let savedOnly = savedRows
                 .filter { $0.ownerAccountId != PoseCatalogBucket.community.rawValue }
                 .map { PoseCatalogMapping.nativePose(from: $0, isSaved: true, baseURL: baseURL) }
-            return PoseAdapterMerge.communityFirst(
+            let merged = PoseAdapterMerge.communityFirst(
                 community: community,
                 saved: PoseAdapterMerge.filterSavedLocally(savedOnly, query: key.query)
             )
+            // Same rule as the community route above: the server owns search matching, so a local name
+            // filter that matches nothing is not an answer. Returning the empty merge here claimed "no
+            // poses match" without ever asking, so an offline search (or one whose rows the catalog has
+            // not mirrored yet) reported a result the server never gave.
+            if key.query != nil, merged.isEmpty { return nil }
+            return merged
         }
     }
 
@@ -869,7 +875,32 @@ struct PoseAPIServiceAdapter: PoseServing {
     /// aligned server page that *covers* it and drops the rows before it, so no row is skipped and
     /// the caller's cursor stays exact.
     func posesPage(query: String?, offset: Int, limit: Int) async throws -> PosePage {
+        // Legacy call sites (and the one-shot `poses(query:)` readers) still name the collection with the
+        // bundle's slot. Paged readers pass it instead — see the filter overload below.
         let route = PoseAdapterRoute.from(rawValue: filterState.effectiveRawValue)
+        return try await posesPage(route: route, query: query, offset: offset, limit: limit)
+    }
+
+    /// The routed window read: the collection is the caller's `filter`, and an account collection without
+    /// a session reads as the community feed. That is what stops a signed-out Search from asking
+    /// `/api/me/saved` (401) and what stops Search and the camera picker from rerouting each other.
+    func posesPage(query: String?, filter: PoseFilter, offset: Int, limit: Int) async throws -> PosePage {
+        let route = await route(for: filter)
+        return try await posesPage(route: route, query: query, offset: offset, limit: limit)
+    }
+
+    /// The collection this read may use. `.saved` and `.all` carry the account's saved rows, so without a
+    /// session they degrade to the community feed — the catalogue a signed-out reader can actually see.
+    func route(for filter: PoseFilter) async -> PoseAdapterRoute {
+        switch filter {
+        case .community:
+            return .community
+        case .saved, .all:
+            return await hasSession() ? PoseAdapterRoute.from(rawValue: filter.rawValue) : .community
+        }
+    }
+
+    private func posesPage(route: PoseAdapterRoute, query: String?, offset: Int, limit: Int) async throws -> PosePage {
         let normalizedQuery = PoseCacheKey.normalizedQuery(query)
         let window = max(1, limit)
         guard offset > 0 else {

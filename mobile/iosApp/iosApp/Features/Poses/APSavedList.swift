@@ -14,8 +14,10 @@ enum APSavedEntry {
     ///   is the route the shared pose service reads by, and leaving it on `.saved` would route the next
     ///   Poses or camera-picker read to the saved collection.
     @discardableResult
-    static func prepare(model: PosesViewModel) async -> PoseLibraryFilter {        let previous = model.filter
-        model.filter = .saved
+    static func prepare(model: PosesViewModel) async -> PoseLibraryFilter {
+        let previous = model.filter
+        model.filter = .saved      // schedules the collection's own reload …
+        model.cancelPendingSearch() // … which the awaited read below replaces: one request, not two
         await model.load()
         return previous
     }
@@ -250,6 +252,42 @@ enum APSavedRowRestore {
     }
 }
 
+/// Puts the collection the Poses tab was showing back — but only when the surface is really gone.
+///
+/// `onDisappear` also fires when the screen is merely **covered** (a pose detail pushed from a row, the
+/// sign-in sheet). Restoring then flipped the shared filter under a list that was still on screen: the Saved
+/// rows stopped being filtered as saved, so a removal no longer left the list, and coming back reloaded the
+/// collection and lost its paging cursor. A covered screen appears again and cancels this; a popped one does
+/// not. One owner, so the timing rule is testable without a screen.
+@MainActor
+final class APSavedFilterRestore: ObservableObject {
+    /// How long a disappearance has to last before it counts as teardown.
+    let grace: TimeInterval
+    private var task: Task<Void, Never>?
+
+    init(grace: TimeInterval = 0.35) {
+        self.grace = grace
+    }
+
+    deinit { task?.cancel() }
+
+    /// Schedules the restore. `restore` runs only if nothing cancels it first.
+    func schedule(_ restore: @escaping @MainActor () -> Void) {
+        task?.cancel()
+        task = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: UInt64(max(0, grace) * 1_000_000_000))
+            guard !Task.isCancelled else { return }
+            restore()
+        }
+    }
+
+    /// The surface is back: the disappearance was a cover, not teardown.
+    func cancel() {
+        task?.cancel()
+        task = nil
+    }
+}
+
 /// The signed-in Saved surface: entering it loads the saved collection, the offline banner sits
 /// above whatever panel is showing, and a removal/failure is reported in the bottom snackbar. One
 /// container for every branch, so a panel that is not the row list cannot lose the entry load, the
@@ -261,17 +299,23 @@ struct APSavedSurface<Content: View>: View {
 
     @StateObject private var undo = APSavedUndo()
     @StateObject private var offline: APSavedOfflineModel
-    /// The filter this surface replaced with `.saved`, put back when it goes away (see `APSavedEntry`).
+    /// The filter this surface replaced with `.saved`, put back when it is really gone (see `APSavedEntry`).
     @State private var entryFilter: PoseLibraryFilter?
-
+    /// The pending restore of `entryFilter`, cancelled by the next appearance.
+    @StateObject private var filterRestore: APSavedFilterRestore
+    /// The entry load runs once per mount, so a screen that was only *covered* (a pose detail pushed from
+    /// a row, a sheet) comes back to the collection it had, with its rows and its paging cursor.
+    @State private var didPrepare = false
     init(
         model: PosesViewModel,
         offline: APSavedOfflineModel? = nil,
+        teardownGrace: TimeInterval = 0.35,
         @ViewBuilder content: @escaping () -> Content
     ) {
         self.model = model
         self.content = content
         _offline = StateObject(wrappedValue: offline ?? APSavedOfflineModel())
+        _filterRestore = StateObject(wrappedValue: APSavedFilterRestore(grace: teardownGrace))
     }
 
     var body: some View {
@@ -289,21 +333,26 @@ struct APSavedSurface<Content: View>: View {
         // panel currently shows (an empty Community model must not freeze on "no saved poses"
         // without ever asking the server).
         .task {
+            // Once per mount. `.task` re-runs when a covered screen comes back, and reloading there would
+            // throw away the rows and the paging cursor the person left behind.
+            guard !didPrepare else { return }
+            didPrepare = true
             // Captured before the surface forces `.saved`: this is the collection the Poses tab was
-            // showing, and the one the surface puts back when it goes away.
-            entryFilter = model.filter
+            // showing, and the one the surface puts back when it is really gone.
+            if entryFilter == nil { entryFilter = model.filter }
             await APSavedEntry.prepare(model: model)
             #if DEBUG
             applyOfflineFixtureIfRequested()
             #endif
         }
-        .onAppear { offline.start() }
+        .onAppear {
+            // Back (a detail popped, a sheet closed): the disappearance was a cover, not teardown.
+            filterRestore.cancel()
+            offline.start()
+        }
         .onDisappear {
-            // Leaving the surface restores the collection the Poses tab was showing: the filter is the
-            // route, and a Saved visit must not route the next read of the catalogue to the saved
-            // collection. `.task` re-runs on the next appearance and re-selects `.saved`.
-            if let entryFilter, model.filter == .saved { model.filter = entryFilter }
             offline.stop()
+            scheduleFilterRestore()
         }
         .environment(\.apSavedUndo, undo)
         .environment(\.apSavedOfflineMode, offline.mode)
@@ -319,6 +368,15 @@ struct APSavedSurface<Content: View>: View {
             },
             identifiers: snackbar?.identifiers
         )
+    }
+
+    /// Schedules the restore of the collection the Poses tab was showing (see `APSavedFilterRestore`).
+    private func scheduleFilterRestore() {
+        guard let entryFilter, model.filter == .saved else { return }
+        filterRestore.schedule { [model] in
+            guard model.filter == .saved else { return }
+            model.filter = entryFilter
+        }
     }
 
     private var snackbar: APSavedSnackbarSpec? {
@@ -1012,6 +1070,14 @@ struct APSavedSignInPanel: View {
 }
 
 /// An empty collection: the bookmark glyph and the one instruction that fills it.
+/// The ids the Saved panels expose. Each addresses a **control**: a flow taps the id, and a tap on the panel
+/// lands on its copy instead (the panel's bounds are the whole screen area while the button sits well below
+/// its centre). Nothing is put on the containers.
+enum APSavedPanelIdentifiers {
+    static let browse = "saved.browseCommunity"
+    static let retry = "saved.retry"
+}
+
 struct APSavedEmptyPanel: View {
     var onBrowse: () -> Void
 
@@ -1022,9 +1088,9 @@ struct APSavedEmptyPanel: View {
             actionTitle: APSavedStateCopy.emptyActionTitle,
             action: onBrowse,
             style: .plain,
-            glyph: APSavedStateCopy.emptyGlyph
+            glyph: APSavedStateCopy.emptyGlyph,
+            actionIdentifier: APSavedPanelIdentifiers.browse
         )
-        .accessibilityIdentifier("saved.browseCommunity")
     }
 }
 
@@ -1042,9 +1108,9 @@ struct APSavedLoadFailurePanel: View {
             retryTitle: APSavedStateCopy.retryActionTitle,
             retry: retry,
             style: .plain,
-            glyph: APSavedStateCopy.loadFailureGlyph
+            glyph: APSavedStateCopy.loadFailureGlyph,
+            actionIdentifier: APSavedPanelIdentifiers.retry
         )
-        .accessibilityIdentifier("saved.retry")
     }
 }
 
