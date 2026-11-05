@@ -844,15 +844,37 @@ final class PosePickerCatalogueLoadTests: XCTestCase {
 
 // MARK: - The picker's search is the Search screen's search
 
+/// A remote with two distinct collections, so a wrong route changes the ids: `.all` merges the community rows with
+/// the account's saved rows, `.community` returns only the first and `.saved` only the second.
+private struct TwoCollectionPoseRemote: PoseRemoteFetching {
+    let community: [CommunityPose]
+    let saved: [CommunityPose]
+
+    func fetchCommunity(page: Int, limit: Int, query: String?) async throws -> PoseRemotePage {
+        PoseRemotePage(poses: community, total: community.count)
+    }
+
+    func fetchSaved(page: Int, limit: Int) async throws -> PoseRemotePage {
+        PoseRemotePage(poses: saved, total: saved.count)
+    }
+}
+
+private func routedPose(_ id: String, name: String) throws -> CommunityPose {
+    try JSONDecoder().decode(CommunityPose.self, from: Data("""
+    {"poseId":"\(id)","name":"\(name)","skeletonUrl":"/s.png","thumbnailUrl":"/t.jpg","status":"published"}
+    """.utf8))
+}
+
 /// Records the exact request each surface makes, so "the picker asks the Search screen's question" is a
 /// recorded fact rather than a shared comment. It can hold a request open (to deliver a *stale* answer
 /// late), fail every request (offline), and match on something other than the name (the server's own notion
 /// of relevance, which no local name filter can reproduce).
 private actor RecordingPoseSearchService: PoseServing {
-    /// One recorded window read. When `PoseServing` carries the route in the request, `filter` joins this
-    /// record and nothing else about the double changes.
+    /// One recorded window read. The route travels in the request now, so the double records it: a test can say
+    /// which collection the sheet asked for instead of inferring it from a service-wide slot.
     struct Request: Equatable, Sendable {
         let query: String?
+        let filter: PoseFilter
         let offset: Int
         let limit: Int
     }
@@ -887,13 +909,19 @@ private actor RecordingPoseSearchService: PoseServing {
         rows.first { $0.id == id } ?? rows[0]
     }
 
-    func posesPage(query: String?, offset: Int, limit: Int) async throws -> PosePage {
-        recorded.append(Request(query: query, offset: offset, limit: limit))
+    /// The routed requirement: the one the sheet must call. A single-collection double answers its one list.
+    func posesPage(query: String?, filter: PoseFilter, offset: Int, limit: Int) async throws -> PosePage {
+        recorded.append(Request(query: query, filter: filter, offset: offset, limit: limit))
         if holdsSearches, query != nil {
             return try await withCheckedThrowingContinuation { held.append((query, $0)) }
         }
         if fails { throw URLError(.notConnectedToInternet) }
         return answer(for: query)
+    }
+
+    /// The un-routed window (used by the catalogue load): it goes through the routed call with its own route.
+    func posesPage(query: String?, offset: Int, limit: Int) async throws -> PosePage {
+        try await posesPage(query: query, filter: .community, offset: offset, limit: limit)
     }
 
     func waitForSearchRequests(_ count: Int) async {
@@ -959,6 +987,8 @@ final class CameraPickerServerSearchTests: XCTestCase {
         await waitUntil { !sheet.state.rows.isEmpty }
 
         let searchScreen = PosesViewModel(service: service, debounceNanoseconds: 0)
+        // `SearchScreen.task` sets the source to `.all` on open; the model defaults to `.community`.
+        searchScreen.filter = .all
         searchScreen.query = "warrior"
         searchScreen.scheduleSearch()
         await waitUntil {
@@ -978,9 +1008,67 @@ final class CameraPickerServerSearchTests: XCTestCase {
         XCTAssertEqual(requests[0], requests[1], "and the two surfaces sent the same request")
         XCTAssertEqual(
             requests.last,
-            RecordingPoseSearchService.Request(query: "warrior", offset: 0, limit: PosesViewModel.Paging.pageSize),
-            "the Search screen's own window: first page, the server's page size"
+            RecordingPoseSearchService.Request(
+                query: "warrior",
+                filter: .all,
+                offset: 0,
+                limit: PosesViewModel.Paging.pageSize
+            ),
+            "the Search screen's own window: the `.all` route, first page, the server's page size"
         )
+        XCTAssertTrue(
+            requests.allSatisfy { $0.filter == .all },
+            "the sheet's All scope names its route in the request instead of leaning on a service-wide slot"
+        )
+    }
+
+    /// The routed requirement, proved on the **real adapter** Feature's route tests use: the picker's All scope and
+    /// the Search screen send the same request and get the same ids in the same order — signed in (the merged
+    /// `.all` list) and signed out (the community feed, because `.all` degrades without a session).
+    ///
+    /// The adapter's own filter slot is set to `.saved` before the read: a picker that still leaned on that
+    /// service-wide slot would answer the saved rows, so this also pins that the route travels in the request.
+    func testThePickerAndTheSearchScreenAgreeOnTheRoutedRequestSignedInAndOut() async throws {
+        let community = [try routedPose("c1", name: "Warrior flow"), try routedPose("c2", name: "Warrior II")]
+        let saved = [try routedPose("s1", name: "Warrior stretch")]
+
+        for signedIn in [true, false] {
+            let remote = TwoCollectionPoseRemote(community: community, saved: saved)
+            let slot = PoseFilterState()
+            let adapter = PoseAPIServiceAdapter(
+                remote: remote,
+                baseURL: "https://api.example.com",
+                filterState: slot,
+                hasSession: { signedIn }
+            )
+
+            let sheet = picker(adapter)
+            await sheet.load()
+            // A stale slot another screen may have left behind: the routed call must not read it.
+            slot.filter = .saved
+            sheet.query = "warrior"
+            await waitUntil { !sheet.state.rows.isEmpty }
+
+            let searchScreen = PosesViewModel(service: adapter, filterState: PoseFilterState(), debounceNanoseconds: 0)
+            // `SearchScreen.task` sets the source to `.all` on open.
+            searchScreen.filter = .all
+            searchScreen.query = "warrior"
+            searchScreen.scheduleSearch()
+            await waitUntil {
+                if case .loaded = searchScreen.state { return true }
+                return false
+            }
+
+            let expected = signedIn ? ["c1", "c2", "s1"] : ["c1", "c2"]
+            XCTAssertEqual(
+                sheet.state.rows.map(\.id), expected,
+                "signed in: the All scope is the merged library; signed out: the community feed"
+            )
+            XCTAssertEqual(
+                sheet.state.rows.map(\.id), searchScreen.state.rows.map(\.id),
+                "the picker and the Search screen return the same ids, in the same order (signedIn: \(signedIn))"
+            )
+        }
     }
 
     /// The rows the sheet draws are the server's answer, not a local name filter over it: a pose the server

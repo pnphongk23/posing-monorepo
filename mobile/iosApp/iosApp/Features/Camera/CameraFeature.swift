@@ -2273,6 +2273,7 @@ final class PosePickerViewModel: ObservableObject {
     private func fetchAll(query text: String) async throws -> PosePage {
         try await service.posesPage(
             query: text.isEmpty ? nil : text,
+            filter: .all,
             offset: 0,
             limit: PosesViewModel.Paging.pageSize
         )
