@@ -64,6 +64,93 @@ struct APInterfaceStyleHost<Content: View>: UIViewControllerRepresentable {
     }
 }
 
+/// The adjust sheet's slider, drawn the way the board draws it: a 6 pt track whose filled part is the accent text
+/// colour and whose rest is the palette's olive-grey (`disabled`), with a 28 pt dark disc for the thumb.
+///
+/// SwiftUI's `Slider` cannot restyle its thumb — it draws a white pill — so the sheet draws its own, with the same
+/// drag-and-adjust behaviour (and the same adjustable accessibility) as the camera band's zoom control.
+///
+/// Every number below is measured on `05-camera-guide-adjust.png` at the 393 reference.
+struct CameraAdjustSlider: View {
+    let value: CGFloat
+    let range: ClosedRange<CGFloat>
+    var isEnabled = true
+    let accessibilityLabel: String
+    let accessibilityIdentifier: String
+    let onChange: (CGFloat) -> Void
+
+    static let thumbDiameter: CGFloat = 28
+    static let trackHeight: CGFloat = 6
+    static let height: CGFloat = 44
+
+    var body: some View {
+        GeometryReader { proxy in
+            let travel = max(proxy.size.width - Self.thumbDiameter, 1)
+            let fraction = Self.fraction(of: value, in: range)
+            let thumbX = Self.thumbDiameter / 2 + travel * fraction
+            let centreY = proxy.size.height / 2
+
+            ZStack(alignment: .topLeading) {
+                // The whole track, in the board's olive-grey…
+                Capsule()
+                    .fill(AP.Color.disabled)
+                    .frame(width: travel, height: Self.trackHeight)
+                    .position(x: proxy.size.width / 2, y: centreY)
+                // …the part behind the value in the accent text colour…
+                Capsule()
+                    .fill(AP.Color.accentText)
+                    .frame(width: max(thumbX - Self.thumbDiameter / 2, 0), height: Self.trackHeight)
+                    .position(x: max(thumbX - Self.thumbDiameter / 2, 0) / 2, y: centreY)
+                // …and the dark disc on top of it.
+                Circle()
+                    .fill(AP.Color.onAccent)
+                    .frame(width: Self.thumbDiameter, height: Self.thumbDiameter)
+                    .position(x: thumbX, y: centreY)
+            }
+            .frame(width: proxy.size.width, height: proxy.size.height)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { drag in
+                        guard isEnabled else { return }
+                        let raw = (drag.location.x - Self.thumbDiameter / 2) / travel
+                        onChange(Self.factor(atFraction: raw, in: range))
+                    }
+            )
+        }
+        .frame(height: Self.height)
+        .opacity(isEnabled ? 1 : 0.45)
+        .accessibilityElement()
+        .accessibilityLabel(accessibilityLabel)
+        .accessibilityValue(Self.percentLabel(value, in: range))
+        .accessibilityAdjustableAction { direction in
+            guard isEnabled else { return }
+            let step = (range.upperBound - range.lowerBound) / 20
+            switch direction {
+            case .increment: onChange(min(value + step, range.upperBound))
+            case .decrement: onChange(max(value - step, range.lowerBound))
+            @unknown default: break
+            }
+        }
+        .accessibilityIdentifier(accessibilityIdentifier)
+    }
+
+    static func fraction(of value: CGFloat, in range: ClosedRange<CGFloat>) -> CGFloat {
+        let span = range.upperBound - range.lowerBound
+        guard span > 0 else { return 0 }
+        return min(max((value - range.lowerBound) / span, 0), 1)
+    }
+
+    static func factor(atFraction fraction: CGFloat, in range: ClosedRange<CGFloat>) -> CGFloat {
+        let clamped = min(max(fraction.isFinite ? fraction : 0, 0), 1)
+        return range.lowerBound + clamped * (range.upperBound - range.lowerBound)
+    }
+
+    static func percentLabel(_ value: CGFloat, in range: ClosedRange<CGFloat>) -> String {
+        "\(Int((fraction(of: value, in: range) * 100).rounded()))%"
+    }
+}
+
 /// The guide-adjust sheet: everything about the pose reference itself — how strong it is, what colour it is
 /// drawn in, how big it is and whether it is mirrored — with one Done. The camera behind stays live, so the
 /// change is visible while it is made.
@@ -154,12 +241,15 @@ struct CameraGuideAdjustSheet: View {
             Text("Opacity")
                 .font(AP.Font.body)
                 .foregroundStyle(AP.Color.primaryText)
-            Slider(value: Binding(get: { opacity }, set: { onOpacityChange($0) }), in: 0.1...1)
-                .tint(AP.Color.accentText)
-                .disabled(!isEnabled)
-                .accessibilityLabel("Pose guide opacity")
-                .accessibilityValue("\(Int((opacity * 100).rounded()))%")
-                .accessibilityIdentifier(Layout.opacityIdentifier)
+            CameraAdjustSlider(
+                value: CGFloat(opacity),
+                range: 0.1...1,
+                isEnabled: isEnabled,
+                accessibilityLabel: "Pose guide opacity",
+                accessibilityIdentifier: Layout.opacityIdentifier,
+                onChange: { onOpacityChange(Double($0)) }
+            )
+            .accessibilityValue("\(Int((opacity * 100).rounded()))%")
             Text("\(Int((opacity * 100).rounded()))%")
                 .font(AP.Font.supporting)
                 .foregroundStyle(AP.Color.secondaryText)
@@ -228,15 +318,15 @@ struct CameraGuideAdjustSheet: View {
             Text("Scale")
                 .font(AP.Font.body)
                 .foregroundStyle(AP.Color.primaryText)
-            Slider(
-                value: Binding(get: { scale }, set: { onScaleChange($0) }),
-                in: CameraGuideScale.range
+            CameraAdjustSlider(
+                value: scale,
+                range: CameraGuideScale.range,
+                isEnabled: isEnabled,
+                accessibilityLabel: "Pose guide scale",
+                accessibilityIdentifier: Layout.scaleIdentifier,
+                onChange: onScaleChange
             )
-            .tint(AP.Color.accentText)
-            .disabled(!isEnabled)
-            .accessibilityLabel("Pose guide scale")
             .accessibilityValue(CameraGuideScale.label(scale))
-            .accessibilityIdentifier(Layout.scaleIdentifier)
             Text(CameraGuideScale.label(scale))
                 .font(AP.Font.supporting)
                 .foregroundStyle(AP.Color.secondaryText)

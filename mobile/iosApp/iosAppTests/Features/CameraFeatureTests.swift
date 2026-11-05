@@ -3218,6 +3218,192 @@ final class CameraGuideAdjustTests: XCTestCase {
             | UInt32((blue * 255).rounded())
     }
 
+    /// The two adjust sliders are the board's, not the system `Slider`'s: a dark round disc on a 6 pt track, the
+    /// filled part in the accent text colour and the rest in the palette's olive-grey. Measured from
+    /// `05-camera-guide-adjust.png` at the 393 reference: thumb 28 pt (0x121212), track 6 pt, unfilled 0x8F887C.
+    func testTheAdjustSlidersMatchTheBoard() throws {
+        let bitmap = try renderSheetOnly()
+        let accentText = APColorTokens.accentText.spec(for: .light).hex ?? 0
+        let trackRest = APColorTokens.disabled.spec(for: .light).hex ?? 0
+        let ink = APColorTokens.onAccent.spec(for: .light).hex ?? 0
+
+        // The first band that paints the filled track is the Opacity slider.
+        let band = try XCTUnwrap(
+            contiguousBands(rowsPainted(bitmap, hex: accentText, minRun: 20)).first,
+            "the Opacity track is painted"
+        )
+        let trackRow = (band.lowerBound + band.upperBound) / 2
+        // The filled part, sampled well inside it (the probe draws at scale 2, so 28 px is 14 pt).
+        let fillEnd = try XCTUnwrap(
+            (0..<bitmap.width).last { x in
+                bitmap.color(x: x, y: trackRow).map { isNear($0, hex: accentText, tolerance: 14) } ?? false
+            },
+            "the filled track has an end"
+        )
+        let filled = try XCTUnwrap(bitmap.color(x: fillEnd - 28, y: trackRow))
+        XCTAssertTrue(
+            isNear(filled, hex: accentText, tolerance: 12),
+            "the filled track stays the accent text token (got \(filled.red),\(filled.green),\(filled.blue))"
+        )
+
+        // The thumb is drawn in the dark ink token, right where the fill ends.
+        let thumb = darkBlob(
+            bitmap,
+            hex: ink,
+            // ±24 pt (the probe draws at scale 2): enough for the whole 28 pt disc around the 6 pt track.
+            rows: (band.lowerBound - 48)...(band.upperBound + 48),
+            columns: (fillEnd - 8)...(bitmap.width - 1)
+        )
+        XCTAssertNotNil(thumb, "the thumb is painted in the dark ink token, not as a white pill")
+        XCTAssertEqual(Double(thumb?.width ?? 0), Double(thumb?.height ?? 0), accuracy: 1, "the thumb is a disc")
+        XCTAssertEqual(Double(thumb?.width ?? 0), 28, accuracy: 1.5, "the board's 28 pt disc")
+
+        // Its centre, one radius past the fill's end, is the ink itself.
+        let centre = try XCTUnwrap(bitmap.color(x: fillEnd + 14, y: trackRow))
+        XCTAssertTrue(
+            isNear(centre, hex: ink, tolerance: 12),
+            "the thumb's centre is the dark ink token (got \(centre.red),\(centre.green),\(centre.blue))"
+        )
+
+        // Right of the thumb: the unfilled track, the board's olive-grey.
+        let rest = try XCTUnwrap(bitmap.color(x: fillEnd + 60, y: trackRow))
+        XCTAssertTrue(
+            isNear(rest, hex: trackRest, tolerance: 12),
+            "the unfilled track is the board's olive-grey (got \(rest.red),\(rest.green),\(rest.blue))"
+        )
+    }
+
+    /// The camera band's zoom slider is untouched: its thumb stays the light disc on the dark band.
+    func testTheZoomSliderThumbIsStillLight() throws {
+        let view = CameraZoomSlider(factor: 1.5, range: 1...2, onChange: { _ in })
+            .environment(\.colorScheme, .dark)
+            .background(AP.Color.background)
+        let probe = APViewProbe(
+            view.ignoresSafeArea(),
+            size: CGSize(width: 260, height: CameraZoomTrackGeometry.totalHeight),
+            scale: 1
+        )
+        let bitmap = probe.capture()
+        probe.tearDown()
+        let geometry = CameraZoomTrackGeometry(width: 260, thumbDiameter: 22, range: 1...2)
+        let thumb = try XCTUnwrap(
+            bitmap.color(x: Int(geometry.thumbCenterX(for: 1.5)), y: Int(geometry.trackLineCenterY)),
+            "the zoom thumb is painted"
+        )
+        XCTAssertGreaterThan(thumb.red, 200, "the zoom slider's thumb is still light on the dark band")
+        XCTAssertGreaterThan(thumb.green, 200)
+        XCTAssertGreaterThan(thumb.blue, 200)
+    }
+
+    // MARK: Slider helpers
+
+    private func renderSheetOnly() throws -> APBitmap {
+        let sheet = CameraGuideAdjustSheet(
+            opacity: 0.6,
+            lineColor: .pink,
+            scale: 1,
+            isFlipped: false,
+            isEnabled: true,
+            onOpacityChange: { _ in },
+            onLineColorChange: { _ in },
+            onScaleChange: { _ in },
+            onFlip: {},
+            onDone: {}
+        )
+        .environment(\.colorScheme, .light)
+        .background(AP.Color.background)
+        let probe = APViewProbe(sheet, size: CGSize(width: 393, height: CameraGuideAdjustSheet.Layout.height), scale: 2)
+        let bitmap = probe.capture()
+        probe.tearDown()
+        return bitmap
+    }
+
+    /// Runs of rows that paint `hex` in a run of at least `minRun` pixels.
+    private func contiguousBands(_ rows: [Int]) -> [ClosedRange<Int>] {
+        var bands: [ClosedRange<Int>] = []
+        var start: Int?
+        var previous: Int?
+        for row in rows.sorted() {
+            if let previous, row - previous <= 2 {
+                self.unused(previous)
+            } else {
+                if let opened = start { bands.append(opened...previous!) }
+                start = row
+            }
+            previous = row
+        }
+        if let opened = start, let previous { bands.append(opened...previous) }
+        return bands
+    }
+
+    private func unused(_ value: Int) {}
+
+    /// The handle on the track row, as a rect in points: its horizontal run right of the filled part, and its
+    /// vertical extent at that run's centre column. Colour-agnostic, so a white pill and a dark disc are both found
+    /// (and the test can then say which one is drawn).
+    private func thumbGeometry(_ bitmap: APBitmap, row: Int, fillHex: UInt32, restHex: UInt32) -> CGRect? {
+        func isTrack(_ pixel: APPixel) -> Bool {
+            isNear(pixel, hex: fillHex, tolerance: 14) || isNear(pixel, hex: restHex, tolerance: 16)
+        }
+        var start: Int?
+        var run: Range<Int>?
+        for x in 0..<bitmap.width {
+            guard let pixel = bitmap.color(x: x, y: row) else { continue }
+            // The handle begins where the fill stops and paints something that is not the unfilled track.
+            if !isTrack(pixel) {
+                if start == nil { start = x }
+            } else if let opened = start {
+                if x - opened >= 8 { run = opened..<x; break }
+                start = nil
+            }
+        }
+        guard let run else { return nil }
+        let centreColumn = (run.lowerBound + run.upperBound) / 2
+        guard let centreColour = bitmap.color(x: centreColumn, y: row) else { return nil }
+        var top = row
+        while top > 0, let pixel = bitmap.color(x: centreColumn, y: top - 1),
+              isNear(pixel, hex: rgb(centreColour), tolerance: 10) {
+            top -= 1
+        }
+        var bottom = row
+        while bottom < bitmap.height - 1, let pixel = bitmap.color(x: centreColumn, y: bottom + 1),
+              isNear(pixel, hex: rgb(centreColour), tolerance: 10) {
+            bottom += 1
+        }
+        let scale = 2.0
+        return CGRect(
+            x: Double(run.lowerBound) / scale,
+            y: Double(top) / scale,
+            width: Double(run.count) / scale,
+            height: Double(bottom - top + 1) / scale
+        )
+    }
+
+    private func rgb(_ pixel: APPixel) -> UInt32 {
+        (UInt32(pixel.red) << 16) | (UInt32(pixel.green) << 8) | UInt32(pixel.blue)
+    }
+
+    /// The bounding box of `hex`-coloured pixels in `rows` (the drawn disc).
+    private func darkBlob(
+        _ bitmap: APBitmap,
+        hex: UInt32,
+        rows: ClosedRange<Int>,
+        columns: ClosedRange<Int>
+    ) -> CGRect? {
+        var minX = Int.max, maxX = Int.min, minY = Int.max, maxY = Int.min
+        for y in rows where y >= 0 && y < bitmap.height {
+            for x in columns where x >= 0 && x < bitmap.width {
+                guard let pixel = bitmap.color(x: x, y: y), isNear(pixel, hex: hex, tolerance: 12) else { continue }
+                minX = min(minX, x); maxX = max(maxX, x)
+                minY = min(minY, y); maxY = max(maxY, y)
+            }
+        }
+        guard minX <= maxX, minY <= maxY else { return nil }
+        // Points, not pixels: the probe renders at scale 2.
+        return CGRect(x: Double(minX) / 2, y: Double(minY) / 2,
+                      width: Double(maxX - minX + 1) / 2, height: Double(maxY - minY + 1) / 2)
+    }
+
     /// Rows inside the sheet (the bottom 340 pt of the screen) that paint `hex` in a run of `minRun`.
     private func rowsPaintedInSheet(_ bitmap: APBitmap, hex: UInt32, minRun: Int = 24) -> [Int] {
         let top = max(0, bitmap.height - Int(CameraGuideAdjustSheet.Layout.height))
