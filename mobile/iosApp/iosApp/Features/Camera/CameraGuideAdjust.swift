@@ -7,15 +7,24 @@ enum GuideLineColor: String, CaseIterable, Identifiable, Sendable {
     var id: String { rawValue }
     var label: String { rawValue.capitalized }
 
-    /// The stroke itself. Pink is the brand accent, black is ink, and the other two are the palette's
-    /// success/warning fills — all four read on both a bright sky and a dark interior.
+    /// The stroke and the swatch fill. Pink is the brand accent and black is ink (both the same in every
+    /// appearance); yellow and green are the palette's **fills** (`warningSurface` / `successSurface`), not its inks
+    /// — the ink tokens are dark brown and dark green in light mode, which is not the board's yellow and mint.
+    ///
+    /// All four are fixed colours, not scheme-dependent ones: the reference is drawn on the camera's dark stage and
+    /// picked on the light sheet, and it has to look the same in both.
     var color: Color {
         switch self {
         case .pink: return AP.Color.accent
         case .black: return AP.Color.onAccent
-        case .yellow: return AP.Color.warning
-        case .green: return AP.Color.success
+        case .yellow: return Self.fixed(APColorTokens.warningSurface)
+        case .green: return Self.fixed(APColorTokens.successSurface)
         }
+    }
+
+    /// A token's light value as a fixed colour (the palette does not follow the appearance).
+    private static func fixed(_ token: APColorToken) -> Color {
+        Color(uiColor: token.spec(for: .light).uiColor)
     }
 
     /// The swatch's fill, so a light colour still has an edge.
@@ -29,6 +38,29 @@ enum GuideLineColor: String, CaseIterable, Identifiable, Sendable {
         guard let raw else { return nil }
         if raw == "white" { return .pink }
         return GuideLineColor(rawValue: raw)
+    }
+}
+
+/// Hosts a SwiftUI subtree with the interface style pinned to its own trait collection.
+///
+/// The AP colour tokens are dynamic `UIColor`s (`Color(uiColor:)`), so they resolve from the **trait
+/// collection**, not from `\.colorScheme`: `.environment(\.colorScheme, .light)` alone leaves them dark inside a
+/// dark screen. A child hosting controller with `overrideUserInterfaceStyle` is the trait the tokens actually
+/// follow, and it keeps the override local — the camera behind the sheet stays dark.
+struct APInterfaceStyleHost<Content: View>: UIViewControllerRepresentable {
+    let style: UIUserInterfaceStyle
+    @ViewBuilder let content: () -> Content
+
+    func makeUIViewController(context: Context) -> UIHostingController<Content> {
+        let controller = UIHostingController(rootView: content())
+        controller.overrideUserInterfaceStyle = style
+        controller.view.backgroundColor = .clear
+        return controller
+    }
+
+    func updateUIViewController(_ controller: UIHostingController<Content>, context: Context) {
+        controller.rootView = content()
+        controller.overrideUserInterfaceStyle = style
     }
 }
 
@@ -72,8 +104,9 @@ struct CameraGuideAdjustSheet: View {
         .frame(maxWidth: .infinity)
         .frame(height: Layout.height, alignment: .top)
         .background(
+            // The board's sheet is the app's cream background, not the white card surface.
             RoundedTopShape(radius: AP.Radius.radius24)
-                .fill(AP.Color.surface)
+                .fill(AP.Color.background)
         )
         .clipShape(RoundedTopShape(radius: AP.Radius.radius24))
         .accessibilityElement(children: .contain)
@@ -122,7 +155,7 @@ struct CameraGuideAdjustSheet: View {
                 .font(AP.Font.body)
                 .foregroundStyle(AP.Color.primaryText)
             Slider(value: Binding(get: { opacity }, set: { onOpacityChange($0) }), in: 0.1...1)
-                .tint(AP.Color.accent)
+                .tint(AP.Color.accentText)
                 .disabled(!isEnabled)
                 .accessibilityLabel("Pose guide opacity")
                 .accessibilityValue("\(Int((opacity * 100).rounded()))%")
@@ -199,7 +232,7 @@ struct CameraGuideAdjustSheet: View {
                 value: Binding(get: { scale }, set: { onScaleChange($0) }),
                 in: CameraGuideScale.range
             )
-            .tint(AP.Color.accent)
+            .tint(AP.Color.accentText)
             .disabled(!isEnabled)
             .accessibilityLabel("Pose guide scale")
             .accessibilityValue(CameraGuideScale.label(scale))

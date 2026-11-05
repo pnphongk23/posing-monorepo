@@ -1136,32 +1136,37 @@ struct CameraScreen: View {
             // The guide-adjust sheet: an in-place overlay, so the camera stays live behind it and a change is
             // visible while it is made.
             if model.showGuideAdjust {
-                VStack(spacing: 0) {
-                    Spacer(minLength: 0)
-                    CameraGuideAdjustSheet(
-                        opacity: model.guideOpacity,
-                        lineColor: model.guideLineColor,
-                        scale: model.guideTransform.scale,
-                        isFlipped: model.guideFlipped,
-                        isEnabled: model.cameraControlsEnabled,
-                        onOpacityChange: { model.setGuideOpacity($0) },
-                        onLineColorChange: { model.setGuideLineColor($0) },
-                        onScaleChange: { model.setGuideScale($0) },
-                        onFlip: { model.toggleGuideMirror() },
-                        onDone: { model.closeGuideAdjust() }
+                // The sheet is the light board. Its tokens are dynamic `UIColor`s, so the sheet's subtree is hosted
+                // with a light trait collection (a colourScheme environment alone leaves them dark) while the camera
+                // behind keeps its own dark scheme.
+                APInterfaceStyleHost(style: .light) {
+                    VStack(spacing: 0) {
+                        Spacer(minLength: 0)
+                        CameraGuideAdjustSheet(
+                            opacity: model.guideOpacity,
+                            lineColor: model.guideLineColor,
+                            scale: model.guideTransform.scale,
+                            isFlipped: model.guideFlipped,
+                            isEnabled: model.cameraControlsEnabled,
+                            onOpacityChange: { model.setGuideOpacity($0) },
+                            onLineColorChange: { model.setGuideLineColor($0) },
+                            onScaleChange: { model.setGuideScale($0) },
+                            onFlip: { model.toggleGuideMirror() },
+                            onDone: { model.closeGuideAdjust() }
+                        )
+                    }
+                    // Both mechanisms, because the tokens arrive two ways: the SwiftUI environment decides for
+                    // `Color(uiColor:)` values and the hosted controller's trait decides for anything UIKit
+                    // resolves. The camera's own dark scheme stays outside this subtree.
+                    .environment(\.colorScheme, .light)
+                    .ignoresSafeArea(edges: .bottom)
+                    // The camera stays live and undimmed behind the sheet: only an outside tap dismisses it.
+                    .background(
+                        Color.clear
+                            .contentShape(Rectangle())
+                            .onTapGesture { model.closeGuideAdjust() }
                     )
                 }
-                // There is no dark guide-adjust board, so the dark variant is derived from the same tokens as the
-                // dark tools-sheet board: the camera's own dark surface, its light type and the same four swatches.
-                // The sheet therefore inherits the camera's scheme instead of re-resolving tokens against a light
-                // environment (the colour tokens are dynamic `UIColor`s, so only the trait collection decides).
-                .ignoresSafeArea(edges: .bottom)
-                // The camera stays live and undimmed behind the sheet: only an outside tap dismisses it.
-                .background(
-                    Color.clear
-                        .contentShape(Rectangle())
-                        .onTapGesture { model.closeGuideAdjust() }
-                )
                 .zIndex(3)
             }
 

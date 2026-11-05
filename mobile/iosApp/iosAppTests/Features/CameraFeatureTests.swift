@@ -3098,11 +3098,11 @@ final class CameraGuideAdjustTests: XCTestCase {
             )
         }
 
-        // Two sliders: the accent track paints twice (Opacity and Scale), and the Mirror button is one wide
-        // controlFill plate.
-        let accent = APColorTokens.accent.spec(for: .light).hex ?? 0
+        // Two sliders: the board's dark-pink track paints twice (Opacity and Scale), and the Mirror button is one
+        // wide controlFill plate.
+        let track = APColorTokens.accentText.spec(for: .light).hex ?? 0
         let controlFill = APColorTokens.controlFill.spec(for: .light).hex ?? 0
-        let sliderBands = rowBands(rowsPainted(bitmap, hex: accent, minRun: 20))
+        let sliderBands = rowBands(rowsPainted(bitmap, hex: track, minRun: 20))
         XCTAssertGreaterThanOrEqual(sliderBands, 2, "Opacity and Scale are both drawn as sliders")
         XCTAssertFalse(
             rowsPainted(bitmap, hex: controlFill, minRun: 120).isEmpty,
@@ -3110,7 +3110,102 @@ final class CameraGuideAdjustTests: XCTestCase {
         )
     }
 
+    /// The sheet is the light board, not a dark variant: its fill is the light background token, its Done action
+    /// the light accent text, and the camera behind it stays dark. The tokens are dynamic `UIColor`s, so this is
+    /// the proof that the sheet's own trait — not the camera's dark scheme — decides how they resolve.
+    func testTheSheetResolvesTheLightTokensOverADarkCamera() throws {
+        let bitmap = try renderScreenWithSheet()
+        let lightBackground = APColorTokens.background.spec(for: .light).hex ?? 0
+        let lightAccentText = APColorTokens.accentText.spec(for: .light).hex ?? 0
+
+        // Inside the sheet, away from its content: the sheet's own fill.
+        let fill = try XCTUnwrap(bitmap.color(x: 200, y: 540), "the sheet is painted")
+        XCTAssertTrue(
+            isNear(fill, hex: lightBackground),
+            "the sheet's fill is the light background token, as on the board (got \(fill.red),\(fill.green),\(fill.blue))"
+        )
+
+        // The Done action's ink in the header, on the right: the light accent text token.
+        let sheetTop = bitmap.height - Int(CameraGuideAdjustSheet.Layout.height)
+        var doneIsLightAccent = false
+        for y in (sheetTop + 16)..<(sheetTop + 80) {
+            for x in (bitmap.width / 2)..<bitmap.width {
+                guard let pixel = bitmap.color(x: x, y: y) else { continue }
+                if isNear(pixel, hex: lightAccentText, tolerance: 16) { doneIsLightAccent = true; break }
+            }
+            if doneIsLightAccent { break }
+        }
+        XCTAssertTrue(doneIsLightAccent, "Done is the light accent text token, as on the board")
+
+        // The palette and the slider track are the board's light tokens: four swatches and two dark-pink tracks.
+        for color in GuideLineColor.allCases {
+            let hex = resolvedHex(color.color)
+            XCTAssertFalse(
+                rowsPaintedInSheet(bitmap, hex: hex).isEmpty,
+                "\(color.rawValue) swatch is drawn in its light token"
+            )
+        }
+        let lightTrack = APColorTokens.accentText.spec(for: .light).hex ?? 0
+        XCTAssertGreaterThanOrEqual(
+            rowBands(rowsPaintedInSheet(bitmap, hex: lightTrack, minRun: 20)),
+            2,
+            "the Opacity and Scale tracks are the light accentText, as on the board"
+        )
+
+        // The camera keeps its own scheme: the Close control is still the dark surface token, which is the very
+        // value the sheet used to take (the override is local to the sheet, not a screen-wide flip).
+        let darkSurface = APColorTokens.surface.spec(for: .dark).hex ?? 0
+        // Inside the Close pill, away from its glyph: the pill's fill is the dark surface token.
+        let close = try XCTUnwrap(bitmap.color(x: 24, y: 70), "the top control is painted")
+        XCTAssertTrue(
+            isNear(close, hex: darkSurface),
+            "the camera behind the sheet keeps its dark surface (got \(close.red),\(close.green),\(close.blue))"
+        )
+    }
+
+    /// The screen with the guide-adjust sheet open, at the board's phone, with a stand-in photo where the camera
+    /// feed would be.
+    private func renderScreenWithSheet() throws -> APBitmap {
+        let size = CGSize(width: 393, height: 852)
+        var guide: NativePose? = NativePose(
+            id: "p1", name: "Warrior II", category: "Yoga", imageURL: nil, instructions: [], isSaved: false
+        )
+        let model = CameraViewModel(settingsStore: InMemoryCameraSettingsStore())
+        model.coordinator.onPermissionResult(.authorized)
+        model.guideAppeared(hasGuide: true)
+        model.openGuideAdjust()
+        let screen = CameraScreen(
+            guide: Binding(get: { guide }, set: { guide = $0 }),
+            poseService: PreviewPoseService(),
+            model: model,
+            preview: AnyView(Color(red: 0.55, green: 0.75, blue: 0.88)),
+            windowInsets: CameraSafeArea.Insets(top: 59, bottom: 34)
+        )
+        let host = UIHostingController(rootView: screen)
+        host.overrideUserInterfaceStyle = .dark
+        host.view.frame = CGRect(origin: .zero, size: size)
+        host.view.layoutIfNeeded()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.2))
+        host.view.setNeedsLayout()
+        host.view.layoutIfNeeded()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = 1
+        format.opaque = true
+        let image = UIGraphicsImageRenderer(size: size, format: format).image { _ in
+            host.view.drawHierarchy(in: CGRect(origin: .zero, size: size), afterScreenUpdates: true)
+        }
+        return try XCTUnwrap(APBitmap(image: image))
+    }
+
     // MARK: Helpers
+
+    private func isNear(_ pixel: APPixel, hex: UInt32, tolerance: Int = 6) -> Bool {
+        let target = (red: Int((hex >> 16) & 0xFF), green: Int((hex >> 8) & 0xFF), blue: Int(hex & 0xFF))
+        return abs(pixel.red - target.red) <= tolerance
+            && abs(pixel.green - target.green) <= tolerance
+            && abs(pixel.blue - target.blue) <= tolerance
+    }
 
     /// The hex a `Color` paints at, resolved in the light appearance the sheet is rendered in.
     private func resolvedHex(_ color: Color) -> UInt32 {
@@ -3121,6 +3216,12 @@ final class CameraGuideAdjustTests: XCTestCase {
         return (UInt32((red * 255).rounded()) << 16)
             | (UInt32((green * 255).rounded()) << 8)
             | UInt32((blue * 255).rounded())
+    }
+
+    /// Rows inside the sheet (the bottom 340 pt of the screen) that paint `hex` in a run of `minRun`.
+    private func rowsPaintedInSheet(_ bitmap: APBitmap, hex: UInt32, minRun: Int = 24) -> [Int] {
+        let top = max(0, bitmap.height - Int(CameraGuideAdjustSheet.Layout.height))
+        return rowsPainted(bitmap, hex: hex, minRun: minRun).filter { $0 >= top }
     }
 
     private func rowsPainted(_ bitmap: APBitmap, hex: UInt32, minRun: Int) -> [Int] {
