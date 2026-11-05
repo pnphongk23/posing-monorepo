@@ -25,6 +25,9 @@ final class APViewProbe {
         self.window = window
         window.frame = CGRect(origin: .zero, size: size)
         host = UIHostingController(rootView: AnyView(view))
+        // A presentation left over from another class on this shared window would sit above the new host and
+        // draw nothing of it, so it is dismissed before the root is replaced.
+        window.rootViewController?.dismiss(animated: false)
         window.rootViewController = host
         window.makeKeyAndVisible()
         host.view.frame = CGRect(origin: .zero, size: size)
@@ -46,14 +49,34 @@ final class APViewProbe {
 
     func capture() -> APBitmap {
         settle()
+        // Deterministic render pass: the host has to be the key window's root (a leftover window or a
+        // presentation from another class takes that away), its layout settled, and its layers committed
+        // before the draw. `afterScreenUpdates` then renders the current tree instead of a stale one.
+        if host.view.window !== window || window.rootViewController !== host {
+            window.rootViewController = host
+            host.view.frame = CGRect(origin: .zero, size: size)
+            window.makeKeyAndVisible()
+        }
+        host.view.setNeedsLayout()
+        host.view.layoutIfNeeded()
+        CATransaction.flush()
+
         let format = UIGraphicsImageRendererFormat.default()
         format.scale = scale
         format.opaque = true
         let image = UIGraphicsImageRenderer(size: size, format: format).image { _ in
             host.view.drawHierarchy(in: CGRect(origin: .zero, size: size), afterScreenUpdates: true)
         }
-        return APBitmap(image: image)
-            ?? APBitmap(width: Int(size.width * scale), height: Int(size.height * scale))
+        // A capture that drew nothing used to reach the assertions as one flat frame, so a single blank
+        // render read as three unrelated "not painted" failures. It fails here instead, where the cause is.
+        guard let bitmap = APBitmap(image: image), !bitmap.isBlank else {
+            XCTFail(
+                "APViewProbe captured a blank frame (\(Int(size.width * scale))x\(Int(size.height * scale))): "
+                + "the hosted view drew nothing — check the shared window is key and the host is its root"
+            )
+            return APBitmap(width: Int(size.width * scale), height: Int(size.height * scale))
+        }
+        return bitmap
     }
 
     func tearDown() {
@@ -119,6 +142,17 @@ struct APBitmap {
         self.width = width
         self.height = height
         bytes = [UInt8](repeating: 0, count: width * height * 4)
+    }
+
+    /// Nothing was drawn: the frame is exactly what an opaque renderer leaves when its context is never
+    /// painted — transparent, or the renderer's own black fill. A real frame is not that even when it is one
+    /// flat colour on purpose (a background swatch, an empty list), which is why this is narrower than
+    /// "uniform".
+    var isBlank: Bool {
+        stride(from: 0, to: bytes.count - 3, by: 4).allSatisfy { index in
+            let alpha = bytes[index + 3]
+            return alpha == 0 || (bytes[index] == 0 && bytes[index + 1] == 0 && bytes[index + 2] == 0)
+        }
     }
 
     func color(x: Int, y: Int) -> APPixel? {
