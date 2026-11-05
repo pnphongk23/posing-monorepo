@@ -66,6 +66,27 @@ final class PaywallScreenLayoutTests: XCTestCase {
         ])
     }
 
+    /// Waits until the model reaches the state the pixel assertions need, on the model's own signals.
+    ///
+    /// The signed-out start announces `.signInRequired` *before* it reads the offering (the cards show
+    /// store prices without an account), so the phase alone is not "ready to capture": a frame taken in
+    /// that window draws placeholder cards with no selected plan, and the band lookups then report "no
+    /// Yearly card is painted" — three failures about pixels for one race in the fixture.
+    @MainActor
+    private func waitFor(
+        _ model: PaywallModel,
+        _ what: String,
+        file: StaticString = #filePath,
+        line: UInt = #line,
+        _ condition: () -> Bool
+    ) async {
+        let deadline = Date().addingTimeInterval(3)
+        while !condition() && Date() < deadline {
+            try? await Task.sleep(nanoseconds: 5_000_000)
+        }
+        XCTAssertTrue(condition(), "the paywall never reached \(what)", file: file, line: line)
+    }
+
     /// A model that already settled on a real offering, so the captured frame is a final state.
     private func signedInModel(offering: PurchaseSnapshot? = nil) async -> PaywallModel {
         let model = PaywallModel(
@@ -79,11 +100,9 @@ final class PaywallScreenLayoutTests: XCTestCase {
             connectivity: PaywallLayoutConnectivity()
         )
         model.start()
-        let deadline = Date().addingTimeInterval(3)
-        while model.phase != .ready && Date() < deadline {
-            try? await Task.sleep(nanoseconds: 5_000_000)
+        await waitFor(model, "ready with a priced offering") {
+            model.phase == .ready && !model.plans.isEmpty
         }
-        XCTAssertEqual(model.phase, .ready)
         return model
     }
 
@@ -96,11 +115,9 @@ final class PaywallScreenLayoutTests: XCTestCase {
             connectivity: PaywallLayoutConnectivity()
         )
         model.start()
-        let deadline = Date().addingTimeInterval(3)
-        while model.phase != .signInRequired && Date() < deadline {
-            try? await Task.sleep(nanoseconds: 5_000_000)
+        await waitFor(model, "the sign-in step with store prices on both cards") {
+            model.phase == .signInRequired && !model.plans.isEmpty
         }
-        XCTAssertEqual(model.phase, .signInRequired)
         return model
     }
 
