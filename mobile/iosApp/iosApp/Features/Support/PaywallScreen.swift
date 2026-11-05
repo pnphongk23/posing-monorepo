@@ -113,7 +113,9 @@ struct PaywallScreen: View {
     static let signInSheetDetents: Set<PresentationDetent> = [.large]
 
     init(
-        model: @autoclosure @escaping () -> PaywallModel = PaywallModel(),
+        // The app passes the shared holder: its launch prefetch is what fills the cards before the wall is
+        // shown. Tests build `PaywallModel` themselves and get a holder of their own.
+        model: @autoclosure @escaping () -> PaywallModel = PaywallModel(offerings: .shared),
         trigger: PaywallTrigger = .shutter
     ) {
         _model = StateObject(wrappedValue: model())
@@ -281,7 +283,10 @@ struct PaywallScreen: View {
                 planRows(model.planPresentations.isEmpty ? model.placeholderPlans : model.planPresentations)
             }
         } else if model.plans.isEmpty {
-            if model.phase == .loadingPlans && model.isSignedIn {
+            if model.phase == .loadingPlans {
+                // The prices are being read (joined from the launch prefetch on the common path): a
+                // skeleton says "coming", while "Price unavailable" said "there is no price" about a read
+                // that was already on its way.
                 loadingPlans
             } else if !model.isSignedIn {
                 planRows(model.placeholderPlans)

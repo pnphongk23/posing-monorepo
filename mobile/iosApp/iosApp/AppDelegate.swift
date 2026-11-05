@@ -21,6 +21,12 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
         // RevenueCat owns the purchase surface (FEAT-011). Configure before any screen can mount so
         // the paywall reads a real offering instead of the fail-closed `unconfigured` state.
         RevenueCatAdapter.shared.configureFromEnvironment()
+        // The paywall must not paint "Price unavailable" for a price that is already on its way, so the
+        // store's offering is read once here — kicked, never awaited: launch does not wait on the store.
+        // Gated by the paywall kill switch: a build that cannot show the paywall must not ask for prices.
+        if AppConfig.shared.isPaywallEnabled {
+            OfferingPrefetcher.shared.prefetch(using: RevenueCatAdapter.shared)
+        }
         // Account-scoped state follows session changes for the whole process, not per screen.
         SessionScopeCoordinator.shared.start()
         resolveEndpointThenShowRoot()

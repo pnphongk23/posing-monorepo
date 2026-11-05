@@ -121,7 +121,15 @@ struct AppFeatureRoot: View {
             .environment(\.apBrowsePoses, APBrowsePosesAction { showPosesCatalogue() })
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(AIPoseColor.background.ignoresSafeArea())
-            .onAppear { premiumGate.start() }
+            .onAppear {
+                premiumGate.start()
+                // The remote config can turn the paywall on after launch (the flag is applied when it
+                // arrives), so the first screen kicks the same read the launch path does. The holder
+                // de-duplicates, and a build whose kill switch stays off never asks the store.
+                if AppConfig.shared.isPaywallEnabled {
+                    OfferingPrefetcher.shared.prefetch(using: RevenueCatAdapter.shared)
+                }
+            }
             // The paywall can be requested from any paid trigger; the cover owns dismissal, and
             // dismissing it changes nothing, so no access is granted on the way out.
             .paywallCover(isPresented: paywallSheetBinding)

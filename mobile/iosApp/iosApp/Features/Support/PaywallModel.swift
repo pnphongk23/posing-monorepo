@@ -14,6 +14,57 @@ protocol PurchaseGateway: AnyObject {
     func restore() async -> PurchaseSnapshot
 }
 
+/// The store's offering, read once and shared: a paywall opened after launch finds the prices already there
+/// instead of painting "Price unavailable" for a read that is on its way.
+///
+/// Prices are a **store** fact, not account state, so this cache survives sign-in and sign-out — the same
+/// rule `PaywallModel` already follows for its own `plans`. It is owned by the purchases layer (`shared`)
+/// and injected in tests, where a fresh holder keeps one test's offering out of the next one's.
+@MainActor
+final class OfferingPrefetcher {
+    static let shared = OfferingPrefetcher()
+
+    private var cached: PurchaseSnapshot?
+    private var inFlight: Task<PurchaseSnapshot?, Never>?
+
+    init() {}
+
+    /// The last usable offering, if one has been read. `nil` until a read brought prices.
+    var snapshot: PurchaseSnapshot? { cached }
+    var isPrefetching: Bool { inFlight != nil }
+
+    /// Starts the read without waiting for it: launch kicks this and moves on. A second call while one is
+    /// running (or after a usable answer) does nothing, so the app never asks the store twice.
+    func prefetch(using gateway: any PurchaseGateway) {
+        guard cached == nil, inFlight == nil else { return }
+        inFlight = Task { [weak self, gateway] in
+            let snapshot = await gateway.loadOffering()
+            self?.finish(snapshot)
+            return snapshot
+        }
+    }
+
+    /// The offering for a paywall starting now: what the prefetch already holds, the read that is already
+    /// running (joined, not repeated), or — only when there is nothing to join — one fresh read.
+    func offering(using gateway: any PurchaseGateway) async -> PurchaseSnapshot {
+        if let cached { return cached }
+        if let inFlight {
+            if let joined = await inFlight.value { return joined }
+            return await gateway.loadOffering()
+        }
+        prefetch(using: gateway)
+        if let inFlight, let joined = await inFlight.value { return joined }
+        return await gateway.loadOffering()
+    }
+
+    /// A snapshot without products is not an answer to keep: the next paywall reads again.
+    private func finish(_ snapshot: PurchaseSnapshot) {
+        inFlight = nil
+        guard !snapshot.products.isEmpty else { return }
+        cached = snapshot
+    }
+}
+
 /// DEC-008 package mapping for the paywall. Which package is the annual highlight is code-owned;
 /// price and period come from the offering through the gateway. Packages are identified by package
 /// type, never by a store product id, so the ids can change in App Store Connect alone.
@@ -347,6 +398,9 @@ final class PaywallModel: ObservableObject, SessionScoped {
     }
 
     private let gateway: any PurchaseGateway
+    /// Where a paywall's prices come from: the launch read when it has them, the one in flight when it is
+    /// still going, and a read of its own only when neither exists.
+    private let offerings: OfferingPrefetcher
     private let boundary: SessionBoundary
     private let signInAction: SignInAction
     /// The Apple handoff is the same `AppleSignInAction` the Account sheet's `AppleSignInModel`
@@ -381,6 +435,7 @@ final class PaywallModel: ObservableObject, SessionScoped {
 
     init(
         gateway: any PurchaseGateway = RevenueCatAdapter.shared,
+        offerings: OfferingPrefetcher = OfferingPrefetcher(),
         boundary: SessionBoundary = ServiceLocator.sessionBoundary,
         signInAction: SignInAction = SignInAction(),
         appleSignInAction: AppleSignInAction = AppleSignInAction(),
@@ -388,6 +443,7 @@ final class PaywallModel: ObservableObject, SessionScoped {
         analytics: @escaping PaywallAnalyticsSink = PaywallAnalytics.production
     ) {
         self.gateway = gateway
+        self.offerings = offerings
         self.boundary = boundary
         self.signInAction = signInAction
         self.appleSignInAction = appleSignInAction
@@ -557,13 +613,14 @@ final class PaywallModel: ObservableObject, SessionScoped {
         Task { [weak self] in
             guard let self else { return }
             guard await self.boundary.hasStoredSession() else {
-                self.phase = .signInRequired
                 self.showsPreSignInPrices = true
-                self.emitView()
                 // Prices before sign-in (owner decision, 1.1 (20)): the offering is read without an
-                // Account and only the packages are adopted, so the cards show the store's real
-                // price and saving before the account step.
+                // Account and only the packages are adopted, so the cards show the store's real price and
+                // saving before the account step. The phase is announced **after** that read: announcing
+                // it first painted "Price unavailable" placeholders for a price that was already arriving.
                 await self.loadSignedOutPrices()
+                self.phase = .signInRequired
+                self.emitView()
                 return
             }
             self.showsPreSignInPrices = false
@@ -644,7 +701,7 @@ final class PaywallModel: ObservableObject, SessionScoped {
     private func loadOffering(keepingPhase: Bool) async {
         let epoch = sessionEpoch
         if !keepingPhase { phase = .loadingPlans }
-        let snapshot = await gateway.loadOffering()
+        let snapshot = await offerings.offering(using: gateway)
         if keepingPhase {
             // The prices are account-agnostic, so a session event does not invalidate them; a
             // sign-in that landed while they loaded owns the state from here on.
@@ -847,6 +904,11 @@ final class PaywallModel: ObservableObject, SessionScoped {
         guard epoch == sessionEpoch else { return }
         isSignedIn = signedIn
         guard signedIn else {
+            // A guest is the pre-sign-in price view, and the snapshot's packages are store data: both are
+            // settled *before* the gate is announced, otherwise the surface paints one frame of the sign-in
+            // step with no plans, which reads as "Price unavailable".
+            showsPreSignInPrices = true
+            if !snapshot.products.isEmpty { adoptPreviewPlans(from: snapshot) }
             // Clear the session before reading it, so a stale "entitled" snapshot cannot survive a
             // sign-out that simply arrived after it.
             invalidateAccountState()
@@ -933,9 +995,10 @@ final class PaywallModel: ObservableObject, SessionScoped {
                 ? .unavailable("Plans are temporarily unavailable. Retry to check again.")
                 : .ready
         case .signInRequired:
-            // M2: the adapter refused a store call because no Account is linked. Show sign-in
-            // instead of a plan list that cannot be bought.
-            plans = []
+            // M2: the adapter refused a store call because no Account is linked. Show sign-in instead of
+            // a plan list that cannot be bought — but the *prices* stay: they are store data, and dropping
+            // them here is what repainted "Price unavailable" cards at a guest who already had them.
+            if !showsPreSignInPrices { plans = [] }
             phase = .signInRequired
         }
     }
