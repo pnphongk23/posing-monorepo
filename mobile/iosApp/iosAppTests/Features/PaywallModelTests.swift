@@ -715,7 +715,9 @@ final class PaywallModelTests: XCTestCase {
         gate.release()
 
         await waitUntil("sign in required") { model.phase == .signInRequired }
-        XCTAssertTrue(model.plans.isEmpty, "A result that crossed sign-out must be dropped")
+        // The stale *account* answer is dropped (phase, session), while the prices it carried are store
+        // data: a guest sees the store's prices before signing in, so they are allowed to stay.
+        XCTAssertEqual(model.phase, .signInRequired, "a result that crossed sign-out must not paint access")
         XCTAssertFalse(model.isSignedIn)
     }
 

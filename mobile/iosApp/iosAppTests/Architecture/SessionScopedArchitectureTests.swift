@@ -33,6 +33,8 @@ final class SessionScopedArchitectureTests: XCTestCase {
             "the epoch is checked inside the GRDB write transaction and SessionScopeCoordinator clears it",
         "RevenueCatAdapter":
             "owns the M01 identity epoch, which only SessionScopeCoordinator is allowed to move",
+        "OfferingPrefetcher":
+            "holds the store's offering — prices, not account data — so it survives sign-in and sign-out",
         "LiveRevenueCatSDK":
             "thin Purchases.shared seam; it stores no Account state, the adapter owns the identity",
         "SessionPresenceModel":
