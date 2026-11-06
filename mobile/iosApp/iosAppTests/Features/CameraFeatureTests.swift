@@ -2669,6 +2669,62 @@ final class CameraScreenStageTests: XCTestCase {
         }
     }
 
+    /// The top chrome is drawn as the light boards draw it — white pills with dark icons — while the rest of the
+    /// camera keeps the dark chrome it has. The camera forces a dark scheme on itself, so these three state their
+    /// light tokens explicitly; this is the proof that they resolve light and nothing else moved.
+    func testTheTopChromeIsTheLightBoardAndTheRestStaysDark() throws {
+        let bitmap = try renderScreen(ratio: .threeFour)
+        let lightSurface = APColorTokens.surface.spec(for: .light).hex ?? 0
+        let lightInk = APColorTokens.primaryText.spec(for: .light).hex ?? 0
+        let darkControlFill = APColorTokens.controlFill.spec(for: .dark).hex ?? 0
+
+        // Inside the Close pill, away from its glyph: the light surface token.
+        let closeFill = try XCTUnwrap(bitmap.color(x: 24, y: 70), "the Close pill is painted")
+        XCTAssertTrue(
+            isNear(closeFill, hex: lightSurface, tolerance: 8),
+            "the top chrome's fill is the light surface token (got \(closeFill.red),\(closeFill.green),\(closeFill.blue))"
+        )
+
+        // The darkest pixel inside that pill is the glyph: the light primary-text token.
+        var darkest: APPixel?
+        for y in 62...100 {
+            for x in 20...56 {
+                guard let pixel = bitmap.color(x: x, y: y) else { continue }
+                if let current = darkest, luminance(current) <= luminance(pixel) { continue }
+                darkest = pixel
+            }
+        }
+        let ink = try XCTUnwrap(darkest, "the Close glyph is painted")
+        // A glyph's core is the ink token (18,18,18); its antialiased edge can go a shade darker, so the test asks
+        // for "the ink's neighbourhood and clearly darker than the pill" rather than an exact pixel.
+        XCTAssertLessThanOrEqual(
+            luminance(ink), 22,
+            "the icon is dark ink, not a light glyph on a dark pill (got \(ink.red),\(ink.green),\(ink.blue))"
+        )
+        XCTAssertTrue(
+            isNear(ink, hex: lightInk, tolerance: 24),
+            "and it is the light primary-text token (got \(ink.red),\(ink.green),\(ink.blue))"
+        )
+
+        // And the chrome below is untouched: the Poses chip on the zoom band keeps the dark control fill.
+        let chip = try XCTUnwrap(bitmap.color(x: 350, y: 660), "the Poses chip is painted")
+        XCTAssertTrue(
+            isNear(chip, hex: darkControlFill, tolerance: 8),
+            "the zoom band's Poses chip is unchanged (got \(chip.red),\(chip.green),\(chip.blue))"
+        )
+    }
+
+    private func luminance(_ pixel: APPixel) -> Int {
+        (pixel.red * 299 + pixel.green * 587 + pixel.blue * 114) / 1000
+    }
+
+    private func isNear(_ pixel: APPixel, hex: UInt32, tolerance: Int = 6) -> Bool {
+        let target = (red: Int((hex >> 16) & 0xFF), green: Int((hex >> 8) & 0xFF), blue: Int(hex & 0xFF))
+        return abs(pixel.red - target.red) <= tolerance
+            && abs(pixel.green - target.green) <= tolerance
+            && abs(pixel.blue - target.blue) <= tolerance
+    }
+
     private func renderScreen(ratio: CameraAspectRatio) throws -> APBitmap {
         var guide: NativePose? = NativePose(
             id: "p1",
@@ -3152,14 +3208,12 @@ final class CameraGuideAdjustTests: XCTestCase {
             "the Opacity and Scale tracks are the light accentText, as on the board"
         )
 
-        // The camera keeps its own scheme: the Close control is still the dark surface token, which is the very
-        // value the sheet used to take (the override is local to the sheet, not a screen-wide flip).
-        let darkSurface = APColorTokens.surface.spec(for: .dark).hex ?? 0
-        // Inside the Close pill, away from its glyph: the pill's fill is the dark surface token.
-        let close = try XCTUnwrap(bitmap.color(x: 24, y: 70), "the top control is painted")
+        // The camera keeps drawing itself as before: the area above the photo frame is the stage's own 65 % dim over
+        // the stand-in preview, so the sheet's light trait is local to the sheet rather than a screen-wide flip.
+        let dimmed = try XCTUnwrap(bitmap.color(x: 196, y: 20), "the stage's dim is painted")
         XCTAssertTrue(
-            isNear(close, hex: darkSurface),
-            "the camera behind the sheet keeps its dark surface (got \(close.red),\(close.green),\(close.blue))"
+            isNear(dimmed, hex: 0x31434E, tolerance: 8),
+            "the camera's stage still draws its own dim over the preview (got \(dimmed.red),\(dimmed.green),\(dimmed.blue))"
         )
     }
 
