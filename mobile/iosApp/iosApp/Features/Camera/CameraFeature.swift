@@ -1366,6 +1366,9 @@ struct CameraScreen: View {
 
 enum CameraProto {
     static let controlInset: CGFloat = 16
+    /// The top chrome's corner radius, measured on the light B6 boards (43 pt pill, ~12 pt radius). No radius token
+    /// is 12 (they are 8 / 16 / 24), so the measurement is stated here.
+    static let topControlRadius: CGFloat = 12
 
     // `.nb-camera-pose-reference`
     static let poseReferenceTopInset: CGFloat = 0.16
@@ -1383,6 +1386,18 @@ enum CameraProto {
     static let shutterSize: CGFloat = 72
 }
 
+/// A token's **light** value as a fixed colour.
+///
+/// The camera forces a dark colour scheme on itself (its canvas, rail and zoom band are dark surfaces), and the AP
+/// tokens are dynamic `UIColor`s that follow that scheme. The top chrome is the exception: the B6 boards draw it as
+/// white pills with dark icons, so those three buttons state their light token explicitly instead of following the
+/// screen's scheme.
+enum APLightChrome {
+    static func token(_ token: APColorToken) -> SwiftUI.Color {
+        SwiftUI.Color(uiColor: token.spec(for: .light).uiColor)
+    }
+}
+
 // MARK: - Camera chrome (AP tokens, forced dark)
 
 /// Pressed = one fill step plus `scale 0.97`; Reduce Motion keeps the fill and drops the scale.
@@ -1392,24 +1407,31 @@ private struct CameraPressStyle: ButtonStyle {
     var shape: CameraPillShape = .rounded16
     /// `nil` keeps the surface fill; a chip that sits on the bar's panel passes `controlFill`.
     var restingFill: SwiftUI.Color? = nil
+    /// The top chrome is the light boards' chrome: white pills with dark ink, whatever the camera's own scheme is.
+    var isLightChrome: Bool = false
 
     func makeBody(configuration: Configuration) -> some View {
         CameraPressBody(
             configuration: configuration,
             isSelected: isSelected,
             shape: shape,
-            restingFill: restingFill
+            restingFill: restingFill,
+            isLightChrome: isLightChrome
         )
     }
 }
 
-private enum CameraPillShape { case rounded16, capsule }
+private enum CameraPillShape {
+    case rounded16, capsule
+    case rounded(CGFloat)
+}
 
 private struct CameraPressBody: View {
     let configuration: ButtonStyleConfiguration
     let isSelected: Bool
     let shape: CameraPillShape
     var restingFill: SwiftUI.Color? = nil
+    var isLightChrome: Bool = false
 
     @Environment(\.isEnabled) private var isEnabled
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -1423,6 +1445,13 @@ private struct CameraPressBody: View {
     }
 
     private var fill: SwiftUI.Color {
+        if isLightChrome {
+            // The light boards' pills: white, one step darker while pressed, the light accent tint when selected.
+            guard isEnabled else { return APLightChrome.token(APColorTokens.controlFill) }
+            if configuration.isPressed { return APLightChrome.token(APColorTokens.controlFillPressed) }
+            return isSelected ? APLightChrome.token(APColorTokens.selectedBackground)
+                : APLightChrome.token(APColorTokens.surface)
+        }
         guard isEnabled else { return AP.Color.controlFill }
         guard configuration.isPressed else {
             if let restingFill { return restingFill }
@@ -1437,11 +1466,17 @@ private struct CameraPressBody: View {
             RoundedRectangle(cornerRadius: AP.Radius.radius16, style: .continuous).fill(fill)
         case .capsule:
             Capsule().fill(fill)
+        case .rounded(let radius):
+            RoundedRectangle(cornerRadius: radius, style: .continuous).fill(fill)
         }
     }
 }
 
 /// One 44 pt surface pill with no resting border — Close, the guide's eye and the tools.
+///
+/// Drawn as the light B6 boards draw it: a white pill (light `surface`), dark ink (light `primaryText`), the light
+/// accent tint when selected. Measured on `05-camera-live-guide.png` at the 393 reference: 43 pt pill, radius ~12,
+/// white fill, 13 pt dark glyph. The 44 pt hit target is the app's, not the board's 43.
 private struct CameraSurfaceControl: View {
     let systemImage: String
     var isSelected = false
@@ -1458,14 +1493,21 @@ private struct CameraSurfaceControl: View {
                 .foregroundStyle(labelColor)
                 .frame(width: AP.HitTarget.minimum, height: AP.HitTarget.minimum)
         }
-        .buttonStyle(CameraPressStyle(isSelected: isSelected))
+        .buttonStyle(
+            CameraPressStyle(
+                isSelected: isSelected,
+                shape: .rounded(CameraProto.topControlRadius),
+                isLightChrome: true
+            )
+        )
         .accessibilityLabel(accessibilityLabel)
         .apIdentifier(identifier)
     }
 
     private var labelColor: SwiftUI.Color {
-        guard isEnabled else { return AP.Color.disabled }
-        return isSelected ? AP.Color.selectedForeground : AP.Color.primaryText
+        guard isEnabled else { return APLightChrome.token(APColorTokens.disabled) }
+        return isSelected ? APLightChrome.token(APColorTokens.selectedForeground)
+            : APLightChrome.token(APColorTokens.primaryText)
     }
 }
 
