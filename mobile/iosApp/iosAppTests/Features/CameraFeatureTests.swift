@@ -3946,6 +3946,27 @@ final class CameraChromeContractTests: XCTestCase {
         XCTAssertEqual(CameraAspectRatio.nineSixteen.accessibilityIdentifier, "camera.tools.ratio.9x16")
     }
 
+    /// The popover's rows are containers over interactive children, exactly like the picker sheet's: a row id
+    /// declared on the HStack without `children: .contain` is handed down and *replaces* every chip's id. That
+    /// is the bug this pins — `22c9c83` fixed it, `1f4574cc` moved the popover to its own file and dropped the
+    /// modifier, so Ratio still read "3:4 / 1:1 / 9:16" but Maestro could not address `camera.tools.ratio.1x1`.
+    ///
+    /// Mutation target: delete `.accessibilityElement(children: .contain)` from `row(_:)` — this turns red.
+    func testTheToolsRowsDeclareContainBeforeTheirContainerId() throws {
+        let source = try cameraToolsPopoverSource()
+        try assertContainPrecedesContainerId(
+            after: "private func row(_ row: CameraToolsLayout.Row) -> some View {",
+            identifier: ".accessibilityIdentifier(row.accessibilityIdentifier)",
+            in: source
+        )
+        // The popover itself is a container too, or the panel id would swallow every row.
+        try assertContainPrecedesContainerId(
+            after: "struct CameraToolsPopup: View {",
+            identifier: ".accessibilityIdentifier(\"camera.tools.popover\")",
+            in: source
+        )
+    }
+
     // MARK: The popover, rendered
 
     /// The popover, measured on a rendered frame: four one-line rows and the artboard's 232 pt, with the Ratio
