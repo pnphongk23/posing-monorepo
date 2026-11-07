@@ -38,6 +38,40 @@ async function writeAtomic(outputPath, contents) {
   }
 }
 
+function awaitWithSignal(promise, signal, onAbort) {
+  return new Promise((resolve, reject) => {
+    const cleanup = () => signal.removeEventListener("abort", abort);
+    const abort = () => {
+      cleanup();
+      onAbort?.();
+      reject(new Error("timeout"));
+    };
+    if (signal.aborted) {
+      abort();
+      return;
+    }
+    signal.addEventListener("abort", abort, { once: true });
+    promise.then(
+      (value) => {
+        cleanup();
+        resolve(value);
+      },
+      (error) => {
+        cleanup();
+        reject(signal.aborted ? new Error("timeout") : error);
+      }
+    );
+  });
+}
+
+function readJsonWithSignal(response, signal) {
+  return awaitWithSignal(
+    response.json(),
+    signal,
+    () => { void response.body?.cancel().catch(() => undefined); }
+  );
+}
+
 /** Refresh credentials from inputPath and atomically write the rotated set to outputPath. */
 export async function runRefresh({
   inputPath,
@@ -62,22 +96,25 @@ export async function runRefresh({
     refresh_token: credentials.refresh_token,
     client_id: CLIENT_ID
   });
+  const signal = AbortSignal.timeout(20_000);
   let response;
   try {
-    response = await fetchImpl(tokenEndpoint, {
+    response = await awaitWithSignal(fetchImpl(tokenEndpoint, {
       method: "POST",
       headers: { "content-type": "application/x-www-form-urlencoded" },
-      body: form.toString()
-    });
+      body: form.toString(),
+      signal
+    }), signal);
   } catch {
-    return { ok: false, reason: "network_error" };
+    return { ok: false, reason: signal.aborted ? "timeout" : "network_error" };
   }
   if (response.status !== 200) {
     if (response.status === 400) {
       try {
-        const body = await response.json();
+        const body = await readJsonWithSignal(response, signal);
         if (isRecord(body) && body.error === "invalid_grant") return { ok: false, reason: "invalid_grant" };
       } catch {
+        if (signal.aborted) return { ok: false, reason: "timeout" };
         // Ignore response parsing errors; never return or print the response body.
       }
     }
@@ -86,9 +123,9 @@ export async function runRefresh({
 
   let tokenResponse;
   try {
-    tokenResponse = await response.json();
+    tokenResponse = await readJsonWithSignal(response, signal);
   } catch {
-    return { ok: false, reason: "invalid_response" };
+    return { ok: false, reason: signal.aborted ? "timeout" : "invalid_response" };
   }
   if (!isRecord(tokenResponse) || typeof tokenResponse.access_token !== "string" ||
       !tokenResponse.access_token || typeof tokenResponse.expires_in !== "number" ||

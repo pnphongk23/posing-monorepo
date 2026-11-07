@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { runRefresh } from "../../scripts/hf-self-refresh.mjs";
 
@@ -16,9 +16,18 @@ async function makeDir() {
 }
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   await Promise.all(servers.splice(0).map((server) => new Promise<void>((resolve) => server.close(() => resolve()))));
   await Promise.all(tempDirs.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true })));
 });
+
+function useShortTimeoutSignal() {
+  return vi.spyOn(AbortSignal, "timeout").mockImplementation((() => {
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(new DOMException("Timed out", "TimeoutError")), 20);
+    return controller.signal;
+  }) as typeof AbortSignal.timeout);
+}
 
 describe("one-off self-refresh script", () => {
   it("uses a local mock token endpoint and writes only the output credentials file with mode 0600", async () => {
@@ -129,5 +138,43 @@ describe("one-off self-refresh script", () => {
 
     expect(result).toEqual({ ok: false, reason: "invalid_paths" });
     expect(await fs.readFile(credentialsPath, "utf8")).toBe(input);
+  });
+
+  it("returns FAIL timeout for a hanging request without creating output", async () => {
+    const timeoutSpy = useShortTimeoutSignal();
+    const dir = await makeDir();
+    const inputPath = path.join(dir, "in.json");
+    const outputPath = path.join(dir, "out.json");
+    await fs.writeFile(inputPath, JSON.stringify({ access_token: "a", refresh_token: "r", expires_at: 1 }));
+    const fetchImpl = vi.fn((_url: string, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener("abort", () => reject(init.signal?.reason), { once: true });
+    }));
+
+    const result = await Promise.race([
+      runRefresh({ inputPath, outputPath, fetchImpl }),
+      new Promise<"hung">((resolve) => setTimeout(() => resolve("hung"), 500))
+    ]);
+
+    expect(result).toEqual({ ok: false, reason: "timeout" });
+    expect(timeoutSpy).toHaveBeenCalledWith(20_000);
+    expect(await fs.readdir(dir)).toEqual(["in.json"]);
+  });
+
+  it("applies the same timeout while reading the token response body", async () => {
+    useShortTimeoutSignal();
+    const dir = await makeDir();
+    const inputPath = path.join(dir, "in.json");
+    const outputPath = path.join(dir, "out.json");
+    await fs.writeFile(inputPath, JSON.stringify({ access_token: "a", refresh_token: "r", expires_at: 1 }));
+    const hangingBody = new ReadableStream({ start() {} });
+    const fetchImpl = async () => new Response(hangingBody, { status: 200 });
+
+    const result = await Promise.race([
+      runRefresh({ inputPath, outputPath, fetchImpl }),
+      new Promise<"hung">((resolve) => setTimeout(() => resolve("hung"), 500))
+    ]);
+
+    expect(result).toEqual({ ok: false, reason: "timeout" });
+    expect(await fs.readdir(dir)).toEqual(["in.json"]);
   });
 });
