@@ -3664,6 +3664,73 @@ final class CameraGuideScaleModelTests: XCTestCase {
 /// view source). Everything else is the pure layout logic the views are wired to.
 @MainActor
 final class CameraChromeContractTests: XCTestCase {
+    func testAdjustGuideButtonOpensSheetOnlyWhenCameraControlsAreEnabled() throws {
+        let source = try cameraFeatureSource()
+        let controls = try viewBody(named: "topControls", in: source)
+        XCTAssertTrue(controls.contains("action: { model.openGuideAdjust() }"), "button activation calls the sheet entry point")
+
+        let ready = CameraViewModel(settingsStore: InMemoryCameraSettingsStore())
+        ready.coordinator.onPermissionResult(.authorized)
+        ready.guideAppeared(hasGuide: true)
+        ready.openGuideAdjust()
+        XCTAssertTrue(ready.showGuideAdjust, "the Adjust guide button opens the sheet")
+
+        ready.closeGuideAdjust()
+        XCTAssertTrue(ready.coordinator.onCaptureRequested())
+        XCTAssertFalse(ready.cameraControlsEnabled)
+        ready.openGuideAdjust()
+        XCTAssertFalse(ready.showGuideAdjust, "capture disables the button's action")
+
+        let unauthorized = CameraViewModel(settingsStore: InMemoryCameraSettingsStore())
+        unauthorized.coordinator.onPermissionResult(.denied)
+        unauthorized.guideAppeared(hasGuide: true)
+        unauthorized.openGuideAdjust()
+        XCTAssertFalse(unauthorized.showGuideAdjust, "unauthorized camera cannot open the sheet")
+    }
+
+    func testVoiceOverGuideActionStillOpensTheAdjustSheet() throws {
+        let canvasSource = try cameraCanvasSource()
+        XCTAssertTrue(
+            canvasSource.contains(".accessibilityAction(named: \"Adjust guide\") { model.openGuideAdjust() }"),
+            "the guide's VoiceOver custom action remains wired to the sheet"
+        )
+
+        let model = CameraViewModel(settingsStore: InMemoryCameraSettingsStore())
+        model.coordinator.onPermissionResult(.authorized)
+        model.guideAppeared(hasGuide: true)
+        model.openGuideAdjust()
+        XCTAssertTrue(model.showGuideAdjust)
+    }
+
+    func testResetRowCallsTheGuideTransformResetPath() throws {
+        let sheetSource = try cameraGuideAdjustSource()
+        let featureSource = try cameraFeatureSource()
+        let resetRow = try viewBody(named: "resetRow", in: sheetSource)
+        let screen = try XCTUnwrap(featureSource.range(of: "CameraGuideAdjustSheet("))
+        let sheetWiring = String(featureSource[screen.lowerBound...]).prefix(1_000)
+
+        XCTAssertTrue(sheetSource.contains("resetRow\n"), "the sheet includes its Reset row")
+        XCTAssertTrue(resetRow.contains("Button(\"Reset\", action: onReset)"), "activating Reset calls the row action")
+        XCTAssertTrue(sheetWiring.contains("onReset: { model.resetGuideTransform() }"), "the row action resets the model transform")
+    }
+
+    func testAdjustGuideButtonVisibilityFollowsGuideSelectionAndVisibility() throws {
+        let source = try cameraFeatureSource()
+        let controls = try viewBody(named: "topControls", in: source)
+        XCTAssertTrue(controls.contains("if guide != nil"), "the guide controls require a selected pose")
+        XCTAssertTrue(controls.contains("if model.isPoseGuideVisible"), "Adjust guide is hidden with the guide")
+        XCTAssertTrue(controls.contains("identifier: \"camera.guideAdjust.open\""))
+
+        let model = CameraViewModel(settingsStore: InMemoryCameraSettingsStore())
+        model.coordinator.onPermissionResult(.authorized)
+        model.guideAppeared(hasGuide: true)
+        XCTAssertTrue(model.isPoseGuideVisible, "selected and shown")
+        model.togglePoseGuideVisibility()
+        XCTAssertFalse(model.isPoseGuideVisible, "hidden guide removes the adjust control")
+        model.togglePoseGuideVisibility()
+        XCTAssertTrue(model.isPoseGuideVisible, "showing the guide restores the adjust control")
+    }
+
     // MARK: One Poses control
 
     /// The Poses control belongs to the scale row only, and it is drawn there exactly once. It used to
@@ -4151,6 +4218,17 @@ final class CameraChromeContractTests: XCTestCase {
                 .deletingLastPathComponent() // iosAppTests
                 .deletingLastPathComponent() // iosApp (project dir)
                 .appendingPathComponent("iosApp/Features/Camera/CameraFeature.swift"),
+            encoding: .utf8
+        )
+    }
+
+    private func cameraGuideAdjustSource() throws -> String {
+        try String(
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appendingPathComponent("iosApp/Features/Camera/CameraGuideAdjust.swift"),
             encoding: .utf8
         )
     }
