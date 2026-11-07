@@ -2201,14 +2201,27 @@ enum SavedSurfaceStage: Equatable {
 /// of calling `/api/me/saved`, so a guest can never be shown cached rows as current (FEAT-013/FEAT-014).
 struct SavedPosesScreen: View {
     @ObservedObject var model: PosesViewModel
-    var onTryPose: (CameraPoseRequest) -> Void = { _ in }
-    @StateObject private var session = SessionPresenceModel()
+    var onTryPose: (CameraPoseRequest) -> Void
+    @StateObject private var session: SessionPresenceModel
     @State private var pendingSignIn: SignInIntent?
     @Environment(\.dismiss) private var dismiss
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     /// The app root's "show the Poses catalogue" action (TC-SAV-004). `nil` outside the app, where the
     /// panel falls back to dismissing this screen.
     @Environment(\.apBrowsePoses) private var browsePoses
+
+    /// - Parameter boundary: the session seam the gate reads. Injectable so a test can mount the
+    ///   signed-out branch from an in-memory store: reaching "no stored session" by clearing the
+    ///   *shared* keychain would sign the simulator (and every later test on it) out for real.
+    init(
+        model: PosesViewModel,
+        onTryPose: @escaping (CameraPoseRequest) -> Void = { _ in },
+        boundary: SessionBoundary = ServiceLocator.sessionBoundary
+    ) {
+        self.model = model
+        self.onTryPose = onTryPose
+        _session = StateObject(wrappedValue: SessionPresenceModel(boundary: boundary))
+    }
 
     private var stage: SavedSurfaceStage {
         SavedSurfaceStage.resolve(isSessionResolved: session.isResolved, isSignedIn: session.isSignedIn)
