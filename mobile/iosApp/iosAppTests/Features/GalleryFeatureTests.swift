@@ -430,7 +430,7 @@ final class GalleryFeatureTests: XCTestCase {
 
     /// `07-photo-delete-confirm`: destructive action first, neutral cancel under it, copy that says it
     /// cannot be undone.
-    func testGalleryDeleteConfirmationFollowsTheBoardCopy() {
+    @MainActor func testGalleryDeleteConfirmationFollowsTheBoardCopy() {
         XCTAssertEqual(GalleryDeleteConfirmSpec.title, "This photo will be deleted from this iPhone.")
         XCTAssertEqual(GalleryDeleteConfirmSpec.confirmTitle, "Delete Photo")
         XCTAssertEqual(GalleryDeleteConfirmSpec.cancelTitle, "Cancel")
@@ -440,6 +440,11 @@ final class GalleryFeatureTests: XCTestCase {
             GalleryDeleteConfirmSpec.cancelIdentifier,
             "QA needs a distinct handle for each dialog action"
         )
+        let actionSheet = GalleryDeleteActionSheet.makeController(onDelete: {}, onCancel: {})
+        XCTAssertEqual(actionSheet.preferredStyle, .actionSheet)
+        XCTAssertEqual(actionSheet.view.accessibilityIdentifier, GalleryDeleteConfirmSpec.dialogIdentifier)
+        XCTAssertEqual(actionSheet.actions.map(\.title), ["Delete Photo", "Cancel"])
+        XCTAssertEqual(actionSheet.actions.map(\.style), [.destructive, .cancel])
         XCTAssertEqual(GalleryDetailCopy.failedTitle, "This photo couldn't be opened. Try again.")
         XCTAssertFalse(GalleryDetailCopy.failedTitle.contains(" of "))
     }

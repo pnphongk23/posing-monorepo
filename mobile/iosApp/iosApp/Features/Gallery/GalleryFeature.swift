@@ -248,6 +248,98 @@ enum GalleryDeleteConfirmSpec {
     static let cancelIdentifier = "gallery.detail.deleteConfirm.cancel"
 }
 
+@MainActor
+enum GalleryDeleteActionSheet {
+    static func makeController(onDelete: @escaping () -> Void, onCancel: @escaping () -> Void) -> UIAlertController {
+        let controller = UIAlertController(
+            title: GalleryDeleteConfirmSpec.title,
+            message: nil,
+            preferredStyle: .actionSheet
+        )
+        controller.view.accessibilityIdentifier = GalleryDeleteConfirmSpec.dialogIdentifier
+        controller.addAction(UIAlertAction(
+            title: GalleryDeleteConfirmSpec.confirmTitle,
+            style: .destructive,
+            handler: { _ in onDelete() }
+        ))
+        controller.addAction(UIAlertAction(
+            title: GalleryDeleteConfirmSpec.cancelTitle,
+            style: .cancel,
+            handler: { _ in onCancel() }
+        ))
+        return controller
+    }
+}
+
+@MainActor
+struct GalleryDeleteActionSheetPresenter: UIViewControllerRepresentable {
+    @Binding var isPresented: Bool
+    let onDelete: () -> Void
+
+    func makeUIViewController(context: Context) -> UIViewController {
+        let controller = UIViewController()
+        controller.view.backgroundColor = .clear
+        controller.view.isUserInteractionEnabled = false
+        controller.view.accessibilityElementsHidden = true
+        return controller
+    }
+
+    func updateUIViewController(_ presenter: UIViewController, context: Context) {
+        guard isPresented else {
+            context.coordinator.isPresenting = false
+            return
+        }
+        guard presenter.viewIfLoaded?.window != nil,
+              presenter.presentedViewController == nil,
+              !context.coordinator.isPresenting else { return }
+
+        context.coordinator.isPresenting = true
+        let controller = GalleryDeleteActionSheet.makeController(
+            onDelete: onDelete,
+            onCancel: { self.isPresented = false }
+        )
+        if let popover = controller.popoverPresentationController,
+           UIDevice.current.userInterfaceIdiom == .pad {
+            popover.sourceView = presenter.view
+            popover.sourceRect = CGRect(
+                x: presenter.view.bounds.midX,
+                y: presenter.view.bounds.midY,
+                width: 0,
+                height: 0
+            )
+            popover.permittedArrowDirections = []
+        } else if let popover = controller.popoverPresentationController {
+            // iOS 26 suppresses the visible Cancel action for inline, source-anchored action sheets.
+            // A centered iPhone action sheet keeps the explicit Cancel choice required by the board.
+            popover.sourceView = nil
+            popover.sourceRect = .zero
+            popover.barButtonItem = nil
+            popover.permittedArrowDirections = []
+        }
+        presenter.present(controller, animated: true) {
+            controller.presentationController?.delegate = context.coordinator
+        }
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onDismiss: { self.isPresented = false })
+    }
+
+    final class Coordinator: NSObject, UIAdaptivePresentationControllerDelegate {
+        var isPresenting = false
+        private let onDismiss: () -> Void
+
+        init(onDismiss: @escaping () -> Void) {
+            self.onDismiss = onDismiss
+        }
+
+        func presentationControllerDidDismiss(_ presentationController: UIPresentationController) {
+            isPresenting = false
+            onDismiss()
+        }
+    }
+}
+
 /// Machine handles on the photo-detail screen. The identifiers are additive (the screen used to
 /// carry labels only); the VoiceOver page label is now count-free (F3).
 enum GalleryDetailAccessibility {
@@ -1513,16 +1605,17 @@ struct GalleryDetailPager: View {
             }
             .background(AP.Color.background.ignoresSafeArea())
             .neoHiddenNavigationBar()
-            .confirmationDialog(
-                GalleryDeleteConfirmSpec.title,
-                isPresented: $showsDeleteConfirm,
-                titleVisibility: .visible
-            ) {
-                Button(GalleryDeleteConfirmSpec.confirmTitle, role: .destructive) {
-                    onDelete(current)
-                    onDismiss()
-                }
-                Button(GalleryDeleteConfirmSpec.cancelTitle, role: .cancel) {}
+            .overlay {
+                GalleryDeleteActionSheetPresenter(
+                    isPresented: $showsDeleteConfirm,
+                    onDelete: {
+                        onDelete(current)
+                        onDismiss()
+                    }
+                )
+                .frame(width: 0, height: 0)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
             }
             .sheet(item: $shareItem) { payload in
                 ShareSheet(items: [payload.url])
