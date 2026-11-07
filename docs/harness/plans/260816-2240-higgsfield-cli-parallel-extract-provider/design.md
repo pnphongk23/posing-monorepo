@@ -22,7 +22,7 @@ and synchronous `--wait` HTTP wrappers as phase 1.
 | 4 | Docker installs Higgsfield CLI globally (`npm install -g`), not `npx`. Railway secret/volume for `credentials.json` / `HIGGSFIELD_CREDENTIALS_PATH`. |
 | 5 | **Async jobs phase 1** (enqueue + poll). No sync `--wait` HTTP wrapper in phase 1. |
 | 6 | Higgsfield **only for extract jobs**. Same `extraction_jobs` table; worker switches engine by provider. |
-| 7 | Default Higgsfield model: **`kling_omni_image`** (code default in `higgsfieldCliProvider.ts`). |
+| 7 | Default Higgsfield model: **`seedream_v5_lite`** (Seedream 5.0 Lite) — `DEFAULT_MODEL` in `higgsfieldCliProvider.ts`; override order `options.model` → `HIGGSFIELD_CLI_MODEL` → `DEFAULT_MODEL`. This supersedes the earlier `kling_omni_image` default written in the first draft. |
 | 8 | **S1 (prod):** scheduled `higgsfield auth status` / `account` probe; alert human on failure; human re-login on headed machine, upload credentials to Railway. Do **not** cron `higgsfield auth login` in headless Docker. |
 | 9 | **S3 (spike, non-blocking):** writable volume + periodic CLI to test credential refresh-writes lasting >1 day. 48h evidence. Unproven — if fails, S1 stays prod path. |
 | 10 | Generalize `GEMINI_*` error codes to provider-neutral codes where the API contract must stay truthful. |
@@ -89,11 +89,19 @@ Factory reference (pattern only, not implementation target):
    `os.tmpdir()` / job-scoped directory (`/tmp/extract-jobs/<jobId>/source.png`).
 2. **Spawn CLI** (no long-lived daemon):
    ```bash
-   higgsfield generate create kling_omni_image \
+   higgsfield generate create seedream_v5_lite \
+     --prompt "<DEFAULT_EXTRACT_PROMPT>" \
      --image <tempPath> \
-     --wait \
+     --quality high \
+     --aspect-ratio <nearest allowed ratio for source dims> \
+     --wait --wait-timeout 9m \
      --json
    ```
+   Seedream models reject `--resolution`, so the provider sends `--quality` instead
+   (`high` for Seedream, `medium` for GPT-style models) and picks `--aspect-ratio`
+   from the source image's nearest allowed ratio for the model. Model selection is
+   `options.model` → `HIGGSFIELD_CLI_MODEL` → `DEFAULT_MODEL` = `seedream_v5_lite`
+   (`higgsfieldCliProvider.ts` L17-31, L247, L263-284).
    Historical test fixture `higgsfield-gpt_image_2-success.json` records an earlier
    `gpt_image_2` response shape for URL-parse regression tests.
 3. **Parse stdout JSON:** Extract result asset URL (exact field TBD during WI-3;

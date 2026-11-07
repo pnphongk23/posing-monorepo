@@ -61,7 +61,7 @@ createdBy: Harness CLI
 
 ## Overview
 
-Introduce a second pose-extraction engine — **Higgsfield CLI** (`kling_omni_image`
+Introduce a second pose-extraction engine — **Higgsfield CLI** (`seedream_v5_lite`
 default model, spawn-per-job) — alongside the existing **Gemini native REST** path, unified
 behind a `PoseExtractorProvider` factory. Canonical extract for mobile and admin
 moves to **async `ExtractionJob` enqueue + worker poll** (phase 1); the worker
@@ -99,7 +99,7 @@ reopened during Cook without a new Decision.
 | --- | --- |
 | Close authority; async extract + dual-provider processing in FEAT-004; engine selection in FEAT-009/DEC-001; FEAT-007 invokes FEAT-009; provider-neutral errors in API spec | 1 |
 | `PoseExtractorProvider` factory (`GeminiNativeProvider`, `HiggsfieldCliProvider`) | 2 |
-| Canonical extract → `ExtractionJob` + worker poll; CLI `kling_omni_image` spawn | 3 |
+| Canonical extract → `ExtractionJob` + worker poll; CLI `seedream_v5_lite` spawn | 3 |
 | FEAT-009 admin provider toggle (Admin Web invokes; no credential UI) | 4 |
 | Docker global CLI install; Railway creds volume; S1 auth probe runbook | 5 |
 | S3 48h credential refresh spike (non-blocking) | 6 |
@@ -128,7 +128,7 @@ reopened during Cook without a new Decision.
 | `PoseExtractorProvider` interface pattern documented | **Verified** | sub2api phase-01 research doc |
 | FEAT-004, FEAT-005, FEAT-007 status is `approved` | **Verified** | feature frontmatter |
 | FEAT-009 status is `approved` | **Verified** | `FEAT-009-configure-extraction-provider.md` |
-| Higgsfield CLI default model `kling_omni_image`; JSON result URL parse | **Verified** | `higgsfieldCliProvider.ts` `DEFAULT_MODEL`; historical fixture `higgsfield-gpt_image_2-success.json` for parse tests |
+| Higgsfield CLI default model `seedream_v5_lite`; JSON result URL parse | **Verified** | `higgsfieldCliProvider.ts` `DEFAULT_MODEL`; historical fixture `higgsfield-gpt_image_2-success.json` for parse tests |
 | S1 auth probe failure drill documented | **Verified** | `s1-auth-runbook.md` WI-7 section; invalid probe exit 1 |
 | S1 auth probe success drill with valid credentials | **Unresolved** | **Owner: Lead/operator** — requires headed login + Railway volume creds; not in CI |
 | S3 credential refresh-writes persist >1 day on volume | **Blocked** | **Owner: WI-6** — 48h spike; S1 remains prod path |
