@@ -13,9 +13,8 @@ final class CameraViewModel: ObservableObject {
     @Published var guideOpacity = 0.5
     @Published var guideFlipped = false
     @Published var isGridVisible = false
-    /// `camera-live.html:87` — `<span id="flash-value">Auto</span>`: the prototype's shipped default
-    /// is `Auto`, and AC4's cycle `Off -> Auto -> On -> Off` does not pin the entry point.
-    @Published var flashSetting: CameraFlashSetting = .auto
+    /// Tools popover default from camera changes line 38 is Off.
+    @Published var flashSetting: CameraFlashSetting = .off
     /// `.nb-camera-tools-menu` — anchored popup, not a bottom sheet.
     @Published var showCameraTools = false
     /// `.nb-pose-picker-sheet` — camera-local bottom sheet, not a pushed route.
@@ -28,10 +27,14 @@ final class CameraViewModel: ObservableObject {
     @Published var timerSetting: CameraTimerSetting = .off
     /// Saved capture aspect, persisted like the other settings.
     @Published var aspectRatio: CameraAspectRatio = .threeFour
+    /// Ratio is intentionally excluded: only non-default Flash, Grid or Timer settings light the Tools dot.
+    var hasNonDefaultTools: Bool {
+        flashSetting != .off || isGridVisible || timerSetting != .off
+    }
     /// `pose-visibility-row`: Shown / Hidden for the selected pose reference.
     @Published var isPoseGuideVisible = true
     /// `pose-line-color-black` / `pose-line-color-white`.
-    @Published var guideLineColor: GuideLineColor = .pink
+    @Published var guideLineColor: GuideLineColor = .white
     /// Pinch / rotate / drag placement of the pose reference, committed when a gesture ends.
     @Published var guideTransform = GuideTransform()
     /// Transient capture feedback; cleared by `statusClearTask`.
@@ -377,6 +380,11 @@ final class CameraViewModel: ObservableObject {
     func togglePoseGuideVisibility() {
         guard cameraControlsEnabled else { return }
         isPoseGuideVisible.toggle()
+    }
+
+    func setPoseGuideVisibility(_ isVisible: Bool) {
+        guard cameraControlsEnabled else { return }
+        isPoseGuideVisible = isVisible
     }
 
     /// Mirror: flips the pose reference horizontally. The reference is what the user lines up against,
@@ -1148,10 +1156,12 @@ struct CameraScreen: View {
                             scale: model.guideTransform.scale,
                             isFlipped: model.guideFlipped,
                             isEnabled: model.cameraControlsEnabled,
+                            isGuideVisible: model.isPoseGuideVisible,
                             onOpacityChange: { model.setGuideOpacity($0) },
                             onLineColorChange: { model.setGuideLineColor($0) },
                             onScaleChange: { model.setGuideScale($0) },
                             onFlip: { model.toggleGuideMirror() },
+                            onGuideVisibilityChange: { model.setPoseGuideVisibility($0) },
                             onDone: { model.closeGuideAdjust() }
                         )
                     }
@@ -1266,9 +1276,10 @@ struct CameraScreen: View {
             status: model.statusMessage,
             statusTone: model.statusTone,
             timerCountdown: model.timerCountdown,
-            selectedPoseID: guide?.id,
-            selectedPoseName: guide?.name,
-            showsPicker: isAuthorized,
+              selectedPoseID: guide?.id,
+              selectedPoseName: guide?.name,
+              selectedPoseThumbnailURL: guide?.imageURL,
+              showsPicker: isAuthorized,
             zoomFactor: model.zoomFactor,
             zoomRange: model.zoomRange,
             onOpenPosePicker: { model.openPosePicker() },
@@ -1278,8 +1289,9 @@ struct CameraScreen: View {
             onSwitchCamera: { model.switchCamera() },
             onDismissStatus: { model.dismissStatusMessage() },
             onCancelTimer: { model.cancelTimer() },
-            safeBottom: safeAreaInsets.bottom
-        )
+              safeBottom: safeAreaInsets.bottom,
+              showsBottomGradient: model.aspectRatio == .nineSixteen
+          )
     }
 
     private func dismissCameraTools() {
@@ -1321,38 +1333,67 @@ struct CameraScreen: View {
         }
     }
 
-    /// The camera's top chrome: Close on the left, the guide's eye when a reference is up, tools on the
-    /// right. The old "Choose a pose" dropdown pill is gone (owner device feedback): picking a pose is
-    /// the Poses control in the scale row, which opens the strip and its Browse entry.
+    /// Close is a glass circle; the guide entry and Tools share the camera's glass capsule.
     private var topControls: some View {
         HStack(alignment: .center, spacing: AP.Space.space8) {
-            CameraSurfaceControl(
-                systemImage: "xmark",
-                accessibilityLabel: "Close camera",
-                identifier: "camera.close",
-                action: onClose
-            )
+            Button(action: onClose) {
+                Image(systemName: "xmark")
+                    .font(AP.Font.heading)
+                    .foregroundStyle(Color.white)
+                    .frame(width: AP.HitTarget.minimum, height: AP.HitTarget.minimum)
+                    .background(CameraGlassBackground(shape: .circle))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Close camera")
+            .accessibilityIdentifier("camera.close")
 
             Spacer(minLength: 0)
 
-            if guide != nil {
-                CameraSurfaceControl(
-                    systemImage: model.isPoseGuideVisible ? "eye" : "eye.slash",
-                    isSelected: !model.isPoseGuideVisible,
-                    accessibilityLabel: model.isPoseGuideVisible ? "Hide pose guide" : "Show pose guide",
-                    identifier: "camera.guideToggle",
-                    action: { model.togglePoseGuideVisibility() }
-                )
-                .accessibilityValue(model.isPoseGuideVisible ? "Shown" : "Hidden")
-            }
+            HStack(spacing: 0) {
+                Button(action: { model.openGuideAdjust() }) {
+                    Image(systemName: "eye")
+                        .font(AP.Font.heading)
+                        .foregroundStyle(Color.white)
+                        .frame(width: AP.HitTarget.minimum, height: AP.HitTarget.minimum)
+                        .opacity(guide == nil ? 0.35 : 1)
+                }
+                .buttonStyle(.plain)
+                .disabled(guide == nil || !model.cameraControlsEnabled)
+                .accessibilityLabel("Adjust guide")
+                .accessibilityValue(guide == nil ? "Unavailable. Choose a pose first" : "Open guide settings")
+                .accessibilityIdentifier("camera.guideToggle")
 
-            CameraSurfaceControl(
-                systemImage: "slider.horizontal.3",
-                accessibilityLabel: "Camera settings",
-                identifier: "camera.tools",
-                action: { model.toggleCameraTools() }
-            )
-            .focused($isToolsButtonFocused)
+                Rectangle()
+                    .fill(Color.white.opacity(0.32))
+                    .frame(width: 1, height: 24)
+                    .accessibilityHidden(true)
+
+                Button(action: { model.toggleCameraTools() }) {
+                    Image(systemName: "slider.horizontal.3")
+                        .font(AP.Font.heading)
+                        .foregroundStyle(Color.white)
+                        .frame(width: AP.HitTarget.minimum, height: AP.HitTarget.minimum)
+                        .overlay(alignment: .topTrailing) {
+                            if model.hasNonDefaultTools {
+                                Circle()
+                                    .fill(AP.Color.accent)
+                                    .frame(width: 8, height: 8)
+                                    .overlay(Circle().stroke(Color.black.opacity(0.64), lineWidth: 1))
+                                    .offset(x: -8, y: 8)
+                                    .accessibilityHidden(true)
+                            }
+                        }
+                }
+                .buttonStyle(.plain)
+                .focused($isToolsButtonFocused)
+                .accessibilityLabel("Camera settings")
+                .accessibilityValue(model.hasNonDefaultTools ? "Custom settings" : "Default settings")
+                .accessibilityIdentifier("camera.tools")
+            }
+            .padding(.horizontal, AP.Space.space4)
+            .frame(height: AP.HitTarget.minimum)
+            .background(CameraGlassBackground(shape: .capsule))
+            .accessibilityElement(children: .contain)
         }
     }
 
@@ -1386,18 +1427,6 @@ enum CameraProto {
     static let shutterSize: CGFloat = 72
 }
 
-/// A token's **light** value as a fixed colour.
-///
-/// The camera forces a dark colour scheme on itself (its canvas, rail and zoom band are dark surfaces), and the AP
-/// tokens are dynamic `UIColor`s that follow that scheme. The top chrome is the exception: the B6 boards draw it as
-/// white pills with dark icons, so those three buttons state their light token explicitly instead of following the
-/// screen's scheme.
-enum APLightChrome {
-    static func token(_ token: APColorToken) -> SwiftUI.Color {
-        SwiftUI.Color(uiColor: token.spec(for: .light).uiColor)
-    }
-}
-
 // MARK: - Camera chrome (AP tokens, forced dark)
 
 /// Pressed = one fill step plus `scale 0.97`; Reduce Motion keeps the fill and drops the scale.
@@ -1407,8 +1436,6 @@ private struct CameraPressStyle: ButtonStyle {
     var shape: CameraPillShape = .rounded16
     /// `nil` keeps the surface fill; a chip that sits on the bar's panel passes `controlFill`.
     var restingFill: SwiftUI.Color? = nil
-    /// The top chrome is the light boards' chrome: white pills with dark ink, whatever the camera's own scheme is.
-    var isLightChrome: Bool = false
 
     func makeBody(configuration: Configuration) -> some View {
         CameraPressBody(
@@ -1416,7 +1443,6 @@ private struct CameraPressStyle: ButtonStyle {
             isSelected: isSelected,
             shape: shape,
             restingFill: restingFill,
-            isLightChrome: isLightChrome
         )
     }
 }
@@ -1431,7 +1457,6 @@ private struct CameraPressBody: View {
     let isSelected: Bool
     let shape: CameraPillShape
     var restingFill: SwiftUI.Color? = nil
-    var isLightChrome: Bool = false
 
     @Environment(\.isEnabled) private var isEnabled
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -1445,13 +1470,6 @@ private struct CameraPressBody: View {
     }
 
     private var fill: SwiftUI.Color {
-        if isLightChrome {
-            // The light boards' pills: white, one step darker while pressed, the light accent tint when selected.
-            guard isEnabled else { return APLightChrome.token(APColorTokens.controlFill) }
-            if configuration.isPressed { return APLightChrome.token(APColorTokens.controlFillPressed) }
-            return isSelected ? APLightChrome.token(APColorTokens.selectedBackground)
-                : APLightChrome.token(APColorTokens.surface)
-        }
         guard isEnabled else { return AP.Color.controlFill }
         guard configuration.isPressed else {
             if let restingFill { return restingFill }
@@ -1472,42 +1490,24 @@ private struct CameraPressBody: View {
     }
 }
 
-/// One 44 pt surface pill with no resting border — Close, the guide's eye and the tools.
-///
-/// Drawn as the light B6 boards draw it: a white pill (light `surface`), dark ink (light `primaryText`), the light
-/// accent tint when selected. Measured on `05-camera-live-guide.png` at the 393 reference: 43 pt pill, radius ~12,
-/// white fill, 13 pt dark glyph. The 44 pt hit target is the app's, not the board's 43.
-private struct CameraSurfaceControl: View {
-    let systemImage: String
-    var isSelected = false
-    let accessibilityLabel: String
-    var identifier: String? = nil
-    let action: () -> Void
+private enum CameraGlassShape {
+    case circle, capsule
+}
 
-    @Environment(\.isEnabled) private var isEnabled
+private struct CameraGlassBackground: View {
+    let shape: CameraGlassShape
 
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: systemImage)
-                .font(AP.Font.heading)
-                .foregroundStyle(labelColor)
-                .frame(width: AP.HitTarget.minimum, height: AP.HitTarget.minimum)
+    @ViewBuilder var body: some View {
+        switch shape {
+        case .circle:
+            Circle()
+                .fill(.ultraThinMaterial)
+                .overlay(Circle().fill(Color.black.opacity(0.64)))
+        case .capsule:
+            Capsule()
+                .fill(.ultraThinMaterial)
+                .overlay(Capsule().fill(Color.black.opacity(0.64)))
         }
-        .buttonStyle(
-            CameraPressStyle(
-                isSelected: isSelected,
-                shape: .rounded(CameraProto.topControlRadius),
-                isLightChrome: true
-            )
-        )
-        .accessibilityLabel(accessibilityLabel)
-        .apIdentifier(identifier)
-    }
-
-    private var labelColor: SwiftUI.Color {
-        guard isEnabled else { return APLightChrome.token(APColorTokens.disabled) }
-        return isSelected ? APLightChrome.token(APColorTokens.selectedForeground)
-            : APLightChrome.token(APColorTokens.primaryText)
     }
 }
 
@@ -1738,6 +1738,7 @@ struct CameraBottomBar: View {
     /// The selected reference's name, announced by the Poses control (the strip that used to draw it is
     /// retired).
     let selectedPoseName: String?
+    var selectedPoseThumbnailURL: URL? = nil
     let showsPicker: Bool
     /// The zoom the lens is at, and the range it can serve: one control, continuous.
     let zoomFactor: CGFloat
@@ -1751,6 +1752,7 @@ struct CameraBottomBar: View {
     let onCancelTimer: () -> Void
     /// The home indicator's inset: the rail sits above it, while the preview keeps running underneath.
     let safeBottom: CGFloat
+    var showsBottomGradient = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -1782,13 +1784,15 @@ struct CameraBottomBar: View {
         // The surface floats over the preview: a gradient fades the photo into the controls instead of an
         // opaque bar cutting the viewfinder in half. On 9:16 the frame runs under this band, which is exactly
         // where the gradient earns its keep.
-        .background(
-            LinearGradient(
-                colors: [Color.black.opacity(0), Color.black.opacity(0.45), Color.black.opacity(0.6)],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-        )
+        .background {
+            if showsBottomGradient {
+                LinearGradient(
+                    colors: [Color.black.opacity(0), Color.black.opacity(0.45), Color.black.opacity(0.6)],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            }
+        }
         .padding(.bottom, safeBottom)
     }
 
@@ -1827,7 +1831,6 @@ struct CameraBottomBar: View {
             .padding(.top, AP.Space.space12)
             .padding(.bottom, AP.Space.space8)
             .frame(maxWidth: .infinity)
-            .background(Color.black.opacity(0.5))
             .accessibilityElement(children: .contain)
     }
 
@@ -1836,21 +1839,40 @@ struct CameraBottomBar: View {
     /// which reference is up without drawing a row of thumbnails.
     private var posesControl: some View {
         Button(action: onOpenPosePicker) {
-            HStack(spacing: AP.Space.space4) {
-                Image(systemName: "person.crop.rectangle.stack")
-                    .font(AP.Font.caption.weight(.semibold))
-                Text(CameraChromeLayout.posesControlLabel)
-                    .font(AP.Font.supporting)
+            HStack(spacing: AP.Space.space8) {
+                if let selectedPoseID, let selectedPoseThumbnailURL {
+                    KFImage(selectedPoseThumbnailURL)
+                        .setProcessor(AppImage.downsample(squarePoints: 28))
+                        .placeholder { AP.Color.controlFill }
+                        .onFailureView { AP.Color.controlFill }
+                        .loadDiskFileSynchronously(false)
+                        .contentConfigure { image, _ in image.resizable().aspectRatio(contentMode: .fill) }
+                        .frame(width: 28, height: 28)
+                          .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+                        .accessibilityHidden(true)
+                    Text(selectedPoseName ?? "")
+                        .font(AP.Font.supporting.weight(.semibold))
+                        .lineLimit(1)
+                } else {
+                    Image(systemName: "person.crop.rectangle.stack")
+                        .font(AP.Font.caption.weight(.semibold))
+                        .accessibilityHidden(true)
+                    Text(CameraChromeLayout.posesControlLabel)
+                        .font(AP.Font.supporting)
+                }
             }
             .foregroundStyle(AP.Color.primaryText)
-            .padding(.horizontal, AP.Space.space16)
-            .frame(minHeight: AP.HitTarget.minimum)
+            .padding(.horizontal, AP.Space.space12)
+            .frame(height: AP.HitTarget.minimum)
+            .background(CameraGlassBackground(shape: .capsule))
         }
-        .buttonStyle(CameraPressStyle(shape: .capsule, restingFill: AP.Color.controlFill))
+        .buttonStyle(.plain)
         .disabled(!controlsEnabled)
         .opacity(controlsEnabled ? 1 : 0.45)
         .accessibilityLabel(selectedPoseID == nil ? "Choose a pose" : "Change pose")
-        .accessibilityValue(CameraChromeLayout.posesControlValue(selectedPoseName: selectedPoseName))
+        .accessibilityValue(selectedPoseID == nil
+            ? "Choose a pose"
+            : CameraChromeLayout.posesControlValue(selectedPoseName: selectedPoseName))
         .accessibilityIdentifier(CameraChromeLayout.posesControlIdentifier)
     }
 
@@ -1860,13 +1882,15 @@ struct CameraBottomBar: View {
     /// keeps its right end.
     private var scaleRow: some View {
         HStack(spacing: AP.Space.space12) {
-            CameraZoomSlider(
-                factor: zoomFactor,
-                range: zoomRange,
-                isEnabled: controlsEnabled,
-                onChange: onZoomChange
-            )
-            .frame(maxWidth: .infinity)
+              CameraZoomSlider(
+                  factor: zoomFactor,
+                  range: zoomRange,
+                  isEnabled: controlsEnabled,
+                  onChange: onZoomChange
+              )
+              .frame(maxWidth: .infinity)
+              .frame(height: CameraZoomTrackGeometry.totalHeight)
+              .background(CameraGlassBackground(shape: .capsule))
 
             if CameraChromeLayout.showsPosesControl(showsPicker: showsPicker) {
                 posesControl

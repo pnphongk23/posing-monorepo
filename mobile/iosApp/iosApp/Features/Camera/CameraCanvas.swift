@@ -17,10 +17,10 @@ struct CameraStageFrame: Equatable {
     static let shortRatioTopInset: CGFloat = 45
     /// A 9:16 frame hangs from the safe-area top itself; the top controls sit on the photo.
     static let tallRatioTopInset: CGFloat = 1
-    /// The dim over everything the shutter is leaving out. The owner's default (65 %), not the artboard's.
-    static let dimOpacity: Double = 0.65
-    /// The frame's edge is a guide, not a border: white at 40 %, one point.
-    static let edgeOpacity: Double = 0.4
+    /// One 55% black layer over everything the shutter leaves out (camera changes, line 8).
+    static let dimOpacity: Double = 0.55
+    /// White corner guides use 90% opacity and a 2pt stroke (camera changes, line 14).
+    static let edgeOpacity: Double = 0.9
 
     let screen: CGSize
     let frame: CGRect
@@ -59,6 +59,44 @@ struct CameraStageFrameMask: Shape {
         var path = Path()
         path.addRect(rect)
         path.addRect(frame.intersection(rect))
+        return path
+    }
+}
+
+/// Four rounded 22pt corner guides inset 16pt from the photo edge; deliberately no continuous border.
+struct CameraFrameCorners: Shape {
+    static let inset: CGFloat = 16
+    static let arm: CGFloat = 22
+    static let radius: CGFloat = 8
+
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        let left = rect.minX
+        let right = rect.maxX
+        let top = rect.minY
+        let bottom = rect.maxY
+        let arm = Self.arm
+        let radius = Self.radius
+
+        path.move(to: CGPoint(x: left + arm, y: top))
+        path.addLine(to: CGPoint(x: left + radius, y: top))
+        path.addQuadCurve(to: CGPoint(x: left, y: top + radius), control: CGPoint(x: left, y: top))
+        path.addLine(to: CGPoint(x: left, y: top + arm))
+
+        path.move(to: CGPoint(x: right - arm, y: top))
+        path.addLine(to: CGPoint(x: right - radius, y: top))
+        path.addQuadCurve(to: CGPoint(x: right, y: top + radius), control: CGPoint(x: right, y: top))
+        path.addLine(to: CGPoint(x: right, y: top + arm))
+
+        path.move(to: CGPoint(x: left, y: bottom - arm))
+        path.addLine(to: CGPoint(x: left, y: bottom - radius))
+        path.addQuadCurve(to: CGPoint(x: left + radius, y: bottom), control: CGPoint(x: left, y: bottom))
+        path.addLine(to: CGPoint(x: left + arm, y: bottom))
+
+        path.move(to: CGPoint(x: right, y: bottom - arm))
+        path.addLine(to: CGPoint(x: right, y: bottom - radius))
+        path.addQuadCurve(to: CGPoint(x: right - radius, y: bottom), control: CGPoint(x: right, y: bottom))
+        path.addLine(to: CGPoint(x: right - arm, y: bottom))
         return path
     }
 }
@@ -191,11 +229,11 @@ struct CameraCanvas: View {
         }
     }
 
-    /// The frame's edge: one white hairline at 40 %. Drawn inside the rect, so it never spills on the photo.
+    /// The frame is marked by four white corner guides, not a continuous outline.
     private var frameEdge: some View {
-        Rectangle()
-            .strokeBorder(Color.white.opacity(CameraStageFrame.edgeOpacity), lineWidth: 1)
-            .frame(width: frame.width, height: frame.height)
+        CameraFrameCorners()
+            .stroke(Color.white.opacity(CameraStageFrame.edgeOpacity), style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+            .frame(width: frame.width - CameraFrameCorners.inset * 2, height: frame.height - CameraFrameCorners.inset * 2)
             .position(x: frame.midX, y: frame.midY)
             .allowsHitTesting(false)
             .accessibilityHidden(true)

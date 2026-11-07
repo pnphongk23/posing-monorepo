@@ -25,9 +25,9 @@ struct CameraSettings: Equatable, Sendable {
     /// C3-Q2: no control exists for it yet, so it stays `false`, but it is persisted as D8 says.
     var guideFlipped = false
     var isGridVisible = false
-    var flash: CameraFlashSetting = .auto
+    var flash: CameraFlashSetting = .off
     var isPoseGuideVisible = true
-    var lineColor: GuideLineColor = .pink
+    var lineColor: GuideLineColor = .white
     var transform = Transform()
     var zoom: CameraZoomLevel = .one
     /// The exact zoom the lens was at. `zoom` keeps every pre-existing row readable; the factor adds
@@ -53,9 +53,9 @@ struct CameraSettings: Equatable, Sendable {
         guideOpacity: Double = 0.5,
         guideFlipped: Bool = false,
         isGridVisible: Bool = false,
-        flash: CameraFlashSetting = .auto,
+        flash: CameraFlashSetting = .off,
         isPoseGuideVisible: Bool = true,
-        lineColor: GuideLineColor = .pink,
+        lineColor: GuideLineColor = .white,
         transform: Transform = Transform(),
         zoom: CameraZoomLevel = .one,
         zoomFactor: Double? = nil,
@@ -149,9 +149,7 @@ extension CameraSettings: Codable {
         flash = Self.flash(from: (try? container.decodeIfPresent(String.self, forKey: .flash)) ?? nil)
         isPoseGuideVisible =
             (try? container.decodeIfPresent(Bool.self, forKey: .isPoseGuideVisible)) ?? defaults.isPoseGuideVisible
-        // A row from before the palette says `white`; `GuideLineColor.stored` maps it to the sheet's default.
         lineColor = GuideLineColor.stored((try? container.decodeIfPresent(String.self, forKey: .lineColor)) ?? nil)
-            ?? defaults.lineColor
         transform = ((try? container.decodeIfPresent(Transform.self, forKey: .transform)) ?? nil)
             ?? defaults.transform
         zoom = ((try? container.decodeIfPresent(Int.self, forKey: .zoom)) ?? nil)
@@ -214,8 +212,9 @@ extension CameraSettings: Codable {
     private static func flash(from raw: String?) -> CameraFlashSetting {
         switch raw {
         case "off": return .off
+        case "auto": return .auto
         case "on": return .on
-        default: return .auto
+        default: return .off
         }
     }
 
