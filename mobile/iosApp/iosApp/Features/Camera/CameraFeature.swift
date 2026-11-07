@@ -1339,7 +1339,7 @@ struct CameraScreen: View {
             if guide != nil {
                 if model.isPoseGuideVisible {
                     CameraSurfaceControl(
-                        systemImage: "slider.horizontal.below.rectangle",
+                        systemImage: "figure.stand",
                         accessibilityLabel: "Adjust guide",
                         identifier: "camera.guideAdjust.open",
                         action: { model.openGuideAdjust() }
