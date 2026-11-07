@@ -25,8 +25,18 @@ Production uses the **S1** path (design decision #8): a scheduled probe validate
 ### Single credential owner
 
 - The credential exists **only** on the Railway volume (`/app/higgsfield/credentials.json`). Never copy the production file back to a laptop, never keep a second copy that can be used against the same refresh token.
-- All CLI spawns inside the server process are serialised through one queue (`withCredentialLock`), so a job can never race the probe or another job on the same refresh token.
-- There is **no cron that refreshes the credential**. The scheduled job below only *probes*; refresh happens inside the CLI when it runs.
+- All CLI spawns inside the server process are serialised through one queue (`withCredentialLock`), so a job can never race the keepalive, the probe or another job on the same refresh token.
+- Refresh happens inside the CLI when the worker runs it: a job, or the in-process keepalive
+  (`HIGGSFIELD_KEEPALIVE`, every 15 min, only when the credential is expired or within 10 min of it,
+  and only when no job holds the credential). There is **no external cron that refreshes**.
+
+### Accepted risks (do not "fix" these silently)
+
+| Risk | Why accepted | Rule |
+| --- | --- | --- |
+| The credential mutex is per process | API and worker are separate Node processes; cross-process safety relies on the CLI's own `credentials.json.lock` | Keep `numReplicas = 1` in `railway.toml` |
+| The probe and manual `railway shell` commands bypass the mutex | Ops access must stay possible during an incident | **Never run `higgsfield` manually on prod while jobs are running.** If you must, back the file up first: `cp -p credentials.json backup/manual-$(date +%s).json` |
+| A dead refresh token cannot be revived by code | The refresh token is single-use and server-side TTL is not ours | Watch for `/api/health` `degraded` / probe `exit 2` and re-login early |
 
 ## Architecture
 

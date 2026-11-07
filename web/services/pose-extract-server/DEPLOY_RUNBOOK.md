@@ -233,6 +233,64 @@ If `prepare:false` **plus** loop-level resilience (A + C) does not stop the cras
 
 ---
 
+## 4b. Higgsfield provider auth (deploy checklist)
+
+The provider credential is a single OAuth file on the volume; the CLI rotates its refresh token on
+write and **deletes the file when a refresh fails**, so the deploy is only safe when a backup exists.
+
+**Before deploying**
+
+1. **Delete any deployment still in `BUILDING`** on the Railway service (Deployments → the running
+   build → Delete). A stale build can finish after yours and take the traffic.
+2. Check the backup next to the credential — names and modes only, never the contents:
+
+```bash
+railway shell --service <pose-extract-server>
+ls -l /app/higgsfield/credentials.json /app/higgsfield/backup/credentials.latest.json
+# EXPECTED: both files exist, mode 600 (-rw-------)
+# MATCH/MISMATCH only; do not print the file:
+if [ "$(shasum -a 256 /app/higgsfield/credentials.json | cut -d" " -f1)" = \
+     "$(shasum -a 256 /app/higgsfield/backup/credentials.latest.json | cut -d" " -f1)" ]; then
+  echo MATCH
+else
+  echo MISMATCH   # backup is older (expected right after a refresh) — still fine, just report it
+fi
+```
+
+If the backup file is missing, take one before deploying:
+`cp -p /app/higgsfield/credentials.json /app/higgsfield/backup/credentials.latest.json && chmod 600 /app/higgsfield/backup/credentials.latest.json`
+
+**After deploying**
+
+3. Provider auth must be healthy:
+
+```bash
+curl -sS https://<PUBLIC_HOST>/api/health/provider | jq '{status, state: .provider.state, lastAuthError: .provider.lastAuthError}'
+# EXPECTED: HTTP 200 and status "ok" (or "warn" when the token has been expired >48h)
+```
+
+4. Run one real job end to end (PNG or JPEG source), then confirm it succeeded:
+
+```bash
+# enqueue (replace the token/ids; never paste secrets into a ticket)
+curl -sS -X POST https://<PUBLIC_HOST>/api/extract-pose \
+  -H "Authorization: Bearer <account-jwt>" \
+  -F "image=@/tmp/source.png"
+# EXPECTED: 202/200 with a jobId, then GET /api/extract-jobs/<jobId> until status=succeeded
+```
+
+5. Restart the service once, then run one more real job the same way. This proves the credential
+   survives a fresh container (the backup/state files live on the volume, not in the image).
+
+6. Confirm the worker recorded a success, not a failure:
+   `/api/health/provider` shows `provider.lastAuthError: null` and a recent `lastSuccessAt`.
+
+**Rollback**
+
+7. If provider auth or extraction regresses, roll back to the last known-good deployment
+   **`727b954`** (`chore(release): bump build to 24`) using the procedure in section 4, then re-check
+   `/api/health/provider` and run one real job.
+
 ## 5. Notes / out-of-scope
 
 - **Not changed:** `Dockerfile` `wait -n` coupling, mobile/iOS files, schema/data migrations, domain/URLs, and any files outside `pose-extract-server`.
