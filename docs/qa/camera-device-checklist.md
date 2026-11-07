@@ -112,6 +112,13 @@ TC-PAY-017/018/019 (and TC-PAY-014 for Restore) in `docs/qa/test-cases/paywall-p
 - [ ] **Expected:** collapsed = thumbnail · shutter · flip only, with the Poses button still there; re-opening restores the
   strip. Force-quit and reopen the camera → it comes back in the state you left.
 
+- [ ] With a pose chosen, find the **Adjust guide** control in the top chrome and tap it.
+- [ ] **Expected:** the guide-adjust sheet opens from that **visible** control (it must never require tapping the pose
+  reference itself) and offers opacity, scale, line colour, the **Mirror** row and a **Reset** row, with **Done** to close.
+- [ ] Change the line colour to yellow, flip the guide, then close and reopen the sheet.
+- [ ] **Expected:** both changes are still there; **Reset** restores the guide's size (100 %) and leaves the colour and
+  mirror choice alone.
+
 ## 4. Pose guide — placing it, and its rows in the panel
 - [ ] With a guide on screen, pinch, twist and drag it.
 - [ ] **Expected:** the guide follows your fingers 1:1 and stays within the preview; the bars do not move.
