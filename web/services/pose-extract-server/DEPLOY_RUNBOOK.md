@@ -238,6 +238,10 @@ If `prepare:false` **plus** loop-level resilience (A + C) does not stop the cras
 The provider credential is a single OAuth file on the volume; the CLI rotates its refresh token on
 write and **deletes the file when a refresh fails**, so the deploy is only safe when a backup exists.
 
+> **DEPLOY FREEZE — 2026-11-08 14:30–16:15 UTC.** No deploy and no service restart in that window
+> (a scheduled self-refresh check runs inside it). If a deploy is unavoidable, get lead approval
+> first and record it in the deploy ticket.
+
 **Before deploying**
 
 1. **Delete any deployment still in `BUILDING`** on the Railway service (Deployments → the running
@@ -253,12 +257,21 @@ if [ "$(shasum -a 256 /app/higgsfield/credentials.json | cut -d" " -f1)" = \
      "$(shasum -a 256 /app/higgsfield/backup/credentials.latest.json | cut -d" " -f1)" ]; then
   echo MATCH
 else
-  echo MISMATCH   # backup is older (expected right after a refresh) — still fine, just report it
+  echo MISMATCH   # STOP: do not deploy until this says MATCH
 fi
 ```
 
-If the backup file is missing, take one before deploying:
-`cp -p /app/higgsfield/credentials.json /app/higgsfield/backup/credentials.latest.json && chmod 600 /app/higgsfield/backup/credentials.latest.json`
+**`MISMATCH` or a missing backup means STOP — do not deploy.** Re-seed the backup from the live file
+(stdin → temp → rename, mode 600) and re-run the check until it prints `MATCH`:
+
+```bash
+railway shell --service <pose-extract-server>
+mkdir -p /app/higgsfield/backup && chmod 700 /app/higgsfield/backup
+umask 077
+tmp="/app/higgsfield/backup/.credentials.latest.tmp.$$"
+cat /app/higgsfield/credentials.json > "$tmp" && chmod 600 "$tmp" && mv -f "$tmp" /app/higgsfield/backup/credentials.latest.json
+# re-run the MATCH/MISMATCH check above; deploy only on MATCH
+```
 
 **After deploying**
 
@@ -287,9 +300,13 @@ curl -sS -X POST https://<PUBLIC_HOST>/api/extract-pose \
 
 **Rollback**
 
-7. If provider auth or extraction regresses, roll back to the last known-good deployment
-   **`727b954`** (`chore(release): bump build to 24`) using the procedure in section 4, then re-check
-   `/api/health/provider` and run one real job.
+7. If provider auth or extraction regresses, roll back to the last known-good deployment using
+   **either** of these (not a git SHA — pick one, then re-check `/api/health/provider` and run one
+   real job):
+   - **Railway deployment `c6f63228-f391-4096-aa3c-9009a306c167`** — Railway UI → Deployments →
+     open that deployment → **Redeploy**. This is the deployment ID, not a commit.
+   - **`railway up` from git `f3fc198`** — the commit production is currently running (its server
+     code is identical to `727b954`, which is *not* a rollback target).
 
 ## 5. Notes / out-of-scope
 
