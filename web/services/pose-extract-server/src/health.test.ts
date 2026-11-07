@@ -70,7 +70,7 @@ describe("GET /api/health", () => {
     expect(response.body.provider).toMatchObject({ state: "ok", expiresInSec: 90000 });
   });
 
-  it("warns but stays 200 when the credential expires within a day", async () => {
+  it("stays ok while the 24h access token is about to expire, because the CLI refreshes it", async () => {
     const app = createApp({
       version: "1.2.3",
       providerAuthHealth: healthStub({
@@ -85,10 +85,29 @@ describe("GET /api/health", () => {
     const response = await request(app).get("/api/health");
 
     expect(response.status).toBe(200);
-    expect(response.body.status).toBe("warn");
+    expect(response.body.status).toBe("ok");
   });
 
-  it.each(["expired", "missing", "invalid"] as const)(
+  it("warns without 503 once the token has been expired for more than 48 hours", async () => {
+    const app = createApp({
+      providerAuthHealth: healthStub({
+        enabled: true,
+        state: "expired",
+        expiresInSec: -49 * 3600,
+        lastAuthError: null,
+        lastSuccessAt: null
+      })
+    });
+
+    const health = await request(app).get("/api/health");
+    const provider = await request(app).get("/api/health/provider");
+
+    expect(health.body.status).toBe("warn");
+    expect(health.status).toBe(200);
+    expect(provider.status).toBe(200);
+  });
+
+  it.each(["missing", "invalid"] as const)(
     "reports degraded but keeps HTTP 200 when the credential is %s",
     async (state) => {
       const app = createApp({
@@ -189,8 +208,8 @@ describe("GET /api/health/provider", () => {
     const app = createApp({
       providerAuthHealth: healthStub({
         enabled: true,
-        state: "expired",
-        expiresInSec: -60,
+        state: "missing",
+        expiresInSec: null,
         lastAuthError: null,
         lastSuccessAt: null
       })
@@ -199,7 +218,7 @@ describe("GET /api/health/provider", () => {
     const response = await request(app).get("/api/health/provider");
 
     expect(response.status).toBe(503);
-    expect(response.body).toMatchObject({ status: "degraded", provider: { state: "expired" } });
+    expect(response.body).toMatchObject({ status: "degraded", provider: { state: "missing" } });
   });
 
   it("answers 200 when no provider credential is configured at all", async () => {

@@ -35,6 +35,14 @@ export interface ProviderAuthHealth {
 
 export type OverallHealthStatus = "ok" | "warn" | "degraded";
 
+/**
+ * How long an expired access token may sit unrefreshed before the deployment is called out.
+ * The token only lives 24h and the CLI refreshes it on its next call, so a token that expired an
+ * hour ago is normal; one that has been expired for two days means nobody (no job, no keepalive)
+ * has managed to refresh it.
+ */
+export const EXPIRED_WARN_AFTER_SEC = 48 * 60 * 60;
+
 /** An auth error recorded after the last successful CLI call is still an open failure. */
 function hasOpenAuthError(state: ProviderAuthState): boolean {
   if (!state.lastAuthErrorAt) {
@@ -56,14 +64,12 @@ export function overallStatusFor(health: ProviderAuthHealth): OverallHealthStatu
   if (health.lastAuthError && (health.lastSuccessAt === null || Date.parse(health.lastAuthError.at) > Date.parse(health.lastSuccessAt))) {
     return "degraded";
   }
-  switch (health.state) {
-    case "expired":
-      return "degraded";
-    case "expiring_soon":
-      return "warn";
-    default:
-      return "ok";
+  // A 24h token is expiring every day; warning on that alone would alert forever. Only an expiry
+  // that nobody refreshed for two days is worth a (non-alerting) warning.
+  if (health.state === "expired" && health.expiresInSec !== null && health.expiresInSec <= -EXPIRED_WARN_AFTER_SEC) {
+    return "warn";
   }
+  return "ok";
 }
 
 interface HealthLogger {
@@ -148,11 +154,13 @@ export async function evaluateProviderAuthHealth(
       );
       await dispatchAlert({ status: "degraded", state: health.state, expiresInSec: health.expiresInSec, statePath, nowMs, env, deps });
     } else if (status === "warn") {
-      logger.error(
+      // Informational only: no webhook, no error-level log, because a stale expiry usually just
+      // means no job has run since the token lapsed.
+      const warn = logger.warn?.bind(logger) ?? logger.error;
+      warn(
         { providerState: health.state, expiresInSec: health.expiresInSec },
-        "higgsfield provider credential expires within 24h; re-login before jobs start failing"
+        "higgsfield credential has been expired for more than 48h without a successful refresh"
       );
-      await dispatchAlert({ status: "warn", state: health.state, expiresInSec: health.expiresInSec, statePath, nowMs, env, deps });
     }
     lastReportedStatus = status;
   }
@@ -161,7 +169,7 @@ export async function evaluateProviderAuthHealth(
 }
 
 async function dispatchAlert(input: {
-  status: "warn" | "degraded";
+  status: "degraded";
   state: string;
   expiresInSec: number | null;
   statePath: string;

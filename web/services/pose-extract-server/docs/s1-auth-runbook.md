@@ -45,7 +45,8 @@ pose-extract-server container (combined API + worker)
 | --- | --- | --- |
 | `HIGGSFIELD_CREDENTIALS_PATH` | `/app/higgsfield/credentials.json` | Set in `Dockerfile`; override only if mount path changes |
 | `HIGGSFIELD_EXPIRING_SOON_SEC` | `86400` (default) | Probe warn threshold for exit code `3` |
-| `ALERT_WEBHOOK_URL` | unset (default) | Optional: health transitions POST a short JSON body (no secrets), debounced 6h |
+| `ALERT_WEBHOOK_URL` | unset (default) | Optional: auth-failure alerts POST a short JSON body (no secrets), debounced 6h |
+| `HIGGSFIELD_KEEPALIVE` | `1` (default) | Worker refreshes the credential before/at expiry; `0` disables |
 | Volume mount | `/app/higgsfield` → Railway volume `higgsfield` | Declared in repo root `railway.toml` |
 
 ## Probe script
@@ -67,9 +68,26 @@ Exit codes:
 | Code | Meaning | Action |
 | --- | --- | --- |
 | `0` | Credential valid; account reachable | none |
-| `2` | Auth failure: file missing/unreadable/expired, or the API rejected the token | human re-login + upload |
+| `2` | Auth failure: file missing/unreadable/expired, or the CLI reported an auth error | human re-login + upload |
 | `3` | Credential still valid but expires in < 24h | schedule the re-login now |
-| `1` | Other failure (`higgsfield` or `node` missing, unexpected error) | investigate the container image |
+| `1` | Other failure (`higgsfield`/`node` missing, network error, timeout, unknown CLI error) | investigate the container/network |
+
+`exit 2` is reserved for authentication: a network error or a timeout is `1`, so a flaky call
+never looks like an expired credential.
+
+### `/api/health` semantics (deployment truth, not a countdown)
+
+The access token lives 24 hours and the CLI refreshes it on its next call, so a token that expires
+every day is **normal**. Health therefore does not warn on a countdown:
+
+| Status | When | Alert |
+| --- | --- | --- |
+| `degraded` | credential file missing/unreadable, or the worker recorded an auth failure newer than the last success | webhook (debounced) + `error` log |
+| `warn` | the token has been expired for **more than 48 hours** with no successful refresh | `warn` log only |
+| `ok` | everything else, including a token expiring today | none |
+
+The probe's `exit 3` (< 24h) remains a pre-emptive ops signal for scheduling a re-login; it is
+deliberately more eager than `/api/health`, which must not cry wolf every day.
 
 ## Railway volume setup (one-time)
 
