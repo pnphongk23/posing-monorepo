@@ -115,9 +115,15 @@ TC-PAY-017/018/019 (and TC-PAY-014 for Restore) in `docs/qa/test-cases/paywall-p
 - [ ] With a pose chosen, find the **Adjust guide** control in the top chrome and tap it.
 - [ ] **Expected:** the guide-adjust sheet opens from that **visible** control (it must never require tapping the pose
   reference itself) and offers opacity, scale, line colour, the **Mirror** row and a **Reset** row, with **Done** to close.
-- [ ] Change the line colour to yellow, flip the guide, then close and reopen the sheet.
+- [ ] Change the line colour to **black**, flip the guide, then close and reopen the sheet.
 - [ ] **Expected:** both changes are still there; **Reset** restores the guide's size (100 %) and leaves the colour and
   mirror choice alone.
+- [ ] **Upgrade check (cannot be driven from a flow):** install the **previous** build, choose a legacy guide colour
+  (pink / yellow / green), then upgrade to this build and open the camera.
+- [ ] **Expected:** the guide draws in **white** (the current default), the rest of the guide settings are kept, and
+  nothing crashes — `GuideLineColor.stored` maps every unsupported stored value to white. The Simulator equivalent is
+  manual: the settings live in one `CameraSettings` JSON blob in UserDefaults, and there is no launch argument that
+  seeds it.
 
 ## 4. Pose guide — placing it, and its rows in the panel
 - [ ] With a guide on screen, pinch, twist and drag it.
@@ -279,14 +285,17 @@ If you are on an **older build**, several things look different and are expected
 screen and the zoom was a row of 0.5x/1x/2x pills; before 21 the guide's controls sat in the tools popover. This page
 describes **build 23** — check the build number in Settings → About before reporting a difference.
 
-Notes for QA triage (not for the product owner): the camera chrome in build 23 is verified in source at `7fa7681`.
+Notes for QA triage (not for the product owner): the camera chrome in build 23 is verified in source at `7fa7681`, and
+the guide-adjust surface at `da2fccc` (`fix/camera-guide-settings`).
 Retired — never assert them: `camera.tools.done`, `camera.tools.poseGuide`, `camera.tools.mirror`,
 `camera.tools.mirror.switch`, `camera.tools.opacity`, `camera.tools.scale`, `camera.tools.lineColor.black|white` and
 every `camera.zoom.0.5x|1x|2x|3x`. In their place: zoom is the continuous `camera.zoom.slider` (value like `1.0×`); the
 tools popover is `camera.tools.popover` with flash chips `camera.tools.flash.off|auto|on`, the grid switch, timer chips
 `camera.tools.timer.off|3s|10s` and ratio chips `camera.tools.ratio.3x4|1x1|9x16` (no title, no Done; closes on its own
-control or an outside tap); the guide's controls live in the `camera.guideAdjust` sheet — opened by tapping the pose
-reference itself — with `camera.guideAdjust.opacity|scale|flip|done` and `.lineColor.pink|black|yellow|green`. The
+control or an outside tap); the guide's controls live in the `camera.guideAdjust` sheet, opened by the **visible top-chrome** control
+`camera.guideAdjust.open` ("Adjust guide") — never by tapping the pose reference — with
+`camera.guideAdjust.opacity|scale|flip|reset|done` and `.lineColor.black|white` (white is the default; a legacy
+pink/yellow/green value loads as white). The
 preview is full screen with a full-width ratio frame, everything outside the frame dimmed to 65 %, and the guide,
 scrims and gestures clipped to it. `camera.choosePose` is still the Poses chip and its value is the selected pose name
 (or "None selected"); the strip and `camera.pickerStripToggle` are retired.
