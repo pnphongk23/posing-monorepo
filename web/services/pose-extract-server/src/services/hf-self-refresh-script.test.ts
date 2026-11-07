@@ -36,7 +36,8 @@ describe("one-off self-refresh script", () => {
         response.end(JSON.stringify({
           access_token: "mock-access-token-secret",
           refresh_token: "mock-refresh-token-secret",
-          token_type: "Bearer",
+          token_type: "NewType",
+          scope: "new-scope",
           expires_in: 600
         }));
       });
@@ -52,6 +53,8 @@ describe("one-off self-refresh script", () => {
     const input = {
       access_token: "old-access-token-secret",
       refresh_token: "old-refresh-token-secret",
+      token_type: "OldType",
+      scope: "old-scope",
       expires_at: 1,
       auth_version: 1,
       workspace_id: "workspace-test"
@@ -81,6 +84,8 @@ describe("one-off self-refresh script", () => {
       ...input,
       access_token: "mock-access-token-secret",
       refresh_token: "mock-refresh-token-secret",
+      token_type: "OldType",
+      scope: "old-scope",
       expires_at: Math.floor(now / 1000) + 600
     });
     expect((await fs.stat(outputPath)).mode & 0o777).toBe(0o600);

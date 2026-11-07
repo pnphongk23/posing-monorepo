@@ -103,11 +103,9 @@ export async function runRefresh({
     refresh_token: typeof tokenResponse.refresh_token === "string" && tokenResponse.refresh_token
       ? tokenResponse.refresh_token
       : credentials.refresh_token,
+    expires_in: tokenResponse.expires_in,
     expires_at: expiresAt
   };
-  for (const field of ["token_type", "expires_in", "scope"]) {
-    if (tokenResponse[field] !== undefined) updated[field] = tokenResponse[field];
-  }
 
   try {
     await writeAtomic(outputPath, `${JSON.stringify(updated, null, 2)}\n`);
