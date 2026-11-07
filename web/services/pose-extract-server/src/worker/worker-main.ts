@@ -6,7 +6,6 @@ import { ExtractionJobStore } from "../db/extractionJobStore";
 import { PoseStore } from "../db/communityStore";
 import { ProviderSettingsStore } from "../db/providerSettingsStore";
 import { GeminiService } from "../services/geminiService";
-import { HiggsfieldCliProvider } from "../services/higgsfieldCliProvider";
 import { defaultCredentialsPath } from "../services/higgsfieldCredentialGuard";
 import { KeyPoolManager } from "../services/keyPoolManager";
 import { KeyStore } from "../services/keyStore";
@@ -52,13 +51,11 @@ async function run(): Promise<void> {
       keyPoolManager
     });
 
-  // Detector: once the credential has expired, check it in-process so an idle deployment does not
-  // discover a dead token only when a real user runs a job. It never queues behind a job
-  // (tryAcquire) and it never writes the credential file.
-  const higgsfieldKeepaliveProvider = new HiggsfieldCliProvider();
+  // Detector: once the credential has expired, record it in-process so an idle deployment does not
+  // discover a dead token only when a real user runs a job. It never spawns the CLI (which would
+  // delete the credential file) and never writes the credential file itself.
   const higgsfieldKeepalive = startHiggsfieldKeepalive({
-    credentialsPath: defaultCredentialsPath(process.env),
-    tryCheckAccountStatus: () => higgsfieldKeepaliveProvider.tryCheckAccountStatus()
+    credentialsPath: defaultCredentialsPath(process.env)
   });
 
   logger.info(

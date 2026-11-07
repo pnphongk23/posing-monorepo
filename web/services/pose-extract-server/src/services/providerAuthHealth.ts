@@ -29,7 +29,7 @@ export interface ProviderAuthHealth {
   enabled: boolean;
   state: ProviderAuthStateName;
   expiresInSec: number | null;
-  lastAuthError: { at: string; code: string } | null;
+  lastAuthError: { at: string; code: string; reason: string | null } | null;
   lastSuccessAt: string | null;
 }
 
@@ -124,6 +124,7 @@ export async function evaluateProviderAuthHealth(
     record = {
       lastAuthErrorAt: null,
       lastAuthErrorCode: null,
+      lastAuthErrorReason: null,
       lastSuccessAt: null,
       lastAlertAt: null,
       lastAlertKey: null
@@ -136,7 +137,11 @@ export async function evaluateProviderAuthHealth(
     state: enabled ? snapshot.state : "not_configured",
     expiresInSec: enabled ? snapshot.expiresInSec : null,
     lastAuthError: hasOpenAuthError(record) && record.lastAuthErrorAt
-      ? { at: record.lastAuthErrorAt, code: record.lastAuthErrorCode ?? "PROVIDER_AUTH_REQUIRED" }
+      ? {
+          at: record.lastAuthErrorAt,
+          code: record.lastAuthErrorCode ?? "PROVIDER_AUTH_REQUIRED",
+          reason: record.lastAuthErrorReason
+        }
       : null,
     lastSuccessAt: record.lastSuccessAt
   };

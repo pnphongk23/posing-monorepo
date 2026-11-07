@@ -20,6 +20,8 @@ export const PROVIDER_ALERT_DEBOUNCE_MS = 6 * 60 * 60 * 1000;
 export interface ProviderAuthState {
   lastAuthErrorAt: string | null;
   lastAuthErrorCode: string | null;
+  /** Why the failure was recorded, e.g. "expired" (local detection) or "cli_auth_failure". */
+  lastAuthErrorReason: string | null;
   lastSuccessAt: string | null;
   lastAlertAt: string | null;
   lastAlertKey: string | null;
@@ -28,6 +30,7 @@ export interface ProviderAuthState {
 export const EMPTY_PROVIDER_AUTH_STATE: ProviderAuthState = {
   lastAuthErrorAt: null,
   lastAuthErrorCode: null,
+  lastAuthErrorReason: null,
   lastSuccessAt: null,
   lastAlertAt: null,
   lastAlertKey: null
@@ -59,6 +62,7 @@ export async function readProviderAuthState(statePath: string): Promise<Provider
     return {
       lastAuthErrorAt: isoOrNull(parsed.lastAuthErrorAt),
       lastAuthErrorCode: stringOrNull(parsed.lastAuthErrorCode),
+      lastAuthErrorReason: stringOrNull(parsed.lastAuthErrorReason),
       lastSuccessAt: isoOrNull(parsed.lastSuccessAt),
       lastAlertAt: isoOrNull(parsed.lastAlertAt),
       lastAlertKey: stringOrNull(parsed.lastAlertKey)
@@ -105,13 +109,15 @@ function updateProviderAuthState(
 export async function recordProviderAuthFailure(input: {
   statePath: string;
   code?: string;
+  reason?: string;
   nowMs?: number;
 }): Promise<ProviderAuthState> {
   const nowMs = input.nowMs ?? Date.now();
   return updateProviderAuthState(input.statePath, (current) => ({
     ...current,
     lastAuthErrorAt: new Date(nowMs).toISOString(),
-    lastAuthErrorCode: input.code ?? "PROVIDER_AUTH_REQUIRED"
+    lastAuthErrorCode: input.code ?? "PROVIDER_AUTH_REQUIRED",
+    lastAuthErrorReason: input.reason ?? "cli_auth_failure"
   }));
 }
 

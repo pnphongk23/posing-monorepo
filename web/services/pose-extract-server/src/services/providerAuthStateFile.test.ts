@@ -68,6 +68,7 @@ describe("recordProviderAuthFailure / recordProviderAuthSuccess", () => {
     expect(JSON.parse(raw)).toEqual({
       lastAuthErrorAt: new Date(NOW_MS).toISOString(),
       lastAuthErrorCode: "PROVIDER_AUTH_REQUIRED",
+      lastAuthErrorReason: "cli_auth_failure",
       lastSuccessAt: null,
       lastAlertAt: null,
       lastAlertKey: null

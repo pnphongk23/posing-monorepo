@@ -85,7 +85,11 @@ describe("evaluateProviderAuthHealth", () => {
     });
 
     expect(health.state).toBe("ok");
-    expect(health.lastAuthError).toEqual({ at: new Date(NOW_MS).toISOString(), code: "PROVIDER_AUTH_REQUIRED" });
+    expect(health.lastAuthError).toEqual({
+      at: new Date(NOW_MS).toISOString(),
+      code: "PROVIDER_AUTH_REQUIRED",
+      reason: "cli_auth_failure"
+    });
     expect(overallStatusFor(health)).toBe("degraded");
   });
 

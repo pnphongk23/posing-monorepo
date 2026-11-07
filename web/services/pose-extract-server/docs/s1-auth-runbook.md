@@ -28,11 +28,12 @@ Production uses the **S1** path (design decision #8): a scheduled probe validate
 - All CLI spawns inside the server process are serialised through one queue (`withCredentialLock`), so a job can never race the keepalive, the probe or another job on the same refresh token.
 - The CLI does **not** refresh on its own (owner-confirmed). A refresh only happens when the worker
   runs the CLI as part of a job, or when the follow-up self-refresh scheduler lands.
-- The in-process keepalive (`HIGGSFIELD_KEEPALIVE`, every 15 min) is a **detector**, not a refresher:
-  it fires only once `now >= expires_at`, only when no job holds the credential, and it **never
-  writes, restores or repairs `credentials.json`** — it takes the usual backup, runs one
-  `account status` and records the outcome in the shared state file. Nothing touches the refresh
-  token before it expires.
+- The in-process keepalive (`HIGGSFIELD_KEEPALIVE`, every 15 min) is a **local detector**, not a
+  refresher and not a prober: once `now >= expires_at` it writes `PROVIDER_AUTH_REQUIRED` with
+  reason `expired` into the shared state file (so `/api/health` degrades and the alert fires on the
+  existing debounce) and it **never spawns the CLI** — after expiry `account status` would only make
+  the CLI delete the credential and possibly burn the refresh token. A later successful job clears
+  the state through `lastSuccessAt`.
 - **Next change:** the self-refresh scheduler will be the single owner allowed to write the
   credential. Until then, no code path other than the CLI itself writes that file.
 - There is **no external cron** that refreshes or probes the credential.
@@ -63,7 +64,7 @@ pose-extract-server container (combined API + worker)
 | `HIGGSFIELD_CREDENTIALS_PATH` | `/app/higgsfield/credentials.json` | Set in `Dockerfile`; override only if mount path changes |
 | `HIGGSFIELD_EXPIRING_SOON_SEC` | `86400` (default) | Probe warn threshold for exit code `3` |
 | `ALERT_WEBHOOK_URL` | unset (default) | Optional: auth-failure alerts POST a short JSON body (no secrets), debounced 6h |
-| `HIGGSFIELD_KEEPALIVE` | `1` (default) | Worker **detector**: checks the credential once it has expired; `0` disables |
+| `HIGGSFIELD_KEEPALIVE` | `1` (default) | Worker **detector**: records an expired credential locally, never calls the CLI; `0` disables |
 | Volume mount | `/app/higgsfield` → Railway volume `higgsfield` | Declared in repo root `railway.toml` |
 
 ## Probe script
