@@ -356,7 +356,17 @@ export class HiggsfieldCliProvider implements PoseExtractorProvider {
           });
           throw new ProviderAuthRequiredError("Higgsfield authentication required");
         }
-        throw new ProviderCliFailedError(stderr.trim() || stdout.trim() || `Higgsfield CLI exited with code ${exitCode}`);
+        // Same rule as the auth path: the CLI output goes to the redacted log, the caller gets a
+        // fixed message that is safe to store on the job and return through the API.
+        logger.error(
+          {
+            credentialsPath: this.credentialsPath,
+            exitCode,
+            cliOutput: sanitizeErrorMessage(stderr.trim() || stdout.trim())
+          },
+          "higgsfield CLI failed"
+        );
+        throw new ProviderCliFailedError("Higgsfield CLI failed");
       }
 
       await recordProviderAuthSuccess({ statePath: this.authStatePath });

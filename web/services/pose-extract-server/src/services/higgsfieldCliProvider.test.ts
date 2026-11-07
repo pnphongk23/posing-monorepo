@@ -332,6 +332,53 @@ describe("HiggsfieldCliProvider credential guard", () => {
     ).rejects.toBeInstanceOf(ProviderAuthRequiredError);
   });
 
+  it("never puts CLI output in the thrown error, only in the redacted log", async () => {
+    const marker = "LEAK-CANARY-1234 https://user:secret@cdn.example.com/upload";
+    const errorLog = vi.spyOn(logger, "error");
+
+    const provider = new HiggsfieldCliProvider({
+      spawnImpl: mockSpawn("", `Error: Session expired. ${marker}`, 2) as never,
+      fetchImpl: vi.fn() as typeof fetch,
+      tmpDir: "/tmp/higgsfield-test-leak"
+    });
+
+    const error = await provider
+      .extractPoseImage({ sourceImageBase64: "c291cmNl", sourceMimeType: "image/png" })
+      .catch((thrown: unknown) => thrown as Error);
+
+    expect(error).toBeInstanceOf(ProviderAuthRequiredError);
+    expect(error.message).toBe("Higgsfield authentication required");
+    expect(error.message).not.toContain("LEAK-CANARY");
+    expect(JSON.stringify(error)).not.toContain("LEAK-CANARY");
+
+    const logged = JSON.stringify(errorLog.mock.calls);
+    expect(logged).toContain("LEAK-CANARY");
+    // Connection-string style credentials are redacted before they reach the log.
+    expect(logged).not.toContain("user:secret@");
+  });
+
+  it("keeps CLI output out of a non-auth CLI failure too", async () => {
+    const marker = "LEAK-CANARY-5678 https://user:secret@cdn.example.com/upload";
+    const errorLog = vi.spyOn(logger, "error");
+
+    const provider = new HiggsfieldCliProvider({
+      spawnImpl: mockSpawn("", `Error: upload failed ${marker}`, 1) as never,
+      fetchImpl: vi.fn() as typeof fetch,
+      tmpDir: "/tmp/higgsfield-test-leak-cli"
+    });
+
+    const error = await provider
+      .extractPoseImage({ sourceImageBase64: "c291cmNl", sourceMimeType: "image/png" })
+      .catch((thrown: unknown) => thrown as Error);
+
+    expect(error).toBeInstanceOf(ProviderCliFailedError);
+    expect(error.message).toBe("Higgsfield CLI failed");
+    expect(JSON.stringify(error)).not.toContain("LEAK-CANARY");
+    const logged = JSON.stringify(errorLog.mock.calls);
+    expect(logged).toContain("LEAK-CANARY");
+    expect(logged).not.toContain("user:secret@");
+  });
+
   it("clears the recorded auth error after a successful call", async () => {
     const failingProvider = new HiggsfieldCliProvider({
       spawnImpl: mockSpawn("", "Error: Session expired.", 2) as never,
