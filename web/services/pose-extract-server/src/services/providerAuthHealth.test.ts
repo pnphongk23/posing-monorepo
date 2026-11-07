@@ -2,17 +2,15 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { EXPIRING_SOON_SEC } from "./higgsfieldCredentialGuard";
 import {
   evaluateProviderAuthHealth,
-  getLastProviderAuthError,
   overallStatusFor,
-  recordProviderAuthFailure,
-  recordProviderAuthSuccess,
-  resetProviderAuthState
+  resetProviderAuthHealthMemory
 } from "./providerAuthHealth";
+import { providerAuthStatePathFor, recordProviderAuthFailure, recordProviderAuthSuccess } from "./providerAuthStateFile";
 
 const NOW_MS = 1_800_000_000_000;
 const NOW_SEC = Math.floor(NOW_MS / 1000);
@@ -31,26 +29,14 @@ async function makeCredentials(expiresAtSec: number | string | null): Promise<st
   return credentialsPath;
 }
 
-afterEach(async () => {
-  vi.restoreAllMocks();
-  resetProviderAuthState();
-  await Promise.all(tempDirs.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true })));
+beforeEach(() => {
+  resetProviderAuthHealthMemory();
 });
 
-describe("provider auth error store", () => {
-  it("records the last auth failure with a timestamp and clears it on success", () => {
-    expect(getLastProviderAuthError()).toBeNull();
-
-    recordProviderAuthFailure({ code: "PROVIDER_AUTH_REQUIRED", nowMs: NOW_MS });
-    const recorded = getLastProviderAuthError();
-
-    expect(recorded?.code).toBe("PROVIDER_AUTH_REQUIRED");
-    expect(recorded?.at).toBe(new Date(NOW_MS).toISOString());
-    expect(JSON.stringify(recorded)).not.toContain("secret");
-
-    recordProviderAuthSuccess();
-    expect(getLastProviderAuthError()).toBeNull();
-  });
+afterEach(async () => {
+  vi.restoreAllMocks();
+  resetProviderAuthHealthMemory();
+  await Promise.all(tempDirs.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true })));
 });
 
 describe("evaluateProviderAuthHealth", () => {
@@ -60,7 +46,13 @@ describe("evaluateProviderAuthHealth", () => {
       now: () => NOW_MS
     });
 
-    expect(health).toEqual({ enabled: false, state: "not_configured", expiresInSec: null, lastAuthError: null });
+    expect(health).toEqual({
+      enabled: false,
+      state: "not_configured",
+      expiresInSec: null,
+      lastAuthError: null,
+      lastSuccessAt: null
+    });
     expect(overallStatusFor(health)).toBe("ok");
   });
 
@@ -77,47 +69,14 @@ describe("evaluateProviderAuthHealth", () => {
     expect(JSON.stringify(health)).not.toContain("secret-access");
   });
 
-  it("reports warn and logs once when the credential expires within a day", async () => {
-    const credentialsPath = await makeCredentials(NOW_SEC + 3600);
-    const logger = { error: vi.fn() };
-
-    const health = await evaluateProviderAuthHealth({
-      env: { HIGGSFIELD_CREDENTIALS_PATH: credentialsPath },
-      now: () => NOW_MS,
-      logger
-    });
-
-    expect(health.state).toBe("expiring_soon");
-    expect(overallStatusFor(health)).toBe("warn");
-    expect(logger.error).toHaveBeenCalledTimes(1);
-    expect(JSON.stringify(logger.error.mock.calls)).not.toContain("secret-refresh");
-
-    await evaluateProviderAuthHealth({
-      env: { HIGGSFIELD_CREDENTIALS_PATH: credentialsPath },
-      now: () => NOW_MS,
-      logger
-    });
-    expect(logger.error).toHaveBeenCalledTimes(1);
-  });
-
-  it("degrades on expired, missing and invalid credentials", async () => {
-    const expiredPath = await makeCredentials(NOW_SEC - 60);
-    const invalidPath = await makeCredentials("2099-01-01T00:00:00Z");
-    const missingPath = path.join(os.tmpdir(), "hf-health-missing", "credentials.json");
-
-    for (const credentialsPath of [expiredPath, invalidPath, missingPath]) {
-      const health = await evaluateProviderAuthHealth({
-        env: { HIGGSFIELD_CREDENTIALS_PATH: credentialsPath },
-        now: () => NOW_MS,
-        logger: { error: vi.fn() }
-      });
-      expect(overallStatusFor(health)).toBe("degraded");
-    }
-  });
-
-  it("degrades when the last CLI call failed auth even if the file still looks valid", async () => {
+  it("reads the auth state another process (the worker) wrote to the shared file", async () => {
     const credentialsPath = await makeCredentials(NOW_SEC + EXPIRING_SOON_SEC + 600);
-    recordProviderAuthFailure({ code: "PROVIDER_AUTH_REQUIRED", nowMs: NOW_MS });
+    // The worker records the failure; this process only reads the file.
+    await recordProviderAuthFailure({
+      statePath: providerAuthStatePathFor(credentialsPath),
+      code: "PROVIDER_AUTH_REQUIRED",
+      nowMs: NOW_MS
+    });
 
     const health = await evaluateProviderAuthHealth({
       env: { HIGGSFIELD_CREDENTIALS_PATH: credentialsPath },
@@ -130,11 +89,66 @@ describe("evaluateProviderAuthHealth", () => {
     expect(overallStatusFor(health)).toBe("degraded");
   });
 
+  it("stops degrading once a later CLI call succeeded", async () => {
+    const credentialsPath = await makeCredentials(NOW_SEC + EXPIRING_SOON_SEC + 600);
+    const statePath = providerAuthStatePathFor(credentialsPath);
+    await recordProviderAuthFailure({ statePath, nowMs: NOW_MS });
+    await recordProviderAuthSuccess({ statePath, nowMs: NOW_MS + 60_000 });
+
+    const health = await evaluateProviderAuthHealth({
+      env: { HIGGSFIELD_CREDENTIALS_PATH: credentialsPath },
+      now: () => NOW_MS + 120_000
+    });
+
+    expect(health.lastAuthError).toBeNull();
+    expect(health.lastSuccessAt).toBe(new Date(NOW_MS + 60_000).toISOString());
+    expect(overallStatusFor(health)).toBe("ok");
+  });
+
+  it("logs the transition once per change instead of on every probe", async () => {
+    const credentialsPath = await makeCredentials(NOW_SEC - 60);
+    const logger = { error: vi.fn() };
+
+    await evaluateProviderAuthHealth({
+      env: { HIGGSFIELD_CREDENTIALS_PATH: credentialsPath },
+      now: () => NOW_MS,
+      logger,
+      dispatchAlert: vi.fn(async () => true)
+    });
+    await evaluateProviderAuthHealth({
+      env: { HIGGSFIELD_CREDENTIALS_PATH: credentialsPath },
+      now: () => NOW_MS,
+      logger,
+      dispatchAlert: vi.fn(async () => true)
+    });
+
+    expect(logger.error).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(logger.error.mock.calls)).not.toContain("secret-refresh");
+  });
+
+  it("degrades on expired, missing and invalid credentials", async () => {
+    const expiredPath = await makeCredentials(NOW_SEC - 60);
+    const invalidPath = await makeCredentials("2099-01-01T00:00:00Z");
+    const missingPath = path.join(os.tmpdir(), "hf-health-missing", "credentials.json");
+
+    for (const credentialsPath of [expiredPath, invalidPath, missingPath]) {
+      resetProviderAuthHealthMemory();
+      const health = await evaluateProviderAuthHealth({
+        env: { HIGGSFIELD_CREDENTIALS_PATH: credentialsPath },
+        now: () => NOW_MS,
+        logger: { error: vi.fn() },
+        dispatchAlert: vi.fn(async () => true)
+      });
+      expect(overallStatusFor(health)).toBe("degraded");
+    }
+  });
+
   it("degrades instead of throwing when the credential file cannot be read", async () => {
     const health = await evaluateProviderAuthHealth({
       env: { HIGGSFIELD_CREDENTIALS_PATH: "/root/definitely/not/readable/credentials.json" },
       now: () => NOW_MS,
       logger: { error: vi.fn() },
+      dispatchAlert: vi.fn(async () => true),
       readSnapshot: async () => {
         throw new Error("EACCES");
       }

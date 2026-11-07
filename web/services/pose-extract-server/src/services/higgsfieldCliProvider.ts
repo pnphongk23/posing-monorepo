@@ -20,9 +20,15 @@ import {
   withCredentialLock
 } from "./higgsfieldCredentialGuard";
 import type { PoseExtractorProvider } from "./poseExtractorProvider";
-import { recordProviderAuthFailure, recordProviderAuthSuccess } from "./providerAuthHealth";
+import {
+  dispatchProviderAuthAlertOnce,
+  providerAuthStatePathFor,
+  recordProviderAuthFailure,
+  recordProviderAuthSuccess
+} from "./providerAuthStateFile";
 import type { ExtractedImage } from "./types";
 import { logger } from "../utils/logger";
+import { sanitizeErrorMessage } from "../utils/sanitizeError";
 
 /** Default generation model → Seedream 5.0 Lite (no `--resolution`, quality `basic`|`high`). */
 const DEFAULT_MODEL = "seedream_v5_lite";
@@ -254,6 +260,7 @@ export class HiggsfieldCliProvider implements PoseExtractorProvider {
   private readonly timeoutMs: number;
   private readonly model: string;
   private readonly tmpDir: string;
+  private readonly authStatePath: string;
 
   constructor(options: HiggsfieldCliProviderOptions = {}) {
     this.spawnImpl = options.spawnImpl ?? nodeSpawn;
@@ -262,6 +269,8 @@ export class HiggsfieldCliProvider implements PoseExtractorProvider {
     this.timeoutMs = options.timeoutMs ?? Number(process.env.HIGGSFIELD_CLI_TIMEOUT_MS ?? DEFAULT_TIMEOUT_MS);
     this.model = options.model ?? process.env.HIGGSFIELD_CLI_MODEL ?? DEFAULT_MODEL;
     this.tmpDir = options.tmpDir ?? path.join(os.tmpdir(), "extract-jobs");
+    // Shared with the API process: the worker records auth failures here so /api/health sees them.
+    this.authStatePath = providerAuthStatePathFor(this.credentialsPath);
   }
 
   /**
@@ -331,13 +340,26 @@ export class HiggsfieldCliProvider implements PoseExtractorProvider {
         }
 
         if (restored || isAuthFailure(stderr, stdout)) {
-          recordProviderAuthFailure({ code: "PROVIDER_AUTH_REQUIRED" });
-          throw new ProviderAuthRequiredError(stderr.trim() || stdout.trim() || "Higgsfield authentication required");
+          // The CLI output never reaches the API response: only the log, redacted and truncated.
+          logger.error(
+            {
+              credentialsPath: this.credentialsPath,
+              restoredFromBackup: restored,
+              cliOutput: sanitizeErrorMessage(stderr.trim() || stdout.trim())
+            },
+            "higgsfield CLI reported an authentication failure"
+          );
+          await recordProviderAuthFailure({ statePath: this.authStatePath, code: "PROVIDER_AUTH_REQUIRED" });
+          await dispatchProviderAuthAlertOnce({
+            statePath: this.authStatePath,
+            payload: { event: "provider_auth", status: "degraded", state: "auth_error", expiresInSec: null }
+          });
+          throw new ProviderAuthRequiredError("Higgsfield authentication required");
         }
         throw new ProviderCliFailedError(stderr.trim() || stdout.trim() || `Higgsfield CLI exited with code ${exitCode}`);
       }
 
-      recordProviderAuthSuccess();
+      await recordProviderAuthSuccess({ statePath: this.authStatePath });
 
       let parsed: unknown;
       try {

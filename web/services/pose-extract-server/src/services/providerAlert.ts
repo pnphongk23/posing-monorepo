@@ -22,6 +22,8 @@ export interface DispatchProviderAlertDeps {
   env?: Record<string, string | undefined>;
   fetchImpl?: typeof fetch;
   now?: () => number;
+  /** Set false when the caller already debounces durably (see providerAuthStateFile). */
+  debounce?: boolean;
 }
 
 let lastSentKey: string | null = null;
@@ -50,7 +52,8 @@ export async function dispatchProviderAuthAlert(
   const now = deps.now ?? Date.now;
   const nowMs = now();
   const key = `${payload.event}:${payload.status}:${payload.state}`;
-  if (lastSentKey === key && lastSentAtMs !== null && nowMs - lastSentAtMs < ALERT_DEBOUNCE_MS) {
+  const debounce = deps.debounce ?? true;
+  if (debounce && lastSentKey === key && lastSentAtMs !== null && nowMs - lastSentAtMs < ALERT_DEBOUNCE_MS) {
     return false;
   }
 

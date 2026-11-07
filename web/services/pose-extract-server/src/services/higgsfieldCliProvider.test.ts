@@ -4,7 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { EventEmitter } from "node:events";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   ProviderAuthRequiredError,
@@ -14,8 +14,30 @@ import {
 import { DEFAULT_EXTRACT_PROMPT } from "./extractPrompt";
 import { extractResultUrlFromCliJson, HiggsfieldCliProvider } from "./higgsfieldCliProvider";
 import { backupPathFor } from "./higgsfieldCredentialGuard";
-import { getLastProviderAuthError, resetProviderAuthState } from "./providerAuthHealth";
+import { providerAuthStatePathFor, readProviderAuthState } from "./providerAuthStateFile";
 import { logger } from "../utils/logger";
+
+// Every spawn records auth state next to the credential: keep it out of the real $HOME.
+const sandboxDirs: string[] = [];
+let previousCredentialsPath: string | undefined;
+let sandboxCredentialsPath = "";
+
+beforeEach(async () => {
+  previousCredentialsPath = process.env.HIGGSFIELD_CREDENTIALS_PATH;
+  const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "hf-provider-sandbox-"));
+  sandboxDirs.push(dir);
+  sandboxCredentialsPath = path.join(dir, "credentials.json");
+  process.env.HIGGSFIELD_CREDENTIALS_PATH = sandboxCredentialsPath;
+});
+
+afterEach(async () => {
+  if (previousCredentialsPath === undefined) {
+    delete process.env.HIGGSFIELD_CREDENTIALS_PATH;
+  } else {
+    process.env.HIGGSFIELD_CREDENTIALS_PATH = previousCredentialsPath;
+  }
+  await Promise.all(sandboxDirs.splice(0).map((dir) => fs.promises.rm(dir, { recursive: true, force: true })));
+});
 
 describe("extractResultUrlFromCliJson", () => {
   it("reads top-level url fields", () => {
@@ -225,7 +247,6 @@ describe("HiggsfieldCliProvider credential guard", () => {
 
   afterEach(async () => {
     vi.restoreAllMocks();
-    resetProviderAuthState();
     await Promise.all(tempDirs.splice(0).map((dir) => fs.promises.rm(dir, { recursive: true, force: true })));
   });
 
@@ -268,7 +289,10 @@ describe("HiggsfieldCliProvider credential guard", () => {
     expect(fs.statSync(backupPath).mode & 0o777).toBe(0o600);
     expect(warn).toHaveBeenCalled();
     expect(JSON.stringify(warn.mock.calls)).not.toContain("secret-refresh");
-    expect(getLastProviderAuthError()?.code).toBe("PROVIDER_AUTH_REQUIRED");
+    const authState = await readProviderAuthState(providerAuthStatePathFor(credentialsPath));
+    expect(authState.lastAuthErrorCode).toBe("PROVIDER_AUTH_REQUIRED");
+    expect(authState.lastAuthErrorAt).not.toBeNull();
+    expect(JSON.stringify(authState)).not.toContain("secret-refresh");
   });
 
   it("keeps the existing backup when a later credential file is older", async () => {
@@ -317,7 +341,8 @@ describe("HiggsfieldCliProvider credential guard", () => {
     await expect(
       failingProvider.extractPoseImage({ sourceImageBase64: "c291cmNl", sourceMimeType: "image/png" })
     ).rejects.toBeInstanceOf(ProviderAuthRequiredError);
-    expect(getLastProviderAuthError()).not.toBeNull();
+    const statePath = providerAuthStatePathFor(sandboxCredentialsPath);
+    expect((await readProviderAuthState(statePath)).lastAuthErrorAt).not.toBeNull();
 
     const provider = new HiggsfieldCliProvider({
       spawnImpl: mockSpawn(JSON.stringify({ url: "https://cdn.example.com/out.png" })) as never,
@@ -326,7 +351,9 @@ describe("HiggsfieldCliProvider credential guard", () => {
     });
     await provider.extractPoseImage({ sourceImageBase64: "c291cmNl", sourceMimeType: "image/png" });
 
-    expect(getLastProviderAuthError()).toBeNull();
+    const state = await readProviderAuthState(statePath);
+    expect(state.lastSuccessAt).not.toBeNull();
+    expect(Date.parse(state.lastSuccessAt!)).toBeGreaterThan(Date.parse(state.lastAuthErrorAt!));
   });
 
   it("runs concurrent extractions one at a time", async () => {

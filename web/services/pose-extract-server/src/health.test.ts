@@ -6,7 +6,8 @@ import request from "supertest";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createApp } from "./app";
-import type { ProviderAuthHealth } from "./services/providerAuthHealth";
+import { resetProviderAuthHealthMemory, type ProviderAuthHealth } from "./services/providerAuthHealth";
+import { providerAuthStatePathFor, recordProviderAuthFailure } from "./services/providerAuthStateFile";
 
 const tempDirs: string[] = [];
 
@@ -21,6 +22,7 @@ function healthStub(health: ProviderAuthHealth) {
 }
 
 afterEach(async () => {
+  resetProviderAuthHealthMemory();
   vi.unstubAllEnvs();
   await Promise.all(tempDirs.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true })));
 });
@@ -42,7 +44,8 @@ describe("GET /api/health", () => {
         enabled: false,
         state: "not_configured",
         expiresInSec: null,
-        lastAuthError: null
+        lastAuthError: null,
+        lastSuccessAt: null
       }
     });
     expect(response.body.uptime).toBeGreaterThanOrEqual(0);
@@ -51,7 +54,13 @@ describe("GET /api/health", () => {
   it("reports ok when the credential is healthy", async () => {
     const app = createApp({
       version: "1.2.3",
-      providerAuthHealth: healthStub({ enabled: true, state: "ok", expiresInSec: 90000, lastAuthError: null })
+      providerAuthHealth: healthStub({
+        enabled: true,
+        state: "ok",
+        expiresInSec: 90000,
+        lastAuthError: null,
+        lastSuccessAt: null
+      })
     });
 
     const response = await request(app).get("/api/health");
@@ -64,7 +73,13 @@ describe("GET /api/health", () => {
   it("warns but stays 200 when the credential expires within a day", async () => {
     const app = createApp({
       version: "1.2.3",
-      providerAuthHealth: healthStub({ enabled: true, state: "expiring_soon", expiresInSec: 3600, lastAuthError: null })
+      providerAuthHealth: healthStub({
+        enabled: true,
+        state: "expiring_soon",
+        expiresInSec: 3600,
+        lastAuthError: null,
+        lastSuccessAt: null
+      })
     });
 
     const response = await request(app).get("/api/health");
@@ -78,7 +93,13 @@ describe("GET /api/health", () => {
     async (state) => {
       const app = createApp({
         version: "1.2.3",
-        providerAuthHealth: healthStub({ enabled: true, state, expiresInSec: null, lastAuthError: null })
+        providerAuthHealth: healthStub({
+          enabled: true,
+          state,
+          expiresInSec: null,
+          lastAuthError: null,
+          lastSuccessAt: null
+        })
       });
 
       const response = await request(app).get("/api/health");
@@ -98,7 +119,8 @@ describe("GET /api/health", () => {
         enabled: true,
         state: "ok",
         expiresInSec: 90000,
-        lastAuthError: { at: "2026-11-04T10:00:00.000Z", code: "PROVIDER_AUTH_REQUIRED" }
+        lastAuthError: { at: "2026-11-04T10:00:00.000Z", code: "PROVIDER_AUTH_REQUIRED" },
+        lastSuccessAt: null
       })
     });
 
@@ -113,13 +135,50 @@ describe("GET /api/health", () => {
   });
 });
 
+describe("GET /api/health across processes", () => {
+  it("reflects an auth failure the worker recorded in the shared state file", async () => {
+    const dir = await makeEmptyHome();
+    const credentialsPath = path.join(dir, "credentials.json");
+    await fs.writeFile(
+      credentialsPath,
+      JSON.stringify({
+        access_token: "secret-access",
+        refresh_token: "secret-refresh",
+        expires_at: Math.floor(Date.now() / 1000) + 86400 * 3
+      }),
+      { mode: 0o600 }
+    );
+    vi.stubEnv("HIGGSFIELD_CREDENTIALS_PATH", credentialsPath);
+    // The worker process wrote this; the API only has the file.
+    await recordProviderAuthFailure({ statePath: providerAuthStatePathFor(credentialsPath), code: "PROVIDER_AUTH_REQUIRED" });
+
+    const response = await request(createApp({ version: "1.2.3" })).get("/api/health");
+
+    expect(response.status).toBe(200);
+    expect(response.body.status).toBe("degraded");
+    expect(response.body.provider.lastAuthError.code).toBe("PROVIDER_AUTH_REQUIRED");
+  });
+});
+
 describe("GET /api/health/provider", () => {
   it("answers 200 while healthy or merely expiring soon", async () => {
     const healthy = createApp({
-      providerAuthHealth: healthStub({ enabled: true, state: "ok", expiresInSec: 90000, lastAuthError: null })
+      providerAuthHealth: healthStub({
+        enabled: true,
+        state: "ok",
+        expiresInSec: 90000,
+        lastAuthError: null,
+        lastSuccessAt: null
+      })
     });
     const warning = createApp({
-      providerAuthHealth: healthStub({ enabled: true, state: "expiring_soon", expiresInSec: 60, lastAuthError: null })
+      providerAuthHealth: healthStub({
+        enabled: true,
+        state: "expiring_soon",
+        expiresInSec: 60,
+        lastAuthError: null,
+        lastSuccessAt: null
+      })
     });
 
     expect((await request(healthy).get("/api/health/provider")).status).toBe(200);
@@ -128,7 +187,13 @@ describe("GET /api/health/provider", () => {
 
   it("answers 503 when degraded so an external uptime monitor can alert", async () => {
     const app = createApp({
-      providerAuthHealth: healthStub({ enabled: true, state: "expired", expiresInSec: -60, lastAuthError: null })
+      providerAuthHealth: healthStub({
+        enabled: true,
+        state: "expired",
+        expiresInSec: -60,
+        lastAuthError: null,
+        lastSuccessAt: null
+      })
     });
 
     const response = await request(app).get("/api/health/provider");
