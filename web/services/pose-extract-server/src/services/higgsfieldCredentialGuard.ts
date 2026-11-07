@@ -1,5 +1,4 @@
 import fs from "node:fs/promises";
-import { constants as fsConstants } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
@@ -227,9 +226,16 @@ export async function restoreCredential(input: { credentialsPath: string }): Pro
     }
   }
 
+  // Only a fully usable credential may be restored: a truncated or token-less backup would replace
+  // a working file with a broken one.
+  const candidate = await readBackupCandidate(backupPath);
+  if (!candidate) {
+    return false;
+  }
+
   const tempPath = `${credentialsPath}.restore.${process.pid}.${Math.random().toString(16).slice(2)}`;
   try {
-    await fs.copyFile(backupPath, tempPath, fsConstants.COPYFILE_EXCL);
+    await fs.writeFile(tempPath, candidate.contents, { mode: 0o600, flag: "wx" });
     await fs.chmod(tempPath, 0o600);
     await fs.link(tempPath, credentialsPath);
     return true;

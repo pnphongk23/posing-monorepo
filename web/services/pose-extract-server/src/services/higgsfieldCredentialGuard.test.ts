@@ -180,6 +180,46 @@ describe("backupCredential safety", () => {
   });
 });
 
+describe("restoreCredential validation", () => {
+  it("refuses to restore a backup that is missing a required field", async () => {
+    const dir = await makeTempDir();
+    const credentialsPath = path.join(dir, "credentials.json");
+    const backupDir = path.join(dir, "backup");
+    await fs.mkdir(backupDir, { recursive: true });
+    // Structurally parseable but not a usable credential: no refresh token to restore.
+    await fs.writeFile(
+      path.join(backupDir, "credentials.latest.json"),
+      JSON.stringify({ access_token: "a", expires_at: NOW_SEC + 3600 }),
+      { mode: 0o600 }
+    );
+
+    expect(await restoreCredential({ credentialsPath })).toBe(false);
+    await expect(fs.stat(credentialsPath)).rejects.toThrow();
+  });
+
+  it("does not overwrite a credential that appears between the check and the link", async () => {
+    const dir = await makeTempDir();
+    const credentialsPath = path.join(dir, "credentials.json");
+    await writeCredential(credentialsPath, NOW_SEC + 7200);
+    await backupCredential({ credentialsPath, nowMs: NOW_MS });
+    await fs.rm(credentialsPath);
+
+    // The credential comes back (concurrent refresh / human upload) but the pre-check still sees
+    // "missing": the hard link must refuse to replace it.
+    const fresh = JSON.stringify({ access_token: "new", refresh_token: "new", expires_at: NOW_SEC + 86400 });
+    await fs.writeFile(credentialsPath, fresh, { mode: 0o600 });
+    const statSpy = vi.spyOn(fs, "stat").mockImplementationOnce(async () => {
+      const error = new Error("ENOENT") as NodeJS.ErrnoException;
+      error.code = "ENOENT";
+      throw error;
+    });
+
+    expect(await restoreCredential({ credentialsPath })).toBe(false);
+    statSpy.mockRestore();
+    expect(await fs.readFile(credentialsPath, "utf8")).toBe(fresh);
+  });
+});
+
 describe("restoreCredential safety", () => {
   it("never overwrites a credential that reappeared before the restore", async () => {
     const dir = await makeTempDir();

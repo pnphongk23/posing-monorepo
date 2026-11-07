@@ -77,7 +77,8 @@ The probe:
 1. Reads `expires_at` from the credential file (no CLI call, no token printed).
 2. Backs the credential up atomically (`backup/credentials.latest.json`, mode 0600).
 3. Runs `higgsfield account status` — the only command that proves the token still works against the API.
-4. Restores the backup if the CLI deleted the file during the call.
+4. Never restores anything: restoring belongs to the worker guard, so a probe can never overwrite a
+   credential that a job or a human just put back.
 
 It deliberately **does not** call the CLI when the credential is missing, unreadable, or already expired: an expired token triggers the CLI's refresh path, and a rejected refresh deletes the file.
 

@@ -172,7 +172,7 @@ describe("scripts/higgsfield-auth-probe.sh", () => {
     expect(result.invocations).toEqual([]);
   });
 
-  it("exits 2 when the API rejects the token and restores the credential the CLI deleted", async () => {
+  it("exits 2 when the API rejects the token and never restores the deleted credential", async () => {
     const workspace = await makeWorkspace(3 * 24 * 60 * 60);
 
     const result = await runProbe(workspace, {
@@ -183,10 +183,40 @@ describe("scripts/higgsfield-auth-probe.sh", () => {
 
     expect(result.code).toBe(2);
     expect(result.invocations).toEqual(["account status"]);
-    const restored = JSON.parse(await fs.readFile(workspace.credentialsPath, "utf8")) as { refresh_token: string };
-    expect(restored.refresh_token).toBe("secret-refresh");
-    expect((await fs.stat(workspace.credentialsPath)).mode & 0o777).toBe(0o600);
-    expect(result.stderr).toContain("restored");
+    // Restore belongs to the worker guard only: the probe must not put the file back.
+    await expect(fs.stat(workspace.credentialsPath)).rejects.toThrow();
+    const backupPath = path.join(path.dirname(workspace.credentialsPath), "backup", "credentials.latest.json");
+    expect((await fs.stat(backupPath)).mode & 0o777).toBe(0o600);
+  });
+
+  it("refuses to back up a credential that is missing a required field", async () => {
+    const workspace = await makeWorkspace(null, JSON.stringify({ access_token: "secret-access", expires_at: 9999999999 }));
+
+    const result = await runProbe(workspace);
+
+    expect(result.code).toBe(2);
+    expect(result.invocations).toEqual([]);
+    expect(result.stderr).toContain("refresh_token");
+    expect(result.stderr).not.toContain("secret-access");
+    const backupPath = path.join(path.dirname(workspace.credentialsPath), "backup", "credentials.latest.json");
+    await expect(fs.stat(backupPath)).rejects.toThrow();
+  });
+
+  it("keeps a newer backup instead of overwriting it with an older credential", async () => {
+    const workspace = await makeWorkspace(3600);
+    const backupDir = path.join(path.dirname(workspace.credentialsPath), "backup");
+    await fs.mkdir(backupDir, { recursive: true });
+    const newer = JSON.stringify({
+      access_token: "a",
+      refresh_token: "r",
+      expires_at: Math.floor(Date.now() / 1000) + 10 * 24 * 60 * 60
+    });
+    await fs.writeFile(path.join(backupDir, "credentials.latest.json"), newer, { mode: 0o600 });
+
+    const result = await runProbe(workspace);
+
+    expect(result.code).toBe(3);
+    expect(await fs.readFile(path.join(backupDir, "credentials.latest.json"), "utf8")).toBe(newer);
   });
 
   it.each([
