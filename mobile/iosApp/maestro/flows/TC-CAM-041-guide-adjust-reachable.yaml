@@ -1,0 +1,154 @@
+# TC-CAM-041 the guide settings are reachable through a VISIBLE control, and they persist
+#
+# Why this case exists: after the guide controls moved out of the tools popover, the only way into the adjust
+# sheet was tapping the pose reference — a control with no visible affordance. TC-CAM-015/032 were re-pointed at
+# retired ids, so both kept passing while the settings were effectively unreachable for a user. This flow therefore
+# opens the sheet ONLY through the visible top-chrome button, and never by tapping the guide.
+#
+# UNVERIFIED IDS — from the camera lane's working tree, not yet in a released commit (confirm on the build; they
+# are the only two handles this case cannot do without):
+#   camera.guideAdjust.open   CameraFeature.swift:1343-1344, label "Adjust guide" (top chrome)
+#   camera.guideAdjust.reset  CameraGuideAdjust.swift:176 + the Reset row at :375
+# Everything else below is verified in committed source: the sheet `camera.guideAdjust` with `.opacity`, `.scale`,
+# `.flip`, `.lineColor.pink|black|yellow|green`, `.done`; flip exposes value Mirrored/Normal and a label that flips
+# between "Mirror pose guide" and "Unmirror pose guide"; a line-colour swatch exposes value "Selected" when chosen;
+# Reset is wired to `resetGuideTransform()`, i.e. it restores the transform (scale 100 %) and NOT the colour/flip.
+appId: ${APP_ID}
+tags: [TC-CAM-041, p0]
+---
+- runFlow: ../subflows/launch.yaml
+- runFlow: ../subflows/open-camera.yaml
+# A guide has to exist before its controls mean anything.
+- runFlow: ../subflows/camera-open-picker.yaml
+- tapOn: '.*Use .* pose.*'
+- extendedWaitUntil:
+    visible:
+      id: "camera.poseGuide"
+    timeout: 20000
+# The point of the case: the affordance is on screen, with its own label, before anything is opened.
+- assertVisible:
+    id: "camera.guideAdjust.open"
+- assertVisible: '.*Adjust guide.*'
+- tapOn:
+    id: "camera.guideAdjust.open"
+- extendedWaitUntil:
+    visible:
+      id: "camera.guideAdjust"
+    timeout: 15000
+# The sheet's controls, including the Reset row.
+- assertVisible:
+    id: "camera.guideAdjust.opacity"
+- assertVisible:
+    id: "camera.guideAdjust.scale"
+- assertVisible:
+    id: "camera.guideAdjust.flip"
+- assertVisible:
+    id: "camera.guideAdjust.lineColor.pink"
+- assertVisible:
+    id: "camera.guideAdjust.lineColor.black"
+- assertVisible:
+    id: "camera.guideAdjust.lineColor.yellow"
+- assertVisible:
+    id: "camera.guideAdjust.lineColor.green"
+- assertVisible:
+    id: "camera.guideAdjust.reset"
+- assertVisible:
+    id: "camera.guideAdjust.done"
+# Nothing of the old popover surface may be back.
+- assertNotVisible:
+    id: "camera.tools.poseGuide"
+- assertNotVisible:
+    id: "camera.tools.mirror"
+- assertNotVisible:
+    id: "camera.tools.mirror.switch"
+- assertNotVisible:
+    id: "camera.tools.opacity"
+- assertNotVisible:
+    id: "camera.tools.scale"
+- assertNotVisible:
+    id: "camera.tools.lineColor.black"
+# Defaults first, so "changed" and "restored" are distinguishable: pink line, not mirrored, scale 100 %.
+- assertVisible:
+    id: "camera.guideAdjust.lineColor.pink"
+    text: '.*Selected.*'
+- assertVisible:
+    id: "camera.guideAdjust.flip"
+    text: '.*Normal.*'
+- assertVisible:
+    id: "camera.guideAdjust.scale"
+    text: '.*100%.*'
+# Change two settings that Reset does NOT touch, so the persistence check below is unambiguous.
+- tapOn:
+    id: "camera.guideAdjust.lineColor.yellow"
+- assertVisible:
+    id: "camera.guideAdjust.lineColor.yellow"
+    text: '.*Selected.*'
+- tapOn:
+    id: "camera.guideAdjust.flip"
+- assertVisible:
+    id: "camera.guideAdjust.flip"
+    text: '.*Mirrored.*'
+- assertVisible: '.*Unmirror pose guide.*'
+- tapOn:
+    id: "camera.guideAdjust.done"
+- extendedWaitUntil:
+    notVisible:
+      id: "camera.guideAdjust"
+    timeout: 15000
+# Re-open through the same visible button: the settings survived the sheet being dismissed.
+- assertVisible:
+    id: "camera.guideAdjust.open"
+- tapOn:
+    id: "camera.guideAdjust.open"
+- extendedWaitUntil:
+    visible:
+      id: "camera.guideAdjust"
+    timeout: 15000
+- assertVisible:
+    id: "camera.guideAdjust.lineColor.yellow"
+    text: '.*Selected.*'
+- assertVisible:
+    id: "camera.guideAdjust.flip"
+    text: '.*Mirrored.*'
+# Reset restores the TRANSFORM (source: `resetGuideTransform()`), so the scale returns to 100 % while the colour
+# and the mirror choice stay as the user left them — asserting otherwise would be inventing behaviour.
+- tapOn:
+    id: "camera.guideAdjust.reset"
+- assertVisible:
+    id: "camera.guideAdjust.scale"
+    text: '.*100%.*'
+- assertVisible:
+    id: "camera.guideAdjust.lineColor.yellow"
+    text: '.*Selected.*'
+- assertVisible:
+    id: "camera.guideAdjust.flip"
+    text: '.*Mirrored.*'
+- tapOn:
+    id: "camera.guideAdjust.done"
+- extendedWaitUntil:
+    notVisible:
+      id: "camera.guideAdjust"
+    timeout: 15000
+# Persistence across a relaunch: these are the settings `CameraSettings` carries in its snapshot.
+- runFlow: ../subflows/relaunch-keep-state.yaml
+- runFlow: ../subflows/open-camera.yaml
+- extendedWaitUntil:
+    visible:
+      id: "camera.guideAdjust.open"
+    timeout: 20000
+- tapOn:
+    id: "camera.guideAdjust.open"
+- extendedWaitUntil:
+    visible:
+      id: "camera.guideAdjust"
+    timeout: 15000
+- assertVisible:
+    id: "camera.guideAdjust.lineColor.yellow"
+    text: '.*Selected.*'
+- assertVisible:
+    id: "camera.guideAdjust.flip"
+    text: '.*Mirrored.*'
+- tapOn:
+    id: "camera.guideAdjust.done"
+- assertVisible:
+    id: "camera.poseGuide"
