@@ -25,7 +25,7 @@ struct CameraSettings: Equatable, Sendable {
     /// C3-Q2: no control exists for it yet, so it stays `false`, but it is persisted as D8 says.
     var guideFlipped = false
     var isGridVisible = false
-    var flash: CameraFlashSetting = .auto
+    var flash: CameraFlashSetting = .off
     var isPoseGuideVisible = true
     var lineColor: GuideLineColor = .white
     var transform = Transform()
@@ -53,7 +53,7 @@ struct CameraSettings: Equatable, Sendable {
         guideOpacity: Double = 0.5,
         guideFlipped: Bool = false,
         isGridVisible: Bool = false,
-        flash: CameraFlashSetting = .auto,
+        flash: CameraFlashSetting = .off,
         isPoseGuideVisible: Bool = true,
         lineColor: GuideLineColor = .white,
         transform: Transform = Transform(),
@@ -212,8 +212,9 @@ extension CameraSettings: Codable {
     private static func flash(from raw: String?) -> CameraFlashSetting {
         switch raw {
         case "off": return .off
+        case "auto": return .auto
         case "on": return .on
-        default: return .auto
+        default: return .off
         }
     }
 

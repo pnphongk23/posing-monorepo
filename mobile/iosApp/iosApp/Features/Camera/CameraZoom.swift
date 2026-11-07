@@ -20,8 +20,8 @@ extension CameraZoomLevel {
     }
 }
 
-/// Lens-aware zoom presets (`05-01`/`05-21`: 0.5x / 1x / 2x). A preset the lens cannot serve is not
-/// offered at all, and a request outside the device's range is clamped instead of failing silently.
+/// Lens-aware zoom presets. The owner retained 0.5x behavior; a stop the active lens cannot serve is
+/// not offered, and requests outside the device range are clamped.
 enum CameraZoomPreset: String, CaseIterable, Identifiable, Sendable {
     case half = "0.5x"
     case one = "1x"
@@ -119,24 +119,20 @@ enum CameraZoomScale {
     }
 }
 
-/// The slider's own geometry, pure: where the thumb sits for a zoom value, where the value pill sits, and whether a
-/// tick's label would repeat what the pill already says. The board's control is the reference: a light thumb on the
-/// track and the accent pill directly above it, kept inside the track at the ends.
+/// The slider's own geometry, pure: where the thumb sits for a zoom value and whether a tick's label would repeat
+/// the value shown in that thumb.
 struct CameraZoomTrackGeometry: Equatable {
     let width: CGFloat
     let thumbDiameter: CGFloat
     let range: ClosedRange<CGFloat>
 
-    /// The pill's row, the gap under it, the thumb's row, and the ticks with their labels under the track.
-    static let pillHeight: CGFloat = 22
-    static let pillToTrack: CGFloat = 4
-    static let thumbDiameterConstant: CGFloat = 22
-    static let markHeight: CGFloat = 6
-    static let labelHeight: CGFloat = 11
+    /// Geometry for the dial and its value thumb.
+    static let totalHeight: CGFloat = 44
+    static let thumbDiameterConstant: CGFloat = 44
+    static let thumbVisualHeight: CGFloat = 26
+    static let markHeight: CGFloat = 5
+    static let labelHeight: CGFloat = 12
     static let markToLabel: CGFloat = 2
-    static var totalHeight: CGFloat {
-        pillHeight + pillToTrack + thumbDiameterConstant + 2 + markHeight + markToLabel + labelHeight
-    }
 
     var trackWidth: CGFloat { max(width - thumbDiameter, 1) }
 
@@ -145,56 +141,65 @@ struct CameraZoomTrackGeometry: Equatable {
         thumbDiameter / 2 + trackWidth * CameraZoomScale.fraction(of: factor, in: range)
     }
 
-    /// Centre of the pill: over the thumb, pushed inside the track at the extremes so it never hangs off.
+    /// Centre of the value thumb, kept inside the track at either extreme.
     func pillCenterX(for factor: CGFloat) -> CGFloat {
-        let half = Self.pillHeight / 2 + 8
+        let half = thumbDiameter / 2
         return min(max(thumbCenterX(for: factor), half), max(half, width - half))
     }
 
-    var pillCenterY: CGFloat { Self.pillHeight / 2 }
+    var pillCenterY: CGFloat { Self.thumbVisualHeight / 2 }
     /// The track line and the thumb share one centre line, under the pill.
-    var trackLineCenterY: CGFloat { Self.pillHeight + Self.pillToTrack + thumbDiameter / 2 }
+    var trackLineCenterY: CGFloat { Self.thumbVisualHeight / 2 }
     /// The top of a tick: its mark, then its label, clear of the thumb.
-    var ticksTop: CGFloat { trackLineCenterY + thumbDiameter / 2 + 2 }
+    var ticksTop: CGFloat { 18 }
     var tickCenterY: CGFloat { ticksTop + (Self.markHeight + Self.markToLabel + Self.labelHeight) / 2 }
-    /// The minimum stop's label x, to prove the labels survive where the pill does not cover them.
+    /// The minimum stop's label x.
     var minimumLabelX: CGFloat { thumbDiameter / 2 }
 
-    /// Whether a tick's label is readable: it is dropped where the pill already carries that value.
+    /// Whether a tick's label is readable: it is hidden when the thumb already carries that value.
     func showsLabel(forFactor tick: CGFloat, thumbFactor: CGFloat) -> Bool {
         abs(thumbCenterX(for: tick) - thumbCenterX(for: thumbFactor)) > 14
     }
 }
 
-/// The continuous zoom control: a light thumb on a thin track, a tick and a label per preset the lens serves, and
-/// the zoom value in an accent pill above the thumb that follows it. Drag or tap anywhere on the track; VoiceOver
-/// gets the same control as one adjustable element.
+/// A continuous zoom control with the current value in a white thumb. Drag continuously or tap for the nearest
+/// preset; VoiceOver gets the same control as one adjustable element.
 struct CameraZoomSlider: View {
     let factor: CGFloat
     let range: ClosedRange<CGFloat>
     var isEnabled = true
     let onChange: (CGFloat) -> Void
 
-    private let thumbSize: CGFloat = 22
+    private let thumbSize: CGFloat = CameraZoomTrackGeometry.thumbDiameterConstant
 
     var body: some View {
         GeometryReader { proxy in
             let geometry = CameraZoomTrackGeometry(width: proxy.size.width, thumbDiameter: thumbSize, range: range)
             ZStack(alignment: .topLeading) {
-                valuePill(geometry)
-                trackLine(geometry)
-                tickMarks(geometry)
-                thumb(geometry)
+                  trackLine(geometry)
+                  tickMarks(geometry)
+                  valuePill(geometry)
             }
             .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
             .contentShape(Rectangle())
             .gesture(
                 DragGesture(minimumDistance: 0)
-                    .onChanged { value in
-                        guard isEnabled else { return }
-                        let fraction = (value.location.x - thumbSize / 2) / geometry.trackWidth
-                        onChange(CameraZoomScale.factor(atFraction: fraction, in: range))
-                    }
+                  .onChanged { value in
+                      guard isEnabled else { return }
+                      let fraction = (value.location.x - thumbSize / 2) / geometry.trackWidth
+                      onChange(CameraZoomScale.factor(atFraction: fraction, in: range))
+                  }
+                  .onEnded { value in
+                      guard isEnabled,
+                            abs(value.translation.width) < 5,
+                            abs(value.translation.height) < 5
+                      else { return }
+                      let fraction = (value.location.x - thumbSize / 2) / geometry.trackWidth
+                      let tappedFactor = CameraZoomScale.factor(atFraction: fraction, in: range)
+                      let nearestStop = CameraZoomScale.ticks(in: range)
+                          .min { abs($0.factor - tappedFactor) < abs($1.factor - tappedFactor) }
+                      if let nearestStop { onChange(nearestStop.factor) }
+                  }
             )
         }
         .frame(height: CameraZoomTrackGeometry.totalHeight)
@@ -216,17 +221,14 @@ struct CameraZoomSlider: View {
         .accessibilityIdentifier(CameraZoomScale.sliderIdentifier)
     }
 
-    /// The value, in the accent pill over the thumb (the board's pink "1×"): it follows the thumb, so the number
-    /// and the handle are never read from two different places.
+    /// The value in the white thumb: it follows the lens, so the number and handle stay together.
     private func valuePill(_ geometry: CameraZoomTrackGeometry) -> some View {
         Text(CameraZoomScale.valueLabel(factor))
             .font(.system(size: 12, weight: .semibold))
-            .foregroundStyle(AP.Color.onAccent)
-            .padding(.horizontal, AP.Space.space8)
-            .frame(minHeight: CameraZoomTrackGeometry.pillHeight)
-            .background(Capsule().fill(AP.Color.accent))
-            .fixedSize()
-            .position(x: geometry.pillCenterX(for: factor), y: CameraZoomTrackGeometry.pillHeight / 2)
+              .foregroundStyle(Color.black.opacity(0.88))
+              .frame(width: thumbSize, height: CameraZoomTrackGeometry.thumbVisualHeight)
+              .background(Capsule().fill(Color.white))
+              .position(x: geometry.pillCenterX(for: factor), y: geometry.pillCenterY)
             .accessibilityHidden(true)
     }
 
@@ -238,17 +240,8 @@ struct CameraZoomSlider: View {
             .allowsHitTesting(false)
     }
 
-    private func thumb(_ geometry: CameraZoomTrackGeometry) -> some View {
-        Circle()
-            .fill(AP.Color.primaryText)
-            .frame(width: thumbSize, height: thumbSize)
-            .position(x: geometry.thumbCenterX(for: factor), y: geometry.trackLineCenterY)
-            .shadow(color: .black.opacity(0.35), radius: 2, y: 1)
-            .allowsHitTesting(false)
-    }
-
     /// A tick per preset the lens serves, with its label under the track. The label under the thumb is dropped:
-    /// the pill above already says that value.
+    /// the value thumb already says that value.
     private func tickMarks(_ geometry: CameraZoomTrackGeometry) -> some View {
         ForEach(CameraZoomScale.ticks(in: range)) { preset in
             VStack(spacing: 2) {

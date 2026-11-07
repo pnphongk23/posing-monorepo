@@ -73,11 +73,13 @@ final class CameraFeatureTests: XCTestCase {
     }
 
     /// The Flash row is three chips, so a choice applies exactly itself: there is no ring to cycle through and no
-    /// hidden next step. Auto stays the shipped default.
+    /// hidden next step. Off is the spec default.
     func testFlashIsChosenNotCycled() {
         let model = CameraViewModel()
         model.coordinator.onPermissionResult(.authorized)
-        XCTAssertEqual(model.flashSetting, .auto, "the shipped default")
+        XCTAssertEqual(model.flashSetting, .off, "the spec default")
+        XCTAssertEqual(CameraSettings().flash, .off, "a fresh persisted settings record uses the same default")
+        XCTAssertEqual(CameraSettings.decode(#"{}"#)?.flash, .off, "a partial legacy record fills with Off")
         for setting in CameraFlashSetting.toolsChoices {
             model.setFlash(setting)
             XCTAssertEqual(model.flashSetting, setting)
@@ -2070,17 +2072,30 @@ final class CameraChromeTests: XCTestCase {
                 "\(label): a picker on screen must not add a catalogue row to the bar"
             )
 
-            // The Poses chip is the one wide controlFill pill on the scale row; the rail's controls are
-            // 48 pt squares, so a run this long can only be the chip.
-            let controlFill = hex(APColorTokens.controlFill, scheme)
-            XCTAssertFalse(
-                filledRows(withPicker, hex: controlFill, minRun: 70).isEmpty,
-                "\(label): the Poses control is drawn on the scale row"
+          // The Poses chip is dark glass rather than the old flat controlFill pill.
+          let controlFill = hex(APColorTokens.controlFill, scheme)
+          XCTAssertTrue(
+              filledRows(withPicker, hex: controlFill, minRun: 70).isEmpty,
+              "\(label): the glass Poses control has no flat fill"
+          )
+          XCTAssertTrue(
+              filledRows(noPicker, hex: controlFill, minRun: 70).isEmpty,
+              "\(label): a camera that cannot place a pose draws no Poses control"
+          )
+            let source = try String(
+                contentsOf: URL(fileURLWithPath: #filePath)
+                    .deletingLastPathComponent()
+                    .deletingLastPathComponent()
+                    .deletingLastPathComponent()
+                    .appendingPathComponent("iosApp/Features/Camera/CameraFeature.swift"),
+                encoding: .utf8
             )
+            let poseControlStart = try XCTUnwrap(source.range(of: "private var posesControl: some View")?.lowerBound)
+            let poseControl = source[poseControlStart...].prefix(2_000)
             XCTAssertTrue(
-                filledRows(noPicker, hex: controlFill, minRun: 70).isEmpty,
-                "\(label): a camera that cannot place a pose draws no Poses control"
-            )
+                poseControl.contains("CameraGlassBackground(shape: .capsule)"),
+              "\(label): the Poses control uses the camera's dark glass treatment"
+          )
 
             // And the shutter is reachable in both states.
             let shutter = hex(APColorTokens.accent, scheme)
@@ -2657,61 +2672,40 @@ final class CameraScreenStageTests: XCTestCase {
             for x in [8, Int(size.width) - 8] {
                 let pixel = try XCTUnwrap(bitmap.color(x: x, y: band))
                 XCTAssertGreaterThan(pixel.red, 40, "\(ratio.rawValue) at (\(x), \(band)): the preview shows through")
-                XCTAssertLessThan(pixel.red, 150, "\(ratio.rawValue) at (\(x), \(band)): and it is dimmed")
+                  XCTAssertGreaterThanOrEqual(pixel.red, 107, "\(ratio.rawValue): outside preview matches 55% black dim")
+                  XCTAssertLessThanOrEqual(pixel.red, 123, "\(ratio.rawValue): outside preview is not dimmed beyond 55%")
             }
 
             // Inside the frame the photo is untouched.
-            let inside = try XCTUnwrap(
-                bitmap.color(x: Int(frame.midX), y: Int(frame.midY)),
-                "\(ratio.rawValue): the frame's middle is painted"
-            )
-            XCTAssertGreaterThan(inside.red, 200, "\(ratio.rawValue): the photo inside the frame is not dimmed")
+              // Stay inside the photo, but away from the centered guide: the guide may correctly be black.
+              let inside = try XCTUnwrap(
+                  bitmap.color(x: Int(frame.minX + 8), y: Int(frame.midY)),
+                  "\(ratio.rawValue): an unobstructed in-frame preview pixel is painted"
+              )
+              XCTAssertGreaterThan(inside.red, 200, "\(ratio.rawValue): the photo inside the frame is not dimmed")
         }
     }
 
-    /// The top chrome is drawn as the light boards draw it — white pills with dark icons — while the rest of the
-    /// camera keeps the dark chrome it has. The camera forces a dark scheme on itself, so these three state their
-    /// light tokens explicitly; this is the proof that they resolve light and nothing else moved.
-    func testTheTopChromeIsTheLightBoardAndTheRestStaysDark() throws {
+    /// The board's top controls use dark glass and white glyphs over the camera preview.
+    func testTopChromeUsesDarkGlassAndWhiteGlyphs() throws {
         let bitmap = try renderScreen(ratio: .threeFour)
-        let lightSurface = APColorTokens.surface.spec(for: .light).hex ?? 0
-        let lightInk = APColorTokens.primaryText.spec(for: .light).hex ?? 0
-        let darkControlFill = APColorTokens.controlFill.spec(for: .dark).hex ?? 0
 
-        // Inside the Close pill, away from its glyph: the light surface token.
+        // Inside the Close circle, away from its glyph: a dark translucent surface.
         let closeFill = try XCTUnwrap(bitmap.color(x: 24, y: 70), "the Close pill is painted")
-        XCTAssertTrue(
-            isNear(closeFill, hex: lightSurface, tolerance: 8),
-            "the top chrome's fill is the light surface token (got \(closeFill.red),\(closeFill.green),\(closeFill.blue))"
-        )
+        XCTAssertLessThan(luminance(closeFill), 110, "the close control is dark glass")
 
-        // The darkest pixel inside that pill is the glyph: the light primary-text token.
-        var darkest: APPixel?
+        // The brightest pixel in the Close circle is the white glyph.
+        var brightest: APPixel?
         for y in 62...100 {
-            for x in 20...56 {
+            for x in 4...40 {
                 guard let pixel = bitmap.color(x: x, y: y) else { continue }
-                if let current = darkest, luminance(current) <= luminance(pixel) { continue }
-                darkest = pixel
+                if let current = brightest, luminance(current) >= luminance(pixel) { continue }
+                brightest = pixel
             }
         }
-        let ink = try XCTUnwrap(darkest, "the Close glyph is painted")
-        // A glyph's core is the ink token (18,18,18); its antialiased edge can go a shade darker, so the test asks
-        // for "the ink's neighbourhood and clearly darker than the pill" rather than an exact pixel.
-        XCTAssertLessThanOrEqual(
-            luminance(ink), 22,
-            "the icon is dark ink, not a light glyph on a dark pill (got \(ink.red),\(ink.green),\(ink.blue))"
-        )
-        XCTAssertTrue(
-            isNear(ink, hex: lightInk, tolerance: 24),
-            "and it is the light primary-text token (got \(ink.red),\(ink.green),\(ink.blue))"
-        )
+        let glyph = try XCTUnwrap(brightest, "the Close glyph is painted")
+        XCTAssertGreaterThan(luminance(glyph), 200, "the top glyph is white against the glass")
 
-        // And the chrome below is untouched: the Poses chip on the zoom band keeps the dark control fill.
-        let chip = try XCTUnwrap(bitmap.color(x: 350, y: 660), "the Poses chip is painted")
-        XCTAssertTrue(
-            isNear(chip, hex: darkControlFill, tolerance: 8),
-            "the zoom band's Poses chip is unchanged (got \(chip.red),\(chip.green),\(chip.blue))"
-        )
     }
 
     private func luminance(_ pixel: APPixel) -> Int {
@@ -2769,52 +2763,40 @@ final class CameraScreenStageTests: XCTestCase {
 final class CameraChromeBoardParityTests: XCTestCase {
     private let darkScheme: ColorScheme = .dark
 
-    // MARK: Zoom thumb and value pill
+      // MARK: Zoom dial
 
-    /// The board's zoom control: a light round thumb on the dark band and the value in a pink pill above it, at the
-    /// thumb's own x — the pill is the value, so it never sits anywhere but over the thumb.
-    func testTheThumbIsLightAndTheValueIsAPinkPillAboveIt() throws {
-        let bitmap = try renderZoomSlider(factor: 1.5)
-        let geometry = CameraZoomTrackGeometry(width: 260, thumbDiameter: 22, range: 1...2)
-        let thumb = try XCTUnwrap(
-            bitmap.color(x: Int(geometry.thumbCenterX(for: 1.5)), y: Int(geometry.trackLineCenterY)),
-            "the thumb is painted"
-        )
-        XCTAssertGreaterThan(thumb.red, 200, "the thumb is a light disc on the dark band")
-        XCTAssertGreaterThan(thumb.green, 200)
-        XCTAssertGreaterThan(thumb.blue, 200)
+      /// The selected zoom value is the white thumb itself, with a 44pt target.
+      func testSelectedZoomValueIsTheWhiteThumb() throws {
+          let bitmap = try renderZoomSlider(factor: 1.5)
+          let geometry = CameraZoomTrackGeometry(width: 260, thumbDiameter: 44, range: 1...2)
+          let thumb = try XCTUnwrap(
+              bitmap.color(x: Int(geometry.thumbCenterX(for: 1.5)) + 16, y: Int(geometry.trackLineCenterY)),
+              "the thumb is painted"
+          )
+          XCTAssertGreaterThan(thumb.red, 200, "the value thumb is white")
+          XCTAssertGreaterThan(thumb.green, 200)
+          XCTAssertGreaterThan(thumb.blue, 200)
+      }
 
-        let band = try pillBand(in: bitmap, accentHex: 0xE89CAE)
-        // The pill's own middle: its rounded ends are antialiased against the band.
-        // Just inside the pill's top edge: its centre is the glyph.
-        let pillRow = try XCTUnwrap(band.rows.min().map { $0 + 3 }, "the pill is painted")
-        let pill = try XCTUnwrap(bitmap.color(x: band.midX, y: pillRow), "the value pill is painted")
-        XCTAssertEqual(pill.red, 232, accuracy: 12, "the pill is the accent pink")
-        XCTAssertEqual(pill.green, 156, accuracy: 26)
-        XCTAssertEqual(pill.blue, 174, accuracy: 26)
-    }
+      /// The visible value thumb follows the slider factor at both ends and in the middle.
+      func testTheValueThumbFollowsTheFactor() throws {
+          for factor: CGFloat in [1, 1.5, 2] {
+              let bitmap = try renderZoomSlider(factor: factor)
+              let geometry = CameraZoomTrackGeometry(width: 260, thumbDiameter: 44, range: 1...2)
+              let thumb = try XCTUnwrap(bitmap.color(
+                  x: Int(geometry.thumbCenterX(for: factor)) + 16,
+                  y: Int(geometry.trackLineCenterY)
+              ))
+              XCTAssertGreaterThan(thumb.red, 200, "\(factor)x: white thumb stays on its selected stop")
+          }
+      }
 
-    /// The pill follows the thumb: it is over the thumb at the minimum, the middle and the maximum, and it stays
-    /// inside the track at the ends instead of hanging off it.
-    func testTheValuePillFollowsTheThumb() throws {
-        for factor: CGFloat in [1, 1.5, 2] {
-            let bitmap = try renderZoomSlider(factor: factor)
-            let geometry = CameraZoomTrackGeometry(width: 260, thumbDiameter: 22, range: 1...2)
-            let pill = try pillBand(in: bitmap, accentHex: 0xE89CAE)
-            XCTAssertEqual(
-                Double(pill.midX), Double(geometry.pillCenterX(for: factor)), accuracy: 3,
-                "\(factor)x: the pill sits over the thumb (kept inside the track at the ends)"
-            )
-        }
-    }
-
-    /// The value is said once: a tick's label is dropped where the pill already carries that value (the tick under
-    /// the thumb), and kept where it does not. The rule is pure, and the slider reads it.
-    func testTheTickLabelUnderTheThumbIsNotRepeated() throws {
-        let geometry = CameraZoomTrackGeometry(width: 260, thumbDiameter: 22, range: 1...2)
-        XCTAssertFalse(
-            geometry.showsLabel(forFactor: 1, thumbFactor: 1),
-            "at 1x the pill says 1x: the tick under it does not repeat it"
+      /// The value is said once: a tick's label is dropped where the thumb carries that value.
+      func testTheTickLabelUnderTheThumbIsNotRepeated() throws {
+          let geometry = CameraZoomTrackGeometry(width: 260, thumbDiameter: 44, range: 1...2)
+          XCTAssertFalse(
+              geometry.showsLabel(forFactor: 1, thumbFactor: 1),
+              "at 1x the thumb says 1x: the tick under it does not repeat it"
         )
         XCTAssertTrue(
             geometry.showsLabel(forFactor: 1, thumbFactor: 2),
@@ -2831,7 +2813,7 @@ final class CameraChromeBoardParityTests: XCTestCase {
         )
         XCTAssertTrue(
             source.contains("if geometry.showsLabel(forFactor: preset.factor, thumbFactor: factor) {"),
-            "the tick's label is only drawn where the pill does not already say it"
+              "the tick's label is only drawn where the thumb does not already say it"
         )
     }
 
@@ -2869,25 +2851,13 @@ final class CameraChromeBoardParityTests: XCTestCase {
 
     // MARK: The bottom rail
 
-    /// The rail is a flat band on the board: no rounded card behind the thumbnail, the shutter and the flip.
-    ///
-    /// Rendered first: on the panel's own first row the whole width is one fill, so the row's luminance is even.
-    /// A rounded top leaves its corners showing the gradient above, which makes that row uneven. Then the shape
-    /// itself, because a fill that happens to match cannot undo a rounded corner.
-    func testTheBottomRailIsAFlatBand() throws {
-        let bitmap = try renderBottomBar()
-        let row = try XCTUnwrap(firstRailRow(in: bitmap, column: bitmap.width / 2), "the rail is painted")
-        var lowest = Int.max
-        var highest = Int.min
-        for x in 0..<bitmap.width {
-            guard let pixel = bitmap.color(x: x, y: row) else { continue }
-            lowest = min(lowest, luminance(pixel))
-            highest = max(highest, luminance(pixel))
-        }
-        XCTAssertLessThanOrEqual(
-            highest - lowest, 6,
-            "the rail's first row is one flat fill across the width: no rounded card"
-        )
+      /// The rail has no background of its own; only the 9:16 stage gets the specified bottom gradient.
+      func testTheBottomRailDoesNotAddASecondDarkLayer() throws {
+          let bitmap = try renderBottomBar()
+          let backdrop = try XCTUnwrap(bitmap.color(x: 8, y: 4))
+          let railMargin = try XCTUnwrap(bitmap.color(x: 8, y: bitmap.height - 20))
+          XCTAssertGreaterThan(backdrop.red, 200, "the probe starts with a bright preview backdrop")
+          XCTAssertGreaterThan(railMargin.red, 200, "the rail margin keeps the preview backdrop visible")
 
         let source = try String(
             contentsOf: URL(fileURLWithPath: #filePath)
@@ -2901,7 +2871,8 @@ final class CameraChromeBoardParityTests: XCTestCase {
         let bar = source[barStart...]
         let panelStart = try XCTUnwrap(bar.range(of: "private var panel: some View")?.lowerBound)
         let panel = bar[panelStart...].prefix(400)
-        XCTAssertFalse(panel.contains("RoundedTopShape"), "the rail has no rounded card behind it")
+          XCTAssertFalse(panel.contains(".background("), "the rail has no separate background")
+          XCTAssertTrue(bar.contains("if showsBottomGradient"), "only the tall ratio opts into the bottom gradient")
     }
 
     // MARK: Helpers
@@ -2970,25 +2941,6 @@ final class CameraChromeBoardParityTests: XCTestCase {
         return bitmap
     }
 
-    /// The x range of the accent-pink pixels in the pill's row band.
-    private func pillBand(in bitmap: APBitmap, accentHex: UInt32) throws -> (midX: Int, rows: [Int]) {
-        let target = (red: Int((accentHex >> 16) & 0xFF), green: Int((accentHex >> 8) & 0xFF), blue: Int(accentHex & 0xFF))
-        var minX = Int.max, maxX = Int.min
-        var rows: [Int] = []
-        for y in 0..<bitmap.height {
-            for x in 0..<bitmap.width {
-                guard let pixel = bitmap.color(x: x, y: y) else { continue }
-                guard abs(pixel.red - target.red) <= 12,
-                      abs(pixel.green - target.green) <= 26,
-                      abs(pixel.blue - target.blue) <= 26 else { continue }
-                minX = min(minX, x); maxX = max(maxX, x)
-                rows.append(y)
-            }
-        }
-        XCTAssertLessThanOrEqual(minX, maxX, "the pill is painted")
-        return ((minX + maxX) / 2, rows)
-    }
-
     /// Bright ink (a label) in a small window: the tick labels are light type on the dark band.
     private func hasBrightInk(in bitmap: APBitmap, aroundX x: Int, rows: Range<Int>) -> Bool {
         for y in rows where y >= 0 && y < bitmap.height {
@@ -3017,17 +2969,6 @@ final class CameraChromeBoardParityTests: XCTestCase {
             if painted >= minimum { rows.append(y) }
         }
         return rows
-    }
-
-    /// The first row where a column paints the rail's own dark fill.
-    private func firstRailRow(in bitmap: APBitmap, column: Int) -> Int? {
-        for y in 1..<bitmap.height {
-            guard let pixel = bitmap.color(x: column, y: y),
-                  let above = bitmap.color(x: column, y: y - 1) else { continue }
-            // The rail starts with a step: its own fill is darker than the gradient above it.
-            if luminance(pixel) < luminance(above) - 6, luminance(pixel) < 80 { return y }
-        }
-        return nil
     }
 
     private func luminance(_ pixel: APPixel) -> Int {
@@ -3151,8 +3092,7 @@ final class CameraGuideAdjustTests: XCTestCase {
             onOpacityChange: { _ in },
             onLineColorChange: { _ in },
             onScaleChange: { _ in },
-            onFlip: {},
-            onReset: {},
+              onFlip: {},
             onDone: {}
         )
         .environment(\.colorScheme, .light)
@@ -3176,7 +3116,7 @@ final class CameraGuideAdjustTests: XCTestCase {
         let sliderBands = rowBands(rowsPainted(bitmap, hex: track, minRun: 20))
         XCTAssertGreaterThanOrEqual(sliderBands, 2, "Opacity and Scale are both drawn as sliders")
         XCTAssertFalse(
-            rowsPainted(bitmap, hex: controlFill, minRun: 120).isEmpty,
+            rowsPainted(bitmap, hex: controlFill, minRun: 30).isEmpty,
             "the Mirror guide button is drawn"
         )
     }
@@ -3208,7 +3148,7 @@ final class CameraGuideAdjustTests: XCTestCase {
         }
         XCTAssertTrue(doneIsLightAccent, "Done is the light accent text token, as on the board")
 
-        // The palette and the slider track are the board's light tokens: four swatches and two dark-pink tracks.
+        // The owner-approved palette has two swatches; the two slider tracks use the board's light accent token.
         for color in GuideLineColor.allCases {
             let hex = resolvedHex(color.color)
             XCTAssertFalse(
@@ -3223,11 +3163,11 @@ final class CameraGuideAdjustTests: XCTestCase {
             "the Opacity and Scale tracks are the light accentText, as on the board"
         )
 
-        // The camera keeps drawing itself as before: the area above the photo frame is the stage's own 65 % dim over
+        // The camera keeps drawing itself as before: the area above the photo frame is the stage's own 55 % dim over
         // the stand-in preview, so the sheet's light trait is local to the sheet rather than a screen-wide flip.
         let dimmed = try XCTUnwrap(bitmap.color(x: 196, y: 20), "the stage's dim is painted")
         XCTAssertTrue(
-            isNear(dimmed, hex: 0x31434E, tolerance: 8),
+            isNear(dimmed, hex: 0x3F5665, tolerance: 8),
             "the camera's stage still draws its own dim over the preview (got \(dimmed.red),\(dimmed.green),\(dimmed.blue))"
         )
     }
@@ -3354,7 +3294,7 @@ final class CameraGuideAdjustTests: XCTestCase {
         )
         let bitmap = probe.capture()
         probe.tearDown()
-        let geometry = CameraZoomTrackGeometry(width: 260, thumbDiameter: 22, range: 1...2)
+          let geometry = CameraZoomTrackGeometry(width: 260, thumbDiameter: 44, range: 1...2)
         let thumb = try XCTUnwrap(
             bitmap.color(x: Int(geometry.thumbCenterX(for: 1.5)), y: Int(geometry.trackLineCenterY)),
             "the zoom thumb is painted"
@@ -3376,8 +3316,7 @@ final class CameraGuideAdjustTests: XCTestCase {
             onOpacityChange: { _ in },
             onLineColorChange: { _ in },
             onScaleChange: { _ in },
-            onFlip: {},
-            onReset: {},
+              onFlip: {},
             onDone: {}
         )
         .environment(\.colorScheme, .light)
@@ -3678,16 +3617,18 @@ final class CameraGuideScaleModelTests: XCTestCase {
 /// view source). Everything else is the pure layout logic the views are wired to.
 @MainActor
 final class CameraChromeContractTests: XCTestCase {
-    func testAdjustGuideButtonOpensSheetOnlyWhenCameraControlsAreEnabled() throws {
+    func testEyeOpensAdjustSheetOnlyWhenGuideAndCameraAreAvailable() throws {
         let source = try cameraFeatureSource()
         let controls = try viewBody(named: "topControls", in: source)
-        XCTAssertTrue(controls.contains("action: { model.openGuideAdjust() }"), "button activation calls the sheet entry point")
+        XCTAssertTrue(controls.contains("Button(action: { model.openGuideAdjust() })"), "the eye opens the adjust sheet")
+        XCTAssertTrue(controls.contains(".disabled(guide == nil || !model.cameraControlsEnabled)"))
+        XCTAssertTrue(controls.contains(".opacity(guide == nil ? 0.35 : 1)"), "the no-guide eye stays visible but dimmed")
 
         let ready = CameraViewModel(settingsStore: InMemoryCameraSettingsStore())
         ready.coordinator.onPermissionResult(.authorized)
         ready.guideAppeared(hasGuide: true)
         ready.openGuideAdjust()
-        XCTAssertTrue(ready.showGuideAdjust, "the Adjust guide button opens the sheet")
+        XCTAssertTrue(ready.showGuideAdjust, "the visible eye opens the sheet")
 
         ready.closeGuideAdjust()
         XCTAssertTrue(ready.coordinator.onCaptureRequested())
@@ -3716,33 +3657,52 @@ final class CameraChromeContractTests: XCTestCase {
         XCTAssertTrue(model.showGuideAdjust)
     }
 
-    func testResetRowCallsTheGuideTransformResetPath() throws {
+    func testShowGuideToggleLivesInTheAdjustSheetAndUsesCameraVisibilityState() throws {
         let sheetSource = try cameraGuideAdjustSource()
         let featureSource = try cameraFeatureSource()
-        let resetRow = try viewBody(named: "resetRow", in: sheetSource)
         let screen = try XCTUnwrap(featureSource.range(of: "CameraGuideAdjustSheet("))
         let sheetWiring = String(featureSource[screen.lowerBound...]).prefix(1_000)
 
-        XCTAssertTrue(sheetSource.contains("resetRow\n"), "the sheet includes its Reset row")
-        XCTAssertTrue(resetRow.contains("Button(\"Reset\", action: onReset)"), "activating Reset calls the row action")
-        XCTAssertTrue(sheetWiring.contains("onReset: { model.resetGuideTransform() }"), "the row action resets the model transform")
+        XCTAssertTrue(sheetSource.contains("Toggle(\"Show guide\""), "visibility control is in the sheet")
+        XCTAssertTrue(sheetWiring.contains("isGuideVisible: model.isPoseGuideVisible"))
+        XCTAssertTrue(sheetWiring.contains("onGuideVisibilityChange: { model.setPoseGuideVisibility($0) }"))
+        XCTAssertFalse(sheetSource.contains("Button(\"Reset\""), "the owner removed Reset")
     }
 
-    func testAdjustGuideButtonVisibilityFollowsGuideSelectionAndVisibility() throws {
+    func testGuideEyeHasNoAdjustButtonAndVisibilityCanChangeSeparately() throws {
         let source = try cameraFeatureSource()
         let controls = try viewBody(named: "topControls", in: source)
-        XCTAssertTrue(controls.contains("if guide != nil"), "the guide controls require a selected pose")
-        XCTAssertTrue(controls.contains("if model.isPoseGuideVisible"), "Adjust guide is hidden with the guide")
-        XCTAssertTrue(controls.contains("identifier: \"camera.guideAdjust.open\""))
+        XCTAssertTrue(controls.contains(".accessibilityIdentifier(\"camera.guideToggle\")"))
+        XCTAssertFalse(controls.contains("camera.guideAdjust.open"), "the separate entry point was removed")
 
         let model = CameraViewModel(settingsStore: InMemoryCameraSettingsStore())
         model.coordinator.onPermissionResult(.authorized)
         model.guideAppeared(hasGuide: true)
-        XCTAssertTrue(model.isPoseGuideVisible, "selected and shown")
+        XCTAssertTrue(model.isPoseGuideVisible, "selected guide starts visible")
         model.togglePoseGuideVisibility()
-        XCTAssertFalse(model.isPoseGuideVisible, "hidden guide removes the adjust control")
+        XCTAssertFalse(model.isPoseGuideVisible, "sheet toggle hides the guide")
         model.togglePoseGuideVisibility()
-        XCTAssertTrue(model.isPoseGuideVisible, "showing the guide restores the adjust control")
+        XCTAssertTrue(model.isPoseGuideVisible, "sheet toggle restores the guide")
+    }
+
+    func testToolsDotTracksFlashGridAndTimerButIgnoresRatio() {
+        let model = CameraViewModel(settingsStore: InMemoryCameraSettingsStore())
+        model.coordinator.onPermissionResult(.authorized)
+        XCTAssertFalse(model.hasNonDefaultTools, "all camera-tool defaults have no dot")
+
+        model.setAspectRatio(.oneOne)
+        XCTAssertFalse(model.hasNonDefaultTools, "ratio is excluded from the dot")
+
+        model.setFlash(.auto)
+        XCTAssertTrue(model.hasNonDefaultTools, "non-default flash shows the dot")
+        model.setFlash(.off)
+        model.toggleGrid()
+        XCTAssertTrue(model.hasNonDefaultTools, "grid shows the dot")
+        model.toggleGrid()
+        model.setTimerSetting(.threeSeconds)
+        XCTAssertTrue(model.hasNonDefaultTools, "timer shows the dot")
+        model.setTimerSetting(.off)
+        XCTAssertFalse(model.hasNonDefaultTools, "resetting tools to defaults clears the dot")
     }
 
     // MARK: One Poses control
@@ -3937,9 +3897,8 @@ final class CameraChromeContractTests: XCTestCase {
         let source = try cameraFeatureSource()
         let control = try viewBody(named: "posesControl", in: source)
         XCTAssertTrue(
-            control.contains(
-                ".accessibilityValue(CameraChromeLayout.posesControlValue(selectedPoseName: selectedPoseName))"
-            ),
+            control.contains(".accessibilityValue(selectedPoseID == nil")
+                && control.contains("CameraChromeLayout.posesControlValue(selectedPoseName: selectedPoseName)"),
             "the control announces the reference it holds, through the one rule"
         )
         XCTAssertFalse(

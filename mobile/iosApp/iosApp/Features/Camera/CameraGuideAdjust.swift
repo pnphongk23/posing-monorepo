@@ -146,11 +146,12 @@ struct CameraGuideAdjustSheet: View {
     let scale: CGFloat
     let isFlipped: Bool
     let isEnabled: Bool
+    var isGuideVisible = true
     let onOpacityChange: (Double) -> Void
     let onLineColorChange: (GuideLineColor) -> Void
     let onScaleChange: (CGFloat) -> Void
     let onFlip: () -> Void
-    let onReset: () -> Void
+    var onGuideVisibilityChange: (Bool) -> Void = { _ in }
     let onDone: () -> Void
 
     /// The sheet's handles. `camera.guideAdjust` is the sheet itself (a container), the rest are its controls.
@@ -159,7 +160,7 @@ struct CameraGuideAdjustSheet: View {
         static let opacityIdentifier = "camera.guideAdjust.opacity"
         static let scaleIdentifier = "camera.guideAdjust.scale"
         static let flipIdentifier = "camera.guideAdjust.flip"
-        static let resetIdentifier = "camera.guideAdjust.reset"
+        static let guideVisibilityIdentifier = "camera.guideAdjust.showGuide"
         static let doneIdentifier = "camera.guideAdjust.done"
         static let height: CGFloat = 340
     }
@@ -168,11 +169,10 @@ struct CameraGuideAdjustSheet: View {
         VStack(spacing: 0) {
             handle
             header
+            guideVisibilityRow
             opacityRow
-            lineColorRow
             scaleRow
-            flipRow
-            resetRow
+            lineColorRow
             Spacer(minLength: 0)
         }
         .padding(.horizontal, AP.Space.space16)
@@ -189,6 +189,18 @@ struct CameraGuideAdjustSheet: View {
         .accessibilityAddTraits(.isModal)
         .accessibilityIdentifier(Layout.sheetIdentifier)
         .accessibilityAction(.escape) { onDone() }
+    }
+
+    private var guideVisibilityRow: some View {
+        Toggle("Show guide", isOn: Binding(
+            get: { isGuideVisible },
+            set: onGuideVisibilityChange
+        ))
+        .font(AP.Font.body)
+        .tint(AP.Color.accent)
+        .disabled(!isEnabled)
+        .frame(minHeight: AP.HitTarget.minimum)
+        .accessibilityIdentifier(Layout.guideVisibilityIdentifier)
     }
 
     private var handle: some View {
@@ -249,26 +261,38 @@ struct CameraGuideAdjustSheet: View {
         .frame(minHeight: 44)
     }
 
-    /// Line colour: four swatches, the chosen one carrying a check glyph as well as its fill.
+    /// Owner decision keeps a two-colour palette; Mirror shares the row's right end, matching the board.
     private var lineColorRow: some View {
         HStack(spacing: AP.Space.space12) {
-            Image(systemName: "eye")
+            Image(systemName: "pencil.tip.crop.circle")
                 .font(AP.Font.body)
                 .foregroundStyle(AP.Color.primaryText)
                 .frame(width: 24)
                 .accessibilityHidden(true)
-            Text("Line\ncolour")
+            Text("Line colour")
                 .font(AP.Font.body)
                 .foregroundStyle(AP.Color.primaryText)
                 .fixedSize()
-            HStack(spacing: AP.Space.space8) {
+            HStack(spacing: AP.Space.space4) {
                 ForEach(GuideLineColor.allCases) { color in
                     swatch(color)
                 }
             }
             Spacer(minLength: 0)
+            Button(action: onFlip) {
+                Image(systemName: "arrow.left.and.right.righttriangle.left.righttriangle.right")
+                    .font(AP.Font.body)
+                    .foregroundStyle(AP.Color.primaryText)
+                    .frame(width: 44, height: 44)
+                    .background(RoundedRectangle(cornerRadius: AP.Radius.radius8).fill(AP.Color.controlFill))
+            }
+            .buttonStyle(.plain)
+            .disabled(!isEnabled)
+            .accessibilityLabel("Mirror guide")
+            .accessibilityValue(isFlipped ? "Mirrored" : "Normal")
+            .accessibilityIdentifier(Layout.flipIdentifier)
         }
-        .frame(minHeight: 56)
+        .frame(minHeight: AP.HitTarget.minimum)
     }
 
     private func swatch(_ color: GuideLineColor) -> some View {
@@ -287,7 +311,7 @@ struct CameraGuideAdjustSheet: View {
                 if isSelected {
                     Image(systemName: "checkmark")
                         .font(AP.Font.caption.weight(.bold))
-                        .foregroundStyle(AP.Color.onAccent)
+                      .foregroundStyle(color == .white ? Color.black : Color.white)
                 }
             }
             .frame(width: 44, height: 44)
@@ -330,46 +354,4 @@ struct CameraGuideAdjustSheet: View {
         .frame(minHeight: 44)
     }
 
-    private var flipRow: some View {
-        HStack(spacing: AP.Space.space12) {
-            Image(systemName: "arrow.left.and.right.righttriangle.left.righttriangle.right")
-                .font(AP.Font.body)
-                .foregroundStyle(AP.Color.primaryText)
-                .frame(width: 24)
-                .accessibilityHidden(true)
-            Text("Flip")
-                .font(AP.Font.body)
-                .foregroundStyle(AP.Color.primaryText)
-            Button(action: onFlip) {
-                Text(isFlipped ? "Mirrored" : "Mirror guide")
-                    .font(AP.Font.supporting.weight(.semibold))
-                    .foregroundStyle(AP.Color.primaryText)
-                    .frame(maxWidth: .infinity, minHeight: AP.HitTarget.minimum)
-                    .background(
-                        RoundedRectangle(cornerRadius: AP.Radius.radius8, style: .continuous)
-                            .fill(AP.Color.controlFill)
-                    )
-            }
-            .buttonStyle(.plain)
-            .disabled(!isEnabled)
-            .accessibilityLabel(isFlipped ? "Unmirror pose guide" : "Mirror pose guide")
-            .accessibilityValue(isFlipped ? "Mirrored" : "Normal")
-            .accessibilityIdentifier(Layout.flipIdentifier)
-        }
-        .frame(minHeight: 52)
-    }
-
-    private var resetRow: some View {
-        HStack {
-            Spacer(minLength: 0)
-            Button("Reset", action: onReset)
-                .buttonStyle(.plain)
-                .font(AP.Font.supporting.weight(.semibold))
-                .foregroundStyle(AP.Color.accentText)
-                .apMinimumHitTarget()
-                .disabled(!isEnabled)
-                .accessibilityIdentifier(Layout.resetIdentifier)
-        }
-        .frame(minHeight: AP.HitTarget.minimum)
-    }
 }

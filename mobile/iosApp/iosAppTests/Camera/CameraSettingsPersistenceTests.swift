@@ -55,7 +55,7 @@ final class CameraSettingsPersistenceTests: XCTestCase {
         let decoded = try XCTUnwrap(CameraSettings.decode(#"{"guideOpacity":0.8}"#))
 
         XCTAssertEqual(decoded.guideOpacity, 0.8, accuracy: 0.001)
-        XCTAssertEqual(decoded.flash, .auto)
+        XCTAssertEqual(decoded.flash, .off)
           XCTAssertEqual(decoded.lineColor.rawValue, "white", "the sheet's default swatch")
         XCTAssertEqual(decoded.zoom, .one)
         XCTAssertTrue(decoded.isPoseGuideVisible)
@@ -83,7 +83,7 @@ final class CameraSettingsPersistenceTests: XCTestCase {
             #"{"flash":"strobe","lineColor":"neon","zoom":9}"#
         ))
 
-        XCTAssertEqual(decoded.flash, .auto)
+        XCTAssertEqual(decoded.flash, .off)
           XCTAssertEqual(decoded.lineColor.rawValue, "white", "the sheet's default swatch")
         XCTAssertEqual(decoded.zoom, .one)
     }
@@ -241,7 +241,7 @@ final class CameraSettingsPersistenceTests: XCTestCase {
         await waitUntil { model.initialMergeDone }
 
         XCTAssertEqual(model.guideOpacity, 0.5, accuracy: 0.001)
-        XCTAssertEqual(model.flashSetting, .auto)
+        XCTAssertEqual(model.flashSetting, .off)
           XCTAssertEqual(model.guideLineColor.rawValue, "white", "the sheet's default swatch")
         XCTAssertEqual(model.zoomLevel, .one)
         XCTAssertTrue(model.isPoseGuideVisible)
@@ -281,17 +281,16 @@ final class CameraSettingsPersistenceTests: XCTestCase {
         XCTAssertEqual(camera.zoomCalls, [3])
     }
 
-    /// Fresh install: there is nothing stored, and today the label says `Auto` while the device sits
-    /// at `Off` because nothing re-applies the flash after the session starts.
-    func testFreshInstallAppliesTheAutoDefaultToTheHardware() async throws {
+    /// Fresh install follows the design default: Off is applied to the device after the session starts.
+    func testFreshInstallAppliesTheOffDefaultToTheHardware() async throws {
         let camera = FakeSessionCamera()
         let model = makeModel(camera: camera, store: MemorySettingsStore(seed: nil))
         await waitUntil { model.initialMergeDone }
 
         await model.onAppear()
 
-        XCTAssertEqual(model.flashSetting, .auto)
-        XCTAssertEqual(camera.flashCalls, [.auto])
+        XCTAssertEqual(model.flashSetting, .off)
+        XCTAssertEqual(camera.flashCalls, [.off])
         XCTAssertEqual(camera.zoomCalls, [1])
     }
 
@@ -337,7 +336,7 @@ final class CameraSettingsPersistenceTests: XCTestCase {
         model.setFlash(.off)
         model.setZoomFactor(2)
 
-        XCTAssertEqual(camera.flashCalls, [.auto, .on, .off], "the launch reconcile, then each chip change once")
+        XCTAssertEqual(camera.flashCalls, [.off, .on, .off], "the launch reconcile, then each chip change once")
         XCTAssertEqual(camera.zoomCalls, [1, 2])
     }
 

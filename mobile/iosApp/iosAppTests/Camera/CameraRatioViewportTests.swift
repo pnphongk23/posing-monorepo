@@ -548,11 +548,12 @@ final class CameraCanvasFramingTests: XCTestCase {
             XCTAssertEqual(inside.green, 0)
             XCTAssertEqual(inside.blue, 255)
 
-            // Outside: the same preview at 35 % (the 65 % dim), never an opaque bar.
+              // Outside: the preview at 45 % (the 55 % dim), never an opaque bar.
             let outsidePoint = CGPoint(x: stage.frame.midX, y: max(2, stage.frame.minY / 2))
             let outside = try XCTUnwrap(pixel(in: bitmap, at: outsidePoint), "\(ratio.rawValue): outside is drawn")
             XCTAssertGreaterThan(outside.red, 40, "\(ratio.rawValue): the preview still shows under the dim")
-            XCTAssertLessThan(outside.red, 130, "\(ratio.rawValue): and it is dimmed, not untouched")
+              XCTAssertGreaterThan(outside.red, 100, "\(ratio.rawValue): dim is 55%, not the former 65%")
+              XCTAssertLessThan(outside.red, 130, "\(ratio.rawValue): and it is dimmed, not untouched")
             XCTAssertEqual(outside.green, 0, "\(ratio.rawValue): the dim is black, so it adds no colour")
             XCTAssertEqual(
                 outside.blue, outside.red,
@@ -562,24 +563,36 @@ final class CameraCanvasFramingTests: XCTestCase {
             XCTAssertEqual(
                 Double(outside.red) / 255,
                 1 - CameraStageFrame.dimOpacity,
-                accuracy: 0.06,
-                "\(ratio.rawValue): 65 % black over the preview leaves 35 % of it"
-            )
-        }
-    }
+                  accuracy: 0.03,
+                  "\(ratio.rawValue): 55 % black over the preview leaves 45 % of it"
+              )
+          }
+      }
 
-    /// The frame's edge is a hairline, not a border: one point of white at 40 % on the boundary.
-    func testTheFramesEdgeIsAHairline() throws {
-        let stage = CameraStageFrame.make(ratio: .threeFour, screen: screen, safeTop: safeTop)
-        let bitmap = try render(ratio: .threeFour)
-        let edge = try XCTUnwrap(pixel(in: bitmap, at: CGPoint(x: stage.frame.midX, y: stage.frame.minY + 0.5)))
-        let outside = try XCTUnwrap(pixel(in: bitmap, at: CGPoint(x: stage.frame.midX, y: stage.frame.minY - 4)))
-        XCTAssertGreaterThan(
-            edge.green, outside.green + 40,
-            "the edge is brighter than the dim it separates: white over the photo, not a seam"
-        )
-        XCTAssertLessThan(edge.green, 255, "and it is 40 %, not a solid white rule")
-    }
+      /// The frame has four 22pt corner brackets, inset 16pt, and no continuous line.
+      func testTheFrameUsesFourCornerBracketsInsteadOfABorder() throws {
+          let stage = CameraStageFrame.make(ratio: .threeFour, screen: screen, safeTop: safeTop)
+          let bitmap = try render(ratio: .threeFour)
+          let xInset = CameraFrameCorners.inset
+          let arm = CameraFrameCorners.arm
+          let top = stage.frame.minY + xInset
+          let left = stage.frame.minX + xInset
+          let right = stage.frame.maxX - xInset
+          let bottom = stage.frame.maxY - xInset
+          let points = [
+              CGPoint(x: left + arm / 2, y: top),
+              CGPoint(x: right - arm / 2, y: top),
+              CGPoint(x: left + arm / 2, y: bottom),
+              CGPoint(x: right - arm / 2, y: bottom),
+          ]
+          for point in points {
+              let corner = try XCTUnwrap(pixel(in: bitmap, at: point), "corner guide is painted at \(point)")
+              XCTAssertGreaterThan(corner.green, 200, "corner guide is 90% white")
+              XCTAssertLessThan(corner.green, 255, "corner guide is translucent")
+          }
+          let middle = try XCTUnwrap(pixel(in: bitmap, at: CGPoint(x: stage.frame.midX, y: top)))
+          XCTAssertLessThan(middle.green, 20, "the frame has no continuous top border")
+      }
 
     /// A guide pushed hard against the frame's edge is clipped, not wrapped: the line art stops at the photo.
     func testATransformedGuideIsClippedToTheFrame() throws {
