@@ -399,7 +399,7 @@ extension View {
 /// with a separate raised Camera shutter in the centre. The camera is an action, never a selection,
 /// and it opens the full-screen camera with the dock hidden.
 ///
-/// Selected dock items fill with `selectedBackground` and tint `selectedForeground`; the search
+/// Selected dock items use a neutral foreground fill; the search
 /// workspace hides the dock entirely, so `activeTab` can be `nil` (every item plain).
 struct NeoDockTabBar: View {
     @Binding var selection: AppTab
@@ -474,13 +474,13 @@ struct NeoDockTabBar: View {
                     .font(AP.Font.caption)
                     .lineLimit(1)
             }
-            .foregroundStyle(isActive ? AP.Color.selectedForeground : AP.Color.primaryText)
+            .foregroundStyle(isActive ? AP.Color.background : AP.Color.primaryText)
             .padding(.horizontal, AP.Space.space12)
             .padding(.vertical, AP.Space.space4)
             .frame(minWidth: AP.HitTarget.minimum, minHeight: AP.HitTarget.minimum)
             .background(
                 RoundedRectangle(cornerRadius: AP.Radius.radius16, style: .continuous)
-                    .fill(isActive ? AP.Color.selectedBackground : Color.clear)
+                    .fill(isActive ? AP.Color.selectedNeutralBackground : Color.clear)
             )
             // Fills the slot so the compact pill stays centred in it.
             .frame(maxWidth: .infinity, maxHeight: .infinity)

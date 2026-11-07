@@ -617,7 +617,7 @@ final class FeatureStateTests: XCTestCase {
         XCTAssertEqual(PosesListStateCopy.loadingMessage, "Getting the pose library ready.")
         XCTAssertEqual(PosesListStateCopy.emptyTitle, "No poses yet")
         XCTAssertEqual(PosesListStateCopy.emptyMessage, "New poses will appear here when they're available.")
-        XCTAssertEqual(PosesListStateCopy.errorTitle, "Couldn't load poses")
+        XCTAssertEqual(PosesListStateCopy.errorTitle, "We couldn't load your poses.")
         XCTAssertEqual(PosesListStateCopy.errorMessage, "Check your connection and try again.")
         XCTAssertEqual(PosesListStateCopy.retryActionTitle, "Try again")
     }

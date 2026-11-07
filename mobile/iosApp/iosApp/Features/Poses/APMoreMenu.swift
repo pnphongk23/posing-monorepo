@@ -4,6 +4,8 @@
 import SwiftUI
 
 struct APMoreMenu: View {
+    @State private var isSpinning = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// Jobs actively processing, shown as the pink badge on the Jobs row.
     var jobsActiveCount: Int = 0
     var isSignedIn: Bool = false
@@ -23,6 +25,10 @@ struct APMoreMenu: View {
             showsSaved: savedDestination != nil,
             showsSettings: settingsDestination != nil
         )
+    }
+
+    private var shouldSpinJobsIcon: Bool {
+        !reduceMotion && jobsActiveCount > 0 && isSpinning
     }
 
     var body: some View {
@@ -51,13 +57,14 @@ struct APMoreMenu: View {
         )
         .apElevation(.e1, cornerRadius: AP.Radius.radius24)
         .accessibilityElement(children: .contain)
+        .onAppear { isSpinning = true }
     }
 
     private var jobsRow: some View {
         let badge = isSignedIn ? jobsActiveCount : 0
         return Button(action: onJobs) {
             row(
-                systemImage: "hourglass",
+                systemImage: "arrow.triangle.2.circlepath",
                 title: "Jobs",
                 subtitle: "",
                 isEnabled: isJobsEnabled,
@@ -119,6 +126,13 @@ struct APMoreMenu: View {
                 .font(.system(size: 17, weight: .semibold))
                 .foregroundStyle(isEnabled ? AP.Color.primaryText : AP.Color.disabled)
                 .frame(width: 24)
+                .rotationEffect(.degrees(title == "Jobs" && shouldSpinJobsIcon ? 360 : 0))
+                .animation(
+                    title == "Jobs" && shouldSpinJobsIcon
+                        ? .linear(duration: 1).repeatForever(autoreverses: false)
+                        : nil,
+                    value: shouldSpinJobsIcon
+                )
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: AP.Space.space4) {
                 Text(title)

@@ -122,7 +122,7 @@ final class AddPoseProcessingTests: XCTestCase {
         XCTAssertFalse(barRows.isEmpty, "the processing card must paint its striped indeterminate bar")
 
         // The copy under the bar is the board's promise that leaving the screen is safe.
-        XCTAssertTrue(AddPoseFormCopy.leaveHint.contains("Status continues in Jobs"))
+        XCTAssertEqual(AddPoseFormCopy.leaveHint, "You can leave — it continues in Jobs.")
 
         // Swapping the stage the server reported must change what the card says. The stripes animate,
         // so the comparison has to stop above the bar: what differs there is the stage copy and glyph.

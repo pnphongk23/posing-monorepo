@@ -19,17 +19,16 @@ enum AddPoseFormCopy {
     static let choosePhoto = "Choose photo"
     static let chooseAnotherPhoto = "Choose another photo"
 
-    static let addPose = "Add pose"
+    static let addPose = "Add to Poses"
     static let addingPose = "Adding…"
     static let viewPose = "View pose"
-    static let viewJobs = "View jobs"
+    static let viewJobs = "View in Jobs"
     static let done = "Done"
-    static let retry = "Retry"
+    static let retry = "Try again"
 
-    static let offlineBanner = "You're offline. Your draft is kept on this device."
-    static let offlineSubmitHint = "Connect to the internet to add this pose."
+    static let offlineBanner = "You're offline. Your draft is kept on this iPhone."
     static let photoRequiredHint = "Choose a photo to continue."
-    static let leaveHint = "You can leave this screen. Status continues in Jobs."
+    static let leaveHint = "You can leave — it continues in Jobs."
 
     static let nameRequired = "Add a name for your pose."
     static let tagsRequired = "Pick at least one tag."
@@ -37,9 +36,8 @@ enum AddPoseFormCopy {
         "\(characters) character\(characters == 1 ? "" : "s") too long."
     }
 
-    static let photoErrorTitle = "Couldn't read this photo"
-    static let extractionFailedTitle = "Extraction failed"
-    static let extractionFailedFallback = "Pose extraction could not be completed."
+    static let photoErrorTitle = "Can't use this photo"
+    static let extractionFailedTitle = "Couldn't add your pose"
     static let jobGoneTitle = "Job removed"
     static let jobGoneMessage = "This job was removed."
     static let extractOffTitle = "Pose extraction is off"
@@ -56,10 +54,9 @@ enum AddPosePhotoError: String, Equatable {
     var message: String {
         switch self {
         case .unreadable:
-            return "It isn't a JPEG or PNG. Choose another photo."
+            return "This photo can't be used. Choose another photo."
         case .tooLarge:
-            // The documented upload limit is 10 MB (`POST /api/extract-pose`, contract §Extract Pose).
-            return "It's larger than 10 MB. Choose a smaller photo."
+            return "This photo is too large. Choose one under \(JobsService.maxImageSizeMB) MB."
         }
     }
 }
@@ -87,7 +84,7 @@ enum AddPoseStage: String, CaseIterable, Equatable {
     var label: String {
         switch self {
         case .queued: return "Queued"
-        case .processing: return AddPoseFormCopy.processingTitle
+        case .processing: return "Processing · just now"
         case .ready: return "Pose ready"
         case .failed: return "Failed"
         }
@@ -110,7 +107,7 @@ final class AddPoseViewModel: ObservableObject {
     /// Tags and description limits from `isFormValid`. The screen draws both, so they are named here
     /// instead of restated in the view.
     static let maxTags = 10
-    static let descriptionLimit = 500
+    static let descriptionLimit = 150
 
     @Published var selectedImage: UIImage?
     @Published var selectedImageData: Data?
@@ -194,15 +191,14 @@ final class AddPoseViewModel: ObservableObject {
         return trimmed.isEmpty ? AddPoseFormCopy.namePlaceholder : trimmed
     }
 
-    /// The footer CTA stays live unless the upload is already running or the device is offline, so a
-    /// tap can explain what is missing (board `08-board07`) instead of a dead control explaining
-    /// nothing.
-    var isSubmitEnabled: Bool { !isSubmitting && !isOffline }
+    /// Keep the CTA retryable after a connection failure; the offline state itself is explained by
+    /// the single banner, without an extra caption or a dead disabled button.
+    var isSubmitEnabled: Bool { !isSubmitting }
 
     /// The reason under the footer CTA when it cannot do anything useful (boards `08-board06`,
     /// `08-board08`).
     var submitHint: String? {
-        if isOffline { return AddPoseFormCopy.offlineSubmitHint }
+        if isOffline { return nil }
         guard selectedImageData == nil else { return nil }
         return AddPoseFormCopy.photoRequiredHint
     }
@@ -361,21 +357,21 @@ final class AddPoseViewModel: ObservableObject {
             return false
         } catch JobsError.offline {
             isOffline = true
-            submitError = "You're offline. Check your connection."
+            submitError = "You're offline. Your draft is kept on this iPhone."
             return false
         } catch JobsError.invalidImage {
             photoError = .unreadable
-            submitError = "Only JPEG and PNG images are supported. Choose another photo."
+            submitError = nil
             return false
         } catch JobsError.imageTooLarge {
             photoError = .tooLarge
-            submitError = "Photo exceeds the 10 MB limit. Choose another photo."
+            submitError = nil
             return false
         } catch JobsError.invalidMetadata {
             submitError = "Please check the pose name and tags."
             return false
         } catch {
-            submitError = "Couldn't send. Try again."
+            submitError = "Couldn't add your pose. Your draft is kept on this iPhone."
             return false
         }
     }
@@ -388,10 +384,6 @@ final class AddPoseViewModel: ObservableObject {
     var isFailed: Bool { !isJobGone && stage == .failed }
 
     var isReady: Bool { !isJobGone && stage == .ready }
-
-    var failureMessage: String {
-        processingError ?? AddPoseFormCopy.extractionFailedFallback
-    }
 
     /// The Jobs segment the processing footer's "View jobs" asks for, or `nil` while it asks for
     /// nothing. The screen turns it into a push on its own stack.
@@ -514,23 +506,43 @@ struct AddPoseScreen: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // F1: back and title on one row, the title inline beside the button.
-            APPageHeader(
-                title: isProcessingFlow ? AddPoseFormCopy.processingTitle : AddPoseFormCopy.screenTitle,
-                titleIdentifier: "addPose.title",
-                onBack: { dismiss() }
-            )
+            // F1: the title and 79 pt Cancel action share one row.
+            HStack(alignment: .center) {
+                Text(AddPoseFormCopy.screenTitle)
+                    .font(AP.Font.display)
+                    .foregroundStyle(AP.Color.primaryText)
+                    .accessibilityIdentifier("addPose.title")
+                Spacer(minLength: AP.Space.space8)
+                Button("Cancel") { dismiss() }
+                    .font(AP.Font.heading)
+                    .foregroundStyle(AP.Color.accentText)
+                    .frame(minWidth: 79, minHeight: AP.HitTarget.minimum, alignment: .trailing)
+                    .contentShape(Rectangle())
+                    .accessibilityIdentifier("addPose.cancelButton")
+            }
+            .padding(.horizontal, AP.Space.space24)
+            .padding(.top, AP.Space.space8)
+            .padding(.bottom, AP.Space.space12)
 
             if !AppConfig.canExtractPose(isEnabled: AppConfig.shared.isExtractPoseEnabled) && !isProcessingFlow {
                 extractionDisabled
             } else if isProcessingFlow {
                 processingBody
+            } else if let photoError = viewModel.photoError {
+                unusablePhotoBody(photoError)
             } else {
                 formBody
             }
         }
         .background(AP.Color.background.ignoresSafeArea())
         .neoHiddenNavigationBar()
+        .onAppear {
+            // The Poses `+` begins with the system photo picker; cancelling it leaves the draft screen
+            // available so the user can cancel or choose a photo later.
+            if viewModel.selectedImage == nil && viewModel.submittedJobId == nil {
+                showsPhotoPicker = true
+            }
+        }
         .sheet(isPresented: $showsPhotoPicker) {
             PhotoLibraryPicker(
                 selectedImage: $viewModel.selectedImage,
@@ -622,6 +634,22 @@ struct AddPoseScreen: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
+    private func unusablePhotoBody(_ error: AddPosePhotoError) -> some View {
+        VStack(alignment: .leading, spacing: AP.Space.space16) {
+            APStatusBanner(tone: .error, title: AddPoseFormCopy.photoErrorTitle, message: error.message)
+            Button(AddPoseFormCopy.chooseAnotherPhoto) {
+                viewModel.clearPhotoError()
+                showsPhotoPicker = true
+            }
+            .buttonStyle(APPrimaryButtonStyle())
+            .accessibilityIdentifier("addPose.chooseAnotherPhoto")
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, AP.Space.space16)
+        .padding(.top, AP.Space.space8)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+
     // MARK: - Form
 
     private var formBody: some View {
@@ -630,9 +658,6 @@ struct AddPoseScreen: View {
                 VStack(alignment: .leading, spacing: AP.Space.space24) {
                     if viewModel.isOffline {
                         offlineBanner
-                    }
-                    if let photoError = viewModel.photoError {
-                        photoErrorBanner(photoError)
                     }
                     photoBlock
                     tagsBlock
@@ -657,21 +682,10 @@ struct AddPoseScreen: View {
     private var offlineBanner: some View {
         APOfflineBanner(
             message: AddPoseFormCopy.offlineBanner,
-            retryTitle: AddPoseFormCopy.retry,
-            // The CTA is disabled while offline (board `08-board06`), so the banner owns the retry.
-            retry: { submitTapped(ignoringOffline: true) }
+            retryTitle: nil,
+            retry: nil
         )
         .accessibilityIdentifier("addPose.offlineBanner")
-    }
-
-    private func photoErrorBanner(_ error: AddPosePhotoError) -> some View {
-        APStatusBanner(
-            tone: .error,
-            title: AddPoseFormCopy.photoErrorTitle,
-            message: error.message
-        )
-        // The id the legacy error card carried, so the QA flow that reads it keeps working.
-        .accessibilityIdentifier("addPose.errorView")
     }
 
     @ViewBuilder
@@ -797,7 +811,7 @@ struct AddPoseScreen: View {
     }
 
     private func tagChip(_ tag: String, fillsWidth: Bool) -> some View {
-        APCategoryChip(title: tag, isSelected: true, fillsWidth: fillsWidth) {
+        APCategoryChip(title: tag, isSelected: true, usesNeutralSelection: true, fillsWidth: fillsWidth) {
             viewModel.removeTag(tag)
         }
         .accessibilityIdentifier("addPose.tag.\(tag)")
@@ -888,23 +902,11 @@ struct AddPoseScreen: View {
             .buttonStyle(APPrimaryButtonStyle())
             .disabled(!viewModel.isSubmitEnabled)
             .accessibilityIdentifier("addPose.submitButton")
-
-            doneTextButton
         }
         .padding(.horizontal, AP.Space.space16)
         .padding(.top, AP.Space.space12)
         .padding(.bottom, AP.Space.space4)
         .background(AP.Color.background)
-    }
-
-    private var doneTextButton: some View {
-        Button(AddPoseFormCopy.done) { dismiss() }
-            .buttonStyle(.plain)
-            .font(AP.Font.heading)
-            .foregroundStyle(AP.Color.accentText)
-            .frame(maxWidth: .infinity, minHeight: AP.HitTarget.minimum)
-            .contentShape(Rectangle())
-            .accessibilityIdentifier("addPose.doneButton")
     }
 
     // MARK: - Shared field chrome
@@ -943,8 +945,8 @@ struct AddPoseScreen: View {
 
     // MARK: - Actions
 
-    private func submitTapped(ignoringOffline: Bool = false) {
-        guard ignoringOffline || viewModel.isSubmitEnabled else { return }
+    private func submitTapped() {
+        guard viewModel.isSubmitEnabled else { return }
         viewModel.showsFieldErrors = true
         // Without a photo there is nothing to upload: send the user straight to the picker instead of
         // showing an error about a control they have not used yet.
@@ -990,7 +992,7 @@ struct AddPoseScreen: View {
                     } else if viewModel.isFailed {
                         APErrorStateView(
                             title: AddPoseFormCopy.extractionFailedTitle,
-                            message: viewModel.failureMessage,
+                            message: "Your draft is kept on this iPhone.",
                             retryTitle: AddPoseFormCopy.retry,
                             retry: canRetry ? { Task { await viewModel.retryProcessing() } } : nil,
                             actionIdentifier: "addPose.retryButton"

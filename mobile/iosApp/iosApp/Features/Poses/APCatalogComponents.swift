@@ -129,6 +129,7 @@ private struct APControlFillButtonBody: View {
 struct APCategoryChip: View {
     let title: String
     var isSelected: Bool
+    var usesNeutralSelection: Bool = false
     /// Accessibility sizes stack the chips full width, one per row (artboard `…-loaded-ax3`).
     var fillsWidth: Bool = false
     let action: () -> Void
@@ -153,28 +154,30 @@ struct APCategoryChip: View {
                 alignment: fillsWidth ? .leading : .center
             )
         }
-        .buttonStyle(APCategoryChipStyle(isSelected: isSelected))
+        .buttonStyle(APCategoryChipStyle(isSelected: isSelected, usesNeutralSelection: usesNeutralSelection))
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
 
 struct APCategoryChipStyle: ButtonStyle {
     var isSelected: Bool
+    var usesNeutralSelection: Bool = false
 
     func makeBody(configuration: Configuration) -> some View {
-        APCategoryChipBody(configuration: configuration, isSelected: isSelected)
+        APCategoryChipBody(configuration: configuration, isSelected: isSelected, usesNeutralSelection: usesNeutralSelection)
     }
 }
 
 private struct APCategoryChipBody: View {
     let configuration: ButtonStyleConfiguration
     let isSelected: Bool
+    let usesNeutralSelection: Bool
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         configuration.label
-            .foregroundStyle(isSelected ? AP.Color.selectedForeground : AP.Color.primaryText)
+            .foregroundStyle(isSelected ? (usesNeutralSelection ? AP.Color.background : AP.Color.selectedForeground) : AP.Color.primaryText)
             .background(
                 RoundedRectangle(cornerRadius: AP.Radius.radius16, style: .continuous)
                     .fill(fill)
@@ -189,7 +192,7 @@ private struct APCategoryChipBody: View {
     private var fill: SwiftUI.Color {
         if isSelected {
             // The selected fill keeps its identity while pressed; the check glyph and trait carry state.
-            return AP.Color.selectedBackground
+            return usesNeutralSelection ? AP.Color.selectedNeutralBackground : AP.Color.selectedBackground
         }
         return configuration.isPressed ? AP.Color.controlFillPressed : AP.Color.controlFill
     }
@@ -205,6 +208,7 @@ struct APCategoryFilterBar: View {
     var identifierPrefix: String = "poses.category"
 
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @State private var contentWidth: CGFloat = 0
 
     var body: some View {
         if dynamicTypeSize.isAccessibilitySize {
@@ -216,15 +220,35 @@ struct APCategoryFilterBar: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         } else {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: AP.Space.space8) {
-                    allChip(fillsWidth: false)
-                    ForEach(categories, id: \.self) { category in
-                        chip(for: category, fillsWidth: false)
+            GeometryReader { viewport in
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: AP.Space.space8) {
+                        allChip(fillsWidth: false)
+                        ForEach(categories, id: \.self) { category in
+                            chip(for: category, fillsWidth: false)
+                        }
+                    }
+                    .padding(.vertical, 2)
+                    .background {
+                        GeometryReader { content in
+                            Color.clear.preference(key: APCategoryContentWidthKey.self, value: content.size.width)
+                        }
                     }
                 }
-                .padding(.vertical, 2)
+                .overlay(alignment: .trailing) {
+                    if contentWidth > viewport.size.width + 1 {
+                        LinearGradient(
+                            colors: [AP.Color.background.opacity(0), AP.Color.background],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                        .frame(width: AP.Space.space24)
+                        .allowsHitTesting(false)
+                    }
+                }
+                .onPreferenceChange(APCategoryContentWidthKey.self) { contentWidth = $0 }
             }
+            .frame(height: AP.HitTarget.minimum + 4)
         }
     }
 
@@ -232,6 +256,7 @@ struct APCategoryFilterBar: View {
         APCategoryChip(
             title: APCategoryFilter.allTitle,
             isSelected: filter.isEmpty,
+            usesNeutralSelection: true,
             fillsWidth: fillsWidth,
             action: onClear
         )
@@ -242,11 +267,17 @@ struct APCategoryFilterBar: View {
         APCategoryChip(
             title: category,
             isSelected: filter.isSelected(category),
+            usesNeutralSelection: true,
             fillsWidth: fillsWidth,
             action: { onToggle(category) }
         )
         .accessibilityIdentifier("\(identifierPrefix).\(category.lowercased())")
     }
+}
+
+private struct APCategoryContentWidthKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
 }
 
 // MARK: - Pose card
@@ -526,4 +557,3 @@ struct APSearchStatePanel: View {
         APPagingFooter(model: model, bottomInset: APGridLayout.rowSpacing)
     }
 }
-
