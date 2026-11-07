@@ -230,7 +230,10 @@ final class AddPoseFormTests: XCTestCase {
         stub.submitResult = .failure(JobsError.imageTooLarge)
         _ = await model.submit()
         XCTAssertEqual(model.photoError, .tooLarge)
-        XCTAssertTrue(AddPosePhotoError.tooLarge.message.contains("20 MB"))
+        XCTAssertEqual(
+            AddPosePhotoError.tooLarge.message,
+            "This photo is too large. Choose one under \(JobsService.maxImageSizeMB) MB."
+        )
 
         // A transient failure is a snackbar, with the model's original copy kept intact.
         stub.submitResult = .failure(JobsError.serverError("boom"))

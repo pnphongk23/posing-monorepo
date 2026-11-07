@@ -56,7 +56,7 @@ enum AddPosePhotoError: String, Equatable {
         case .unreadable:
             return "This photo can't be used. Choose another photo."
         case .tooLarge:
-            return "This photo is too large. Choose one under 20 MB."
+            return "This photo is too large. Choose one under \(JobsService.maxImageSizeMB) MB."
         }
     }
 }
