@@ -2,20 +2,23 @@ import { logger } from "../utils/logger";
 import { readCredentialSnapshot, type CredentialSnapshot } from "../services/higgsfieldCredentialGuard";
 
 /**
- * Worker-side keepalive for the Higgsfield credential.
+ * Worker-side credential *detector* for Higgsfield.
  *
- * A 24h access token that nobody refreshes only reveals itself when a real user runs a job. This
- * timer refreshes it in the worker process — through the same guard path as a job (mutex, backup,
- * restore, shared auth state) — but only when the credential is due and nothing else is running.
+ * The CLI does not refresh on its own (owner-confirmed), and a 24h access token that nobody checks
+ * only reveals itself when a real user runs a job. This timer therefore only **detects**: once the
+ * access token has actually expired it runs one `account status` through the guarded path (mutex,
+ * backup, shared auth state) and records the outcome.
+ *
+ * It never writes, restores or repairs `credentials.json` — the file stays exactly as the CLI left
+ * it. Writing the credential will be the job of the self-refresh scheduler in a follow-up change,
+ * which must remain the single owner of the file.
  */
 
 export const DEFAULT_INTERVAL_MS = 15 * 60 * 1000;
-/** Refresh once the access token has 10 minutes or less left. */
-export const REFRESH_WINDOW_SEC = 10 * 60;
 /** At most one attempt per hour after a failure, so a broken credential cannot hammer the CLI. */
 export const FAILURE_BACKOFF_MS = 60 * 60 * 1000;
 
-export type KeepaliveTickResult = "disabled" | "skipped" | "busy" | "refreshed" | "auth_failed" | "failed";
+export type KeepaliveTickResult = "disabled" | "skipped" | "busy" | "detected" | "auth_failed" | "failed";
 
 export interface AccountStatusResult {
   ok: boolean;
@@ -74,10 +77,12 @@ export function startHiggsfieldKeepalive(deps: HiggsfieldKeepaliveDeps): Higgsfi
 
     const snapshot = await readSnapshot(deps.credentialsPath, nowMs);
     if (snapshot.state === "missing" || snapshot.state === "invalid" || snapshot.expiresInSec === null) {
-      // Nothing to refresh: a missing or unreadable file needs a human, not a CLI call.
+      // Nothing to detect against: a missing or unreadable file needs a human, not a CLI call.
       return "skipped";
     }
-    if (snapshot.expiresInSec > REFRESH_WINDOW_SEC) {
+    // Detector only: nothing touches the credential before `expires_at`, so the refresh token stays
+    // untouched until it is actually needed.
+    if (snapshot.expiresInSec > 0) {
       return "skipped";
     }
 
@@ -89,8 +94,11 @@ export function startHiggsfieldKeepalive(deps: HiggsfieldKeepaliveDeps): Higgsfi
       }
       if (result.ok) {
         nextAllowedAtMs = 0;
-        logger.info({ expiresInSec: snapshot.expiresInSec }, "higgsfield keepalive refreshed the credential");
-        return "refreshed";
+        logger.info(
+          { expiresInSec: snapshot.expiresInSec },
+          "higgsfield keepalive detector confirmed the credential against the API"
+        );
+        return "detected";
       }
       nextAllowedAtMs = now() + FAILURE_BACKOFF_MS;
       if (result.authFailure) {
@@ -101,7 +109,7 @@ export function startHiggsfieldKeepalive(deps: HiggsfieldKeepaliveDeps): Higgsfi
       nextAllowedAtMs = now() + FAILURE_BACKOFF_MS;
       logger.warn(
         { message: error instanceof Error ? error.message : "unknown error" },
-        "higgsfield keepalive check threw"
+        "higgsfield keepalive detector threw"
       );
       return "failed";
     } finally {

@@ -275,14 +275,19 @@ export class HiggsfieldCliProvider implements PoseExtractorProvider {
   }
 
   /**
-   * Keepalive entry point: prove the credential against the API, but only if no job is running.
-   * Resolves null when the credential is busy so the caller can skip this round.
+   * Keepalive (detector) entry point: prove the credential against the API, but only if no job is
+   * running. Resolves null when the credential is busy so the caller can skip this round.
+   *
+   * A detector never writes the credential: it takes the usual backup, reports the outcome into
+   * the shared state and leaves the file exactly as the CLI left it. Restoring a deleted file is
+   * the job path's business only, so nothing here can fight a future self-refresh scheduler for
+   * ownership of the file.
    */
   async tryCheckAccountStatus(): Promise<{ ok: boolean; authFailure: boolean } | null> {
-    return tryWithCredentialLock(() => this.checkAccountStatusLocked());
+    return tryWithCredentialLock(() => this.checkAccountStatusLocked({ restoreOnDelete: false }));
   }
 
-  private async checkAccountStatusLocked(): Promise<{ ok: boolean; authFailure: boolean }> {
+  private async checkAccountStatusLocked(options: { restoreOnDelete: boolean }): Promise<{ ok: boolean; authFailure: boolean }> {
     await backupCredential({ credentialsPath: this.credentialsPath });
     const env = { ...process.env, HIGGSFIELD_CREDENTIALS_PATH: this.credentialsPath };
     const { stdout, stderr, exitCode } = await runSpawn(
@@ -300,15 +305,23 @@ export class HiggsfieldCliProvider implements PoseExtractorProvider {
 
     const afterFailure = await readCredentialSnapshot(this.credentialsPath);
     const restored =
-      afterFailure.state === "missing" ? await restoreCredential({ credentialsPath: this.credentialsPath }) : false;
+      options.restoreOnDelete && afterFailure.state === "missing"
+        ? await restoreCredential({ credentialsPath: this.credentialsPath })
+        : false;
     if (restored) {
       logger.warn(
         { backupPath: backupPathFor(this.credentialsPath), credentialsPath: this.credentialsPath },
         "higgsfield CLI removed the credential file; restored the last backup"
       );
     }
+    if (!restored && afterFailure.state === "missing") {
+      logger.warn(
+        { backupPath: backupPathFor(this.credentialsPath), credentialsPath: this.credentialsPath },
+        "higgsfield CLI removed the credential file; detector left it deleted"
+      );
+    }
 
-    const authFailure = restored || isAuthFailure(stderr, stdout);
+    const authFailure = restored || afterFailure.state === "missing" || isAuthFailure(stderr, stdout);
     logger.error(
       {
         credentialsPath: this.credentialsPath,

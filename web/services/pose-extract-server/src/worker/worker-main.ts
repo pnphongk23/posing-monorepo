@@ -52,8 +52,9 @@ async function run(): Promise<void> {
       keyPoolManager
     });
 
-  // Refreshes the credential in-process when it is due, so an idle deployment does not discover a
-  // dead token only when a real user runs a job. It never queues behind a job (tryAcquire).
+  // Detector: once the credential has expired, check it in-process so an idle deployment does not
+  // discover a dead token only when a real user runs a job. It never queues behind a job
+  // (tryAcquire) and it never writes the credential file.
   const higgsfieldKeepaliveProvider = new HiggsfieldCliProvider();
   const higgsfieldKeepalive = startHiggsfieldKeepalive({
     credentialsPath: defaultCredentialsPath(process.env),

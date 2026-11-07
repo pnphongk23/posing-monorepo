@@ -435,6 +435,32 @@ describe("HiggsfieldCliProvider credential guard", () => {
     await expect(provider.tryCheckAccountStatus()).resolves.toEqual({ ok: false, authFailure: true });
     const state = await readProviderAuthState(providerAuthStatePathFor(credentialsPath));
     expect(state.lastAuthErrorCode).toBe("PROVIDER_AUTH_REQUIRED");
+
+    // The keepalive is a detector: it never writes the credential back.
+    const spawnDeletes = vi.fn(() => {
+      fs.rmSync(credentialsPath);
+      const child = new EventEmitter() as EventEmitter & {
+        stdout: EventEmitter;
+        stderr: EventEmitter;
+        kill: ReturnType<typeof vi.fn>;
+      };
+      child.stdout = new EventEmitter();
+      child.stderr = new EventEmitter();
+      child.kill = vi.fn();
+      queueMicrotask(() => {
+        child.stderr.emit("data", Buffer.from("Error: Session expired."));
+        child.emit("close", 2);
+      });
+      return child;
+    });
+    const deletingProvider = new HiggsfieldCliProvider({
+      spawnImpl: spawnDeletes as never,
+      fetchImpl: vi.fn() as typeof fetch,
+      tmpDir: "/tmp/higgsfield-test-account-no-restore",
+      credentialsPath
+    });
+    await expect(deletingProvider.tryCheckAccountStatus()).resolves.toEqual({ ok: false, authFailure: true });
+    expect(fs.existsSync(credentialsPath)).toBe(false);
   });
 
   it("runs concurrent extractions one at a time", async () => {
