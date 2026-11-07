@@ -195,6 +195,7 @@ enum APColorTokens {
     static let onAccent = APColorToken("onAccent", light: APColorSpec(0x121212), dark: APColorSpec(0x121212))
     static let selectedBackground = APColorToken("selectedBackground", light: APColorSpec(0xFAE0E7), dark: APColorSpec(0x4B2B36))
     static let selectedForeground = APColorToken("selectedForeground", light: APColorSpec(0x8C3350), dark: APColorSpec(0xFAE0E7))
+    static let selectedNeutralBackground = APColorToken("selectedNeutralBackground", light: APColorSpec(0x24211E), dark: APColorSpec(0xE8DFD3))
     static let success = APColorToken("success", light: APColorSpec(0x1E7A3C), dark: APColorSpec(0xB5E2B9))
     static let warning = APColorToken("warning", light: APColorSpec(0x8A5A00), dark: APColorSpec(0xFED766))
     static let error = APColorToken("error", light: APColorSpec(0xC8302F), dark: APColorSpec(0xFF6B6B))
@@ -213,10 +214,10 @@ enum APColorTokens {
     static let errorSurface = APColorToken("errorSurface", light: APColorSpec(0xFFF4F5), dark: APColorSpec(0x3A1C1E))
     static let scrim = APColorToken("scrim", light: APColorSpec(0x121212, alpha: 0.48), dark: APColorSpec(0x000000, alpha: 0.64))
 
-    /// Doc order, core then support: 25 tokens total (14 + 11).
+    /// Doc order, core then support, plus the Poses and dock neutral selection token.
     static let all: [APColorToken] = [
         background, secondaryBackground, surface, primaryText, secondaryText, separator,
-        accent, onAccent, selectedBackground, selectedForeground, success, warning, error, disabled,
+        accent, onAccent, selectedBackground, selectedForeground, selectedNeutralBackground, success, warning, error, disabled,
         accentText, accentPressed, controlFill, controlFillPressed, cardStroke, outline, onError,
         successSurface, warningSurface, errorSurface, scrim
     ]
@@ -225,7 +226,7 @@ enum APColorTokens {
 extension AP {
     /// Semantic colour roles. Screens read these, never a hex literal.
     enum Color {
-        /// The 25 documented tokens, for token-integrity tests.
+        /// The documented tokens, for token-integrity tests.
         static let tokens: [APColorToken] = APColorTokens.all
 
         static let background: SwiftUI.Color = APColorTokens.background.color
@@ -238,6 +239,7 @@ extension AP {
         static let onAccent: SwiftUI.Color = APColorTokens.onAccent.color
         static let selectedBackground: SwiftUI.Color = APColorTokens.selectedBackground.color
         static let selectedForeground: SwiftUI.Color = APColorTokens.selectedForeground.color
+        static let selectedNeutralBackground: SwiftUI.Color = APColorTokens.selectedNeutralBackground.color
         static let success: SwiftUI.Color = APColorTokens.success.color
         static let warning: SwiftUI.Color = APColorTokens.warning.color
         static let error: SwiftUI.Color = APColorTokens.error.color

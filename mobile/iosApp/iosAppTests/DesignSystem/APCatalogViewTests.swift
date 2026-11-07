@@ -7,7 +7,7 @@ import XCTest
 final class APCatalogViewTests: XCTestCase {
     private let canvas: UInt32 = 0xF4F1E8 // secondaryBackground
     private let surface: UInt32 = 0xFFFFFF
-    private let selectedFill: UInt32 = 0xFAE0E7
+    private let selectedFill: UInt32 = 0x24211E
 
     private func pose() -> NativePose {
         NativePose(

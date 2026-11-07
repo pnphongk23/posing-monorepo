@@ -28,7 +28,7 @@ final class APDesignTokensTests: XCTestCase {
         }
     }
 
-    /// `tokens.md` § "Colour tokens": 14 core then 11 support.
+    /// `tokens.md` § "Colour tokens": 14 core then 11 support plus Poses' neutral selection role.
     private static let documentedColors: [DocumentedColor] = [
         .init(name: "background", light: 0xFBF6EF, dark: 0x141210),
         .init(name: "secondaryBackground", light: 0xF4F1E8, dark: 0x1D1A17),
@@ -40,6 +40,7 @@ final class APDesignTokensTests: XCTestCase {
         .init(name: "onAccent", light: 0x121212, dark: 0x121212),
         .init(name: "selectedBackground", light: 0xFAE0E7, dark: 0x4B2B36),
         .init(name: "selectedForeground", light: 0x8C3350, dark: 0xFAE0E7),
+        .init(name: "selectedNeutralBackground", light: 0x24211E, dark: 0xE8DFD3),
         .init(name: "success", light: 0x1E7A3C, dark: 0xB5E2B9),
         .init(name: "warning", light: 0x8A5A00, dark: 0xFED766),
         .init(name: "error", light: 0xC8302F, dark: 0xFF6B6B),
@@ -98,6 +99,7 @@ final class APDesignTokensTests: XCTestCase {
         .init("onAccent", on: "accent", light: 8.7, dark: 8.7, minimum: 4.5),
         .init("onAccent", on: "accentPressed", light: 6.2, dark: 6.2, minimum: 4.5),
         .init("selectedForeground", on: "selectedBackground", light: 6.2, dark: 9.9, minimum: 4.5),
+        .init("background", on: "selectedNeutralBackground", minimum: 4.5),
         .init("primaryText", on: "controlFill", light: 15.0, dark: 11.7, minimum: 4.5),
         .init("primaryText", on: "controlFillPressed", light: 12.9, dark: 9.2, minimum: 4.5),
         .init("success", on: "background", light: 5.0, dark: 12.9, minimum: 4.5),
@@ -122,7 +124,7 @@ final class APDesignTokensTests: XCTestCase {
     // MARK: - Colour integrity
 
     func testEveryDocumentedColorTokenResolvesToItsLightAndDarkHex() {
-        XCTAssertEqual(AP.Color.tokens.count, 25, "14 core + 11 support tokens")
+        XCTAssertEqual(AP.Color.tokens.count, 26, "14 core + 11 support + neutral selection")
         let byName = Dictionary(uniqueKeysWithValues: AP.Color.tokens.map { ($0.name, $0) })
 
         for documented in Self.documentedColors {
@@ -162,6 +164,7 @@ final class APDesignTokensTests: XCTestCase {
             ("onAccent", AP.Color.onAccent),
             ("selectedBackground", AP.Color.selectedBackground),
             ("selectedForeground", AP.Color.selectedForeground),
+            ("selectedNeutralBackground", AP.Color.selectedNeutralBackground),
             ("success", AP.Color.success),
             ("warning", AP.Color.warning),
             ("error", AP.Color.error),
@@ -179,7 +182,7 @@ final class APDesignTokensTests: XCTestCase {
             ("scrim", AP.Color.scrim)
         ]
         let documented = Dictionary(uniqueKeysWithValues: Self.documentedColors.map { ($0.name, $0) })
-        XCTAssertEqual(roles.count, 25)
+        XCTAssertEqual(roles.count, 26)
 
         for (name, role) in roles {
             guard let expected = documented[name] else {

@@ -77,13 +77,13 @@ final class AddPoseFormTests: XCTestCase {
         model.tagsText = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11"
         XCTAssertFalse(model.isFormValid)
 
-        // Test description exceeding 500 chars
+        // The Add pose form allows at most 150 description characters.
         model.tagsText = "yoga"
-        model.descriptionText = String(repeating: "a", count: 501)
+        model.descriptionText = String(repeating: "a", count: 151)
         XCTAssertFalse(model.isFormValid)
 
-        // Description <= 500 chars
-        model.descriptionText = String(repeating: "a", count: 500)
+        // Description <= 150 chars
+        model.descriptionText = String(repeating: "a", count: 150)
         XCTAssertTrue(model.isFormValid)
     }
 
@@ -106,7 +106,7 @@ final class AddPoseFormTests: XCTestCase {
         XCTAssertEqual(model.descriptionText, "Keep core tight")
         XCTAssertNotNil(model.selectedImageData)
         XCTAssertTrue(model.isOffline)
-        XCTAssertEqual(model.submitError, "You're offline. Check your connection.")
+        XCTAssertEqual(model.submitError, "You're offline. Your draft is kept on this iPhone.")
         XCTAssertEqual(stub.submitCallCount, 1)
 
         // 2. Invalid Image (400 / 413)
@@ -114,7 +114,7 @@ final class AddPoseFormTests: XCTestCase {
         let invalidImageResult = await model.submit()
         XCTAssertFalse(invalidImageResult)
         XCTAssertEqual(model.name, "Test Pose")
-        XCTAssertEqual(model.submitError, "Only JPEG and PNG images are supported. Choose another photo.")
+        XCTAssertNil(model.submitError, "photo errors use their dedicated screen, not a snackbar")
 
         // 3. Invalid Metadata (400)
         stub.submitResult = .failure(JobsError.invalidMetadata)
@@ -128,7 +128,7 @@ final class AddPoseFormTests: XCTestCase {
         let serverErrorResult = await model.submit()
         XCTAssertFalse(serverErrorResult)
         XCTAssertEqual(model.name, "Test Pose")
-        XCTAssertEqual(model.submitError, "Couldn't send. Try again.")
+        XCTAssertEqual(model.submitError, "Couldn't add your pose. Your draft is kept on this iPhone.")
 
         // 5. Sign In Required
         stub.submitResult = .failure(JobsError.signInRequired)
@@ -230,19 +230,16 @@ final class AddPoseFormTests: XCTestCase {
         stub.submitResult = .failure(JobsError.imageTooLarge)
         _ = await model.submit()
         XCTAssertEqual(model.photoError, .tooLarge)
-        XCTAssertTrue(
-            AddPosePhotoError.tooLarge.message.contains("10 MB"),
-            "the copy names the documented 10 MB upload limit, not the board's 20 MB"
-        )
+        XCTAssertTrue(AddPosePhotoError.tooLarge.message.contains("20 MB"))
 
         // A transient failure is a snackbar, with the model's original copy kept intact.
         stub.submitResult = .failure(JobsError.serverError("boom"))
         _ = await model.submit()
         XCTAssertNil(model.photoError, "a new attempt starts clean")
-        XCTAssertEqual(model.snackbarMessage, "Couldn't send. Try again.")
+        XCTAssertEqual(model.snackbarMessage, "Couldn't add your pose. Your draft is kept on this iPhone.")
     }
 
-    func testOfflineSubmitDisablesTheFooterAndExplainsWhy() async {
+    func testOfflineSubmitKeepsTheFormRetryableAndUsesOnlyTheBanner() async {
         let stub = StubJobsService()
         let model = AddPoseViewModel(jobsService: stub)
         model.name = "Window light"
@@ -259,8 +256,8 @@ final class AddPoseFormTests: XCTestCase {
         stub.submitResult = .failure(JobsError.offline)
         _ = await model.submit()
         XCTAssertTrue(model.isOffline)
-        XCTAssertFalse(model.isSubmitEnabled, "board 08-board06 disables the CTA while offline")
-        XCTAssertEqual(model.submitHint, AddPoseFormCopy.offlineSubmitHint)
+        XCTAssertTrue(model.isSubmitEnabled, "the user can retry from the same CTA after checking the banner")
+        XCTAssertNil(model.submitHint, "the offline banner is the only offline explanation")
     }
 
     func testProcessingCopyComesFromTheStatusTheServerReported() {
@@ -271,7 +268,7 @@ final class AddPoseFormTests: XCTestCase {
         XCTAssertEqual(AddPoseStage(status: "something-new"), .processing, "an unknown state never claims it is ready")
 
         XCTAssertEqual(AddPoseStage.queued.label, "Queued")
-        XCTAssertEqual(AddPoseStage.processing.label, "Processing")
+        XCTAssertEqual(AddPoseStage.processing.label, "Processing · just now")
         XCTAssertEqual(AddPoseStage.ready.label, "Pose ready")
         XCTAssertEqual(AddPoseStage.failed.label, "Failed")
 
@@ -385,10 +382,10 @@ final class AddPoseFormTests: XCTestCase {
             style: .light
         )
 
-        // A selected chip paints `selectedBackground`; at the default sizes it hugs its label, and at
+        // A selected chip paints a neutral dark fill; at the default sizes it hugs its label, and at
         // the Accessibility sizes the chips stack full width instead of squeezing into one row.
-        let largeChip = AddPoseRender.longestRun(large, paintedWith: 0xFAE0E7)
-        let accessibilityChip = AddPoseRender.longestRun(accessibility, paintedWith: 0xFAE0E7)
+        let largeChip = AddPoseRender.longestRun(large, paintedWith: 0x24211E)
+        let accessibilityChip = AddPoseRender.longestRun(accessibility, paintedWith: 0x24211E)
 
         XCTAssertGreaterThan(largeChip, 40, "the default layout still paints a chip")
         XCTAssertLessThan(largeChip, 200, "at the default sizes a chip hugs its label")

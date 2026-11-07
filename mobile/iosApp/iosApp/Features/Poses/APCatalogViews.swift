@@ -156,12 +156,12 @@ enum APSearchChrome {
 struct APCategoryFilter: Equatable {
     static let allTitle = "All"
     static let emptyTitle = "No poses match"
-    static let recoveryTitle = "Clear filters"
+    static let recoveryTitle = "Show all"
 
-    private(set) var selected: Set<String> = []
+    private(set) var selected: String?
 
-    var isActive: Bool { !selected.isEmpty }
-    var isEmpty: Bool { selected.isEmpty }
+    var isActive: Bool { selected != nil }
+    var isEmpty: Bool { selected == nil }
 
     /// Categories present in the list, unique and in first-appearance order, so the row cannot
     /// reshuffle when a later page arrives.
@@ -176,41 +176,28 @@ struct APCategoryFilter: Equatable {
         return ordered
     }
 
-    func isSelected(_ category: String) -> Bool { selected.contains(category) }
+    func isSelected(_ category: String) -> Bool { selected == category }
 
     mutating func toggle(_ category: String) {
-        if selected.contains(category) {
-            selected.remove(category)
-        } else {
-            selected.insert(category)
-        }
+        selected = selected == category ? nil : category
     }
 
-    mutating func clear() { selected.removeAll() }
+    mutating func clear() { selected = nil }
 
     func matches(_ pose: NativePose) -> Bool {
-        guard !selected.isEmpty else { return true }
-        return selected.contains(pose.category)
+        guard let selected else { return true }
+        return selected == pose.category
     }
 
     func apply(to poses: [NativePose]) -> [NativePose] {
-        guard !selected.isEmpty else { return poses }
+        guard selected != nil else { return poses }
         return poses.filter(matches)
     }
 
     /// Copy for the no-match panel: names the styles that are selected, so the panel explains itself.
     var message: String {
-        let titles = selected.sorted()
-        switch titles.count {
-        case 0:
-            return "Try a different category."
-        case 1:
-            return "Nothing fits \(titles[0]). Try removing the filter."
-        case 2:
-            return "Nothing fits \(titles[0]) and \(titles[1]) together. Try removing a filter."
-        default:
-            return "Nothing fits \(titles.count) styles together. Try removing a filter."
-        }
+        guard let selected else { return "You don't have any poses in this category yet." }
+        return "You don't have any \(selected) poses yet."
     }
 }
 
