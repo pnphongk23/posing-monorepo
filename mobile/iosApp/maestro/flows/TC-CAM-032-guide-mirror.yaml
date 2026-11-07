@@ -10,10 +10,14 @@ tags: [TC-CAM-032, p1]
     visible:
       id: "camera.poseGuide"
     timeout: 20000
-# Build 23 moved every guide control out of the tools popover and into the guide-adjust sheet, and the sheet is
-# opened from the reference itself (CameraCanvas.swift: the guide is the control), so the flow taps the guide.
+# Build 23 moved every guide control out of the tools popover and into the guide-adjust sheet. The sheet is opened
+# through the **visible** top-chrome control (`camera.guideAdjust.open`, label "Adjust guide", commit 84a8b1d) —
+# never by tapping the pose reference, which is the hidden route that let this surface regress unnoticed.
+- assertVisible:
+    id: "camera.guideAdjust.open"
+- assertVisible: '.*Adjust guide.*'
 - tapOn:
-    id: "camera.poseGuide"
+    id: "camera.guideAdjust.open"
 - extendedWaitUntil:
     visible:
       id: "camera.guideAdjust"

@@ -5,14 +5,16 @@
 # retired ids, so both kept passing while the settings were effectively unreachable for a user. This flow therefore
 # opens the sheet ONLY through the visible top-chrome button, and never by tapping the guide.
 #
-# UNVERIFIED IDS — from the camera lane's working tree, not yet in a released commit (confirm on the build; they
-# are the only two handles this case cannot do without):
-#   camera.guideAdjust.open   CameraFeature.swift:1343-1344, label "Adjust guide" (top chrome)
-#   camera.guideAdjust.reset  CameraGuideAdjust.swift:176 + the Reset row at :375
-# Everything else below is verified in committed source: the sheet `camera.guideAdjust` with `.opacity`, `.scale`,
-# `.flip`, `.lineColor.pink|black|yellow|green`, `.done`; flip exposes value Mirrored/Normal and a label that flips
-# between "Mirror pose guide" and "Unmirror pose guide"; a line-colour swatch exposes value "Selected" when chosen;
-# Reset is wired to `resetGuideTransform()`, i.e. it restores the transform (scale 100 %) and NOT the colour/flip.
+# Ids and behaviour verified in the camera commit `84a8b1d` (`fix/camera-guide-settings`):
+#   camera.guideAdjust.open   CameraSurfaceControl, accessibilityLabel "Adjust guide", drawn in the top chrome only
+#                             while a guide exists AND is visible, disabled when the camera controls are disabled
+#   camera.guideAdjust.reset  the sheet's Reset row, wired to `resetGuideTransform()`
+# Sheet: `camera.guideAdjust` with `.opacity` (value "NN%"), `.scale` (value "100%" at default), `.flip` (label flips
+# "Mirror pose guide" ⇄ "Unmirror pose guide", value "Mirrored"/"Normal"), `.lineColor.pink|black|yellow|green`
+# (value "Selected" on the chosen one, empty elsewhere), `.reset`, `.done`. Defaults: line colour pink, not mirrored,
+# scale 100 %. **Reset restores the guide TRANSFORM only** (scale/rotation/offset) — it leaves colour and flip alone,
+# so that is what this flow asserts. Persistence: `CameraSettings.PersistedSetting` carries opacity, flipped,
+# lineColor and transform, so both survive a relaunch.
 appId: ${APP_ID}
 tags: [TC-CAM-041, p0]
 ---
