@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import { constants as fsConstants } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
@@ -111,6 +112,52 @@ export function backupPathFor(credentialsPath: string): string {
   return path.join(path.dirname(credentialsPath), BACKUP_DIR_NAME, BACKUP_FILE_NAME);
 }
 
+interface BackupCandidate {
+  contents: Buffer;
+  expiresAtSec: number;
+  mtimeMs: number;
+}
+
+/**
+ * Read the credential file exactly once and decide whether it is worth backing up. The bytes that
+ * are validated here are the bytes that get written: a second read could pick up a file the CLI
+ * rewrote (or deleted) in between.
+ */
+async function readBackupCandidate(credentialsPath: string): Promise<BackupCandidate | null> {
+  let contents: Buffer;
+  let mtimeMs: number;
+  try {
+    const stat = await fs.stat(credentialsPath);
+    mtimeMs = stat.mtimeMs;
+    contents = await fs.readFile(credentialsPath);
+  } catch {
+    return null;
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(contents.toString("utf8"));
+  } catch {
+    return null;
+  }
+
+  if (!isRecord(parsed)) {
+    return null;
+  }
+  const { access_token: accessToken, refresh_token: refreshToken, expires_at: expiresAt } = parsed;
+  if (typeof accessToken !== "string" || accessToken.length === 0) {
+    return null;
+  }
+  if (typeof refreshToken !== "string" || refreshToken.length === 0) {
+    return null;
+  }
+  if (typeof expiresAt !== "number" || !Number.isFinite(expiresAt)) {
+    return null;
+  }
+
+  return { contents, expiresAtSec: expiresAt, mtimeMs };
+}
+
 export interface BackupResult {
   written: boolean;
   backupPath: string;
@@ -129,9 +176,9 @@ export async function backupCredential(input: {
 }): Promise<BackupResult> {
   const { credentialsPath, nowMs = Date.now() } = input;
   const backupPath = backupPathFor(credentialsPath);
-  const snapshot = await readCredentialSnapshot(credentialsPath, nowMs);
+  const candidate = await readBackupCandidate(credentialsPath);
 
-  if (snapshot.state === "missing" || snapshot.state === "invalid" || snapshot.expiresAtSec === null) {
+  if (!candidate) {
     return { written: false, backupPath, skipped: "unusable-credential" };
   }
 
@@ -140,8 +187,8 @@ export async function backupCredential(input: {
   const existingMtime = existing.mtimeMs ?? 0;
   const isNewer =
     existingExpiry === null ||
-    snapshot.expiresAtSec > existingExpiry ||
-    (snapshot.expiresAtSec === existingExpiry && (snapshot.mtimeMs ?? 0) > existingMtime);
+    candidate.expiresAtSec > existingExpiry ||
+    (candidate.expiresAtSec === existingExpiry && candidate.mtimeMs > existingMtime);
 
   if (!isNewer) {
     return { written: false, backupPath, skipped: "not-newer" };
@@ -150,8 +197,7 @@ export async function backupCredential(input: {
   const tempPath = `${backupPath}.tmp.${process.pid}.${Math.random().toString(16).slice(2)}`;
   try {
     await fs.mkdir(path.dirname(backupPath), { recursive: true, mode: 0o700 });
-    const contents = await fs.readFile(credentialsPath);
-    await fs.writeFile(tempPath, contents, { mode: 0o600 });
+    await fs.writeFile(tempPath, candidate.contents, { mode: 0o600 });
     await fs.chmod(tempPath, 0o600);
     await fs.rename(tempPath, backupPath);
     return { written: true, backupPath };
@@ -162,8 +208,11 @@ export async function backupCredential(input: {
 }
 
 /**
- * Put the last backup back when the CLI deleted the credential file. Returns true only when a
- * restore actually happened, so the caller can report the destructive refresh failure.
+ * Put the last backup back when the CLI deleted the credential file.
+ *
+ * The restore must never clobber a credential that came back (a concurrent successful refresh, or a
+ * human re-upload): the copy goes to a temp file and `link()` refuses to replace an existing target.
+ * Returns true only when a restore actually happened.
  */
 export async function restoreCredential(input: { credentialsPath: string }): Promise<boolean> {
   const { credentialsPath } = input;
@@ -178,22 +227,17 @@ export async function restoreCredential(input: { credentialsPath: string }): Pro
     }
   }
 
-  let contents: Buffer;
-  try {
-    contents = await fs.readFile(backupPath);
-  } catch {
-    return false;
-  }
-
   const tempPath = `${credentialsPath}.restore.${process.pid}.${Math.random().toString(16).slice(2)}`;
   try {
-    await fs.writeFile(tempPath, contents, { mode: 0o600 });
+    await fs.copyFile(backupPath, tempPath, fsConstants.COPYFILE_EXCL);
     await fs.chmod(tempPath, 0o600);
-    await fs.rename(tempPath, credentialsPath);
+    await fs.link(tempPath, credentialsPath);
     return true;
   } catch {
-    await fs.rm(tempPath, { force: true }).catch(() => undefined);
+    // EEXIST: the credential reappeared, so the backup must not win.
     return false;
+  } finally {
+    await fs.rm(tempPath, { force: true }).catch(() => undefined);
   }
 }
 

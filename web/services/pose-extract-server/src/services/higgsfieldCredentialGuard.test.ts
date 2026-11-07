@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   EXPIRING_SOON_SEC,
@@ -142,6 +142,69 @@ describe("defaultCredentialsPath", () => {
     const resolved = defaultCredentialsPath({ HOME: "/home/tester" });
 
     expect(resolved).toBe(path.join("/home/tester", ".config", "higgsfield", "credentials.json"));
+  });
+});
+
+describe("backupCredential safety", () => {
+  it("reads the credential once and stores exactly those bytes", async () => {
+    const dir = await makeTempDir();
+    const credentialsPath = path.join(dir, "credentials.json");
+    // Deliberately unusual formatting: the backup must be byte-identical, not re-serialised.
+    const raw = `{\n  "access_token": "a",\n  "refresh_token": "r",\n  "expires_at": ${NOW_SEC + 7200}\n}\n`;
+    await fs.writeFile(credentialsPath, raw, { mode: 0o600 });
+    const readFile = vi.spyOn(fs, "readFile");
+
+    const result = await backupCredential({ credentialsPath, nowMs: NOW_MS });
+
+    expect(result.written).toBe(true);
+    const credentialReads = readFile.mock.calls.filter((call) => call[0] === credentialsPath);
+    expect(credentialReads).toHaveLength(1);
+    expect(await fs.readFile(backupPathFor(credentialsPath), "utf8")).toBe(raw);
+    readFile.mockRestore();
+  });
+
+  it.each([
+    ["missing access_token", { refresh_token: "r", expires_at: NOW_SEC + 7200 }],
+    ["missing refresh_token", { access_token: "a", expires_at: NOW_SEC + 7200 }],
+    ["non-numeric expires_at", { access_token: "a", refresh_token: "r", expires_at: "2099-01-01T00:00:00Z" }]
+  ])("refuses to back up a credential with %s", async (_label, payload) => {
+    const dir = await makeTempDir();
+    const credentialsPath = path.join(dir, "credentials.json");
+    await fs.writeFile(credentialsPath, JSON.stringify(payload), { mode: 0o600 });
+
+    const result = await backupCredential({ credentialsPath, nowMs: NOW_MS });
+
+    expect(result.written).toBe(false);
+    expect(result.skipped).toBe("unusable-credential");
+    await expect(fs.stat(backupPathFor(credentialsPath))).rejects.toThrow();
+  });
+});
+
+describe("restoreCredential safety", () => {
+  it("never overwrites a credential that reappeared before the restore", async () => {
+    const dir = await makeTempDir();
+    const credentialsPath = path.join(dir, "credentials.json");
+    await writeCredential(credentialsPath, NOW_SEC + 7200);
+    await backupCredential({ credentialsPath, nowMs: NOW_MS });
+
+    // The CLI (or a human) put a newer file back between the check and the restore.
+    const fresh = JSON.stringify({ access_token: "new", refresh_token: "new", expires_at: NOW_SEC + 86400 });
+    await fs.writeFile(credentialsPath, fresh, { mode: 0o600 });
+
+    expect(await restoreCredential({ credentialsPath })).toBe(false);
+    expect(await fs.readFile(credentialsPath, "utf8")).toBe(fresh);
+  });
+
+  it("leaves no temporary file behind after a restore", async () => {
+    const dir = await makeTempDir();
+    const credentialsPath = path.join(dir, "credentials.json");
+    await writeCredential(credentialsPath, NOW_SEC + 7200);
+    await backupCredential({ credentialsPath, nowMs: NOW_MS });
+    await fs.rm(credentialsPath);
+
+    expect(await restoreCredential({ credentialsPath })).toBe(true);
+    const leftovers = (await fs.readdir(dir)).filter((name) => name !== "credentials.json" && name !== "backup");
+    expect(leftovers).toEqual([]);
   });
 });
 
