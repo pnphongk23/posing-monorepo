@@ -29,6 +29,8 @@ tags: [TC-CAM-032, p1]
 - assertVisible:
     id: "camera.guideAdjust.flip"
 - assertVisible:
+    id: "camera.guideAdjust.lineColor.white"
+- assertVisible:
     id: "camera.guideAdjust.lineColor.black"
 # The retired popover controls must not exist on either surface.
 - assertNotVisible:

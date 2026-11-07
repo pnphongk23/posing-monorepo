@@ -5,16 +5,21 @@
 # retired ids, so both kept passing while the settings were effectively unreachable for a user. This flow therefore
 # opens the sheet ONLY through the visible top-chrome button, and never by tapping the guide.
 #
-# Ids and behaviour verified in the camera commit `84a8b1d` (`fix/camera-guide-settings`):
-#   camera.guideAdjust.open   CameraSurfaceControl, accessibilityLabel "Adjust guide", drawn in the top chrome only
-#                             while a guide exists AND is visible, disabled when the camera controls are disabled
+# Verified against `fix/camera-guide-settings` (da2fccc):
+#   camera.guideAdjust.open   CameraSurfaceControl, glyph `figure.stand`, accessibilityLabel "Adjust guide", drawn in
+#                             the top chrome while a guide exists AND is visible, disabled when the controls are
 #   camera.guideAdjust.reset  the sheet's Reset row, wired to `resetGuideTransform()`
-# Sheet: `camera.guideAdjust` with `.opacity` (value "NN%"), `.scale` (value "100%" at default), `.flip` (label flips
-# "Mirror pose guide" ⇄ "Unmirror pose guide", value "Mirrored"/"Normal"), `.lineColor.pink|black|yellow|green`
-# (value "Selected" on the chosen one, empty elsewhere), `.reset`, `.done`. Defaults: line colour pink, not mirrored,
-# scale 100 %. **Reset restores the guide TRANSFORM only** (scale/rotation/offset) — it leaves colour and flip alone,
-# so that is what this flow asserts. Persistence: `CameraSettings.PersistedSetting` carries opacity, flipped,
-# lineColor and transform, so both survive a relaunch.
+#   line colour               `GuideLineColor` is **black | white only** (`camera.guideAdjust.lineColor.black|white`,
+#                             that order), **white is the default**, and a legacy stored pink/yellow/green loads as
+#                             white (`GuideLineColor.stored`). A swatch exposes value "Selected" when chosen.
+#   scale / flip / opacity    scale value reads "NN%" ("100%" at the default), flip label flips
+#                             "Mirror pose guide" ⇄ "Unmirror pose guide" with value "Mirrored"/"Normal", opacity
+#                             reads "NN%"
+#   Reset                     restores the guide TRANSFORM only (scale/rotation/offset) — colour and flip are kept
+#   persistence               `CameraSettings` carries opacity, flipped, lineColor and transform, so they survive a
+#                             relaunch. Seeding a legacy colour is NOT possible from a flow (no launch-arg hook for
+#                             camera settings; the snapshot is one UserDefaults JSON blob) — that upgrade check is a
+#                             device step in docs/qa/camera-device-checklist.md.
 appId: ${APP_ID}
 tags: [TC-CAM-041, p0]
 ---
@@ -37,7 +42,7 @@ tags: [TC-CAM-041, p0]
     visible:
       id: "camera.guideAdjust"
     timeout: 15000
-# The sheet's controls, including the Reset row.
+# The sheet's controls: colour is black-or-white only, plus the Reset row.
 - assertVisible:
     id: "camera.guideAdjust.opacity"
 - assertVisible:
@@ -45,45 +50,42 @@ tags: [TC-CAM-041, p0]
 - assertVisible:
     id: "camera.guideAdjust.flip"
 - assertVisible:
-    id: "camera.guideAdjust.lineColor.pink"
-- assertVisible:
     id: "camera.guideAdjust.lineColor.black"
 - assertVisible:
-    id: "camera.guideAdjust.lineColor.yellow"
-- assertVisible:
-    id: "camera.guideAdjust.lineColor.green"
+    id: "camera.guideAdjust.lineColor.white"
 - assertVisible:
     id: "camera.guideAdjust.reset"
 - assertVisible:
     id: "camera.guideAdjust.done"
-# Nothing of the old popover surface may be back.
-- assertNotVisible:
-    id: "camera.tools.poseGuide"
-- assertNotVisible:
-    id: "camera.tools.mirror"
-- assertNotVisible:
-    id: "camera.tools.mirror.switch"
-- assertNotVisible:
-    id: "camera.tools.opacity"
-- assertNotVisible:
-    id: "camera.tools.scale"
-- assertNotVisible:
-    id: "camera.tools.lineColor.black"
-# Defaults first, so "changed" and "restored" are distinguishable: pink line, not mirrored, scale 100 %.
+# 1. The default is WHITE and nothing else is offered.
 - assertVisible:
-    id: "camera.guideAdjust.lineColor.pink"
+    id: "camera.guideAdjust.lineColor.white"
     text: '.*Selected.*'
+- assertVisible:
+    id: "camera.guideAdjust.lineColor.black"
+    text: ''
 - assertVisible:
     id: "camera.guideAdjust.flip"
     text: '.*Normal.*'
 - assertVisible:
     id: "camera.guideAdjust.scale"
     text: '.*100%.*'
-# Change two settings that Reset does NOT touch, so the persistence check below is unambiguous.
+# Retired surfaces must not come back (cheap, and this is exactly what let the regression hide).
+- assertNotVisible:
+    id: "camera.tools.poseGuide"
+- assertNotVisible:
+    id: "camera.tools.mirror"
+- assertNotVisible:
+    id: "camera.tools.opacity"
+- assertNotVisible:
+    id: "camera.tools.scale"
+- assertNotVisible:
+    id: "camera.tools.lineColor.black"
+# 2. Pick black, mirror the guide, close with Done.
 - tapOn:
-    id: "camera.guideAdjust.lineColor.yellow"
+    id: "camera.guideAdjust.lineColor.black"
 - assertVisible:
-    id: "camera.guideAdjust.lineColor.yellow"
+    id: "camera.guideAdjust.lineColor.black"
     text: '.*Selected.*'
 - tapOn:
     id: "camera.guideAdjust.flip"
@@ -97,7 +99,9 @@ tags: [TC-CAM-041, p0]
     notVisible:
       id: "camera.guideAdjust"
     timeout: 15000
-# Re-open through the same visible button: the settings survived the sheet being dismissed.
+- assertVisible:
+    id: "camera.poseGuide"
+# 3. Re-open through the same visible button: the settings survived the sheet being dismissed.
 - assertVisible:
     id: "camera.guideAdjust.open"
 - tapOn:
@@ -107,20 +111,20 @@ tags: [TC-CAM-041, p0]
       id: "camera.guideAdjust"
     timeout: 15000
 - assertVisible:
-    id: "camera.guideAdjust.lineColor.yellow"
+    id: "camera.guideAdjust.lineColor.black"
     text: '.*Selected.*'
 - assertVisible:
     id: "camera.guideAdjust.flip"
     text: '.*Mirrored.*'
-# Reset restores the TRANSFORM (source: `resetGuideTransform()`), so the scale returns to 100 % while the colour
-# and the mirror choice stay as the user left them — asserting otherwise would be inventing behaviour.
+# 4. Reset restores the guide's transform (source: `resetGuideTransform()` → scale 100 %, no rotation, no offset);
+#    the sheet exposes the scale as a value, and every offset is 0 again — colour and flip are NOT reset.
 - tapOn:
     id: "camera.guideAdjust.reset"
 - assertVisible:
     id: "camera.guideAdjust.scale"
     text: '.*100%.*'
 - assertVisible:
-    id: "camera.guideAdjust.lineColor.yellow"
+    id: "camera.guideAdjust.lineColor.black"
     text: '.*Selected.*'
 - assertVisible:
     id: "camera.guideAdjust.flip"
@@ -131,8 +135,13 @@ tags: [TC-CAM-041, p0]
     notVisible:
       id: "camera.guideAdjust"
     timeout: 15000
-# Persistence across a relaunch: these are the settings `CameraSettings` carries in its snapshot.
-- runFlow: ../subflows/relaunch-keep-state.yaml
+# 5. Persistence across a relaunch WITHOUT clearState: these four settings live in the CameraSettings snapshot.
+- launchApp:
+    stopApp: true
+- extendedWaitUntil:
+    visible:
+      id: "poses.open-search"
+    timeout: 30000
 - runFlow: ../subflows/open-camera.yaml
 - extendedWaitUntil:
     visible:
@@ -145,11 +154,14 @@ tags: [TC-CAM-041, p0]
       id: "camera.guideAdjust"
     timeout: 15000
 - assertVisible:
-    id: "camera.guideAdjust.lineColor.yellow"
+    id: "camera.guideAdjust.lineColor.black"
     text: '.*Selected.*'
 - assertVisible:
     id: "camera.guideAdjust.flip"
     text: '.*Mirrored.*'
+- assertVisible:
+    id: "camera.guideAdjust.opacity"
+    text: '.*%.*'
 - tapOn:
     id: "camera.guideAdjust.done"
 - assertVisible:
