@@ -72,8 +72,10 @@ Exit codes:
 | `3` | Credential still valid but expires in < 24h | schedule the re-login now |
 | `1` | Other failure (`higgsfield`/`node` missing, network error, timeout, unknown CLI error) | investigate the container/network |
 
-`exit 2` is reserved for authentication: a network error or a timeout is `1`, so a flaky call
-never looks like an expired credential.
+`exit 2` is reserved for authentication. The probe only answers `2` when the credential file is
+missing/unreadable/expired **or** the CLI output matches `not authenticated`, `session expired`,
+`invalid credentials`, `older auth flow`, `unauthorized`. A network error, a timeout or any other
+CLI failure answers `1`, so a flaky call never looks like an expired credential.
 
 ### `/api/health` semantics (deployment truth, not a countdown)
 

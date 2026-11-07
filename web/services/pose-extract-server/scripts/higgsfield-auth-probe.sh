@@ -3,9 +3,11 @@
 #
 # Exit codes:
 #   0  credential valid and the Higgsfield API answered
-#   2  authentication problem: credential missing/unreadable/expired, or the API rejected it
+#   2  authentication problem: credential missing/unreadable/expired, or the CLI reported an auth
+#      failure (not authenticated / session expired / invalid credentials / older auth flow /
+#      unauthorized)
 #   3  credential still valid but expires in less than 24 hours (re-login window)
-#   1  anything else (CLI or node missing, unexpected failure)
+#   1  anything else: CLI or node missing, network error, timeout, unknown CLI failure
 #
 # Rules this probe follows, learned from @higgsfield/cli@1.1.23:
 #   * `higgsfield auth token` only reads the file locally and therefore proves nothing — the
@@ -125,12 +127,24 @@ fi
 backup_credential
 
 log "checking account with the Higgsfield API (credential state=$state expiresInSec=$left)"
-if ! higgsfield account status >/dev/null; then
+# Keep stderr (it carries the CLI's verdict) and drop stdout, which can contain account details.
+account_error="$(higgsfield account status 2>&1 >/dev/null)"
+account_exit=$?
+if [ "$account_exit" -ne 0 ]; then
   if restore_credential; then
     warn "restored credentials from backup after the CLI removed the file"
   fi
-  err "higgsfield account status failed; the stored credential is no longer accepted"
-  exit 2
+  account_error_lower="$(printf '%s' "$account_error" | tr '[:upper:]' '[:lower:]')"
+  case "$account_error_lower" in
+    *"not authenticated"* | *"session expired"* | *"invalid credentials"* | *"older auth flow"* | *"unauthorized"*)
+      err "higgsfield account status reported an authentication failure (exit $account_exit)"
+      exit 2
+      ;;
+    *)
+      err "higgsfield account status failed with exit $account_exit but that is not an authentication failure"
+      exit 1
+      ;;
+  esac
 fi
 
 if [ "$state" = "expiring_soon" ]; then

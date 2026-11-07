@@ -48,7 +48,10 @@ async function makeWorkspace(expiresInSec: number | null, rawContents?: string):
 set -u
 printf '%s\\n' "$*" >> "${logPath}"
 if [ "\${STUB_DELETE_CREDENTIALS:-0}" = "1" ]; then rm -f "\${HIGGSFIELD_CREDENTIALS_PATH}"; fi
-if [ "\${1:-}" = "account" ] && [ "\${2:-}" = "status" ]; then exit "\${STUB_ACCOUNT_EXIT:-0}"; fi
+if [ "\${1:-}" = "account" ] && [ "\${2:-}" = "status" ]; then
+  if [ -n "\${STUB_ACCOUNT_STDERR:-}" ]; then printf '%s\n' "\${STUB_ACCOUNT_STDERR}" >&2; fi
+  exit "\${STUB_ACCOUNT_EXIT:-0}"
+fi
 exit 0
 `;
   const stubPath = path.join(binDir, "higgsfield");
@@ -172,7 +175,11 @@ describe("scripts/higgsfield-auth-probe.sh", () => {
   it("exits 2 when the API rejects the token and restores the credential the CLI deleted", async () => {
     const workspace = await makeWorkspace(3 * 24 * 60 * 60);
 
-    const result = await runProbe(workspace, { STUB_ACCOUNT_EXIT: "2", STUB_DELETE_CREDENTIALS: "1" });
+    const result = await runProbe(workspace, {
+      STUB_ACCOUNT_EXIT: "2",
+      STUB_ACCOUNT_STDERR: "Error: Session expired.",
+      STUB_DELETE_CREDENTIALS: "1"
+    });
 
     expect(result.code).toBe(2);
     expect(result.invocations).toEqual(["account status"]);
@@ -180,6 +187,33 @@ describe("scripts/higgsfield-auth-probe.sh", () => {
     expect(restored.refresh_token).toBe("secret-refresh");
     expect((await fs.stat(workspace.credentialsPath)).mode & 0o777).toBe(0o600);
     expect(result.stderr).toContain("restored");
+  });
+
+  it.each([
+    ["Error: Not authenticated."],
+    ["Error: Session expired."],
+    ["Error: Invalid credentials file."],
+    ["Error: Stored credentials use an older auth flow."],
+    ["Error: unauthorized"]
+  ])("exits 2 when the CLI reports an auth failure: %s", async (stderr) => {
+    const workspace = await makeWorkspace(3 * 24 * 60 * 60);
+
+    const result = await runProbe(workspace, { STUB_ACCOUNT_EXIT: "2", STUB_ACCOUNT_STDERR: stderr });
+
+    expect(result.code).toBe(2);
+  });
+
+  it.each([
+    ["dial tcp 1.2.3.4:443: i/o timeout", "1"],
+    ["Error: higgsfield: request failed (no response received)", "2"],
+    ["", "2"]
+  ])("exits 1 when the CLI fails without an auth message: %s", async (stderr, exitCode) => {
+    const workspace = await makeWorkspace(3 * 24 * 60 * 60);
+
+    const result = await runProbe(workspace, { STUB_ACCOUNT_EXIT: exitCode, STUB_ACCOUNT_STDERR: stderr });
+
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain("not an authentication failure");
   });
 
   it("exits 1 when the CLI is not installed", async () => {
