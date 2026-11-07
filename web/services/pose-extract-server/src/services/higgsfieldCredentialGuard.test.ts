@@ -180,6 +180,32 @@ describe("backupCredential safety", () => {
   });
 });
 
+describe("backupCredential vs an unusable existing backup", () => {
+  it("replaces a token-less backup even though its expiry is further out", async () => {
+    const dir = await makeTempDir();
+    const credentialsPath = path.join(dir, "credentials.json");
+    await writeCredential(credentialsPath, NOW_SEC + 7200);
+    const liveBytes = await fs.readFile(credentialsPath, "utf8");
+
+    const backupPath = backupPathFor(credentialsPath);
+    await fs.mkdir(path.dirname(backupPath), { recursive: true });
+    // Structurally parseable, far-future expiry, but no refresh token: it must not win.
+    await fs.writeFile(
+      backupPath,
+      JSON.stringify({ access_token: "stale", expires_at: NOW_SEC + 30 * 24 * 3600 }),
+      { mode: 0o600 }
+    );
+
+    expect((await backupCredential({ credentialsPath, nowMs: NOW_MS })).written).toBe(true);
+    expect(await fs.readFile(backupPath, "utf8")).toBe(liveBytes);
+
+    // The restore path must now find a usable backup.
+    await fs.rm(credentialsPath);
+    expect(await restoreCredential({ credentialsPath })).toBe(true);
+    expect(await fs.readFile(credentialsPath, "utf8")).toBe(liveBytes);
+  });
+});
+
 describe("restoreCredential validation", () => {
   it("refuses to restore a backup that is missing a required field", async () => {
     const dir = await makeTempDir();

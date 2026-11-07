@@ -171,9 +171,10 @@ export interface BackupResult {
  */
 export async function backupCredential(input: {
   credentialsPath: string;
+  /** Accepted for callers/tests; freshness is decided by expires_at + mtime, not by the clock. */
   nowMs?: number;
 }): Promise<BackupResult> {
-  const { credentialsPath, nowMs = Date.now() } = input;
+  const { credentialsPath } = input;
   const backupPath = backupPathFor(credentialsPath);
   const candidate = await readBackupCandidate(credentialsPath);
 
@@ -181,9 +182,12 @@ export async function backupCredential(input: {
     return { written: false, backupPath, skipped: "unusable-credential" };
   }
 
-  const existing = await readCredentialSnapshot(backupPath, nowMs);
-  const existingExpiry = existing.expiresAtSec;
-  const existingMtime = existing.mtimeMs ?? 0;
+  // The existing backup must pass the same full validation as the live credential and the restore
+  // path: a token-less backup with a far-future expiry would otherwise block a usable one forever
+  // and then be rejected by restoreCredential, leaving no recovery path at all.
+  const existing = await readBackupCandidate(backupPath);
+  const existingExpiry = existing?.expiresAtSec ?? null;
+  const existingMtime = existing?.mtimeMs ?? 0;
   const isNewer =
     existingExpiry === null ||
     candidate.expiresAtSec > existingExpiry ||
