@@ -46,7 +46,7 @@ final class GalleryFeatureTests: XCTestCase {
         let model = GalleryViewModel(store: IntegrationBlockedGalleryStore(reason: "simulator-db"))
         await model.load()
         guard case .failed(let message) = model.state else { return XCTFail("Expected failed") }
-        XCTAssertTrue(message.contains("simulator-db"))
+        XCTAssertEqual(message, "We couldn't open your photos.")
     }
 
     // MARK: - F10: one grid, three columns, no second layout
@@ -74,14 +74,8 @@ final class GalleryFeatureTests: XCTestCase {
 
     /// F10 header: exactly one action, Add pose, and no list/grid toggle to switch layouts with.
     func testGalleryHeaderOffersOnlyAddPose() {
-        XCTAssertEqual(GalleryHeaderActions.actions, [.addPose])
-        XCTAssertEqual(GalleryHeaderAction.allCases.count, 1)
-        XCTAssertEqual(GalleryHeaderAction.addPose.systemImage, "plus")
-        XCTAssertEqual(GalleryHeaderAction.addPose.accessibilityLabel, "Add pose")
-        XCTAssertEqual(GalleryHeaderAction.addPose.identifier, "gallery.add-pose")
-        for action in GalleryHeaderAction.allCases {
-            XCTAssertNotNil(UIImage(systemName: action.systemImage), "\(action) glyph is an SF Symbol")
-        }
+        XCTAssertTrue(GalleryHeaderActions.actions.isEmpty)
+        XCTAssertFalse(GalleryHeaderActions.showsAddPose(extractPoseEnabled: true, hasDestination: true))
     }
 
     /// The remote `extractPoseEnabled` flag hides Add pose entirely (F7's rule, reused by F10), and the
@@ -89,7 +83,7 @@ final class GalleryFeatureTests: XCTestCase {
     func testGalleryAddPoseIsHiddenByTheRemoteFlag() {
         XCTAssertFalse(GalleryHeaderActions.showsAddPose(extractPoseEnabled: false, hasDestination: true))
         XCTAssertFalse(GalleryHeaderActions.showsAddPose(extractPoseEnabled: false, hasDestination: false))
-        XCTAssertTrue(GalleryHeaderActions.showsAddPose(extractPoseEnabled: true, hasDestination: true))
+        XCTAssertFalse(GalleryHeaderActions.showsAddPose(extractPoseEnabled: true, hasDestination: true))
         XCTAssertFalse(GalleryHeaderActions.showsAddPose(extractPoseEnabled: true, hasDestination: false))
     }
 
@@ -109,9 +103,10 @@ final class GalleryFeatureTests: XCTestCase {
         )
 
         let shown = probe.render(galleryHost(GalleryHeaderBar(showsAddPose: true), size: size))
-        let controlRows = rowsPainted(with: 0xECE5D8, in: shown, columns: 540..<720).count
-        // 44 pt * scale 2 = 88 px tall; allow the rounded corners to cost a couple of rows.
-        XCTAssertEqual(Double(controlRows), 88, accuracy: 4, "one 44 pt Add pose control, painted \(controlRows) px tall")
+        XCTAssertTrue(
+            rowsPainted(with: 0xECE5D8, in: shown, columns: 540..<720).isEmpty,
+            "the Gallery header no longer exposes Add pose"
+        )
     }
 
     /// Pixel proof that the gallery paints exactly three columns. Columns are grouped per x across the
@@ -151,7 +146,7 @@ final class GalleryFeatureTests: XCTestCase {
         )
         XCTAssertEqual(GalleryStatePresentation.kind(for: .loading, timeFilter: .all), .loading)
         XCTAssertEqual(GalleryStatePresentation.kind(for: .empty, timeFilter: .all), .emptyAll)
-        XCTAssertEqual(GalleryStatePresentation.kind(for: .empty, timeFilter: .today), .emptyFilter)
+        XCTAssertEqual(GalleryStatePresentation.kind(for: .empty, timeFilter: .starred), .emptyFilter)
         XCTAssertEqual(GalleryStatePresentation.kind(for: .failed("boom"), timeFilter: .all), .error)
         XCTAssertEqual(
             GalleryStatePresentation.kind(
@@ -177,7 +172,7 @@ final class GalleryFeatureTests: XCTestCase {
             "gallery.error.retry"
         )
         // The states without an action must not carry an identifier (a tap target that does nothing).
-        XCTAssertNil(GalleryStatePresentation.kind(for: .empty, timeFilter: .today).actionIdentifier)
+        XCTAssertEqual(GalleryStatePresentation.kind(for: .empty, timeFilter: .starred).actionIdentifier, GalleryStateCopy.showAllPhotosButtonIdentifier)
         XCTAssertNil(GalleryStatePresentation.kind(for: .loading, timeFilter: .all).actionIdentifier)
         XCTAssertNil(
             GalleryStatePresentation
@@ -202,7 +197,7 @@ final class GalleryFeatureTests: XCTestCase {
     @MainActor func testOnlyTheAllEmptyStateOffersTheCameraAction() {
         XCTAssertEqual(GalleryStateCopy.openCameraActionTitle, "Open Camera")
         XCTAssertNotNil(GalleryStatePresentation.kind(for: .empty, timeFilter: .all).actionIdentifier)
-        XCTAssertNil(GalleryStatePresentation.kind(for: .empty, timeFilter: .month).actionIdentifier)
+        XCTAssertEqual(GalleryStatePresentation.kind(for: .empty, timeFilter: .starred).actionIdentifier, GalleryStateCopy.showAllPhotosButtonIdentifier)
     }
 
     /// The detail failure panel is drawn at its natural height, not inside the photo's fixed 3:4 box: at
@@ -231,7 +226,7 @@ final class GalleryFeatureTests: XCTestCase {
             retryRows.isEmpty,
             "Retry must be painted inside the failure state at AX5 (a 3:4 box clipped it)"
         )
-        XCTAssertEqual(GalleryDetailCopy.failedTitle, "Couldn't load this photo")
+        XCTAssertEqual(GalleryDetailCopy.failedTitle, "This photo couldn't be opened. Try again.")
     }
 
     /// The detail header reserves layout space for the Options control: at 320 pt with Accessibility 3
@@ -349,7 +344,15 @@ final class GalleryFeatureTests: XCTestCase {
         let now = noonToday()
         let model = GalleryViewModel(store: StubGalleryFeatureStore(items: daySpreadItems(now: now)))
         await model.load()
-        model.timeFilter = .today
+        for item in daySpreadItems(now: now).filter({ Calendar.current.isDate($0.createdAt, inSameDayAs: now) }) {
+            GalleryStarStore.toggle(item.id)
+        }
+        defer {
+            for item in daySpreadItems(now: now).filter({ Calendar.current.isDate($0.createdAt, inSameDayAs: now) }) {
+                GalleryStarStore.toggle(item.id)
+            }
+        }
+        model.timeFilter = .starred
         model.applyFilter()
 
         let sections = model.dateSections
@@ -428,9 +431,8 @@ final class GalleryFeatureTests: XCTestCase {
     /// `07-photo-delete-confirm`: destructive action first, neutral cancel under it, copy that says it
     /// cannot be undone.
     func testGalleryDeleteConfirmationFollowsTheBoardCopy() {
-        XCTAssertEqual(GalleryDeleteConfirmSpec.title, "Delete this photo?")
-        XCTAssertTrue(GalleryDeleteConfirmSpec.message.contains("can't be undone"))
-        XCTAssertEqual(GalleryDeleteConfirmSpec.confirmTitle, "Delete photo")
+        XCTAssertEqual(GalleryDeleteConfirmSpec.title, "This photo will be deleted from this iPhone.")
+        XCTAssertEqual(GalleryDeleteConfirmSpec.confirmTitle, "Delete Photo")
         XCTAssertEqual(GalleryDeleteConfirmSpec.cancelTitle, "Cancel")
         XCTAssertEqual(GalleryDeleteConfirmSpec.dialogIdentifier, "gallery.detail.deleteConfirm")
         XCTAssertNotEqual(
@@ -438,7 +440,7 @@ final class GalleryFeatureTests: XCTestCase {
             GalleryDeleteConfirmSpec.cancelIdentifier,
             "QA needs a distinct handle for each dialog action"
         )
-        XCTAssertEqual(GalleryDetailCopy.failedTitle, "Couldn't load this photo")
+        XCTAssertEqual(GalleryDetailCopy.failedTitle, "This photo couldn't be opened. Try again.")
         XCTAssertFalse(GalleryDetailCopy.failedTitle.contains(" of "))
     }
 
@@ -573,22 +575,19 @@ final class GalleryFeatureTests: XCTestCase {
     /// cut because nothing behind it exists.
     func testGalleryDetailTrayCarriesShareSaveAddPoseAndDelete() {
         let withDestination = GalleryDetailTrayActions.actions(hasAddPoseDestination: true)
-        XCTAssertEqual(withDestination, [.share, .save, .addPose, .delete])
-        XCTAssertEqual(withDestination.last, .delete, "the destructive action is the last one in the tray")
+        XCTAssertEqual(withDestination, [.star])
         XCTAssertEqual(GalleryDetailTrayAction.addPose.title, "Add pose")
         XCTAssertNotNil(UIImage(systemName: GalleryDetailTrayAction.addPose.systemImage))
 
-        XCTAssertFalse(
-            GalleryDetailTrayAction.allCases.map(\.rawValue).contains("star"),
-            "the board's Star action has no model and must not ship"
-        )
+        XCTAssertTrue(GalleryDetailTrayAction.allCases.contains(.star))
+        XCTAssertTrue(GalleryStarStore.isStarred(999_123) == false)
     }
 
     /// No Add-pose destination means no Add pose control: the tray never ships a dead button.
     func testGalleryDetailTrayHidesAddPoseWithoutADestination() {
         XCTAssertEqual(
             GalleryDetailTrayActions.actions(hasAddPoseDestination: false),
-            [.share, .save, .delete]
+            [.star]
         )
     }
 
@@ -599,7 +598,7 @@ final class GalleryFeatureTests: XCTestCase {
                 hasAddPoseDestination: true,
                 stacks: GalleryDetailTrayActions.stacksRows(dynamicTypeSize: size)
             )
-            XCTAssertEqual(rows, [[.share, .save, .addPose, .delete]], "\(size) keeps the single row")
+            XCTAssertEqual(rows, [[.star]], "\(size) keeps one Star action")
         }
     }
 
@@ -611,19 +610,19 @@ final class GalleryFeatureTests: XCTestCase {
                 hasAddPoseDestination: true,
                 stacks: GalleryDetailTrayActions.stacksRows(dynamicTypeSize: size)
             )
-            XCTAssertEqual(rows, [[.share, .save], [.addPose, .delete]], "\(size)")
+            XCTAssertEqual(rows, [[.star]], "\(size) keeps one Star action")
             XCTAssertEqual(rows.flatMap { $0 }, GalleryDetailTrayActions.actions(hasAddPoseDestination: true))
-            XCTAssertEqual(GalleryDetailTrayActions.columnsPerRow(rows), 2)
+            XCTAssertEqual(GalleryDetailTrayActions.columnsPerRow(rows), 1)
         }
     }
 
     /// A short last row keeps the full row's cell width instead of stretching one label across the bar.
     func testGalleryDetailTrayPadsAShortLastRow() {
         let rows = GalleryDetailTrayActions.rows(hasAddPoseDestination: false, stacks: true)
-        XCTAssertEqual(rows, [[.share, .save], [.delete]])
+        XCTAssertEqual(rows, [[.star]])
         XCTAssertEqual(
-            GalleryDetailTrayActions.columnsPerRow(rows), 2,
-            "the second row is padded to the widest row, so Delete does not stretch"
+            GalleryDetailTrayActions.columnsPerRow(rows), 1,
+            "the single Star action occupies one column"
         )
     }
 
@@ -643,7 +642,7 @@ final class GalleryFeatureTests: XCTestCase {
         XCTAssertEqual(GalleryDetailTrayAction.save.identifier, "gallery.detail.save")
         XCTAssertEqual(GalleryDetailTrayAction.delete.identifier, "gallery.detail.delete")
         XCTAssertEqual(GalleryDetailTrayAction.addPose.identifier, "gallery.detail.addPose")
-        XCTAssertNotEqual(GalleryDetailAccessibility.addPoseIdentifier, GalleryHeaderAction.addPose.identifier)
+        XCTAssertNotEqual(GalleryDetailAccessibility.addPoseIdentifier, "gallery.add-pose")
     }
 
     // MARK: - Offline (`07-board11`)

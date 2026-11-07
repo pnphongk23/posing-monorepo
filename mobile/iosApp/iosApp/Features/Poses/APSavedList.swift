@@ -70,10 +70,8 @@ enum APSavedStateCopy {
     /// printed only when the screen actually knows it; the reassurance holds either way, because a
     /// failed load never touches the saved collection.
     static func loadFailureMessage(statusCode: Int?) -> String {
-        guard let statusCode else {
-            return "We couldn't reach your account. Your saved poses are safe."
-        }
-        return "We couldn't reach your account (error \(statusCode)). Your saved poses are safe."
+        _ = statusCode
+        return "We couldn't reach your account. Your saved poses are safe."
     }
 }
 

@@ -118,9 +118,7 @@ struct EmptyGalleryStore: GalleryStoring {
 
 enum GalleryTimeFilter: String, CaseIterable, Identifiable {
     case all = "All"
-    case today = "Today"
-    case week = "7 days"
-    case month = "30 days"
+    case starred = "Starred only"
     var id: String { rawValue }
 
     /// Stable Maestro/VoiceOver handle (AC6 drivability). The raw values contain spaces
@@ -128,10 +126,21 @@ enum GalleryTimeFilter: String, CaseIterable, Identifiable {
     var filterIdentifier: String {
         switch self {
         case .all: return "gallery.filter.all"
-        case .today: return "gallery.filter.today"
-        case .week: return "gallery.filter.week"
-        case .month: return "gallery.filter.month"
+        case .starred: return "gallery.filter.starred"
         }
+    }
+}
+
+enum GalleryStarStore {
+    private static let key = "gallery.starredPhotoIDs"
+    static func isStarred(_ id: Int64) -> Bool { ids.contains(id) }
+    static func toggle(_ id: Int64) {
+        var values = ids
+        if values.contains(id) { values.remove(id) } else { values.insert(id) }
+        UserDefaults.standard.set(values.map(String.init).sorted(), forKey: key)
+    }
+    private static var ids: Set<Int64> {
+        Set((UserDefaults.standard.stringArray(forKey: key) ?? []).compactMap(Int64.init))
     }
 }
 
@@ -139,12 +148,15 @@ enum GalleryTimeFilter: String, CaseIterable, Identifiable {
 /// Pure and testable: views call these instead of hardcoding strings.
 enum GalleryStateCopy {
     static let emptyAllTitle = "No photos yet"
-    static let emptyAllMessage = "Capture a pose to start your gallery."
+    static let emptyAllMessage = "Photos you take with Posing show up here."
     static let openCameraActionTitle = "Open Camera"
-    static let emptyFilterTitle = "No photos in this filter"
-    static let emptyFilterMessage = "Try another filter."
-    static let errorTitle = "Couldn't load gallery"
-    static let retryActionTitle = "Try again"
+    static let emptyFilterTitle = "No starred photos"
+    static let emptyFilterMessage = "Tap the star on a photo to find it here."
+    static let showAllPhotosActionTitle = "Show all photos"
+    static let showAllPhotosButtonIdentifier = "gallery.empty.showAllPhotos"
+    static let errorTitle = "Can't open your photos"
+    static let errorMessage = "Allow photo access in Settings so Posing can show your photos."
+    static let openSettingsActionTitle = "Open Settings"
     static let loadingLabel = "Loading gallery…"
 
     /// QA (TC-GAL-001) taps the empty-state action by id; the panel is the other handle.
@@ -160,8 +172,8 @@ enum GalleryDetailCopy {
     /// The name `DatabaseGalleryStore` falls back to when a capture has no pose name. It matches the
     /// header, so the caption drops the title line for it instead of repeating "Photo".
     static let untitledName = "Photo"
-    static let failedTitle = "Couldn't load this photo"
-    static let failedMessage = "The photo is missing from this device."
+    static let failedTitle = "This photo couldn't be opened. Try again."
+    static let failedMessage = ""
     static let retryTitle = "Retry"
     static let shareTitle = "Share"
     static let sharePreparingTitle = "Preparing…"
@@ -226,9 +238,9 @@ enum GalleryDetailCaption {
 /// The delete confirmation from the export board `07-photo-delete-confirm`: a centred dialog card,
 /// not the system action sheet, with the destructive action first.
 enum GalleryDeleteConfirmSpec {
-    static let title = "Delete this photo?"
-    static let message = "It will be removed from this device. This can't be undone."
-    static let confirmTitle = "Delete photo"
+    static let title = "This photo will be deleted from this iPhone."
+    static let message = ""
+    static let confirmTitle = "Delete Photo"
     static let cancelTitle = "Cancel"
 
     static let dialogIdentifier = "gallery.detail.deleteConfirm"
@@ -308,8 +320,9 @@ extension GalleryStateKind {
     var actionIdentifier: String? {
         switch self {
         case .emptyAll: return GalleryStateCopy.openCameraButtonIdentifier
+        case .emptyFilter: return GalleryStateCopy.showAllPhotosButtonIdentifier
         case .error: return GalleryStateCopy.retryButtonIdentifier
-        case .loading, .emptyFilter, .grid, .offline: return nil
+        case .loading, .grid, .offline: return nil
         }
     }
 }
@@ -357,13 +370,12 @@ enum GalleryHeaderAction: String, CaseIterable {
 }
 
 enum GalleryHeaderActions {
-    /// The complete set. A list/grid toggle, a list mode or a dense grid must never come back.
-    static let actions: [GalleryHeaderAction] = [.addPose]
+    static let actions: [GalleryHeaderAction] = []
 
     /// Add pose is a remote-flag action *and* a destination action: it is hidden when the flag is off
     /// and while the app has not supplied the Add pose route, so it never ships as a dead control.
     static func showsAddPose(extractPoseEnabled: Bool, hasDestination: Bool) -> Bool {
-        APHomeHeader.showsAddPose(isExtractPoseEnabled: extractPoseEnabled) && hasDestination
+        false
     }
 }
 
@@ -504,17 +516,9 @@ enum GalleryOfflinePolicy {
 
     var visibleItems: [GalleryItem] {
         let sorted = allItems.sorted { $0.createdAt > $1.createdAt }
-        let calendar = Calendar.current
-        let now = Date()
         switch timeFilter {
         case .all: return sorted
-        case .today: return sorted.filter { calendar.isDate($0.createdAt, inSameDayAs: now) }
-        case .week:
-            guard let start = calendar.date(byAdding: .day, value: -7, to: now) else { return sorted }
-            return sorted.filter { $0.createdAt >= start }
-        case .month:
-            guard let start = calendar.date(byAdding: .day, value: -30, to: now) else { return sorted }
-            return sorted.filter { $0.createdAt >= start }
+        case .starred: return sorted.filter { GalleryStarStore.isStarred($0.id) }
         }
     }
 
@@ -648,6 +652,7 @@ struct GalleryScreen: View {
                     },
                     onDismiss: {
                         model.selectedIndex = nil
+                        model.applyFilter()
                     },
                     onAddPose: onAddPose
                 )
@@ -660,17 +665,6 @@ struct GalleryScreen: View {
     private var galleryHeader: some View {
         VStack(spacing: 0) {
             GalleryHeaderBar(showsAddPose: showsAddPose) { onAddPose?() }
-            if showsOfflineBanner {
-                // `07-board11`'s banner, scoped to the action that really needs a connection.
-                APStatusBanner(
-                    tone: .offline,
-                    title: GalleryOfflineCopy.bannerTitle,
-                    message: GalleryOfflineCopy.bannerMessage
-                )
-                .padding(.horizontal, AP.Space.space16)
-                .padding(.top, AP.Space.space8)
-                .accessibilityIdentifier(GalleryOfflineCopy.bannerIdentifier)
-            }
             GalleryFilterBar(filter: model.timeFilter) { model.timeFilter = $0 }
         }
     }
@@ -696,11 +690,14 @@ struct GalleryScreen: View {
                 .padding(.horizontal, AP.Space.space16)
                 .padding(.bottom, GalleryGridContract.dockInset)
             }
-        case .loading, .emptyAll, .emptyFilter, .error:
+        case .loading:
+            GalleryLoadingGrid()
+        case .emptyAll, .emptyFilter, .error:
             GalleryStateContent(
                 kind: model.stateKind,
                 errorMessage: model.errorMessage,
                 onOpenCamera: onOpenCamera,
+                onShowAll: { model.timeFilter = .all },
                 onRetry: { Task { await model.load() } }
             )
         }
@@ -722,14 +719,6 @@ struct GalleryHeaderBar: View {
                 .accessibilityAddTraits(.isHeader)
                 .accessibilityIdentifier("gallery.title")
             Spacer(minLength: 0)
-            if showsAddPose {
-                APHeaderActionButton(
-                    systemImage: GalleryHeaderAction.addPose.systemImage,
-                    accessibilityLabel: GalleryHeaderAction.addPose.accessibilityLabel,
-                    action: onAddPose
-                )
-                .accessibilityIdentifier(GalleryHeaderAction.addPose.identifier)
-            }
         }
         .padding(.horizontal, AP.Space.space16)
         .padding(.top, AP.Space.space8)
@@ -742,6 +731,7 @@ struct GalleryStateContent: View {
     let kind: GalleryStateKind
     var errorMessage: String = GalleryStateCopy.errorTitle
     var onOpenCamera: () -> Void = {}
+    var onShowAll: () -> Void = {}
     var onRetry: () -> Void = {}
 
     @ViewBuilder var body: some View {
@@ -768,15 +758,18 @@ struct GalleryStateContent: View {
             APEmptyStateView(
                 title: GalleryStateCopy.emptyFilterTitle,
                 message: GalleryStateCopy.emptyFilterMessage,
-                style: .plain
+                actionTitle: GalleryStateCopy.showAllPhotosActionTitle,
+                action: onShowAll,
+                style: .plain,
+                actionIdentifier: kind.actionIdentifier
             )
             .accessibilityIdentifier("gallery.empty.filter")
         case .error:
             APErrorStateView(
                 title: GalleryStateCopy.errorTitle,
-                message: errorMessage,
-                retryTitle: GalleryStateCopy.retryActionTitle,
-                retry: onRetry,
+                message: GalleryStateCopy.errorMessage,
+                retryTitle: GalleryStateCopy.openSettingsActionTitle,
+                retry: { UIApplication.shared.open(URL(string: UIApplication.openSettingsURLString)!) },
                 style: .plain,
                 actionIdentifier: kind.actionIdentifier
             )
@@ -786,6 +779,23 @@ struct GalleryStateContent: View {
             // instead. A photo is local, so an "offline" panel would hide photos that are right there.
             EmptyView()
         }
+    }
+}
+
+struct GalleryLoadingGrid: View {
+    private let columns = Array(repeating: GridItem(.flexible(), spacing: GalleryGridContract.spacing), count: 3)
+    var body: some View {
+        LazyVGrid(columns: columns, spacing: GalleryGridContract.spacing) {
+            ForEach(0..<12, id: \.self) { _ in
+                RoundedRectangle(cornerRadius: GalleryGridContract.cornerRadius)
+                    .fill(AP.Color.controlFill)
+                    .aspectRatio(1, contentMode: .fit)
+                    .accessibilityHidden(true)
+            }
+        }
+        .padding(.horizontal, AP.Space.space16)
+        .padding(.top, AP.Space.space24)
+        .accessibilityIdentifier("gallery.loading.grid")
     }
 }
 
@@ -1131,6 +1141,7 @@ enum GalleryDetailTrayAction: String, CaseIterable {
     case save
     case addPose
     case delete
+    case star
 
     var title: String {
         switch self {
@@ -1138,6 +1149,7 @@ enum GalleryDetailTrayAction: String, CaseIterable {
         case .save: return GalleryDetailCopy.saveTitle
         case .addPose: return GalleryDetailCopy.addPoseTitle
         case .delete: return GalleryDetailCopy.deleteTitle
+        case .star: return "Star"
         }
     }
 
@@ -1147,6 +1159,7 @@ enum GalleryDetailTrayAction: String, CaseIterable {
         case .save: return "arrow.down.to.line"
         case .addPose: return "plus.circle"
         case .delete: return "trash"
+        case .star: return "star"
         }
     }
 
@@ -1156,6 +1169,7 @@ enum GalleryDetailTrayAction: String, CaseIterable {
         case .save: return GalleryDetailAccessibility.saveIdentifier
         case .addPose: return GalleryDetailAccessibility.addPoseIdentifier
         case .delete: return GalleryDetailAccessibility.deleteIdentifier
+        case .star: return "gallery.detail.star"
         }
     }
 }
@@ -1163,7 +1177,7 @@ enum GalleryDetailTrayAction: String, CaseIterable {
 enum GalleryDetailTrayActions {
     /// Share, Save, Add pose, Delete — destructive last. Never Star.
     static func actions(hasAddPoseDestination: Bool) -> [GalleryDetailTrayAction] {
-        [.share, .save] + (hasAddPoseDestination ? [.addPose] : []) + [.delete]
+        [.star]
     }
 
     /// tokens.md wraps the tray at the Accessibility sizes: four glyph + word actions on one row broke
@@ -1299,10 +1313,12 @@ struct GalleryDetailPhotoFrame: View {
                 .font(AP.Font.heading)
                 .foregroundStyle(AP.Color.primaryText)
                 .multilineTextAlignment(.center)
-            Text(GalleryDetailCopy.failedMessage)
-                .font(AP.Font.supporting)
-                .foregroundStyle(AP.Color.secondaryText)
-                .multilineTextAlignment(.center)
+            if !GalleryDetailCopy.failedMessage.isEmpty {
+                Text(GalleryDetailCopy.failedMessage)
+                    .font(AP.Font.supporting)
+                    .foregroundStyle(AP.Color.secondaryText)
+                    .multilineTextAlignment(.center)
+            }
             Button(GalleryDetailCopy.retryTitle) { retry() }
                 .buttonStyle(APSecondaryButtonStyle())
                 .frame(maxWidth: 200)
@@ -1343,6 +1359,9 @@ struct GalleryDetailPhotoFrame: View {
 struct GalleryDetailHeader: View {
     let title: String
     var onBack: () -> Void = {}
+    var onShare: () -> Void = {}
+    var onSave: () -> Void = {}
+    var onAddPose: (() -> Void)? = nil
     var onDelete: () -> Void = {}
 
     var body: some View {
@@ -1356,6 +1375,11 @@ struct GalleryDetailHeader: View {
                 onBack: onBack
             )
             Menu {
+                Button(action: onShare) { Label(GalleryDetailCopy.shareTitle, systemImage: "square.and.arrow.up") }
+                Button(action: onSave) { Label(GalleryDetailCopy.saveTitle, systemImage: "arrow.down.to.line") }
+                if let onAddPose {
+                    Button(action: onAddPose) { Label(GalleryDetailCopy.addPoseTitle, systemImage: "plus.circle") }
+                }
                 Button(role: .destructive, action: onDelete) {
                     Label(GalleryDeleteConfirmSpec.confirmTitle, systemImage: "trash")
                 }
@@ -1392,6 +1416,7 @@ struct GalleryDetailPager: View {
     @State private var shareItem: GallerySharePayload?
     @State private var isPreparingShare = false
     @State private var isSaving = false
+    @State private var isStarred = false
     @State private var toast: GalleryToast?
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
@@ -1410,6 +1435,7 @@ struct GalleryDetailPager: View {
         self.onDismiss = onDismiss
         self.onAddPose = onAddPose
         _page = State(initialValue: startIndex)
+        _isStarred = State(initialValue: GalleryStarStore.isStarred(items[startIndex].id))
     }
 
     private var current: GalleryItem { items[page] }
@@ -1438,7 +1464,7 @@ struct GalleryDetailPager: View {
                         .accessibilityLabel(GalleryDetailAccessibility.mediaLabel)
                     }
                 }
-                .tabViewStyle(.page(indexDisplayMode: items.count > 1 ? .automatic : .never))
+                .tabViewStyle(.page(indexDisplayMode: .never))
                 .frame(maxHeight: .infinity)
                 .apSnackbar(toast?.message, tone: toast?.tone ?? .error) { toast = nil }
 
@@ -1451,17 +1477,16 @@ struct GalleryDetailPager: View {
             }
             .background(AP.Color.background.ignoresSafeArea())
             .neoHiddenNavigationBar()
-            .overlay {
-                if showsDeleteConfirm {
-                    GalleryDeleteDialog(
-                        onConfirm: {
-                            showsDeleteConfirm = false
-                            onDelete(current)
-                            onDismiss()
-                        },
-                        onCancel: { showsDeleteConfirm = false }
-                    )
+            .confirmationDialog(
+                GalleryDeleteConfirmSpec.title,
+                isPresented: $showsDeleteConfirm,
+                titleVisibility: .visible
+            ) {
+                Button(GalleryDeleteConfirmSpec.confirmTitle, role: .destructive) {
+                    onDelete(current)
+                    onDismiss()
                 }
+                Button(GalleryDeleteConfirmSpec.cancelTitle, role: .cancel) {}
             }
             .sheet(item: $shareItem) { payload in
                 ShareSheet(items: [payload.url])
@@ -1495,6 +1520,11 @@ struct GalleryDetailPager: View {
         GalleryDetailHeader(
             title: GalleryDetailCopy.title,
             onBack: onDismiss,
+            onShare: prepareShare,
+            onSave: saveCurrentToPhotos,
+            onAddPose: onAddPose.map { action in
+                { onDismiss(); action() }
+            },
             onDelete: { showsDeleteConfirm = true }
         )
     }
@@ -1502,7 +1532,20 @@ struct GalleryDetailPager: View {
     /// `07-photo-detail`: a raised `surface` tray directly above the bottom safe area — one row of
     /// glyph + word actions at the default sizes, two per row at the Accessibility sizes.
     private var actionTray: some View {
-        trayRows
+        Button {
+            GalleryStarStore.toggle(current.id)
+            isStarred = GalleryStarStore.isStarred(current.id)
+        } label: {
+            GalleryTrayActionLabel(
+                title: isStarred ? "Starred" : "Star",
+                systemImage: isStarred ? "star.fill" : "star"
+            )
+            .frame(maxWidth: .infinity)
+            .frame(minHeight: AP.HitTarget.minimum)
+        }
+        .buttonStyle(GalleryTrayButtonStyle())
+        .accessibilityIdentifier("gallery.detail.star")
+        .accessibilityLabel(isStarred ? "Remove star" : "Star photo")
             .padding(.horizontal, AP.Space.space16)
             .padding(.vertical, AP.Space.space12)
             // The bar carries the surface down behind the home indicator; the controls stay above it.
@@ -1511,29 +1554,6 @@ struct GalleryDetailPager: View {
                     .ignoresSafeArea(edges: .bottom)
                     .apElevation(.e1, cornerRadius: 0)
             }
-    }
-
-    private var trayRows: some View {
-        let rows = GalleryDetailTrayActions.rows(
-            hasAddPoseDestination: onAddPose != nil,
-            stacks: GalleryDetailTrayActions.stacksRows(dynamicTypeSize: dynamicTypeSize)
-        )
-        let columns = GalleryDetailTrayActions.columnsPerRow(rows)
-        return VStack(spacing: AP.Space.space4) {
-            ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
-                HStack(spacing: AP.Space.space4) {
-                    ForEach(0..<columns, id: \.self) { index in
-                        if index < row.count {
-                            trayAction(row[index])
-                        } else {
-                            Color.clear
-                                .frame(maxWidth: .infinity, maxHeight: 1)
-                                .accessibilityHidden(true)
-                        }
-                    }
-                }
-            }
-        }
     }
 
     @ViewBuilder private var shareAction: some View {
@@ -1593,48 +1613,6 @@ struct GalleryDetailPager: View {
         .disabled(isSaving)
         .accessibilityIdentifier(GalleryDetailAccessibility.saveIdentifier)
         .accessibilityLabel(isSaving ? "Saving to Photos" : "Save to Photos")
-    }
-
-    @ViewBuilder private func trayAction(_ action: GalleryDetailTrayAction) -> some View {
-        switch action {
-        case .share: shareAction
-        case .save: saveAction
-        case .addPose: addPoseAction
-        case .delete: trashAction
-        }
-    }
-
-    /// `07-board12`'s Add pose tray action: it enters the existing Add pose flow instead of inventing a
-    /// second one. The viewer leaves first — the full-screen cover would otherwise stay on top of the
-    /// Add pose form it opened.
-    @ViewBuilder private var addPoseAction: some View {
-        if let onAddPose {
-            Button {
-                onDismiss()
-                onAddPose()
-            } label: {
-                GalleryTrayActionLabel(
-                    title: GalleryDetailTrayAction.addPose.title,
-                    systemImage: GalleryDetailTrayAction.addPose.systemImage
-                )
-            }
-            .buttonStyle(GalleryTrayButtonStyle())
-            .accessibilityIdentifier(GalleryDetailTrayAction.addPose.identifier)
-            .accessibilityLabel("Add pose from this photo")
-        }
-    }
-
-    private var trashAction: some View {
-        Button(role: .destructive) { showsDeleteConfirm = true } label: {
-            GalleryTrayActionLabel(
-                title: GalleryDetailCopy.deleteTitle,
-                systemImage: "trash",
-                tint: AP.Color.error
-            )
-        }
-        .buttonStyle(GalleryTrayButtonStyle())
-        .accessibilityIdentifier(GalleryDetailAccessibility.deleteIdentifier)
-        .accessibilityLabel("Delete photo")
     }
 
     /// Save reuses the existing Photos export port (`PhotosExporter`); the outcome is reported honestly
