@@ -412,6 +412,25 @@ final class CameraSettingsPersistenceTests: XCTestCase {
         XCTAssertEqual(model.guideTransform, GuideTransform())
     }
 
+    func testResetGuideTransformPersistsIdentityPlacement() async throws {
+        let database = try makeDatabase()
+        let camera = FakeSessionCamera()
+        let store = GRDBCameraSettingsStore(database: database)
+        let model = makeModel(camera: camera, store: store, debounce: 10_000_000_000)
+        await waitUntil { model.initialMergeDone }
+        model.commitGuideGesture(.init(scale: 1.8, rotation: .degrees(15), translation: CGSize(width: 24, height: -9)))
+        await model.flushSettings()
+
+        model.resetGuideTransform()
+        await model.flushSettings()
+
+        XCTAssertEqual(model.guideTransform, GuideTransform())
+        let storedRow = try await snapshotRow(database)
+        let row = try XCTUnwrap(storedRow)
+        let reloaded = try XCTUnwrap(CameraSettings.decode(row.settingsJSON))
+        XCTAssertEqual(reloaded.guideTransform, GuideTransform(), "Reset persists the identity placement")
+    }
+
     // MARK: - Saving
 
     func testRapidEditsCollapseIntoOneWriteWithTheLastValue() async throws {

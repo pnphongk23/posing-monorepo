@@ -164,6 +164,7 @@ struct CameraGuideAdjustSheet: View {
     let onLineColorChange: (GuideLineColor) -> Void
     let onScaleChange: (CGFloat) -> Void
     let onFlip: () -> Void
+    let onReset: () -> Void
     let onDone: () -> Void
 
     /// The sheet's handles. `camera.guideAdjust` is the sheet itself (a container), the rest are its controls.
@@ -172,6 +173,7 @@ struct CameraGuideAdjustSheet: View {
         static let opacityIdentifier = "camera.guideAdjust.opacity"
         static let scaleIdentifier = "camera.guideAdjust.scale"
         static let flipIdentifier = "camera.guideAdjust.flip"
+        static let resetIdentifier = "camera.guideAdjust.reset"
         static let doneIdentifier = "camera.guideAdjust.done"
         static let height: CGFloat = 340
     }
@@ -184,6 +186,7 @@ struct CameraGuideAdjustSheet: View {
             lineColorRow
             scaleRow
             flipRow
+            resetRow
             Spacer(minLength: 0)
         }
         .padding(.horizontal, AP.Space.space16)
@@ -364,5 +367,19 @@ struct CameraGuideAdjustSheet: View {
             .accessibilityIdentifier(Layout.flipIdentifier)
         }
         .frame(minHeight: 52)
+    }
+
+    private var resetRow: some View {
+        HStack {
+            Spacer(minLength: 0)
+            Button("Reset", action: onReset)
+                .buttonStyle(.plain)
+                .font(AP.Font.supporting.weight(.semibold))
+                .foregroundStyle(AP.Color.accentText)
+                .apMinimumHitTarget()
+                .disabled(!isEnabled)
+                .accessibilityIdentifier(Layout.resetIdentifier)
+        }
+        .frame(minHeight: AP.HitTarget.minimum)
     }
 }

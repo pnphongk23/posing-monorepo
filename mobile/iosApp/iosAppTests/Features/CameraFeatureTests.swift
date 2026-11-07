@@ -3138,6 +3138,7 @@ final class CameraGuideAdjustTests: XCTestCase {
             onLineColorChange: { _ in },
             onScaleChange: { _ in },
             onFlip: {},
+            onReset: {},
             onDone: {}
         )
         .environment(\.colorScheme, .light)
@@ -3362,6 +3363,7 @@ final class CameraGuideAdjustTests: XCTestCase {
             onLineColorChange: { _ in },
             onScaleChange: { _ in },
             onFlip: {},
+            onReset: {},
             onDone: {}
         )
         .environment(\.colorScheme, .light)

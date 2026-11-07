@@ -1152,6 +1152,7 @@ struct CameraScreen: View {
                             onLineColorChange: { model.setGuideLineColor($0) },
                             onScaleChange: { model.setGuideScale($0) },
                             onFlip: { model.toggleGuideMirror() },
+                            onReset: { model.resetGuideTransform() },
                             onDone: { model.closeGuideAdjust() }
                         )
                     }
@@ -1336,6 +1337,15 @@ struct CameraScreen: View {
             Spacer(minLength: 0)
 
             if guide != nil {
+                if model.isPoseGuideVisible {
+                    CameraSurfaceControl(
+                        systemImage: "slider.horizontal.below.rectangle",
+                        accessibilityLabel: "Adjust guide",
+                        identifier: "camera.guideAdjust.open",
+                        action: { model.openGuideAdjust() }
+                    )
+                    .disabled(!model.cameraControlsEnabled)
+                }
                 CameraSurfaceControl(
                     systemImage: model.isPoseGuideVisible ? "eye" : "eye.slash",
                     isSelected: !model.isPoseGuideVisible,
