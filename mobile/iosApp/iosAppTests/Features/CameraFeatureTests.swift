@@ -260,15 +260,15 @@ final class CameraFeatureTests: XCTestCase {
     func testSetGuideLineColorIgnoredWhenControlsDisabled() {
         let model = CameraViewModel()
         model.coordinator.onPermissionResult(.denied)
-        model.setGuideLineColor(.yellow)
-        XCTAssertEqual(model.guideLineColor, .pink, "a control the camera cannot serve does not move")
+        model.setGuideLineColor(.black)
+        XCTAssertEqual(model.guideLineColor.rawValue, "white", "a control the camera cannot serve does not move")
     }
 
     func testSetGuideLineColorWhenEnabled() {
         let model = CameraViewModel()
         model.coordinator.onPermissionResult(.authorized)
-        model.setGuideLineColor(.yellow)
-        XCTAssertEqual(model.guideLineColor, .yellow)
+        model.setGuideLineColor(.black)
+        XCTAssertEqual(model.guideLineColor, .black)
     }
 
     // MARK: Persisted defaults (FEAT-012)
@@ -319,14 +319,14 @@ final class CameraFeatureTests: XCTestCase {
         let model = CameraViewModel()
         model.coordinator.onPermissionResult(.authorized)
         model.setGuideOpacity(0.9)
-        model.setGuideLineColor(.yellow)
+        model.setGuideLineColor(.black)
         model.commitGuideGesture(.init(scale: 2, rotation: .degrees(30), translation: CGSize(width: 40, height: 40)))
 
         model.resetGuideTransform()
 
         XCTAssertEqual(model.guideTransform, GuideTransform())
         XCTAssertEqual(model.guideOpacity, 0.9, accuracy: 0.001)
-        XCTAssertEqual(model.guideLineColor, .yellow)
+        XCTAssertEqual(model.guideLineColor, .black)
     }
 
     /// `NativePose.imageURL` is the source photo; the camera must never draw it.
@@ -554,7 +554,7 @@ final class CameraFeatureTests: XCTestCase {
         var guide: NativePose? = pose
         let model = CameraViewModel()
         model.coordinator.onPermissionResult(.authorized)
-        model.setGuideLineColor(.yellow)
+        model.setGuideLineColor(.white)
         model.setGuideOpacity(1)
         model.commitGuideGesture(.init(scale: placement.scale,
                                        rotation: placement.rotation,
@@ -2737,7 +2737,7 @@ final class CameraScreenStageTests: XCTestCase {
         let model = CameraViewModel(settingsStore: InMemoryCameraSettingsStore())
         model.coordinator.onPermissionResult(.authorized)
         model.setAspectRatio(ratio)
-        model.setGuideLineColor(.green)
+          model.setGuideLineColor(.black)
         let screen = CameraScreen(
             guide: Binding(get: { guide }, set: { guide = $0 }),
             poseService: PreviewPoseService(),
@@ -3080,7 +3080,7 @@ final class CameraGuideAdjustTests: XCTestCase {
         XCTAssertTrue(model.showGuideAdjust, "the reference reopens it")
     }
 
-    /// The sheet's controls write the same state the gesture writes, and the palette is the sheet's four.
+    /// The sheet's controls write the same state the gesture writes, including a supported line colour.
     func testTheSheetControlsWriteTheGuidelinesState() {
         let model = CameraViewModel(settingsStore: InMemoryCameraSettingsStore())
         model.coordinator.onPermissionResult(.authorized)
@@ -3090,47 +3090,61 @@ final class CameraGuideAdjustTests: XCTestCase {
         model.setGuideScale(1.8)
         XCTAssertEqual(model.guideTransform.scale, 1.8, accuracy: 0.0001, "the slider and the pinch share one value")
 
-        model.setGuideLineColor(.green)
-        XCTAssertEqual(model.guideLineColor, .green)
+        model.setGuideLineColor(.black)
+        XCTAssertEqual(model.guideLineColor, .black)
 
         model.toggleGuideMirror()
         XCTAssertTrue(model.guideFlipped, "Mirror guide flips the reference")
     }
 
-    /// The palette is four swatches and `white` is not one of them; a stored row that still says `white` reads as
-    /// the sheet's default (pink), which is what it meant before the palette existed.
-    func testThePaletteIsFourSwatchesAndLegacyWhiteMigrates() {
-        XCTAssertEqual(GuideLineColor.allCases.map(\.rawValue), ["pink", "black", "yellow", "green"])
-        XCTAssertEqual(GuideLineColor.stored("white"), .pink)
-        XCTAssertEqual(GuideLineColor.stored("neon"), nil)
-        XCTAssertEqual(GuideLineColor.stored(nil), nil)
-        XCTAssertEqual(GuideLineColor.stored("green"), .green)
-
-        for color in GuideLineColor.allCases {
-            XCTAssertEqual(
-                color.accessibilityIdentifier,
-                "camera.guideAdjust.lineColor.\(color.rawValue)",
-                "each swatch has its own handle"
-            )
+    /// The palette is exactly black and white; old colours migrate to white without leaving an unselected swatch.
+    func testPaletteOffersOnlyBlackAndWhiteAndMigratesLegacyValues() {
+        XCTAssertEqual(CameraSettings().lineColor.rawValue, "white", "white is the palette default")
+        XCTAssertEqual(GuideLineColor.allCases.map(\.rawValue), ["black", "white"])
+        XCTAssertEqual(GuideLineColor.stored("black").rawValue, "black")
+        XCTAssertEqual(GuideLineColor.stored("white").rawValue, "white")
+        for legacy in ["pink", "yellow", "green", "neon"] {
+            XCTAssertEqual(GuideLineColor.stored(legacy).rawValue, "white", "legacy \(legacy) uses the default")
         }
+        XCTAssertEqual(GuideLineColor.stored(nil).rawValue, "white")
+        XCTAssertEqual(
+            GuideLineColor.allCases.map(\.accessibilityIdentifier),
+            ["camera.guideAdjust.lineColor.black", "camera.guideAdjust.lineColor.white"]
+        )
     }
 
     /// A row written before the palette existed still opens the camera with its own settings.
-    func testALegacyWhiteRowStillDecodes() throws {
+    func testWhiteRowStillDecodes() throws {
         let legacy = #"{"version":1,"lineColor":"white","guideOpacity":0.7}"#
         let decoded = try XCTUnwrap(CameraSettings.decode(legacy))
-        XCTAssertEqual(decoded.lineColor, .pink)
+        XCTAssertEqual(decoded.lineColor.rawValue, "white")
         XCTAssertEqual(decoded.guideOpacity, 0.7, accuracy: 0.0001, "and its other settings survive")
     }
 
-    /// The sheet draws its four controls: two sliders, the four swatches and the Mirror button, with Done in the
+    /// The sheet draws its controls: two sliders, the black and white swatches and the Mirror button, with Done in the
     /// header. Rendered on its own at the sheet's own size, so the measurement is of the sheet and not of the
     /// camera behind it.
     func testTheSheetDrawsOpacityLineColourScaleAndFlip() throws {
+        let sheetSource = try String(
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appendingPathComponent("iosApp/Features/Camera/CameraGuideAdjust.swift"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(sheetSource.contains("ForEach(GuideLineColor.allCases) { color in\n                    swatch(color)"))
+        XCTAssertTrue(sheetSource.contains(".accessibilityIdentifier(color.accessibilityIdentifier)"))
+        XCTAssertTrue(sheetSource.contains(".strokeBorder(color == .white ? AP.Color.separator : .clear, lineWidth: 1)"))
+        XCTAssertEqual(
+            GuideLineColor.allCases.map(\.accessibilityIdentifier),
+            ["camera.guideAdjust.lineColor.black", "camera.guideAdjust.lineColor.white"],
+            "the rendered swatch loop exposes only the two approved controls"
+        )
         let size = CGSize(width: 393, height: CameraGuideAdjustSheet.Layout.height)
         let sheet = CameraGuideAdjustSheet(
             opacity: 0.6,
-            lineColor: .pink,
+            lineColor: GuideLineColor.stored("white"),
             scale: 1,
             isFlipped: false,
             isEnabled: true,
@@ -3147,7 +3161,7 @@ final class CameraGuideAdjustTests: XCTestCase {
         let bitmap = probe.capture()
         probe.tearDown()
 
-        // The four swatches are painted, in the palette's own colours.
+        // Exactly the black and white swatches are painted, in the palette's own colours.
         for color in GuideLineColor.allCases {
             XCTAssertFalse(
                 rowsPainted(bitmap, hex: resolvedHex(color.color), minRun: 30).isEmpty,
@@ -3355,7 +3369,7 @@ final class CameraGuideAdjustTests: XCTestCase {
     private func renderSheetOnly() throws -> APBitmap {
         let sheet = CameraGuideAdjustSheet(
             opacity: 0.6,
-            lineColor: .pink,
+            lineColor: GuideLineColor.stored("white"),
             scale: 1,
             isFlipped: false,
             isEnabled: true,

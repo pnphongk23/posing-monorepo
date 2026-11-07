@@ -31,7 +31,7 @@ final class CameraViewModel: ObservableObject {
     /// `pose-visibility-row`: Shown / Hidden for the selected pose reference.
     @Published var isPoseGuideVisible = true
     /// `pose-line-color-black` / `pose-line-color-white`.
-    @Published var guideLineColor: GuideLineColor = .pink
+    @Published var guideLineColor: GuideLineColor = .white
     /// Pinch / rotate / drag placement of the pose reference, committed when a gesture ends.
     @Published var guideTransform = GuideTransform()
     /// Transient capture feedback; cleared by `statusClearTask`.

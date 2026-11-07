@@ -2,29 +2,17 @@ import SwiftUI
 
 /// The pose reference's stroke colour, as the guide-adjust sheet's swatches offer it.
 enum GuideLineColor: String, CaseIterable, Identifiable, Sendable {
-    case pink, black, yellow, green
+    case black, white
 
     var id: String { rawValue }
     var label: String { rawValue.capitalized }
 
-    /// The stroke and the swatch fill. Pink is the brand accent and black is ink (both the same in every
-    /// appearance); yellow and green are the palette's **fills** (`warningSurface` / `successSurface`), not its inks
-    /// — the ink tokens are dark brown and dark green in light mode, which is not the board's yellow and mint.
-    ///
-    /// All four are fixed colours, not scheme-dependent ones: the reference is drawn on the camera's dark stage and
-    /// picked on the light sheet, and it has to look the same in both.
+    /// The reference is drawn on the dark camera stage and picked on the light sheet, so these stay fixed.
     var color: Color {
         switch self {
-        case .pink: return AP.Color.accent
-        case .black: return AP.Color.onAccent
-        case .yellow: return Self.fixed(APColorTokens.warningSurface)
-        case .green: return Self.fixed(APColorTokens.successSurface)
+        case .black: return .black
+        case .white: return .white
         }
-    }
-
-    /// A token's light value as a fixed colour (the palette does not follow the appearance).
-    private static func fixed(_ token: APColorToken) -> Color {
-        Color(uiColor: token.spec(for: .light).uiColor)
     }
 
     /// The swatch's fill, so a light colour still has an edge.
@@ -32,12 +20,10 @@ enum GuideLineColor: String, CaseIterable, Identifiable, Sendable {
 
     var accessibilityIdentifier: String { "camera.guideAdjust.lineColor.\(rawValue)" }
 
-    /// A stored row from before the palette existed says `white`; the sheet's default is pink, which is what
-    /// that row meant (the reference's light stroke).
-    static func stored(_ raw: String?) -> GuideLineColor? {
-        guard let raw else { return nil }
-        if raw == "white" { return .pink }
-        return GuideLineColor(rawValue: raw)
+    /// Older builds stored pink/yellow/green. Unsupported or missing values use white, the current default.
+    static func stored(_ raw: String?) -> GuideLineColor {
+        guard let raw, let color = GuideLineColor(rawValue: raw) else { return .white }
+        return color
     }
 }
 
@@ -291,9 +277,13 @@ struct CameraGuideAdjustSheet: View {
             onLineColorChange(color)
         } label: {
             ZStack {
-                RoundedRectangle(cornerRadius: AP.Radius.radius8, style: .continuous)
-                    .fill(color.swatchColor)
-                    .frame(width: 44, height: 44)
+                  RoundedRectangle(cornerRadius: AP.Radius.radius8, style: .continuous)
+                      .fill(color.swatchColor)
+                      .frame(width: 44, height: 44)
+                      .overlay {
+                          RoundedRectangle(cornerRadius: AP.Radius.radius8, style: .continuous)
+                              .strokeBorder(color == .white ? AP.Color.separator : .clear, lineWidth: 1)
+                      }
                 if isSelected {
                     Image(systemName: "checkmark")
                         .font(AP.Font.caption.weight(.bold))

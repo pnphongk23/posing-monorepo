@@ -27,7 +27,7 @@ struct CameraSettings: Equatable, Sendable {
     var isGridVisible = false
     var flash: CameraFlashSetting = .auto
     var isPoseGuideVisible = true
-    var lineColor: GuideLineColor = .pink
+    var lineColor: GuideLineColor = .white
     var transform = Transform()
     var zoom: CameraZoomLevel = .one
     /// The exact zoom the lens was at. `zoom` keeps every pre-existing row readable; the factor adds
@@ -55,7 +55,7 @@ struct CameraSettings: Equatable, Sendable {
         isGridVisible: Bool = false,
         flash: CameraFlashSetting = .auto,
         isPoseGuideVisible: Bool = true,
-        lineColor: GuideLineColor = .pink,
+        lineColor: GuideLineColor = .white,
         transform: Transform = Transform(),
         zoom: CameraZoomLevel = .one,
         zoomFactor: Double? = nil,
@@ -149,9 +149,7 @@ extension CameraSettings: Codable {
         flash = Self.flash(from: (try? container.decodeIfPresent(String.self, forKey: .flash)) ?? nil)
         isPoseGuideVisible =
             (try? container.decodeIfPresent(Bool.self, forKey: .isPoseGuideVisible)) ?? defaults.isPoseGuideVisible
-        // A row from before the palette says `white`; `GuideLineColor.stored` maps it to the sheet's default.
         lineColor = GuideLineColor.stored((try? container.decodeIfPresent(String.self, forKey: .lineColor)) ?? nil)
-            ?? defaults.lineColor
         transform = ((try? container.decodeIfPresent(Transform.self, forKey: .transform)) ?? nil)
             ?? defaults.transform
         zoom = ((try? container.decodeIfPresent(Int.self, forKey: .zoom)) ?? nil)
