@@ -332,8 +332,8 @@ describe("HiggsfieldCliProvider credential guard", () => {
     ).rejects.toBeInstanceOf(ProviderAuthRequiredError);
   });
 
-  it("never puts CLI output in the thrown error, only in the redacted log", async () => {
-    const marker = "LEAK-CANARY-1234 https://user:secret@cdn.example.com/upload";
+  it("logs only the exit code, the category and the output length", async () => {
+    const marker = "LEAK-CANARY-1234 token=sk-live-abcdef123456 https://user:secret@cdn.example.com/upload";
     const errorLog = vi.spyOn(logger, "error");
 
     const provider = new HiggsfieldCliProvider({
@@ -348,13 +348,41 @@ describe("HiggsfieldCliProvider credential guard", () => {
 
     expect(error).toBeInstanceOf(ProviderAuthRequiredError);
     expect(error.message).toBe("Higgsfield authentication required");
-    expect(error.message).not.toContain("LEAK-CANARY");
     expect(JSON.stringify(error)).not.toContain("LEAK-CANARY");
 
     const logged = JSON.stringify(errorLog.mock.calls);
-    expect(logged).toContain("LEAK-CANARY");
-    // Connection-string style credentials are redacted before they reach the log.
+    expect(logged).not.toContain("LEAK-CANARY");
+    expect(logged).not.toContain("sk-live-abcdef123456");
     expect(logged).not.toContain("user:secret@");
+    expect(errorLog.mock.calls[0][0]).toMatchObject({
+      exitCode: 2,
+      category: "auth",
+      outputLength: expect.any(Number)
+    });
+  });
+
+  it.each([
+    ["dial tcp 1.2.3.4:443: i/o timeout", 1, "network"],
+    ["Error: higgsfield: request failed (no response received)", 2, "network"],
+    ["Error: upload failed with status 500", 1, "other"]
+  ])("categorises a CLI failure (%s) as %s/%s without leaking it", async (stderr, exitCode, category) => {
+    const marker = "LEAK-CANARY-9999 token=sk-live-zzz999";
+    const errorLog = vi.spyOn(logger, "error");
+
+    const provider = new HiggsfieldCliProvider({
+      spawnImpl: mockSpawn("", `${stderr} ${marker}`, exitCode) as never,
+      fetchImpl: vi.fn() as typeof fetch,
+      tmpDir: "/tmp/higgsfield-test-category"
+    });
+
+    await expect(
+      provider.extractPoseImage({ sourceImageBase64: "c291cmNl", sourceMimeType: "image/png" })
+    ).rejects.toBeInstanceOf(ProviderCliFailedError);
+
+    const logged = JSON.stringify(errorLog.mock.calls);
+    expect(logged).not.toContain("LEAK-CANARY");
+    expect(logged).not.toContain("sk-live-zzz999");
+    expect(errorLog.mock.calls[0][0]).toMatchObject({ exitCode, category });
   });
 
   it("keeps CLI output out of a non-auth CLI failure too", async () => {
@@ -375,7 +403,7 @@ describe("HiggsfieldCliProvider credential guard", () => {
     expect(error.message).toBe("Higgsfield CLI failed");
     expect(JSON.stringify(error)).not.toContain("LEAK-CANARY");
     const logged = JSON.stringify(errorLog.mock.calls);
-    expect(logged).toContain("LEAK-CANARY");
+    expect(logged).not.toContain("LEAK-CANARY");
     expect(logged).not.toContain("user:secret@");
   });
 

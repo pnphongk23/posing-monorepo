@@ -28,7 +28,6 @@ import {
 } from "./providerAuthStateFile";
 import type { ExtractedImage } from "./types";
 import { logger } from "../utils/logger";
-import { sanitizeErrorMessage } from "../utils/sanitizeError";
 
 /** Default generation model → Seedream 5.0 Lite (no `--resolution`, quality `basic`|`high`). */
 const DEFAULT_MODEL = "seedream_v5_lite";
@@ -177,6 +176,43 @@ export function extractResultUrlFromCliJson(payload: unknown): string | null {
   }
 
   return null;
+}
+
+const NETWORK_FAILURE_MARKERS = [
+  "timeout",
+  "timed out",
+  "deadline exceeded",
+  "dial tcp",
+  "connection refused",
+  "connection reset",
+  "econnreset",
+  "enotfound",
+  "no such host",
+  "tls handshake",
+  "no response received",
+  "network is unreachable",
+  "temporary failure in name resolution"
+];
+
+/** Stable failure category for logs: never the raw output, just what kind of failure it was. */
+export type CliFailureCategory = "auth" | "network" | "other";
+
+export function classifyCliFailure(stderr: string, stdout: string): CliFailureCategory {
+  const combined = `${stderr}\n${stdout}`.toLowerCase();
+  if (
+    combined.includes("not authenticated") ||
+    combined.includes("auth required") ||
+    combined.includes("unauthorized") ||
+    combined.includes("credentials") ||
+    combined.includes("session expired") ||
+    combined.includes("older auth flow")
+  ) {
+    return "auth";
+  }
+  if (NETWORK_FAILURE_MARKERS.some((marker) => combined.includes(marker))) {
+    return "network";
+  }
+  return "other";
 }
 
 /**
@@ -340,12 +376,13 @@ export class HiggsfieldCliProvider implements PoseExtractorProvider {
         }
 
         if (restored || isAuthFailure(stderr, stdout)) {
-          // The CLI output never reaches the API response: only the log, redacted and truncated.
+          // Never log the CLI output: it can echo prompts, upload URLs or tokens. Exit code,
+          // category and length are enough to tell an auth failure from a network one.
           logger.error(
             {
-              credentialsPath: this.credentialsPath,
-              restoredFromBackup: restored,
-              cliOutput: sanitizeErrorMessage(stderr.trim() || stdout.trim())
+              exitCode,
+              category: classifyCliFailure(stderr, stdout),
+              outputLength: (stderr.trim() || stdout.trim()).length
             },
             "higgsfield CLI reported an authentication failure"
           );
@@ -356,13 +393,13 @@ export class HiggsfieldCliProvider implements PoseExtractorProvider {
           });
           throw new ProviderAuthRequiredError("Higgsfield authentication required");
         }
-        // Same rule as the auth path: the CLI output goes to the redacted log, the caller gets a
-        // fixed message that is safe to store on the job and return through the API.
+        // Same rule as the auth path: only the exit code, the category and the output length reach
+        // the log, and the caller gets a fixed message that is safe to store and return.
         logger.error(
           {
-            credentialsPath: this.credentialsPath,
             exitCode,
-            cliOutput: sanitizeErrorMessage(stderr.trim() || stdout.trim())
+            category: classifyCliFailure(stderr, stdout),
+            outputLength: (stderr.trim() || stdout.trim()).length
           },
           "higgsfield CLI failed"
         );
