@@ -403,6 +403,40 @@ describe("HiggsfieldCliProvider credential guard", () => {
     expect(Date.parse(state.lastSuccessAt!)).toBeGreaterThan(Date.parse(state.lastAuthErrorAt!));
   });
 
+  it("checks account status through the guard: backup first, state on success", async () => {
+    const credentialsPath = await makeCredentials(7200);
+    const spawnImpl = mockSpawn("");
+
+    const provider = new HiggsfieldCliProvider({
+      spawnImpl: spawnImpl as never,
+      fetchImpl: vi.fn() as typeof fetch,
+      tmpDir: "/tmp/higgsfield-test-account",
+      credentialsPath
+    });
+
+    await expect(provider.tryCheckAccountStatus()).resolves.toEqual({ ok: true, authFailure: false });
+
+    const [, args] = spawnImpl.mock.calls[0] as [string, string[]];
+    expect(args).toEqual(["account", "status"]);
+    expect(fs.existsSync(backupPathFor(credentialsPath))).toBe(true);
+    const state = await readProviderAuthState(providerAuthStatePathFor(credentialsPath));
+    expect(state.lastSuccessAt).not.toBeNull();
+  });
+
+  it("reports an auth failure from account status and records it for the API", async () => {
+    const credentialsPath = await makeCredentials(7200);
+    const provider = new HiggsfieldCliProvider({
+      spawnImpl: mockSpawn("", "Error: Session expired.", 2) as never,
+      fetchImpl: vi.fn() as typeof fetch,
+      tmpDir: "/tmp/higgsfield-test-account-fail",
+      credentialsPath
+    });
+
+    await expect(provider.tryCheckAccountStatus()).resolves.toEqual({ ok: false, authFailure: true });
+    const state = await readProviderAuthState(providerAuthStatePathFor(credentialsPath));
+    expect(state.lastAuthErrorCode).toBe("PROVIDER_AUTH_REQUIRED");
+  });
+
   it("runs concurrent extractions one at a time", async () => {
     const events: string[] = [];
     const spawnImpl = vi.fn((_cmd: string, args: string[]) => {

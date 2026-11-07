@@ -17,6 +17,7 @@ import {
   defaultCredentialsPath,
   restoreCredential,
   readCredentialSnapshot,
+  tryWithCredentialLock,
   withCredentialLock
 } from "./higgsfieldCredentialGuard";
 import type { PoseExtractorProvider } from "./poseExtractorProvider";
@@ -271,6 +272,60 @@ export class HiggsfieldCliProvider implements PoseExtractorProvider {
     this.tmpDir = options.tmpDir ?? path.join(os.tmpdir(), "extract-jobs");
     // Shared with the API process: the worker records auth failures here so /api/health sees them.
     this.authStatePath = providerAuthStatePathFor(this.credentialsPath);
+  }
+
+  /**
+   * Keepalive entry point: prove the credential against the API, but only if no job is running.
+   * Resolves null when the credential is busy so the caller can skip this round.
+   */
+  async tryCheckAccountStatus(): Promise<{ ok: boolean; authFailure: boolean } | null> {
+    return tryWithCredentialLock(() => this.checkAccountStatusLocked());
+  }
+
+  private async checkAccountStatusLocked(): Promise<{ ok: boolean; authFailure: boolean }> {
+    await backupCredential({ credentialsPath: this.credentialsPath });
+    const env = { ...process.env, HIGGSFIELD_CREDENTIALS_PATH: this.credentialsPath };
+    const { stdout, stderr, exitCode } = await runSpawn(
+      this.spawnImpl,
+      "higgsfield",
+      ["account", "status"],
+      this.timeoutMs,
+      env
+    );
+
+    if (exitCode === 0) {
+      await recordProviderAuthSuccess({ statePath: this.authStatePath });
+      return { ok: true, authFailure: false };
+    }
+
+    const afterFailure = await readCredentialSnapshot(this.credentialsPath);
+    const restored =
+      afterFailure.state === "missing" ? await restoreCredential({ credentialsPath: this.credentialsPath }) : false;
+    if (restored) {
+      logger.warn(
+        { backupPath: backupPathFor(this.credentialsPath), credentialsPath: this.credentialsPath },
+        "higgsfield CLI removed the credential file; restored the last backup"
+      );
+    }
+
+    const authFailure = restored || isAuthFailure(stderr, stdout);
+    logger.error(
+      {
+        credentialsPath: this.credentialsPath,
+        restoredFromBackup: restored,
+        exitCode,
+        cliOutput: sanitizeErrorMessage(stderr.trim() || stdout.trim())
+      },
+      authFailure ? "higgsfield account status reported an authentication failure" : "higgsfield account status failed"
+    );
+    if (authFailure) {
+      await recordProviderAuthFailure({ statePath: this.authStatePath, code: "PROVIDER_AUTH_REQUIRED" });
+      await dispatchProviderAuthAlertOnce({
+        statePath: this.authStatePath,
+        payload: { event: "provider_auth", status: "degraded", state: "auth_error", expiresInSec: null }
+      });
+    }
+    return { ok: false, authFailure };
   }
 
   /**

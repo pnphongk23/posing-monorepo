@@ -242,6 +242,12 @@ export async function restoreCredential(input: { credentialsPath: string }): Pro
 }
 
 let credentialQueue: Promise<unknown> = Promise.resolve();
+let credentialInFlight = 0;
+
+/** True when no CLI command currently holds the credential. */
+export function isCredentialLockIdle(): boolean {
+  return credentialInFlight === 0;
+}
 
 /**
  * Single credential owner: every CLI spawn runs through this queue so two commands can never
@@ -249,10 +255,27 @@ let credentialQueue: Promise<unknown> = Promise.resolve();
  * and the CLI would delete the credential file).
  */
 export function withCredentialLock<T>(task: () => Promise<T>): Promise<T> {
+  credentialInFlight += 1;
   const run = credentialQueue.then(task, task);
-  credentialQueue = run.then(
-    () => undefined,
-    () => undefined
-  );
+  const settle = () => {
+    credentialInFlight -= 1;
+  };
+  credentialQueue = run.then(settle, settle);
   return run;
+}
+
+/**
+ * Run only when the credential is free right now: never queue behind a job. Used by the keepalive
+ * timer, which must not delay real work.
+ */
+export async function tryWithCredentialLock<T>(task: () => Promise<T>): Promise<T | null> {
+  if (credentialInFlight > 0) {
+    return null;
+  }
+  credentialInFlight += 1;
+  try {
+    return await task();
+  } finally {
+    credentialInFlight -= 1;
+  }
 }
