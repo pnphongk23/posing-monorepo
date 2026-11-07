@@ -842,7 +842,7 @@ struct GalleryFilterBar: View {
 
     private func chips(fillsWidth: Bool) -> some View {
         ForEach(GalleryTimeFilter.allCases) { option in
-            APCategoryChip(
+            GalleryFilterChip(
                 title: option.rawValue,
                 isSelected: filter == option,
                 fillsWidth: fillsWidth,
@@ -851,6 +851,42 @@ struct GalleryFilterBar: View {
             .accessibilityIdentifier(option.filterIdentifier)
             .accessibilityLabel(option.rawValue)
         }
+    }
+}
+
+struct GalleryFilterChip: View {
+    let title: String
+    let isSelected: Bool
+    var fillsWidth = false
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: AP.Space.space8) {
+                if isSelected {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 15, weight: .semibold))
+                        .accessibilityHidden(true)
+                }
+                Text(title)
+                    .font(AP.Font.supporting)
+                    .lineLimit(nil)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.horizontal, AP.Space.space16)
+            .frame(
+                maxWidth: fillsWidth ? .infinity : nil,
+                minHeight: AP.HitTarget.minimum,
+                alignment: fillsWidth ? .leading : .center
+            )
+            .foregroundStyle(isSelected ? AP.Color.background : AP.Color.primaryText)
+            .background(
+                RoundedRectangle(cornerRadius: AP.Radius.radius16, style: .continuous)
+                    .fill(isSelected ? AP.Color.primaryText : AP.Color.controlFill)
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
 

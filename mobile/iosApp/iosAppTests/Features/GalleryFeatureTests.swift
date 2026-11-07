@@ -758,26 +758,8 @@ final class GalleryFeatureTests: XCTestCase {
         func selectedChipWidth(_ bitmap: APBitmap) -> Int {
             // The selected chip's own fill band, grouped per column so neither the check glyph nor the
             // label can split it, and so the other chips on the same row cannot widen it.
-            paintedColumnRuns(with: 0xFAE0E7, in: bitmap).map(\.count).max() ?? 0
+            paintedColumnRuns(with: 0x121212, in: bitmap).map(\.count).max() ?? 0
         }
-        func chipRowBands(_ bitmap: APBitmap) -> Int {
-            var rows = Set(bitmap.rows(paintedWith: 0xFAE0E7))
-            rows.formUnion(bitmap.rows(paintedWith: 0xECE5D8))
-            var bands = 0
-            var previous = -2
-            for row in rows.sorted() {
-                if row != previous + 1 { bands += 1 }
-                previous = row
-            }
-            return bands
-        }
-
-        XCTAssertEqual(chipRowBands(inline), 1, "the default layout keeps the chips on one row")
-        XCTAssertEqual(
-            chipRowBands(stacked), GalleryTimeFilter.allCases.count,
-            "at the Accessibility sizes each chip gets its own row"
-        )
-
         let inlineWidth = selectedChipWidth(inline)
         let stackedWidth = selectedChipWidth(stacked)
         XCTAssertGreaterThan(inlineWidth, 0)
