@@ -600,10 +600,12 @@ final class FeatureStateTests: XCTestCase {
         ])
         let model = GalleryViewModel(store: store)
         await model.load()
-        model.timeFilter = .today
+        GalleryStarStore.toggle(1)
+        defer { GalleryStarStore.toggle(1) }
+        model.timeFilter = .starred
         model.applyFilter()
         guard case .loaded(let items) = model.state else { return XCTFail("Expected loaded") }
-        XCTAssertEqual(items.count, 1)
+        XCTAssertEqual(items.map(\.id), [1])
     }
 
     // MARK: - Shared state adoption (UI-CHANGE-260913, report §3.4–§3.8)
@@ -642,12 +644,15 @@ final class FeatureStateTests: XCTestCase {
     /// only the all-empty branch carries the `Open Camera` action.
     func testGalleryStateCopyMatchesPrototype() {
         XCTAssertEqual(GalleryStateCopy.emptyAllTitle, "No photos yet")
-        XCTAssertEqual(GalleryStateCopy.emptyAllMessage, "Capture a pose to start your gallery.")
+        XCTAssertEqual(GalleryStateCopy.emptyAllMessage, "Photos you take with Posing show up here.")
         XCTAssertEqual(GalleryStateCopy.openCameraActionTitle, "Open Camera")
-        XCTAssertEqual(GalleryStateCopy.emptyFilterTitle, "No photos in this filter")
-        XCTAssertEqual(GalleryStateCopy.emptyFilterMessage, "Try another filter.")
-        XCTAssertEqual(GalleryStateCopy.errorTitle, "Couldn't load gallery")
-        XCTAssertEqual(GalleryStateCopy.retryActionTitle, "Try again")
+        XCTAssertEqual(GalleryStateCopy.emptyFilterTitle, "No starred photos")
+        XCTAssertEqual(GalleryStateCopy.emptyFilterMessage, "Tap the star on a photo to find it here.")
+        XCTAssertEqual(GalleryStateCopy.showAllPhotosActionTitle, "Show all photos")
+        XCTAssertEqual(GalleryStateCopy.errorTitle, "Can't open your photos")
+        XCTAssertEqual(GalleryStateCopy.showAllPhotosActionTitle, "Show all photos")
+        XCTAssertEqual(GalleryStateCopy.errorMessage, "Allow photo access in Settings so Posing can show your photos.")
+        XCTAssertEqual(GalleryStateCopy.openSettingsActionTitle, "Open Settings")
     }
 
     /// §3.8: account signed-out success and sign-in-prompt failure share the component copy.

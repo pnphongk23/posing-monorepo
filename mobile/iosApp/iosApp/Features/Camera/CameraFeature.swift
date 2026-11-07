@@ -1579,7 +1579,7 @@ enum CameraStatePanel: Equatable {
     /// The permission copy, in one place so the panel and its tests cannot drift.
     var permissionCopy: (title: String, message: String, actionTitle: String) {
         ("Camera access is off",
-         "AI Pose needs the camera to show the pose guide. Turn it on in Settings.",
+         "Posing needs the camera to show the pose guide. Turn it on in Settings.",
          self == .permissionDenied ? "Open Settings" : "Allow Camera")
     }
 }

@@ -130,7 +130,7 @@ enum GalleryStoreIntegrationError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .blocked(let reason):
-            return "Gallery integration blocked: \(reason)"
+            return "We couldn't open your photos."
         }
     }
 }
