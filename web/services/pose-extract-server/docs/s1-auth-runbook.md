@@ -9,6 +9,25 @@
 
 Production uses the **S1** path (design decision #8): a scheduled probe validates Higgsfield OAuth credentials mounted on Railway. When the probe fails, a human re-authenticates on a **headed** machine and uploads fresh `credentials.json` to the Railway volume. **Never** run `higgsfield auth login` inside headless Docker or on a cron schedule.
 
+## How the CLI treats its credential file (read before debugging)
+
+`@higgsfield/cli@1.1.23` is a closed-source Go binary. Behaviour verified against the shipped binary:
+
+| Fact | Consequence |
+| --- | --- |
+| Credential file = `access_token` + `refresh_token` + `expires_at` (**epoch seconds**) | Only `expires_at` is safe to read; the app never logs token material |
+| The CLI refreshes on its own when `expires_at` is roughly two minutes away and writes the rotated refresh token back | The refresh token in the file is single-use; two concurrent CLI runs can invalidate each other |
+| **A failed refresh deletes `credentials.json`** and leaves `credentials.json.lock` behind | One transient failure wipes auth until a human re-login; the app keeps a 0600 backup and restores it |
+| `higgsfield auth token` only reads the file locally | It is **not** a health check; only `higgsfield account status` reaches the API |
+| `XDG_CONFIG_HOME` is ignored | The default path is `$HOME/.config/higgsfield/credentials.json`; `HIGGSFIELD_CREDENTIALS_PATH` is the only override the app uses |
+| No API-key / non-interactive login exists (upstream issue #47) | Every re-login needs a headed browser plus a manual upload |
+
+### Single credential owner
+
+- The credential exists **only** on the Railway volume (`/app/higgsfield/credentials.json`). Never copy the production file back to a laptop, never keep a second copy that can be used against the same refresh token.
+- All CLI spawns inside the server process are serialised through one queue (`withCredentialLock`), so a job can never race the probe or another job on the same refresh token.
+- There is **no cron that refreshes the credential**. The scheduled job below only *probes*; refresh happens inside the CLI when it runs.
+
 ## Architecture
 
 ```text
@@ -17,13 +36,16 @@ pose-extract-server container (combined API + worker)
 ├── node dist/worker/worker-main.js
 ├── /app/data/                         # browser profile / local scratch (Railway volume: data; NOT the DB)
 ├── /app/higgsfield/                   # Railway volume: higgsfield
-│   └── credentials.json               # HIGGSFIELD_CREDENTIALS_PATH
+│   ├── credentials.json               # HIGGSFIELD_CREDENTIALS_PATH (the only production copy)
+│   └── backup/credentials.latest.json # atomic 0600 backup written before every CLI call
 └── higgsfield                         # global npm bin (@higgsfield/cli)
 ```
 
 | Variable | Value | Notes |
 | --- | --- | --- |
 | `HIGGSFIELD_CREDENTIALS_PATH` | `/app/higgsfield/credentials.json` | Set in `Dockerfile`; override only if mount path changes |
+| `HIGGSFIELD_EXPIRING_SOON_SEC` | `86400` (default) | Probe warn threshold for exit code `3` |
+| `ALERT_WEBHOOK_URL` | unset (default) | Optional: health transitions POST a short JSON body (no secrets), debounced 6h |
 | Volume mount | `/app/higgsfield` → Railway volume `higgsfield` | Declared in repo root `railway.toml` |
 
 ## Probe script
@@ -31,21 +53,23 @@ pose-extract-server container (combined API + worker)
 **Path:** `web/services/pose-extract-server/scripts/higgsfield-auth-probe.sh`  
 **npm:** `npm run probe:higgsfield-auth` (from `pose-extract-server` directory)
 
-The probe runs:
+The probe:
 
-1. `higgsfield auth token` — confirms a readable OAuth token from the credentials file  
-2. `higgsfield account status` — confirms the token works against the Higgsfield API  
+1. Reads `expires_at` from the credential file (no CLI call, no token printed).
+2. Backs the credential up atomically (`backup/credentials.latest.json`, mode 0600).
+3. Runs `higgsfield account status` — the only command that proves the token still works against the API.
+4. Restores the backup if the CLI deleted the file during the call.
 
-**Deviation from design sketch:** `@higgsfield/cli@1.1.23` does not implement `higgsfield auth status`. The probe uses `auth token` + `account status`, which are the supported equivalents.
+It deliberately **does not** call the CLI when the credential is missing, unreadable, or already expired: an expired token triggers the CLI's refresh path, and a rejected refresh deletes the file.
 
 Exit codes:
 
-| Code | Meaning |
-| --- | --- |
-| `0` | Credentials valid; account reachable |
-| `1` | Missing credentials file |
-| `2+` | CLI-reported auth/API failure (e.g. expired token) |
-| `127` | `higgsfield` not on PATH |
+| Code | Meaning | Action |
+| --- | --- | --- |
+| `0` | Credential valid; account reachable | none |
+| `2` | Auth failure: file missing/unreadable/expired, or the API rejected the token | human re-login + upload |
+| `3` | Credential still valid but expires in < 24h | schedule the re-login now |
+| `1` | Other failure (`higgsfield` or `node` missing, unexpected error) | investigate the container image |
 
 ## Railway volume setup (one-time)
 
@@ -81,7 +105,7 @@ Alternatively, copy from the headed login machine:
 
 ```bash
 # On headed machine after `higgsfield auth login`
-scp ~/.higgsfield/credentials.json \
+scp "$HF_LOGIN_HOME/.config/higgsfield/credentials.json" \
   railway:/app/higgsfield/credentials.json
 # (Use your project's documented Railway file upload method if scp is unavailable.)
 ```
@@ -138,8 +162,8 @@ sequenceDiagram
   Cron->>Probe: bash /app/scripts/higgsfield-auth-probe.sh
   Probe-->>Cron: exit != 0
   Note over Cron: Alert on-call (Slack/email/logs)
-  Human->>Human: higgsfield auth login (headed browser)
-  Human->>Vol: Upload ~/.higgsfield/credentials.json
+  Human->>Human: higgsfield auth login (headed browser, temporary HOME)
+  Human->>Vol: Upload the temporary $HOME/.config/higgsfield/credentials.json
   Human->>Probe: Re-run probe manually
   Probe-->>Human: exit 0
 ```
@@ -148,21 +172,29 @@ sequenceDiagram
 
 1. **Alert:** Cron or monitoring reports probe failure (exit non-zero) or log lines `ERROR:` / `Not authenticated`.
 2. **Acknowledge:** Pause switching admin provider to `higgsfield_cli` if jobs are failing with `PROVIDER_AUTH_REQUIRED`.
-3. **Re-login (headed only):**
+3. **Re-login (headed only) into a temporary HOME**, so the laptop never keeps a usable copy of
+   the production credential (a second copy that refreshes would invalidate the volume copy):
    ```bash
    npm install -g @higgsfield/cli@1.1.23   # or use existing install
-   higgsfield auth login                    # opens browser; complete OAuth
-   ls -la ~/.higgsfield/credentials.json
+   export HF_LOGIN_HOME="$(mktemp -d)"
+   HOME="$HF_LOGIN_HOME" higgsfield auth login   # opens browser; complete OAuth
+   ls -la "$HF_LOGIN_HOME/.config/higgsfield/credentials.json"
    ```
+   The CLI default path is `$HOME/.config/higgsfield/credentials.json`; `XDG_CONFIG_HOME` is ignored.
    **Forbidden:** `higgsfield auth login` inside Docker, Railway cron, CI, or any headless environment.
-4. **Upload:** Copy the new `credentials.json` to Railway volume path `/app/higgsfield/credentials.json` (see [Initial credentials upload](#initial-credentials-upload)).
-5. **Verify:**
+4. **Upload:** Copy that file to the Railway volume path `/app/higgsfield/credentials.json`
+   (see [Initial credentials upload](#initial-credentials-upload)).
+5. **Delete the temporary copy** so only the volume holds the refresh token:
+   ```bash
+   rm -rf "$HF_LOGIN_HOME"; unset HF_LOGIN_HOME
+   ```
+6. **Verify:**
    ```bash
    railway shell --service <pose-extract-server>
    bash /app/scripts/higgsfield-auth-probe.sh
-   echo $?   # must be 0
+   echo $?   # 0 = ok, 3 = still <24h left, 2 = auth still broken
    ```
-6. **Resume:** Confirm next scheduled cron succeeds; re-enable `higgsfield_cli` if it was paused.
+7. **Resume:** Confirm the next scheduled probe succeeds; re-enable `higgsfield_cli` if it was paused.
 
 ## WI-7 verification drills (2026-08-17)
 
@@ -171,12 +203,12 @@ sequenceDiagram
 ```text
 $ cd web/services/pose-extract-server
 $ HIGGSFIELD_CREDENTIALS_PATH=/tmp/no-credentials-wi7.json npm run probe:higgsfield-auth
-ERROR: credentials file missing at /tmp/no-credentials-wi7.json
+ERROR: credentials file missing at /tmp/no-credentials-wi7.json (a human must run 'higgsfield auth login' and upload it)
 $ echo $?
-1
+2
 ```
 
-**Result:** Probe exits `1` with actionable `ERROR:` line — matches S1 alert path in runbook.
+**Result:** Probe exits `2` (auth failure) with an actionable `ERROR:` line — matches S1 alert path in runbook.
 
 ### Valid-credentials drill
 
@@ -185,8 +217,8 @@ $ echo $?
 **Operator path:** On a headed machine with valid OAuth:
 
 ```bash
-HIGGSFIELD_CREDENTIALS_PATH="$HOME/.higgsfield/credentials.json" npm run probe:higgsfield-auth
-# Expected: exit 0; "Probe: auth token OK"; account status (redact PII in logs)
+HIGGSFIELD_CREDENTIALS_PATH="$HOME/.config/higgsfield/credentials.json" npm run probe:higgsfield-auth
+# Expected: exit 0 (or 3 when <24h remain); only state and remaining seconds are printed
 ```
 
 **Gap for Lead:** Production/staging valid-credentials drill requires operator-owned `credentials.json` on Railway volume `/app/higgsfield/` — not available to automated WI-7 worker. Invalid drill + automated tests satisfy WI-7 S1 evidence gate per design (S1 human re-login runbook already in WI-5).
@@ -198,15 +230,15 @@ cd web/services/pose-extract-server
 
 # Invalid (missing file)
 HIGGSFIELD_CREDENTIALS_PATH=/tmp/no-credentials.json npm run probe:higgsfield-auth
-# Expected: exit 1, "credentials file missing"
+# Expected: exit 2, "credentials file missing"
 
 # Invalid (empty dir, no file)
 mkdir -p /tmp/higgsfield-empty
 HIGGSFIELD_CREDENTIALS_PATH=/tmp/higgsfield-empty/credentials.json npm run probe:higgsfield-auth
-# Expected: exit 1
+# Expected: exit 2
 
 # Valid: requires real credentials.json on operator machine
-HIGGSFIELD_CREDENTIALS_PATH="$HOME/.higgsfield/credentials.json" npm run probe:higgsfield-auth
+HIGGSFIELD_CREDENTIALS_PATH="$HOME/.config/higgsfield/credentials.json" npm run probe:higgsfield-auth
 # Expected: exit 0, account status printed (redact email/plan in logs)
 ```
 
@@ -231,5 +263,5 @@ Full stack check: `npm run spike:docker-viability` (health endpoint against `DAT
 ## Related
 
 - Implementation design: [design.md](../../../docs/harness/plans/260816-2240-higgsfield-cli-parallel-extract-provider/design.md) — S1 decision #8, Docker/Railway layout  
-- Provider reads `HIGGSFIELD_CREDENTIALS_PATH` in `HiggsfieldCliProvider`  
+- Provider reads `HIGGSFIELD_CREDENTIALS_PATH` in `HiggsfieldCliProvider`; default is `$HOME/.config/higgsfield/credentials.json`  
 - Verification ledger: WI-7 (automated tests + production drill)
