@@ -1,9 +1,10 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { EventEmitter } from "node:events";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   ProviderAuthRequiredError,
@@ -12,6 +13,9 @@ import {
 } from "./errors";
 import { DEFAULT_EXTRACT_PROMPT } from "./extractPrompt";
 import { extractResultUrlFromCliJson, HiggsfieldCliProvider } from "./higgsfieldCliProvider";
+import { backupPathFor } from "./higgsfieldCredentialGuard";
+import { getLastProviderAuthError, resetProviderAuthState } from "./providerAuthHealth";
+import { logger } from "../utils/logger";
 
 describe("extractResultUrlFromCliJson", () => {
   it("reads top-level url fields", () => {
@@ -184,5 +188,179 @@ describe("HiggsfieldCliProvider", () => {
     await expect(
       provider.extractPoseImage({ sourceImageBase64: "c291cmNl", sourceMimeType: "image/png" })
     ).rejects.toBeInstanceOf(ProviderTimeoutError);
+  });
+});
+
+describe("HiggsfieldCliProvider credential guard", () => {
+  const tempDirs: string[] = [];
+
+  async function makeCredentials(expiresInSec: number): Promise<string> {
+    const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "hf-provider-"));
+    tempDirs.push(dir);
+    const credentialsPath = path.join(dir, "credentials.json");
+    await fs.promises.writeFile(
+      credentialsPath,
+      JSON.stringify({
+        access_token: "secret-access",
+        refresh_token: "secret-refresh",
+        token_type: "Bearer",
+        expires_in: expiresInSec,
+        expires_at: Math.floor(Date.now() / 1000) + expiresInSec,
+        scope: "openid",
+        auth_version: 2
+      }),
+      { mode: 0o600 }
+    );
+    return credentialsPath;
+  }
+
+  function okFetch() {
+    return vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: { get: () => "image/png" },
+      arrayBuffer: async () => Uint8Array.from([1]).buffer
+    });
+  }
+
+  afterEach(async () => {
+    vi.restoreAllMocks();
+    resetProviderAuthState();
+    await Promise.all(tempDirs.splice(0).map((dir) => fs.promises.rm(dir, { recursive: true, force: true })));
+  });
+
+  it("backs the credential up before spawning and restores it when the CLI deletes it", async () => {
+    const credentialsPath = await makeCredentials(7200);
+    const warn = vi.spyOn(logger, "warn");
+    const spawnImpl = vi.fn(() => {
+      fs.rmSync(credentialsPath);
+      const child = new EventEmitter() as EventEmitter & {
+        stdout: EventEmitter;
+        stderr: EventEmitter;
+        kill: ReturnType<typeof vi.fn>;
+      };
+      child.stdout = new EventEmitter();
+      child.stderr = new EventEmitter();
+      child.kill = vi.fn();
+      queueMicrotask(() => {
+        child.stderr.emit("data", Buffer.from("Error: Session expired.\nHint: Run: hf auth login"));
+        child.emit("close", 2);
+      });
+      return child;
+    });
+
+    const provider = new HiggsfieldCliProvider({
+      spawnImpl: spawnImpl as never,
+      fetchImpl: vi.fn() as typeof fetch,
+      tmpDir: "/tmp/higgsfield-test-guard",
+      credentialsPath
+    });
+
+    await expect(
+      provider.extractPoseImage({ sourceImageBase64: "c291cmNl", sourceMimeType: "image/png" })
+    ).rejects.toBeInstanceOf(ProviderAuthRequiredError);
+
+    const restored = JSON.parse(fs.readFileSync(credentialsPath, "utf8")) as { refresh_token: string };
+    expect(restored.refresh_token).toBe("secret-refresh");
+    expect(fs.statSync(credentialsPath).mode & 0o777).toBe(0o600);
+    const backupPath = backupPathFor(credentialsPath);
+    expect(fs.existsSync(backupPath)).toBe(true);
+    expect(fs.statSync(backupPath).mode & 0o777).toBe(0o600);
+    expect(warn).toHaveBeenCalled();
+    expect(JSON.stringify(warn.mock.calls)).not.toContain("secret-refresh");
+    expect(getLastProviderAuthError()?.code).toBe("PROVIDER_AUTH_REQUIRED");
+  });
+
+  it("keeps the existing backup when a later credential file is older", async () => {
+    const credentialsPath = await makeCredentials(7200);
+    const provider = new HiggsfieldCliProvider({
+      spawnImpl: mockSpawn(JSON.stringify({ url: "https://cdn.example.com/out.png" })) as never,
+      fetchImpl: okFetch() as typeof fetch,
+      tmpDir: "/tmp/higgsfield-test-guard-older",
+      credentialsPath
+    });
+    await provider.extractPoseImage({ sourceImageBase64: "c291cmNl", sourceMimeType: "image/png" });
+    const firstBackup = fs.readFileSync(backupPathFor(credentialsPath), "utf8");
+
+    await fs.promises.writeFile(
+      credentialsPath,
+      JSON.stringify({ access_token: "a", refresh_token: "b", expires_at: Math.floor(Date.now() / 1000) + 60 }),
+      { mode: 0o600 }
+    );
+    await provider.extractPoseImage({ sourceImageBase64: "c291cmNl", sourceMimeType: "image/png" });
+
+    expect(fs.readFileSync(backupPathFor(credentialsPath), "utf8")).toBe(firstBackup);
+  });
+
+  it.each([
+    ["Session expired."],
+    ["Error: Stored credentials use an older auth flow."],
+    ["Error: Invalid credentials file."]
+  ])("maps %s to PROVIDER_AUTH_REQUIRED", async (stderr) => {
+    const provider = new HiggsfieldCliProvider({
+      spawnImpl: mockSpawn("", stderr, 2) as never,
+      fetchImpl: vi.fn() as typeof fetch,
+      tmpDir: "/tmp/higgsfield-test-auth-strings"
+    });
+
+    await expect(
+      provider.extractPoseImage({ sourceImageBase64: "c291cmNl", sourceMimeType: "image/png" })
+    ).rejects.toBeInstanceOf(ProviderAuthRequiredError);
+  });
+
+  it("clears the recorded auth error after a successful call", async () => {
+    const failingProvider = new HiggsfieldCliProvider({
+      spawnImpl: mockSpawn("", "Error: Session expired.", 2) as never,
+      fetchImpl: vi.fn() as typeof fetch,
+      tmpDir: "/tmp/higgsfield-test-auth-clear"
+    });
+    await expect(
+      failingProvider.extractPoseImage({ sourceImageBase64: "c291cmNl", sourceMimeType: "image/png" })
+    ).rejects.toBeInstanceOf(ProviderAuthRequiredError);
+    expect(getLastProviderAuthError()).not.toBeNull();
+
+    const provider = new HiggsfieldCliProvider({
+      spawnImpl: mockSpawn(JSON.stringify({ url: "https://cdn.example.com/out.png" })) as never,
+      fetchImpl: okFetch() as typeof fetch,
+      tmpDir: "/tmp/higgsfield-test-auth-clear"
+    });
+    await provider.extractPoseImage({ sourceImageBase64: "c291cmNl", sourceMimeType: "image/png" });
+
+    expect(getLastProviderAuthError()).toBeNull();
+  });
+
+  it("runs concurrent extractions one at a time", async () => {
+    const events: string[] = [];
+    const spawnImpl = vi.fn((_cmd: string, args: string[]) => {
+      const label = args.includes("--prompt") ? (events.length === 0 ? "first" : "second") : "unknown";
+      events.push(`${label}:start`);
+      const child = new EventEmitter() as EventEmitter & {
+        stdout: EventEmitter;
+        stderr: EventEmitter;
+        kill: ReturnType<typeof vi.fn>;
+      };
+      child.stdout = new EventEmitter();
+      child.stderr = new EventEmitter();
+      child.kill = vi.fn();
+      setTimeout(() => {
+        events.push(`${label}:end`);
+        child.stdout.emit("data", Buffer.from(JSON.stringify({ url: "https://cdn.example.com/out.png" })));
+        child.emit("close", 0);
+      }, 20);
+      return child;
+    });
+
+    const provider = new HiggsfieldCliProvider({
+      spawnImpl: spawnImpl as never,
+      fetchImpl: okFetch() as typeof fetch,
+      tmpDir: "/tmp/higgsfield-test-mutex"
+    });
+
+    await Promise.all([
+      provider.extractPoseImage({ sourceImageBase64: "c291cmNl", sourceMimeType: "image/png" }),
+      provider.extractPoseImage({ sourceImageBase64: "c291cmNl", sourceMimeType: "image/png" })
+    ]);
+
+    expect(events).toEqual(["first:start", "first:end", "second:start", "second:end"]);
   });
 });

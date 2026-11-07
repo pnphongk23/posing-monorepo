@@ -138,7 +138,13 @@ export async function processNextJob(input: ProcessNextJobInput): Promise<boolea
     processed = await backgroundRemover.removeBackground(extracted);
   } catch (error) {
     const { code, message } = mapProviderError(error);
-    await input.jobStore.markFailedOrRequeue(job.id, lockToken, code, message);
+    // A provider authentication failure is terminal: requeueing only delays the same answer and
+    // burns the job's remaining attempts, so the client is told on this attempt.
+    if (error instanceof ProviderAuthRequiredError) {
+      await input.jobStore.markFailed(job.id, lockToken, code, message);
+    } else {
+      await input.jobStore.markFailedOrRequeue(job.id, lockToken, code, message);
+    }
     const info = sanitizeError(error);
     logger.error(
       { jobId: job.id, providerId, name: info.name, code: info.code, message: info.message },

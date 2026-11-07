@@ -150,6 +150,33 @@ describe("processNextJob", () => {
     expect(updated?.errorMessage).toBe("provider failed");
   });
 
+  it("fails the job immediately on a provider auth error instead of requeueing", async () => {
+    const { jobStore, providerSettingsStore } = await createStores();
+    const mockProviderInstance = mockProvider(
+      "higgsfield_cli",
+      vi.fn().mockRejectedValue(new ProviderAuthRequiredError("Error: Session expired."))
+    );
+
+    const job = await jobStore.enqueue({
+      sourceImageBase64: Buffer.from("source").toString("base64"),
+      sourceMimeType: "image/png",
+      maxAttempts: 3
+    });
+
+    await processNextJob({
+      jobStore,
+      providerSettingsStore,
+      createProvider: () => mockProviderInstance,
+      staleLockSeconds: 120
+    });
+
+    const updated = await jobStore.getById(job.id);
+    expect(updated?.status).toBe("failed");
+    expect(updated?.attempts).toBe(1);
+    expect(updated?.errorCode).toBe("PROVIDER_AUTH_REQUIRED");
+    expect(updated?.errorMessage).toBe("Error: Session expired.");
+  });
+
   it("marks job failed when max attempts exhausted", async () => {
     const { jobStore, providerSettingsStore } = await createStores();
     const mockProviderInstance = mockProvider(

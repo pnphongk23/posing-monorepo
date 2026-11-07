@@ -11,8 +11,18 @@ import {
   ProviderTimeoutError
 } from "./errors";
 import { DEFAULT_EXTRACT_PROMPT } from "./extractPrompt";
+import {
+  backupCredential,
+  backupPathFor,
+  defaultCredentialsPath,
+  restoreCredential,
+  readCredentialSnapshot,
+  withCredentialLock
+} from "./higgsfieldCredentialGuard";
 import type { PoseExtractorProvider } from "./poseExtractorProvider";
+import { recordProviderAuthFailure, recordProviderAuthSuccess } from "./providerAuthHealth";
 import type { ExtractedImage } from "./types";
+import { logger } from "../utils/logger";
 
 /** Default generation model → Seedream 5.0 Lite (no `--resolution`, quality `basic`|`high`). */
 const DEFAULT_MODEL = "seedream_v5_lite";
@@ -163,13 +173,19 @@ export function extractResultUrlFromCliJson(payload: unknown): string | null {
   return null;
 }
 
+/**
+ * The CLI reports every credential problem as a plain sentence on stderr; all of them mean "a human
+ * must re-authenticate", so they must map to PROVIDER_AUTH_REQUIRED instead of a generic CLI failure.
+ */
 function isAuthFailure(stderr: string, stdout: string): boolean {
   const combined = `${stderr}\n${stdout}`.toLowerCase();
   return (
     combined.includes("not authenticated") ||
     combined.includes("auth required") ||
     combined.includes("unauthorized") ||
-    combined.includes("credentials")
+    combined.includes("credentials") ||
+    combined.includes("session expired") ||
+    combined.includes("older auth flow")
   );
 }
 
@@ -242,13 +258,24 @@ export class HiggsfieldCliProvider implements PoseExtractorProvider {
   constructor(options: HiggsfieldCliProviderOptions = {}) {
     this.spawnImpl = options.spawnImpl ?? nodeSpawn;
     this.fetchImpl = options.fetchImpl ?? fetch;
-    this.credentialsPath = options.credentialsPath ?? process.env.HIGGSFIELD_CREDENTIALS_PATH ?? path.join(os.homedir(), ".higgsfield", "credentials.json");
+    this.credentialsPath = options.credentialsPath ?? defaultCredentialsPath(process.env);
     this.timeoutMs = options.timeoutMs ?? Number(process.env.HIGGSFIELD_CLI_TIMEOUT_MS ?? DEFAULT_TIMEOUT_MS);
     this.model = options.model ?? process.env.HIGGSFIELD_CLI_MODEL ?? DEFAULT_MODEL;
     this.tmpDir = options.tmpDir ?? path.join(os.tmpdir(), "extract-jobs");
   }
 
+  /**
+   * Every CLI spawn is serialised: the CLI rotates its refresh token on write, so two concurrent
+   * commands can invalidate each other's token and make the CLI delete the credential file.
+   */
   async extractPoseImage(input: {
+    sourceImageBase64: string;
+    sourceMimeType: string;
+  }): Promise<ExtractedImage> {
+    return withCredentialLock(() => this.extractPoseImageLocked(input));
+  }
+
+  private async extractPoseImageLocked(input: {
     sourceImageBase64: string;
     sourceMimeType: string;
   }): Promise<ExtractedImage> {
@@ -286,14 +313,31 @@ export class HiggsfieldCliProvider implements PoseExtractorProvider {
         HIGGSFIELD_CREDENTIALS_PATH: this.credentialsPath
       };
 
+      // The CLI deletes the credential file when a refresh fails, and the refresh token it holds
+      // is the only copy, so keep an atomic 0600 backup before every spawn.
+      const backup = await backupCredential({ credentialsPath: this.credentialsPath });
+
       const { stdout, stderr, exitCode } = await runSpawn(this.spawnImpl, "higgsfield", args, this.timeoutMs, env);
 
       if (exitCode !== 0) {
-        if (isAuthFailure(stderr, stdout)) {
+        const afterFailure = await readCredentialSnapshot(this.credentialsPath);
+        const restored =
+          afterFailure.state === "missing" ? await restoreCredential({ credentialsPath: this.credentialsPath }) : false;
+        if (restored) {
+          logger.warn(
+            { backupPath: backup.backupPath, credentialsPath: this.credentialsPath },
+            "higgsfield CLI removed the credential file; restored the last backup"
+          );
+        }
+
+        if (restored || isAuthFailure(stderr, stdout)) {
+          recordProviderAuthFailure({ code: "PROVIDER_AUTH_REQUIRED" });
           throw new ProviderAuthRequiredError(stderr.trim() || stdout.trim() || "Higgsfield authentication required");
         }
         throw new ProviderCliFailedError(stderr.trim() || stdout.trim() || `Higgsfield CLI exited with code ${exitCode}`);
       }
+
+      recordProviderAuthSuccess();
 
       let parsed: unknown;
       try {
