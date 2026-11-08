@@ -1,3 +1,4 @@
+import AVFoundation
 import Combine
 import Kingfisher
 import SwiftUI
@@ -492,16 +493,16 @@ final class CameraFeatureTests: XCTestCase {
     func testTheSliderSetsTheFactorAndClampsItToTheLens() {
         let model = CameraViewModel()
         model.coordinator.onPermissionResult(.authorized)
-        // The simulator has no capture device: the lens fallback is 1...2.
-        XCTAssertEqual(model.zoomRange, 1...2)
+        // The simulator has no capture device: the lens fallback is the wide-only 1…5.
+        XCTAssertEqual(model.zoomRange, 1...CameraZoomScale.maxFactor)
 
         model.setZoomFactor(1.5)
         XCTAssertEqual(model.zoomFactor, 1.5, accuracy: 0.0001, "a continuous value, not a preset")
 
         model.setZoomFactor(9)
-        XCTAssertEqual(model.zoomFactor, 2, accuracy: 0.0001, "the slider stops where the lens stops")
+        XCTAssertEqual(model.zoomFactor, 5, accuracy: 0.0001, "the dial stops where the lens stops")
         model.setZoomFactor(0.2)
-        XCTAssertEqual(model.zoomFactor, 1, accuracy: 0.0001)
+        XCTAssertEqual(model.zoomFactor, 1, accuracy: 0.0001, "and 0.5× is not offered without the ultra-wide")
     }
 
     // MARK: Camera tools geometry
@@ -2661,29 +2662,50 @@ final class CameraScreenStageTests: XCTestCase {
     /// A bright stand-in for the photo: a dim over it is measurable, and so is leaving it alone.
     private let previewColour = Color(red: 1, green: 0, blue: 1)
 
-    func testTheScreensPreviewIsFullBleedAndOnlyTheFrameIsUndimmed() throws {
-        for ratio in CameraAspectRatio.allCases {
+    func testTheScreenShowsThePhotoInsideTheFrameAndBlackOutsideIt() throws {
+        for ratio in [CameraAspectRatio.threeFour, .oneOne] {
             let bitmap = try renderScreen(ratio: ratio)
-            let frame = CameraStageFrame.make(ratio: ratio, screen: size, safeTop: phone.top).frame
+            let inset = CameraChromeLayout.bottomBandHeight + phone.bottom
+            let frame = CameraStageFrame.make(
+                ratio: ratio, screen: size, safeTop: phone.top, bottomInset: inset
+            ).frame
 
-            // Above the frame, clear of the top controls' buttons: the preview covers the whole screen and is
-            // dimmed there — never an opaque bar, and never the plain background.
-            let band = max(2, Int(frame.minY / 2))
-            for x in [8, Int(size.width) - 8] {
-                let pixel = try XCTUnwrap(bitmap.color(x: x, y: band))
-                XCTAssertGreaterThan(pixel.red, 40, "\(ratio.rawValue) at (\(x), \(band)): the preview shows through")
-                  XCTAssertGreaterThanOrEqual(pixel.red, 107, "\(ratio.rawValue): outside preview matches 55% black dim")
-                  XCTAssertLessThanOrEqual(pixel.red, 123, "\(ratio.rawValue): outside preview is not dimmed beyond 55%")
+            // Above and below the frame, clear of the chrome's controls: the viewfinder's black, not a preview and
+            // not a dimmed copy of one (build 26 filled the screen with the preview instead of the frame).
+            let bands = [max(2, Int(frame.minY / 2)), min(Int(size.height) - 4, Int((frame.maxY + size.height) / 2))]
+            for band in bands {
+                for x in [8, Int(size.width) - 8] {
+                    let pixel = try XCTUnwrap(bitmap.color(x: x, y: band))
+                    XCTAssertLessThan(pixel.red, 40, "\(ratio.rawValue) at (\(x), \(band)): the outside is black")
+                    XCTAssertEqual(pixel.green, pixel.red, accuracy: 6,
+                                   "\(ratio.rawValue): and neutral — no preview tint outside the photo")
+                }
             }
 
-            // Inside the frame the photo is untouched.
-              // Stay inside the photo, but away from the centered guide: the guide may correctly be black.
-              let inside = try XCTUnwrap(
-                  bitmap.color(x: Int(frame.minX + 8), y: Int(frame.midY)),
-                  "\(ratio.rawValue): an unobstructed in-frame preview pixel is painted"
-              )
-              XCTAssertGreaterThan(inside.red, 200, "\(ratio.rawValue): the photo inside the frame is not dimmed")
+            // Inside the frame the photo is untouched. Stay inside the photo, but away from the centered guide:
+            // the guide may correctly be black.
+            let inside = try XCTUnwrap(
+                bitmap.color(x: Int(frame.minX + 8), y: Int(frame.midY)),
+                "\(ratio.rawValue): an unobstructed in-frame preview pixel is painted"
+            )
+            XCTAssertGreaterThan(inside.red, 200, "\(ratio.rawValue): the photo inside the frame is not dimmed")
         }
+    }
+
+    /// 9:16 is full bleed: the photo runs to every edge (status bar and home indicator included) and the bottom
+    /// gradient reaches the last row, so there is no separate dark band and no bright gap under the rail.
+    func testTheTallRatioCoversTheScreenAndItsGradientReachesTheBottomEdge() throws {
+        let bitmap = try renderScreen(ratio: .nineSixteen)
+
+        for point in [(x: 8, y: 4), (x: 8, y: 200)] {
+            let pixel = try XCTUnwrap(bitmap.color(x: point.x, y: point.y), "\(point) is painted")
+            XCTAssertGreaterThan(pixel.red, 200, "9:16 paints the photo at \(point), not the plain background")
+        }
+
+        let justAboveEdge = try XCTUnwrap(bitmap.color(x: 8, y: Int(size.height) - 36), "the gradient starts")
+        let edge = try XCTUnwrap(bitmap.color(x: 8, y: Int(size.height) - 2), "the last row is painted")
+        XCTAssertLessThan(edge.red, justAboveEdge.red, "the gradient keeps darkening to the screen's last row")
+        XCTAssertLessThan(edge.red, 200, "no bright, uncovered strip is left under the rail")
     }
 
     /// The board's top controls use dark glass and white glyphs over the camera preview.
@@ -2763,59 +2785,47 @@ final class CameraScreenStageTests: XCTestCase {
 final class CameraChromeBoardParityTests: XCTestCase {
     private let darkScheme: ColorScheme = .dark
 
-      // MARK: Zoom dial
+      // MARK: Zoom dial (minimal: one hairline + the white value thumb)
 
-      /// The selected zoom value is the white thumb itself, with a 44pt target.
-      func testSelectedZoomValueIsTheWhiteThumb() throws {
-          let bitmap = try renderZoomSlider(factor: 1.5)
-          let geometry = CameraZoomTrackGeometry(width: 260, thumbDiameter: 44, range: 1...2)
-          let thumb = try XCTUnwrap(
-              bitmap.color(x: Int(geometry.thumbCenterX(for: 1.5)) + 16, y: Int(geometry.trackLineCenterY)),
-              "the thumb is painted"
+      /// The dial is **one 1 pt line at half white and the white value thumb, nothing else** — no tick marks, no
+      /// numbers under the line, no dark capsule behind it (owner decision, 2026-11-08). Source-level because the
+      /// dial is 44 pt of translucent strokes: what it *paints* is in the 14/15 shots, and what it may not paint is
+      /// cheapest to hold here.
+      func testTheDialIsOneHairlineAndTheWhiteValueThumb() throws {
+          let source = try String(
+              contentsOf: URL(fileURLWithPath: #filePath)
+                  .deletingLastPathComponent()
+                  .deletingLastPathComponent()
+                  .deletingLastPathComponent()
+                  .appendingPathComponent("iosApp/Features/Camera/CameraZoom.swift"),
+              encoding: .utf8
           )
-          XCTAssertGreaterThan(thumb.red, 200, "the value thumb is white")
-          XCTAssertGreaterThan(thumb.green, 200)
-          XCTAssertGreaterThan(thumb.blue, 200)
+          let dialStart = try XCTUnwrap(source.range(of: "struct CameraZoomDial: View {")?.lowerBound)
+          let dial = source[dialStart...].prefix(2_600)
+
+          XCTAssertTrue(dial.contains(".frame(width: geometry.trackWidth, height: 1)"), "the track is one 1 pt line")
+          XCTAssertTrue(dial.contains("Color.white.opacity(0.5)"), "at half white")
+          XCTAssertTrue(dial.contains("Capsule().fill(Color.white)"), "and the value thumb is a white pill")
+          XCTAssertTrue(
+              dial.contains("Text(CameraZoomScale.valueLabel(factor))"),
+              "which carries the live value as text"
+          )
+
+          XCTAssertFalse(dial.contains("ForEach("), "no tick marks, no labels under the line")
+          XCTAssertEqual(
+              dial.components(separatedBy: ".background(").count - 1, 1,
+              "one background only: the white pill's — no dark capsule behind the line"
+          )
+          XCTAssertFalse(dial.contains("CameraGlassBackground"), "and no glass capsule either")
+          XCTAssertFalse(dial.contains("Circle()"), "no extra chrome")
       }
 
-      /// The visible value thumb follows the slider factor at both ends and in the middle.
-      func testTheValueThumbFollowsTheFactor() throws {
-          for factor: CGFloat in [1, 1.5, 2] {
-              let bitmap = try renderZoomSlider(factor: factor)
-              let geometry = CameraZoomTrackGeometry(width: 260, thumbDiameter: 44, range: 1...2)
-              let thumb = try XCTUnwrap(bitmap.color(
-                  x: Int(geometry.thumbCenterX(for: factor)) + 16,
-                  y: Int(geometry.trackLineCenterY)
-              ))
-              XCTAssertGreaterThan(thumb.red, 200, "\(factor)x: white thumb stays on its selected stop")
-          }
+      /// The minimal dial keeps the 44 pt row and the 44 pt thumb target, so the finger and VoiceOver still reach it.
+      func testTheDialKeepsTheRowHeightAndTheThumbTarget() {
+          XCTAssertEqual(CameraZoomTrackGeometry.totalHeight, 44)
+          XCTAssertEqual(CameraZoomTrackGeometry.thumbDiameterConstant, 44)
+          XCTAssertEqual(CameraZoomLensRow.height, 44)
       }
-
-      /// The value is said once: a tick's label is dropped where the thumb carries that value.
-      func testTheTickLabelUnderTheThumbIsNotRepeated() throws {
-          let geometry = CameraZoomTrackGeometry(width: 260, thumbDiameter: 44, range: 1...2)
-          XCTAssertFalse(
-              geometry.showsLabel(forFactor: 1, thumbFactor: 1),
-              "at 1x the thumb says 1x: the tick under it does not repeat it"
-        )
-        XCTAssertTrue(
-            geometry.showsLabel(forFactor: 1, thumbFactor: 2),
-            "at 2x the 1x stop keeps its small label under the track"
-        )
-
-        let source = try String(
-            contentsOf: URL(fileURLWithPath: #filePath)
-                .deletingLastPathComponent()
-                .deletingLastPathComponent()
-                .deletingLastPathComponent()
-                .appendingPathComponent("iosApp/Features/Camera/CameraZoom.swift"),
-            encoding: .utf8
-        )
-        XCTAssertTrue(
-            source.contains("if geometry.showsLabel(forFactor: preset.factor, thumbFactor: factor) {"),
-              "the tick's label is only drawn where the thumb does not already say it"
-        )
-    }
 
     // MARK: Tools popover chips
 
@@ -2876,14 +2886,6 @@ final class CameraChromeBoardParityTests: XCTestCase {
     }
 
     // MARK: Helpers
-
-    private func renderZoomSlider(factor: CGFloat) -> APBitmap {
-        // No extra padding: the slider's own frame is what the geometry describes.
-        let view = CameraZoomSlider(factor: factor, range: 1...2, onChange: { _ in })
-            .environment(\.colorScheme, darkScheme)
-            .background(AP.Color.background)
-        return renderProbe(view, size: CGSize(width: 260, height: 140))
-    }
 
     private func renderPopover() -> APBitmap {
         let popup = CameraToolsPopup(
@@ -3163,12 +3165,18 @@ final class CameraGuideAdjustTests: XCTestCase {
             "the Opacity and Scale tracks are the light accentText, as on the board"
         )
 
-        // The camera keeps drawing itself as before: the area above the photo frame is the stage's own 55 % dim over
-        // the stand-in preview, so the sheet's light trait is local to the sheet rather than a screen-wide flip.
-        let dimmed = try XCTUnwrap(bitmap.color(x: 196, y: 20), "the stage's dim is painted")
-        XCTAssertTrue(
-            isNear(dimmed, hex: 0x3F5665, tolerance: 8),
-            "the camera's stage still draws its own dim over the preview (got \(dimmed.red),\(dimmed.green),\(dimmed.blue))"
+        // The camera keeps drawing itself dark: the area above the photo frame is the viewfinder's black (the
+        // preview is the frame now), so the sheet's light trait is local to the sheet rather than a screen-wide
+        // flip of the camera behind it.
+        let outside = try XCTUnwrap(bitmap.color(x: 196, y: 20), "the stage above the frame is painted")
+        XCTAssertLessThan(
+            outside.red, 40,
+            "the camera behind the sheet is dark, not lightened by the sheet's trait (got \(outside.red),\(outside.green),\(outside.blue))"
+        )
+        let inside = try XCTUnwrap(bitmap.color(x: 196, y: 300), "the photo inside the frame is painted")
+        XCTAssertGreaterThan(
+            inside.blue, 150,
+            "the stand-in preview still fills the frame (got \(inside.red),\(inside.green),\(inside.blue))"
         )
     }
 
@@ -3280,28 +3288,6 @@ final class CameraGuideAdjustTests: XCTestCase {
             isNear(rest, hex: trackRest, tolerance: 12),
             "the unfilled track is the board's olive-grey (got \(rest.red),\(rest.green),\(rest.blue))"
         )
-    }
-
-    /// The camera band's zoom slider is untouched: its thumb stays the light disc on the dark band.
-    func testTheZoomSliderThumbIsStillLight() throws {
-        let view = CameraZoomSlider(factor: 1.5, range: 1...2, onChange: { _ in })
-            .environment(\.colorScheme, .dark)
-            .background(AP.Color.background)
-        let probe = APViewProbe(
-            view.ignoresSafeArea(),
-            size: CGSize(width: 260, height: CameraZoomTrackGeometry.totalHeight),
-            scale: 1
-        )
-        let bitmap = probe.capture()
-        probe.tearDown()
-          let geometry = CameraZoomTrackGeometry(width: 260, thumbDiameter: 44, range: 1...2)
-        let thumb = try XCTUnwrap(
-            bitmap.color(x: Int(geometry.thumbCenterX(for: 1.5)), y: Int(geometry.trackLineCenterY)),
-            "the zoom thumb is painted"
-        )
-        XCTAssertGreaterThan(thumb.red, 200, "the zoom slider's thumb is still light on the dark band")
-        XCTAssertGreaterThan(thumb.green, 200)
-        XCTAssertGreaterThan(thumb.blue, 200)
     }
 
     // MARK: Slider helpers
@@ -3454,106 +3440,75 @@ final class CameraGuideAdjustTests: XCTestCase {
     }
 }
 
-/// The zoom slider's mapping: what it shows, what the lens receives, and where the thumb sits.
+/// The zoom mapping: the display range, where the thumb sits on it, and the labels.
 final class CameraZoomScaleTests: XCTestCase {
-    /// The camera drives one wide-angle lens, so the displayed factor is the lens's own factor — the round trip
-    /// has to be the identity inside the range and a clamp outside it.
-    func testTheDisplayedFactorAndTheLensFactorRoundTrip() {
-        let lens: ClosedRange<CGFloat> = 1...5
-        for factor: CGFloat in [1, 1.4, 2, 3, 4.75, 5] {
-            let device = CameraZoomScale.deviceFactor(forDisplay: factor, in: lens)
-            XCTAssertEqual(device, factor, accuracy: 0.0001, "\(factor)x reaches the lens unchanged")
-            XCTAssertEqual(
-                CameraZoomScale.displayFactor(forDevice: device, in: lens),
-                factor,
-                accuracy: 0.0001,
-                "and comes back to the same number on the pill"
-            )
-        }
-
-        XCTAssertEqual(CameraZoomScale.deviceFactor(forDisplay: 0.2, in: lens), 1, "below the lens' floor")
-        XCTAssertEqual(CameraZoomScale.deviceFactor(forDisplay: 9, in: lens), 5, "above the ramp's ceiling")
-        XCTAssertEqual(
-            CameraZoomScale.deviceFactor(forDisplay: .nan, in: lens), 1,
-            "a corrupt value falls back to the lens' floor instead of an impossible one"
+    /// 0.5×…5× on a phone with an ultra-wide, 1×…5× without; nothing outside the range is reachable by a drag,
+    /// a restored row or a tap.
+    func testTheRangeFollowsTheLensSet() {
+        let withUltraWide = CameraLensDiscovery.profile(
+            minimumVideoZoom: 1, maximumVideoZoom: 22, switchOverFactors: [2, 6], includesUltraWide: true
         )
-    }
+        XCTAssertEqual(withUltraWide.range.lowerBound, 0.5, accuracy: 0.0001)
+        XCTAssertEqual(withUltraWide.range.upperBound, CameraZoomScale.maxFactor)
 
-    /// A lens that really has the ultra-wide stop keeps it: the range is the device's, capped by the ramp.
-    func testTheRangeIsTheLensRubyCappedByTheRamp() {
-        XCTAssertEqual(CameraZoomScale.range(lower: 0.5, upper: 15.7), 0.5...CameraZoomScale.maxFactor)
-        XCTAssertEqual(CameraZoomScale.range(lower: 1, upper: 2), 1...2)
-        XCTAssertEqual(
-            CameraZoomScale.range(lower: 2, upper: 1), 2...2,
-            "an inverted report cannot make a range the thumb cannot sit in"
+        let wideOnly = CameraLensDiscovery.profile(
+            minimumVideoZoom: 1, maximumVideoZoom: 10, switchOverFactors: [], includesUltraWide: false
         )
+        XCTAssertEqual(wideOnly.range.lowerBound, 1, accuracy: 0.0001, "no ultra-wide, no 0.5× stop")
+        XCTAssertEqual(wideOnly.range.upperBound, CameraZoomScale.maxFactor)
+
+        let range = withUltraWide.range
+        XCTAssertEqual(CameraZoomScale.clamped(0.2, in: range), 0.5, "below the range: the ultra-wide")
+        XCTAssertEqual(CameraZoomScale.clamped(3.2, in: range), 3.2, accuracy: 0.0001, "inside: untouched")
+        XCTAssertEqual(CameraZoomScale.clamped(9, in: range), 5, "above the range: the dial's ceiling")
+        XCTAssertEqual(CameraZoomScale.clamped(.nan, in: range), 0.5, "a corrupt value falls back to the floor")
     }
 
     /// The thumb's position and the value it stands for are one mapping, both ways.
     func testTheThumbPositionRoundTrips() {
-        let range: ClosedRange<CGFloat> = 1...5
-        XCTAssertEqual(CameraZoomScale.fraction(of: 1, in: range), 0, accuracy: 0.0001, "the left end")
+        let range: ClosedRange<CGFloat> = 0.5...5
+        XCTAssertEqual(CameraZoomScale.fraction(of: 0.5, in: range), 0, accuracy: 0.0001, "the left end")
         XCTAssertEqual(CameraZoomScale.fraction(of: 5, in: range), 1, accuracy: 0.0001, "the right end")
-        XCTAssertEqual(CameraZoomScale.fraction(of: 3, in: range), 0.5, accuracy: 0.0001, "the middle")
+        XCTAssertEqual(CameraZoomScale.fraction(of: 2.75, in: range), 0.5, accuracy: 0.0001, "the middle")
 
-        for factor: CGFloat in [1, 1.7, 2.5, 4.2, 5] {
+        for factor: CGFloat in [0.5, 1, 1.4, 2.75, 4.2, 5] {
             let x = CameraZoomScale.fraction(of: factor, in: range)
             XCTAssertEqual(
                 CameraZoomScale.factor(atFraction: x, in: range), factor, accuracy: 0.0001,
                 "\(factor)x sits where dragging to \(x) puts it"
             )
         }
-        XCTAssertEqual(CameraZoomScale.factor(atFraction: -3, in: range), 1, "a drag past the end stops at it")
+        XCTAssertEqual(CameraZoomScale.factor(atFraction: -3, in: range), 0.5, "a drag past the end stops at it")
         XCTAssertEqual(CameraZoomScale.factor(atFraction: 7, in: range), 5)
     }
 
-    func testTheLabelsNameTheFactorTheWayTheBoardsDo() {
-        XCTAssertEqual(CameraZoomScale.valueLabel(1), "1×", "whole stops have no decimal, as on the boards")
+    func testTheLabelsNameTheFactor() {
+        XCTAssertEqual(CameraZoomScale.valueLabel(1), "1×", "whole stops have no decimal")
         XCTAssertEqual(CameraZoomScale.valueLabel(0.5), "0.5×")
-        XCTAssertEqual(CameraZoomScale.valueLabel(2.46), "2.5×")
+        XCTAssertEqual(CameraZoomScale.valueLabel(3.24), "3.2×", "the live value is one decimal")
+        XCTAssertEqual(CameraZoomScale.valueLabel(4.97), "5×")
         XCTAssertEqual(CameraZoomScale.accessibilityValue(1), "1.0×", "VoiceOver reads one decimal, never \"1x\"")
         XCTAssertEqual(CameraZoomScale.accessibilityValue(0.5), "0.5×")
-        XCTAssertEqual(CameraZoomScale.accessibilityValue(3), "3.0×")
-    }
-
-    /// The wall of ticks comes from the same range the slider spans, so a label can never sit on a factor the
-    /// thumb cannot reach.
-    func testTheTicksComeFromTheSliderRange() {
-        let lens = CameraZoomScale.range(lower: 0.5, upper: 5)
-        XCTAssertEqual(CameraZoomScale.ticks(in: lens), [.half, .one, .two, .three])
-        for tick in CameraZoomScale.ticks(in: lens) {
-            XCTAssertTrue(lens.contains(tick.factor), "\(tick.factor) is reachable")
-            XCTAssertTrue(
-                (0...1).contains(CameraZoomScale.fraction(of: tick.factor, in: lens)),
-                "\(tick.factor) sits on the track"
-            )
-        }
+        XCTAssertEqual(CameraZoomScale.accessibilityValue(5), "5.0×")
     }
 }
 
 final class CameraZoomPresetTests: XCTestCase {
-    /// The slider's ticks are the stops the lens can actually reach: a phone without the ultra-wide never draws
-    /// a 0.5 label, and a lens that starts at 2x never draws a 1.
-    func testPresetsFollowTheLensRange() {
-        XCTAssertEqual(
-            CameraZoomPresets.available(range: 0.5...4),
-            [.half, .one, .two, .three],
-            "a lens with an ultra-wide stop offers 0.5x"
-        )
-        XCTAssertEqual(
-            CameraZoomPresets.available(range: 1...2),
-            [.one, .two],
-            "a lens that cannot go below 1x never offers 0.5x"
-        )
-        XCTAssertEqual(CameraZoomPresets.available(range: 2...5), [.two, .three])
-        XCTAssertEqual(CameraZoomPresets.available(range: 3...5), [.three])
-        XCTAssertEqual(CameraZoomPresets.available(range: 4...4), [.one], "an empty wall of ticks still names 1x")
+    /// The row is **0.5 · 1× · 2×** on a phone with an ultra-wide, and **1× · 2×** without.
+    func testTheRowOffersTheLensesThePhoneHas() {
+        XCTAssertEqual(CameraZoomPresets.available(range: 0.5...5), [.half, .one, .two])
+        XCTAssertEqual(CameraZoomPresets.available(range: 1...5), [.one, .two], "no 0.5 button without the lens")
+        XCTAssertEqual(CameraZoomPreset.half.factor, 0.5)
+        XCTAssertEqual(CameraZoomPreset.two.factor, 2)
     }
 
-    /// The 1x/2x pills are gone; the slider is the zoom control now, and the old pill handles are retired so no
-    /// flow can address a control that no longer exists.
-    func testTheZoomSliderIsTheOnlyZoomControl() {
-        XCTAssertEqual(CameraZoomScale.sliderIdentifier, "camera.zoom.slider")
+    /// The zoom control is the **lens row**, and the dial it expands into keeps the slider's own handle. The old
+    /// always-visible pills stay retired so no flow can address them.
+    func testTheLensRowAndTheDialItOpensCarryTheZoomHandles() {
+        XCTAssertEqual(CameraZoomScale.sliderIdentifier, "camera.zoom.slider", "the dial keeps its handle")
+        XCTAssertEqual(CameraZoomPreset.half.accessibilityIdentifier, "camera.zoom.lens.0.5x")
+        XCTAssertEqual(CameraZoomPreset.one.accessibilityIdentifier, "camera.zoom.lens.1x")
+        XCTAssertEqual(CameraZoomPreset.two.accessibilityIdentifier, "camera.zoom.lens.2x")
         XCTAssertTrue(
             CameraZoomScale.retiredIdentifiers.contains("camera.zoom.0.5x"),
             "the old pill spelling is kept as the retirement record"
@@ -3569,7 +3524,197 @@ final class CameraZoomPresetTests: XCTestCase {
     func testTheStoredLevelMatchesTheNearestFactor() {
         XCTAssertEqual(CameraZoomLevel.nearest(to: 0.5), .one, "the enum has no half stop")
         XCTAssertEqual(CameraZoomLevel.nearest(to: 2), .two)
-        XCTAssertEqual(CameraZoomLevel.nearest(to: 2.7), .three)
+        XCTAssertEqual(CameraZoomLevel.nearest(to: 3.2), .three, "old rows stay readable for a 3× capture")
+    }
+}
+
+/// The zoom bar: compact lens buttons by default, a drag opens the minimal dial, and the dial collapses about a
+/// second after the finger lifts. The rules are pure so they are a unit test.
+final class CameraZoomBarTests: XCTestCase {
+    func testATapOnTheRowIsNotADrag() {
+        var bar = CameraZoomBarState()
+        XCTAssertEqual(bar.dragChanged(translation: CGSize(width: 2, height: 1)), .lenses,
+                       "a tap never opens the dial")
+        XCTAssertFalse(bar.dragEnded(translation: CGSize(width: 2, height: 1)), "and needs no collapse timer")
+    }
+
+    func testADragOpensTheDialAndReleaseSchedulesTheCollapse() {
+        var bar = CameraZoomBarState()
+        XCTAssertEqual(bar.dragChanged(translation: CGSize(width: 24, height: 0)), .dial, "a drag expands it")
+        XCTAssertEqual(bar.dragChanged(translation: CGSize(width: 60, height: 4)), .dial, "and it stays open")
+        XCTAssertTrue(bar.dragEnded(translation: CGSize(width: 60, height: 4)), "release starts the collapse")
+        bar.collapse()
+        XCTAssertEqual(bar.mode, .lenses, "the row comes back")
+    }
+
+    func testAVerticalDragOnTheRowCountsAsADragToo() {
+        var bar = CameraZoomBarState()
+        XCTAssertEqual(bar.dragChanged(translation: CGSize(width: 1, height: 18)), .dial)
+    }
+
+    /// "Release and after ~1 s it collapses back": the constant is the contract the view's timer reads.
+    func testTheDialCollapsesAboutASecondAfterRelease() {
+        XCTAssertGreaterThanOrEqual(CameraZoomBarState.collapseDelaySeconds, 0.8)
+        XCTAssertLessThanOrEqual(CameraZoomBarState.collapseDelaySeconds, 1.5)
+    }
+
+    /// The live model — the object the screen draws from — really closes the dial about a second after the drag
+    /// ends. Asserted on the object rather than the pure struct, because a `Task` writing to a stale view copy was
+    /// exactly the bug that kept the dial open on the simulator.
+    @MainActor
+    func testTheModelClosesTheDialAboutASecondAfterRelease() async throws {
+        let bar = CameraZoomBarModel()
+        XCTAssertEqual(bar.dragChanged(translation: CGSize(width: 40, height: 0)), .dial)
+        XCTAssertEqual(bar.mode, .dial)
+
+        bar.dragEnded(translation: CGSize(width: 40, height: 0))
+        XCTAssertEqual(bar.mode, .dial, "the dial stays up while the collapse is pending")
+
+        try await Task.sleep(nanoseconds: 400_000_000)
+        XCTAssertEqual(bar.mode, .dial, "and is not yanked away immediately")
+
+        let deadline = Date().addingTimeInterval(2)
+        while bar.mode == .dial, Date() < deadline {
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+        XCTAssertEqual(bar.mode, .lenses, "release → ~1 s → the lens row is back")
+    }
+
+    /// A tap on an open dial also closes it, and a tap on the row never opens it.
+    @MainActor
+    func testTapsDoNotStrandTheDial() async throws {
+        let bar = CameraZoomBarModel()
+        XCTAssertEqual(bar.dragChanged(translation: CGSize(width: 0, height: 0)), .lenses)
+        bar.dragEnded(translation: CGSize(width: 0, height: 0))
+        XCTAssertEqual(bar.mode, .lenses)
+
+        bar.dragChanged(translation: CGSize(width: 30, height: 0))
+        bar.tappedOnOpenDial()
+        let deadline = Date().addingTimeInterval(2)
+        while bar.mode == .dial, Date() < deadline {
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+        XCTAssertEqual(bar.mode, .lenses, "a tap on the open dial closes it on the same timer")
+    }
+
+    /// Three buttons with the ultra-wide, two without, and the row stays compact next to the Poses chip.
+    func testTheRowDrawsTheLensesItIsGiven() {
+        let withUltraWide = CameraZoomLensRow(presets: CameraZoomPresets.available(range: 0.5...5))
+        XCTAssertEqual(withUltraWide.presets, [.half, .one, .two])
+        XCTAssertEqual(
+            withUltraWide.width,
+            CGFloat(3) * CameraZoomLensRow.buttonWidth + CameraZoomLensRow.horizontalInset * 2
+        )
+        XCTAssertLessThan(withUltraWide.width, 220, "the lens row is a fraction of the band it sits on")
+
+        let wideOnly = CameraZoomLensRow(presets: CameraZoomPresets.available(range: 1...5))
+        XCTAssertEqual(wideOnly.presets, [.one, .two])
+        XCTAssertEqual(CameraZoomLensRow.height, 44, "the touch area is still the 44 pt minimum")
+    }
+
+    /// Tap → jump to that lens. The mapping is the buttons' own geometry, so a tap can never land on a neighbour.
+    func testATapSelectsTheLensUnderTheFinger() {
+        let row = CameraZoomLensRow(presets: [.half, .one, .two])
+        for (index, preset) in row.presets.enumerated() {
+            XCTAssertEqual(row.preset(atX: row.centerX(index: index)), preset)
+        }
+        XCTAssertEqual(row.preset(atX: 0), .half, "the row's left edge is 0.5×")
+        XCTAssertEqual(row.preset(atX: row.width + 40), .two, "past the last button clamps to it")
+        XCTAssertEqual(row.preset(atX: CameraZoomLensRow.buttonWidth - 1), .half, "a tap in the gap is the near lens")
+    }
+
+    /// The current button is highlighted **and** carries the live value; the others keep their own stop.
+    func testTheSelectedButtonShowsTheLiveValue() {
+        let row = CameraZoomLensRow(presets: [.half, .one, .two])
+        XCTAssertEqual(row.label(for: .two, factor: 3.2, isSelected: true), "3.2×")
+        XCTAssertEqual(row.label(for: .two, factor: 3.2, isSelected: false), "2×")
+        XCTAssertEqual(row.label(for: .one, factor: 1, isSelected: true), "1×")
+    }
+
+    /// The highlighted button follows the factor, so a continuous zoom still reads as "the nearest lens".
+    func testTheHighlightFollowsTheNearestLens() {
+        let range: ClosedRange<CGFloat> = 0.5...5
+        XCTAssertEqual(CameraZoomPresets.nearest(to: 0.5, in: range), .half)
+        XCTAssertEqual(CameraZoomPresets.nearest(to: 1.2, in: range), .one)
+        XCTAssertEqual(CameraZoomPresets.nearest(to: 1.6, in: range), .two, "1.6× sits on the 2× button")
+        XCTAssertEqual(CameraZoomPresets.nearest(to: 4.6, in: range), .two, "and 4.6× stays on it")
+        XCTAssertEqual(CameraZoomPresets.nearest(to: 1.4, in: 1...5), .one, "without 0.5× the row is 1×/2×")
+    }
+}
+
+/// Lens discovery: 0.5× is a mapping question — the virtual device's `videoZoomFactor` 1.0 *is* the ultra-wide —
+/// and the app's 1× must land on the wide lens (the switch-over factor), never on the ultra-wide.
+final class CameraLensDiscoveryTests: XCTestCase {
+    func testAVirtualDeviceWithAnUltraWideOffersTheHalfStop() {
+        // iPhone 13 Pro class: triple camera, device zoom 1.0 = ultra-wide, wide native at 2.0.
+        let profile = CameraLensDiscovery.profile(
+            minimumVideoZoom: 1, maximumVideoZoom: 22, switchOverFactors: [2, 6], includesUltraWide: true
+        )
+        XCTAssertEqual(profile.range.lowerBound, 0.5, accuracy: 0.0001, "the ultra-wide is the 0.5× stop")
+        XCTAssertTrue(profile.hasUltraWide)
+        XCTAssertEqual(profile.deviceMultiplier, 2, "1× display is 2.0 on the lens")
+        XCTAssertEqual(profile.presets, [.half, .one, .two])
+        XCTAssertEqual(profile.range.upperBound, CameraZoomScale.maxFactor, "the dial's ceiling still caps the top")
+    }
+
+    func testADualWideDeviceOffersTheHalfStopToo() {
+        let profile = CameraLensDiscovery.profile(
+            minimumVideoZoom: 1, maximumVideoZoom: 8, switchOverFactors: [2], includesUltraWide: true
+        )
+        XCTAssertEqual(profile.range.lowerBound, 0.5, accuracy: 0.0001)
+        XCTAssertEqual(profile.range.upperBound, 4, accuracy: 0.0001, "the device's own ceiling, under 5×")
+    }
+
+    /// A plain wide-angle lens cannot go below 1×, and nothing may claim otherwise.
+    func testAWideAngleOnlyLensNeverOffersTheHalfStop() {
+        let profile = CameraLensDiscovery.profile(
+            minimumVideoZoom: 1, maximumVideoZoom: 10, switchOverFactors: [], includesUltraWide: false
+        )
+        XCTAssertEqual(profile.range.lowerBound, 1, accuracy: 0.0001)
+        XCTAssertEqual(profile.deviceMultiplier, 1, "a wide-angle lens is its own display factor")
+        XCTAssertEqual(profile.presets, [.one, .two])
+        XCTAssertFalse(profile.hasUltraWide)
+    }
+
+    /// The trap this rule exists for: a `builtInDualCamera` (wide + tele) also reports a switch-over factor of 2,
+    /// but its 1.0 is the **wide** lens. Reading a switch-over as "has an ultra-wide" would offer a 0.5× that the
+    /// phone cannot shoot — and would put the UI's 1× on the ultra-wide's framing.
+    func testADualCameraWithNoUltraWideDoesNotGetAHalfStopFromItsSwitchOver() {
+        let profile = CameraLensDiscovery.profile(
+            minimumVideoZoom: 1, maximumVideoZoom: 6, switchOverFactors: [2], includesUltraWide: false
+        )
+        XCTAssertEqual(profile.range.lowerBound, 1, accuracy: 0.0001)
+        XCTAssertEqual(profile.deviceMultiplier, 1)
+    }
+
+    /// The display factor reaches the lens through the profile: 0.5× is the ultra-wide's own 1.0, 1× is the wide
+    /// lens's native 2.0, and 5× is digital zoom on top of it.
+    func testTheDisplayFactorReachesTheLensThroughTheProfile() {
+        let ultraWide = CameraLensProfile(
+            range: 0.5...5, deviceMultiplier: 2, deviceMaximum: 22
+        )
+        XCTAssertEqual(CameraZoomScale.lensFactor(forDisplay: 0.5, in: ultraWide), 1, accuracy: 0.0001)
+        XCTAssertEqual(CameraZoomScale.lensFactor(forDisplay: 1, in: ultraWide), 2, accuracy: 0.0001,
+                       "the UI's 1× is the wide lens itself, not the ultra-wide")
+        XCTAssertEqual(CameraZoomScale.lensFactor(forDisplay: 5, in: ultraWide), 10, accuracy: 0.0001)
+        XCTAssertEqual(CameraZoomScale.lensFactor(forDisplay: .nan, in: ultraWide), 2, accuracy: 0.0001,
+                       "a corrupt value falls back to 1×")
+
+        let wideOnly = CameraLensProfile.wideOnly
+        XCTAssertEqual(CameraZoomScale.lensFactor(forDisplay: 1, in: wideOnly), 1, accuracy: 0.0001)
+        XCTAssertEqual(CameraZoomScale.lensFactor(forDisplay: 5, in: wideOnly), 5, accuracy: 0.0001)
+    }
+
+    /// "5× = digital zoom, clamped to the device's maxAvailableVideoZoomFactor": a lens that stops at 8.0 can only
+    /// reach display 4×, so the request is capped there instead of being silently refused by the hardware.
+    func testTheDeviceCeilingCapsTheRequest() {
+        let capped = CameraLensProfile(range: 0.5...5, deviceMultiplier: 2, deviceMaximum: 8)
+        XCTAssertEqual(CameraZoomScale.lensFactor(forDisplay: 5, in: capped), 8, accuracy: 0.0001)
+    }
+
+    func testTheFallbackClaimsNoUltraWide() {
+        XCTAssertEqual(CameraLensDiscovery.fallback, CameraLensProfile.wideOnly)
+        XCTAssertFalse(CameraLensDiscovery.fallback.hasUltraWide, "no capture device = no 0.5× offered")
     }
 }
 
@@ -3593,19 +3738,74 @@ final class CameraGuideScaleModelTests: XCTestCase {
         XCTAssertEqual(model.guideTransform.scale, 1, accuracy: 0.0001, "a control the camera cannot serve does not move")
     }
 
-    /// The simulator has no capture device, so the lens range falls back to 1...2: the slider's ticks are 1x
-    /// and 2x, and the 0.5x stop is simply not offered instead of being drawn and refused.
-    func testTheSliderTicksAreLensAwareInTheSimulator() {
+    /// The simulator has no capture device, so the range is the wide-only 1×…5×: the row offers 1× and 2× and
+    /// simply hides the 0.5× button instead of drawing a stop it cannot shoot.
+    func testWithoutAnUltraWideTheRowHidesTheHalfStop() {
         let model = CameraViewModel()
         model.coordinator.onPermissionResult(.authorized)
 
-        XCTAssertEqual(model.zoomRange, 1...2)
-        XCTAssertEqual(CameraZoomScale.ticks(in: model.zoomRange), [.one, .two])
+        XCTAssertEqual(model.zoomRange, 1...CameraZoomScale.maxFactor)
+        XCTAssertEqual(CameraZoomPresets.available(range: model.zoomRange), [.one, .two])
 
-        model.setZoomFactor(2)
-        XCTAssertEqual(model.zoomLevel, .two, "the stored level follows the factor for older readers")
-        XCTAssertEqual(model.zoomFactor, 2, accuracy: 0.0001)
+        model.setZoomFactor(5)
+        XCTAssertEqual(model.zoomFactor, 5, accuracy: 0.0001, "5× is the top of the dial")
+        XCTAssertEqual(model.zoomLevel, .three, "the stored level follows the factor for older readers")
+
+        model.setZoomFactor(9)
+        XCTAssertEqual(model.zoomFactor, 5, accuracy: 0.0001, "past the top is the top")
+        model.setZoomFactor(0.2)
+        XCTAssertEqual(model.zoomFactor, 1, accuracy: 0.0001, "and 0.5× is not offered without the lens")
     }
+
+    /// A phone with the ultra-wide offers 0.5×, and the model keeps it — the bug that started this goal.
+    func testWithAnUltraWideTheRowOffersTheHalfStop() async throws {
+        let camera = UltraWideStubCamera()
+        let model = CameraViewModel(camera: camera, settingsStore: InMemoryCameraSettingsStore())
+        model.coordinator.onPermissionResult(.authorized)
+
+        XCTAssertEqual(model.zoomRange.lowerBound, 0.5, accuracy: 0.0001)
+        XCTAssertEqual(model.zoomRange.upperBound, CameraZoomScale.maxFactor)
+        XCTAssertEqual(CameraZoomPresets.available(range: model.zoomRange), [.half, .one, .two])
+
+        var waited = 0
+        while !model.initialMergeDone, waited < 100 {
+            try await Task.sleep(nanoseconds: 20_000_000)
+            waited += 1
+        }
+        model.setZoomFactor(0.5)
+        XCTAssertEqual(model.zoomFactor, 0.5, accuracy: 0.0001, "0.5× is not clamped up to 1×")
+        await model.onAppear()
+        XCTAssertTrue(
+            camera.zoomCalls.contains { abs($0 - 0.5) < 0.0001 },
+            "and 0.5× is what the lens is asked for (\(camera.zoomCalls))"
+        )
+    }
+
+}
+
+/// A camera that reports the lens set an iPhone with an ultra-wide has: the virtual device's 0.5×…5× display range,
+/// where the UI's 1× is `videoZoomFactor` 2.0 (the switch-over factor) and 0.5× is 1.0.
+@MainActor
+final class UltraWideStubCamera: CameraSessionControlling {
+    let session = AVCaptureSession()
+    var facing: CameraFacing = .back
+    /// Running on purpose: a resting camera is not asked for a zoom, and this stub is about the range.
+    private(set) var isSessionRunning = true
+    private(set) var zoomCalls: [CGFloat] = []
+    var lensProfile = CameraLensProfile(range: 0.5...5, deviceMultiplier: 2, deviceMaximum: 22)
+
+    func currentPermissionState() -> CameraPermissionState { .authorized }
+    func requestPermission(onResult: @escaping @Sendable (CameraPermissionState) -> Void) {
+        onResult(.authorized)
+    }
+    func capture(captureId: String, onResult: @escaping @Sendable (CameraCaptureResult) -> Void) {}
+    func cancelCapture() {}
+    func switchCamera() {}
+    func setFlashMode(_ mode: CameraFlashSetting) {}
+    func setTorchEnabled(_ enabled: Bool) {}
+    func setZoomFactor(_ factor: CGFloat) { zoomCalls.append(factor) }
+    func start() async throws { isSessionRunning = true }
+    func stop() { isSessionRunning = false }
 }
 
 // MARK: - Camera chrome contracts (one host per control · one picker entry · addressable option rows · a popover inside its safe area)
@@ -3829,15 +4029,17 @@ final class CameraChromeContractTests: XCTestCase {
         let canvas = try cameraCanvasSource()
         let frameSize = ".frame(width: frame.width, height: frame.height)"
 
-        // One dim layer over everything the photo leaves out — never four strips, never an opaque bar.
-        let dimStart = try XCTUnwrap(canvas.range(of: "CameraStageFrameMask(frame: frame)")?.lowerBound)
-        let dim = canvas[dimStart...].prefix(260)
-        XCTAssertTrue(
-            dim.contains("Color.black.opacity(CameraStageFrame.dimOpacity)"),
-            "the outside is one translucent black layer at the stage's own opacity"
+        // The preview is the photo and nothing else: sized to the frame, clipped to it, so no part of the feed
+        // reaches the bars (that is the build-26 field-of-view bug in one line) and nothing outside it pretends
+        // to be part of the picture.
+        let previewStart = try XCTUnwrap(
+            canvas.range(of: "preview\n                    .frame(width: frame.width, height: frame.height)")?.lowerBound
         )
-        XCTAssertTrue(dim.contains("eoFill: true"), "a rect with a hole, so the photo inside is untouched")
-        XCTAssertTrue(dim.contains(".allowsHitTesting(false)"), "and it never eats a gesture meant for the photo")
+        let previewBlock = canvas[previewStart...].prefix(220)
+        XCTAssertTrue(previewBlock.contains(frameSize), "the preview is sized to the frame")
+        XCTAssertTrue(previewBlock.contains(".clipped()"), "and clipped to it")
+        XCTAssertTrue(previewBlock.contains(".position(x: frame.midX, y: frame.midY)"), "centred on the photo")
+        XCTAssertFalse(canvas.contains("CameraStageFrameMask"), "no dim layer: outside the frame is the viewfinder's black")
 
         // The pinch/twist/drag catcher is the photo.
         let catcherStart = try XCTUnwrap(canvas.range(of: "Color.clear")?.lowerBound)
@@ -4376,5 +4578,114 @@ final class CameraPickerSheetGeometryTests: XCTestCase {
         }
         close(rows.upperBound - 1)
         return bands
+    }
+}
+
+// MARK: - Build-25 device feedback: the frames the owner checks
+
+/// Renders the camera screen at a modern iPhone's size and writes the five frames the build-25 feedback needs:
+/// the three ratios, then the zoom control collapsed and open.
+///
+/// Two substitutions, both stated: the **feed** is a flat stand-in (the simulator has no capture device) and the
+/// **lens set** is what a phone with an ultra-wide reports, so the 0.5× button is in the frame. Everything else —
+/// the frame, the black outside it, the lens row and the minimal dial — is what the app draws.
+@MainActor
+final class CameraDeviceFeedbackShots: XCTestCase {
+    private let size = CGSize(width: 393, height: 852)
+    private let insets = CameraSafeArea.Insets(top: 59, bottom: 34)
+
+    func testTheThreeRatiosAndBothZoomStates() throws {
+        for ratio in CameraAspectRatio.allCases {
+            try write(ratio: ratio, zoomBarMode: .lenses, zoomFactor: 1, name: "01-03-ratio-\(name(for: ratio))")
+        }
+        try write(ratio: .threeFour, zoomBarMode: .lenses, zoomFactor: 3.2, name: "04-zoom-collapsed-lenses")
+        try write(ratio: .threeFour, zoomBarMode: .dial, zoomFactor: 3.2, name: "05-zoom-expanded-dial")
+    }
+
+    private func name(for ratio: CameraAspectRatio) -> String {
+        switch ratio {
+        case .threeFour: return "3x4"
+        case .oneOne: return "1x1"
+        case .nineSixteen: return "9x16"
+        }
+    }
+
+    private func write(
+        ratio: CameraAspectRatio,
+        zoomBarMode: CameraZoomBarMode,
+        zoomFactor: CGFloat,
+        name: String
+    ) throws {
+        var guide: NativePose? = NativePose(
+            id: "shot-pose",
+            name: "Warrior II",
+            category: "Yoga",
+            imageURL: nil,
+            instructions: [],
+            isSaved: false
+        )
+        let model = CameraViewModel(camera: UltraWideStubCamera(), settingsStore: InMemoryCameraSettingsStore())
+        model.coordinator.onPermissionResult(.authorized)
+        model.setAspectRatio(ratio)
+        model.setGuideLineColor(.black)
+        model.setZoomFactor(zoomFactor)
+
+        let screen = CameraScreen(
+            guide: Binding(get: { guide }, set: { guide = $0 }),
+            poseService: PreviewPoseService(),
+            model: model,
+            preview: AnyView(Self.standInFeed),
+            windowInsets: insets,
+            zoomBarMode: zoomBarMode
+        )
+        let host = UIHostingController(rootView: screen)
+        host.overrideUserInterfaceStyle = .dark
+        host.view.frame = CGRect(origin: .zero, size: size)
+        host.view.layoutIfNeeded()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.12))
+        host.view.setNeedsLayout()
+        host.view.layoutIfNeeded()
+
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = 2
+        format.opaque = true
+        let image = UIGraphicsImageRenderer(size: size, format: format).image { _ in
+            host.view.drawHierarchy(in: CGRect(origin: .zero, size: size), afterScreenUpdates: true)
+        }
+        let data = try XCTUnwrap(image.pngData(), "\(name) did not encode")
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("camera-device-feedback", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let url = directory.appendingPathComponent("\(name).png")
+        try data.write(to: url)
+        print("CAMERA_SHOT \(url.path)")
+    }
+
+    /// The stand-in feed: warm walls, a bright window and a dark sofa, so "dimmed" is visible on both the bright
+    /// and the dark parts of the picture instead of only on one flat colour.
+    private static var standInFeed: some View {
+        ZStack {
+            LinearGradient(
+                colors: [
+                    Color(red: 0.94, green: 0.9, blue: 0.84),
+                    Color(red: 0.86, green: 0.8, blue: 0.72),
+                    Color(red: 0.62, green: 0.56, blue: 0.5),
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            Rectangle()
+                .fill(Color(red: 0.99, green: 0.98, blue: 0.94))
+                .frame(width: 150, height: 230)
+                .offset(x: 96, y: -250)
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(Color(red: 0.31, green: 0.27, blue: 0.25))
+                .frame(width: 300, height: 170)
+                .offset(x: -30, y: 250)
+            Circle()
+                .fill(Color(red: 0.79, green: 0.42, blue: 0.32))
+                .frame(width: 96, height: 96)
+                .offset(x: -110, y: -60)
+        }
     }
 }

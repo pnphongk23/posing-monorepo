@@ -256,30 +256,25 @@ final class CameraViewModel: ObservableObject {
         guideTransform = transform
     }
 
-    /// The zoom range this camera can serve, which is what the slider spans and what its ticks come from.
-    var zoomRange: ClosedRange<CGFloat> { CameraZoomScale.range(lower: lensZoomRange.lowerBound, upper: lensZoomRange.upperBound) }
+    /// The zoom range the buttons and the drag span: 0.5×…5× on a phone with an ultra-wide, 1×…5× on one without
+    /// (owner decisions, 2026-11-08). It comes from the **port**, so the row can never offer a stop the lens set
+    /// cannot serve.
+    var zoomRange: ClosedRange<CGFloat> {
+        let profile = camera.lensProfile
+        return CameraZoomScale.range(lower: profile.range.lowerBound, upper: profile.range.upperBound)
+    }
 
-    /// The slider's own value: clamped to the lens before it reaches the hardware, so a drag past the end
-    /// stops at the end instead of being quietly clipped later.
+    /// The dial's own value: clamped before it reaches the hardware, so a drag past the end stops at the end
+    /// instead of being quietly clipped later.
     func setZoomFactor(_ factor: CGFloat) {
         guard cameraControlsEnabled else { return }
         applyZoom(factor: factor)
     }
 
     func applyZoom(factor: CGFloat) {
-        zoomFactor = CameraZoomScale.deviceFactor(forDisplay: factor, in: zoomRange)
+        zoomFactor = CameraZoomScale.clamped(factor, in: zoomRange)
         zoomLevel = CameraZoomLevel.nearest(to: zoomFactor)
         reconcileHardware()
-    }
-
-    /// The active lens's own zoom range, best effort: the simulator has no capture device, so the shipped
-    /// presets (1x/2x) are the fallback.
-    private var lensZoomRange: ClosedRange<CGFloat> {
-        let position: AVCaptureDevice.Position = camera.facing == .front ? .front : .back
-        let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: position)
-            ?? AVCaptureDevice.default(for: .video)
-        guard let device else { return 1...2 }
-        return device.minAvailableVideoZoomFactor...device.maxAvailableVideoZoomFactor
     }
 
     func setAspectRatio(_ ratio: CameraAspectRatio) {
@@ -1073,6 +1068,9 @@ struct CameraScreen: View {
     /// The window's insets, stated by a rendered test: the test host has no window safe area, and the chrome
     /// and the photo frame are positioned from it.
     private let windowInsets: CameraSafeArea.Insets?
+    /// The zoom control's initial shape, stated by a rendered test: the open dial is reached by a drag, which a
+    /// snapshot cannot perform.
+    private let zoomBarMode: CameraZoomBarMode
 
     init(
         guide: Binding<NativePose?>,
@@ -1084,7 +1082,8 @@ struct CameraScreen: View {
         savedPoses: any CameraSavedPosesProviding = CatalogueSavedPosesService(),
         model: @autoclosure @escaping () -> CameraViewModel? = nil,
         preview: AnyView? = nil,
-        windowInsets: CameraSafeArea.Insets? = nil
+        windowInsets: CameraSafeArea.Insets? = nil,
+        zoomBarMode: CameraZoomBarMode = .lenses
     ) {
         _guide = guide
         self.poseService = poseService
@@ -1100,6 +1099,7 @@ struct CameraScreen: View {
         _savedPosesModel = StateObject(wrappedValue: CameraSavedPosesModel(provider: savedPoses))
         self.preview = preview
         self.windowInsets = windowInsets
+        self.zoomBarMode = zoomBarMode
     }
 
     /// Legacy UIKit host and previews without an injected pose service.
@@ -1113,6 +1113,8 @@ struct CameraScreen: View {
     var body: some View {
         ZStack {
             // The camera stage: the preview fills the screen, and the ratio frames the part the shutter keeps.
+            // The geometry reader ignores the safe area itself: the stage's numbers are **screen** numbers, so a
+            // dim layer or a 9:16 frame cannot stop at the status bar or above the home indicator.
             GeometryReader { proxy in
                 CameraCanvas(
                     model: model,
@@ -1121,12 +1123,14 @@ struct CameraScreen: View {
                     stage: CameraStageFrame.make(
                         ratio: model.aspectRatio,
                         screen: proxy.size,
-                        safeTop: safeAreaInsets.top
+                        safeTop: safeAreaInsets.top,
+                        bottomInset: bottomChromeInset
                     ),
                     onClose: onClose,
                     previewOverride: preview
                 )
             }
+            .ignoresSafeArea()
 
             VStack(spacing: 0) {
                 topControls
@@ -1254,15 +1258,26 @@ struct CameraScreen: View {
 
     /// The canvas for one container size. The screen's entry point, so a rendered test mounts exactly what the
     /// screen mounts.
-    func cameraCanvas(size: CGSize, safeTop: CGFloat = 0) -> some View {
+    func cameraCanvas(size: CGSize, safeTop: CGFloat = 0, bottomInset: CGFloat = 0) -> some View {
         CameraCanvas(
             model: model,
             guide: guide,
             isAuthorized: isAuthorized,
-            stage: CameraStageFrame.make(ratio: model.aspectRatio, screen: size, safeTop: safeTop),
+            stage: CameraStageFrame.make(
+                ratio: model.aspectRatio,
+                screen: size,
+                safeTop: safeTop,
+                bottomInset: bottomInset
+            ),
             onClose: onClose,
             previewOverride: preview
         )
+    }
+
+    /// From the screen's bottom edge to the top of the zoom row: the band the 1:1 and 3:4 frames are centred
+    /// above. The chrome's own height plus the home indicator's inset, so the frame never hides behind a control.
+    private var bottomChromeInset: CGFloat {
+        CameraChromeLayout.bottomBandHeight + max(0, safeAreaInsets.bottom)
     }
 
     /// The bottom control surface — snackbar, zoom row, shutter rail. One view, so a rendered test can
@@ -1282,6 +1297,7 @@ struct CameraScreen: View {
               showsPicker: isAuthorized,
             zoomFactor: model.zoomFactor,
             zoomRange: model.zoomRange,
+            zoomBarMode: zoomBarMode,
             onOpenPosePicker: { model.openPosePicker() },
             onZoomChange: { factor in model.setZoomFactor(factor) },
             onOpenGallery: onOpenGallery,
@@ -1289,8 +1305,8 @@ struct CameraScreen: View {
             onSwitchCamera: { model.switchCamera() },
             onDismissStatus: { model.dismissStatusMessage() },
             onCancelTimer: { model.cancelTimer() },
-              safeBottom: safeAreaInsets.bottom,
-              showsBottomGradient: model.aspectRatio == .nineSixteen
+            safeBottom: safeAreaInsets.bottom,
+            showsBottomGradient: model.aspectRatio == .nineSixteen
           )
     }
 
@@ -1490,11 +1506,11 @@ private struct CameraPressBody: View {
     }
 }
 
-private enum CameraGlassShape {
+enum CameraGlassShape {
     case circle, capsule
 }
 
-private struct CameraGlassBackground: View {
+struct CameraGlassBackground: View {
     let shape: CameraGlassShape
 
     @ViewBuilder var body: some View {
@@ -1697,6 +1713,11 @@ enum CameraChromeLayout {
 
     static let bottomSurfaceOrder: [BottomSlot] = [.snackbar, .scaleRow, .panel]
 
+    /// The bottom chrome's own height (zoom row + rail, no safe-area padding): the band a 1:1 / 3:4 frame is
+    /// centred above, so the frame never ends up behind the shutter rail. 44 pt zoom row + 12 pt gap + 88 pt
+    /// rail + 16 pt padding = 160.
+    static let bottomBandHeight: CGFloat = 160
+
     /// Identifiers the strip used to expose. Retired with it: a flow that still looks for one is
     /// describing a screen that no longer exists, and this list is what says so.
     static let retiredIdentifiers = [
@@ -1743,6 +1764,8 @@ struct CameraBottomBar: View {
     /// The zoom the lens is at, and the range it can serve: one control, continuous.
     let zoomFactor: CGFloat
     let zoomRange: ClosedRange<CGFloat>
+    /// Which shape the zoom control draws first (a rendered test/preview opens the dial with it).
+    var zoomBarMode: CameraZoomBarMode = .lenses
     let onOpenPosePicker: () -> Void
     let onZoomChange: (CGFloat) -> Void
     let onOpenGallery: () -> Void
@@ -1782,8 +1805,11 @@ struct CameraBottomBar: View {
         }
         .frame(maxWidth: .infinity)
         // The surface floats over the preview: a gradient fades the photo into the controls instead of an
-        // opaque bar cutting the viewfinder in half. On 9:16 the frame runs under this band, which is exactly
-        // where the gradient earns its keep.
+        // opaque bar cutting the viewfinder in half. On 9:16 the frame is the whole viewfinder, so this is the
+        // only thing between the photo and the shutter rail.
+        .padding(.bottom, safeBottom)
+        // The gradient runs to the **screen's** bottom edge (the home indicator's strip included): stopping it
+        // at the safe area left a hard, bright band across the bottom of a full-bleed 9:16 preview.
         .background {
             if showsBottomGradient {
                 LinearGradient(
@@ -1791,9 +1817,9 @@ struct CameraBottomBar: View {
                     startPoint: .top,
                     endPoint: .bottom
                 )
+                .ignoresSafeArea(edges: .bottom)
             }
         }
-        .padding(.bottom, safeBottom)
     }
 
     /// The countdown: seconds left plus its own Cancel. Cancelling returns to ready with no photo;
@@ -1878,19 +1904,18 @@ struct CameraBottomBar: View {
 
     // MARK: Zoom
 
-    /// The band under the photo: the continuous zoom slider takes the left of the row and the Poses control
-    /// keeps its right end.
+    /// The band under the photo: the lens buttons (which a drag expands into the zoom dial) take the left of the
+    /// row and the Poses control keeps its right end.
     private var scaleRow: some View {
         HStack(spacing: AP.Space.space12) {
-              CameraZoomSlider(
-                  factor: zoomFactor,
-                  range: zoomRange,
-                  isEnabled: controlsEnabled,
-                  onChange: onZoomChange
-              )
-              .frame(maxWidth: .infinity)
-              .frame(height: CameraZoomTrackGeometry.totalHeight)
-              .background(CameraGlassBackground(shape: .capsule))
+            CameraZoomControl(
+                factor: zoomFactor,
+                range: zoomRange,
+                isEnabled: controlsEnabled,
+                initialMode: zoomBarMode,
+                onChange: onZoomChange
+            )
+            .frame(maxWidth: .infinity, alignment: .leading)
 
             if CameraChromeLayout.showsPosesControl(showsPicker: showsPicker) {
                 posesControl
