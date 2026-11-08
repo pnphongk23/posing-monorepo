@@ -1,4 +1,4 @@
-# TC-GAL-010 an empty gallery offers the camera, an empty time filter does not
+# TC-GAL-010 an empty gallery offers the camera, an empty filter does not
 appId: ${APP_ID}
 tags: [TC-GAL-010, p0]
 ---
@@ -13,19 +13,33 @@ tags: [TC-GAL-010, p0]
     id: "gallery.empty.openCamera"
 - assertVisible:
     id: "gallery.empty.openCameraButton"
-# A time window with nothing in it is a different state: it explains the filter and offers no camera action…
+# The chip row is All / Starred only — design-sync (70d38cfe) replaced the time windows, so there is
+# no `gallery.filter.today` / `.week` any more. The chips stay on screen in every state.
+- assertVisible:
+    id: "gallery.filter.all"
+- assertVisible:
+    id: "gallery.filter.starred"
+# Starred with nothing starred is a different state: it explains the filter and never offers the camera.
 - tapOn:
-    id: "gallery.filter.today"
+    id: "gallery.filter.starred"
 - assertVisible:
     id: "gallery.empty.filter"
 - assertNotVisible:
     id: "gallery.empty.openCamera"
-# …and the chips stay interactive, which is the only way out of it.
+# Its own action is one way out: "Show all photos" flips the filter back to All.
+- assertVisible:
+    id: "gallery.empty.showAllPhotos"
 - tapOn:
-    id: "gallery.filter.week"
+    id: "gallery.empty.showAllPhotos"
+- assertVisible:
+    id: "gallery.empty.openCamera"
+- assertVisible:
+    id: "gallery.empty.openCameraButton"
+# …and the chips stay interactive, which is the other way out.
+- tapOn:
+    id: "gallery.filter.starred"
 - assertVisible:
     id: "gallery.empty.filter"
-# Back to All: the camera action returns.
 - tapOn:
     id: "gallery.filter.all"
 - assertVisible:

@@ -21,9 +21,9 @@ tags: [TC-SET-013, p1]
     id: "about.privacy"
 - assertVisible:
     id: "about.licences"
-# The board's "Contact support" row is deliberately not built (no Support surface).
-- assertNotVisible:
-    id: "about.contact"
+# The board's "Contact support" row is deliberately not built (no Support surface), so no such id
+# exists — guard the row by its label instead of a dead `about.contact` id.
+- assertNotVisible: "Contact support"
 - tapOn:
     id: "about.close"
 - assertNotVisible:
