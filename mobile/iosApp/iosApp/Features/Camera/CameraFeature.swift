@@ -256,25 +256,19 @@ final class CameraViewModel: ObservableObject {
         guideTransform = transform
     }
 
-    /// The zoom range this camera can serve, which is what the lens row and the dial span.
-    ///
-    /// It comes from the **port**, not from a hard-coded wide-angle lookup: on a phone whose back cameras include
-    /// an ultra-wide the range starts at 0.5×, and the lens the session runs is the virtual multi-camera device
-    /// that can serve it (owner feedback, build 25: the 0.5× stop was missing on a phone that has it).
-    var zoomRange: ClosedRange<CGFloat> {
-        let profile = camera.lensProfile
-        return CameraZoomScale.range(lower: profile.range.lowerBound, upper: profile.range.upperBound)
-    }
+    /// The zoom range the buttons and the drag span: 1×…2× (owner decision, 2026-11-08). It is the same on every
+    /// phone — 2× is the wide lens zoomed in, so a device without a 2× lens still serves it.
+    var zoomRange: ClosedRange<CGFloat> { CameraZoomScale.range }
 
-    /// The slider's own value: clamped to the lens before it reaches the hardware, so a drag past the end
-    /// stops at the end instead of being quietly clipped later.
+    /// The dial's own value: clamped before it reaches the hardware, so a drag past the end stops at the end
+    /// instead of being quietly clipped later.
     func setZoomFactor(_ factor: CGFloat) {
         guard cameraControlsEnabled else { return }
         applyZoom(factor: factor)
     }
 
     func applyZoom(factor: CGFloat) {
-        zoomFactor = CameraZoomScale.deviceFactor(forDisplay: factor, in: zoomRange)
+        zoomFactor = CameraZoomScale.clamped(factor)
         zoomLevel = CameraZoomLevel.nearest(to: zoomFactor)
         reconcileHardware()
     }
