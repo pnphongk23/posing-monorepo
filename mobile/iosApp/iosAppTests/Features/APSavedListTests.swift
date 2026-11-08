@@ -156,11 +156,15 @@ final class APSavedListTests: XCTestCase {
     @MainActor func testSignedOutShowsSignInGate() async {
         let previous = AppConfig.shared.isAccountFeatureEnabled
         AppConfig.shared.applyAccountFeatureEnabled(true)
-        await ServiceLocator.sessionBoundary.signOut()
         defer { AppConfig.shared.applyAccountFeatureEnabled(previous) }
 
+        // The signed-out branch comes from a store that never held a session, not from signing the
+        // shared keychain out: the simulator's real session is not this test's to throw away.
+        let storage = SignedOutTokenStorage()
+        let boundary = SessionBoundary(tokenStorage: storage)
+
         XCTAssertTrue(AppConfig.shared.isAccountFeatureEnabled, "the Saved surface is flag-gated")
-        let hasSession = await ServiceLocator.sessionBoundary.hasStoredSession()
+        let hasSession = await boundary.hasStoredSession()
         XCTAssertFalse(hasSession, "the gate is the signed-out branch")
 
         // Rows in the model on purpose: if the screen fell through to the list, the gate's panel is
@@ -169,7 +173,10 @@ final class APSavedListTests: XCTestCase {
         let model = PosesViewModel(service: SavedListPoseService(rows: rows))
         model.state = .loaded(rows)
 
-        let probe = APViewProbe(SavedPosesScreen(model: model), size: CGSize(width: 393, height: 700))
+        let probe = APViewProbe(
+            SavedPosesScreen(model: model, boundary: boundary),
+            size: CGSize(width: 393, height: 700)
+        )
         defer { probe.tearDown() }
         var painted = probe.capture()
         // `SessionPresenceModel` starts on the screen's `.task`, so wait for the gate instead of
@@ -193,6 +200,10 @@ final class APSavedListTests: XCTestCase {
             return XCTFail("the sign-in gate must offer its Sign in action")
         }
         XCTAssertLessThanOrEqual(action.height, 60, "the gate's action is one control, not a second panel")
+        XCTAssertEqual(
+            storage.clearCount, 0,
+            "the gate is drawn from an empty store, so nothing had to be signed out for it"
+        )
     }
 
     // MARK: - Undo (06-board04)
@@ -1711,6 +1722,28 @@ private func savedRouteRemotePose(_ id: String, name: String) throws -> Communit
     try JSONDecoder().decode(CommunityPose.self, from: Data("""
     {"poseId":"\(id)","name":"\(name)","skeletonUrl":"/s.png","thumbnailUrl":"/t.jpg","status":"published"}
     """.utf8))
+}
+
+/// A store that never held a session, and remembers being asked to clear one. The signed-out gate is
+/// the empty-store branch, so a gate test must reach it without mutating the shared keychain.
+private final class SignedOutTokenStorage: TokenStoring, @unchecked Sendable {
+    private let lock = NSLock()
+    private var _clearCount = 0
+
+    /// Read from the `@MainActor` test after the render, so the counter is locked like the rest.
+    var clearCount: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return _clearCount
+    }
+
+    func saveCredentials(_ credentials: SessionCredentials) {}
+    func loadCredentials() -> SessionCredentials? { nil }
+    func clearCredentials() {
+        lock.lock()
+        _clearCount += 1
+        lock.unlock()
+    }
 }
 
 /// A boundary that starts signed in, for the "the session changed under the tap" case.

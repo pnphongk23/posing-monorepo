@@ -129,6 +129,7 @@
 		C4F461F913C3D3D1F6192DEA /* CameraTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = C254D42661B28636ECF42B71 /* CameraTypes.swift */; };
 		C570FA5B01D3249FD3F2CA3B /* CameraLastPoseTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52E97F07902AB9B765D7227F /* CameraLastPoseTests.swift */; };
 		C57B42C033C38165FB5F5D36 /* legacy-aipose-v1.sql in Resources */ = {isa = PBXBuildFile; fileRef = ECD01519B875CB01EAA64D5D /* legacy-aipose-v1.sql */; };
+		C67770AEE18FAB05A3D4F262 /* SessionMutationArchitectureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6766057C17B31B2F3DADF020 /* SessionMutationArchitectureTests.swift */; };
 		C862DA62FE077F181481D5AC /* OAuthCallbackParserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B148FE3930570FF57E255519 /* OAuthCallbackParserTests.swift */; };
 		C87B4FA04BDA1DA04158D48E /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = A55143988C4C8F291BE72E9A /* GoogleService-Info.plist */; };
 		C9B245073C88423EC54B4D18 /* APCatalogLogicTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20FF2E6B58AF2A054AEDD0D /* APCatalogLogicTests.swift */; };
@@ -238,6 +239,7 @@
 		605353FE16B986A780983BCF /* CameraZoom.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraZoom.swift; sourceTree = "<group>"; };
 		61571883DB4BF8DDEFEE8BD5 /* JobsFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JobsFixtures.swift; sourceTree = "<group>"; };
 		6535A435C54DDB708745F381 /* DatabaseRecords.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DatabaseRecords.swift; sourceTree = "<group>"; };
+		6766057C17B31B2F3DADF020 /* SessionMutationArchitectureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionMutationArchitectureTests.swift; sourceTree = "<group>"; };
 		69F99C45485E02CD56C6E0C2 /* SupportScreens.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupportScreens.swift; sourceTree = "<group>"; };
 		6A62E6FF1D170C088F48EAA2 /* APDetailSavedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APDetailSavedTests.swift; sourceTree = "<group>"; };
 		6DCAF98D324B169E9441A54D /* PosesPaginationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PosesPaginationTests.swift; sourceTree = "<group>"; };
@@ -539,6 +541,7 @@
 		55F67A6F4738AF678A34BF5D /* Architecture */ = {
 			isa = PBXGroup;
 			children = (
+				6766057C17B31B2F3DADF020 /* SessionMutationArchitectureTests.swift */,
 				2390F661F0C57B7CC33D5181 /* SessionScopedArchitectureTests.swift */,
 			);
 			path = Architecture;
@@ -997,6 +1000,7 @@
 				5850C50963070EA3EBC6EF19 /* PremiumGateTests.swift in Sources */,
 				7342797CFF2900F85521D10B /* RevenueCatAdapterTests.swift in Sources */,
 				D140B0ADEB322D73048D1243 /* SessionBoundaryTests.swift in Sources */,
+				C67770AEE18FAB05A3D4F262 /* SessionMutationArchitectureTests.swift in Sources */,
 				F9F8B63AB2B71AED8220776B /* SessionScopeCoordinatorTests.swift in Sources */,
 				6D9E58147F5D785B0AA8D5AD /* SessionScopeTests.swift in Sources */,
 				2AEA399C3418B1C8291E3462 /* SessionScopedArchitectureTests.swift in Sources */,
