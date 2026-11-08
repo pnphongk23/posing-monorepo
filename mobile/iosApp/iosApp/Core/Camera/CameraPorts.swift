@@ -13,6 +13,8 @@ protocol CameraControllerPort: AnyObject {
     func setZoomFactor(_ factor: CGFloat)
     var session: AVCaptureSession { get }
     var facing: CameraFacing { get }
+    /// What lenses this camera has, in display zoom space: the stops the UI offers come from here.
+    var lensProfile: CameraLensProfile { get }
 }
 
 /// The camera as the view model drives it: the port above plus the session lifecycle. Readiness is
@@ -27,6 +29,11 @@ protocol CameraSessionControlling: CameraControllerPort {
 
 extension CameraControllerPort {
     func setZoomFactor(_ factor: CGFloat) {}
+
+    /// What lenses this camera has, in display zoom space — which decides the stops the UI offers and how a
+    /// display factor reaches the lens. The default reads the hardware; a stub camera overrides it, because the
+    /// simulator has no capture device (it then falls back to `CameraLensProfile.wideOnly`, 1×…2×).
+    var lensProfile: CameraLensProfile { CameraLensDiscovery.currentProfile(for: facing) }
 }
 
 protocol CaptureImageWriter: Sendable {
