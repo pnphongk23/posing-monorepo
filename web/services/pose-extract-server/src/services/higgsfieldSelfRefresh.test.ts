@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { isHiggsfieldSelfRefreshEnabled, maybeSelfRefresh, refreshCredentials } from "./higgsfieldSelfRefresh";
+import { isHiggsfieldSelfRefreshEnabled, refreshCredentials } from "./higgsfieldSelfRefresh";
 
 const NOW_MS = 1_800_000_000_000;
 const AUTH_URL = "https://clerk.higgsfield.ai/oauth/token";
@@ -29,7 +29,7 @@ async function makeCredentials(overrides: Record<string, unknown> = {}) {
     ...overrides
   };
   await fs.writeFile(credentialsPath, JSON.stringify(credentials), { mode: 0o600 });
-  return { credentialsPath, credentials };
+  return { credentialsPath, credentials, dir };
 }
 
 function response(status: number, body: unknown): Response {
@@ -39,10 +39,20 @@ function response(status: number, body: unknown): Response {
   });
 }
 
+/** Restore directory permissions so cleanup can always delete the temp tree. */
+async function makeWritable(dir: string): Promise<void> {
+  await fs.chmod(dir, 0o700).catch(() => undefined);
+}
+
 afterEach(async () => {
   process.env.HIGGSFIELD_SELF_REFRESH = originalEnv.selfRefresh;
   process.env.HIGGSFIELD_CREDENTIALS_PATH = originalEnv.credentialsPath;
-  await Promise.all(tempDirs.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true })));
+  await Promise.all(
+    tempDirs.splice(0).map(async (dir) => {
+      await makeWritable(dir);
+      await fs.rm(dir, { recursive: true, force: true });
+    })
+  );
   vi.restoreAllMocks();
 });
 
@@ -158,8 +168,10 @@ describe("refreshCredentials", () => {
 
   it("passes an abort signal so a hung socket is cancelled rather than left open", async () => {
     const { credentialsPath } = await makeCredentials();
+    const calls: RequestInit[] = [];
+    // Asserting inside the fetch would be swallowed by the network-error catch, so capture instead.
     const fetchImpl = vi.fn(async (_url: string, init: RequestInit) => {
-      expect(init.signal).toBeInstanceOf(AbortSignal);
+      calls.push(init);
       throw new Error("aborted");
     });
 
@@ -171,6 +183,113 @@ describe("refreshCredentials", () => {
     });
 
     expect(result).toEqual({ ok: false, reason: "network_error" });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.signal).toBeInstanceOf(AbortSignal);
+    expect(calls[0]?.signal?.aborted).toBe(false);
+  });
+
+  it("does not contact Clerk when the credential directory cannot be written", async () => {
+    const { credentialsPath, dir } = await makeCredentials();
+    const before = await fs.readFile(credentialsPath);
+    const fetchImpl = vi.fn(async () => response(200, { access_token: "new", expires_in: 3600 }));
+    await fs.chmod(dir, 0o500);
+    try {
+      const result = await refreshCredentials({
+        credentialsPath,
+        fetchImpl: fetchImpl as unknown as typeof fetch,
+        now: () => NOW_MS
+      });
+
+      expect(result).toEqual({ ok: false, reason: "write_error" });
+      // No rotation was risked: the request never left the process.
+      expect(fetchImpl).not.toHaveBeenCalled();
+      expect(await fs.readFile(credentialsPath)).toEqual(before);
+    } finally {
+      await makeWritable(dir);
+    }
+  });
+
+  it("retries the local write when the volume recovers and never re-posts the rotated token", async () => {
+    const { credentialsPath, dir } = await makeCredentials();
+    const fetchImpl = vi.fn(async () => {
+      // The token is rotated from here on: make the write fail once, then recover.
+      await fs.chmod(dir, 0o500);
+      setTimeout(() => {
+        void fs.chmod(dir, 0o700).catch(() => undefined);
+      }, 30);
+      return response(200, {
+        access_token: "new-access-token-secret",
+        refresh_token: "new-refresh-token-secret",
+        expires_in: 3600
+      });
+    });
+
+    try {
+      const result = await refreshCredentials({
+        credentialsPath,
+        fetchImpl: fetchImpl as unknown as typeof fetch,
+        now: () => NOW_MS,
+        writeRetryDelayMs: 150
+      });
+
+      expect(result).toEqual({ ok: true, expiresAt: Math.floor(NOW_MS / 1000) + 3600, refreshed: true });
+      // Exactly one POST: the retry re-writes from memory, it never goes back to Clerk.
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+      const written = JSON.parse(await fs.readFile(credentialsPath, "utf8"));
+      expect(written.refresh_token).toBe("new-refresh-token-secret");
+      expect(written.expires_at).toBe(Math.floor(NOW_MS / 1000) + 3600);
+      expect((await fs.stat(credentialsPath)).mode & 0o777).toBe(0o600);
+    } finally {
+      await makeWritable(dir);
+    }
+  });
+
+  it("reports write_error_after_rotation when the rotated token cannot be stored", async () => {
+    const { credentialsPath, dir } = await makeCredentials();
+    const before = await fs.readFile(credentialsPath);
+    const fetchImpl = vi.fn(async () => {
+      // Rotate, then make every local write attempt fail for the rest of the call.
+      await fs.chmod(dir, 0o500);
+      return response(200, {
+        access_token: "new-access-token-secret",
+        refresh_token: "new-refresh-token-secret",
+        expires_in: 3600
+      });
+    });
+
+    try {
+      const result = await refreshCredentials({
+        credentialsPath,
+        fetchImpl: fetchImpl as unknown as typeof fetch,
+        now: () => NOW_MS,
+        writeRetryDelayMs: 5
+      });
+
+      expect(result).toEqual({ ok: false, reason: "write_error_after_rotation" });
+      // One POST only: re-posting would burn the already rotated refresh token.
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+      expect(await fs.readFile(credentialsPath)).toEqual(before);
+      // No probe/temp leftovers from the failed attempts.
+      expect((await fs.readdir(dir)).sort()).toEqual(["credentials.json"]);
+    } finally {
+      await makeWritable(dir);
+    }
+  });
+
+  it("treats an unreadable 200 body as invalid_response without re-posting", async () => {
+    const { credentialsPath } = await makeCredentials();
+    const before = await fs.readFile(credentialsPath);
+    const fetchImpl = vi.fn(async () => new Response("not-json", { status: 200 }));
+
+    const result = await refreshCredentials({
+      credentialsPath,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      now: () => NOW_MS
+    });
+
+    expect(result).toEqual({ ok: false, reason: "invalid_response" });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(await fs.readFile(credentialsPath)).toEqual(before);
   });
 });
 
@@ -188,40 +307,5 @@ describe("isHiggsfieldSelfRefreshEnabled", () => {
     expect(isHiggsfieldSelfRefreshEnabled({ HIGGSFIELD_SELF_REFRESH: "true" })).toBe(true);
     expect(isHiggsfieldSelfRefreshEnabled({ HIGGSFIELD_SELF_REFRESH: "TRUE" })).toBe(true);
     expect(isHiggsfieldSelfRefreshEnabled({ HIGGSFIELD_SELF_REFRESH: " True " })).toBe(true);
-  });
-});
-
-describe("maybeSelfRefresh", () => {
-  it("is disabled unless HIGGSFIELD_SELF_REFRESH is explicitly enabled", async () => {
-    const { credentialsPath } = await makeCredentials();
-    process.env.HIGGSFIELD_SELF_REFRESH = "false";
-    process.env.HIGGSFIELD_CREDENTIALS_PATH = credentialsPath;
-    const fetchImpl = vi.fn();
-
-    const result = await maybeSelfRefresh({ fetchImpl, now: () => NOW_MS });
-
-    expect(result).toEqual({ ok: false, reason: "disabled" });
-    expect(fetchImpl).not.toHaveBeenCalled();
-  });
-
-  it("refreshes through the shared code path when the flag is on and the token is inside the window", async () => {
-    const { credentialsPath } = await makeCredentials({
-      expires_at: Math.floor(NOW_MS / 1000) + 600
-    });
-    process.env.HIGGSFIELD_SELF_REFRESH = "TRUE";
-    process.env.HIGGSFIELD_CREDENTIALS_PATH = credentialsPath;
-    const fetchImpl = vi.fn(async () => response(200, {
-      access_token: "new-access-token-secret",
-      expires_in: 3600
-    }));
-
-    const result = await maybeSelfRefresh({
-      credentialsPath,
-      fetchImpl: fetchImpl as unknown as typeof fetch,
-      now: () => NOW_MS
-    });
-
-    expect(result).toEqual({ ok: true, expiresAt: Math.floor(NOW_MS / 1000) + 3600, refreshed: true });
-    expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 });

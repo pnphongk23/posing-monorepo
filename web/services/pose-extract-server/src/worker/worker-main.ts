@@ -6,7 +6,7 @@ import { ExtractionJobStore } from "../db/extractionJobStore";
 import { PoseStore } from "../db/communityStore";
 import { ProviderSettingsStore } from "../db/providerSettingsStore";
 import { GeminiService } from "../services/geminiService";
-import { defaultCredentialsPath } from "../services/higgsfieldCredentialGuard";
+import { defaultCredentialsPath, withCredentialLock } from "../services/higgsfieldCredentialGuard";
 import { isHiggsfieldSelfRefreshEnabled } from "../services/higgsfieldSelfRefresh";
 import { KeyPoolManager } from "../services/keyPoolManager";
 import { KeyStore } from "../services/keyStore";
@@ -21,6 +21,8 @@ import { sanitizeError } from "../utils/sanitizeError";
 
 const POLL_INTERVAL_MS = Number(process.env.WORKER_POLL_INTERVAL_MS ?? "1000");
 const STALE_LOCK_SECONDS = Number(process.env.WORKER_STALE_LOCK_SECONDS ?? "120");
+/** Upper bound on waiting for an in-flight credential refresh when the worker is asked to stop. */
+const SHUTDOWN_LOCK_TIMEOUT_MS = 20_000;
 
 async function run(): Promise<void> {
   const env = getEnv();
@@ -78,6 +80,15 @@ async function run(): Promise<void> {
     shuttingDown = true;
     logger.info({ signal }, "worker shutting down");
     higgsfieldKeepalive.stop();
+    // A refresh may be past the provider's rotation and still writing the new token. Exiting now
+    // would lose that refresh token for good, so wait for the credential lock to drain (bounded, in
+    // case a CLI spawn or a stuck write never releases it).
+    const lockDrained = withCredentialLock(async () => undefined);
+    const lockTimeout = new Promise<void>((resolve) => {
+      const timer = setTimeout(resolve, SHUTDOWN_LOCK_TIMEOUT_MS);
+      timer.unref?.();
+    });
+    await Promise.race([lockDrained, lockTimeout]);
     await closeDatabase(sql);
     process.exit(0);
   };

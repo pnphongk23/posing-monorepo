@@ -16,7 +16,7 @@ import {
   dispatchProviderAuthAlertOnce,
   providerAuthStatePathFor,
   recordProviderAuthFailure,
-  recordProviderAuthSuccess
+  recordProviderAuthRefreshSuccess
 } from "../services/providerAuthStateFile";
 
 /**
@@ -45,16 +45,26 @@ export const FAILURE_BACKOFF_MS = 60 * 60 * 1000;
 export type KeepaliveTickResult = "disabled" | "skipped" | "expired" | "refreshed" | "refresh_failed";
 
 /**
- * Refresh failures that a retry cannot fix: the stored refresh token is dead, unreadable or
- * malformed, so the next attempt waits an hour instead of hammering the token endpoint.
+ * Refresh failures a retry cannot fix: the stored refresh token is dead, malformed or unreadable,
+ * the rotated token could not be persisted, or a 200 could not be read back. The next attempt waits
+ * an hour instead of hammering the token endpoint (or, worse, POSTing a refresh token the provider
+ * has already rotated).
  */
-const PERMANENT_REFRESH_FAILURES = new Set(["invalid_grant", "invalid_credentials", "read_error"]);
+const PERMANENT_REFRESH_FAILURES = new Set([
+  "invalid_grant",
+  "invalid_credentials",
+  "read_error",
+  "invalid_response",
+  "write_error_after_rotation"
+]);
 
 export interface RefreshFailureInput {
   statePath: string;
   nowMs: number;
   reason: string;
   expiresInSec: number;
+  /** Permanent failures alert under their own state so a transient alert cannot hide them. */
+  permanent: boolean;
   env?: Record<string, string | undefined>;
 }
 
@@ -78,7 +88,7 @@ export interface HiggsfieldKeepaliveDeps {
   lock?: <T>(task: () => Promise<T>) => Promise<T>;
   /** Test seam: defaults to the atomic 0600 credential backup. Runs inside `lock`, after a refresh. */
   backup?: (input: { credentialsPath: string }) => Promise<unknown>;
-  /** Test seam: defaults to `recordProviderAuthSuccess`. */
+  /** Test seam: defaults to `recordProviderAuthRefreshSuccess` (clears credential errors only). */
   recordRefreshSuccess?: (input: { statePath: string; nowMs: number }) => Promise<unknown>;
   /** Test seam: defaults to recording the failure and dispatching the alert once. */
   recordRefreshFailure?: (input: RefreshFailureInput) => Promise<void>;
@@ -134,11 +144,13 @@ async function defaultRecordRefreshFailure(input: RefreshFailureInput): Promise<
     reason: `refresh_${input.reason}`,
     nowMs: input.nowMs
   });
-  // Reason and remaining lifetime only: never a token, never a response body.
+  // Reason and remaining lifetime only: never a token, never a response body. A permanent failure
+  // gets its own `state`, which is also its debounce key: a transient alert must never silence the
+  // one that says a re-login is required.
   const payload: ProviderAlertPayload = {
     event: "provider_auth",
     status: "degraded",
-    state: "refresh_failed",
+    state: input.permanent ? "refresh_failed_permanent" : "refresh_failed",
     expiresInSec: input.expiresInSec
   };
   await dispatchProviderAuthAlertOnce({
@@ -167,7 +179,7 @@ export function startHiggsfieldKeepalive(deps: HiggsfieldKeepaliveDeps): Higgsfi
   const refresh = deps.refresh ?? ((credentialsPath: string) => refreshCredentials({ credentialsPath, now }));
   const lock = deps.lock ?? withCredentialLock;
   const backup = deps.backup ?? backupCredential;
-  const recordRefreshSuccess = deps.recordRefreshSuccess ?? recordProviderAuthSuccess;
+  const recordRefreshSuccess = deps.recordRefreshSuccess ?? recordProviderAuthRefreshSuccess;
   const recordRefreshFailure = deps.recordRefreshFailure ?? ((input) => defaultRecordRefreshFailure({ ...input, env }));
   const statePath = deps.statePath ?? providerAuthStatePathFor(deps.credentialsPath);
   const enabled = isHiggsfieldKeepaliveEnabled(env);
@@ -193,17 +205,22 @@ export function startHiggsfieldKeepalive(deps: HiggsfieldKeepaliveDeps): Higgsfi
         if (!result.ok) {
           return { kind: "failed", reason: result.reason, expiresInSec: fresh.expiresInSec };
         }
-        // Back up the refreshed credential before the CLI can delete/rewrite it, so a later CLI
-        // refresh failure is recoverable.
-        await backup({ credentialsPath: deps.credentialsPath });
+        try {
+          // Back up the refreshed credential before the CLI can delete/rewrite it, so a later CLI
+          // refresh failure is recoverable.
+          await backup({ credentialsPath: deps.credentialsPath });
+        } catch (error) {
+          // The token is rotated and already on disk: a backup problem is not a refresh failure.
+          logger.warn(
+            { message: error instanceof Error ? error.message : "unknown error" },
+            "higgsfield credential was refreshed but could not be backed up"
+          );
+        }
         return { kind: "refreshed", expiresAt: result.expiresAt };
       });
-    } catch (error) {
-      return {
-        kind: "failed",
-        reason: error instanceof Error && error.message === "write_error" ? "write_error" : "internal_error",
-        expiresInSec: 0
-      };
+    } catch {
+      // A throw inside the lock (refresh/backup/lock itself): nothing was reported as refreshed.
+      return { kind: "failed", reason: "internal_error", expiresInSec: 0 };
     }
   };
 
@@ -217,6 +234,10 @@ export function startHiggsfieldKeepalive(deps: HiggsfieldKeepaliveDeps): Higgsfi
     if (outcome.kind === "refreshed") {
       nextAllowedAtMs = 0;
       try {
+        // Clears a credential error (`expired` / `refresh_*`) only; a job-side auth failure stays
+        // recorded, otherwise this refresh would report healthy while jobs keep failing. Note a later
+        // job success still clears a `refresh_*` error through `lastSuccessAt` (unchanged on
+        // purpose): the next tick after the one-hour backoff records the failure again.
         await recordRefreshSuccess({ statePath, nowMs: now() });
       } catch (error) {
         logger.warn(
@@ -231,13 +252,15 @@ export function startHiggsfieldKeepalive(deps: HiggsfieldKeepaliveDeps): Higgsfi
     // The credential file is left exactly as it was: no rewrite, no delete, no restore.
     // This failure is the only record written even when the token had already expired — the health
     // endpoint is degraded by it, and a second "expired" record would only duplicate the alert.
-    nextAllowedAtMs = PERMANENT_REFRESH_FAILURES.has(outcome.reason) ? now() + FAILURE_BACKOFF_MS : 0;
+    const permanent = PERMANENT_REFRESH_FAILURES.has(outcome.reason);
+    nextAllowedAtMs = permanent ? now() + FAILURE_BACKOFF_MS : 0;
     try {
       await recordRefreshFailure({
         statePath,
         nowMs: now(),
         reason: outcome.reason,
-        expiresInSec: outcome.expiresInSec
+        expiresInSec: outcome.expiresInSec,
+        permanent
       });
     } catch (error) {
       logger.warn(

@@ -15,8 +15,10 @@ import {
 import {
   providerAuthStatePathFor,
   readProviderAuthState,
+  recordProviderAuthFailure,
   recordProviderAuthSuccess
 } from "../services/providerAuthStateFile";
+import { logger } from "../utils/logger";
 import {
   startHiggsfieldKeepalive,
   type HiggsfieldKeepaliveDeps,
@@ -53,6 +55,13 @@ async function makeCredentials(expiresAtSec: number | null): Promise<string> {
   return credentialsPath;
 }
 
+/** A state file outside the credential directory, for tests that make that directory read-only. */
+async function makeStatePath(): Promise<string> {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "hf-keepalive-state-"));
+  tempDirs.push(dir);
+  return path.join(dir, "provider-auth.json");
+}
+
 function makeHandle(options: {
   credentialsPath: string;
   env?: Record<string, string | undefined>;
@@ -84,7 +93,13 @@ afterEach(async () => {
   vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
-  await Promise.all(tempDirs.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true })));
+  await Promise.all(
+    tempDirs.splice(0).map(async (dir) => {
+      // A test may leave its temp tree read-only to simulate an unwritable volume.
+      await fs.chmod(dir, 0o700).catch(() => undefined);
+      await fs.rm(dir, { recursive: true, force: true });
+    })
+  );
 });
 
 describe("higgsfield keepalive", () => {
@@ -393,13 +408,14 @@ describe("higgsfield keepalive self-refresh", () => {
     const state = await readProviderAuthState(statePath);
     expect(state.lastAuthErrorCode).toBe("PROVIDER_AUTH_REQUIRED");
     expect(state.lastAuthErrorReason).toBe("refresh_invalid_grant");
-    expect(state.lastAlertKey).toBe("degraded:refresh_failed");
+    // Permanent failures debounce under their own key so a transient alert cannot hide them.
+    expect(state.lastAlertKey).toBe("degraded:refresh_failed_permanent");
 
     expect(alertFetch).toHaveBeenCalledTimes(1);
     const [url, init] = alertFetch.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe("https://alerts.test/hook");
     const body = JSON.parse(String(init.body));
-    expect(body).toMatchObject({ event: "provider_auth", status: "degraded", state: "refresh_failed" });
+    expect(body).toMatchObject({ event: "provider_auth", status: "degraded", state: "refresh_failed_permanent" });
     expect(body.expiresInSec).toBe(30 * 60);
     expect(String(init.body)).not.toContain("secret-refresh");
 
@@ -432,11 +448,182 @@ describe("higgsfield keepalive self-refresh", () => {
 
     expect(await handle.tick()).toBe<KeepaliveTickResult>("refresh_failed");
     expect(await fs.readFile(credentialsPath)).toEqual(before);
-    expect((await readProviderAuthState(statePath)).lastAuthErrorReason).toBe("refresh_write_error");
+    const state = await readProviderAuthState(statePath);
+    expect(state.lastAuthErrorReason).toBe("refresh_write_error");
 
     nowMs = NOW_MS + 15 * MINUTE;
     expect(await handle.tick()).toBe<KeepaliveTickResult>("refresh_failed");
     expect(refresh).toHaveBeenCalledTimes(2);
+    handle.stop();
+  });
+
+  it("lets a permanent alert through even after a transient alert was just sent", async () => {
+    const credentialsPath = await makeCredentials(NOW_SEC + 55 * 60);
+    const statePath = providerAuthStatePathFor(credentialsPath);
+    const alertFetch = vi.fn(async () => jsonResponse(200, { ok: true }));
+    vi.stubGlobal("fetch", alertFetch);
+    let nowMs = NOW_MS;
+    const refresh = vi.fn(async () => ({ ok: false as const, reason: "network_error" }));
+    const { handle } = makeHandle({
+      credentialsPath,
+      env: { ...SELF_REFRESH_ENV, ALERT_WEBHOOK_URL: "https://alerts.test/hook" },
+      now: () => nowMs,
+      deps: { refresh }
+    });
+
+    expect(await handle.tick()).toBe<KeepaliveTickResult>("refresh_failed");
+    expect((await readProviderAuthState(statePath)).lastAlertKey).toBe("degraded:refresh_failed");
+
+    // The refresh token turns out to be dead while the transient alert is still debounced: the
+    // operator must still be told, because this one needs a re-login.
+    refresh.mockResolvedValue({ ok: false, reason: "invalid_grant" });
+    nowMs = NOW_MS + 15 * MINUTE;
+    expect(await handle.tick()).toBe<KeepaliveTickResult>("refresh_failed");
+
+    expect(alertFetch).toHaveBeenCalledTimes(2);
+    const states = alertFetch.mock.calls.map(([, init]) => JSON.parse(String((init as RequestInit).body)).state);
+    expect(states).toEqual(["refresh_failed", "refresh_failed_permanent"]);
+    expect((await readProviderAuthState(statePath)).lastAlertKey).toBe("degraded:refresh_failed_permanent");
+    handle.stop();
+  });
+
+  it("keeps a refresh successful when only the backup fails", async () => {
+    const credentialsPath = await makeCredentials(NOW_SEC + 30 * 60);
+    const statePath = providerAuthStatePathFor(credentialsPath);
+    const warn = vi.spyOn(logger, "warn");
+    const { handle } = makeHandle({
+      credentialsPath,
+      env: SELF_REFRESH_ENV,
+      deps: {
+        refresh: async () => {
+          await writeCredentials(credentialsPath, NOW_SEC + 3600);
+          return { ok: true, expiresAt: NOW_SEC + 3600, refreshed: true };
+        },
+        backup: async () => {
+          throw new Error("volume full");
+        }
+      }
+    });
+
+    expect(await handle.tick()).toBe<KeepaliveTickResult>("refreshed");
+    // Not a failure: no degraded state, no alert, and the refreshed file stays.
+    const state = await readProviderAuthState(statePath);
+    expect(state.lastAuthErrorAt).toBeNull();
+    expect(state.lastSuccessAt).not.toBeNull();
+    expect(warn).toHaveBeenCalledWith(
+      { message: "volume full" },
+      "higgsfield credential was refreshed but could not be backed up"
+    );
+    expect(JSON.parse(await fs.readFile(credentialsPath, "utf8")).expires_at).toBe(NOW_SEC + 3600);
+    handle.stop();
+  });
+
+  it("clears a credential error on success but never an unrelated job auth failure", async () => {
+    const credentialsPath = await makeCredentials(NOW_SEC + 30 * 60);
+    const statePath = providerAuthStatePathFor(credentialsPath);
+    const refresh = async () => {
+      await writeCredentials(credentialsPath, NOW_SEC + 3600);
+      return { ok: true as const, expiresAt: NOW_SEC + 3600, refreshed: true as const };
+    };
+
+    // 1. A job-side CLI auth failure is not ours to clear.
+    await recordProviderAuthFailure({ statePath, reason: "cli_auth_failure", nowMs: NOW_MS - 60_000 });
+    const jobFailure = makeHandle({ credentialsPath, env: SELF_REFRESH_ENV, deps: { refresh } });
+    expect(await jobFailure.handle.tick()).toBe<KeepaliveTickResult>("refreshed");
+    const afterRefresh = await readProviderAuthState(statePath);
+    expect(afterRefresh.lastAuthErrorReason).toBe("cli_auth_failure");
+    expect(afterRefresh.lastSuccessAt).toBeNull();
+    jobFailure.handle.stop();
+
+    // 2. Our own refresh/expiry error (and "expired") is cleared.
+    await recordProviderAuthFailure({ statePath, reason: "refresh_network_error", nowMs: NOW_MS });
+    const gitRefreshed = makeHandle({
+      credentialsPath,
+      env: SELF_REFRESH_ENV,
+      now: () => NOW_MS + MINUTE,
+      deps: { refresh }
+    });
+    expect(await gitRefreshed.handle.tick()).toBe<KeepaliveTickResult>("refreshed");
+    const cleared = await readProviderAuthState(statePath);
+    expect(cleared.lastAuthErrorAt).toBeNull();
+    expect(cleared.lastAuthErrorReason).toBeNull();
+    expect(cleared.lastSuccessAt).toBe(new Date(NOW_MS + MINUTE).toISOString());
+    gitRefreshed.handle.stop();
+  });
+
+  it("does not lose the rotated token when the real writer cannot store it", async () => {
+    const credentialsPath = await makeCredentials(NOW_SEC + 30 * 60);
+    const dir = path.dirname(credentialsPath);
+    const statePath = await makeStatePath();
+    const before = await fs.readFile(credentialsPath);
+    // Clerk answers 200 and rotates the token; every local write then fails.
+    const fetchImpl = vi.fn(async () => {
+      await fs.chmod(dir, 0o500);
+      return jsonResponse(200, {
+        access_token: "new-access-token-secret",
+        refresh_token: "new-refresh-token-secret",
+        expires_in: 3600
+      });
+    });
+    vi.stubGlobal("fetch", fetchImpl);
+    let nowMs = NOW_MS;
+    const { handle } = makeHandle({
+      credentialsPath,
+      env: SELF_REFRESH_ENV,
+      now: () => nowMs,
+      deps: {
+        statePath,
+        refresh: (innerPath: string) =>
+          refreshCredentials({ credentialsPath: innerPath, now: () => NOW_MS, writeRetryDelayMs: 5 })
+      }
+    });
+
+    try {
+      expect(await handle.tick()).toBe<KeepaliveTickResult>("refresh_failed");
+      expect(await fs.readFile(credentialsPath)).toEqual(before);
+      const state = await readProviderAuthState(statePath);
+      expect(state.lastAuthErrorCode).toBe("PROVIDER_AUTH_REQUIRED");
+      expect(state.lastAuthErrorReason).toBe("refresh_write_error_after_rotation");
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+    } finally {
+      await fs.chmod(dir, 0o700).catch(() => undefined);
+    }
+
+    // Permanent: the next tick does not POST the stale refresh token again.
+    nowMs = NOW_MS + 15 * MINUTE;
+    expect(await handle.tick()).toBe<KeepaliveTickResult>("skipped");
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    handle.stop();
+  });
+
+  it("does not contact the provider when the credential directory is not writable", async () => {
+    const credentialsPath = await makeCredentials(NOW_SEC + 30 * 60);
+    const dir = path.dirname(credentialsPath);
+    const statePath = await makeStatePath();
+    const before = await fs.readFile(credentialsPath);
+    const fetchImpl = vi.fn(async () => jsonResponse(200, { access_token: "new", expires_in: 3600 }));
+    vi.stubGlobal("fetch", fetchImpl);
+    await fs.chmod(dir, 0o500);
+
+    const { handle } = makeHandle({
+      credentialsPath,
+      env: SELF_REFRESH_ENV,
+      deps: {
+        statePath,
+        refresh: (innerPath: string) => refreshCredentials({ credentialsPath: innerPath, now: () => NOW_MS })
+      }
+    });
+
+    try {
+      expect(await handle.tick()).toBe<KeepaliveTickResult>("refresh_failed");
+      const state = await readProviderAuthState(statePath);
+      expect(state.lastAuthErrorReason).toBe("refresh_write_error");
+      // Pre-flight probe only: nothing was sent, so nothing could be rotated.
+      expect(fetchImpl).not.toHaveBeenCalled();
+      expect(await fs.readFile(credentialsPath)).toEqual(before);
+    } finally {
+      await fs.chmod(dir, 0o700).catch(() => undefined);
+    }
     handle.stop();
   });
 

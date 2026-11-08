@@ -2,8 +2,6 @@ import { randomBytes } from "node:crypto";
 import { open, readFile, rename, rm } from "node:fs/promises";
 import path from "node:path";
 
-import { defaultCredentialsPath } from "./higgsfieldCredentialGuard";
-
 const TOKEN_ENDPOINT = "https://clerk.higgsfield.ai/oauth/token";
 const CLIENT_ID = "sRGCQJvvJkPrrtRj";
 
@@ -12,6 +10,15 @@ export const REFRESH_WINDOW_SEC = 60 * 60;
 
 /** Hard ceiling on the token request so a stalled socket cannot wedge the credential mutex. */
 export const DEFAULT_REFRESH_TIMEOUT_MS = 15_000;
+
+/**
+ * Attempts to persist a freshly rotated token. Clerk has already rotated it by then, so the only
+ * safe move is to keep retrying the local write from memory — never to POST again.
+ */
+const WRITE_ATTEMPTS = 3;
+
+/** Pause between write attempts; overridable so tests do not wait on wall-clock time. */
+export const WRITE_RETRY_DELAY_MS = 1_000;
 
 /**
  * Self-refresh is opt-in: only `HIGGSFIELD_SELF_REFRESH=1|true` (any casing) turns it on. Unset,
@@ -41,6 +48,8 @@ export interface RefreshCredentialsInput {
   now?: () => number;
   /** Abort the token request after this long; the failure is reported as `network_error`. */
   timeoutMs?: number;
+  /** Pause between local write attempts after a rotated token was received. */
+  writeRetryDelayMs?: number;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -76,12 +85,72 @@ async function writeAtomic(credentialsPath: string, contents: string): Promise<v
   }
 }
 
+/**
+ * Prove the credential can be written *before* the token is rotated. Create, fsync and rename a
+ * throwaway file inside the credential's own directory (a read-only or full volume, or a single-file
+ * bind mount where rename gives EBUSY, is then a plain `write_error` with no rotation to lose).
+ */
+async function probeWritable(credentialsPath: string): Promise<boolean> {
+  const directory = path.dirname(credentialsPath);
+  const suffix = `${process.pid}.${randomBytes(8).toString("hex")}`;
+  const probePath = path.join(directory, `.${path.basename(credentialsPath)}.${suffix}.probe.tmp`);
+  const probeTarget = path.join(directory, `.${path.basename(credentialsPath)}.${suffix}.probe`);
+  let file;
+  try {
+    file = await open(probePath, "wx", 0o600);
+    await file.writeFile("probe", "utf8");
+    await file.sync();
+    await file.close();
+    file = undefined;
+    await rename(probePath, probeTarget);
+    await rm(probeTarget, { force: true });
+    return true;
+  } catch {
+    if (file) await file.close().catch(() => undefined);
+    await rm(probePath, { force: true }).catch(() => undefined);
+    await rm(probeTarget, { force: true }).catch(() => undefined);
+    return false;
+  }
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, ms);
+    // A pending retry must never keep the process alive on its own.
+    (timer as { unref?: () => void }).unref?.();
+  });
+}
+
+/**
+ * Persist a rotated token, retrying only the local write. `write_error_after_rotation` is terminal:
+ * the refresh token on disk is the old one and Clerk has already rotated it, so POSTing it again
+ * would burn it (`invalid_grant`).
+ */
+async function writeRotated(
+  credentialsPath: string,
+  contents: string,
+  retryDelayMs: number
+): Promise<RefreshResult | null> {
+  for (let attempt = 1; attempt <= WRITE_ATTEMPTS; attempt += 1) {
+    try {
+      await writeAtomic(credentialsPath, contents);
+      return null;
+    } catch {
+      if (attempt < WRITE_ATTEMPTS) {
+        await delay(retryDelayMs);
+      }
+    }
+  }
+  return { ok: false, reason: "write_error_after_rotation" };
+}
+
 /** Refresh OAuth credentials in place; token values never leave this module's file/request path. */
 export async function refreshCredentials({
   credentialsPath,
   fetchImpl = globalThis.fetch,
   now = Date.now,
-  timeoutMs = DEFAULT_REFRESH_TIMEOUT_MS
+  timeoutMs = DEFAULT_REFRESH_TIMEOUT_MS,
+  writeRetryDelayMs = WRITE_RETRY_DELAY_MS
 }: RefreshCredentialsInput): Promise<RefreshResult> {
   let credentials: unknown;
   try {
@@ -90,6 +159,11 @@ export async function refreshCredentials({
     return { ok: false, reason: "read_error" };
   }
   if (!isCredentials(credentials)) return { ok: false, reason: "invalid_credentials" };
+
+  // Never rotate the token on a volume that cannot take the result back.
+  if (!(await probeWritable(credentialsPath))) {
+    return { ok: false, reason: "write_error" };
+  }
 
   const body = new URLSearchParams({
     grant_type: "refresh_token",
@@ -134,6 +208,7 @@ export async function refreshCredentials({
   try {
     tokenResponse = await response.json();
   } catch {
+    // The 200 may already have rotated the refresh token: never POST again.
     return { ok: false, reason: "invalid_response" };
   }
   if (!isRecord(tokenResponse) || typeof tokenResponse.access_token !== "string" ||
@@ -155,41 +230,13 @@ export async function refreshCredentials({
     if (tokenResponse[field] !== undefined) updated[field] = tokenResponse[field];
   }
 
-  try {
-    await writeAtomic(credentialsPath, `${JSON.stringify(updated, null, 2)}\n`);
-  } catch {
-    return { ok: false, reason: "write_error" };
+  const writeFailure = await writeRotated(
+    credentialsPath,
+    `${JSON.stringify(updated, null, 2)}\n`,
+    writeRetryDelayMs
+  );
+  if (writeFailure) {
+    return writeFailure;
   }
   return { ok: true, expiresAt, refreshed: true };
-}
-
-/**
- * Ad-hoc entry point (CLI/one-off use). Disabled by default and only refreshes inside the one-hour
- * expiry window. The worker does not call this: its keepalive tick runs `refreshCredentials` inside
- * the shared credential mutex, which is what makes the worker the single writer of the file.
- */
-export async function maybeSelfRefresh(options: {
-  credentialsPath?: string;
-  fetchImpl?: typeof fetch;
-  now?: () => number;
-  env?: Record<string, string | undefined>;
-} = {}): Promise<RefreshResult | { ok: true; expiresAt: number; refreshed: false }> {
-  const env = options.env ?? process.env;
-  if (!isHiggsfieldSelfRefreshEnabled(env)) {
-    return { ok: false, reason: "disabled" };
-  }
-  const credentialsPath = options.credentialsPath ?? defaultCredentialsPath(env);
-  const now = options.now ?? Date.now;
-  let credentials: unknown;
-  try {
-    credentials = JSON.parse(await readFile(credentialsPath, "utf8"));
-  } catch {
-    return { ok: false, reason: "read_error" };
-  }
-  if (!isCredentials(credentials)) return { ok: false, reason: "invalid_credentials" };
-  const expiresAt = credentials.expires_at;
-  if (expiresAt - Math.floor(now() / 1000) > REFRESH_WINDOW_SEC) {
-    return { ok: true, expiresAt, refreshed: false };
-  }
-  return refreshCredentials({ credentialsPath, fetchImpl: options.fetchImpl, now });
 }

@@ -255,10 +255,20 @@ write and **deletes the file when a refresh fails**, so the deploy is only safe 
   writers rotating the same refresh token means the loser gets `invalid_grant` and the CLI can
   delete the credential file. Stop the worker first (or set the kill switch), then run it by hand.
 - After a failed refresh the worker leaves the file byte-for-byte intact, records
-  `PROVIDER_AUTH_REQUIRED` with reason `refresh_<reason>`, alerts once (`refresh_failed`), and retries
-  transient failures (`network_error`, `http_error`, `invalid_response`, `write_error`) on the next
-  tick. `invalid_grant` / `invalid_credentials` / `read_error` back off for an hour — that means a
-  real re-login is required.
+  `PROVIDER_AUTH_REQUIRED` with reason `refresh_<reason>`, and alerts once (`refresh_failed`, or
+  `refresh_failed_permanent` — separate debounce keys, so a transient alert cannot hide the one that
+  needs a re-login). Transient failures (`network_error`, `http_error`, `write_error`) retry on the
+  next tick. `invalid_grant`, `invalid_credentials`, `read_error`, `invalid_response` and
+  `write_error_after_rotation` are permanent and back off for an hour — that means a real re-login is
+  required (the rotated/served token cannot be recovered locally).
+- The worker probes that the volume is writable **before** it calls the provider, and retries a local
+  write 3× from memory after a 200. If the write still fails it reports
+  `write_error_after_rotation` and never POSTs the old refresh token again, so a read-only or full
+  volume can no longer burn the token mid-rotation.
+- **Deploy only sequentially — never two containers on the same volume.** The credential mutex is
+  in-process only: a rolling/overlapping deploy would give two workers (and the API's CLI spawns in a
+  second container) the same refresh token. Stop the old container before starting the new one, and
+  do not scale the worker above 1 replica.
 
 **Before deploying**
 

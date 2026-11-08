@@ -27,15 +27,17 @@ Production uses the **S1** path (design decision #8): a scheduled probe validate
 - The credential exists **only** on the Railway volume (`/app/higgsfield/credentials.json`). Never copy the production file back to a laptop, never keep a second copy that can be used against the same refresh token.
 - All CLI spawns inside the server process are serialised through one queue (`withCredentialLock`), so a job can never race the keepalive, the probe or another job on the same refresh token.
 - The CLI does **not** refresh on its own (owner-confirmed). A refresh only happens when the worker
-  runs the CLI as part of a job, or when the follow-up self-refresh scheduler lands.
-- The in-process keepalive (`HIGGSFIELD_KEEPALIVE`, every 15 min) is a **local detector**, not a
-  refresher and not a prober: once `now >= expires_at` it writes `PROVIDER_AUTH_REQUIRED` with
-  reason `expired` into the shared state file (so `/api/health` degrades and the alert fires on the
-  existing debounce) and it **never spawns the CLI** — after expiry `account status` would only make
-  the CLI delete the credential and possibly burn the refresh token. A later successful job clears
-  the state through `lastSuccessAt`.
-- **Next change:** the self-refresh scheduler will be the single owner allowed to write the
-  credential. Until then, no code path other than the CLI itself writes that file.
+  runs the CLI as part of a job, or when the worker's self-refresh tick does it (below).
+- The in-process keepalive (`HIGGSFIELD_KEEPALIVE`, every 15 min) has two modes. With
+  `HIGGSFIELD_SELF_REFRESH=1` it **is** the credential writer: inside `withCredentialLock`, once the
+  token has ≤ 1h left, it refreshes, backs the new file up and records the success. Otherwise it is a
+  **local detector** only: once `now >= expires_at` it writes `PROVIDER_AUTH_REQUIRED` with reason
+  `expired` into the shared state file (so `/api/health` degrades and the alert fires on the existing
+  debounce) and it **never spawns the CLI** — after expiry `account status` would only make the CLI
+  delete the credential and possibly burn the refresh token. A later successful job clears the state
+  through `lastSuccessAt`.
+- **Next change:** none pending. The self-refresh tick is now the only code path, besides the CLI's
+  own job-time refresh, that writes the credential — and both run through the same mutex.
 - There is **no external cron** that refreshes or probes the credential.
 
 ### Accepted risks (do not "fix" these silently)
@@ -64,7 +66,8 @@ pose-extract-server container (combined API + worker)
 | `HIGGSFIELD_CREDENTIALS_PATH` | `/app/higgsfield/credentials.json` | Set in `Dockerfile`; override only if mount path changes |
 | `HIGGSFIELD_EXPIRING_SOON_SEC` | `86400` (default) | Probe warn threshold for exit code `3` |
 | `ALERT_WEBHOOK_URL` | unset (default) | Optional: auth-failure alerts POST a short JSON body (no secrets), debounced 6h |
-| `HIGGSFIELD_KEEPALIVE` | `1` (default) | Worker **detector**: records an expired credential locally, never calls the CLI; `0` disables |
+| `HIGGSFIELD_KEEPALIVE` | `1` (default) | Worker tick: refreshes with `HIGGSFIELD_SELF_REFRESH=1`, otherwise only records an expired credential locally (never calls the CLI); `0` disables |
+| `HIGGSFIELD_SELF_REFRESH` | unset (default = off) | `1`/`true` lets the worker refresh the token an hour before expiry; **prod `=1`**; `0` is the kill switch |
 | Volume mount | `/app/higgsfield` → Railway volume `higgsfield` | Declared in repo root `railway.toml` |
 
 ## Probe script

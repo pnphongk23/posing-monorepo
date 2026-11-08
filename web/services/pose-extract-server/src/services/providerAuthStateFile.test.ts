@@ -10,6 +10,7 @@ import {
   providerAuthStatePathFor,
   readProviderAuthState,
   recordProviderAuthFailure,
+  recordProviderAuthRefreshSuccess,
   recordProviderAuthSuccess,
   writeProviderAuthState
 } from "./providerAuthStateFile";
@@ -89,6 +90,37 @@ describe("recordProviderAuthFailure / recordProviderAuthSuccess", () => {
     expect(afterSuccess.lastAuthErrorAt).toBe(new Date(NOW_MS).toISOString());
     expect(afterSuccess.lastSuccessAt).toBe(new Date(NOW_MS + 60_000).toISOString());
     expect(await readProviderAuthState(statePath)).toEqual(afterSuccess);
+  });
+
+  it("clears only credential errors when a refresh succeeds", async () => {
+    for (const reason of ["expired", "refresh_invalid_grant", "refresh_network_error"]) {
+      const { statePath } = await makeCredentialsDir();
+      await recordProviderAuthFailure({ statePath, reason, nowMs: NOW_MS });
+
+      const cleared = await recordProviderAuthRefreshSuccess({ statePath, nowMs: NOW_MS + 60_000 });
+
+      expect(cleared.lastAuthErrorAt).toBeNull();
+      expect(cleared.lastAuthErrorCode).toBeNull();
+      expect(cleared.lastAuthErrorReason).toBeNull();
+      expect(cleared.lastSuccessAt).toBe(new Date(NOW_MS + 60_000).toISOString());
+    }
+  });
+
+  it("leaves an unrelated job auth failure in place when a refresh succeeds", async () => {
+    const { statePath } = await makeCredentialsDir();
+    await recordProviderAuthFailure({
+      statePath,
+      code: "PROVIDER_AUTH_FAILED",
+      reason: "cli_auth_failure",
+      nowMs: NOW_MS
+    });
+
+    const untouched = await recordProviderAuthRefreshSuccess({ statePath, nowMs: NOW_MS + 60_000 });
+
+    expect(untouched.lastAuthErrorAt).toBe(new Date(NOW_MS).toISOString());
+    expect(untouched.lastAuthErrorReason).toBe("cli_auth_failure");
+    // Not even the success time is bumped: that would reopen the otherwise still-open error.
+    expect(untouched.lastSuccessAt).toBeNull();
   });
 
   it("survives a concurrent write by another process", async () => {

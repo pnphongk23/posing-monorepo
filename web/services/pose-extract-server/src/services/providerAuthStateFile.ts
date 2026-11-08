@@ -132,6 +132,39 @@ export async function recordProviderAuthSuccess(input: {
   }));
 }
 
+/**
+ * Only a credential problem may be cleared by a successful credential refresh.
+ *
+ * `lastSuccessAt` opens the state again (`hasOpenAuthError` compares the two timestamps), so writing
+ * it unconditionally would silently clear an unrelated job-side `cli_auth_failure` and make
+ * `/api/health/provider` report ok while jobs still fail. A non-credential error is therefore left
+ * untouched — not even its timestamp is bumped.
+ */
+export async function recordProviderAuthRefreshSuccess(input: {
+  statePath: string;
+  nowMs?: number;
+}): Promise<ProviderAuthState> {
+  const nowMs = input.nowMs ?? Date.now();
+  return updateProviderAuthState(input.statePath, (current) => {
+    const reason = current.lastAuthErrorReason;
+    const clearable =
+      current.lastAuthErrorAt === null ||
+      reason === null ||
+      reason === "expired" ||
+      reason.startsWith("refresh_");
+    if (!clearable) {
+      return current;
+    }
+    return {
+      ...current,
+      lastAuthErrorAt: null,
+      lastAuthErrorCode: null,
+      lastAuthErrorReason: null,
+      lastSuccessAt: new Date(nowMs).toISOString()
+    };
+  });
+}
+
 export interface DispatchAlertOnceDeps {
   statePath: string;
   payload: ProviderAlertPayload;
@@ -144,6 +177,10 @@ export interface DispatchAlertOnceDeps {
 /**
  * Send at most one alert per transition window. The debounce lives in the state file, so a
  * restart or a second process cannot re-send it.
+ *
+ * The debounce key is `status:state`. Callers that must not be silenced by a different class of the
+ * same event (e.g. a transient refresh failure followed by a permanent one) encode that class in
+ * `payload.state`, which gives them an independent debounce slot.
  */
 export async function dispatchProviderAuthAlertOnce(deps: DispatchAlertOnceDeps): Promise<boolean> {
   const nowMs = deps.nowMs ?? Date.now();
