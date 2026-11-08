@@ -651,8 +651,8 @@ final class FeatureStateTests: XCTestCase {
         XCTAssertEqual(GalleryStateCopy.showAllPhotosActionTitle, "Show all photos")
         XCTAssertEqual(GalleryStateCopy.errorTitle, "Can't open your photos")
         XCTAssertEqual(GalleryStateCopy.showAllPhotosActionTitle, "Show all photos")
-        XCTAssertEqual(GalleryStateCopy.errorMessage, "Allow photo access in Settings so Posing can show your photos.")
-        XCTAssertEqual(GalleryStateCopy.openSettingsActionTitle, "Open Settings")
+        XCTAssertEqual(GalleryStateCopy.errorMessage, "Something went wrong reading your photos. Try again.")
+        XCTAssertEqual(GalleryStateCopy.retryActionTitle, "Try again")
     }
 
     /// §3.8: account signed-out success and sign-in-prompt failure share the component copy.

@@ -155,8 +155,8 @@ enum GalleryStateCopy {
     static let showAllPhotosActionTitle = "Show all photos"
     static let showAllPhotosButtonIdentifier = "gallery.empty.showAllPhotos"
     static let errorTitle = "Can't open your photos"
-    static let errorMessage = "Allow photo access in Settings so Posing can show your photos."
-    static let openSettingsActionTitle = "Open Settings"
+    static let errorMessage = "Something went wrong reading your photos. Try again."
+    static let retryActionTitle = "Try again"
     static let loadingLabel = "Loading gallery…"
 
     /// QA (TC-GAL-001) taps the empty-state action by id; the panel is the other handle.
@@ -860,8 +860,8 @@ struct GalleryStateContent: View {
             APErrorStateView(
                 title: GalleryStateCopy.errorTitle,
                 message: GalleryStateCopy.errorMessage,
-                retryTitle: GalleryStateCopy.openSettingsActionTitle,
-                retry: { UIApplication.shared.open(URL(string: UIApplication.openSettingsURLString)!) },
+                retryTitle: GalleryStateCopy.retryActionTitle,
+                retry: onRetry,
                 style: .plain,
                 actionIdentifier: kind.actionIdentifier
             )

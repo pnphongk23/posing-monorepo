@@ -192,6 +192,18 @@ final class GalleryFeatureTests: XCTestCase {
         XCTAssertEqual(panel.actionIdentifier, emptyAll.actionIdentifier)
     }
 
+    func testGalleryReadErrorUsesGenericCopyAndRetryAction() {
+        XCTAssertEqual(GalleryStateCopy.errorTitle, "Can't open your photos")
+        XCTAssertEqual(GalleryStateCopy.errorMessage, "Something went wrong reading your photos. Try again.")
+        XCTAssertEqual(GalleryStateCopy.retryActionTitle, "Try again")
+
+        let copy = [GalleryStateCopy.errorTitle, GalleryStateCopy.errorMessage, GalleryStateCopy.retryActionTitle]
+            .joined(separator: " ").lowercased()
+        XCTAssertFalse(copy.contains("settings"))
+        XCTAssertFalse(copy.contains("access"))
+        XCTAssertFalse(copy.contains("permission"))
+    }
+
     /// The empty gallery's actionable state is the one that opens the camera; the filter-empty state is
     /// deliberately actionless, so QA can only drive the camera from the all-empty panel.
     @MainActor func testOnlyTheAllEmptyStateOffersTheCameraAction() {
