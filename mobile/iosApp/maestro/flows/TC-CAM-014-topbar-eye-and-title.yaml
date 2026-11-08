@@ -1,17 +1,30 @@
-# TC-CAM-014 the top bar: Close · eye · tools, and the Poses chip is the only way into the picker
+# TC-CAM-014 the top bar: Close · eye (Adjust guide) · tools, and the Poses chip is the only way into the picker
 appId: ${APP_ID}
 tags: [TC-CAM-014, p0]
 ---
 - runFlow: ../subflows/launch.yaml
 - runFlow: ../subflows/open-camera.yaml
-# No pose pill in the bar and no eye while no pose is chosen.
+# One row, no pose pill: Close on the left, the eye and tools on the right. The eye is always drawn (read at
+# `feat/design-sync-1108`, 70d38cfe: `topControls`), so without a guide it is present but disabled — it reports
+# that in words instead of disappearing, and it must not open the sheet.
 - assertVisible:
     id: "camera.close"
 - assertVisible:
     id: "camera.tools"
-- assertNotVisible:
+- assertVisible:
     id: "camera.guideToggle"
-# The Poses chip on the scale row opens the sheet (it replaced the strip's Browse card).
+- assertVisible: '.*Adjust guide.*'
+- assertVisible: '.*Unavailable\. Choose a pose first.*'
+- assertNotVisible:
+    id: "camera.poseGuide"
+# The disabled eye is not tapped here: Maestro cannot tap a `.disabled` control deterministically, and the value
+# above is the contract. What the tap must do is asserted once a pose exists.
+- assertNotVisible:
+    id: "camera.guideAdjust"
+# The Poses control on the scale row is the sheet's only entry (it replaced the strip's Browse card).
+- assertVisible:
+    id: "camera.choosePose"
+- assertVisible: '.*Choose a pose.*'
 - runFlow: ../subflows/camera-open-picker.yaml
 - extendedWaitUntil:
     visible:
@@ -26,19 +39,44 @@ tags: [TC-CAM-014, p0]
     timeout: 15000
 - assertNotVisible:
     id: "posePicker.sheet"
-# A pose is chosen, so the eye appears and owns the guide's visibility — its label is the action.
+# A pose is chosen, so the eye becomes the sheet's entry point — owner decision 2026-11-08: the eye OPENS the
+# "Adjust guide" sheet; showing and hiding the guide is the sheet's own "Show guide" toggle, not the eye's.
 - assertVisible:
     id: "camera.guideToggle"
-- assertVisible: '.*Hide pose guide.*'
+- assertVisible: '.*Open guide settings.*'
 - tapOn:
     id: "camera.guideToggle"
-- assertNotVisible:
-    id: "camera.poseGuide"
-- assertVisible: '.*Show pose guide.*'
-- tapOn:
-    id: "camera.guideToggle"
+- extendedWaitUntil:
+    visible:
+      id: "camera.guideAdjust"
+    timeout: 15000
 - assertVisible:
-    id: "camera.poseGuide"
+    id: "camera.guideAdjust.showGuide"
+- assertVisible:
+    id: "camera.guideAdjust.done"
+# Hide, then show again: the reference is the proof, the camera keeps running behind the sheet.
+- tapOn:
+    id: "camera.guideAdjust.showGuide"
+- extendedWaitUntil:
+    notVisible:
+      id: "camera.poseGuide"
+    timeout: 15000
+- tapOn:
+    id: "camera.guideAdjust.showGuide"
+- extendedWaitUntil:
+    visible:
+      id: "camera.poseGuide"
+    timeout: 15000
+- tapOn:
+    id: "camera.guideAdjust.done"
+- extendedWaitUntil:
+    notVisible:
+      id: "camera.guideAdjust"
+    timeout: 15000
+# The top bar never re-grows a "Choose a pose" pill; the Poses chip now reads "Change pose" and names the pose.
 - assertVisible:
     id: "camera.choosePose"
+- assertVisible: '.*Change pose.*'
+- assertVisible:
+    id: "camera.poseGuide"
 - takeScreenshot: topbar-pose-applied

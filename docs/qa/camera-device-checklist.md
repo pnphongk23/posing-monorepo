@@ -61,8 +61,9 @@ TC-PAY-017/018/019 (and TC-PAY-014 for Restore) in `docs/qa/test-cases/paywall-p
 
 ## 2. Camera chrome — what changed in 23
 - [ ] Open the camera from the dock and read the **top row**.
-- [ ] **Expected:** a round **X** on the left, the **tools** button on the right, and (once a pose is chosen) an **eye** —
-  there is no "Choose a pose" pill any more.
+- [ ] **Expected:** a round **X** on the left, and the **eye** with the **tools** button on the right — there is no "Choose a pose"
+  pill any more. The eye is **always drawn**: without a pose it is dimmed, disabled and reads "Unavailable. Choose a pose
+  first"; with a pose it reads "Open guide settings" and opens the **Adjust guide** sheet.
 - [ ] Read the **preview**. It is full screen: the ratio frame spans the screen's width and everything outside the photo
   is dimmed (about 65 %), so what you see inside the frame is what the photo will contain.
 - [ ] Read the row just above the bottom bar.
@@ -134,19 +135,21 @@ TC-PAY-017/018/019 (and TC-PAY-014 for Restore) in `docs/qa/test-cases/paywall-p
 ## 4. Pose guide — placing it, and its rows in the panel
 - [ ] With a guide on screen, pinch, twist and drag it.
 - [ ] **Expected:** the guide follows your fingers 1:1 and stays within the preview; the bars do not move.
-- [ ] Tap the **eye** in the top bar, then tap it again.
-- [ ] **Expected:** the guide hides (crossed-out eye, "Show pose guide") and returns in the same place, size and colour.
-- [ ] Open the tools panel and scroll inside it until the pose-guide section is on screen.
-- [ ] **Expected:** the rows are all reachable by scrolling the panel if they sit below its edge — a row you cannot bring into
-  view (or one that only reacts when you tap somewhere else) is a defect to report.
-- [ ] Read its rows.
-- [ ] **Expected:** Pose guide (Shown/Hidden), **Mirror**, **Opacity** with a %, **Scale** with a % and a **Reset**, and
-  **Line colour Black | White** with a tick on the chosen colour.
-- [ ] Toggle **Mirror**, then drag **Scale**, then tap **Reset**, then switch **Line colour**.
-- [ ] **Expected:** the guide flips horizontally, grows/shrinks about its centre, snaps back on Reset, and redraws in the
-  new colour — each change visible immediately behind the panel.
-- [ ] Collapse the strip, then re-open it.
-- [ ] **Expected:** the guide is untouched by the collapse — same size, position, flip, colour and opacity.
+- [ ] Tap the **eye** in the top bar, then toggle **Show guide** in the sheet it opens.
+- [ ] **Expected:** the eye opens the guide-adjust sheet (it is not a visibility switch); **Show guide** off hides the
+  reference and on brings it back in the same place, size and colour, with the camera still live behind the sheet.
+- [ ] Close the sheet with **Done**, then reopen it with the eye.
+- [ ] **Expected:** the sheet comes back with the same values — every guide setting is persisted, and there is **no Reset**
+  row to fall back on (owner decision 2026-11-08: a Reset row is a finding).
+- [ ] Read the sheet's rows.
+- [ ] **Expected:** **Show guide**, then **Opacity** with a %, **Scale** with a %, **Line colour Black | White** with a tick
+  on the chosen colour, and **Mirror guide**, which reports **Normal** / **Mirrored** in words as well as by its glyph.
+- [ ] Toggle **Mirror guide**, then drag **Scale**, then switch **Line colour**.
+- [ ] **Expected:** the guide flips horizontally, grows/shrinks about its centre, and redraws in the new colour — each change
+  visible immediately behind the sheet. The old "snaps back on Reset" check is gone with the row.
+- [ ] Close the camera and reopen it.
+- [ ] **Expected:** the guide is untouched by leaving the camera — same size, position, flip, colour and opacity. (The
+  inline strip was retired; collapsing it is no longer a step in any case.)
 
 ## 5. Timer — countdown and cancel
 - [ ] In the tools panel set **Timer → 3s** and tap the shutter once.
