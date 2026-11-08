@@ -408,6 +408,28 @@ export class ExtractionJobStore {
     `;
   }
 
+  /**
+   * Terminal failure that no retry can fix (provider authentication): the job stops at this
+   * attempt so the client is told immediately instead of waiting out the remaining attempts.
+   */
+  async markFailed(
+    id: string,
+    lockToken: string,
+    errorCode: string,
+    errorMessage: string
+  ): Promise<void> {
+    await this.db`
+      UPDATE extraction_jobs
+      SET status = 'failed',
+          error_code = ${errorCode},
+          error_message = ${errorMessage},
+          lock_token = NULL,
+          locked_at = NULL,
+          updated_at = NOW()
+      WHERE id = ${id} AND lock_token = ${lockToken}
+    `;
+  }
+
   private toJob(row: ExtractionJobRow): ExtractionJob {
     let poseDraft: PoseDraft | null = null;
     if (row.pose_draft) {

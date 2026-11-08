@@ -33,6 +33,11 @@ import { createRevenueCatClient } from "./services/revenueCatClient";
 import type { AppleSignInConfig } from "./services/appleRevocation";
 import { createMyExtractJobsRoutes } from "./routes/myExtractJobsRoutes";
 import { createGuideReadRoutes } from "./routes/guideReadRoutes";
+import {
+  evaluateProviderAuthHealth,
+  overallStatusFor,
+  type ProviderAuthHealth
+} from "./services/providerAuthHealth";
 import { logger } from "./utils/logger";
 import { sanitizeError } from "./utils/sanitizeError";
 
@@ -98,6 +103,8 @@ interface CreateAppOptions {
   /** Absent means "read the feature-scoped env": no APPLE_* block leaves Apple deletion failing closed. */
   apple?: AppleSignInConfig;
   appleFetchImpl?: typeof fetch;
+  /** Absent means "evaluate the credential file and the last CLI auth failure" from the env. */
+  providerAuthHealth?: () => Promise<ProviderAuthHealth> | ProviderAuthHealth;
 }
 
 export function createCommunityExtractPoseImage(options: CreateAppOptions): ExtractPoseImage | null {
@@ -151,6 +158,8 @@ function resolveRevenueCatConfig(overrides: RevenueCatRuntimeConfig | undefined)
 export function createApp(options: CreateAppOptions): express.Express {
   const app = express();
   const startedAtMs = options.startedAtMs ?? Date.now();
+  const getProviderAuthHealth =
+    options.providerAuthHealth ?? (() => evaluateProviderAuthHealth());
   const communityExtractPoseImage = createCommunityExtractPoseImage(options);
   const envRateLimit = authRateLimitFromEnv();
   const appleConfig = options.apple ?? appleSignInFromEnv(process.env);
@@ -182,14 +191,25 @@ export function createApp(options: CreateAppOptions): express.Express {
     next();
   });
 
-    app.get("/api/health", (_req, res) => {
-    const uptime = Math.max((Date.now() - startedAtMs) / 1000, 0);
-    res.json({
-      status: "ok",
-      uptime,
-      version: options.version
+    app.get("/api/health", async (_req, res) => {
+      const uptime = Math.max((Date.now() - startedAtMs) / 1000, 0);
+      // Always HTTP 200: Railway restarts a container whose healthcheck fails, and a provider
+      // credential problem must never take the API down — jobs already fail closed on their own.
+      // `status` carries the degradation for humans; /api/health/provider is the 503 surface for
+      // an external uptime monitor.
+      const provider = await getProviderAuthHealth();
+      res.json({
+        status: overallStatusFor(provider),
+        uptime,
+        version: options.version,
+        provider
+      });
     });
 
+    app.get("/api/health/provider", async (_req, res) => {
+      const provider = await getProviderAuthHealth();
+      const status = overallStatusFor(provider);
+      res.status(status === "degraded" ? 503 : 200).json({ status, provider });
     });
 
     const accountAuthMiddleware = (options.accountStore && options.supabaseUrl)

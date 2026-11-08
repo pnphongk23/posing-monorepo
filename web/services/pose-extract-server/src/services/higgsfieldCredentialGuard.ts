@@ -1,0 +1,268 @@
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+
+/**
+ * Higgsfield CLI credential guard.
+ *
+ * The CLI keeps its OAuth credentials in a single JSON file (`credentials.json`) whose
+ * `expires_at` is an **epoch-seconds number**. Two behaviours of the CLI drive this module:
+ *
+ * 1. It refreshes the access token on its own once `expires_at` is roughly two minutes away,
+ *    writing the rotated refresh token back into the same file.
+ * 2. When a refresh fails it **deletes the credential file** and leaves `credentials.json.lock`
+ *    behind, so the only copy of the refresh token is gone.
+ *
+ * Everything here therefore reads the file, never returns or logs token material, and keeps an
+ * atomic 0600 backup so a destructive refresh failure is recoverable.
+ */
+
+/** Below this remaining lifetime the credential is reported as expiring soon. */
+export const EXPIRING_SOON_SEC = 24 * 60 * 60;
+
+export const BACKUP_DIR_NAME = "backup";
+export const BACKUP_FILE_NAME = "credentials.latest.json";
+
+export type CredentialState = "ok" | "expiring_soon" | "expired" | "missing" | "invalid";
+
+export interface CredentialSnapshot {
+  state: CredentialState;
+  /** Seconds until `expires_at`; negative when expired, null when unknown. */
+  expiresInSec: number | null;
+  /** Raw `expires_at` epoch seconds; null when the file is missing or unparseable. */
+  expiresAtSec: number | null;
+  /** File mtime in ms, used only to break expiry ties when deciding a backup. */
+  mtimeMs: number | null;
+}
+
+const MISSING_SNAPSHOT: CredentialSnapshot = {
+  state: "missing",
+  expiresInSec: null,
+  expiresAtSec: null,
+  mtimeMs: null
+};
+
+const INVALID_SNAPSHOT: CredentialSnapshot = {
+  state: "invalid",
+  expiresInSec: null,
+  expiresAtSec: null,
+  mtimeMs: null
+};
+
+/** `HIGGSFIELD_CREDENTIALS_PATH` wins; otherwise the CLI default under `$HOME/.config`. */
+export function defaultCredentialsPath(
+  env: Record<string, string | undefined> = process.env,
+  homedir?: string
+): string {
+  const configured = env.HIGGSFIELD_CREDENTIALS_PATH?.trim();
+  if (configured) {
+    return configured;
+  }
+  const home = homedir ?? env.HOME?.trim() ?? os.homedir();
+  return path.join(home, ".config", "higgsfield", "credentials.json");
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Read the credential file into a token-free snapshot. Only `state`, the expiry and the mtime
+ * leave this function: the access/refresh tokens are parsed but never returned.
+ */
+export async function readCredentialSnapshot(
+  credentialsPath: string,
+  nowMs: number = Date.now()
+): Promise<CredentialSnapshot> {
+  let raw: string;
+  let mtimeMs: number;
+  try {
+    const stat = await fs.stat(credentialsPath);
+    mtimeMs = stat.mtimeMs;
+    raw = await fs.readFile(credentialsPath, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return MISSING_SNAPSHOT;
+    }
+    return INVALID_SNAPSHOT;
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return INVALID_SNAPSHOT;
+  }
+
+  if (!isRecord(parsed) || typeof parsed.expires_at !== "number" || !Number.isFinite(parsed.expires_at)) {
+    return { ...INVALID_SNAPSHOT, mtimeMs };
+  }
+
+  const nowSec = Math.floor(nowMs / 1000);
+  const expiresAtSec = parsed.expires_at;
+  const expiresInSec = Math.floor(expiresAtSec - nowSec);
+  const state: CredentialState =
+    expiresInSec <= 0 ? "expired" : expiresInSec < EXPIRING_SOON_SEC ? "expiring_soon" : "ok";
+
+  return { state, expiresInSec, expiresAtSec, mtimeMs };
+}
+
+export function backupPathFor(credentialsPath: string): string {
+  return path.join(path.dirname(credentialsPath), BACKUP_DIR_NAME, BACKUP_FILE_NAME);
+}
+
+interface BackupCandidate {
+  contents: Buffer;
+  expiresAtSec: number;
+  mtimeMs: number;
+}
+
+/**
+ * Read the credential file exactly once and decide whether it is worth backing up. The bytes that
+ * are validated here are the bytes that get written: a second read could pick up a file the CLI
+ * rewrote (or deleted) in between.
+ */
+async function readBackupCandidate(credentialsPath: string): Promise<BackupCandidate | null> {
+  let contents: Buffer;
+  let mtimeMs: number;
+  try {
+    const stat = await fs.stat(credentialsPath);
+    mtimeMs = stat.mtimeMs;
+    contents = await fs.readFile(credentialsPath);
+  } catch {
+    return null;
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(contents.toString("utf8"));
+  } catch {
+    return null;
+  }
+
+  if (!isRecord(parsed)) {
+    return null;
+  }
+  const { access_token: accessToken, refresh_token: refreshToken, expires_at: expiresAt } = parsed;
+  if (typeof accessToken !== "string" || accessToken.length === 0) {
+    return null;
+  }
+  if (typeof refreshToken !== "string" || refreshToken.length === 0) {
+    return null;
+  }
+  if (typeof expiresAt !== "number" || !Number.isFinite(expiresAt)) {
+    return null;
+  }
+
+  return { contents, expiresAtSec: expiresAt, mtimeMs };
+}
+
+export interface BackupResult {
+  written: boolean;
+  backupPath: string;
+  /** Why the backup was skipped; absent when written. */
+  skipped?: "unusable-credential" | "not-newer" | "write-failed";
+}
+
+/**
+ * Copy the credential to `<dir>/backup/credentials.latest.json` atomically (temp file + rename,
+ * mode 0600). Only a parseable credential that is newer than the existing backup overwrites it,
+ * so a stale or corrupt file can never replace the last known-good copy.
+ */
+export async function backupCredential(input: {
+  credentialsPath: string;
+  /** Accepted for callers/tests; freshness is decided by expires_at + mtime, not by the clock. */
+  nowMs?: number;
+}): Promise<BackupResult> {
+  const { credentialsPath } = input;
+  const backupPath = backupPathFor(credentialsPath);
+  const candidate = await readBackupCandidate(credentialsPath);
+
+  if (!candidate) {
+    return { written: false, backupPath, skipped: "unusable-credential" };
+  }
+
+  // The existing backup must pass the same full validation as the live credential and the restore
+  // path: a token-less backup with a far-future expiry would otherwise block a usable one forever
+  // and then be rejected by restoreCredential, leaving no recovery path at all.
+  const existing = await readBackupCandidate(backupPath);
+  const existingExpiry = existing?.expiresAtSec ?? null;
+  const existingMtime = existing?.mtimeMs ?? 0;
+  const isNewer =
+    existingExpiry === null ||
+    candidate.expiresAtSec > existingExpiry ||
+    (candidate.expiresAtSec === existingExpiry && candidate.mtimeMs > existingMtime);
+
+  if (!isNewer) {
+    return { written: false, backupPath, skipped: "not-newer" };
+  }
+
+  const tempPath = `${backupPath}.tmp.${process.pid}.${Math.random().toString(16).slice(2)}`;
+  try {
+    await fs.mkdir(path.dirname(backupPath), { recursive: true, mode: 0o700 });
+    await fs.writeFile(tempPath, candidate.contents, { mode: 0o600 });
+    await fs.chmod(tempPath, 0o600);
+    await fs.rename(tempPath, backupPath);
+    return { written: true, backupPath };
+  } catch {
+    await fs.rm(tempPath, { force: true }).catch(() => undefined);
+    return { written: false, backupPath, skipped: "write-failed" };
+  }
+}
+
+/**
+ * Put the last backup back when the CLI deleted the credential file.
+ *
+ * The restore must never clobber a credential that came back (a concurrent successful refresh, or a
+ * human re-upload): the copy goes to a temp file and `link()` refuses to replace an existing target.
+ * Returns true only when a restore actually happened.
+ */
+export async function restoreCredential(input: { credentialsPath: string }): Promise<boolean> {
+  const { credentialsPath } = input;
+  const backupPath = backupPathFor(credentialsPath);
+
+  try {
+    await fs.stat(credentialsPath);
+    return false;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+      return false;
+    }
+  }
+
+  // Only a fully usable credential may be restored: a truncated or token-less backup would replace
+  // a working file with a broken one.
+  const candidate = await readBackupCandidate(backupPath);
+  if (!candidate) {
+    return false;
+  }
+
+  const tempPath = `${credentialsPath}.restore.${process.pid}.${Math.random().toString(16).slice(2)}`;
+  try {
+    await fs.writeFile(tempPath, candidate.contents, { mode: 0o600, flag: "wx" });
+    await fs.chmod(tempPath, 0o600);
+    await fs.link(tempPath, credentialsPath);
+    return true;
+  } catch {
+    // EEXIST: the credential reappeared, so the backup must not win.
+    return false;
+  } finally {
+    await fs.rm(tempPath, { force: true }).catch(() => undefined);
+  }
+}
+
+let credentialQueue: Promise<unknown> = Promise.resolve();
+
+/**
+ * Single credential owner: every CLI spawn runs through this queue so two commands can never
+ * refresh the same refresh token concurrently (the loser of that race would get `invalid_grant`
+ * and the CLI would delete the credential file).
+ */
+export function withCredentialLock<T>(task: () => Promise<T>): Promise<T> {
+  const run = credentialQueue.then(task, task);
+  credentialQueue = run.then(
+    () => undefined,
+    () => undefined
+  );
+  return run;
+}

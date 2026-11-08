@@ -103,6 +103,28 @@ function buildApp(options: {
 }
 
 describe("extractJobsRoutes", () => {
+  it("returns the fixed auth message for a failed provider-auth job, never CLI output", async () => {
+    const failedJob = makeJob({
+      id: "job-auth",
+      status: "failed",
+      errorCode: "PROVIDER_AUTH_REQUIRED",
+      errorMessage: "Higgsfield authentication required"
+    });
+    const { store } = createJobStore([failedJob]);
+    const app = buildApp({ jobStore: store });
+
+    const res = await request(app)
+      .get("/api/extract-jobs/job-auth")
+      .set("Authorization", `Bearer ${accountToken(ACCOUNT_A.id)}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.error).toEqual({
+      code: "PROVIDER_AUTH_REQUIRED",
+      message: "Higgsfield authentication required"
+    });
+    expect(JSON.stringify(res.body)).not.toContain("LEAK-CANARY");
+  });
+
   it("returns 401 without touching the store when unauthenticated", async () => {
     const { store, getById, getByIdForOwner } = createJobStore([makeJob({ id: "job-a" })]);
     const app = buildApp({ jobStore: store });
