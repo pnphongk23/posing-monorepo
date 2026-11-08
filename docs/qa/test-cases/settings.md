@@ -84,4 +84,5 @@ Appearance: `settings.appearance.system, settings.appearance.light, settings.app
 option (accessibility value `Selected` / `Not selected`, or a distinct id suffix).
 Help/About: `settings.replayOnboarding`, `settings.about`, `about.version`, `about.terms`,
 `about.privacy`, `about.licences` (`about.close` exists).
-Not needed any more: `settings.camera.*` (section cut) and `about.contact` (contradicts the product fact).
+Not needed any more: `settings.camera.*` (section cut) and `about.contact` (contradicts the product fact — the row is
+never built, so TC-SET-013 guards its **absence by label** (`"Contact support"`), never by an id that cannot exist).
