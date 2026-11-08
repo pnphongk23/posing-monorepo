@@ -7,6 +7,7 @@ import { PoseStore } from "../db/communityStore";
 import { ProviderSettingsStore } from "../db/providerSettingsStore";
 import { GeminiService } from "../services/geminiService";
 import { defaultCredentialsPath } from "../services/higgsfieldCredentialGuard";
+import { isHiggsfieldSelfRefreshEnabled } from "../services/higgsfieldSelfRefresh";
 import { KeyPoolManager } from "../services/keyPoolManager";
 import { KeyStore } from "../services/keyStore";
 import { createPoseExtractorProvider } from "../services/poseExtractorProvider";
@@ -51,9 +52,9 @@ async function run(): Promise<void> {
       keyPoolManager
     });
 
-  // Detector: once the credential has expired, record it in-process so an idle deployment does not
-  // discover a dead token only when a real user runs a job. It never spawns the CLI (which would
-  // delete the credential file) and never writes the credential file itself.
+  // Credential owner: when HIGGSFIELD_SELF_REFRESH is on the tick refreshes the token inside the
+  // credential mutex an hour before expiry; otherwise it only records an expired credential without
+  // ever spawning the CLI (which would delete the credential file).
   const higgsfieldKeepalive = startHiggsfieldKeepalive({
     credentialsPath: defaultCredentialsPath(process.env)
   });
@@ -62,6 +63,8 @@ async function run(): Promise<void> {
     {
       pollIntervalMs: POLL_INTERVAL_MS,
       staleLockSeconds: STALE_LOCK_SECONDS,
+      // Booleans only: never the credential path or any token material.
+      selfRefreshEnabled: isHiggsfieldSelfRefreshEnabled(process.env),
       activeProvider: await providerSettingsStore.getActiveProvider()
     },
     "worker started"

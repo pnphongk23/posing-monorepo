@@ -6,7 +6,22 @@ import { defaultCredentialsPath } from "./higgsfieldCredentialGuard";
 
 const TOKEN_ENDPOINT = "https://clerk.higgsfield.ai/oauth/token";
 const CLIENT_ID = "sRGCQJvvJkPrrtRj";
-const REFRESH_WINDOW_SEC = 60 * 60;
+
+/** The token is refreshed no earlier than this, so a live token is never rotated for nothing. */
+export const REFRESH_WINDOW_SEC = 60 * 60;
+
+/** Hard ceiling on the token request so a stalled socket cannot wedge the credential mutex. */
+export const DEFAULT_REFRESH_TIMEOUT_MS = 15_000;
+
+/**
+ * Self-refresh is opt-in: only `HIGGSFIELD_SELF_REFRESH=1|true` (any casing) turns it on. Unset,
+ * empty, `0`, `false` or anything else leaves the worker on the detect-only path.
+ */
+export function isHiggsfieldSelfRefreshEnabled(
+  env: Record<string, string | undefined> = process.env
+): boolean {
+  return /^(1|true)$/i.test(env.HIGGSFIELD_SELF_REFRESH?.trim() ?? "");
+}
 
 export type RefreshResult =
   | { ok: true; expiresAt: number; refreshed: true }
@@ -24,6 +39,8 @@ export interface RefreshCredentialsInput {
   fetchImpl?: typeof fetch;
   /** Current time in milliseconds since epoch. */
   now?: () => number;
+  /** Abort the token request after this long; the failure is reported as `network_error`. */
+  timeoutMs?: number;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -63,7 +80,8 @@ async function writeAtomic(credentialsPath: string, contents: string): Promise<v
 export async function refreshCredentials({
   credentialsPath,
   fetchImpl = globalThis.fetch,
-  now = Date.now
+  now = Date.now,
+  timeoutMs = DEFAULT_REFRESH_TIMEOUT_MS
 }: RefreshCredentialsInput): Promise<RefreshResult> {
   let credentials: unknown;
   try {
@@ -78,13 +96,23 @@ export async function refreshCredentials({
     refresh_token: credentials.refresh_token,
     client_id: CLIENT_ID
   });
+  // The signal aborts the request itself; the race also covers an implementation that ignores it,
+  // so a stalled endpoint can never hold the credential mutex past the timeout.
+  const signal = AbortSignal.timeout(Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : DEFAULT_REFRESH_TIMEOUT_MS);
   let response: Response;
   try {
-    response = await fetchImpl(TOKEN_ENDPOINT, {
-      method: "POST",
-      headers: { "content-type": "application/x-www-form-urlencoded" },
-      body: body.toString()
+    const timedOut = new Promise<never>((_, reject) => {
+      signal.addEventListener("abort", () => reject(new Error("timeout")), { once: true });
     });
+    response = await Promise.race([
+      fetchImpl(TOKEN_ENDPOINT, {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: body.toString(),
+        signal
+      }),
+      timedOut
+    ]);
   } catch {
     return { ok: false, reason: "network_error" };
   }
@@ -136,8 +164,9 @@ export async function refreshCredentials({
 }
 
 /**
- * Optional future worker entry point. Disabled by default and only refreshes inside the one-hour
- * expiry window. Callers must serialize it with the worker's credentials mutex before enabling.
+ * Ad-hoc entry point (CLI/one-off use). Disabled by default and only refreshes inside the one-hour
+ * expiry window. The worker does not call this: its keepalive tick runs `refreshCredentials` inside
+ * the shared credential mutex, which is what makes the worker the single writer of the file.
  */
 export async function maybeSelfRefresh(options: {
   credentialsPath?: string;
@@ -146,7 +175,7 @@ export async function maybeSelfRefresh(options: {
   env?: Record<string, string | undefined>;
 } = {}): Promise<RefreshResult | { ok: true; expiresAt: number; refreshed: false }> {
   const env = options.env ?? process.env;
-  if (!/^(1|true)$/i.test(env.HIGGSFIELD_SELF_REFRESH?.trim() ?? "")) {
+  if (!isHiggsfieldSelfRefreshEnabled(env)) {
     return { ok: false, reason: "disabled" };
   }
   const credentialsPath = options.credentialsPath ?? defaultCredentialsPath(env);

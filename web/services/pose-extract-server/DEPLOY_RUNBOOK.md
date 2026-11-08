@@ -242,6 +242,24 @@ write and **deletes the file when a refresh fails**, so the deploy is only safe 
 > (a scheduled self-refresh check runs inside it). If a deploy is unavoidable, get lead approval
 > first and record it in the deploy ticket.
 
+**Credential self-refresh (`HIGGSFIELD_SELF_REFRESH`)**
+
+- Unset / empty / `0` / `false` → worker is **detect-only**: it never touches `credentials.json`, it
+  only records an expired credential and lets `/api/health/provider` go degraded. This is the default.
+- `=1` (or `true`, any casing) → the worker refreshes the OAuth token **itself** once ≤ 1h of
+  lifetime is left, inside the credential mutex, and backs the refreshed file up first. **Prod: `=1`.**
+  The worker logs `selfRefreshEnabled: true` at startup (boolean only — never the path or a token).
+- **Kill switch:** set `=0` and redeploy/restart the worker. The next tick stops refreshing and
+  falls back to detect-only; no other change is needed and no credential file is rewritten.
+- **Do not run `scripts/hf-self-refresh.mjs` (or any manual refresh) while the worker is up** — two
+  writers rotating the same refresh token means the loser gets `invalid_grant` and the CLI can
+  delete the credential file. Stop the worker first (or set the kill switch), then run it by hand.
+- After a failed refresh the worker leaves the file byte-for-byte intact, records
+  `PROVIDER_AUTH_REQUIRED` with reason `refresh_<reason>`, alerts once (`refresh_failed`), and retries
+  transient failures (`network_error`, `http_error`, `invalid_response`, `write_error`) on the next
+  tick. `invalid_grant` / `invalid_credentials` / `read_error` back off for an hour — that means a
+  real re-login is required.
+
 **Before deploying**
 
 1. **Delete any deployment still in `BUILDING`** on the Railway service (Deployments → the running

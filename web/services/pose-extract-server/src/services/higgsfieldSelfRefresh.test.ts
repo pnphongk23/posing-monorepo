@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { maybeSelfRefresh, refreshCredentials } from "./higgsfieldSelfRefresh";
+import { isHiggsfieldSelfRefreshEnabled, maybeSelfRefresh, refreshCredentials } from "./higgsfieldSelfRefresh";
 
 const NOW_MS = 1_800_000_000_000;
 const AUTH_URL = "https://clerk.higgsfield.ai/oauth/token";
@@ -138,6 +138,57 @@ describe("refreshCredentials", () => {
     expect(await fs.readFile(credentialsPath)).toEqual(before);
     expect(JSON.stringify(result)).not.toContain("old-refresh-token-secret");
   });
+
+  it("gives up on a token request that never answers and reports network_error", async () => {
+    const { credentialsPath } = await makeCredentials();
+    const before = await fs.readFile(credentialsPath);
+    // Neither resolves nor honours the abort signal: the timeout race must still settle.
+    const fetchImpl = vi.fn(() => new Promise<Response>(() => undefined));
+
+    const result = await refreshCredentials({
+      credentialsPath,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      now: () => NOW_MS,
+      timeoutMs: 20
+    });
+
+    expect(result).toEqual({ ok: false, reason: "network_error" });
+    expect(await fs.readFile(credentialsPath)).toEqual(before);
+  });
+
+  it("passes an abort signal so a hung socket is cancelled rather than left open", async () => {
+    const { credentialsPath } = await makeCredentials();
+    const fetchImpl = vi.fn(async (_url: string, init: RequestInit) => {
+      expect(init.signal).toBeInstanceOf(AbortSignal);
+      throw new Error("aborted");
+    });
+
+    const result = await refreshCredentials({
+      credentialsPath,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      now: () => NOW_MS,
+      timeoutMs: 5000
+    });
+
+    expect(result).toEqual({ ok: false, reason: "network_error" });
+  });
+});
+
+describe("isHiggsfieldSelfRefreshEnabled", () => {
+  it("is off by default and off for every value other than 1/true", () => {
+    expect(isHiggsfieldSelfRefreshEnabled({})).toBe(false);
+    expect(isHiggsfieldSelfRefreshEnabled({ HIGGSFIELD_SELF_REFRESH: "" })).toBe(false);
+    expect(isHiggsfieldSelfRefreshEnabled({ HIGGSFIELD_SELF_REFRESH: "0" })).toBe(false);
+    expect(isHiggsfieldSelfRefreshEnabled({ HIGGSFIELD_SELF_REFRESH: "false" })).toBe(false);
+    expect(isHiggsfieldSelfRefreshEnabled({ HIGGSFIELD_SELF_REFRESH: "yes" })).toBe(false);
+  });
+
+  it("accepts 1/true in any casing, ignoring surrounding whitespace", () => {
+    expect(isHiggsfieldSelfRefreshEnabled({ HIGGSFIELD_SELF_REFRESH: "1" })).toBe(true);
+    expect(isHiggsfieldSelfRefreshEnabled({ HIGGSFIELD_SELF_REFRESH: "true" })).toBe(true);
+    expect(isHiggsfieldSelfRefreshEnabled({ HIGGSFIELD_SELF_REFRESH: "TRUE" })).toBe(true);
+    expect(isHiggsfieldSelfRefreshEnabled({ HIGGSFIELD_SELF_REFRESH: " True " })).toBe(true);
+  });
 });
 
 describe("maybeSelfRefresh", () => {
@@ -151,5 +202,26 @@ describe("maybeSelfRefresh", () => {
 
     expect(result).toEqual({ ok: false, reason: "disabled" });
     expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("refreshes through the shared code path when the flag is on and the token is inside the window", async () => {
+    const { credentialsPath } = await makeCredentials({
+      expires_at: Math.floor(NOW_MS / 1000) + 600
+    });
+    process.env.HIGGSFIELD_SELF_REFRESH = "TRUE";
+    process.env.HIGGSFIELD_CREDENTIALS_PATH = credentialsPath;
+    const fetchImpl = vi.fn(async () => response(200, {
+      access_token: "new-access-token-secret",
+      expires_in: 3600
+    }));
+
+    const result = await maybeSelfRefresh({
+      credentialsPath,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      now: () => NOW_MS
+    });
+
+    expect(result).toEqual({ ok: true, expiresAt: Math.floor(NOW_MS / 1000) + 3600, refreshed: true });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 });
