@@ -6,10 +6,12 @@ tags: [TC-CAM-037, p0]
 - runFlow: ../subflows/open-camera.yaml
 - assertNotVisible:
     id: "camera.poseGuide"
-# Nothing picked yet: the chip's value says so.
+# Nothing picked yet: the control announces "Choose a pose" (label and value both). Design-sync 70d38cfe
+# moved the no-pose value from "None selected" to "Choose a pose" — `CameraChromeLayout.posesControlValue`
+# only returns "None selected" for a pose with an empty name (CameraFeature.swift:1874-1876 on 9886cb34).
 - assertVisible:
     id: "camera.choosePose"
-    text: '.*None selected.*'
+    text: '.*Choose a pose.*'
 - runFlow: ../subflows/camera-open-picker.yaml
 - assertVisible:
     id: "posePicker.grid"
@@ -17,10 +19,11 @@ tags: [TC-CAM-037, p0]
 # asserted by pattern, and the pick goes by the row's `Use <name> pose` label — never a coordinate.
 - assertVisible:
     id: 'posePicker\.row\..*'
-# Read the pose name off the row that is about to be tapped, so the chip's value can be checked against it
-# instead of against a constant: "Use Window light pose" → "Window light".
-- copyTextFrom: '.*Use .* pose.*'
-- evalScript: ${output.pickedName = maestro.copiedText.replace(/^Use /, "").replace(/ pose$/, "")}
+# The rows carry `posePicker.row.<poseID>` but only their VoiceOver label holds the pose name, and that label
+# is not readable back: `copyTextFrom` on '.*Use .* pose.*' leaves `maestro.copiedText` undefined (Maestro
+# 2.2.0 — the row's `text` attribute is empty, the name lives in the accessibility label), which made
+# `${output.pickedName}` resolve to the string "undefined" and failed the chip assertion on 2026-11-08.
+# So the pick goes by the row's label and the chip is asserted by *state*, as the case documents it.
 - tapOn: '.*Use .* pose.*'
 # No Done step: the selection itself closes the sheet — asserted on the sheet's own container.
 - extendedWaitUntil:
@@ -32,8 +35,9 @@ tags: [TC-CAM-037, p0]
 - assertVisible:
     id: "camera.shutter"
 - assertVisible: '.*Change pose.*'
-# The chip reports the chosen pose by NAME (build 23), not the word "Selected".
-- assertVisible:
+# The chip stopped advertising the empty state and reports the chosen pose by NAME instead (its value), not
+# the word "Selected". The name itself is not pinned — no fixture supplies a known pose id.
+- assertNotVisible:
     id: "camera.choosePose"
-    text: ${output.pickedName}
+    text: '.*Choose a pose.*'
 - takeScreenshot: sheet-pose-applied

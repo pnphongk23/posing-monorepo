@@ -74,9 +74,10 @@ guide" or "separate Adjust guide button" note:
   is a button labelled "Mirror guide" whose **value** flips "Normal" ⇄ "Mirrored".
 
 ## Pose-popup branch (`feat/camera-pose-popup`, f0bd7a2) — ids verified in that source
-- **Kept:** `camera.choosePose` is now the **Poses chip** on the zoom/scale row (label "Poses", VoiceOver
-  "Choose a pose" / "Change pose", value **"None selected"** or the **selected pose name** — build 23 reports the name
-  there, not the word "Selected") and is the sheet's **only** entry;
+- **Kept:** `camera.choosePose` is now the **Poses chip** on the zoom/scale row (label "Choose a pose" when nothing
+  is picked / "Change pose" after, value **the same string** as the label when nothing is picked — design-sync
+  `70d38cfe` replaced the old "None selected" value — or the **selected pose name** once one is chosen, reported by
+  name, not the word "Selected") and is the sheet's **only** entry;
   `camera.tools.ratio` + `camera.tools.ratio.3x4|1x1|9x16` stay in the tools popover; `posePicker.search`,
   `.searchClear`, `.close`, `.state`, `.grid`, `.scope` + `.scope.all|saved`, `.saved.loading|signIn|error|empty`;
   `camera.poseGuide|shutter|gallery|flip|status|timer.countdown|cancel|permission` unchanged.
@@ -196,3 +197,11 @@ Confirmed and landed at `b8878da`: `camera.close`, `camera.choosePose` (title pi
 13. Still open, now the only thing keeping three camera cases manual: **a readable selected state on the zoom pills**
     (`camera.zoom.<label>` carries `.isSelected` only). A `camera.tools.outside`-style stable tap target for the popover
     dismissal would also make TC-CAM-015/032's outside tap deterministic instead of a screen coordinate.
+14. **`camera.guideAdjust.showGuide` is a `Toggle`, so its accessibility frame spans the whole row** while only the
+    switch is touch-reactive (`[16,600][377,628]` for the row, switch at the trailing end — measured on 7CC9393C,
+    main `9886cb34`). A centre tap therefore lands in the empty gap between the label and the switch and changes
+    nothing, which is why TC-CAM-041's first run failed on a step whose product behaviour is correct. The flow now
+    taps the switch (`point: "92%,50%"`, relative to the element). Two things would remove the coordinate: give the
+    row the hit area it looks like it has (`.contentShape(Rectangle())` + a tap on the binding, i.e. tapping the
+    **"Show guide"** label toggles — today it does nothing for a touch user), or expose the switch itself with its own
+    id. This is a touch-target gap, not a VoiceOver one: activating the element through accessibility toggles fine.

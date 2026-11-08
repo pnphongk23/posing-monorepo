@@ -96,14 +96,19 @@ tags: [TC-CAM-041, p0]
 - assertNotVisible:
     id: "camera.tools.lineColor.black"
 # 2. The eye no longer hides the guide — the sheet's "Show guide" toggle does, and it draws the reference back.
+# Tap the SWITCH, not the row's centre: `camera.guideAdjust.showGuide` is the SwiftUI `Toggle`, whose
+# accessibility frame spans the whole row (`[16,600][377,628]` on 7CC9393C), so a centre tap lands in the
+# empty gap between the label and the switch and changes nothing (TC-CAM-041 run 2026-11-08 failed here).
 - tapOn:
     id: "camera.guideAdjust.showGuide"
+    point: "92%,50%"
 - extendedWaitUntil:
     notVisible:
       id: "camera.poseGuide"
     timeout: 15000
 - tapOn:
     id: "camera.guideAdjust.showGuide"
+    point: "92%,50%"
 - extendedWaitUntil:
     visible:
       id: "camera.poseGuide"

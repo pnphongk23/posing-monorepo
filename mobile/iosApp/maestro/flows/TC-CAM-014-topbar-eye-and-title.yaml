@@ -55,14 +55,19 @@ tags: [TC-CAM-014, p0]
 - assertVisible:
     id: "camera.guideAdjust.done"
 # Hide, then show again: the reference is the proof, the camera keeps running behind the sheet.
+# Both taps hit the SWITCH end of the row: `camera.guideAdjust.showGuide` is a `Toggle` whose accessibility
+# frame spans the whole row, so a centre tap lands in the gap and does nothing (same defect that failed
+# TC-CAM-041 on 2026-11-08; see that flow and camera-guide.md request 14).
 - tapOn:
     id: "camera.guideAdjust.showGuide"
+    point: "92%,50%"
 - extendedWaitUntil:
     notVisible:
       id: "camera.poseGuide"
     timeout: 15000
 - tapOn:
     id: "camera.guideAdjust.showGuide"
+    point: "92%,50%"
 - extendedWaitUntil:
     visible:
       id: "camera.poseGuide"
