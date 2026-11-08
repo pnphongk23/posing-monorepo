@@ -572,10 +572,11 @@ final class CameraCanvasFramingTests: XCTestCase {
     /// The stand-in preview: a saturated colour, so "dimmed" is measurable and cannot be confused with black.
     private let previewColour = Color(red: 1, green: 0, blue: 1)
 
-    /// Inside the frame the photo is untouched; outside it — above **and** below — one even 55 % black layer.
-    /// The "above only" version is the build-25 defect: the dim stopped at the safe area, so the status bar strip
-    /// stayed bright and the area under the photo was the only thing dimmed.
-    func testTheFrameLeavesThePhotoUntouchedAndDimsOnlyWhatItLeavesOut() throws {
+    /// Inside the frame the photo is untouched; outside it — above **and** below — is the viewfinder's own black,
+    /// not a preview. Build 26 filled the whole screen with the preview and dimmed it, which is what made the app's
+    /// 1× look ~1.6× tighter than the iPhone Camera (a 4:3 stream aspect-filled into a 9:19.5 screen shows a ~61 %
+    /// centre crop, and the 3:4 frame then showed a crop *of a crop* while the file kept the whole picture).
+    func testTheFrameShowsThePhotoAndNothingElseShowsThePreview() throws {
         for ratio in [CameraAspectRatio.threeFour, .oneOne] {
             let stage = stage(for: ratio)
             let bitmap = try render(ratio: ratio)
@@ -589,32 +590,24 @@ final class CameraCanvasFramingTests: XCTestCase {
             XCTAssertEqual(inside.green, 0)
             XCTAssertEqual(inside.blue, 255)
 
+            // Outside (above and below the frame): the viewfinder background, never the preview colour, never an
+            // opaque bar pretending to be one.
             for point in [
                 CGPoint(x: stage.frame.midX, y: max(2, stage.frame.minY / 2)),
                 CGPoint(x: stage.frame.midX, y: min(screen.height - 2, (stage.frame.maxY + screen.height) / 2)),
             ] {
                 let outside = try XCTUnwrap(pixel(in: bitmap, at: point), "\(ratio.rawValue): outside is drawn")
-                XCTAssertGreaterThan(outside.red, 40, "\(ratio.rawValue) at \(point): the preview still shows under the dim")
-                XCTAssertGreaterThan(outside.red, 100, "\(ratio.rawValue): dim is 55%, not the former 65%")
-                XCTAssertLessThan(outside.red, 130, "\(ratio.rawValue): and it is dimmed, not untouched")
-                XCTAssertEqual(outside.green, 0, "\(ratio.rawValue): the dim is black, so it adds no colour")
-                XCTAssertEqual(
-                    outside.blue, outside.red,
-                    accuracy: 12,
-                    "\(ratio.rawValue): the dim is neutral — it scales the colour, it does not tint it"
-                )
-                XCTAssertEqual(
-                    Double(outside.red) / 255,
-                    1 - CameraStageFrame.dimOpacity,
-                    accuracy: 0.03,
-                    "\(ratio.rawValue): 55 % black over the preview leaves 45 % of it"
-                )
+                XCTAssertEqual(outside.green, outside.red, accuracy: 4,
+                               "\(ratio.rawValue) at \(point): the outside is neutral black, not the preview")
+                XCTAssertEqual(outside.red, outside.blue, accuracy: 4)
+                XCTAssertLessThan(outside.red, 40, "\(ratio.rawValue) at \(point): the outside is the dark background")
             }
         }
     }
 
-    /// 9:16 is the viewfinder: no dim layer at all, and no corner brackets marking an edge that is the screen's.
-    func testTheFullBleedRatioDimsNothingAndMarksNoEdge() throws {
+    /// 9:16 is the viewfinder: the preview fills it edge to edge, and no corner brackets mark an edge that is the
+    /// screen's.
+    func testTheFullBleedRatioShowsThePreviewEverywhereAndMarksNoEdge() throws {
         let stage = stage(for: .nineSixteen)
         XCTAssertTrue(stage.isFullBleed)
         let bitmap = try render(ratio: .nineSixteen)
@@ -626,7 +619,7 @@ final class CameraCanvasFramingTests: XCTestCase {
             CGPoint(x: stage.frame.midX, y: stage.frame.midY),
         ] {
             let pixel = try XCTUnwrap(pixel(in: bitmap, at: point), "\(point) is painted")
-            XCTAssertEqual(pixel.red, 255, "\(point): a full-bleed 9:16 preview is not dimmed anywhere")
+            XCTAssertEqual(pixel.red, 255, "\(point): a full-bleed 9:16 preview covers the screen")
             XCTAssertEqual(pixel.blue, 255)
         }
 
@@ -640,30 +633,54 @@ final class CameraCanvasFramingTests: XCTestCase {
         XCTAssertEqual(corner.green, 0, "9:16 draws no corner bracket on the screen's own edge")
     }
 
-      /// The frame has four 22pt corner brackets, inset 16pt, and no continuous line.
-      func testTheFrameUsesFourCornerBracketsInsteadOfABorder() throws {
-          let stage = stage(for: .threeFour)
-          let bitmap = try render(ratio: .threeFour)
-          let xInset = CameraFrameCorners.inset
-          let arm = CameraFrameCorners.arm
-          let top = stage.frame.minY + xInset
-          let left = stage.frame.minX + xInset
-          let right = stage.frame.maxX - xInset
-          let bottom = stage.frame.maxY - xInset
-          let points = [
-              CGPoint(x: left + arm / 2, y: top),
-              CGPoint(x: right - arm / 2, y: top),
-              CGPoint(x: left + arm / 2, y: bottom),
-              CGPoint(x: right - arm / 2, y: bottom),
-          ]
-          for point in points {
-              let corner = try XCTUnwrap(pixel(in: bitmap, at: point), "corner guide is painted at \(point)")
-              XCTAssertGreaterThan(corner.green, 200, "corner guide is 90% white")
-              XCTAssertLessThan(corner.green, 255, "corner guide is translucent")
-          }
-          let middle = try XCTUnwrap(pixel(in: bitmap, at: CGPoint(x: stage.frame.midX, y: top)))
-          XCTAssertLessThan(middle.green, 20, "the frame has no continuous top border")
-      }
+    // MARK: - What the frame shows is what the shutter saves (the 1× field of view)
+
+    /// The field-of-view guard for the build-26 defect: the frame's visible part of the sensor **is** the crop the
+    /// shutter writes.
+    ///
+    /// At 3:4 that means the whole sensor — the full width of the wide lens, the same framing the iPhone Camera
+    /// gives at 1× / 4:3 — so a phone that used to look "more zoomed in" now cannot. At 1:1 and 9:16 both are the
+    /// centred crop of the picture, which is what `CameraAspectCrop` cuts.
+    func testTheVisibleFrameIsExactlyTheSavedCrop() {
+        let picture = CGSize(width: 3024, height: 4032)   // a portrait capture, displayed
+        for ratio in CameraAspectRatio.allCases {
+            let frameAspect = ratio.widthOverHeight
+            let visible = CameraFrameProjection.visibleSensorRect(frameAspect: frameAspect)
+            let saved = CameraAspectCrop.rect(for: ratio, imageSize: picture)
+            let normalized = CGRect(
+                x: saved.minX / picture.width,
+                y: saved.minY / picture.height,
+                width: saved.width / picture.width,
+                height: saved.height / picture.height
+            )
+            XCTAssertEqual(visible.minX, normalized.minX, accuracy: 0.002, "\(ratio.rawValue): same left edge")
+            XCTAssertEqual(visible.minY, normalized.minY, accuracy: 0.002, "\(ratio.rawValue): same top edge")
+            XCTAssertEqual(visible.width, normalized.width, accuracy: 0.002, "\(ratio.rawValue): same width")
+            XCTAssertEqual(visible.height, normalized.height, accuracy: 0.002, "\(ratio.rawValue): same height")
+        }
+    }
+
+    /// 3:4 shows the **whole** sensor, edge to edge: the wide lens's full field of view, which is the iPhone
+    /// Camera's 1× / 4:3 framing. Anything narrower is the build-26 "1× looks zoomed in" bug.
+    func testThreeFourShowsTheWholeWideLens() {
+        let visible = CameraFrameProjection.visibleSensorRect(frameAspect: CameraAspectRatio.threeFour.widthOverHeight)
+        XCTAssertEqual(visible, CGRect(x: 0, y: 0, width: 1, height: 1), "3:4 is the picture's own aspect")
+        XCTAssertEqual(CameraAspectCrop.rect(for: .threeFour, imageSize: CGSize(width: 3024, height: 4032)),
+                       CGRect(x: 0, y: 0, width: 3024, height: 4032), "and the shutter saves it whole")
+    }
+
+    /// The taller/wider ratios crop only what they have to, centred — never an extra crop on top of the screen's.
+    func testTheOtherRatiosCropThePictureCentred() {
+        let square = CameraFrameProjection.visibleSensorRect(frameAspect: 1)
+        XCTAssertEqual(square.width, 1, accuracy: 0.001, "1:1 keeps the full width")
+        XCTAssertEqual(square.height, CameraFrameProjection.pictureAspect, accuracy: 0.01, "and crops the height")
+        XCTAssertEqual(square.midY, 0.5, accuracy: 0.001, "centred")
+
+        let story = CameraFrameProjection.visibleSensorRect(frameAspect: 9.0 / 16.0)
+        XCTAssertEqual(story.height, 1, accuracy: 0.001, "9:16 keeps the full height")
+        XCTAssertEqual(story.width, (9.0 / 16.0) / CameraFrameProjection.pictureAspect, accuracy: 0.01)
+        XCTAssertEqual(story.midX, 0.5, accuracy: 0.001, "centred")
+    }
 
     /// A guide pushed hard against the frame's edge is clipped, not wrapped: the line art stops at the photo.
     func testATransformedGuideIsClippedToTheFrame() throws {

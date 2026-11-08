@@ -33,6 +33,8 @@ private final class CameraSessionBox: @unchecked Sendable {
     var deviceInput: AVCaptureDeviceInput?
     var facing: CameraFacing = .back
     var flashSetting: CameraFlashSetting = .off
+    /// How a display zoom reaches this device's `videoZoomFactor` (see `CameraLensProfile`).
+    var zoomProfile: CameraLensProfile = .wideOnly
 
     var isPhotoCaptureReady: Bool {
         guard session.isRunning else { return false }
@@ -42,7 +44,7 @@ private final class CameraSessionBox: @unchecked Sendable {
     }
 
     func configure(position: AVCaptureDevice.Position) throws {
-        guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: position) else {
+        guard let device = CameraLensDiscovery.device(for: position) else {
             throw CameraFailure.unavailable
         }
         let input = try AVCaptureDeviceInput(device: device)
@@ -61,6 +63,9 @@ private final class CameraSessionBox: @unchecked Sendable {
         }
         session.addInput(input)
         deviceInput = input
+        // Which lens set is running decides how a display factor reaches the hardware: on a virtual multi-camera
+        // device `videoZoomFactor` 1.0 *is* the ultra-wide, so the UI's 1× is the switch-over factor.
+        zoomProfile = CameraLensDiscovery.profile(for: device)
         facing = position == .back ? .back : .front
         // The photo connection only exists once the configuration is committed.
         session.commitConfiguration()
@@ -92,8 +97,9 @@ private final class CameraSessionBox: @unchecked Sendable {
         logged("setZoomFactor") {
             try? device.lockForConfiguration()
             let minZ = device.minAvailableVideoZoomFactor
-            let maxZ = min(device.maxAvailableVideoZoomFactor, CameraZoomScale.range.upperBound)
-            device.videoZoomFactor = max(minZ, min(CameraZoomScale.clamped(factor), maxZ))
+            let maxZ = device.maxAvailableVideoZoomFactor
+            let wanted = CameraZoomScale.lensFactor(forDisplay: factor, in: zoomProfile)
+            device.videoZoomFactor = max(minZ, min(wanted, maxZ))
             device.unlockForConfiguration()
         }
     }
@@ -169,6 +175,60 @@ protocol VideoMirroringConnection: AnyObject {
 }
 
 extension AVCaptureConnection: VideoMirroringConnection {}
+
+// MARK: - Lens discovery (the AVFoundation side)
+
+/// The hardware side of `CameraLensDiscovery`: which device to run, and what the UI may offer for it.
+///
+/// The virtual multi-camera devices are tried in order of field of view, because they are the only ones whose
+/// `videoZoomFactor` can reach the ultra-wide: running `builtInWideAngleCamera` alone cannot serve 0.5× at all.
+/// The front camera has no ultra-wide, so it falls through to the wide (TrueDepth) device and the row offers
+/// 1×… with no 0.5 stop.
+extension CameraLensDiscovery {
+    /// Widest first: a device that includes the ultra-wide can also serve every stop above it.
+    static let preferredDeviceTypes: [AVCaptureDevice.DeviceType] = [
+        .builtInTripleCamera,
+        .builtInDualWideCamera,
+        .builtInWideAngleCamera,
+    ]
+
+    static func device(for position: AVCaptureDevice.Position) -> AVCaptureDevice? {
+        for type in preferredDeviceTypes {
+            if let device = AVCaptureDevice.default(type, for: .video, position: position) {
+                return device
+            }
+        }
+        return AVCaptureDevice.default(for: .video)
+    }
+
+    /// Whether a device type's widest constituent is the ultra-wide. A `.builtInDualCamera` (wide + tele) reports
+    /// a switch-over factor of 2 as well, but its 1.0 is the wide lens — it must never offer 0.5×.
+    static func includesUltraWide(_ type: AVCaptureDevice.DeviceType) -> Bool {
+        switch type {
+        case .builtInTripleCamera, .builtInDualWideCamera, .builtInUltraWideCamera:
+            return true
+        default:
+            return false
+        }
+    }
+
+    static func profile(for device: AVCaptureDevice) -> CameraLensProfile {
+        profile(
+            minimumVideoZoom: device.minAvailableVideoZoomFactor,
+            maximumVideoZoom: device.maxAvailableVideoZoomFactor,
+            switchOverFactors: device.virtualDeviceSwitchOverVideoZoomFactors.map { CGFloat($0.doubleValue) },
+            includesUltraWide: includesUltraWide(device.deviceType)
+        )
+    }
+
+    /// The profile of the lens set the camera would run for a facing, for a caller that only has the facing
+    /// (the view model, deciding which buttons to draw).
+    static func currentProfile(for facing: CameraFacing) -> CameraLensProfile {
+        let position: AVCaptureDevice.Position = facing == .front ? .front : .back
+        guard let device = device(for: position) else { return fallback }
+        return profile(for: device)
+    }
+}
 
 /// The preview's field of view, pinned to the still's.
 ///

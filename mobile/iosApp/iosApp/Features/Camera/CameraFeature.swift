@@ -256,9 +256,13 @@ final class CameraViewModel: ObservableObject {
         guideTransform = transform
     }
 
-    /// The zoom range the buttons and the drag span: 1×…2× (owner decision, 2026-11-08). It is the same on every
-    /// phone — 2× is the wide lens zoomed in, so a device without a 2× lens still serves it.
-    var zoomRange: ClosedRange<CGFloat> { CameraZoomScale.range }
+    /// The zoom range the buttons and the drag span: 0.5×…5× on a phone with an ultra-wide, 1×…5× on one without
+    /// (owner decisions, 2026-11-08). It comes from the **port**, so the row can never offer a stop the lens set
+    /// cannot serve.
+    var zoomRange: ClosedRange<CGFloat> {
+        let profile = camera.lensProfile
+        return CameraZoomScale.range(lower: profile.range.lowerBound, upper: profile.range.upperBound)
+    }
 
     /// The dial's own value: clamped before it reaches the hardware, so a drag past the end stops at the end
     /// instead of being quietly clipped later.
@@ -268,7 +272,7 @@ final class CameraViewModel: ObservableObject {
     }
 
     func applyZoom(factor: CGFloat) {
-        zoomFactor = CameraZoomScale.clamped(factor)
+        zoomFactor = CameraZoomScale.clamped(factor, in: zoomRange)
         zoomLevel = CameraZoomLevel.nearest(to: zoomFactor)
         reconcileHardware()
     }

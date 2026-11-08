@@ -4,6 +4,32 @@ import Kingfisher
 import SwiftUI
 import UIKit
 
+/// The part of the sensor picture a frame shows, in normalized sensor space.
+///
+/// The preview aspect-fills the frame, so a frame with the picture's own aspect shows all of it and a narrower
+/// or wider one shows a centred crop. This is the rule that has to agree with `CameraAspectCrop`, which is what
+/// the shutter saves: the difference between the two is exactly the build-26 bug where the app's 1× framed a
+/// crop while the file kept the full 4:3 picture.
+enum CameraFrameProjection {
+    /// The picture's own aspect: the stills' 4:3, portrait.
+    static let pictureAspect: CGFloat = 3.0 / 4.0
+
+    static func visibleSensorRect(frameAspect: CGFloat) -> CGRect {
+        guard frameAspect.isFinite, frameAspect > 0 else { return CGRect(x: 0, y: 0, width: 1, height: 1) }
+        if abs(frameAspect - pictureAspect) <= 0.005 {
+            return CGRect(x: 0, y: 0, width: 1, height: 1)
+        }
+        if frameAspect < pictureAspect {
+            // Taller than the picture: fill by height, crop the sides.
+            let width = frameAspect / pictureAspect
+            return CGRect(x: (1 - width) / 2, y: 0, width: width, height: 1)
+        }
+        // Wider than the picture: fill by width, crop top and bottom.
+        let height = pictureAspect / frameAspect
+        return CGRect(x: 0, y: (1 - height) / 2, width: 1, height: height)
+    }
+}
+
 /// Where the photo frame sits on the camera stage.
 ///
 /// The preview is always full screen — edge to edge, behind the top buttons and the bottom controls — and the
@@ -20,8 +46,6 @@ struct CameraStageFrame: Equatable {
     /// From the safe-area top to the band a 3:4 / 1:1 frame is centred in: the top control row plus the
     /// hairline under it.
     static let shortRatioTopInset: CGFloat = 45
-    /// One 55% black layer over everything the shutter leaves out (camera changes, line 8).
-    static let dimOpacity: Double = 0.55
     /// White corner guides use 90% opacity and a 2pt stroke (camera changes, line 14).
     static let edgeOpacity: Double = 0.9
 
@@ -67,19 +91,6 @@ struct CameraStageFrame: Equatable {
 
     /// The pose reference's area inside the frame (the prototype's `.nb-camera-pose-reference` fractions).
     var guideFrame: CGRect { CameraViewportFrame.guideRect(in: frame) }
-}
-
-/// The stage minus the photo frame: one rect with a hole, so the dim outside the frame is a single translucent
-/// layer instead of four strips that could leave a seam.
-struct CameraStageFrameMask: Shape {
-    let frame: CGRect
-
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        path.addRect(rect)
-        path.addRect(frame.intersection(rect))
-        return path
-    }
 }
 
 /// Four rounded 22pt corner guides inset 16pt from the photo edge; deliberately no continuous border.
@@ -175,19 +186,18 @@ struct CameraCanvas: View {
             AP.Color.background
 
             if isAuthorized {
-                // The preview is the whole screen: the ratio frames the photo, it never letterboxes the camera.
+                // The preview **is the frame**, not the screen. Filling the screen instead (build 26) made the
+                // 3:4 frame show a ~61 % centre crop of the 4:3 sensor: the app's 1× looked about 1.6× tighter
+                // than the iPhone Camera at 1×/4:3, and the saved photo held content the frame never showed.
+                // Sized to the frame, aspect-fill of the 4:3 stream into a 3:4 rect is the whole wide lens's
+                // field of view — the same framing the iPhone gives at 1× / 4:3 — and 1:1 / 9:16 show exactly
+                // the centred crop the shutter saves. Everything outside the photo is the black of a camera
+                // viewfinder (the iPhone does the same in 4:3), so the controls sit on black, not on a preview
+                // that could never be part of the file.
                 preview
-                    .frame(width: stage.screen.width, height: stage.screen.height)
+                    .frame(width: frame.width, height: frame.height)
                     .clipped()
-
-                // One layer over everything the shutter is leaving out, sized to the **screen** rather than to
-                // whatever the container offers: a full-bleed 9:16 frame leaves nothing to dim, and a safe-area
-                // inset container must not leave an undimmed strip at the status bar or the home indicator.
-                CameraStageFrameMask(frame: frame)
-                    .fill(Color.black.opacity(CameraStageFrame.dimOpacity), style: FillStyle(eoFill: true))
-                    .allowsHitTesting(false)
-                    .frame(width: stage.screen.width, height: stage.screen.height)
-                    .accessibilityHidden(true)
+                    .position(x: frame.midX, y: frame.midY)
 
                 // A full-bleed frame has no edge to mark: its edge is the screen's, so corner guides there
                 // would be drawn under the controls or off the display.

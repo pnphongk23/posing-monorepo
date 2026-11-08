@@ -20,16 +20,18 @@ extension CameraZoomLevel {
     }
 }
 
-/// The lenses the camera offers: **1× and 2×** (owner decision, 2026-11-08, replacing the earlier
-/// "include 0.5×" decision). 1× is the wide lens's own framing; 2× is the same lens zoomed in, so a phone
-/// without a 2× lens still serves it as digital zoom.
+/// The lenses the row offers: **0.5 · 1× · 2×** (owner decision, 2026-11-08). 0.5× is the ultra-wide and is
+/// hidden on a phone that does not have one; 1× is the wide lens's native framing; 2× is a lens stop or, where
+/// there is no 2× lens, the wide lens zoomed in. The dial then runs on to 5×.
 enum CameraZoomPreset: String, CaseIterable, Identifiable, Sendable {
+    case half = "0.5x"
     case one = "1x"
     case two = "2x"
 
     var id: String { rawValue }
     var factor: CGFloat {
         switch self {
+        case .half: return 0.5
         case .one: return 1
         case .two: return 2
         }
@@ -40,47 +42,129 @@ enum CameraZoomPreset: String, CaseIterable, Identifiable, Sendable {
 }
 
 enum CameraZoomPresets {
-    /// The row's buttons, in order: every stop the camera offers.
-    static let all: [CameraZoomPreset] = CameraZoomPreset.allCases
-
-    /// The lens a factor belongs to: the nearest stop. A continuous 1.4× still reads as "the 1× button is
-    /// current", with 1.4× written in it.
-    static func nearest(to factor: CGFloat) -> CameraZoomPreset {
-        all.min { abs($0.factor - factor) < abs($1.factor - factor) } ?? .one
+    /// The buttons the row draws for a range: 1× and 2× always, 0.5× only when the phone really has the
+    /// ultra-wide (its range starts at 0.5).
+    static func available(range: ClosedRange<CGFloat>) -> [CameraZoomPreset] {
+        let presets = CameraZoomPreset.allCases.filter { range.contains($0.factor) }
+        return presets.isEmpty ? [.one] : presets
     }
+
+    /// The lens a factor belongs to: the nearest stop the row draws. A continuous 3.2× still reads as
+    /// "the 2× button is current", with 3.2× written in it.
+    static func nearest(to factor: CGFloat, in range: ClosedRange<CGFloat>) -> CameraZoomPreset {
+        available(range: range).min { abs($0.factor - factor) < abs($1.factor - factor) } ?? .one
+    }
+}
+
+/// What lenses this phone actually has, in **display** zoom space — what the row and the dial show.
+///
+/// The ultra-wide stop lives on the *virtual* multi-camera device, where `videoZoomFactor` 1.0 **is** the
+/// ultra-wide and the wide lens sits at the first switch-over factor (2.0 on every iPhone): `deviceMultiplier`
+/// is that mapping. Running the plain wide-angle device instead (build 26) cannot serve 0.5× at all, and mapping
+/// a virtual device without it (build 26's fix) would put the UI's 1× at the ultra-wide's framing.
+struct CameraLensProfile: Equatable {
+    /// Display-space range: 0.5…5 on a phone with an ultra-wide, 1…5 on one without.
+    var range: ClosedRange<CGFloat> = 1...CameraZoomScale.maxFactor
+    /// Display → lens factor: 2 when `videoZoomFactor` 1.0 is the ultra-wide, 1 on a plain wide-angle lens.
+    var deviceMultiplier: CGFloat = 1
+    /// The device's own ceiling in `videoZoomFactor` terms, so the UI never asks for a factor the hardware
+    /// refuses (`5×` is digital zoom, and even that has a limit).
+    var deviceMaximum: CGFloat = 5
+
+    /// The owner's "does this phone have 0.5×" question, answered from the lens range itself.
+    var hasUltraWide: Bool { range.lowerBound <= 0.5 + 0.001 }
+    /// The buttons the row draws.
+    var presets: [CameraZoomPreset] { CameraZoomPresets.available(range: range) }
+
+    /// No capture device (the simulator) or a plain wide-angle lens: 1×…5×, no 0.5 stop.
+    static let wideOnly = CameraLensProfile()
+}
+
+extension CameraZoomScale {
+    /// Display factor → the lens's own `videoZoomFactor`, clamped to the device's ceiling. The one place the two
+    /// spaces are related, so the session and the UI cannot disagree about what "1×" means.
+    static func lensFactor(forDisplay display: CGFloat, in profile: CameraLensProfile) -> CGFloat {
+        let factor = display.isFinite ? max(display, 0) : 1
+        let scaled = factor * (profile.deviceMultiplier > 0 ? profile.deviceMultiplier : 1)
+        let ceiling = profile.deviceMaximum.isFinite ? max(profile.deviceMaximum, 1) : scaled
+        return min(scaled, ceiling)
+    }
+}
+
+/// Lens discovery: which device to run and what the UI may offer for it.
+///
+/// The virtual multi-camera devices are tried first, because they are the only ones that can serve 0.5×:
+/// `builtInTripleCamera` (ultra-wide + wide + tele) then `builtInDualWideCamera` (ultra-wide + wide). A plain
+/// `builtInWideAngleCamera` is the last stop, and it never claims an ultra-wide it does not have.
+enum CameraLensDiscovery {
+    /// The rules, pure: given the device's own numbers, what the UI may offer.
+    ///
+    /// `includesUltraWide` is a **device-type** fact, not a switch-over fact: a `builtInDualCamera` (wide + tele)
+    /// also reports a switch-over factor of 2, and its 1.0 is the wide lens — mapping it as if it had an
+    /// ultra-wide would offer a 0.5× the phone cannot shoot.
+    static func profile(
+        minimumVideoZoom: CGFloat,
+        maximumVideoZoom: CGFloat,
+        switchOverFactors: [CGFloat] = [],
+        includesUltraWide: Bool
+    ) -> CameraLensProfile {
+        let switchOver = switchOverFactors.first { $0.isFinite && $0 > 0 }
+        let multiplier = includesUltraWide ? (switchOver ?? 2) : 1
+        let minZoom = minimumVideoZoom.isFinite ? minimumVideoZoom : 1
+        let maxZoom = maximumVideoZoom.isFinite ? maximumVideoZoom : CameraZoomScale.maxFactor
+        let low = minZoom / multiplier
+        let high = maxZoom / multiplier
+        return CameraLensProfile(
+            range: CameraZoomScale.range(lower: low, upper: high),
+            deviceMultiplier: multiplier,
+            deviceMaximum: maxZoom
+        )
+    }
+
+    /// A fallback for a process with no capture device at all: no ultra-wide is claimed.
+    static let fallback = CameraLensProfile.wideOnly
 }
 
 /// The mapping between what the row and the dial show and what the lens receives, plus the labels.
 ///
-/// The camera drives one wide-angle device (`AVCaptureDevice.default(.builtInWideAngleCamera)`), so the displayed
-/// factor **is** the lens's `videoZoomFactor`: 1×…2×, clamped. 2× is that lens zoomed in, which every iPhone can
-/// do — the owner's "devices without a 2× lens use digital zoom" rule is what this identity means.
+/// The row shows **display** factors; the lens receives `display × deviceMultiplier` (see `CameraLensProfile`).
+/// The display range is 0.5…5 where the phone has an ultra-wide and 1…5 where it does not; 5× is digital zoom,
+/// so the same range serves a phone with a 2× or a 3× tele lens.
 enum CameraZoomScale {
-    /// The whole range the buttons and the drag span (owner decision, 2026-11-08).
-    static let range: ClosedRange<CGFloat> = 1...2
+    /// The top of the dial. `CameraSessionBox.setZoomOnQueue` clamps the lens to the device's own ceiling as well,
+    /// so the thumb can never sit where the hardware refuses to follow.
+    static let maxFactor: CGFloat = 5
     static let sliderIdentifier = "camera.zoom.slider"
 
     /// The old pills' ids are retired with them; nothing may address them again.
     static let retiredIdentifiers = ["camera.zoom.0.5x", "camera.zoom.1x", "camera.zoom.2x", "camera.zoom.3x"]
 
-    static func clamped(_ factor: CGFloat) -> CGFloat {
+    /// The usable range: the lens's own, floored at 0.5× (the ultra-wide) and capped at `maxFactor`, never
+    /// inverted.
+    static func range(lower: CGFloat, upper: CGFloat) -> ClosedRange<CGFloat> {
+        let low = lower.isFinite ? max(lower, 0.5) : 1
+        let high = upper.isFinite ? min(max(upper, low), maxFactor) : max(low, maxFactor)
+        return low...max(low, high)
+    }
+
+    static func clamped(_ factor: CGFloat, in range: ClosedRange<CGFloat>) -> CGFloat {
         guard factor.isFinite else { return range.lowerBound }
         return min(max(factor, range.lowerBound), range.upperBound)
     }
 
     /// Where a factor sits on the line, 0…1, and the way back. Pure, so the thumb's position is a unit test.
-    static func fraction(of factor: CGFloat) -> CGFloat {
+    static func fraction(of factor: CGFloat, in range: ClosedRange<CGFloat>) -> CGFloat {
         let span = range.upperBound - range.lowerBound
         guard span > 0 else { return 0 }
-        return (clamped(factor) - range.lowerBound) / span
+        return (clamped(factor, in: range) - range.lowerBound) / span
     }
 
-    static func factor(atFraction fraction: CGFloat) -> CGFloat {
+    static func factor(atFraction fraction: CGFloat, in range: ClosedRange<CGFloat>) -> CGFloat {
         let clampedFraction = min(max(fraction.isFinite ? fraction : 0, 0), 1)
-        return clamped(range.lowerBound + clampedFraction * (range.upperBound - range.lowerBound))
+        return clamped(range.lowerBound + clampedFraction * (range.upperBound - range.lowerBound), in: range)
     }
 
-    /// The value in the thumb: "1×", "1.4×".
+    /// The value in the thumb: "1×", "3.2×".
     static func valueLabel(_ factor: CGFloat) -> String {
         let rounded = (factor * 10).rounded() / 10
         if abs(rounded - rounded.rounded()) < 0.001 {
@@ -111,7 +195,7 @@ struct CameraZoomTrackGeometry: Equatable {
 
     /// Centre of the thumb for a zoom factor: the track's ends are the range's ends.
     func thumbCenterX(for factor: CGFloat) -> CGFloat {
-        thumbDiameter / 2 + trackWidth * CameraZoomScale.fraction(of: factor)
+        thumbDiameter / 2 + trackWidth * CameraZoomScale.fraction(of: factor, in: range)
     }
 
     /// The thumb's centre, kept inside the track at either extreme.
@@ -134,7 +218,7 @@ struct CameraZoomTrackGeometry: Equatable {
 /// see it.
 struct CameraZoomDial: View {
     let factor: CGFloat
-    var range: ClosedRange<CGFloat> = CameraZoomScale.range
+    var range: ClosedRange<CGFloat> = CameraLensProfile.wideOnly.range
     var isEnabled = true
 
     private let thumbSize: CGFloat = CameraZoomTrackGeometry.thumbDiameterConstant
@@ -324,8 +408,8 @@ struct CameraZoomControl: View {
         _bar = StateObject(wrappedValue: CameraZoomBarModel(mode: initialMode))
     }
 
-    private var row: CameraZoomLensRow { CameraZoomLensRow(presets: CameraZoomPresets.all) }
-    private var selectedLens: CameraZoomPreset { CameraZoomPresets.nearest(to: factor) }
+    private var row: CameraZoomLensRow { CameraZoomLensRow(presets: CameraZoomPresets.available(range: range)) }
+    private var selectedLens: CameraZoomPreset { CameraZoomPresets.nearest(to: factor, in: range) }
 
     var body: some View {
         GeometryReader { proxy in
@@ -368,9 +452,9 @@ struct CameraZoomControl: View {
                 guard isEnabled else { return }
                 switch direction {
                 case .increment:
-                    onChange(CameraZoomScale.clamped(factor + 0.1))
+                    onChange(CameraZoomScale.clamped(factor + 0.5, in: range))
                 case .decrement:
-                    onChange(CameraZoomScale.clamped(factor - 0.1))
+                    onChange(CameraZoomScale.clamped(factor - 0.5, in: range))
                 @unknown default:
                     break
                 }
@@ -441,6 +525,6 @@ struct CameraZoomControl: View {
             range: range
         )
         let fraction = (x - CameraZoomTrackGeometry.thumbDiameterConstant / 2) / geometry.trackWidth
-        return CameraZoomScale.factor(atFraction: fraction)
+        return CameraZoomScale.factor(atFraction: fraction, in: range)
     }
 }
