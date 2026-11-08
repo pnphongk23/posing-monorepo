@@ -2,29 +2,17 @@ import SwiftUI
 
 /// The pose reference's stroke colour, as the guide-adjust sheet's swatches offer it.
 enum GuideLineColor: String, CaseIterable, Identifiable, Sendable {
-    case pink, black, yellow, green
+    case black, white
 
     var id: String { rawValue }
     var label: String { rawValue.capitalized }
 
-    /// The stroke and the swatch fill. Pink is the brand accent and black is ink (both the same in every
-    /// appearance); yellow and green are the palette's **fills** (`warningSurface` / `successSurface`), not its inks
-    /// — the ink tokens are dark brown and dark green in light mode, which is not the board's yellow and mint.
-    ///
-    /// All four are fixed colours, not scheme-dependent ones: the reference is drawn on the camera's dark stage and
-    /// picked on the light sheet, and it has to look the same in both.
+    /// The reference is drawn on the dark camera stage and picked on the light sheet, so these stay fixed.
     var color: Color {
         switch self {
-        case .pink: return AP.Color.accent
-        case .black: return AP.Color.onAccent
-        case .yellow: return Self.fixed(APColorTokens.warningSurface)
-        case .green: return Self.fixed(APColorTokens.successSurface)
+        case .black: return .black
+        case .white: return .white
         }
-    }
-
-    /// A token's light value as a fixed colour (the palette does not follow the appearance).
-    private static func fixed(_ token: APColorToken) -> Color {
-        Color(uiColor: token.spec(for: .light).uiColor)
     }
 
     /// The swatch's fill, so a light colour still has an edge.
@@ -32,12 +20,10 @@ enum GuideLineColor: String, CaseIterable, Identifiable, Sendable {
 
     var accessibilityIdentifier: String { "camera.guideAdjust.lineColor.\(rawValue)" }
 
-    /// A stored row from before the palette existed says `white`; the sheet's default is pink, which is what
-    /// that row meant (the reference's light stroke).
-    static func stored(_ raw: String?) -> GuideLineColor? {
-        guard let raw else { return nil }
-        if raw == "white" { return .pink }
-        return GuideLineColor(rawValue: raw)
+    /// Older builds stored pink/yellow/green. Unsupported or missing values use white, the current default.
+    static func stored(_ raw: String?) -> GuideLineColor {
+        guard let raw, let color = GuideLineColor(rawValue: raw) else { return .white }
+        return color
     }
 }
 
@@ -160,10 +146,12 @@ struct CameraGuideAdjustSheet: View {
     let scale: CGFloat
     let isFlipped: Bool
     let isEnabled: Bool
+    var isGuideVisible = true
     let onOpacityChange: (Double) -> Void
     let onLineColorChange: (GuideLineColor) -> Void
     let onScaleChange: (CGFloat) -> Void
     let onFlip: () -> Void
+    var onGuideVisibilityChange: (Bool) -> Void = { _ in }
     let onDone: () -> Void
 
     /// The sheet's handles. `camera.guideAdjust` is the sheet itself (a container), the rest are its controls.
@@ -172,6 +160,7 @@ struct CameraGuideAdjustSheet: View {
         static let opacityIdentifier = "camera.guideAdjust.opacity"
         static let scaleIdentifier = "camera.guideAdjust.scale"
         static let flipIdentifier = "camera.guideAdjust.flip"
+        static let guideVisibilityIdentifier = "camera.guideAdjust.showGuide"
         static let doneIdentifier = "camera.guideAdjust.done"
         static let height: CGFloat = 340
     }
@@ -180,10 +169,10 @@ struct CameraGuideAdjustSheet: View {
         VStack(spacing: 0) {
             handle
             header
+            guideVisibilityRow
             opacityRow
-            lineColorRow
             scaleRow
-            flipRow
+            lineColorRow
             Spacer(minLength: 0)
         }
         .padding(.horizontal, AP.Space.space16)
@@ -200,6 +189,18 @@ struct CameraGuideAdjustSheet: View {
         .accessibilityAddTraits(.isModal)
         .accessibilityIdentifier(Layout.sheetIdentifier)
         .accessibilityAction(.escape) { onDone() }
+    }
+
+    private var guideVisibilityRow: some View {
+        Toggle("Show guide", isOn: Binding(
+            get: { isGuideVisible },
+            set: onGuideVisibilityChange
+        ))
+        .font(AP.Font.body)
+        .tint(AP.Color.accent)
+        .disabled(!isEnabled)
+        .frame(minHeight: AP.HitTarget.minimum)
+        .accessibilityIdentifier(Layout.guideVisibilityIdentifier)
     }
 
     private var handle: some View {
@@ -260,26 +261,38 @@ struct CameraGuideAdjustSheet: View {
         .frame(minHeight: 44)
     }
 
-    /// Line colour: four swatches, the chosen one carrying a check glyph as well as its fill.
+    /// Owner decision keeps a two-colour palette; Mirror shares the row's right end, matching the board.
     private var lineColorRow: some View {
         HStack(spacing: AP.Space.space12) {
-            Image(systemName: "eye")
+            Image(systemName: "pencil.tip.crop.circle")
                 .font(AP.Font.body)
                 .foregroundStyle(AP.Color.primaryText)
                 .frame(width: 24)
                 .accessibilityHidden(true)
-            Text("Line\ncolour")
+            Text("Line colour")
                 .font(AP.Font.body)
                 .foregroundStyle(AP.Color.primaryText)
                 .fixedSize()
-            HStack(spacing: AP.Space.space8) {
+            HStack(spacing: AP.Space.space4) {
                 ForEach(GuideLineColor.allCases) { color in
                     swatch(color)
                 }
             }
             Spacer(minLength: 0)
+            Button(action: onFlip) {
+                Image(systemName: "arrow.left.and.right.righttriangle.left.righttriangle.right")
+                    .font(AP.Font.body)
+                    .foregroundStyle(AP.Color.primaryText)
+                    .frame(width: 44, height: 44)
+                    .background(RoundedRectangle(cornerRadius: AP.Radius.radius8).fill(AP.Color.controlFill))
+            }
+            .buttonStyle(.plain)
+            .disabled(!isEnabled)
+            .accessibilityLabel("Mirror guide")
+            .accessibilityValue(isFlipped ? "Mirrored" : "Normal")
+            .accessibilityIdentifier(Layout.flipIdentifier)
         }
-        .frame(minHeight: 56)
+        .frame(minHeight: AP.HitTarget.minimum)
     }
 
     private func swatch(_ color: GuideLineColor) -> some View {
@@ -288,13 +301,17 @@ struct CameraGuideAdjustSheet: View {
             onLineColorChange(color)
         } label: {
             ZStack {
-                RoundedRectangle(cornerRadius: AP.Radius.radius8, style: .continuous)
-                    .fill(color.swatchColor)
-                    .frame(width: 44, height: 44)
+                  RoundedRectangle(cornerRadius: AP.Radius.radius8, style: .continuous)
+                      .fill(color.swatchColor)
+                      .frame(width: 44, height: 44)
+                      .overlay {
+                          RoundedRectangle(cornerRadius: AP.Radius.radius8, style: .continuous)
+                              .strokeBorder(color == .white ? AP.Color.separator : .clear, lineWidth: 1)
+                      }
                 if isSelected {
                     Image(systemName: "checkmark")
                         .font(AP.Font.caption.weight(.bold))
-                        .foregroundStyle(AP.Color.onAccent)
+                      .foregroundStyle(color == .white ? Color.black : Color.white)
                 }
             }
             .frame(width: 44, height: 44)
@@ -337,32 +354,4 @@ struct CameraGuideAdjustSheet: View {
         .frame(minHeight: 44)
     }
 
-    private var flipRow: some View {
-        HStack(spacing: AP.Space.space12) {
-            Image(systemName: "arrow.left.and.right.righttriangle.left.righttriangle.right")
-                .font(AP.Font.body)
-                .foregroundStyle(AP.Color.primaryText)
-                .frame(width: 24)
-                .accessibilityHidden(true)
-            Text("Flip")
-                .font(AP.Font.body)
-                .foregroundStyle(AP.Color.primaryText)
-            Button(action: onFlip) {
-                Text(isFlipped ? "Mirrored" : "Mirror guide")
-                    .font(AP.Font.supporting.weight(.semibold))
-                    .foregroundStyle(AP.Color.primaryText)
-                    .frame(maxWidth: .infinity, minHeight: AP.HitTarget.minimum)
-                    .background(
-                        RoundedRectangle(cornerRadius: AP.Radius.radius8, style: .continuous)
-                            .fill(AP.Color.controlFill)
-                    )
-            }
-            .buttonStyle(.plain)
-            .disabled(!isEnabled)
-            .accessibilityLabel(isFlipped ? "Unmirror pose guide" : "Mirror pose guide")
-            .accessibilityValue(isFlipped ? "Mirrored" : "Normal")
-            .accessibilityIdentifier(Layout.flipIdentifier)
-        }
-        .frame(minHeight: 52)
-    }
 }

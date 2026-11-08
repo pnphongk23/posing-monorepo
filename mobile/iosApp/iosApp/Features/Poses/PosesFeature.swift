@@ -73,7 +73,7 @@ enum PosesListStateCopy {
     static let loadingMessage = "Getting the pose library ready."
     static let emptyTitle = "No poses yet"
     static let emptyMessage = "New poses will appear here when they're available."
-    static let errorTitle = "Couldn't load poses"
+    static let errorTitle = "We couldn't load your poses."
     static let errorMessage = "Check your connection and try again."
     static let retryActionTitle = "Try again"
 }

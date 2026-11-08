@@ -284,7 +284,7 @@ final class APStateViewsTests: XCTestCase {
         let view = APEmptyStateView(
             title: "No poses match those filters",
             message: "Try a different category, or clear the filters to see every pose in the library.",
-            actionTitle: "Clear filters",
+            actionTitle: "Show all",
             action: {}
         )
         let large = measure(view.environment(\.dynamicTypeSize, .large), width: 320)

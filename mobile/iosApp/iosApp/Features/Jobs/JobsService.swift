@@ -202,6 +202,8 @@ protocol JobsServing: ObservableObject, AnyObject, Sendable {
 
 @MainActor
 final class JobsService: ObservableObject, JobsServing, SessionScoped {
+    nonisolated static let maxImageSizeMB = 10
+
     @Published private(set) var inProgress: [JobRow] = []
     @Published private(set) var finished: [JobRow] = []
     @Published private(set) var activeCount: Int = 0

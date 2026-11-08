@@ -33,7 +33,7 @@ final class CameraSettingsPersistenceTests: XCTestCase {
             isGridVisible: true,
             flash: .off,
             isPoseGuideVisible: false,
-            lineColor: .green,
+            lineColor: .black,
             transform: .init(scale: 2.5, rotationDegrees: 32, offsetX: 14, offsetY: -20),
             zoom: .three
         )
@@ -55,8 +55,8 @@ final class CameraSettingsPersistenceTests: XCTestCase {
         let decoded = try XCTUnwrap(CameraSettings.decode(#"{"guideOpacity":0.8}"#))
 
         XCTAssertEqual(decoded.guideOpacity, 0.8, accuracy: 0.001)
-        XCTAssertEqual(decoded.flash, .auto)
-        XCTAssertEqual(decoded.lineColor, .pink, "the sheet's default swatch")
+        XCTAssertEqual(decoded.flash, .off)
+          XCTAssertEqual(decoded.lineColor.rawValue, "white", "the sheet's default swatch")
         XCTAssertEqual(decoded.zoom, .one)
         XCTAssertTrue(decoded.isPoseGuideVisible)
         XCTAssertFalse(decoded.isGridVisible)
@@ -83,9 +83,24 @@ final class CameraSettingsPersistenceTests: XCTestCase {
             #"{"flash":"strobe","lineColor":"neon","zoom":9}"#
         ))
 
-        XCTAssertEqual(decoded.flash, .auto)
-        XCTAssertEqual(decoded.lineColor, .pink, "the sheet's default swatch")
+        XCTAssertEqual(decoded.flash, .off)
+          XCTAssertEqual(decoded.lineColor.rawValue, "white", "the sheet's default swatch")
         XCTAssertEqual(decoded.zoom, .one)
+    }
+
+    func testLegacyGuideColorsDefaultToWhiteAndKeepOtherSettings() throws {
+        for legacy in ["pink", "yellow", "green", "violet"] {
+            let payload = """
+            {"lineColor":"\(legacy)","guideOpacity":0.73,"guideFlipped":true,
+             "transform":{"scale":1.6,"rotationDegrees":12,"offsetX":24,"offsetY":-8}}
+            """
+            let decoded = try XCTUnwrap(CameraSettings.decode(payload), "legacy \(legacy) should not discard the record")
+            XCTAssertEqual(decoded.lineColor.rawValue, "white", "legacy \(legacy) maps to the white default")
+            XCTAssertEqual(decoded.guideOpacity, 0.73, accuracy: 0.001)
+            XCTAssertTrue(decoded.guideFlipped)
+            XCTAssertEqual(decoded.guideTransform.scale, 1.6, accuracy: 0.001)
+            XCTAssertEqual(decoded.guideTransform.offset, CGSize(width: 24, height: -8))
+        }
     }
 
     func testGarbageJSONIsNilSoTheCallerCanFallBackToDefaults() {
@@ -188,7 +203,7 @@ final class CameraSettingsPersistenceTests: XCTestCase {
         camera.permission = .notDetermined
         let store = MemorySettingsStore(seed: makeSettings(
             opacity: 0.2, flipped: true, grid: true, flash: .off,
-            guideVisible: false, lineColor: .green, zoom: .three
+              guideVisible: false, lineColor: .black, zoom: .three
         ))
         let model = makeModel(camera: camera, store: store)
 
@@ -199,7 +214,7 @@ final class CameraSettingsPersistenceTests: XCTestCase {
         XCTAssertTrue(model.isGridVisible)
         XCTAssertEqual(model.flashSetting, .off)
         XCTAssertFalse(model.isPoseGuideVisible)
-        XCTAssertEqual(model.guideLineColor, .green)
+          XCTAssertEqual(model.guideLineColor, .black)
         XCTAssertEqual(model.zoomLevel, .three)
         XCTAssertFalse(model.cameraControlsEnabled, "the setters stay gated; the restore does not")
     }
@@ -226,8 +241,8 @@ final class CameraSettingsPersistenceTests: XCTestCase {
         await waitUntil { model.initialMergeDone }
 
         XCTAssertEqual(model.guideOpacity, 0.5, accuracy: 0.001)
-        XCTAssertEqual(model.flashSetting, .auto)
-        XCTAssertEqual(model.guideLineColor, .pink, "the sheet's default swatch")
+        XCTAssertEqual(model.flashSetting, .off)
+          XCTAssertEqual(model.guideLineColor.rawValue, "white", "the sheet's default swatch")
         XCTAssertEqual(model.zoomLevel, .one)
         XCTAssertTrue(model.isPoseGuideVisible)
         XCTAssertFalse(model.isGridVisible)
@@ -266,17 +281,16 @@ final class CameraSettingsPersistenceTests: XCTestCase {
         XCTAssertEqual(camera.zoomCalls, [3])
     }
 
-    /// Fresh install: there is nothing stored, and today the label says `Auto` while the device sits
-    /// at `Off` because nothing re-applies the flash after the session starts.
-    func testFreshInstallAppliesTheAutoDefaultToTheHardware() async throws {
+    /// Fresh install follows the design default: Off is applied to the device after the session starts.
+    func testFreshInstallAppliesTheOffDefaultToTheHardware() async throws {
         let camera = FakeSessionCamera()
         let model = makeModel(camera: camera, store: MemorySettingsStore(seed: nil))
         await waitUntil { model.initialMergeDone }
 
         await model.onAppear()
 
-        XCTAssertEqual(model.flashSetting, .auto)
-        XCTAssertEqual(camera.flashCalls, [.auto])
+        XCTAssertEqual(model.flashSetting, .off)
+        XCTAssertEqual(camera.flashCalls, [.off])
         XCTAssertEqual(camera.zoomCalls, [1])
     }
 
@@ -322,7 +336,7 @@ final class CameraSettingsPersistenceTests: XCTestCase {
         model.setFlash(.off)
         model.setZoomFactor(2)
 
-        XCTAssertEqual(camera.flashCalls, [.auto, .on, .off], "the launch reconcile, then each chip change once")
+        XCTAssertEqual(camera.flashCalls, [.off, .on, .off], "the launch reconcile, then each chip change once")
         XCTAssertEqual(camera.zoomCalls, [1, 2])
     }
 
@@ -410,6 +424,53 @@ final class CameraSettingsPersistenceTests: XCTestCase {
         model.resetGuideTransform()
 
         XCTAssertEqual(model.guideTransform, GuideTransform())
+    }
+
+    func testResetGuideTransformPersistsIdentityPlacement() async throws {
+        let database = try makeDatabase()
+        let camera = FakeSessionCamera()
+        let store = GRDBCameraSettingsStore(database: database)
+        let model = makeModel(camera: camera, store: store, debounce: 10_000_000_000)
+        await waitUntil { model.initialMergeDone }
+        model.commitGuideGesture(.init(scale: 1.8, rotation: .degrees(15), translation: CGSize(width: 24, height: -9)))
+        await model.flushSettings()
+
+        model.resetGuideTransform()
+        await model.flushSettings()
+
+        XCTAssertEqual(model.guideTransform, GuideTransform())
+        let storedRow = try await snapshotRow(database)
+        let row = try XCTUnwrap(storedRow)
+        let reloaded = try XCTUnwrap(CameraSettings.decode(row.settingsJSON))
+        XCTAssertEqual(reloaded.guideTransform, GuideTransform(), "Reset persists the identity placement")
+    }
+
+    func testBlackGuideLineColorPersistsAcrossStoreReload() async throws {
+        let database = try makeDatabase()
+        let store = GRDBCameraSettingsStore(database: database)
+        let first = makeModel(camera: FakeSessionCamera(), store: store)
+        first.coordinator.onPermissionResult(.authorized)
+        await waitUntil { first.initialMergeDone }
+        first.setGuideLineColor(.black)
+        await first.flushSettings()
+
+        let reloaded = makeModel(camera: FakeSessionCamera(), store: store)
+        await waitUntil { reloaded.initialMergeDone }
+        XCTAssertEqual(reloaded.guideLineColor.rawValue, "black")
+    }
+
+    func testWhiteGuideLineColorPersistsAcrossStoreReload() async throws {
+        let database = try makeDatabase()
+        let store = GRDBCameraSettingsStore(database: database)
+        let first = makeModel(camera: FakeSessionCamera(), store: store)
+        first.coordinator.onPermissionResult(.authorized)
+        await waitUntil { first.initialMergeDone }
+        first.setGuideLineColor(GuideLineColor.stored("white"))
+        await first.flushSettings()
+
+        let reloaded = makeModel(camera: FakeSessionCamera(), store: store)
+        await waitUntil { reloaded.initialMergeDone }
+        XCTAssertEqual(reloaded.guideLineColor.rawValue, "white")
     }
 
     // MARK: - Saving

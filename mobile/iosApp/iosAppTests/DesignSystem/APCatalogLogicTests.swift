@@ -75,12 +75,13 @@ final class APCatalogLogicTests: XCTestCase {
         filter.toggle("Sitting")
         filter.toggle("Couple")
         XCTAssertTrue(filter.isActive)
-        XCTAssertTrue(filter.isSelected("Sitting"))
-        XCTAssertEqual(filter.selected, ["Sitting", "Couple"])
+        XCTAssertTrue(filter.isSelected("Couple"))
+        XCTAssertEqual(filter.selected, "Couple", "selecting a category replaces the previous selection")
 
         filter.toggle("Sitting")
-        XCTAssertFalse(filter.isSelected("Sitting"), "a second tap removes the category")
-        XCTAssertEqual(filter.selected, ["Couple"])
+        XCTAssertTrue(filter.isSelected("Sitting"), "a new selection replaces the prior category")
+        filter.toggle("Sitting")
+        XCTAssertNil(filter.selected, "tapping the selected category returns to All")
 
         filter.clear()
         XCTAssertFalse(filter.isActive)
@@ -99,21 +100,21 @@ final class APCatalogLogicTests: XCTestCase {
         XCTAssertEqual(filter.apply(to: poses).map(\.id), ["2", "3"])
 
         filter.toggle("Couple")
-        XCTAssertEqual(filter.apply(to: poses).map(\.id), ["2", "3"], "an unmatched category adds nothing")
+        XCTAssertEqual(filter.apply(to: poses).map(\.id), [], "an unmatched category adds nothing")
     }
 
     func testNoMatchCopyNamesTheSelectedStyles() {
         var filter = APCategoryFilter()
-        XCTAssertEqual(filter.message, "Try a different category.")
+        XCTAssertEqual(filter.message, "You don't have any poses in this category yet.")
 
         filter.toggle("Sitting")
-        XCTAssertEqual(filter.message, "Nothing fits Sitting. Try removing the filter.")
+        XCTAssertEqual(filter.message, "You don't have any Sitting poses yet.")
 
         filter.toggle("Couple")
-        XCTAssertEqual(filter.message, "Nothing fits Couple and Sitting together. Try removing a filter.")
+        XCTAssertEqual(filter.message, "You don't have any Couple poses yet.")
 
         filter.toggle("Standing")
-        XCTAssertEqual(filter.message, "Nothing fits 3 styles together. Try removing a filter.")
+        XCTAssertEqual(filter.message, "You don't have any Standing poses yet.")
     }
 
     // MARK: - State panel selection

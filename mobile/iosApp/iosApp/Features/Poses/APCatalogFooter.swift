@@ -135,9 +135,7 @@ struct APPagingFooter: View {
                 .accessibilityIdentifier("poses.loadMore.retry")
                 .accessibilityHint(model.paging.error ?? "")
             case .end:
-                Text(APPagingFooterRule.end)
-                    .font(AP.Font.caption)
-                    .foregroundStyle(AP.Color.secondaryText)
+                EmptyView()
             }
         }
         .frame(maxWidth: .infinity)
