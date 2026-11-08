@@ -1,42 +1,35 @@
-# TC-CAM-016 zoom is a continuous slider, and its value survives a relaunch
+# TC-CAM-016 zoom is a 1×/2× lens row, and the chosen lens survives a relaunch
 appId: ${APP_ID}
 tags: [TC-CAM-016, p1]
 ---
 - runFlow: ../subflows/launch.yaml
 - runFlow: ../subflows/open-camera.yaml
-# Build 23 replaced the lens-aware pills with ONE continuous slider. It reports its factor as a value ("1.0×"), which
-# is the only handle a flow has on it: Maestro can read the value, it cannot drag a slider to an exact factor, so
-# setting 0.5×/2×/3× and comparing the preview against the captured photo is the device item (checklist §7).
-- extendedWaitUntil:
-    visible:
-      id: "camera.zoom.slider"
-    timeout: 15000
+# Build 26 (owner decision 2026-11-08) draws only two lens buttons, 1× and 2×. Tap jumps to the lens; the row
+# hides behind a 1 pt dial that a drag opens, and the dial is not asserted here — Maestro cannot drag a track to a
+# factor and the row collapses ~1 s after release, so "drag opens the dial" stays a device check (checklist §7).
 - assertVisible:
+    id: "camera.zoom.lens.1x"
+- assertVisible:
+    id: "camera.zoom.lens.2x"
+- assertNotVisible:
+    id: "camera.zoom.lens.0.5x"
+- assertNotVisible:
+    id: "camera.zoom.lens.3x"
+# Tapping 2× stays on the camera (no cycling, no navigation) and the dial stays closed.
+- tapOn:
+    id: "camera.zoom.lens.2x"
+- assertVisible:
+    id: "camera.zoom.lens.2x"
+- assertNotVisible:
     id: "camera.zoom.slider"
-    text: '.*[0-9]\.[0-9]×.*'
-- assertVisible: '.*Zoom.*'
-# The retired presets must not come back: no flow and no screen should find them.
-- assertNotVisible:
-    id: "camera.zoom.0.5x"
-- assertNotVisible:
-    id: "camera.zoom.1x"
-- assertNotVisible:
-    id: "camera.zoom.2x"
-- assertNotVisible:
-    id: "camera.zoom.3x"
 - assertVisible:
     id: "camera.shutter"
 - assertVisible:
     id: "camera.close"
-# The zoom setting is persisted like every other camera setting: after a relaunch the slider is back with a value.
+# The zoom choice is persisted like the other camera settings.
 - runFlow: ../subflows/relaunch-keep-state.yaml
 - runFlow: ../subflows/open-camera.yaml
-- extendedWaitUntil:
-    visible:
-      id: "camera.zoom.slider"
-    timeout: 15000
 - assertVisible:
-    id: "camera.zoom.slider"
-    text: '.*[0-9]\.[0-9]×.*'
+    id: "camera.zoom.lens.2x"
 - assertVisible:
     id: "camera.shutter"
