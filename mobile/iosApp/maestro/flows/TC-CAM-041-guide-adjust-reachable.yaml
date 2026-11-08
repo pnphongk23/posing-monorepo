@@ -3,23 +3,31 @@
 # Why this case exists: after the guide controls moved out of the tools popover, the only way into the adjust
 # sheet was tapping the pose reference — a control with no visible affordance. TC-CAM-015/032 were re-pointed at
 # retired ids, so both kept passing while the settings were effectively unreachable for a user. This flow therefore
-# opens the sheet ONLY through the visible top-chrome button, and never by tapping the guide.
+# opens the sheet ONLY through the visible top-chrome control, and never by tapping the guide.
 #
-# Verified against `fix/camera-guide-settings` (da2fccc):
-#   camera.guideAdjust.open   CameraSurfaceControl, glyph `figure.stand`, accessibilityLabel "Adjust guide", drawn in
-#                             the top chrome while a guide exists AND is visible, disabled when the controls are
-#   camera.guideAdjust.reset  the sheet's Reset row, wired to `resetGuideTransform()`
+# Owner decision (2026-11-08, final): the entry point is the **eye** button in the top chrome. A separate
+# `camera.guideAdjust.open` button and the sheet's Reset row were REMOVED; showing/hiding the guide is the
+# "Show guide" toggle at the top of the sheet. There is no long press. Both retired ids are guarded below.
+#
+# Verified against `feat/design-sync-1108` (70d38cfe):
+#   camera.guideToggle        CameraFeature.swift `topControls`: glyph `eye`, accessibilityLabel "Adjust guide",
+#                             value "Open guide settings" / "Unavailable. Choose a pose first", action
+#                             `model.openGuideAdjust()`. Always drawn (dimmed + disabled when no guide), so the
+#                             sheet has a visible entry point at all times.
+#   camera.guideAdjust        CameraGuideAdjust.swift `CameraGuideAdjustSheet.Layout.sheetIdentifier` — the sheet
+#                             container (in-place overlay, not a modal sheet, so the camera stays live behind it).
+#   camera.guideAdjust.showGuide  the "Show guide" toggle in the sheet's first row — `isPoseGuideVisible`.
+#   camera.poseGuide          CameraCanvas.swift: drawn only while a guide exists AND `isPoseGuideVisible`, so it is
+#                             the proof that the Show guide toggle hid and re-showed the reference.
 #   line colour               `GuideLineColor` is **black | white only** (`camera.guideAdjust.lineColor.black|white`,
 #                             that order), **white is the default**, and a legacy stored pink/yellow/green loads as
 #                             white (`GuideLineColor.stored`). A swatch exposes value "Selected" when chosen.
-#   scale / flip / opacity    scale value reads "NN%" ("100%" at the default), flip label flips
-#                             "Mirror pose guide" ⇄ "Unmirror pose guide" with value "Mirrored"/"Normal", opacity
-#                             reads "NN%"
-#   Reset                     restores the guide TRANSFORM only (scale/rotation/offset) — colour and flip are kept
-#   persistence               `CameraSettings` carries opacity, flipped, lineColor and transform, so they survive a
-#                             relaunch. Seeding a legacy colour is NOT possible from a flow (no launch-arg hook for
-#                             camera settings; the snapshot is one UserDefaults JSON blob) — that upgrade check is a
-#                             device step in docs/qa/camera-device-checklist.md.
+#   scale / flip / opacity    scale value reads "NN%" ("100%" at the default); flip is a button labelled
+#                             "Mirror guide" whose value flips "Normal" ⇄ "Mirrored"; opacity reads "NN%".
+#   persistence               `CameraSettings` carries opacity, flipped, lineColor and the guide transform, so they
+#                             survive a relaunch. Seeding a legacy colour is NOT possible from a flow (no launch-arg
+#                             hook for camera settings; the snapshot is one UserDefaults JSON blob) — that upgrade
+#                             check is a device step in docs/qa/camera-device-checklist.md.
 appId: ${APP_ID}
 tags: [TC-CAM-041, p0]
 ---
@@ -34,15 +42,18 @@ tags: [TC-CAM-041, p0]
     timeout: 20000
 # The point of the case: the affordance is on screen, with its own label, before anything is opened.
 - assertVisible:
-    id: "camera.guideAdjust.open"
+    id: "camera.guideToggle"
 - assertVisible: '.*Adjust guide.*'
+- assertVisible: '.*Open guide settings.*'
 - tapOn:
-    id: "camera.guideAdjust.open"
+    id: "camera.guideToggle"
 - extendedWaitUntil:
     visible:
       id: "camera.guideAdjust"
     timeout: 15000
-# The sheet's controls: colour is black-or-white only, plus the Reset row.
+# The sheet's controls, in board order: visibility first, then opacity · scale · line colour + mirror, one Done.
+- assertVisible:
+    id: "camera.guideAdjust.showGuide"
 - assertVisible:
     id: "camera.guideAdjust.opacity"
 - assertVisible:
@@ -54,10 +65,13 @@ tags: [TC-CAM-041, p0]
 - assertVisible:
     id: "camera.guideAdjust.lineColor.white"
 - assertVisible:
-    id: "camera.guideAdjust.reset"
-- assertVisible:
     id: "camera.guideAdjust.done"
-# 1. The default is WHITE and nothing else is offered.
+# Owner decision: no separate open button on the camera, no Reset row in the sheet. Both must stay retired.
+- assertNotVisible:
+    id: "camera.guideAdjust.open"
+- assertNotVisible:
+    id: "camera.guideAdjust.reset"
+# 1. The default is WHITE and nothing else is offered; flip starts Normal, scale 100 %.
 - assertVisible:
     id: "camera.guideAdjust.lineColor.white"
     text: '.*Selected.*'
@@ -81,7 +95,20 @@ tags: [TC-CAM-041, p0]
     id: "camera.tools.scale"
 - assertNotVisible:
     id: "camera.tools.lineColor.black"
-# 2. Pick black, mirror the guide, close with Done.
+# 2. The eye no longer hides the guide — the sheet's "Show guide" toggle does, and it draws the reference back.
+- tapOn:
+    id: "camera.guideAdjust.showGuide"
+- extendedWaitUntil:
+    notVisible:
+      id: "camera.poseGuide"
+    timeout: 15000
+- tapOn:
+    id: "camera.guideAdjust.showGuide"
+- extendedWaitUntil:
+    visible:
+      id: "camera.poseGuide"
+    timeout: 15000
+# 3. Pick black, mirror the guide, close with Done.
 - tapOn:
     id: "camera.guideAdjust.lineColor.black"
 - assertVisible:
@@ -92,7 +119,6 @@ tags: [TC-CAM-041, p0]
 - assertVisible:
     id: "camera.guideAdjust.flip"
     text: '.*Mirrored.*'
-- assertVisible: '.*Unmirror pose guide.*'
 - tapOn:
     id: "camera.guideAdjust.done"
 - extendedWaitUntil:
@@ -101,11 +127,9 @@ tags: [TC-CAM-041, p0]
     timeout: 15000
 - assertVisible:
     id: "camera.poseGuide"
-# 3. Re-open through the same visible button: the settings survived the sheet being dismissed.
-- assertVisible:
-    id: "camera.guideAdjust.open"
+# 4. Re-open through the same visible button: the settings survived the sheet being dismissed.
 - tapOn:
-    id: "camera.guideAdjust.open"
+    id: "camera.guideToggle"
 - extendedWaitUntil:
     visible:
       id: "camera.guideAdjust"
@@ -116,39 +140,22 @@ tags: [TC-CAM-041, p0]
 - assertVisible:
     id: "camera.guideAdjust.flip"
     text: '.*Mirrored.*'
-# 4. Reset restores the guide's transform (source: `resetGuideTransform()` → scale 100 %, no rotation, no offset);
-#    the sheet exposes the scale as a value, and every offset is 0 again — colour and flip are NOT reset.
-- tapOn:
-    id: "camera.guideAdjust.reset"
-- assertVisible:
-    id: "camera.guideAdjust.scale"
-    text: '.*100%.*'
-- assertVisible:
-    id: "camera.guideAdjust.lineColor.black"
-    text: '.*Selected.*'
-- assertVisible:
-    id: "camera.guideAdjust.flip"
-    text: '.*Mirrored.*'
 - tapOn:
     id: "camera.guideAdjust.done"
 - extendedWaitUntil:
     notVisible:
       id: "camera.guideAdjust"
     timeout: 15000
-# 5. Persistence across a relaunch WITHOUT clearState: these four settings live in the CameraSettings snapshot.
-- launchApp:
-    stopApp: true
-- extendedWaitUntil:
-    visible:
-      id: "poses.open-search"
-    timeout: 30000
+# 5. Persistence across a relaunch WITHOUT clearState: these settings live in the CameraSettings snapshot, and
+#    the remembered pose brings the guide (and therefore the eye) back.
+- runFlow: ../subflows/relaunch-keep-state.yaml
 - runFlow: ../subflows/open-camera.yaml
 - extendedWaitUntil:
     visible:
-      id: "camera.guideAdjust.open"
+      id: "camera.poseGuide"
     timeout: 20000
 - tapOn:
-    id: "camera.guideAdjust.open"
+    id: "camera.guideToggle"
 - extendedWaitUntil:
     visible:
       id: "camera.guideAdjust"

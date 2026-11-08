@@ -11,13 +11,14 @@ tags: [TC-CAM-032, p1]
       id: "camera.poseGuide"
     timeout: 20000
 # Build 23 moved every guide control out of the tools popover and into the guide-adjust sheet. The sheet is opened
-# through the **visible** top-chrome control (`camera.guideAdjust.open`, label "Adjust guide", commit 84a8b1d) —
-# never by tapping the pose reference, which is the hidden route that let this surface regress unnoticed.
+# through the **visible** eye in the top chrome — `camera.guideToggle`, label "Adjust guide" (owner decision
+# 2026-11-08; read at `feat/design-sync-1108`, 70d38cfe: `topControls` → `model.openGuideAdjust()`) — never by tapping
+# the pose reference, which is the hidden route that let this surface regress unnoticed.
 - assertVisible:
-    id: "camera.guideAdjust.open"
+    id: "camera.guideToggle"
 - assertVisible: '.*Adjust guide.*'
 - tapOn:
-    id: "camera.guideAdjust.open"
+    id: "camera.guideToggle"
 - extendedWaitUntil:
     visible:
       id: "camera.guideAdjust"
@@ -37,11 +38,16 @@ tags: [TC-CAM-032, p1]
     id: "camera.tools.mirror"
 - assertNotVisible:
     id: "camera.tools.mirror.switch"
-# Off by default; the control reports its own state as a word, not only a colour.
-- assertVisible: '.*Mirror pose guide.*'
+# Off by default; the control reports its own state as a word, not only a colour. The label stays
+# "Mirror guide" and the VALUE flips "Normal" ⇄ "Mirrored" (CameraGuideAdjust.swift `Layout.flipIdentifier`).
+- assertVisible:
+    id: "camera.guideAdjust.flip"
+    text: '.*Normal.*'
 - tapOn:
     id: "camera.guideAdjust.flip"
-- assertVisible: '.*Unmirror pose guide.*'
+- assertVisible:
+    id: "camera.guideAdjust.flip"
+    text: '.*Mirrored.*'
 # The guide is still drawn (mirrored, not removed) and the camera itself is untouched.
 - assertVisible:
     id: "camera.poseGuide"
@@ -50,7 +56,9 @@ tags: [TC-CAM-032, p1]
 # Back to Normal, then close the sheet with its own control.
 - tapOn:
     id: "camera.guideAdjust.flip"
-- assertVisible: '.*Mirror pose guide.*'
+- assertVisible:
+    id: "camera.guideAdjust.flip"
+    text: '.*Normal.*'
 - tapOn:
     id: "camera.guideAdjust.done"
 - extendedWaitUntil:
