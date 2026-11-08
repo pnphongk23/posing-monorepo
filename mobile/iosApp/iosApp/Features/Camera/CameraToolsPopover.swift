@@ -144,6 +144,11 @@ struct CameraToolsPopup: View {
         .padding(.horizontal, AP.Space.space8)
         .frame(height: CameraToolsLayout.rowHeight)
         .opacity(controlsEnabled ? 1 : 0.45)
+        // A container, not a single element: each choice keeps its own identifier
+        // (`camera.tools.ratio.1x1`, `camera.tools.timer.3s`, …) while the row keeps
+        // `camera.tools.ratio` / `camera.tools.timer` for the flows that open it. Without
+        // this line SwiftUI hands the row's id down and every chip reports the row's.
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier(row.accessibilityIdentifier)
     }
 
